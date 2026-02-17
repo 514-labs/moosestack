@@ -17,7 +17,7 @@ import {
 
 Slow dashboards are a database architecture problem. Running analytical queries (aggregations, wide scans, time-series breakdowns) on your transactional database degrades everything: dashboard latency, core app reliability, and your team's ability to ship new metrics without capacity planning.
 
-This guide walks you through adding a dedicated analytical layer (ClickHouse) alongside your existing OLTP database using MooseStack, 514 hosting, and a supporting toolchain (dev MCP server, language server, CLIs, and ClickHouse skills) that form an agent harness for AI-assisted migration. You keep your source database as the system of record, replicate the data your dashboards need via CDC, and rewire analytical reads to ClickHouse. Writes stay unchanged.
+This guide walks you through adding a dedicated analytical layer ([ClickHouse](https://clickhouse.com)) alongside your existing OLTP database using [MooseStack](/moosestack), [514 hosting](https://boreal.cloud), and a supporting toolchain ([dev MCP server](/moosestack/moosedev-mcp), [language server](/moosestack/language-server), CLIs, and [ClickHouse skills](https://github.com/514-labs/agent-skills/)) that form an agent harness for AI-assisted migration. You keep your source database as the system of record, replicate the data your dashboards need via CDC, and rewire analytical reads to ClickHouse. Writes stay unchanged.
 
 <ZoomImg light="/guides/performant-dashboards/marchitecture-light.png" dark="/guides/performant-dashboards/marchitecture-dark.png" alt="Architecture: Your App writes to OLTP, CDC replicates to ClickHouse OLAP, analytical reads rewired to ClickHouse, managed by Fiveonefour Hosting" />
 
@@ -25,8 +25,8 @@ This guide walks you through adding a dedicated analytical layer (ClickHouse) al
 
 | Source database | CDC method | App language |
 |---|---|---|
-| **Postgres** | ClickPipes (managed by ClickHouse Cloud) | TypeScript |
-| **SQL Server** | Debezium (self-hosted) | TypeScript |
+| **[Postgres](https://clickhouse.com/cloud/postgresql)** | [ClickPipes](https://clickhouse.com/cloud/clickpipes) (managed by ClickHouse Cloud) | TypeScript |
+| **SQL Server** | [Debezium](https://debezium.io/) (self-hosted) | TypeScript |
 
 ### Get Started
 
