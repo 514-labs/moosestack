@@ -1,0 +1,107 @@
+---
+title: Setup failures
+description: Recovery guide for common setup blockers.
+order: 1
+---
+
+# Setup failures
+
+Each section includes:
+- Symptom
+- Likely cause
+- Next command(s)
+- Recovery route
+
+## 1. Auth expired or missing
+
+Symptom:
+- Setup or link commands fail with auth-required message.
+
+Likely cause:
+- No active CLI session.
+
+Next command(s):
+
+```bash
+514 auth login
+```
+
+Recovery route:
+- `https://www.boreal.cloud/login`
+
+## 2. Repo access denied or slug invalid
+
+Symptom:
+- Project cannot be resolved or accessed.
+
+Likely cause:
+- Incorrect `<org>/<project>` or missing permissions.
+
+Next command(s):
+
+```bash
+514 setup <org>/<project>
+```
+
+Recovery routes:
+- `https://www.boreal.cloud/projects`
+- `https://github.com/settings/installations`
+
+## 3. Destination path conflict
+
+Symptom:
+- Clone destination exists and is not empty.
+
+Likely cause:
+- Local folder already contains files.
+
+Next command(s):
+
+```bash
+514 setup <org>/<project> --path <new-parent> --dir-name <new-folder>
+```
+
+Recovery route:
+- Local filesystem path currently in conflict.
+
+## 4. Invalid branch name
+
+Symptom:
+- Branch creation rejected.
+
+Likely cause:
+- Branch name does not satisfy git branch format.
+
+Next command(s):
+
+```bash
+git check-ref-format --branch feature/add-orders
+```
+
+Recovery route:
+- Local repository path where branch will be created.
+
+## 5. Push failure
+
+Symptom:
+- Branch push fails after local branch is created.
+
+Likely cause:
+- Git auth issue or branch protection rules.
+
+Next command(s):
+
+```bash
+git push -u origin <branch-name>
+```
+
+Recovery routes:
+- Repository branch rules in GitHub
+- Boreal project page for deployment status
+
+## Related
+
+- [CLI: auth](/hosting/cli/auth)
+- [CLI: setup](/hosting/cli/setup)
+- [CLI: link](/hosting/cli/link)
+- [Boreal to local setup](/hosting/workflow/boreal-to-local-setup)

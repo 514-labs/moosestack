@@ -87,8 +87,7 @@ function processNavItems(
 
 // Whitelist of publicly visible sections for the TOC.
 // New sections are hidden by default until explicitly added here.
-// This prevents accidentally exposing sections behind feature flags (ai, hosting, etc.)
-const PUBLIC_SECTIONS = new Set(["moosestack", "guides"]);
+const PUBLIC_SECTIONS = new Set(["moosestack", "guides", "hosting"]);
 
 /**
  * Generate TOC markdown for LLM consumption

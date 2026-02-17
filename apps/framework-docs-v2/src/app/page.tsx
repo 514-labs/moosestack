@@ -20,7 +20,7 @@ import { getNavVariant } from "@/lib/nav-variant";
 export default function HomePage() {
   // Use build-time variant (same approach as guides page)
   const variant = getNavVariant();
-  const showHosting = variant !== "base";
+  const showHosting = true;
   const showAi = variant !== "base";
 
   const sections = [
@@ -51,7 +51,7 @@ export default function HomePage() {
           title: "Hosting",
           description:
             "Deploy and host your MooseStack applications with our managed hosting platform.",
-          href: `/hosting/overview`,
+          href: `/hosting`,
           icon: IconCloud,
         },
       ]

@@ -70,7 +70,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
       [
         {
           label: "Hosting",
-          href: "/hosting/overview",
+          href: "/hosting",
           section: "hosting" as DocumentationSection,
         },
       ]

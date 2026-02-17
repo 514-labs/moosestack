@@ -7,10 +7,8 @@ async function TopNavWithFlagsContent() {
   // Get variant at build time
   const variant = getNavVariant();
 
-  // Determine section visibility based on variant
-  // For now, show hosting/AI sections for all variants except 'base'
-  // Adjust this logic based on your requirements
-  const showHosting = variant !== "base";
+  // Hosting is now public in all variants.
+  const showHosting = true;
   const showAi = variant !== "base";
 
   // Fetch stars

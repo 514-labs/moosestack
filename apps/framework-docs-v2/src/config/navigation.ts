@@ -1062,30 +1062,52 @@ const moosestackNavigationConfig: NavigationConfig = [
 ];
 
 /**
- * Hosting navigation configuration (placeholder)
+ * Hosting navigation configuration
  */
 const hostingNavigationConfig: NavigationConfig = [
   {
     type: "page",
-    slug: "hosting/overview",
-    title: "Overview",
+    slug: "hosting",
+    title: "Hosting Overview",
     icon: IconChartArea,
     languages: ["typescript", "python"],
   },
+  { type: "separator" },
+  { type: "label", title: "CLI" },
   {
     type: "page",
-    slug: "hosting/getting-started",
-    title: "Getting Started",
-    icon: IconDatabase,
+    slug: "hosting/cli/auth",
+    title: "auth",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/setup",
+    title: "setup",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/link",
+    title: "link",
     languages: ["typescript", "python"],
   },
   { type: "separator" },
-  { type: "label", title: "Deployment" },
+  { type: "label", title: "Workflow" },
   {
     type: "page",
-    slug: "hosting/deployment",
-    title: "Deployment Guide",
-    icon: IconHammer,
+    slug: "hosting/workflow/boreal-to-local-setup",
+    title: "Boreal to Local Setup",
+    icon: IconRoute,
+    languages: ["typescript", "python"],
+  },
+  { type: "separator" },
+  { type: "label", title: "Troubleshooting" },
+  {
+    type: "page",
+    slug: "hosting/troubleshooting/setup-failures",
+    title: "Setup Failures",
+    icon: IconHelpCircle,
     languages: ["typescript", "python"],
   },
 ];

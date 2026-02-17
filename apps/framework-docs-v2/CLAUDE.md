@@ -67,7 +67,7 @@ content/
 ├── shared/          # Reusable content fragments (excluded from routes)
 ├── templates/       # Template documentation
 ├── ai/             # AI-specific docs (feature flagged)
-└── hosting/        # Hosting docs (feature flagged)
+└── hosting/        # Hosting docs (public by default)
 ```
 
 **CRITICAL**: The `shared/` folder is excluded from route generation. Content here is only used via the `include` system (see `src/lib/includes.ts`).
@@ -90,7 +90,7 @@ Navigation is **manually configured** in `src/config/navigation.ts`, NOT auto-ge
 Visibility controlled via Vercel Toolbar flags:
 - `show-draft-guides`: Internal WIP guides (not ready for external users)
 - `show-beta-guides`: Guides ready for select external preview
-- `show-hosting-section`: Hosting tab visibility
+- `show-hosting-section`: Legacy Hosting visibility flag (Hosting is public by default)
 - `show-ai-section`: AI tab visibility
 - `show-copy-as-markdown`: Copy page as markdown button
 - `show-linear-integration`: Linear integration on guide pages

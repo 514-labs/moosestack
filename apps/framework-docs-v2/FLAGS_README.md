@@ -21,7 +21,7 @@
 
 ## Available Flags
 
-- `show-hosting-section` - Controls Hosting tab visibility (default: off)
+- `show-hosting-section` - Legacy Hosting visibility flag (Hosting tab is now public by default)
 - `show-ai-section` - Controls AI tab visibility (default: off)
 - `show-data-sources-page` - Controls Data sources page visibility in navigation (default: off)
 - `show-draft-guides` - Show draft guides (internal WIP, not ready for external users) (default: off)
