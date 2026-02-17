@@ -19,8 +19,10 @@ pub struct Workflow {
     path: PathBuf,
     config: WorkflowConfig,
     language: SupportedLanguages,
+    /// Infrastructure components this workflow reads data from (lineage).
     #[serde(default)]
     pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this workflow writes data to (lineage).
     #[serde(default)]
     pushes_data_to: Vec<InfrastructureSignature>,
 }
@@ -55,10 +57,12 @@ impl Workflow {
         &self.config
     }
 
+    /// Returns lineage sources this workflow reads from.
     pub fn pulls_data_from(&self) -> &[InfrastructureSignature] {
         &self.pulls_data_from
     }
 
+    /// Returns lineage targets this workflow writes to.
     pub fn pushes_data_to(&self) -> &[InfrastructureSignature] {
         &self.pushes_data_to
     }

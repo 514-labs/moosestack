@@ -48,7 +48,11 @@ import {
   hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
-import { analyzeRegistryLineage } from "./dependencyAnalysis";
+import {
+  analyzeRegistryLineage,
+  type DependencyAnalysisResult,
+  type DependencySignatures,
+} from "./dependencyAnalysis";
 
 /**
  * Recursively finds all TypeScript/JavaScript files in a directory
@@ -990,7 +994,18 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
-  const lineage = analyzeRegistryLineage(registry);
+  const hasLineageRoots =
+    registry.apis.size > 0 ||
+    registry.workflows.size > 0 ||
+    registry.webApps.size > 0;
+  const lineage: DependencyAnalysisResult =
+    hasLineageRoots ?
+      analyzeRegistryLineage(registry)
+    : {
+        apiByKey: new Map<string, DependencySignatures>(),
+        workflowByName: new Map<string, DependencySignatures>(),
+        webAppByName: new Map<string, DependencySignatures>(),
+      };
 
   registry.tables.forEach((table) => {
     const id =

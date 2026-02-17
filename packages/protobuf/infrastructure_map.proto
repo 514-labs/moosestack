@@ -526,6 +526,8 @@ message Workflow {
   string timeout = 4;
   // Programming language of the workflow
   string language = 5;
+  // Infrastructure components this workflow reads data from.
   repeated InfrastructureSignature pulls_data_from = 6;
+  // Infrastructure components this workflow writes data to.
   repeated InfrastructureSignature pushes_data_to = 7;
 }
