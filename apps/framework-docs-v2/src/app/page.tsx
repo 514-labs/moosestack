@@ -25,14 +25,14 @@ export default function HomePage() {
     {
       title: "MooseStack",
       description:
-        "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
+        "OLAP-native agent harness for analytical workloads. Define schemas and pipelines as code, then let agents design, test, migrate, and ship from local development to production.",
       href: `/moosestack`,
       icon: IconDatabase,
     },
     {
       title: "Hosting",
       description:
-        "Deploy and host your MooseStack applications with our managed hosting platform.",
+        "Managed cloud control plane that lets AI agents run, test, and monitor workloads consistently across preview branches and production deployments.",
       href: `/hosting`,
       icon: IconCloud,
     },
@@ -76,16 +76,17 @@ export default function HomePage() {
   const renderableSections = sections.filter(shouldRenderSection);
 
   return (
-    <div className="container mx-auto px-4 py-16">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
+    <div className="container mx-auto px-4 py-12 md:py-16">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 text-center md:mb-12">
           <h1 className="text-4xl font-bold mb-4">Documentation</h1>
           <p className="text-lg text-muted-foreground">
-            Choose a documentation section to get started
+            Start with MooseStack, then follow Getting Started to move
+            analytical workloads through a production-safe SDLC loop.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:mx-auto md:[&>*:last-child:nth-child(odd)]:max-w-md md:[&>*:last-child:nth-child(odd)]:md:col-span-2">
           {renderableSections.map((section) => {
             const Icon = section.icon;
             return (
