@@ -54,6 +54,7 @@ use super::{
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::Dmv1View,
+        InfrastructureSignature,
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
@@ -420,6 +421,10 @@ struct PartialApi {
     pub response_schema: serde_json::Value,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
     /// Optional custom path for the consumption endpoint.
     /// If not specified, defaults to "{name}" or "{name}/{version}"
     #[serde(default)]
@@ -472,11 +477,16 @@ pub struct Consumer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PartialWorkflow {
     pub name: String,
     pub retries: Option<u32>,
     pub timeout: Option<String>,
     pub schedule: Option<String>,
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 /// Errors that can occur during the loading of Data Model V2 infrastructure definitions.
@@ -1154,6 +1164,8 @@ impl PartialInfrastructureMap {
                     primitive_type: PrimitiveTypes::DataModel,
                 },
                 metadata: partial_api.metadata.clone(),
+                pulls_data_from: vec![],
+                pushes_data_to: vec![],
             };
 
             api_endpoints.insert(api_endpoint.id(), api_endpoint);
@@ -1213,6 +1225,8 @@ impl PartialInfrastructureMap {
                     primitive_type: PrimitiveTypes::ConsumptionAPI,
                 },
                 metadata: partial_api.metadata.clone(),
+                pulls_data_from: partial_api.pulls_data_from.clone(),
+                pushes_data_to: partial_api.pushes_data_to.clone(),
             };
 
             api_endpoints.insert(api_endpoint.id(), api_endpoint);
@@ -1412,6 +1426,8 @@ impl PartialInfrastructureMap {
                     partial_workflow.retries,
                     partial_workflow.timeout.clone(),
                     partial_workflow.schedule.clone(),
+                    partial_workflow.pulls_data_from.clone(),
+                    partial_workflow.pushes_data_to.clone(),
                 )
                 .expect("Failed to create workflow from user code");
                 (partial_workflow.name.clone(), workflow)
@@ -1471,5 +1487,46 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
         if let Some(source_file) = &mut resource.source_file {
             *source_file = normalize_path_string(source_file, project_root);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::InfrastructureSignature;
+    use crate::framework::languages::SupportedLanguages;
+    use serde_json::json;
+
+    #[test]
+    fn deserializes_workflow_lineage_from_camel_case_fields() {
+        let payload = json!({
+            "workflows": {
+                "lineageWorkflow": {
+                    "name": "lineageWorkflow",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders" }],
+                    "pushesDataTo": [{ "kind": "Topic", "id": "OrdersEvents" }]
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        let workflows = partial.convert_workflows(SupportedLanguages::Typescript);
+        let workflow = workflows
+            .get("lineageWorkflow")
+            .expect("workflow should be converted");
+
+        assert_eq!(
+            workflow.pulls_data_from(),
+            [InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }]
+        );
+        assert_eq!(
+            workflow.pushes_data_to(),
+            [InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }]
+        );
     }
 }

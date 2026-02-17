@@ -95,6 +95,8 @@ message ApiEndpoint {
   optional string version = 6;
   PrimitiveSignature source_primitive = 7;
   Metadata metadata = 8;
+  repeated InfrastructureSignature pulls_data_from = 9;
+  repeated InfrastructureSignature pushes_data_to = 10;
 }
 
 message IngressDetails {
@@ -522,4 +524,6 @@ message Workflow {
   string timeout = 4;
   // Programming language of the workflow
   string language = 5;
+  repeated InfrastructureSignature pulls_data_from = 6;
+  repeated InfrastructureSignature pushes_data_to = 7;
 }
