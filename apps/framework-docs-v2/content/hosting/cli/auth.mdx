@@ -8,7 +8,13 @@ order: 1
 
 Use `514 auth` to establish the trust boundary for the CLI agent harness.
 
-Once authenticated, every other command (`setup`, `link`, and follow-on workflow commands) can act on your cloud OLAP workloads with the correct account and project permissions.
+Once authenticated, follow-on commands (`orgs`, `projects`, `setup`, and `link`) can act on your cloud OLAP workloads with the correct account and project permissions.
+
+## Usage
+
+```bash
+514 auth [OPTIONS] <COMMAND>
+```
 
 ## Subcommands
 
@@ -63,8 +69,20 @@ Recovery:
 514 auth whoami
 ```
 
+## Options
+
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
 ## Related
 
+- [`514 --help`](/hosting/cli)
+- [`514 orgs`](/hosting/cli/orgs)
+- [`514 projects`](/hosting/cli/projects)
 - [`514 setup`](/hosting/cli/setup)
 - [`514 link`](/hosting/cli/link)
+- [`514 update`](/hosting/cli/update)
 - [Setup failures](/hosting/troubleshooting/setup-failures)

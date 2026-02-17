@@ -1,0 +1,47 @@
+---
+title: update
+description: Update installed CLI binaries.
+order: 6
+---
+
+# 514 update
+
+Use `514 update` to update installed CLI binaries.
+
+## Usage
+
+```bash
+514 update [OPTIONS] [TARGET]
+```
+
+## Arguments
+
+- `[TARGET]`: CLI target to update. Omit to update both.
+  - `514`
+  - `moose`
+
+## Options
+
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+# Update both CLIs
+514 update
+
+# Update only 514 CLI
+514 update 514
+
+# Update only moose CLI
+514 update moose
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 auth`](/hosting/cli/auth)

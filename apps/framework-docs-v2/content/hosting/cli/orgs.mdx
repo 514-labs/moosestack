@@ -1,0 +1,58 @@
+---
+title: orgs
+description: Manage organizations in the 514 hosting control plane.
+order: 4
+---
+
+# 514 orgs
+
+Use `514 orgs` to inspect available organizations and switch your active organization context.
+
+## Usage
+
+```bash
+514 orgs [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List organizations available to the current authenticated user.
+
+```bash
+514 orgs list
+```
+
+### Switch
+
+Switch the active organization context.
+
+```bash
+514 orgs switch <ORG_REF>
+```
+
+- `<ORG_REF>`: Organization ID, slug, or name.
+
+## Options
+
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+514 orgs list
+514 orgs switch acme
+514 --json orgs list
+```
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 projects`](/hosting/cli/projects)
+- [`514 setup`](/hosting/cli/setup)
+- [`514 link`](/hosting/cli/link)

@@ -6,24 +6,31 @@ order: 2
 
 # 514 setup
 
-Use `514 setup <org>/<project>` to bootstrap a local workspace from an existing Fiveonefour project.
+Use `514 setup <PROJECT_REF>` to bootstrap a local workspace from an existing Fiveonefour project.
 
 This command is the main provisioning step in the CLI agent harness: it verifies cloud access, prepares local git state, and creates a runnable workspace that stays aligned with the hosted project lifecycle.
 
 ## Syntax
 
 ```bash
-514 setup <org>/<project> [options]
+514 setup [OPTIONS] <PROJECT_REF>
 ```
+
+## Arguments
+
+- `<PROJECT_REF>`: Project reference as `<org>/<project>`, project name, project ID, or Boreal URL.
 
 ## Options
 
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
 - `--path <dir>`: Parent directory for clone destination.
 - `--dir-name <name>`: Local directory name override.
+- `-o, --org <ORG>`: Organization name or ID.
 - `--branch <name>`: Branch name to create.
 - `--no-branch`: Skip branch creation.
 - `--push`: Push created branch.
-- `--no-push`: Do not push branch.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
 - `--run <install|dev|both|skip>`: Choose local follow-up action.
 - `--yes`: Auto-confirm safe prompts.
 - `--no-input`: Disable prompts and fail fast if required input is missing.
@@ -64,5 +71,8 @@ Expected flow:
 ## Related
 
 - [`514 auth`](/hosting/cli/auth)
+- [`514 orgs`](/hosting/cli/orgs)
+- [`514 projects`](/hosting/cli/projects)
 - [`514 link`](/hosting/cli/link)
+- [`514 update`](/hosting/cli/update)
 - [Setup failures](/hosting/troubleshooting/setup-failures)

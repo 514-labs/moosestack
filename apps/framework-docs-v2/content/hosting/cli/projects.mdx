@@ -1,0 +1,48 @@
+---
+title: projects
+description: List hosting projects in an organization.
+order: 5
+---
+
+# 514 projects
+
+Use `514 projects` to inspect projects in the current or specified organization.
+
+## Usage
+
+```bash
+514 projects [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List projects in an organization.
+
+```bash
+514 projects list
+```
+
+## Options
+
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+514 projects list
+514 projects list --org acme
+514 --json projects list
+```
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 orgs`](/hosting/cli/orgs)
+- [`514 setup`](/hosting/cli/setup)
+- [`514 link`](/hosting/cli/link)
