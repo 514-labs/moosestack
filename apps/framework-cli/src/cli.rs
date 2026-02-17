@@ -243,7 +243,7 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
   Email:          hello@fiveonefour.com
 
 \x1b[1;4mHOSTING\x1b[0m
-  Try Boreal, Fiveonefour's hosting platform built for MooseStack apps.
+  Try Fiveonefour's hosting platform built for MooseStack apps.
   Sign up for a free trial: https://fiveonefour.boreal.cloud/sign-up"
 )]
 pub struct Cli {
