@@ -1,60 +1,12 @@
 ---
 title: Cloud to local setup
-description: Practical workflow for running cloud OLAP workloads from local development with the 514 CLI harness.
+description: Legacy route for the Boreal-to-local setup workflow.
 order: 1
 ---
 
 # Cloud to local setup
 
-This workflow covers the adjacent steps around CLI commands required to complete local setup successfully.
+This page has moved.
 
-Follow it when you want the `514` CLI to act as a reliable harness between hosted OLAP infrastructure and local execution.
-
-## 1. Confirm Fiveonefour access
-
-- Sign in: `https://www.fiveonefour.boreal.cloud/login`
-- Confirm target project exists and you have access.
-
-## 2. Confirm GitHub integration access
-
-- Open GitHub app installations: `https://github.com/settings/installations`
-- Verify the relevant org/repo is authorized for Fiveonefour.
-
-## 3. Choose destination path intentionally
-
-- Prefer an explicit parent directory for predictable clones.
-- Avoid non-empty destination directories unless intentionally reusing them.
-
-## 4. Use branch names that pass validation
-
-Recommended format:
-
-```txt
-feature/<kebab-summary>
-```
-
-Examples:
-- `feature/add-orders-rollup`
-- `feature/fix-ingest-timeout`
-
-## 5. Push and verify preview routing
-
-- If setup created a branch, push it when prompted.
-- Verify preview/deployment status in Fiveonefour project UI before local iteration.
-
-## 6. Verify local state
-
-Run from repository root:
-
-```bash
-git status
-```
-
-Then continue with your local development loop.
-
-## Related
-
-- [`514 setup`](/hosting/cli/setup)
-- [`514 link`](/hosting/cli/link)
-- [Trigger deployment](/hosting/workflow/trigger-deployment)
-- [`514 setup failures`](/hosting/troubleshooting/setup-failures)
+Use:
+- [Boreal to local setup](/hosting/workflow/boreal-to-local-setup)

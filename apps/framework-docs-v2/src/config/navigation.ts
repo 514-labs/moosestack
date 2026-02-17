@@ -1095,14 +1095,8 @@ const hostingNavigationConfig: NavigationConfig = [
   { type: "label", title: "Workflow" },
   {
     type: "page",
-    slug: "hosting/workflow/cloud-to-local-setup",
-    title: "Cloud to Local Setup",
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "hosting/workflow/trigger-deployment",
-    title: "Trigger Deployment",
+    slug: "hosting/workflow/boreal-to-local-setup",
+    title: "Boreal to Local Setup",
     languages: ["typescript", "python"],
   },
   { type: "separator" },
