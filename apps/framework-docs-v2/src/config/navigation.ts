@@ -1095,8 +1095,8 @@ const hostingNavigationConfig: NavigationConfig = [
   { type: "label", title: "Workflow" },
   {
     type: "page",
-    slug: "hosting/workflow/cloud-to-local-setup",
-    title: "Cloud to Local Setup",
+    slug: "hosting/workflow/fiveonefour-to-local-setup",
+    title: "Fiveonefour to Local Setup",
     languages: ["typescript", "python"],
   },
   { type: "separator" },

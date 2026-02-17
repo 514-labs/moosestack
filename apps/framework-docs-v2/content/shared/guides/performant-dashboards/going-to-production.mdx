@@ -3,7 +3,7 @@
 <GuideStepper.WhatYouNeed>
 - New queries and materialized views run locally successfully
 - `moose dev` starts without errors
-- `BOREAL_HOST` and `BOREAL_ADMIN_API_BEARER_TOKEN` for production
+- `FIVEONEFOUR_HOST` and `FIVEONEFOUR_ADMIN_API_BEARER_TOKEN` for production
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A generated `migrations/plan.yaml` for this change
@@ -14,14 +14,14 @@
 Open your terminal (ensure you `cd` to your MooseStack project root). Then run:
 
 ```bash
-moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BEARER_TOKEN>
+moose generate migration --save --url <FIVEONEFOUR_HOST> --token <FIVEONEFOUR_ADMIN_API_BEARER_TOKEN>
 ```
 
 **Parameters:**
 
-- `BOREAL_HOST` is the host for your production deployment in Fiveonefour hosting. Copy it from the URL in your project overview dashboard:
+- `FIVEONEFOUR_HOST` is the host for your production deployment in Fiveonefour hosting. Copy it from the URL in your project overview dashboard:
   {/* image */}
-- `BOREAL_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Fiveonefour hosting Admin API at `BOREAL_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
+- `FIVEONEFOUR_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Fiveonefour hosting Admin API at `FIVEONEFOUR_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
 
 </GuideStepper.Checkpoint>
 
@@ -184,7 +184,7 @@ Merge your PR and click the Fiveonefour hosting bot to view the deployment page.
 <GuideStepper.Step id="going-to-production-step-6" number={6} title="Backfill new materialized views">
 
 <GuideStepper.WhatYouNeed>
-  - Production `BOREAL_CONNECTION_STRING` for the `main` database
+  - Production `FIVEONEFOUR_CONNECTION_STRING` for the `main` database
   - Newly created Materialized Views identified from `plan.yaml`
   - Backing table names for each new Materialized View
 </GuideStepper.WhatYouNeed>
@@ -212,7 +212,7 @@ In a terminal, run:
 
 ```bash
 curl -sS \
-  "$BOREAL_CONNECTION_STRING" \
+  "$FIVEONEFOUR_CONNECTION_STRING" \
   --data-binary "
   INSERT INTO <mv_backing_table>
   SELECT ...
@@ -231,7 +231,7 @@ After each backfill, sanity check that the backing table now has rows:
 
 ```bash
 curl -sS \
-  "$BOREAL_CONNECTION_STRING" \
+  "$FIVEONEFOUR_CONNECTION_STRING" \
   --data-binary 'SELECT count() FROM <mv_backing_table>'
 ```
 
