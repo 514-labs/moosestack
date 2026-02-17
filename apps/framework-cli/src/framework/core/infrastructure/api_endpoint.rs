@@ -59,8 +59,10 @@ pub struct ApiEndpoint {
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
+    /// Infrastructure components this API reads data from (lineage).
     #[serde(default)]
     pub pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this API writes data to (lineage).
     #[serde(default)]
     pub pushes_data_to: Vec<InfrastructureSignature>,
 }
@@ -234,12 +236,17 @@ impl DataLineage for ApiEndpoint {
             APIType::INGRESS {
                 target_topic_id, ..
             } => {
-                let mut pushes = HashSet::new();
-                pushes.insert(InfrastructureSignature::Topic {
+                let mut pushes = vec![InfrastructureSignature::Topic {
                     id: target_topic_id.clone(),
-                });
+                }];
                 pushes.extend(self.pushes_data_to.iter().cloned());
-                pushes.into_iter().collect()
+
+                // Preserve insertion order while deduplicating.
+                let mut seen = HashSet::new();
+                pushes
+                    .into_iter()
+                    .filter(|signature| seen.insert(signature.clone()))
+                    .collect()
             }
             APIType::EGRESS { .. } => self.pushes_data_to.clone(),
         }
@@ -322,5 +329,54 @@ impl Method {
             ProtoMethod::PUT => Method::PUT,
             ProtoMethod::DELETE => Method::DELETE,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+
+    #[test]
+    fn ingress_pushes_data_to_is_deterministic_and_deduplicated() {
+        let endpoint = ApiEndpoint {
+            name: "test".to_string(),
+            api_type: APIType::INGRESS {
+                target_topic_id: "target_topic".to_string(),
+                data_model: None,
+                dead_letter_queue: None,
+                schema: serde_json::Map::default(),
+            },
+            path: PathBuf::from("/ingest"),
+            method: Method::POST,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "secondary_topic".to_string(),
+                },
+            ],
+        };
+
+        let lineage = endpoint.pushes_data_to("default");
+        assert_eq!(
+            lineage,
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string()
+                },
+                InfrastructureSignature::Topic {
+                    id: "secondary_topic".to_string()
+                }
+            ]
+        );
     }
 }
