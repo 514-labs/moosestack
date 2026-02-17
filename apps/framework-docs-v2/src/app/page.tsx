@@ -80,13 +80,10 @@ export default function HomePage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-10 text-center md:mb-12">
           <h1 className="text-4xl font-bold mb-4">Documentation</h1>
-          <p className="text-lg text-muted-foreground">
-            Start with MooseStack, then follow Getting Started to design,
-            validate, and ship analytical systems as code.
-          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:mx-auto md:[&>*:last-child:nth-child(odd)]:max-w-md md:[&>*:last-child:nth-child(odd)]:md:col-span-2">
+        {/* Center the last card on md+ when count is odd */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:mx-auto md:[&>*:last-child:nth-child(odd)]:max-w-md md:[&>*:last-child:nth-child(odd)]:col-span-2">
           {renderableSections.map((section) => {
             const Icon = section.icon;
             return (
