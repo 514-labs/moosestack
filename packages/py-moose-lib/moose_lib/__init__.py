@@ -32,6 +32,7 @@ from .blocks import (
     S3QueueEngine,
     IcebergS3Engine,
     KafkaEngine,
+    MergeEngine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines,

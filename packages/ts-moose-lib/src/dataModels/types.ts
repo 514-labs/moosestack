@@ -252,6 +252,7 @@ export enum ClickHouseEngines {
   Distributed = "Distributed",
   IcebergS3 = "IcebergS3",
   Kafka = "Kafka",
+  Merge = "Merge",
   ReplicatedMergeTree = "ReplicatedMergeTree",
   ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree",
   ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree",

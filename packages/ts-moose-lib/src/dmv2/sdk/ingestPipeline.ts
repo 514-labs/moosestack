@@ -236,6 +236,18 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
 
     // Create OLAP table if configured
     if (config.table) {
+      // Validate that the engine is not read-only (Merge engine cannot be written to)
+      if (
+        typeof config.table === "object" &&
+        "engine" in config.table &&
+        config.table.engine === ClickHouseEngines.Merge
+      ) {
+        throw new Error(
+          `IngestPipeline "${name}": Cannot use Merge engine as a table destination. ` +
+            `The Merge engine is read-only and does not support INSERT operations.`,
+        );
+      }
+
       const tableConfig: OlapConfig<T> =
         typeof config.table === "object" ?
           {

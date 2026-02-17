@@ -589,7 +589,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine"
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine, MergeEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -1067,6 +1067,15 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "        topic_list={:?},", topic_list).unwrap();
                 writeln!(output, "        group_name={:?},", group_name).unwrap();
                 writeln!(output, "        format={:?}",format).unwrap();
+                writeln!(output, "    ),").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Merge {
+                source_database,
+                tables_regexp,
+            } => {
+                writeln!(output, "    engine=MergeEngine(").unwrap();
+                writeln!(output, "        source_database={:?},", source_database).unwrap();
+                writeln!(output, "        tables_regexp={:?},", tables_regexp).unwrap();
                 writeln!(output, "    ),").unwrap();
             }
         }
