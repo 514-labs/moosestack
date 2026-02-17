@@ -180,8 +180,8 @@ export async function runMoosePlanJson(
   const env: Record<string, string | undefined> = {
     ...process.env,
     // Dummy credentials required for S3Queue secret resolution
-    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
     // Admin token for moose plan --url authentication
     MOOSE_ADMIN_TOKEN: adminToken,
     ...(pythonVenvDir && {
