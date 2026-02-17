@@ -222,7 +222,94 @@ From the [Linear project](https://linear.app/514/project/ship-the-first-iteratio
 
 These are top-level guides (no category) and will appear prominently on the guides page.
 
+## Interactive Components & Settings Architecture
+
+Guides use interactive MDX components (`SelectField`, `CheckboxGroup`, `ConditionalContent`, etc.) that let users customize guide content based on their setup. This section explains how settings flow through the system.
+
+### Data Flow Overview
+
+```text
+┌─────────────────────┐     localStorage      ┌──────────────────────┐
+│  GlobalGuideCustomizer│ ──────────────────► │   ConditionalContent  │
+│  (wizard modal)      │  writes per-key:     │   (reads & renders)   │
+│                      │  moose-docs-guide-   │                      │
+│  SelectField ×N      │  settings-{id}       │  Priority chain:     │
+│  persist: global     │                      │  1. Page-level key   │
+└─────────────────────┘                      │  2. Global key       │
+                                              │  3. Legacy fallback  │
+┌─────────────────────┐     localStorage      │                      │
+│  Page SelectField    │ ──────────────────► │                      │
+│  (inline in MDX)     │  writes per-key:     └──────────────────────┘
+│  persist: true       │  moose-docs-
+│                      │  interactive-{id}
+└─────────────────────┘
+```
+
+### Key Concepts
+
+**Two storage namespaces:**
+- `moose-docs-guide-settings-{id}` — Global settings (language, os, sourceDatabase). Written by the wizard and shared across all guide pages.
+- `moose-docs-interactive-{id}` — Page-level settings (progress checkboxes, page-specific selections). Scoped to individual guide pages.
+
+**The wizard modal** (`GlobalGuideCustomizer` in `global-guide-customizer.tsx`):
+- Renders a `SelectField` for each visible setting from `guide-settings-config.ts`
+- Uses `persist={{ namespace: "global", syncToUrl: false }}` — writes to global localStorage keys but doesn't touch the URL
+- On "Continue", writes defaults for any untouched fields so the wizard doesn't reappear
+
+**ConditionalContent** reads stored values using a priority chain:
+1. **Page-level key** (`moose-docs-interactive-{id}`) — allows per-page overrides
+2. **Global key** (`moose-docs-guide-settings-{camelCaseId}`) — the wizard's storage
+3. **Legacy fallback** — raw key without camelCase normalization
+
+**URL syncing** is config-driven via `syncToUrl: true` in `guide-settings-config.ts`:
+- Only settings marked `syncToUrl: true` appear in URL params (currently: language, os, sourceDatabase)
+- URL params are only present on `/guides/*` pages — `GlobalGuideSettingsPanel` strips them on non-guide pages
+- URL is never the source of truth for reading; localStorage always wins
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `src/config/guide-settings-config.ts` | Single source of truth for all global settings (options, defaults, visibility, URL sync) |
+| `src/lib/guide-settings.ts` | Read/write helpers for global settings in localStorage |
+| `src/contexts/guide-settings-context.tsx` | React context providing settings state and wizard visibility |
+| `src/components/mdx/interactive/global-guide-customizer.tsx` | The wizard modal that collects initial settings |
+| `src/components/mdx/interactive/global-guide-settings-panel.tsx` | The bottom-left "Your Stack" panel + URL cleanup on non-guide pages |
+| `src/components/mdx/interactive/use-persisted-state.ts` | Core hook for localStorage + URL persistence with namespace support |
+| `src/components/mdx/interactive/conditional-content.tsx` | Shows/hides MDX content based on stored field values |
+| `src/components/mdx/interactive/select-field.tsx` | Dropdown that persists selection to localStorage (and optionally URL) |
+| `src/components/mdx/interactive/checkbox-group.tsx` | Checkbox group that persists selections to localStorage |
+| `src/components/mdx/interactive/customize-panel.tsx` | Page-level customizer panel with inline settings |
+
+### Adding a New Global Setting
+
+1. Add an entry to `GUIDE_SETTINGS_CONFIG` in `src/config/guide-settings-config.ts`:
+
+   ```typescript
+   {
+     id: "newSetting",
+     label: "Display Label",
+     options: [
+       { value: "option1", label: "Option 1" },
+       { value: "option2", label: "Option 2" },
+     ],
+     defaultValue: "option1",
+     visible: true,        // Show in wizard modal
+     showInSummary: true,   // Show in bottom-left panel
+     syncToUrl: false,      // Whether to include in URL params on guide pages
+   },
+   ```
+
+2. That's it — the wizard, summary panel, types, and storage all derive from this config automatically.
+3. Use `<ConditionalContent whenId="newSetting" whenValue="option1">` in MDX to show conditional content.
+
+### Same-Tab Reactivity
+
+Components communicate within the same tab via custom events (`INTERACTIVE_STATE_CHANGE_EVENT`), dispatched by `usePersistedState` whenever a value changes. `ConditionalContent` listens for these events to update immediately without waiting for a page reload or `storage` event (which only fires cross-tab).
+
 ## Related Documentation
 
 - `FLAGS_README.md` - Feature flags setup and usage
 - `AGENTS.md` (root) - General development guidelines
+- `src/config/README.md` - Guide settings config reference
+- `content/guides/test-guides/interactive-guide-demo.mdx` - Interactive component syntax examples
