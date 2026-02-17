@@ -5,28 +5,37 @@
   summary="Translate your existing dashboard's SQL or ORM query directly to ClickHouse SQL and prove output parity."
 >
     <GuideStepper.WhatYouNeed>
-      - `moosestack/context/dashboard-migration/<component>/` — the context directory for this component
+      - A subdirectory in `<PROJECT_ROOT>/context/dashboard-migration/*/` for your component
       - The API specification for the endpoint
-      - Your existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
+      - The existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
       - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
+      - A command to run your existing OLTP backend to capture test data
     </GuideStepper.WhatYouNeed>
     <GuideStepper.WhatYouGet>
-      - A ClickHouse parity query that preserves the existing API contract
+      - A ClickHouse parity query that preserves the existing API contract and output semantics
       - Replayable parity test cases with expected vs actual diff evidence
-      - A documented Phase 1 context map for downstream optimization work
     </GuideStepper.WhatYouGet>
 
 <GuideStepper.Prompt>
-Translate the provided Postgres or ORM endpoint query into ClickHouse SQL using MooseStack `sql` tagged template literal and prove parity against test cases from the existing OLTP endpoint.
+Translate the provided Postgres or ORM endpoint query into ClickHouse SQL using MooseStack `sql` tagged template literal and prove parity against test cases from the existing OLTP system.
+
+Path resolution requirements (run first):
+
+1. Find the Moose project root (`<PROJECT_ROOT>`) by locating `moose.config.toml`.
+2. Determine the project package name (`<PROJECT_PACKAGE>`) from `<PROJECT_ROOT>/package.json` (`name`) when package-based imports are needed.
+3. Read `source_dir` from `moose.config.toml` and set `<SOURCE_DIR>` to that value (default to `app` if `source_dir` is not set).
+4. Use `<PROJECT_ROOT>/<SOURCE_DIR>/...` for code paths and `<PROJECT_ROOT>/context/...` for migration artifacts.
+5. Do not hardcode `moosestack/` or `app/` in resolved paths.
 
 Rules:
 
-1. Validate required inputs once at start and list any missing input.
+1. Validate all required inputs once at start and list any missing inputs.
 2. Preserve current API contract and output semantics exactly.
-3. Record ambiguities and assumptions as an inline comment in the ClickHouse translation file.
+3. Before writing ClickHouse SQL, extract and document the OLTP query semantics in the TypeScript file that contains the ClickHouse translation (source tables + joins, filters, parameter defaults, group-by/aggregations, and edge cases).
 4. Do not fabricate test case data, expected outputs, or verification evidence.
 5. If any test case comparison fails, mark FAIL, report root cause, fix, and re-run.
-6. Do not mark PASS until all test case diffs are empty.
+6. Iterate on the query until all test cases pass.
+7. Do not mark PASS until all test case diffs are empty.
 
 Required inputs:
 
@@ -36,9 +45,9 @@ Required inputs:
 
 Required outputs:
 
-- `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts` with the ClickHouse translation of the OLTP query.
+- 2-5 test case files under `<PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/` with the exact JSON response from the OLTP endpoint for each test case.
+- `<PROJECT_ROOT>/<SOURCE_DIR>/queries/<COMPONENT_NAME>-olap-translation.ts` with the ClickHouse translation of the OLTP query.
 - Updated `context-map.md` with the file path to the file that contains the ClickHouse translation of the OLTP query.
-- 2–5 test case files under `moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/` with the exact JSON response from the OLTP endpoint for each test case.
 - Test case verification evidence (`expected.json`, `actual.json`, `diff`)
 </GuideStepper.Prompt>
 
@@ -52,81 +61,21 @@ Steps:
 
 1. Identify 2–5 representative requests that exercise different filters, time ranges, and edge cases (e.g. empty results, large result sets, boundary dates).
 2. Run each request against the **live OLTP endpoint** and capture the exact response.
-3. For each test case, create a file: `moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md`.
+3. For each test case, create a file: `<PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md`.
 4. Each file must include:
    - the `curl` command (GET or POST)
    - the **verbatim** JSON response — this must come from actually calling the running endpoint, not from approximation
-5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
+5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days) so parity validation uses a consistent, representative slice.
+
+For components that read `EXTERNALLY_MANAGED` tables, local data coverage is controlled in `moose.config.toml` via `[dev.remote_clickhouse]` and `[dev.externally_managed.tables]` (especially `sample_size`). Set this sample size to a reasonable value for the test cases you are capturing.
 
 Copy the provided test case template (path: `context/migrations/test-case-template.md`) to create the test case files:
 
 ```bash
-cp context/migrations/test-case-template.md moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md
+cp <PROJECT_ROOT>/context/migrations/test-case-template.md <PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md
 ```
 
 This checkpoint is complete when 2–5 test case files exist under `test-cases/`, each with a runnable curl command and the actual JSON response from the OLTP endpoint. Record the file paths in `context-map.md`.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-oltp-semantics"
-  title="OLTP semantics"
->
-Goal: extract the query logic from the existing endpoint so you have a precise spec to translate.
-
-Steps:
-
-1. Locate the SQL query or stored procedure that powers the existing endpoint (typically in the backend handler or a database layer).
-2. Document:
-   - Source tables and join conditions (including join type)
-   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
-   - Parameter substitution rules and defaults
-   - Group-by / aggregation logic
-   - Edge cases (null handling, division by zero, missing rows)
-3. Record these findings in `context-map.md` under Phase 1 Notes.
-
-**Done when:** `context-map.md` lists every source table, the join graph, all filter/aggregation logic, and any edge cases. You should be able to write the ClickHouse translation from this spec alone.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-seed-local-clickhouse"
-  title="Seed local ClickHouse"
->
-Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1).
-
-Prerequisites:
-
-- Dev server is running (`moose dev`)
-- Production ClickHouse HTTPS connection string is exported:
-
-```shell
-export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
-```
-
-The connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
-
-Steps:
-
-1. For each source table from Checkpoint 2, generate and run a seed command that covers the test case time windows:
-
-```shell
-moose seed clickhouse \
-  --connection-string "$CLICKHOUSE_PROD_URL" \
-  --table <TABLE_NAME> \
-  --order-by '<TIMESTAMP_COLUMN> DESC' \
-  --limit 100000
-```
-
-2. Verify the seeded data covers every test case:
-
-```shell
-moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count() FROM <TABLE_NAME> FINAL"
-```
-
-If any test case falls outside the seeded range, re-seed with a larger `--limit` or use `--all`.
-
-**Done when:** every source table has local data that spans the time windows used in all Checkpoint 1 test cases.
 
 </GuideStepper.Checkpoint>
 
@@ -138,20 +87,26 @@ Goal: write a direct translation of the OLTP query into ClickHouse SQL that retu
 
 Steps:
 
-1. Create `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts`.
-2. Write a function that:
+1. Locate the SQL query (or stored procedure) that powers the existing endpoint and record OLTP semantics in `context-map.md` under Phase 1 Notes:
+   - Source tables and join conditions (including join type)
+   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
+   - Parameter substitution rules and defaults
+   - Group-by / aggregation logic
+   - Edge cases (null handling, division by zero, missing rows)
+2. Create `<PROJECT_ROOT>/<SOURCE_DIR>/queries/<COMPONENT_NAME>-olap-translation.ts`.
+3. Write a function that:
    - accepts the exact same parameters as the existing handler/query logic
    - builds the translated query using the `sql` tagged template literal
    - executes via the Moose ClickHouse client against local `moose dev`
-3. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
-4. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
-5. Record the file path in `context-map.md`.
+4. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
+5. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
+6. Record the file path in `context-map.md`.
 
 Refer to the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
 
 Example (adapt to your component — do not copy names literally):
 
-```ts filename="moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts" copy
+```ts filename="<PROJECT_ROOT>/<SOURCE_DIR>/queries/<COMPONENT_NAME>-olap-translation.ts" copy
 import { sql, MooseClient } from "@514labs/moose-lib";
 import { Orders } from "./models/Orders.model";
 
@@ -188,7 +143,7 @@ export async function runParity(
 }
 ```
 
-**Done when:** the parity function compiles, runs against local `moose dev`, and returns results. The file path is recorded in `context-map.md`.
+**Done when:** `context-map.md` contains complete OLTP semantics, the parity function compiles and runs against local `moose dev`, and the translation file path is recorded in `context-map.md`.
 
 </GuideStepper.Checkpoint>
 
@@ -198,15 +153,17 @@ export async function runParity(
 >
 Goal: prove the parity function returns the exact same JSON as the OLTP endpoint for every test case.
 
+Iteration rule: treat Phase 1 as a red/green loop. If any `diff` is non-empty, revise the ClickHouse translation, re-run verification, and repeat until every test case diff is empty.
+
 Steps:
 
 1. For each Checkpoint 1 test case, call the parity function with the same parameters and capture the output:
 
-   Run this command from your MooseStack project root (or whichever directory contains your `tsconfig.json` and `node_modules`). The inline `tsx` script uses a relative import (`./app/queries/<component>-olap-translation`) and `getMooseUtils()` from `@514labs/moose-lib`, so it depends on your project's TypeScript/module resolution context. If your query file lives elsewhere, adjust the import path accordingly so both `runParity` and `getMooseUtils` resolve.
+   Run this command from `<PROJECT_ROOT>` (or whichever directory contains your `tsconfig.json` and `node_modules`). The inline `tsx` script uses a relative import (`./<SOURCE_DIR>/queries/<component>-olap-translation`) and `getMooseUtils()` from `@514labs/moose-lib`, so it depends on your project's TypeScript/module resolution context. If your query file lives elsewhere, adjust the import path accordingly so both `runParity` and `getMooseUtils` resolve.
 
 ```bash
 pnpm tsx -e "
-  import { runParity } from './app/queries/<COMPONENT_NAME>-olap-translation';
+  import { runParity } from './<SOURCE_DIR>/queries/<COMPONENT_NAME>-olap-translation';
   import { getMooseUtils } from '@514labs/moose-lib';
   const { client } = await getMooseUtils();
   const result = await runParity(
@@ -221,7 +178,7 @@ pnpm tsx -e "
 
 ````bash
 awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
-  moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md \
+  <PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/0N-<TEST_CASE_NAME>.md \
   | jq -S '.' > expected.json
 ````
 
@@ -231,11 +188,16 @@ awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
 diff expected.json actual.json
 ```
 
-4. If there are differences, check:
+4. If `diff` is non-empty, debug and fix the translation:
    - Column names (case-sensitive in ClickHouse)
    - Data types (timestamps, decimals, integers vs floats)
    - Sort order (add explicit `ORDER BY` if needed)
-   - Missing rows (seed slice too small — re-seed with a larger `--limit`)
+   - Missing rows or availability mismatch for the selected test-case window:
+     - confirm local/source data coverage
+     - for `EXTERNALLY_MANAGED` tables, configure local mirrors in `moose.config.toml` (`[dev.remote_clickhouse]`, `[dev.externally_managed.tables]`, `sample_size`) and restart `moose dev`
+     - adjust the test window only if needed
+5. Re-run Steps 1-4 for the same test case until `diff` produces no output.
+6. Repeat Steps 1-5 for every recorded test case.
 
 **Done when:** `diff` produces no output for every test case. Once all test cases pass, Phase 1 is complete — proceed to Phase 2.
 

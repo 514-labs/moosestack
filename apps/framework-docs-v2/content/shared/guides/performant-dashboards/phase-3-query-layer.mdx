@@ -19,6 +19,14 @@
 Role:
 Your goal is to expose optimized ClickHouse serving tables through a type-safe Query Layer and rewire your existing handler to use it while preserving existing API contract behavior.
 
+Path resolution requirements (run first):
+
+1. Find the Moose project root (`<PROJECT_ROOT>`) by locating `moose.config.toml`.
+2. Determine the project package name (`<PROJECT_PACKAGE>`) from `<PROJECT_ROOT>/package.json` (`name`) for package-based imports.
+3. Read `source_dir` from `moose.config.toml` and set `<SOURCE_DIR>` to that value (default to `app` if `source_dir` is not set).
+4. Use `<PROJECT_ROOT>/<SOURCE_DIR>/...` for code paths and `<PROJECT_ROOT>/context/...` for migration artifacts.
+5. Do not hardcode `moosestack/` or `app/` in resolved paths.
+
 Rules:
 
 1. Validate required inputs once at start and list any missing input.
@@ -37,7 +45,7 @@ Required inputs:
 
 Required outputs:
 
-- `moosestack/app/query-models/<name>.ts`
+- `<PROJECT_ROOT>/<SOURCE_DIR>/query-models/<name>.ts`
 - Updated handler integration file(s)
 - Verification evidence for test case comparisons
 
@@ -68,11 +76,11 @@ Steps:
    - **Metrics:** aggregates the UI needs (e.g. `totalOrders`, `fulfillmentRate`)
    - **Filters:** request params + allowed operators (e.g. `merchantId in`, `day gte/lte`)
    - **Sortable:** sortable fields + any tie-breakers
-2. Create `moosestack/app/query-models/<name>.ts` with `defineQueryModel(...)` over the serving table.
+2. Create `<PROJECT_ROOT>/<SOURCE_DIR>/query-models/<name>.ts` with `defineQueryModel(...)` over the serving table.
 3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
 
 ```ts
-// File: moosestack/app/query-models/orderFulfillment.ts
+// File: <PROJECT_ROOT>/<SOURCE_DIR>/query-models/orderFulfillment.ts
 
 import { sql } from "@514labs/moose-lib";
 import { defineQueryModel } from "../query-layer";
@@ -122,7 +130,7 @@ Steps:
 3. Map the QueryModel results back to the exact response shape the endpoint already produces.
 
 ```ts
-// File: moosestack/app/apis/orderFulfillment.api.ts
+// File: <PROJECT_ROOT>/<SOURCE_DIR>/apis/orderFulfillment.api.ts
 
 import { getMooseUtils } from "@514labs/moose-lib";
 import { orderFulfillmentModel } from "../query-models/orderFulfillment.model";
@@ -158,11 +166,15 @@ export async function getOrderFulfillment(request: OrderFulfillmentRequest) {
 }
 ```
 
-**Integration point:** In your existing backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call with a call to this new function and return the result:
+**Integration point:** Export `getOrderFulfillment` from your package main entry
+(for example, `<PROJECT_ROOT>/<SOURCE_DIR>/index.ts`). Then in your existing
+backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call
+with a call to this function and return the result:
 
 ```ts
 // In your existing backend handler (e.g. Express route)
-import { getOrderFulfillment } from "moosestack/app/apis/orderFulfillment.api";
+// Import from your package root entrypoint.
+import { getOrderFulfillment } from "<PROJECT_PACKAGE>";
 
 app.post("/api/order-fulfillment", async (req, res) => {
   const result = await getOrderFulfillment(req.body);
@@ -182,7 +194,7 @@ Steps:
 
 1. Restart your backend with the updated handler so the endpoint now reads from ClickHouse via the QueryModel.
 2. Run a saved Phase 1 test case by copying the `curl` request from:
-   - `moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md`
+   - `<PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md`
 3. Save the live endpoint response:
 
 ```bash
@@ -194,7 +206,7 @@ Steps:
 
 ````bash
 awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
-  moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md \
+  <PROJECT_ROOT>/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md \
   | jq -S '.' > expected.json
 ````
 

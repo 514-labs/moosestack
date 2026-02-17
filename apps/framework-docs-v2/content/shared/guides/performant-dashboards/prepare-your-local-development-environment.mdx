@@ -10,6 +10,17 @@
 - A validated baseline before migration steps
 </GuideStepper.WhatYouGet>
 
+<GuideStepper.Checkpoint title="Link your project in Boreal CLI">
+Run this from the directory that contains your `moose.config.toml`:
+
+```bash
+boreal link
+```
+
+This links your local project so Boreal CLI commands run in the right project context.
+
+</GuideStepper.Checkpoint>
+
 <GuideStepper.Checkpoint title="Create a new branch">
 ```bash 
 git checkout -b <your-branch-name>
@@ -25,13 +36,13 @@ Create a new branch in your repo to isolate your changes. When you open a pull r
   ```
 
 If Docker is not running, start it using your OS-specific method and rerun the command.
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Navigate to your MooseStack project directory and run the development server">
-  
-  ```bash 
-  moose dev
-  ```
+```bash
+moose dev
+```
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Validate expected output">
@@ -52,6 +63,7 @@ GET /ready Readiness check endpoint
 ...
 
 ```
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Validate expected Docker Containers">
@@ -130,6 +142,7 @@ pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/conte
 If `moosestack/context` already exists and is non-empty, remove or rename it before running this command again.
 
 As you complete each phase of this guide, attach the required input files in your initial prompt to your copilot. The copilot can then update the workspace files as it completes each phase.
+
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
