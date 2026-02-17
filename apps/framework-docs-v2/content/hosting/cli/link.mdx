@@ -13,15 +13,19 @@ In the agent harness model, `link` maps your local repo to the correct hosted wo
 ## Syntax
 
 ```bash
-514 link [options]
+514 link [OPTIONS]
 ```
 
 ## Common Options
 
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
 - `--project <org>/<project>`: Explicit project slug override.
+- `-o, --org <ORG>`: Organization name or ID.
 - `--yes`: Auto-confirm safe prompts.
+- `--json`: Output as JSON.
 - `--no-input`: Disable prompts; fail fast on missing required input.
 - `--force-relink`: Replace an existing repo-level link.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
 
 ## Example
 
@@ -38,5 +42,8 @@ Expected outcome:
 ## Related
 
 - [`514 auth`](/hosting/cli/auth)
+- [`514 orgs`](/hosting/cli/orgs)
+- [`514 projects`](/hosting/cli/projects)
 - [`514 setup`](/hosting/cli/setup)
+- [`514 update`](/hosting/cli/update)
 - [Setup failures](/hosting/troubleshooting/setup-failures)

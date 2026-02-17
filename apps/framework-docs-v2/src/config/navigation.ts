@@ -1075,8 +1075,32 @@ const hostingNavigationConfig: NavigationConfig = [
   { type: "label", title: "CLI" },
   {
     type: "page",
+    slug: "hosting/cli",
+    title: "--help",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
     slug: "hosting/cli/auth",
     title: "auth",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/orgs",
+    title: "orgs",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/link",
+    title: "link",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/projects",
+    title: "projects",
     languages: ["typescript", "python"],
   },
   {
@@ -1087,8 +1111,8 @@ const hostingNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "hosting/cli/link",
-    title: "link",
+    slug: "hosting/cli/update",
+    title: "update",
     languages: ["typescript", "python"],
   },
   { type: "separator" },
