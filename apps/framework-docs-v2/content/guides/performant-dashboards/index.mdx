@@ -19,7 +19,7 @@ Slow dashboards are a database architecture problem. Running analytical queries 
 
 This guide walks you through adding a dedicated analytical layer ([ClickHouse](https://clickhouse.com)) alongside your existing OLTP database, in order to drastically improve the performance of your dashboards. In order to accelerate your implementation, especially with AI coding agents, this guide utilizes [MooseStack](/moosestack), [514 hosting](https://boreal.cloud), and a supporting toolchain ([dev MCP server](/moosestack/moosedev-mcp), [language server](/moosestack/language-server), CLIs, and [ClickHouse skills](https://github.com/514-labs/agent-skills/)) that form an agent harness for AI-assisted migration. You keep your source database as the system of record, replicate the data your dashboards need via CDC, and rewire analytical reads to ClickHouse. Transactional CRUD stays unchanged.
 
-<ZoomImg light="/guides/performant-dashboards/marchitecture-light.png" dark="/guides/performant-dashboards/marchitecture-dark.png" alt="Architecture: Your App writes to OLTP, CDC replicates to ClickHouse OLAP, analytical reads rewired to ClickHouse, managed by Fiveonefour Hosting" />
+<ZoomImg light="/guides/performant-dashboards/marchitecture-light.png" dark="/guides/performant-dashboards/marchitecture-dark.png" alt="Architecture: Your App writes to OLTP, CDC replicates to ClickHouse OLAP, analytical reads rewired to ClickHouse, managed by 514 Hosting" />
 
 ### Architectures covered by this guide
 
@@ -54,7 +54,7 @@ This guide walks you through adding a dedicated analytical layer ([ClickHouse](h
   ctaLabel="Get started"
 >
   If you're building a new dashboard or data-connected chat (not migrating an
-  existing one), start with [Chat in Your App](/guides/chat-in-your-app).
+  existing one), start with Chat in Your App.
 </Callout>
 
 <CommunityCallout title="Need a different source or language?">
@@ -71,7 +71,7 @@ MooseStack gives you a development framework where your entire ClickHouse analyt
 
 **Code:** everything is typed objects with a dependency graph. The agent reads and writes TypeScript, not raw SQL or YAML. Type errors surface at write time, not after deployment.
 
-**Cadence:** three nested feedback loops catch errors at increasing scope. The IDE catches type and SQL errors instantly, `moose dev` catches runtime and schema errors in seconds, and Boreal preview environments catch deployment and scale errors in minutes. The tightest loop that catches the error wins.
+**Cadence:** three nested feedback loops catch errors at increasing scope. The IDE catches type and SQL errors instantly, `moose dev` catches runtime and schema errors in seconds, and 514 Hosting's preview environments catch deployment and scale errors in minutes. The tightest loop that catches the error wins.
 
 **Context:** the agent works with [ClickHouse-specific skills](https://github.com/514-labs/agent-skills/), [live query validation with LSP](/moosestack/language-server), [local dev environment validation with MooseDev MCP](/moosestack/moosedev-mcp), reference implementations, copilot prompts, test fixtures, and a structured context workspace. Not raw LLM training data: curated, task-specific context.
 
