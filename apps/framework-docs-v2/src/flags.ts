@@ -9,15 +9,6 @@ async function identify() {
   return {};
 }
 
-export const showHostingSection = flag<boolean>({
-  key: "show-hosting-section",
-  adapter: postHogAdapter.isFeatureEnabled(),
-  defaultValue: false,
-  description: "Show Hosting section in top navigation",
-  origin: "https://us.i.posthog.com",
-  identify,
-});
-
 export const showAiSection = flag<boolean>({
   key: "show-ai-section",
   adapter: postHogAdapter.isFeatureEnabled(),

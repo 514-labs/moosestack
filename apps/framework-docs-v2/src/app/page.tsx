@@ -14,13 +14,11 @@ import {
   IconCode,
   IconCompass,
 } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
 import { getNavVariant } from "@/lib/nav-variant";
 
 export default function HomePage() {
   // Use build-time variant (same approach as guides page)
   const variant = getNavVariant();
-  const showHosting = true;
   const showAi = variant !== "base";
 
   const sections = [
@@ -30,6 +28,13 @@ export default function HomePage() {
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
       href: `/moosestack`,
       icon: IconDatabase,
+    },
+    {
+      title: "Hosting",
+      description:
+        "Deploy and host your MooseStack applications with our managed hosting platform.",
+      href: `/hosting`,
+      icon: IconCloud,
     },
     {
       title: "Guides",
@@ -45,17 +50,6 @@ export default function HomePage() {
       href: `/templates`,
       icon: IconCode,
     },
-    ...(showHosting ?
-      [
-        {
-          title: "Hosting",
-          description:
-            "Deploy and host your MooseStack applications with our managed hosting platform.",
-          href: `/hosting`,
-          icon: IconCloud,
-        },
-      ]
-    : []),
     ...(showAi ?
       [
         {
@@ -81,9 +75,6 @@ export default function HomePage() {
   // Filter sections to only include those that will actually render
   const renderableSections = sections.filter(shouldRenderSection);
 
-  // Calculate card count from actual rendered sections
-  const cardCount = renderableSections.length;
-
   return (
     <div className="container mx-auto px-4 py-16">
       <div className="max-w-4xl mx-auto">
@@ -94,15 +85,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div
-          className={cn("grid grid-cols-1 gap-6", {
-            "md:grid-cols-1 md:max-w-md md:mx-auto": cardCount === 1,
-            "md:grid-cols-2": cardCount === 2,
-            "md:grid-cols-3": cardCount === 3,
-            "md:grid-cols-2 lg:grid-cols-4": cardCount === 4,
-            "md:grid-cols-3 lg:grid-cols-5": cardCount === 5,
-          })}
-        >
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {renderableSections.map((section) => {
             const Icon = section.icon;
             return (
