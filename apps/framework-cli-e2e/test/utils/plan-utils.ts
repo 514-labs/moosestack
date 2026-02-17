@@ -2,6 +2,12 @@
  * Utilities for parsing and analyzing moose plan output
  */
 
+import { exec } from "child_process";
+import { promisify } from "util";
+import * as path from "path";
+
+const execAsync = promisify(exec);
+
 // Plan output structure from moose plan --json
 export interface PlanOutput {
   target_infra_map: {
@@ -156,4 +162,65 @@ export function getTableChanges(
   }
 
   return results;
+}
+
+/**
+ * Run `moose plan --json` against a running moose server and return parsed output.
+ *
+ * @param pythonVenvDir - If the project is Python, pass the project dir so the
+ *   venv's PATH and VIRTUAL_ENV are set. Omit for TypeScript projects.
+ */
+export async function runMoosePlanJson(
+  projectDir: string,
+  cliPath: string,
+  serverUrl: string,
+  adminToken: string,
+  pythonVenvDir?: string,
+): Promise<PlanOutput> {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    // Dummy credentials required for S3Queue secret resolution
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+    // Admin token for moose plan --url authentication
+    MOOSE_ADMIN_TOKEN: adminToken,
+    ...(pythonVenvDir && {
+      VIRTUAL_ENV: path.join(pythonVenvDir, ".venv"),
+      PATH: `${path.join(pythonVenvDir, ".venv", "bin")}:${process.env.PATH ?? ""}`,
+    }),
+  };
+
+  try {
+    const { stdout } = await execAsync(
+      `"${cliPath}" plan --url "${serverUrl}" --json`,
+      { cwd: projectDir, env },
+    );
+    // Debug: log first 500 chars of output to see structure
+    console.log(
+      "Plan JSON output (first 500 chars):",
+      stdout.substring(0, 500),
+    );
+    const parsed = JSON.parse(stdout) as PlanOutput;
+    // Debug: log structure
+    console.log("Parsed plan structure:", {
+      hasChanges: !!parsed.changes,
+      olapChangesLength: parsed.changes?.olap_changes?.length ?? 0,
+      changesKeys: parsed.changes ? Object.keys(parsed.changes) : [],
+    });
+    return parsed;
+  } catch (error: any) {
+    console.error("moose plan --json failed:");
+    console.error("stdout:", error.stdout);
+    console.error("stderr:", error.stderr);
+    // Try to parse what we got to see structure
+    if (error.stdout) {
+      try {
+        const partial = JSON.parse(error.stdout.substring(0, 1000));
+        console.error("Partial JSON structure:", Object.keys(partial));
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+    throw error;
+  }
 }

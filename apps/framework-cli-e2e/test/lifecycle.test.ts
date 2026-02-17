@@ -40,6 +40,7 @@ import {
   hasTableRemoved,
   hasTableUpdated,
   getTableChanges,
+  runMoosePlanJson,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -49,12 +50,6 @@ const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-tests",
 );
-
-// Build ClickHouse connection URL for plan/migration commands
-const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123/${CLICKHOUSE_CONFIG.database}`;
-
-// Moose server URL for plan command
-const MOOSE_SERVER_URL = "http://localhost:4000";
 
 /**
  * Environment variables needed for the typescript-tests template
@@ -69,46 +64,6 @@ const TEST_ENV = {
   // Admin token for moose plan --url authentication
   MOOSE_ADMIN_TOKEN: TEST_ADMIN_BEARER_TOKEN,
 };
-
-/**
- * Helper to run moose plan --json and return parsed result
- * Uses --url to connect to the running moose prod server
- */
-async function runMoosePlanJson(projectDir: string): Promise<PlanOutput> {
-  try {
-    const { stdout } = await execAsync(
-      `"${CLI_PATH}" plan --url "${MOOSE_SERVER_URL}" --json`,
-      { cwd: projectDir, env: TEST_ENV },
-    );
-    // Debug: log first 500 chars of output to see structure
-    console.log(
-      "Plan JSON output (first 500 chars):",
-      stdout.substring(0, 500),
-    );
-    const parsed = JSON.parse(stdout) as PlanOutput;
-    // Debug: log structure
-    console.log("Parsed plan structure:", {
-      hasChanges: !!parsed.changes,
-      olapChangesLength: parsed.changes?.olap_changes?.length ?? 0,
-      changesKeys: parsed.changes ? Object.keys(parsed.changes) : [],
-    });
-    return parsed;
-  } catch (error: any) {
-    console.error("moose plan --json failed:");
-    console.error("stdout:", error.stdout);
-    console.error("stderr:", error.stderr);
-    // Try to parse what we got to see structure
-    if (error.stdout) {
-      try {
-        const partial = JSON.parse(error.stdout.substring(0, 1000));
-        console.error("Partial JSON structure:", Object.keys(partial));
-      } catch (e) {
-        // Ignore parse errors
-      }
-    }
-    throw error;
-  }
-}
 
 /**
  * Modify models.ts to simulate schema changes
@@ -280,7 +235,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
 
         console.log("✓ Added new EXTERNALLY_MANAGED table");
 
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // NewExternalTable should NOT have any CreateTable operation
         const hasCreate = hasTableAdded(plan, "NewExternalTable");
@@ -308,7 +268,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
 
         // ExternallyManagedTest already exists in the template with lifeCycle: EXTERNALLY_MANAGED
         // Run initial plan to establish baseline (should have no operations since it's externally managed)
-        const initialPlan = await runMoosePlanJson(testProjectDir);
+        const initialPlan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
         console.log("✓ Initial plan generated");
 
         // Manually create the table in ClickHouse to simulate external management
@@ -353,7 +318,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
         );
 
         // Generate plan after schema change - should STILL have no operations at all
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         const operations = getTableChanges(plan, "ExternallyManagedTest");
         expect(operations).to.have.lengthOf(
@@ -434,7 +404,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
         );
 
         // Generate new plan - should NOT have DropTable for DeletionProtectedTest
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         const hasDrop = hasTableRemoved(plan, "DeletionProtectedTest");
         expect(hasDrop).to.be.false;
@@ -481,7 +456,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
         );
 
         // Generate new plan - should NOT have column removal for DeletionProtectedTest
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Check if there's any Updated change with column_changes that removes a column
         const tableChanges = getTableChanges(plan, "DeletionProtectedTest");
@@ -528,7 +508,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
         console.log("✓ Changed orderByFields for DeletionProtectedOrderByTest");
 
         // Generate new plan
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Should NOT have table removal or addition (no drop+create)
         const hasDrop = hasTableRemoved(plan, "DeletionProtectedOrderByTest");
@@ -578,7 +563,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
         );
 
         // Generate new plan
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Should NOT have table removal or addition (no drop+create)
         const hasDrop = hasTableRemoved(plan, "DeletionProtectedEngineTest");
@@ -671,7 +661,12 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestDataWithExtra>(
         console.log("✓ Removed FullyManagedTest from models.ts");
 
         // Generate new plan - SHOULD have DropTable
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Debug: log all olap changes to see what we got
         console.log(
@@ -746,7 +741,12 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
         );
 
         // Generate new plan - SHOULD have column removal
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         const tableChanges = getTableChanges(plan, "FullyManagedTest");
         console.log(
@@ -802,7 +802,12 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
         console.log("✓ Changed orderByFields for FullyManagedOrderByTest");
 
         // Generate new plan
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Should have drop+create (removal + addition or Updated change)
         const hasDrop = hasTableRemoved(plan, "FullyManagedOrderByTest");
@@ -849,7 +854,12 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
         );
 
         // Generate new plan
-        const plan = await runMoosePlanJson(testProjectDir);
+        const plan = await runMoosePlanJson(
+          testProjectDir,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+        );
 
         // Should have operations for engine change (drop+create or Updated)
         const tableChanges = getTableChanges(plan, "FullyManagedEngineTest");
