@@ -24,6 +24,7 @@ from moose_lib.blocks import (
     ReplicatedCollapsingMergeTreeEngine,
     ReplicatedVersionedCollapsingMergeTreeEngine,
     BufferEngine,
+    MergeEngine,
     # S3QueueEngine - requires S3 configuration, tested separately
 )
 from pydantic import BaseModel
@@ -299,6 +300,29 @@ sample_by_table = OlapTable[EngineTestDataSample](
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
 
+# Test Merge engine - virtual read-only view over tables matching a regex
+# Source tables that the Merge table will read from
+merge_source_a = OlapTable[EngineTestData](
+    "MergeSourceA",
+    OlapConfig(engine=MergeTreeEngine(), order_by_fields=["id", "timestamp"]),
+)
+
+merge_source_b = OlapTable[EngineTestData](
+    "MergeSourceB",
+    OlapConfig(engine=MergeTreeEngine(), order_by_fields=["id", "timestamp"]),
+)
+
+# Merge table: reads from all tables matching ^MergeSource.* in the current database
+merge_table = OlapTable[EngineTestData](
+    "MergeTest",
+    OlapConfig(
+        engine=MergeEngine(
+            source_database="currentDatabase()",
+            tables_regexp="^MergeSource.*",
+        )
+    ),
+)
+
 # Test Buffer engine - buffers writes before flushing to destination table
 # First create the destination table
 buffer_destination_table = OlapTable[EngineTestData](
@@ -346,6 +370,9 @@ all_engine_test_tables = [
     replicated_versioned_collapsing_merge_tree_table,
     sample_by_table,
     ttl_table,
+    merge_source_a,
+    merge_source_b,
+    merge_table,
     buffer_destination_table,
     buffer_table,
     default_table,
