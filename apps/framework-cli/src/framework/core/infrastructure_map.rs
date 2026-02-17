@@ -7716,6 +7716,8 @@ mod diff_workflow_tests {
             } else {
                 Some(schedule.to_string())
             },
+            vec![],
+            vec![],
         )
         .unwrap()
     }
