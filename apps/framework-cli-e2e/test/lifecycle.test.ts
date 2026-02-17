@@ -43,6 +43,7 @@ import {
   hasMvAdded,
   hasMvRemoved,
   hasMvUpdated,
+  runMoosePlanJson,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -52,12 +53,6 @@ const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-tests",
 );
-
-// Build ClickHouse connection URL for plan/migration commands
-const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123/${CLICKHOUSE_CONFIG.database}`;
-
-// Moose server URL for plan command
-const MOOSE_SERVER_URL = "http://localhost:4000";
 
 /**
  * Environment variables needed for the typescript-tests template
@@ -72,46 +67,6 @@ const TEST_ENV = {
   // Admin token for moose plan --url authentication
   MOOSE_ADMIN_TOKEN: TEST_ADMIN_BEARER_TOKEN,
 };
-
-/**
- * Helper to run moose plan --json and return parsed result
- * Uses --url to connect to the running moose prod server
- */
-async function runMoosePlanJson(projectDir: string): Promise<PlanOutput> {
-  try {
-    const { stdout } = await execAsync(
-      `"${CLI_PATH}" plan --url "${MOOSE_SERVER_URL}" --json`,
-      { cwd: projectDir, env: TEST_ENV },
-    );
-    // Debug: log first 500 chars of output to see structure
-    console.log(
-      "Plan JSON output (first 500 chars):",
-      stdout.substring(0, 500),
-    );
-    const parsed = JSON.parse(stdout) as PlanOutput;
-    // Debug: log structure
-    console.log("Parsed plan structure:", {
-      hasChanges: !!parsed.changes,
-      olapChangesLength: parsed.changes?.olap_changes?.length ?? 0,
-      changesKeys: parsed.changes ? Object.keys(parsed.changes) : [],
-    });
-    return parsed;
-  } catch (error: any) {
-    console.error("moose plan --json failed:");
-    console.error("stdout:", error.stdout);
-    console.error("stderr:", error.stderr);
-    // Try to parse what we got to see structure
-    if (error.stdout) {
-      try {
-        const partial = JSON.parse(error.stdout.substring(0, 1000));
-        console.error("Partial JSON structure:", Object.keys(partial));
-      } catch (e) {
-        // Ignore parse errors
-      }
-    }
-    throw error;
-  }
-}
 
 /**
  * Modify models.ts to simulate schema changes

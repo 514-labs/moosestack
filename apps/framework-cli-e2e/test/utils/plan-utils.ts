@@ -2,6 +2,18 @@
  * Utilities for parsing and analyzing moose plan output
  */
 
+import { exec } from "child_process";
+import { promisify } from "util";
+import * as path from "path";
+import { SERVER_CONFIG, TEST_ADMIN_BEARER_TOKEN } from "../constants";
+
+const DEFAULT_CLI_PATH = path.resolve(
+  __dirname,
+  "../../../../target/debug/moose-cli",
+);
+
+const execAsync = promisify(exec);
+
 // Plan output structure from moose plan --json
 export interface PlanOutput {
   target_infra_map: {
@@ -195,4 +207,48 @@ export function getTableChanges(
   }
 
   return results;
+}
+
+/**
+ * Run `moose plan --json` against a running moose server and return parsed output.
+ *
+ * @param projectDir - Directory of the Moose project to plan
+ * @param cliPath - Path to the moose-cli binary (defaults to debug build)
+ * @param serverUrl - URL of the running moose server (defaults to localhost:4000)
+ * @param adminToken - Admin bearer token for authentication (defaults to test token)
+ * @param pythonVenvDir - If the project is Python, pass the project dir so the
+ *   venv's PATH and VIRTUAL_ENV are set. Omit for TypeScript projects.
+ */
+export async function runMoosePlanJson(
+  projectDir: string,
+  cliPath: string = DEFAULT_CLI_PATH,
+  serverUrl: string = SERVER_CONFIG.url,
+  adminToken: string = TEST_ADMIN_BEARER_TOKEN,
+  pythonVenvDir?: string,
+): Promise<PlanOutput> {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    // Dummy credentials required for S3Queue secret resolution
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
+    // Admin token for moose plan --url authentication
+    MOOSE_ADMIN_TOKEN: adminToken,
+    ...(pythonVenvDir && {
+      VIRTUAL_ENV: path.join(pythonVenvDir, ".venv"),
+      PATH: `${path.join(pythonVenvDir, ".venv", "bin")}:${process.env.PATH ?? ""}`,
+    }),
+  };
+
+  try {
+    const { stdout } = await execAsync(
+      `"${cliPath}" plan --url "${serverUrl}" --json`,
+      { cwd: projectDir, env },
+    );
+    return JSON.parse(stdout) as PlanOutput;
+  } catch (error: any) {
+    console.error("moose plan --json failed:");
+    console.error("stdout:", error.stdout);
+    console.error("stderr:", error.stderr);
+    throw error;
+  }
 }
