@@ -69,11 +69,13 @@ const SOURCE_EXTENSIONS = new Set([
 
 const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
 
-const EMPTY_RESULT: DependencyAnalysisResult = {
-  apiByKey: new Map<string, DependencySignatures>(),
-  workflowByName: new Map<string, DependencySignatures>(),
-  webAppByName: new Map<string, DependencySignatures>(),
-};
+function createEmptyResult(): DependencyAnalysisResult {
+  return {
+    apiByKey: new Map<string, DependencySignatures>(),
+    workflowByName: new Map<string, DependencySignatures>(),
+    webAppByName: new Map<string, DependencySignatures>(),
+  };
+}
 
 function isSourceFilePath(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -133,7 +135,7 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
   registry.streams.forEach((stream: any, id: string) => {
     const streamName = typeof stream?.name === "string" ? stream.name : id;
     const existing = topicIdsByName.get(streamName) ?? [];
-    existing.push(streamName);
+    existing.push(id);
     topicIdsByName.set(streamName, existing);
   });
 
@@ -708,6 +710,10 @@ function toSignature(
         return { kind: "Table", id: ref.targetTableId };
       }
       return { kind: "MaterializedView", id: ref.id };
+    case "IngestPipeline":
+      // Intentional: IngestPipeline is not a standalone infra node. It must be
+      // decomposed through `.stream` or `.table` property access first.
+      return undefined;
     default:
       return undefined;
   }
@@ -1087,7 +1093,9 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
   }
 
   const uniqueApis = new Set<any>();
-  registry.apis.forEach((api) => uniqueApis.add(api));
+  for (const api of registry.apis.values()) {
+    uniqueApis.add(api);
+  }
   for (const api of uniqueApis) {
     const sourceFile = api?.metadata?.source?.file;
     if (
@@ -1360,9 +1368,17 @@ function resolveWebAppRootFunctions(
 export function analyzeRegistryLineage(
   registry: RegistryLike,
 ): DependencyAnalysisResult {
+  if (
+    registry.apis.size === 0 &&
+    registry.workflows.size === 0 &&
+    registry.webApps.size === 0
+  ) {
+    return createEmptyResult();
+  }
+
   const files = collectAnalysisFiles(registry);
   if (files.length === 0) {
-    return EMPTY_RESULT;
+    return createEmptyResult();
   }
 
   const { rootNames, options } = loadCompilerOptions(files);
