@@ -1,4 +1,5 @@
 import { getMooseInternal } from "../internal";
+import { getSourceLocationFromStack } from "../utils/stackTrace";
 
 /**
  * Context passed to task handlers. Single param to future-proof API changes.
@@ -151,6 +152,15 @@ export interface WorkflowConfig {
  * ```
  */
 export class Workflow {
+  /** @internal Source file path where this workflow was declared */
+  sourceFile?: string;
+
+  /** @internal Source line number where this workflow was declared */
+  sourceLine?: number;
+
+  /** @internal Source column number where this workflow was declared */
+  sourceColumn?: number;
+
   /**
    * Creates a new Workflow instance and registers it with the Moose system.
    *
@@ -162,6 +172,14 @@ export class Workflow {
     readonly name: string,
     readonly config: WorkflowConfig,
   ) {
+    const stack = new Error().stack;
+    const location = getSourceLocationFromStack(stack);
+    if (location) {
+      this.sourceFile = location.file;
+      this.sourceLine = location.line;
+      this.sourceColumn = location.column;
+    }
+
     const workflows = getMooseInternal().workflows;
     if (workflows.has(name)) {
       throw new Error(`Workflow with name ${name} already exists`);
