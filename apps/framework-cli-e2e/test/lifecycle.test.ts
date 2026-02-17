@@ -84,12 +84,16 @@ async function runMoosePlanJson(projectDir: string): Promise<PlanOutput> {
       `"${CLI_PATH}" plan --url "${MOOSE_SERVER_URL}" --json`,
       { cwd: projectDir, env: TEST_ENV },
     );
-    // Debug: log first 500 chars of output to see structure
-    console.log(
-      "Plan JSON output (first 500 chars):",
-      stdout.substring(0, 500),
-    );
-    const parsed = JSON.parse(stdout) as PlanOutput;
+    // The CLI may output ANSI-colored warnings before the JSON object.
+    // Extract the JSON by finding the first '{' character.
+    const jsonStart = stdout.indexOf("{");
+    if (jsonStart === -1) {
+      throw new Error(
+        `No JSON object found in moose plan output: ${stdout.substring(0, 500)}`,
+      );
+    }
+    const jsonStr = stdout.substring(jsonStart);
+    const parsed = JSON.parse(jsonStr) as PlanOutput;
     // Debug: log structure
     console.log("Parsed plan structure:", {
       hasChanges: !!parsed.changes,
@@ -104,9 +108,12 @@ async function runMoosePlanJson(projectDir: string): Promise<PlanOutput> {
     // Try to parse what we got to see structure
     if (error.stdout) {
       try {
-        const partial = JSON.parse(error.stdout.substring(0, 1000));
-        console.error("Partial JSON structure:", Object.keys(partial));
-      } catch (e) {
+        const idx = error.stdout.indexOf("{");
+        if (idx !== -1) {
+          const partial = JSON.parse(error.stdout.substring(idx));
+          console.error("Partial JSON structure:", Object.keys(partial));
+        }
+      } catch (_e) {
         // Ignore parse errors
       }
     }
