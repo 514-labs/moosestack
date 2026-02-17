@@ -10,7 +10,7 @@ import { getSourceFileFromStack } from "../utils/stackTrace";
 /**
  * Helper function to format a table reference as `database`.`table` or just `table`
  */
-function formatTableReference(table: OlapTable<unknown> | View): string {
+function formatTableReference(table: OlapTable<any> | View): string {
   const database =
     table instanceof OlapTable ? table.config.database : undefined;
   if (database) {
@@ -27,7 +27,7 @@ export interface MaterializedViewConfig<T> {
   /** The SQL SELECT statement or `Sql` object defining the data to be materialized. Dynamic SQL (with parameters) is not allowed here. */
   selectStatement: string | Sql;
   /** An array of OlapTable or View objects that the `selectStatement` reads from. */
-  selectTables: (OlapTable<unknown> | View)[];
+  selectTables: (OlapTable<any> | View)[];
 
   /** @deprecated See {@link targetTable}
    *  The name for the underlying target OlapTable that stores the materialized data. */
