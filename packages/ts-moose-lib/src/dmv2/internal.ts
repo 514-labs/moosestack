@@ -95,26 +95,51 @@ function findSourceFiles(
 }
 
 /**
- * Checks for source files that exist but weren't loaded
+ * Strips the file extension from a path, returning the "stem".
+ * Handles compound extensions like .d.ts by stripping only the last extension.
+ */
+function pathStem(filePath: string): string {
+  const ext = path.extname(filePath);
+  return ext ? filePath.slice(0, -ext.length) : filePath;
+}
+
+/**
+ * Checks for source files that exist but weren't loaded.
+ *
+ * Since we now load pre-compiled JS from the outDir (e.g. .moose/compiled/app/),
+ * require.cache contains compiled paths, not source paths. We compare using
+ * path stems relative to each root: for source files relative to appDir, and
+ * for loaded files relative to compiledAppDir. This maps e.g.
+ *   source:   app/models.ts         -> stem "models"
+ *   compiled: .moose/compiled/app/models.js -> stem "models"
  */
 function findUnloadedFiles(): string[] {
-  const appDir = path.resolve(process.cwd(), getSourceDir());
+  const cwd = process.cwd();
+  const sourceDir = getSourceDir();
+  const appDir = path.resolve(cwd, sourceDir);
 
-  // Find all source files in the directory
+  // The compiled equivalent of appDir lives under outDir/sourceDir
+  const compiledAppDir = path.resolve(cwd, getOutDir(), sourceDir);
+
+  // Find all source files in the source directory
   const allSourceFiles = findSourceFiles(appDir);
 
-  // Get all loaded files from require.cache
-  const loadedFiles = new Set(
+  // Build a set of stems from require.cache entries under the compiled directory.
+  // e.g. ".moose/compiled/app/models.js" -> stem "models"
+  const loadedStems = new Set(
     Object.keys(require.cache)
-      .filter((key) => key.startsWith(appDir))
-      .map((key) => path.resolve(key)),
+      .filter((key) => key.startsWith(compiledAppDir))
+      .map((key) => pathStem(path.relative(compiledAppDir, key))),
   );
 
-  // Find files that exist but weren't loaded
+  // A source file is unloaded if its stem (relative to appDir) is not in loadedStems.
+  // e.g. "app/unloaded_table.ts" -> stem "unloaded_table" -> not in loadedStems
   const unloadedFiles = allSourceFiles
-    .map((file) => path.resolve(file))
-    .filter((file) => !loadedFiles.has(file))
-    .map((file) => path.relative(process.cwd(), file));
+    .filter((file) => {
+      const stem = pathStem(path.relative(appDir, file));
+      return !loadedStems.has(stem);
+    })
+    .map((file) => path.relative(cwd, file));
 
   return unloadedFiles;
 }
