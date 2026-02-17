@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use super::languages::SupportedLanguages;
+use crate::framework::core::infrastructure::InfrastructureSignature;
 
 pub mod config;
 pub mod executor;
@@ -18,6 +19,10 @@ pub struct Workflow {
     path: PathBuf,
     config: WorkflowConfig,
     language: SupportedLanguages,
+    #[serde(default)]
+    pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 impl Workflow {
@@ -27,6 +32,8 @@ impl Workflow {
         retries: Option<u32>,
         timeout: Option<String>,
         schedule: Option<String>,
+        pulls_data_from: Vec<InfrastructureSignature>,
+        pushes_data_to: Vec<InfrastructureSignature>,
     ) -> Result<Self, anyhow::Error> {
         let config = WorkflowConfig::with_overrides(name.clone(), retries, timeout, schedule);
 
@@ -35,6 +42,8 @@ impl Workflow {
             path: PathBuf::from(name.clone()),
             config,
             language,
+            pulls_data_from,
+            pushes_data_to,
         })
     }
 
@@ -44,6 +53,14 @@ impl Workflow {
 
     pub fn config(&self) -> &WorkflowConfig {
         &self.config
+    }
+
+    pub fn pulls_data_from(&self) -> &[InfrastructureSignature] {
+        &self.pulls_data_from
+    }
+
+    pub fn pushes_data_to(&self) -> &[InfrastructureSignature] {
+        &self.pushes_data_to
     }
 
     /// Start the workflow execution locally
@@ -69,6 +86,8 @@ impl Workflow {
             retries: self.config.retries,
             timeout: self.config.timeout.clone(),
             language: self.language.to_string(),
+            pulls_data_from: self.pulls_data_from.iter().map(|s| s.to_proto()).collect(),
+            pushes_data_to: self.pushes_data_to.iter().map(|s| s.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -87,6 +106,16 @@ impl Workflow {
             path: PathBuf::from(proto.name),
             config,
             language: SupportedLanguages::from_proto(proto.language),
+            pulls_data_from: proto
+                .pulls_data_from
+                .into_iter()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
+            pushes_data_to: proto
+                .pushes_data_to
+                .into_iter()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
         }
     }
 }
@@ -103,6 +132,8 @@ mod tests {
             Some(5),
             Some("60s".to_string()),
             Some("1h".to_string()),
+            vec![],
+            vec![],
         )
         .unwrap();
 
