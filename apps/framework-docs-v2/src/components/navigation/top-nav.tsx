@@ -6,7 +6,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { IconMenu, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -189,64 +188,64 @@ export function TopNav({ stars, showAi }: TopNavProps) {
             </Button>
           </div>
         </div>
-      </nav>
 
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <div className="xl:hidden border-t">
-          <div className="px-4 py-4 space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => {
-                setSearchOpen(true);
-                setMobileMenuOpen(false);
-              }}
-            >
-              <IconSearch className="mr-2 h-4 w-4" />
-              Search documentation
-            </Button>
-            {navItems.map((item, index) => {
-              const isActive =
-                item.isActive ?
-                  item.isActive(pathname)
-                : activeSection !== null && activeSection === item.section;
-              return (
-                <Button
-                  key={`${item.section}-${index}`}
-                  variant={isActive ? "secondary" : "ghost"}
-                  asChild
-                  className="w-full justify-start"
-                >
-                  <Link
-                    href={item.external ? item.href : buildUrl(item.href)}
-                    target={item.external ? "_blank" : undefined}
-                    rel={item.external ? "noopener noreferrer" : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    {item.label}
-                  </Link>
-                </Button>
-              );
-            })}
-            <Button variant="ghost" asChild className="w-full justify-start">
-              <Link
-                href={buildUrl("/moosestack/release-notes")}
-                onClick={() => setMobileMenuOpen(false)}
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="xl:hidden border-t bg-background absolute top-full left-0 right-0">
+            <div className="px-4 py-4 space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  setSearchOpen(true);
+                  setMobileMenuOpen(false);
+                }}
               >
-                Release Notes
-              </Link>
-            </Button>
-            <div className="flex items-center justify-between pt-2 border-t">
-              <div className="flex items-center space-x-2">
-                <ThemeToggle />
-                <SidebarTrigger />
+                <IconSearch className="mr-2 h-4 w-4" />
+                Search documentation
+              </Button>
+              {navItems.map((item, index) => {
+                const isActive =
+                  item.isActive ?
+                    item.isActive(pathname)
+                  : activeSection !== null && activeSection === item.section;
+                return (
+                  <Button
+                    key={`${item.section}-${index}`}
+                    variant={isActive ? "secondary" : "ghost"}
+                    asChild
+                    className="w-full justify-start"
+                  >
+                    <Link
+                      href={item.external ? item.href : buildUrl(item.href)}
+                      target={item.external ? "_blank" : undefined}
+                      rel={item.external ? "noopener noreferrer" : undefined}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  </Button>
+                );
+              })}
+              <Button variant="ghost" asChild className="w-full justify-start">
+                <Link
+                  href={buildUrl("/moosestack/release-notes")}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Release Notes
+                </Link>
+              </Button>
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div className="flex items-center space-x-2">
+                  <ThemeToggle />
+                  <SidebarTrigger />
+                </div>
+                <GitHubButtonGroup stars={stars} />
               </div>
-              <GitHubButtonGroup stars={stars} />
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </nav>
 
       <CommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </>
