@@ -11,6 +11,7 @@ import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
+import { LifeCycle } from "./lifeCycle";
 
 /**
  * Configuration options for creating a Materialized View.
@@ -42,6 +43,8 @@ export interface MaterializedViewConfig<T> {
         engine?: ClickHouseEngines;
         /** Optional ordering fields for the target table. Crucial if using ReplacingMergeTree. */
         orderByFields?: (keyof T & string)[];
+        /** Optional lifecycle setting for the inline target table. */
+        lifeCycle?: LifeCycle;
       };
 
   /** @deprecated See {@link targetTable}
@@ -50,6 +53,9 @@ export interface MaterializedViewConfig<T> {
 
   /** Optional metadata for the materialized view (e.g., description, source file). */
   metadata?: { [key: string]: unknown };
+
+  /** Optional lifecycle management setting for the materialized view. */
+  lifeCycle?: LifeCycle;
 }
 
 const requireTargetTableName = (tableName: string | undefined): string => {
@@ -85,6 +91,9 @@ export class MaterializedView<TargetTable> {
 
   /** Optional metadata for the materialized view */
   metadata: { [key: string]: unknown };
+
+  /** Optional lifecycle management setting for the materialized view */
+  lifeCycle?: LifeCycle;
 
   /**
    * Creates a new MaterializedView instance.
@@ -131,6 +140,7 @@ export class MaterializedView<TargetTable> {
               options.targetTable?.engine ??
               options.engine ??
               ClickHouseEngines.MergeTree,
+            lifeCycle: options.targetTable?.lifeCycle ?? options.lifeCycle,
           } as OlapConfig<TargetTable>,
           targetSchema,
           targetColumns,
@@ -151,6 +161,8 @@ export class MaterializedView<TargetTable> {
 
     // Initialize metadata, preserving user-provided metadata if any
     this.metadata = options.metadata ? { ...options.metadata } : {};
+
+    this.lifeCycle = options.lifeCycle;
 
     // Capture source file from stack trace if not already provided
     if (!this.metadata.source) {

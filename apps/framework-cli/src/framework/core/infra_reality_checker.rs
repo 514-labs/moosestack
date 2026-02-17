@@ -1716,25 +1716,19 @@ mod tests {
         // In production, both MVs are pre-normalized via ClickHouse's formatQuerySingleLine
         // + Rust's normalize_sql_for_comparison before comparison.
         // This test verifies that pre-normalized MVs compare correctly.
-        let mv1 = MaterializedView {
-            name: "test_mv".to_string(),
-            database: None,
-            target_table: "events".to_string(),
-            target_database: None,
-            select_sql: "SELECT * FROM source".to_string(),
-            source_tables: vec!["source".to_string()],
-            metadata: None,
-        };
+        let mv1 = MaterializedView::new(
+            "test_mv",
+            "SELECT * FROM source",
+            vec!["source".to_string()],
+            "events",
+        );
 
-        let mv2 = MaterializedView {
-            name: "test_mv".to_string(),
-            database: None,
-            target_table: "events".to_string(),
-            target_database: None,
-            select_sql: "SELECT * FROM source".to_string(),
-            source_tables: vec!["source".to_string()],
-            metadata: None,
-        };
+        let mv2 = MaterializedView::new(
+            "test_mv",
+            "SELECT * FROM source",
+            vec!["source".to_string()],
+            "events",
+        );
 
         assert!(
             materialized_views_are_equivalent(&mv1, &mv2, default_db),

@@ -885,6 +885,8 @@ impl InfrastructureMap {
             is_production,
             &self.default_database,
             &mut changes.olap_changes,
+            respect_life_cycle,
+            &mut changes.filtered_olap_changes,
         );
         let mv_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("Materialized View changes detected: {}", mv_changes);
@@ -1644,6 +1646,9 @@ impl InfrastructureMap {
     /// * `is_production` - Whether we're in production mode (population only in dev)
     /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
+    /// * `respect_life_cycle` - Whether to filter changes based on lifecycle policies
+    /// * `filtered_changes` - Mutable vector to collect changes blocked by lifecycle policies
+    #[allow(clippy::too_many_arguments)]
     pub fn diff_materialized_views(
         self_mvs: &HashMap<String, MaterializedView>,
         target_mvs: &HashMap<String, MaterializedView>,
@@ -1651,6 +1656,8 @@ impl InfrastructureMap {
         is_production: bool,
         default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
+        respect_life_cycle: bool,
+        filtered_changes: &mut Vec<FilteredChange>,
     ) {
         use crate::framework::core::infra_reality_checker::materialized_views_are_equivalent;
 
@@ -1668,6 +1675,27 @@ impl InfrastructureMap {
             if let Some(target_mv) = target_mvs.get(id) {
                 // Use semantic equivalence check instead of plain !=
                 if !materialized_views_are_equivalent(mv, target_mv, default_database) {
+                    // MV updates require DROP+CREATE in ClickHouse, so treat as destructive
+                    // Use the TARGET lifecycle (after state) for the check
+                    if respect_life_cycle && target_mv.life_cycle.is_drop_protected() {
+                        tracing::warn!(
+                            "Materialized view '{}' has {:?} lifecycle - blocking update (DROP+CREATE)",
+                            id,
+                            target_mv.life_cycle
+                        );
+                        filtered_changes.push(FilteredChange {
+                            reason: format!(
+                                "MaterializedView '{}' has {:?} lifecycle - update (DROP+CREATE) blocked",
+                                mv.name, target_mv.life_cycle
+                            ),
+                            change: OlapChange::MaterializedView(Change::Updated {
+                                before: Box::new(mv.clone()),
+                                after: Box::new(target_mv.clone()),
+                            }),
+                        });
+                        continue;
+                    }
+
                     tracing::debug!("Materialized view '{}' has differences", id);
                     mv_updates += 1;
                     olap_changes.push(OlapChange::MaterializedView(Change::Updated {
@@ -1686,6 +1714,23 @@ impl InfrastructureMap {
                     );
                 }
             } else {
+                // Removal: check if lifecycle blocks dropping
+                if respect_life_cycle && mv.life_cycle.is_drop_protected() {
+                    tracing::warn!(
+                        "Materialized view '{}' has {:?} lifecycle - blocking removal",
+                        id,
+                        mv.life_cycle
+                    );
+                    filtered_changes.push(FilteredChange {
+                        reason: format!(
+                            "MaterializedView '{}' has {:?} lifecycle - DROP operation blocked",
+                            mv.name, mv.life_cycle
+                        ),
+                        change: OlapChange::MaterializedView(Change::Removed(Box::new(mv.clone()))),
+                    });
+                    continue;
+                }
+
                 tracing::debug!("Materialized view '{}' removed", id);
                 mv_removals += 1;
                 olap_changes.push(OlapChange::MaterializedView(Change::Removed(Box::new(
@@ -1696,6 +1741,23 @@ impl InfrastructureMap {
 
         for (id, mv) in target_mvs {
             if !self_mvs.contains_key(id) {
+                // Addition: check if lifecycle blocks creation
+                if respect_life_cycle && mv.life_cycle.is_any_modification_protected() {
+                    tracing::warn!(
+                        "Materialized view '{}' has {:?} lifecycle - blocking creation",
+                        id,
+                        mv.life_cycle
+                    );
+                    filtered_changes.push(FilteredChange {
+                        reason: format!(
+                            "MaterializedView '{}' has {:?} lifecycle - CREATE operation blocked",
+                            mv.name, mv.life_cycle
+                        ),
+                        change: OlapChange::MaterializedView(Change::Added(Box::new(mv.clone()))),
+                    });
+                    continue;
+                }
+
                 tracing::debug!("Materialized view '{}' added", id);
                 mv_additions += 1;
                 olap_changes.push(OlapChange::MaterializedView(Change::Added(Box::new(
@@ -2879,6 +2941,7 @@ impl InfrastructureMap {
             target_table: parsed.target_table,
             target_database: parsed.target_database,
             metadata,
+            life_cycle: LifeCycle::FullyManaged,
         })
     }
 
