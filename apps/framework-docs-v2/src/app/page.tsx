@@ -25,7 +25,7 @@ export default function HomePage() {
     {
       title: "MooseStack",
       description:
-        "OLAP-native agent harness for analytical workloads. Define schemas and pipelines as code, then let agents design, test, migrate, and ship from local development to production.",
+        "Open-source, OLAP-native agent harness for designing, validating, and shipping analytical systems as code.",
       href: `/moosestack`,
       icon: IconDatabase,
     },
@@ -81,8 +81,8 @@ export default function HomePage() {
         <div className="mb-10 text-center md:mb-12">
           <h1 className="text-4xl font-bold mb-4">Documentation</h1>
           <p className="text-lg text-muted-foreground">
-            Start with MooseStack, then follow Getting Started to move
-            analytical workloads through a production-safe SDLC loop.
+            Start with MooseStack, then follow Getting Started to design,
+            validate, and ship analytical systems as code.
           </p>
         </div>
 
