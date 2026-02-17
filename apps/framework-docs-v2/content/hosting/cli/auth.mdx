@@ -1,12 +1,14 @@
 ---
 title: auth
-description: Authenticate the 514 CLI and verify session state.
+description: Authenticate the 514 CLI agent harness and verify control plane session state.
 order: 1
 ---
 
 # 514 auth
 
-Use `514 auth` commands to create and manage your local CLI session.
+Use `514 auth` to establish the trust boundary for the CLI agent harness.
+
+Once authenticated, every other command (`setup`, `link`, and follow-on workflow commands) can act on your cloud OLAP workloads with the correct account and project permissions.
 
 ## Subcommands
 

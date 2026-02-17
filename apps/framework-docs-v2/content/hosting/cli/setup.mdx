@@ -1,12 +1,14 @@
 ---
 title: setup
-description: Clone and prepare a local project from Fiveonefour using 514 setup.
+description: Bootstrap a local agent workspace from an existing cloud OLAP project with 514 setup.
 order: 2
 ---
 
 # 514 setup
 
-Use `514 setup <org>/<project>` to set up a local workspace from an existing Fiveonefour project.
+Use `514 setup <org>/<project>` to bootstrap a local workspace from an existing Fiveonefour project.
+
+This command is the main provisioning step in the CLI agent harness: it verifies cloud access, prepares local git state, and creates a runnable workspace that stays aligned with the hosted project lifecycle.
 
 ## Syntax
 
@@ -33,11 +35,11 @@ Use `514 setup <org>/<project>` to set up a local workspace from an existing Fiv
 ```
 
 Expected flow:
-- Checks auth, git, project access, and remote.
+- Checks auth, git, project access, and remote readiness.
 - Prompts for destination path and folder name.
 - Shows planned git commands before mutating actions.
 - Optionally creates and pushes branch.
-- Optionally runs local setup actions.
+- Optionally runs local setup actions so you can execute workloads immediately.
 
 ## Non-Interactive Example
 
@@ -57,7 +59,7 @@ Expected flow:
 - Check-only output: preflight validations with no mutation.
 - Planned commands: explicit command preview before running.
 - Mutating commands: clone, branch creation, and push actions.
-- Post-action verification: final paths, branch, and preview route checks.
+- Post-action verification: final paths, branch, and cloud preview route checks.
 
 ## Related
 
