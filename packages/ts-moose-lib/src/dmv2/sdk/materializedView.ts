@@ -27,7 +27,14 @@ function formatTableReference(table: OlapTable<any> | View): string {
  * Supported time units for refresh intervals.
  * Maps directly to ClickHouse interval units.
  */
-export type TimeUnit = "second" | "minute" | "hour" | "day" | "week";
+export type TimeUnit =
+  | "second"
+  | "minute"
+  | "hour"
+  | "day"
+  | "week"
+  | "month"
+  | "year";
 
 /**
  * Refresh interval using EVERY mode - periodic refresh at fixed times.
@@ -502,6 +509,24 @@ export class RefreshableMaterializedView<TargetTable> {
       );
     }
 
+    // Validate interval value is a positive integer
+    const intervalVal = options.refreshConfig.interval.value;
+    if (!Number.isInteger(intervalVal) || intervalVal <= 0) {
+      throw new Error(
+        `Refresh interval value must be a positive integer, got: ${intervalVal}`,
+      );
+    }
+
+    // Validate offset/randomize values if present
+    for (const key of ["offset", "randomize"] as const) {
+      const dur = options.refreshConfig[key];
+      if (dur && (!Number.isInteger(dur.value) || dur.value <= 0)) {
+        throw new Error(
+          `Refresh ${key} value must be a positive integer, got: ${dur.value}`,
+        );
+      }
+    }
+
     // Validate OFFSET is not used with REFRESH AFTER (only valid with REFRESH EVERY)
     if (
       options.refreshConfig.interval.type === "after" &&
@@ -544,7 +569,7 @@ export class RefreshableMaterializedView<TargetTable> {
     const materializedViews = getMooseInternal().materializedViews;
     if (!isClientOnlyMode() && materializedViews.has(this.name)) {
       throw new Error(
-        `RefreshableMaterializedView with name ${this.name} already exists`,
+        `A MaterializedView with name '${this.name}' is already registered.`,
       );
     }
     materializedViews.set(this.name, this);

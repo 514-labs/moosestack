@@ -2822,7 +2822,6 @@ impl InfrastructureMap {
         })
     }
 
-    /// Parses a REFRESH clause from a CREATE MATERIALIZED VIEW statement.
     /// Parses the REFRESH clause from a CREATE MATERIALIZED VIEW statement.
     /// Extracts: interval (EVERY/AFTER), OFFSET, RANDOMIZE, DEPENDS ON, and APPEND.
     ///
@@ -2839,19 +2838,7 @@ impl InfrastructureMap {
         use regex::Regex;
         use std::sync::LazyLock;
 
-        // Helper to convert value + unit to seconds
-        fn to_seconds(value: u64, unit: &str) -> Option<u64> {
-            match unit.to_uppercase().as_str() {
-                "SECOND" => Some(value),
-                "MINUTE" => Some(value * 60),
-                "HOUR" => Some(value * 3600),
-                "DAY" => Some(value * 86400),
-                "WEEK" => Some(value * 604800),
-                "MONTH" => Some(value * 2592000), // Approximate: 30 days
-                "YEAR" => Some(value * 31536000), // Approximate: 365 days
-                _ => None,
-            }
-        }
+        use crate::framework::core::infrastructure::materialized_view::{Duration, TimeUnit};
 
         // Pattern to match REFRESH EVERY/AFTER <n> <unit>
         static REFRESH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -2890,28 +2877,30 @@ impl InfrastructureMap {
         let caps = REFRESH_PATTERN.captures(sql)?;
         let mode = caps.get(1)?.as_str().to_uppercase();
         let value: u64 = caps.get(2)?.as_str().parse().ok()?;
-        let unit = caps.get(3)?.as_str();
-
-        let seconds = to_seconds(value, unit)?;
+        let unit_str = caps.get(3)?.as_str();
+        let unit = TimeUnit::parse(unit_str)?;
 
         let interval = match mode.as_str() {
-            "EVERY" => RefreshInterval::Every { interval: seconds },
-            "AFTER" => RefreshInterval::After { interval: seconds },
+            "EVERY" => RefreshInterval::Every {
+                value,
+                unit: unit.clone(),
+            },
+            "AFTER" => RefreshInterval::After { value, unit },
             _ => return None,
         };
 
         // Parse optional OFFSET
         let offset = OFFSET_PATTERN.captures(sql).and_then(|caps| {
             let value: u64 = caps.get(1)?.as_str().parse().ok()?;
-            let unit = caps.get(2)?.as_str();
-            to_seconds(value, unit)
+            let unit = TimeUnit::parse(caps.get(2)?.as_str())?;
+            Some(Duration::new(value, unit))
         });
 
         // Parse optional RANDOMIZE
         let randomize = RANDOMIZE_PATTERN.captures(sql).and_then(|caps| {
             let value: u64 = caps.get(1)?.as_str().parse().ok()?;
-            let unit = caps.get(2)?.as_str();
-            to_seconds(value, unit)
+            let unit = TimeUnit::parse(caps.get(2)?.as_str())?;
+            Some(Duration::new(value, unit))
         });
 
         // Parse optional DEPENDS ON
@@ -4477,7 +4466,9 @@ mod tests {
 #[cfg(test)]
 mod parse_refresh_clause_tests {
     use super::InfrastructureMap;
-    use crate::framework::core::infrastructure::materialized_view::RefreshInterval;
+    use crate::framework::core::infrastructure::materialized_view::{
+        Duration, RefreshInterval, TimeUnit,
+    };
 
     #[test]
     fn test_depends_on_with_names_containing_t() {
@@ -4518,34 +4509,40 @@ mod parse_refresh_clause_tests {
     fn test_basic_refresh_every() {
         let sql = "REFRESH EVERY 1 HOUR";
         let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
-        assert!(matches!(
+        assert_eq!(
             config.interval,
-            RefreshInterval::Every { interval: 3600 }
-        ));
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Hour
+            }
+        );
     }
 
     #[test]
     fn test_basic_refresh_after() {
         let sql = "REFRESH AFTER 30 MINUTE";
         let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
-        assert!(matches!(
+        assert_eq!(
             config.interval,
-            RefreshInterval::After { interval: 1800 }
-        ));
+            RefreshInterval::After {
+                value: 30,
+                unit: TimeUnit::Minute
+            }
+        );
     }
 
     #[test]
     fn test_offset_only_valid_with_every() {
         let sql = "REFRESH EVERY 1 HOUR OFFSET 5 MINUTE";
         let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
-        assert_eq!(config.offset, Some(300)); // 5 minutes in seconds
+        assert_eq!(config.offset, Some(Duration::new(5, TimeUnit::Minute)));
     }
 
     #[test]
     fn test_randomize() {
         let sql = "REFRESH EVERY 5 MINUTE RANDOMIZE FOR 30 SECOND";
         let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
-        assert_eq!(config.randomize, Some(30));
+        assert_eq!(config.randomize, Some(Duration::new(30, TimeUnit::Second)));
     }
 
     #[test]
@@ -4553,14 +4550,40 @@ mod parse_refresh_clause_tests {
         let sql =
             "REFRESH EVERY 1 DAY OFFSET 1 HOUR RANDOMIZE FOR 5 MINUTE DEPENDS ON mv1, mv2 APPEND";
         let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
-        assert!(matches!(
+        assert_eq!(
             config.interval,
-            RefreshInterval::Every { interval: 86400 }
-        ));
-        assert_eq!(config.offset, Some(3600));
-        assert_eq!(config.randomize, Some(300));
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Day
+            }
+        );
+        assert_eq!(config.offset, Some(Duration::new(1, TimeUnit::Hour)));
+        assert_eq!(config.randomize, Some(Duration::new(5, TimeUnit::Minute)));
         assert_eq!(config.depends_on, vec!["mv1", "mv2"]);
         assert!(config.append);
+    }
+
+    #[test]
+    fn test_month_year_units() {
+        let sql = "REFRESH EVERY 1 MONTH";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Month
+            }
+        );
+
+        let sql = "REFRESH EVERY 1 YEAR";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Year
+            }
+        );
     }
 }
 

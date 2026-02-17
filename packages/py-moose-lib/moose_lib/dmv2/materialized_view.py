@@ -35,7 +35,7 @@ def _format_table_reference(table: Union[OlapTable, View]) -> str:
 # ============================================================================
 
 # Supported time units for refresh intervals
-TimeUnit = Literal["second", "minute", "hour", "day", "week"]
+TimeUnit = Literal["second", "minute", "hour", "day", "week", "month", "year"]
 
 
 @dataclass
@@ -51,6 +51,12 @@ class RefreshIntervalEvery:
     """The time unit for the interval"""
     type: Literal["every"] = "every"
 
+    def __post_init__(self):
+        if self.value <= 0:
+            raise ValueError(
+                f"Refresh interval value must be positive, got {self.value}"
+            )
+
 
 @dataclass
 class RefreshIntervalAfter:
@@ -64,6 +70,12 @@ class RefreshIntervalAfter:
     unit: TimeUnit
     """The time unit for the interval"""
     type: Literal["after"] = "after"
+
+    def __post_init__(self):
+        if self.value <= 0:
+            raise ValueError(
+                f"Refresh interval value must be positive, got {self.value}"
+            )
 
 
 RefreshInterval = Union[RefreshIntervalEvery, RefreshIntervalAfter]
@@ -80,6 +92,10 @@ class Duration:
     """The numeric value"""
     unit: TimeUnit
     """The time unit"""
+
+    def __post_init__(self):
+        if self.value <= 0:
+            raise ValueError(f"Duration value must be positive, got {self.value}")
 
 
 @dataclass
@@ -361,11 +377,17 @@ class RefreshableMaterializedView(BaseTypedResource, Generic[T]):
         self.source_tables = [_format_table_reference(t) for t in options.select_tables]
 
         # Convert refresh_config.depends_on from RefreshableMaterializedView objects to string names
+        dep_names = [dep.name for dep in options.refresh_config.depends_on]
+        if options.materialized_view_name in dep_names:
+            raise ValueError(
+                f"RefreshableMaterializedView '{options.materialized_view_name}' "
+                "cannot depend on itself"
+            )
         self.refresh_config = ResolvedRefreshConfig(
             interval=options.refresh_config.interval,
             offset=options.refresh_config.offset,
             randomize=options.refresh_config.randomize,
-            depends_on=[dep.name for dep in options.refresh_config.depends_on],
+            depends_on=dep_names,
             append=options.refresh_config.append,
         )
 

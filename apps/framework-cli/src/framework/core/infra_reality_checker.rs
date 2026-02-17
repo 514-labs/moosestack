@@ -910,6 +910,76 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 }
 
 #[cfg(test)]
+mod materialized_view_diff_tests {
+    use super::MaterializedViewDiff;
+
+    #[test]
+    fn test_can_alter_refresh_only_change() {
+        let diff = MaterializedViewDiff {
+            select_changed: false,
+            target_changed: false,
+            kind_changed: false,
+            refresh_config_changed: true,
+            source_tables_changed: false,
+        };
+        assert!(diff.can_alter());
+        assert!(!diff.requires_recreate());
+    }
+
+    #[test]
+    fn test_cannot_alter_when_select_changed() {
+        let diff = MaterializedViewDiff {
+            select_changed: true,
+            target_changed: false,
+            kind_changed: false,
+            refresh_config_changed: true,
+            source_tables_changed: false,
+        };
+        assert!(!diff.can_alter());
+        assert!(diff.requires_recreate());
+    }
+
+    #[test]
+    fn test_cannot_alter_when_target_changed() {
+        let diff = MaterializedViewDiff {
+            select_changed: false,
+            target_changed: true,
+            kind_changed: false,
+            refresh_config_changed: false,
+            source_tables_changed: false,
+        };
+        assert!(!diff.can_alter());
+        assert!(diff.requires_recreate());
+    }
+
+    #[test]
+    fn test_cannot_alter_when_kind_changed() {
+        let diff = MaterializedViewDiff {
+            select_changed: false,
+            target_changed: false,
+            kind_changed: true,
+            refresh_config_changed: false,
+            source_tables_changed: false,
+        };
+        assert!(!diff.can_alter());
+        assert!(diff.requires_recreate());
+    }
+
+    #[test]
+    fn test_no_changes() {
+        let diff = MaterializedViewDiff {
+            select_changed: false,
+            target_changed: false,
+            kind_changed: false,
+            refresh_config_changed: false,
+            source_tables_changed: false,
+        };
+        assert!(!diff.can_alter());
+        assert!(!diff.requires_recreate());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::cli::local_webserver::LocalWebserverConfig;
