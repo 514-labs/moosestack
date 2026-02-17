@@ -48,6 +48,7 @@ import {
   hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
+import { analyzeRegistryLineage } from "./dependencyAnalysis";
 
 /**
  * Recursively finds all TypeScript/JavaScript files in a directory
@@ -481,6 +482,10 @@ interface ApiJson {
   path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
+  /** Components that this API reads from. */
+  pullsDataFrom: InfrastructureSignatureJson[];
+  /** Components that this API writes to. */
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 /**
@@ -506,6 +511,8 @@ interface WorkflowJson {
   retries?: number;
   timeout?: string;
   schedule?: string;
+  pullsDataFrom: InfrastructureSignatureJson[];
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 interface WebAppJson {
@@ -952,6 +959,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
+  const lineage = analyzeRegistryLineage(registry);
 
   registry.tables.forEach((table) => {
     const id =
@@ -1120,6 +1128,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   registry.apis.forEach((api, key) => {
     const rustKey =
       api.config.version ? `${api.name}:${api.config.version}` : api.name;
+    const apiLineage = lineage.apiByKey.get(rustKey);
     apis[rustKey] = {
       name: api.name,
       queryParams: api.columnArray,
@@ -1127,6 +1136,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       version: api.config.version,
       path: api.config.path,
       metadata: api.metadata,
+      pullsDataFrom: apiLineage?.pullsDataFrom ?? [],
+      pushesDataTo: apiLineage?.pushesDataTo ?? [],
     };
   });
 
@@ -1209,11 +1220,14 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   });
 
   registry.workflows.forEach((workflow) => {
+    const workflowLineage = lineage.workflowByName.get(workflow.name);
     workflows[workflow.name] = {
       name: workflow.name,
       retries: workflow.config.retries,
       timeout: workflow.config.timeout,
       schedule: workflow.config.schedule,
+      pullsDataFrom: workflowLineage?.pullsDataFrom ?? [],
+      pushesDataTo: workflowLineage?.pushesDataTo ?? [],
     };
   });
 
