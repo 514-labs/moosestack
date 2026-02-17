@@ -10,9 +10,9 @@
 
 **The ClickHouse-native developer framework and agent harness for building real-time analytical backends in TypeScript and Python** — designed for developers and AI coding agents alike.
 
-MooseStack offers a unified, type‑safe, code‑first developer experience layer for [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/)/[Redpanda](https://redpanda.com/), [Temporal](https://temporal.io/), and other realtime analytical infrastructure. 
+MooseStack offers a unified, type‑safe, code‑first developer experience layer for [ClickHouse](https://clickhouse.com/) (realtime analytical database), [Kafka](https://kafka.apache.org/)/[Redpanda](https://redpanda.com/) (realtime streaming), and [Temporal](https://temporal.io/) (workflow orchestration). So you can integrate real time analytical infrastructure into your application stack in native Typescript or Python.
 
-Because your entire analytical stack is captured in Typescript or Python, AI agents can read, write, and refactor it just like any other part of your application. Combined with fast local feedback loops via `moose dev` and complimentary [ClickHouse best-practice agent skills](https://github.com/514-labs/agent-skills), agents can often handle the bulk of your development work — schema design, materialized views, migrations, and query APIs — while you review and steer.
+Because your entire analytical stack is captured in code, AI agents can read, write, and refactor it just like any other part of your application. Combined with fast local feedback loops via `moose dev` and complementary [ClickHouse best-practice agent skills](https://github.com/514-labs/agent-skills), agents can often handle the bulk of your development work — schema design, materialized views, migrations, and query APIs — while you review and steer.
 
 ## Why MooseStack?
 
@@ -31,12 +31,12 @@ Because your entire analytical stack is captured in Typescript or Python, AI age
 - [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, or bring your own API framework (Nextjs, Express, FastAPI, Fastify, , etc)
 
 ## MooseStack Tooling:
-- [Moose **Dev**](https://docs.fiveonefour.com/moosestack/dev)
-- [Moose **Dev MCP**](https://docs.fiveonefour.com/moosestack/moosedev-mcp)
-- [Moose **Language Server / LSP**](https://docs.fiveonefour.com/moosestack/language-server)
-- [ClickHouse TS/Py **Agent Skills**](https://github.com/514-labs/agent-skills)
-- [Moose **Deploy**](https://docs.fiveonefour.com/moosestack/deploying)
-- [Moose **Migrate**](https://docs.fiveonefour.com/moosestack/migrate)
+- [Moose **Dev**](https://docs.fiveonefour.com/moosestack/dev): Local dev server with hot-reloading infrastructure
+- [Moose **Dev MCP**](https://docs.fiveonefour.com/moosestack/moosedev-mcp): AI agent interface to your local dev stack
+- [Moose **Language Server / LSP**](https://docs.fiveonefour.com/moosestack/language-server): In-editor diagnostics and autocomplete for agents and devs
+- [ClickHouse TS/Py **Agent Skills**](https://github.com/514-labs/agent-skills): ClickHouse best practices as agent-readable rules
+- [Moose **Migrate**](https://docs.fiveonefour.com/moosestack/migrate): Code-based schema migrations for ClickHouse
+- [Moose **Deploy**](https://docs.fiveonefour.com/moosestack/deploying): Ship your app to production
 
 ## Quickstart
 
