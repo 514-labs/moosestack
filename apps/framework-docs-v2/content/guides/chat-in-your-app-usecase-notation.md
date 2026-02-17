@@ -61,7 +61,7 @@ Formal use-case notation (per Ottensooser/Fekete et al) for the chat-in-your-app
        4.5.2 Verify MCP server
        4.5.3 Test the chat
 
-   4.6 Deploy [INCLUDE: deploy-to-boreal-and-vercel.mdx]
+   4.6 Deploy [INCLUDE: deploy-to-fiveonefour-and-vercel.mdx]
    4.7 Troubleshoot [INCLUDE: troubleshooting.mdx]
    → END
 
@@ -102,7 +102,7 @@ Formal use-case notation (per Ottensooser/Fekete et al) for the chat-in-your-app
        5.8.1 Chat with your data
        5.8.2 Create custom API endpoints and frontend
 
-   5.9 Deploy [INCLUDE: deploy-to-boreal-and-vercel.mdx]
+   5.9 Deploy [INCLUDE: deploy-to-fiveonefour-and-vercel.mdx]
 
    5.10 Hydrate production deployment
         IF D3.YES: [TOGGLE: Amazon dataset production hydration]
@@ -115,7 +115,7 @@ Formal use-case notation (per Ottensooser/Fekete et al) for the chat-in-your-app
 **POSTCONDITIONS:**
 - User has working chat-over-data application
 - Chat can query ClickHouse via MCP tools
-- Application deployed to Boreal + Vercel (if chosen)
+- Application deployed to Fiveonefour + Vercel (if chosen)
 
 ---
 
@@ -152,7 +152,7 @@ D1: Has existing Next.js app?
 |----|------|---------|
 | I1 | prerequisites.mdx | 5.1, 4.1 |
 | I2 | optional-mcp-setup.mdx | 5.5 |
-| I3 | deploy-to-boreal-and-vercel.mdx | 5.9, 4.6 |
+| I3 | deploy-to-fiveonefour-and-vercel.mdx | 5.9, 4.6 |
 | I4 | troubleshooting.mdx | 5.11, 4.7 |
 
 ---

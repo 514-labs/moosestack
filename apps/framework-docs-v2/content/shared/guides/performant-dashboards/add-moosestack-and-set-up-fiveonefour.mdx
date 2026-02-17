@@ -1,13 +1,13 @@
 <BulletPointsCard
-  title="Why deploy to Boreal now?"
+  title="Why deploy to Fiveonefour hosting now?"
   bulletStyle="none"
   bullets={[
     {
       title: "Preview Environments and Migration Planning",
       description:
-        "When you open a feature branch and PR later in this guide, Boreal can automatically provision a preview environment and generate a migration plan for the code changes in your branch. This ensures your code changes are safe and you can apply them to your main ClickHouse database with confidence.",
+        "When you open a feature branch and PR later in this guide, Fiveonefour can automatically provision a preview environment and generate a migration plan for the code changes in your branch. This ensures your code changes are safe and you can apply them to your main ClickHouse database with confidence.",
       link: {
-        text: "Sign Up for Boreal",
+        text: "Sign Up for Fiveonefour",
         href: "https://boreal.cloud/sign-up",
         external: true,
         variant: "emphasized",
@@ -20,9 +20,9 @@
   :::include /shared/prerequisites/wsl-setup.mdx
 </ConditionalContent>
 
-<GuideStepper id="add-moosestack-and-set-up-boreal-steps" persist>
+<GuideStepper id="add-moosestack-and-set-up-fiveonefour-steps" persist>
 <GuideStepper.Step
-  id="add-moosestack-and-set-up-boreal-step-1-install-cli"
+  id="add-moosestack-and-set-up-fiveonefour-step-1-install-cli"
   number={1}
   title="Prerequisite: Install Moose CLI"
   summary="Skip this step if `moose` is already available in your terminal."
@@ -84,7 +84,7 @@ moose X.X.X
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="add-moosestack-and-set-up-boreal-step-2"
+  id="add-moosestack-and-set-up-fiveonefour-step-2"
   number={2}
   title="Add MooseStack to your monorepo"
   summary="Initialize a new MooseStack project in your monorepo and wire it up to your existing application."
@@ -251,23 +251,23 @@ PNPM):
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
-<GuideStepper.Step id="add-moosestack-and-set-up-boreal-step-3" number={3} title="Create and configure your Boreal project" summary="Connect your repository, configure deployment settings, and capture the ClickHouse connection details used later in the guide.">
+<GuideStepper.Step id="add-moosestack-and-set-up-fiveonefour-step-3" number={3} title="Create and configure your Fiveonefour hosting project" summary="Connect your repository, configure deployment settings, and capture the ClickHouse connection details used later in the guide.">
 <GuideStepper.WhatYouNeed>
-- Access to your GitHub repository and Boreal account
+- Access to your GitHub repository and Fiveonefour hosting account
 - The MooseStack project root path in your repository
 - Optional ClickHouse connection details if using your own instance
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A Boreal project connected to your repository
+- A Fiveonefour hosting project connected to your repository
 - A baseline deployment environment for main + preview branches
 - A ClickHouse HTTPS connection string for the next guide section
 </GuideStepper.WhatYouGet>
 <GuideStepper.Prompt>
-Set up Boreal for my MooseStack project by following the steps below:
+Set up Fiveonefour hosting for my MooseStack project by following the steps below:
 </GuideStepper.Prompt>
 
-<GuideStepper.Checkpoint title="Create New Boreal Project">
-Go to [boreal.cloud](https://boreal.cloud) and sign in to your account.
+<GuideStepper.Checkpoint title="Create New Fiveonefour hosting project">
+Go to [Fiveonefour hosting](https://boreal.cloud) and sign in to your account.
 
 From your account dashboard, click the `New Project` button to create a new project.
 
@@ -276,7 +276,7 @@ From your account dashboard, click the `New Project` button to create a new proj
 <GuideStepper.Checkpoint title="Define project details">
 ![Project Details](/deployment/import-existing-project.png)
 
-On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
+On the “Import Existing Project” page, confirm the basic settings Fiveonefour hosting will use to build and deploy this repo:
 
 - `Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
 
@@ -291,7 +291,7 @@ Once these fields look correct, click `Next` to proceed.
 
 ![Configure ClickHouse Connection](/deployment/configure-clickhouse-connection.png)
 
-By default, Boreal provisions a managed ClickHouse instance for your project. If you already have one, provide its connection details to use it instead.
+By default, Fiveonefour provisions a managed ClickHouse instance for your project. If you already have one, provide its connection details to use it instead.
 
 Required connection details:
 
@@ -314,24 +314,24 @@ and test again.
 <GuideStepper.Checkpoint title="Set the main branch target database">
 
 **Only do this if you’re connecting your own ClickHouse instance.** Set the
-database name Boreal should use for your project’s main branch.
+database name Fiveonefour hosting should use for your project’s main branch.
 
 ![Set Main Branch](/deployment/set-main-db.png)
 
-By default, Boreal creates a new database for your project. This is the database where schema changes will be applied when you merge to your main GitHub branch.
+By default, Fiveonefour creates a new database for your project. This is the database where schema changes will be applied when you merge to your main GitHub branch.
 
 <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 Override this by selecting the ClickHouse Cloud database your ClickPipes write to.
 
 <Callout
   type="info"
-  title="Boreal + ClickPipes: what Moose will (and won’t) change"
+  title="Fiveonefour hosting + ClickPipes: what Moose will (and won’t) change"
 >
-  ClickPipes owns the raw replicated tables, so Boreal will not rewrite them
+  ClickPipes owns the raw replicated tables, so Fiveonefour will not rewrite them
   when you deploy unless you remove
   `OlapTable.lifeCycle = LifeCycle.EXTERNALLY_MANAGED`. In this guide, you add
   Moose-managed resources (views, materialized views, serving tables), and
-  Boreal migrates them automatically during deployment.
+  Fiveonefour migrates them automatically during deployment.
 </Callout>
 </ConditionalContent>
 

@@ -3,7 +3,7 @@
 <GuideStepper.WhatYouNeed>
 - New queries and materialized views run locally successfully
 - `moose dev` starts without errors
-- `BOREAL_HOST` and `BOREAL_ADMIN_API_BEARER_TOKEN` for production
+- `FIVEONEFOUR_HOST` and `FIVEONEFOUR_ADMIN_API_BEARER_TOKEN` for production
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A generated `migrations/plan.yaml` for this change
@@ -14,14 +14,14 @@
 Open your terminal (ensure you `cd` to your MooseStack project root). Then run:
 
 ```bash
-moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BEARER_TOKEN>
+moose generate migration --save --url <FIVEONEFOUR_HOST> --token <FIVEONEFOUR_ADMIN_API_BEARER_TOKEN>
 ```
 
 **Parameters:**
 
-- `BOREAL_HOST` is the host for your production deployment in Boreal. Copy it from the URL in your project overview dashboard:
+- `FIVEONEFOUR_HOST` is the host for your production deployment in Fiveonefour hosting. Copy it from the URL in your project overview dashboard:
   {/* image */}
-- `BOREAL_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Boreal Admin API at `BOREAL_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
+- `FIVEONEFOUR_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Fiveonefour hosting Admin API at `FIVEONEFOUR_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
 
 </GuideStepper.Checkpoint>
 
@@ -80,20 +80,20 @@ Once the plan looks correct, you're ready to continue with preview and productio
 <GuideStepper.WhatYouNeed>
 - A reviewed `plan.yaml` that matches your intended changes
 - A feature branch with code + migration updates ready to push
-- Boreal GitHub app connected to this repository
+- Fiveonefour hosting GitHub app connected to this repository
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A PR with Boreal preview deployment started
-- A direct Boreal preview link scoped to your branch
+- A PR with Fiveonefour hosting preview deployment started
+- A direct Fiveonefour hosting preview link scoped to your branch
 </GuideStepper.WhatYouGet>
 <GuideStepper.Checkpoint title="Commit your changes and push the branch to GitHub">
 Commit your changes, push the branch to GitHub, and open a pull request targeting `main`.
 
-When the PR is opened, Boreal creates an isolated preview environment for the branch. Your PR’s code and the generated `plan.yaml` are applied against a preview database so you can validate schema and behavior before you merge anything into `main`.
+When the PR is opened, Fiveonefour creates an isolated preview environment for the branch. Your PR’s code and the generated `plan.yaml` are applied against a preview database so you can validate schema and behavior before you merge anything into `main`.
 
 </GuideStepper.Checkpoint>
 <GuideStepper.Checkpoint title="Confirm the preview environment is ready">
-In the PR, confirm that **boreal-cloud bot** posts a comment.
+In the PR, confirm that the **Fiveonefour hosting bot** (`boreal-cloud`) posts a comment.
 
 {/* image */}
 
@@ -102,12 +102,12 @@ This confirms that:
 - the repo is connected and authorized, and
 - the preview deployment has started for this branch.
 
-If the bot does not appear, double-check that the Boreal GitHub app is authorized for this repository and that the Boreal project is connected to the correct repo/root directory.
+If the bot does not appear, double-check that the Fiveonefour hosting GitHub app is authorized for this repository and that the Fiveonefour hosting project is connected to the correct repo/root directory.
 
 </GuideStepper.Checkpoint>
 <GuideStepper.Checkpoint title="Click the link in the **Project** column">
 
-In the **boreal-cloud bot** comment, you’ll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal dashboard with the preview environment selected.
+In the **Fiveonefour hosting bot** (`boreal-cloud`) comment, you’ll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Fiveonefour hosting dashboard with the preview environment selected.
 
 {/* image */}
 
@@ -115,8 +115,8 @@ In the **boreal-cloud bot** comment, you’ll see a table. Click the link in the
 </GuideStepper.Step>
 <GuideStepper.Step id="going-to-production-step-4" number={4} title="Inspect the preview environment" summary="Verify the database resources created by your migration plan match what you reviewed in `plan.yaml`.">
 <GuideStepper.WhatYouNeed>
-- The preview/staging ClickHouse HTTPS connection string from Boreal
-- Boreal dashboard set to your feature branch (not `main`)
+- The preview/staging ClickHouse HTTPS connection string from Fiveonefour
+- Fiveonefour hosting dashboard set to your feature branch (not `main`)
 - Local terminal access with `curl`
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -171,20 +171,20 @@ If the list of tables does not match what you reviewed in the migration plan, st
 <GuideStepper.WhatYouNeed>
 - A PR with successful preview validation and approvals
 - Merge permissions for the target branch
-- Access to Boreal deployment status/logs
+- Access to Fiveonefour deployment status/logs
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - Production deployment started from the merged PR
 - Deployment status visibility to confirm completion
 </GuideStepper.WhatYouGet>
 <GuideStepper.Checkpoint title="Merge the PR and monitor deployment status">
-Merge your PR and click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
+Merge your PR and click the Fiveonefour hosting bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 <GuideStepper.Step id="going-to-production-step-6" number={6} title="Backfill new materialized views">
 
 <GuideStepper.WhatYouNeed>
-  - Production `BOREAL_CONNECTION_STRING` for the `main` database
+  - Production `FIVEONEFOUR_CONNECTION_STRING` for the `main` database
   - Newly created Materialized Views identified from `plan.yaml`
   - Backing table names for each new Materialized View
 </GuideStepper.WhatYouNeed>
@@ -212,7 +212,7 @@ In a terminal, run:
 
 ```bash
 curl -sS \
-  "$BOREAL_CONNECTION_STRING" \
+  "$FIVEONEFOUR_CONNECTION_STRING" \
   --data-binary "
   INSERT INTO <mv_backing_table>
   SELECT ...
@@ -231,7 +231,7 @@ After each backfill, sanity check that the backing table now has rows:
 
 ```bash
 curl -sS \
-  "$BOREAL_CONNECTION_STRING" \
+  "$FIVEONEFOUR_CONNECTION_STRING" \
   --data-binary 'SELECT count() FROM <mv_backing_table>'
 ```
 

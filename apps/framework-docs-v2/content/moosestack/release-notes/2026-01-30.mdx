@@ -8,7 +8,7 @@ import { Callout } from "@/components/mdx";
 # January 30, 2026
 
 <Callout type="info" title="Highlights">
-* **New:** Added Boreal command center with keyboard shortcuts for quick navigation
+* **New:** Added Fiveonefour command center with keyboard shortcuts for quick navigation
 * **New:** First-class workflows with infrastructure tracking and lifecycle management
 </Callout>
 
@@ -42,7 +42,7 @@ import { Callout } from "@/components/mdx";
 - Fix SQL query comparison in plan and migration commands: Fixed an issue where `moose plan` and migration generation commands would incorrectly show differences between SQL queries that were functionally identical. The commands now properly normalize SQL queries using ClickHouse's native formatting before comparison, eliminating false positives caused by whitespace, formatting, and identifier quoting differences. This makes plan output more accurate and prevents unnecessary migrations. ([@georgevanderson](https://github.com/georgevanderson))
 - Fix workflow precompilation in production builds: Fixed an issue where workflows weren't working properly in production builds due to registry clearing happening in compiled mode. This ensures workflows function correctly when deployed to production environments. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
 
-## Boreal
+## Fiveonefour
 
 ### New Features
 **Added command center with keyboard shortcuts for quick navigation** ([@groy-514](https://github.com/groy-514))

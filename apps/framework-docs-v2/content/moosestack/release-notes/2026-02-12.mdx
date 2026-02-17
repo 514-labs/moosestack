@@ -7,10 +7,10 @@ import { Callout } from "@/components/mdx";
 
 # February 12, 2026
 
-Boreal's project creation experience gets a major overhaul this week with a completely redesigned multi-step wizard. On the CLI side, a new `moose docs` command brings interactive documentation browsing directly into the terminal, remote ClickHouse support simplifies working with cloud-hosted databases in development, and `moose generate dockerfile` enables CI-friendly Docker workflows without a running daemon.
+Fiveonefour's project creation experience gets a major overhaul this week with a completely redesigned multi-step wizard. On the CLI side, a new `moose docs` command brings interactive documentation browsing directly into the terminal, remote ClickHouse support simplifies working with cloud-hosted databases in development, and `moose generate dockerfile` enables CI-friendly Docker workflows without a running daemon.
 
 <Callout type="info" title="Highlights">
-* **New:** Boreal project creation flow revamp with multi-step wizard
+* **New:** Fiveonefour hosting project creation flow revamp with multi-step wizard
 * **New:** Interactive `moose docs` command with browsing, search, and section navigation
 * **New:** Remote ClickHouse dev support with keychain credential storage
 * **New:** `moose generate dockerfile` subcommand for customizable Docker builds
@@ -110,7 +110,7 @@ Boreal's project creation experience gets a major overhaul this week with a comp
 
 - Fix workflow polling generating excessive history events: Fixed overly aggressive continue-as-new polling in both Python and TypeScript workflows. The previous implementation used background polling that checked event limits continuously, but each check itself created workflow history events — compounding the problem for long-running workflows. The runtime now checks continue-as-new once before starting each task, with `continue_from_task` pointing to the next unexecuted task to avoid duplicate runs on resume. The original raw workflow input is also threaded through to `continue_as_new` to prevent double-serialization on restart. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
 
-## Boreal
+## Fiveonefour
 
 ### New Features
 
@@ -121,5 +121,5 @@ Boreal's project creation experience gets a major overhaul this week with a comp
 
 ### Improvements
 
-- Enable typescript-mcp template for Boreal one-click deploy: The `typescript-mcp` template now supports Boreal one-click deploy. During provisioning, Boreal automatically runs `moose generate hash-token --json` to populate `MCP_API_KEY` and `MCP_API_TOKEN`, so MCP projects are deployment-ready out of the box. ([@onelesd](https://github.com/onelesd))
+- Enable typescript-mcp template for Fiveonefour one-click deploy: The `typescript-mcp` template now supports Fiveonefour one-click deploy. During provisioning, Fiveonefour automatically runs `moose generate hash-token --json` to populate `MCP_API_KEY` and `MCP_API_TOKEN`, so MCP projects are deployment-ready out of the box. ([@onelesd](https://github.com/onelesd))
 - Warm node pool for faster deployment scheduling: A cluster-level warm pool now keeps a configurable number of GKE Autopilot nodes pre-provisioned with low-priority placeholder pods. When a new Moose deployment is created, it can be scheduled onto an already-provisioned node rather than waiting for node spin-up. Pod anti-affinity rules ensure org-level isolation in multi-tenant clusters, and pod disruption budgets protect running deployments during cluster maintenance. ([@jmsuzuki](https://github.com/jmsuzuki))

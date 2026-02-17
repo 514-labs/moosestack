@@ -32,14 +32,14 @@ This tutorial is for teams with a production dashboard or report that needs to g
     {
       title: "Safe local-to-production workflow",
       description:
-        "A local development workflow plus Boreal preview environments and migration plans so you can validate changes before merging to `main`."
+        "A local development workflow plus Fiveonefour hosting preview environments and migration plans so you can validate changes before merging to `main`."
     },
   ]}
 />
 
 You do not need a full rewrite. Keep your source database (Postgres or SQL Server) as the transactional system of record, keep your existing app contracts, and offload analytical reads to ClickHouse via CDC (ClickPipes or Debezium).
 
-This guide gives a path to ship this as normal code, as part of your existing development process. With MooseStack, you model your ClickHouse analytics layer in code, iterate locally, and roll out with preview migrations in Boreal so you can safely iterate on your analytics layer without risking your production ClickHouse data.
+This guide gives a path to ship this as normal code, as part of your existing development process. With MooseStack, you model your ClickHouse analytics layer in code, iterate locally, and roll out with preview migrations in Fiveonefour so you can safely iterate on your analytics layer without risking your production ClickHouse data.
 
 <Callout
   type="info"
@@ -58,13 +58,13 @@ This guide is written for TypeScript developers, but Python developers can follo
 You'll work through:
 
 <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
-1. [Project Setup](#project-setup) to set up ClickHouse Cloud ClickPipes, initialize MooseStack, and configure Boreal preview environments.
+1. [Project Setup](#project-setup) to set up ClickHouse Cloud ClickPipes, initialize MooseStack, and configure Fiveonefour hosting preview environments.
 2. [Develop with ClickHouse locally](#develop-with-clickhouse-locally) to prepare your local environment, validate data flow, and migrate a dashboard component to ClickHouse.
 3. [Going to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-1. [Project Setup](#project-setup) to initialize MooseStack and configure Boreal preview environments.
+1. [Project Setup](#project-setup) to initialize MooseStack and configure Fiveonefour hosting preview environments.
 2. [Develop with ClickHouse locally](#develop-with-clickhouse-locally) to prepare your local environment, set up Debezium CDC, and migrate a dashboard component to ClickHouse.
 3. [Going to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
@@ -84,9 +84,9 @@ You'll work through:
 </ConditionalContent>
 
 ### Create and Deploy MooseStack Project
-This sets up the foundation for the rest of this guide. You'll initialize a MooseStack project in your monorepo and deploy your new project to [Boreal](https://boreal.cloud) for preview deployments and migration planning.
+This sets up the foundation for the rest of this guide. You'll initialize a MooseStack project in your monorepo and deploy your new project to [Fiveonefour hosting](https://boreal.cloud) for preview deployments and migration planning.
 
-:::include /shared/guides/performant-dashboards/add-moosestack-and-set-up-boreal.mdx
+:::include /shared/guides/performant-dashboards/add-moosestack-and-set-up-fiveonefour.mdx
 
 ## Develop with ClickHouse locally
 
@@ -131,10 +131,10 @@ Pick a specific dashboard component or report to migrate. You'll work through on
 
 In this section, you'll apply your local changes to production. Complete these steps in order:
 
-<Callout type="info" title="Confirm Boreal project access">
+<Callout type="info" title="Confirm Fiveonefour hosting project access">
   To deploy to production (and to create branch preview environments), you need
-  a Boreal project connected to the GitHub repo you’re working in. If you
-  haven’t created a project yet, go back to [**Create your Boreal
+  a Fiveonefour hosting project connected to the GitHub repo you’re working in. If you
+  haven’t created a project yet, go back to [**Create your Fiveonefour
   project**](#create-and-deploy-moosestack-project) above and
   complete that setup first.
 </Callout>

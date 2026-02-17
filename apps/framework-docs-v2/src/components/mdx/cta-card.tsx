@@ -24,7 +24,7 @@ interface CTACardProps {
     | React.FC<React.SVGProps<SVGSVGElement>>
     | string;
   badge?: {
-    variant: "boreal" | "sloan" | "moose" | "default";
+    variant: "fiveonefour" | "sloan" | "moose" | "default";
     text: string;
   };
   className?: string;

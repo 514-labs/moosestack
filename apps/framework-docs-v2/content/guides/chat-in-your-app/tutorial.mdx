@@ -16,7 +16,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 This tutorial requires a Parquet data source in S3. Bring your own, or use the [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) (150M+ rows, no auth required).
 </Callout>
 
-In this tutorial, you’ll bootstrap the MooseStack MCP template, load real Parquet data from S3 into ClickHouse, validate queries via the MCP-enabled chat UI, then deploy the backend to Boreal and the Next.js app to Vercel. 
+In this tutorial, you’ll bootstrap the MooseStack MCP template, load real Parquet data from S3 into ClickHouse, validate queries via the MCP-enabled chat UI, then deploy the backend to Fiveonefour and the Next.js app to Vercel. 
 
 <Callout type="info" title="Existing app?">
 If you already have a Next.js app that you want to add this chat to, see [Adding Chat to Your Existing Next.js Application](#adding-chat-to-your-existing-nextjs-application).
@@ -49,14 +49,14 @@ flowchart LR
 | **API Route** | Handles chat requests, streams responses from Claude |
 | **MCP Server** | Exposes `query_clickhouse` and `get_data_catalog` tools |
 | **Authentication** | Bearer token flow between frontend and backend |
-| **Production deployment** | Backend on Boreal, frontend on Vercel |
+| **Production deployment** | Backend on Fiveonefour, frontend on Vercel |
 
 **What this covers:**
 
 - Installing the Moose CLI and initializing the template
 - Modeling your data and bulk-loading from S3 into ClickHouse
 - Testing chat locally and customizing the frontend
-- Deploying MooseStack to Boreal and the Next.js app to Vercel
+- Deploying MooseStack to Fiveonefour and the Next.js app to Vercel
 
 
 **Not in scope:** Continuous data ingestion. This covers initial bulk load only. For recurring ingestion, see [MooseStack Workflows](https://docs.fiveonefour.com/moosestack/workflows).
@@ -148,7 +148,7 @@ The chat will be functional, but since you've not added any data to your MooseSt
 
 ### Model your data
 
-The following steps cover how to get data from a source, model that data in MooseStack, creating the relevant ClickHouse tables and other infrastructure, and then loading the data into ClickHouse (either local or Boreal hosted).
+The following steps cover how to get data from a source, model that data in MooseStack, creating the relevant ClickHouse tables and other infrastructure, and then loading the data into ClickHouse (either local or Fiveonefour hosted).
 
 You can [model your data manually](https://docs.fiveonefour.com/moosestack/data-modeling?lang=typescript) or you can generate a data model from your data. This guide will walk through the generative approach. This guide assumes you have direct access to the files in S3.
 
@@ -418,11 +418,11 @@ handlers thin, maintain type safety throughout.
 You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
 
 
-:::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
+:::include /shared/chat-guide/deploy-to-fiveonefour-and-vercel.mdx
 
 #### Hydrate your production deployment
 
-Your project is now deployed. You have a Vercel hosted frontend. You have a Boreal hosted backend, with tables, APIs etc. set up for you.
+Your project is now deployed. You have a Vercel hosted frontend. You have a Fiveonefour hosted backend, with tables, APIs etc. set up for you.
 
 Your backend, however, is still unpopulated.
 
@@ -430,7 +430,7 @@ This section will cover how to get data into prod.
 
 Note, it assumes a bulk ingest from a Parquet file on S3 with direct insertion through SQL, like the rest of this tutorial. If you configured a recurring workflow, that would automate data ingest (depending on the trigger). If you set up an ingestion endpoint, you may need to send data to said endpoint. 
 
-**Find your Boreal connection string / database details:**
+**Find your Fiveonefour connection string / database details:**
 
 It is in the Database tab of your deployment overview:  
 ![][image5]  
@@ -514,7 +514,7 @@ flowchart LR
 | **API Route** | Handles chat requests, streams responses from Claude |
 | **MCP Server** | Exposes `query_clickhouse` and `get_data_catalog` tools |
 | **Authentication** | Bearer token flow between frontend and backend |
-| **Production deployment** | Backend on Boreal, frontend on Vercel |
+| **Production deployment** | Backend on Fiveonefour, frontend on Vercel |
 
 **What this covers:**
 - Adding MooseStack service with MCP server to your monorepo
@@ -845,7 +845,7 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 3. Ask a question like "What tables are available?"  
 4. The AI should call `get_data_catalog` and show you the results
 
-:::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
+:::include /shared/chat-guide/deploy-to-fiveonefour-and-vercel.mdx
 
 :::include /shared/chat-guide/troubleshooting.mdx
 

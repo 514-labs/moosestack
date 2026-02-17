@@ -1,12 +1,12 @@
-### Deploy to Boreal and Vercel
+### Deploy to Fiveonefour hosting and Vercel
 
-We'll prepare the application for deployment by setting up authentication, then deploy the MooseStack application to Boreal, and the web-app to Vercel. You can set up authentication and hosting to your preferences, if we haven't covered your preferred option in our docs, reach out in our slack community: [https://slack.moosestack.com/](https://slack.moosestack.com/). 
+We'll prepare the application for deployment by setting up authentication, then deploy the MooseStack application to Fiveonefour hosting, and the web-app to Vercel. You can set up authentication and hosting to your preferences, if we haven't covered your preferred option in our docs, reach out in our slack community: [https://slack.moosestack.com/](https://slack.moosestack.com/). 
 
 Authentication was covered in the start of this guide, but covers back end to front end authentication only (you should also add authentication to restrict access to your frontend).
 
-#### Deploy MooseStack to Boreal
+#### Deploy MooseStack to Fiveonefour hosting
 
-[Go to boreal.cloud, and set up an account](https://www.boreal.cloud/sign-up). Link your Github account. Create an organization. Create a new project:
+[Go to Fiveonefour hosting and set up an account](https://www.boreal.cloud/sign-up). Link your GitHub account. Create an organization. Create a new project:
 
 Select import a MooseStack Project:
 
@@ -29,7 +29,7 @@ MOOSE_WEB_APP_API_KEYS
 
 ![][image2]
 
-Continue, selecting Boreal default hosting (or point it at your own managed ClickHouse and Redpanda instances if you like).
+Continue, selecting Fiveonefour hosting defaults (or point it at your own managed ClickHouse and Redpanda instances if you like).
 
 ![][image3]
 
@@ -55,10 +55,10 @@ See Vercel docs:
 
 ```text
 ANTHROPIC_API_KEY: Your Anthropic API key for chat functionality
-NEXT_PUBLIC_API_URL: Your Boreal endpoint URL (e.g., `https://your-project.boreal.cloud`)
+NEXT_PUBLIC_API_URL: Your Fiveonefour hosting endpoint URL (e.g., `https://your-project.boreal.cloud`)
 API_KEY: Use the bearer token generated earlier
 ```
 
-You can find your Boreal endpoint URL at the top of the project overview page:
+You can find your Fiveonefour hosting endpoint URL at the top of the project overview page:
 
 ![][image4]
