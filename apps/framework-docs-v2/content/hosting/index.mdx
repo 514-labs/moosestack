@@ -1,51 +1,22 @@
 ---
 title: Hosting
-description: Operate cloud OLAP workloads through a branch-native CLI harness with automatic preview environments on every push.
+description: Set up local development and connect your repository to Fiveonefour Hosting with the 514 CLI.
 order: 1
 ---
 
 # Hosting
 
-514 Hosting is a branch-native control plane for cloud OLAP workloads.
-
-The `514` CLI acts as your agent harness: authenticate, link your repository, and run local workflows that stay in sync with hosted infrastructure.
-
-Every pushed branch automatically gets its own preview environment, and subsequent pushes update that same preview. This gives you isolated validation per branch and a clear path from iteration to merge.
-
-## Preview environments and branches
-
-Hosting deployments are branch-aware:
-
-- Pushing a branch triggers an automatic deployment for that branch.
-- Each active branch maps to its own preview environment so you can validate changes in isolation.
-- New pushes to the same branch update the same preview environment.
-- Merge your branch when the preview is healthy and ready to promote.
-
-## Installation
-
-```bash filename="Terminal" copy
-bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
-```
-
-Verify the installation:
-
-```bash
-514 --version
-```
+Use this section to go from a Fiveonefour project to a working local workflow with the `514` CLI.
 
 ## Start Here
 
-- [`514 auth`](/hosting/cli/auth) - Establish the CLI control plane session for agent runs.
-- [`514 setup`](/hosting/cli/setup) - Bootstrap a local workspace from an existing cloud OLAP project.
-- [`514 link`](/hosting/cli/link) - Attach an existing repository to a hosted project so agents can target the right workload.
+- [CLI: auth](/hosting/cli/auth) - Sign in and manage your auth session.
+- [CLI: setup](/hosting/cli/setup) - Clone and prepare a local project from the Fiveonefour hosting platform.
+- [CLI: link](/hosting/cli/link) - Link an existing local repository to a Fiveonefour project.
 
 ## Workflow
 
-- [Boreal to local setup](/hosting/workflow/boreal-to-local-setup) - End-to-end flow from cloud project access to local execution.
-
-## Integrations
-
-- [Vercel _(coming soon)_](/hosting/integrations/vercel) - Native Vercel-connected workflows and deployment interoperability.
+- [Cloud to local setup](/hosting/workflow/cloud-to-local-setup) - End-to-end flow including GitHub and preview checks.
 
 ## Troubleshooting
 

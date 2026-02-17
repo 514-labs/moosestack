@@ -1069,6 +1069,7 @@ const hostingNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "hosting",
     title: "Hosting Overview",
+    icon: IconChartArea,
     languages: ["typescript", "python"],
   },
   { type: "separator" },
@@ -1097,6 +1098,7 @@ const hostingNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "hosting/workflow/boreal-to-local-setup",
     title: "Boreal to Local Setup",
+    icon: IconRoute,
     languages: ["typescript", "python"],
   },
   { type: "separator" },
@@ -1105,6 +1107,7 @@ const hostingNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "hosting/troubleshooting/setup-failures",
     title: "Setup Failures",
+    icon: IconHelpCircle,
     languages: ["typescript", "python"],
   },
 ];
