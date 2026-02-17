@@ -2,36 +2,41 @@
 
 [![Made by Fiveonefour](https://img.shields.io/badge/MADE%20BY-Fiveonefour-black.svg)](https://www.fiveonefour.com)
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
-[![MooseStack Community](https://img.shields.io/badge/Slack-MooseStack_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+[![MooseStack Community](https://img.shields.io/badge/Slack-MooseStack_community-purple.svg?logo=slack)](http://slack.moosestack.com)
 [![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 # MooseStack
 
-**Developer toolkit for building real-time analytical backends in Typescript and Python** — MooseStack brings data engineering best practices and a modern web development DX to any engineer building on data infra.
+**The ClickHouse-native developer framework and agent harness for building real-time analytical backends in TypeScript and Python** — designed for developers and AI coding agents alike.
 
-MooseStack modules offer a type‑safe, code‑first developer experience layer for popular open source analytical infrastructure, including [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/), [Redpanda](https://redpanda.com/), and [Temporal](https://temporal.io/).
+MooseStack offers a unified, type‑safe, code‑first developer experience layer for [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/)/[Redpanda](https://redpanda.com/), [Temporal](https://temporal.io/), and other realtime analytical infrastructure. 
 
-MooseStack is designed for:
-1. Software engineers integrating analytics & AI into their apps, and leaning into real-time / OLAP infrastructure best practices
-2. Data engineers building software & AI applications on their data infra, and leaning into software development best practices
+Because your entire analytical stack is captured in Typescript or Python, AI agents can read, write, and refactor it just like any other part of your application. Combined with fast local feedback loops via `moose dev` and complimentary [ClickHouse best-practice agent skills](https://github.com/514-labs/agent-skills), agents can often handle the bulk of your development work — schema design, materialized views, migrations, and query APIs — while you review and steer.
 
 ## Why MooseStack?
 
+- **AI agent harness**: AI-friendly interfaces enable coding agents to iterate quickly and safely on your analytical workloads
 - **Git-native development**: Version control, collaboration, and governance built-in
 - **Local-first experience**: Full mirror of production environment on your laptop with `moose dev`
-- **Schema & migration management**: typed schemas in your application code, with transparent migration support
-- **Code‑first infrastructure**: Declare tables, streams, workflows, and APIs in TS/Python -> MooseStack wires it all up.
-- **Modular design**: Only enable the modules you need. Each module is independent and can be adopted incrementally.
-- **AI copilot friendly**: Designed from the ground up for LLM-powered development
+- **Schema & migration management**: Typed schemas in your application code, with automated schema migration support
+- **Code‑first infrastructure**: Declare tables, streams, workflows, and APIs in TS/Python -> MooseStack wires it all up
+- **Modular design**: Only enable the modules you need. Each module is independent and can be adopted incrementally
 
 ## MooseStack Modules
 
 - [Moose **OLAP**](https://docs.fiveonefour.com/moosestack/olap): Manage ClickHouse tables, materialized views, and migrations in code.
 - [Moose **Streaming**](https://docs.fiveonefour.com/moosestack/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
 - [Moose **Workflows**](https://docs.fiveonefour.com/moosestack/workflows): ETL pipelines and tasks with Temporal.
-- [Moose **APIs**](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints with auto‑generated OpenAPI docs.
-- MooseStack Tooling: [Moose **Deploy**](https://docs.fiveonefour.com/moosestack/deploying), [Moose **Migrate**](https://docs.fiveonefour.com/moosestack/migrate), [Moose **Observability**](https://docs.fiveonefour.com/moosestack/metrics)
+- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, or bring your own API framework (Nextjs, Express, FastAPI, Fastify, , etc)
+
+## MooseStack Tooling:
+- [Moose **Dev**](https://docs.fiveonefour.com/moosestack/dev)
+- [Moose **Dev MCP**](https://docs.fiveonefour.com/moosestack/moosedev-mcp)
+- [Moose **Language Server / LSP**](https://docs.fiveonefour.com/moosestack/language-server)
+- [ClickHouse TS/Py **Agent Skills**](https://github.com/514-labs/agent-skills)
+- [Moose **Deploy**](https://docs.fiveonefour.com/moosestack/deploying)
+- [Moose **Migrate**](https://docs.fiveonefour.com/moosestack/migrate)
 
 ## Quickstart
 
@@ -65,11 +70,11 @@ moose dev
 
 MooseStack will start ClickHouse, Redpanda, Temporal, and Redis; the CLI validates each component.
 
-## Deploy with Boreal
+## Deploy with Fiveonefour hosting
 
-The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose. Boreal provides zero-config deployments, automatic scaling, managed or BYO infrastructure, monitoring and observability integrations.
+The fastest way to deploy your MooseStack application is with [hosting from Fiveonefour](https://fiveonefour.boreal.cloud/sign-up), the creators of MooseStack. Fiveonefour provides automated preview branches, managed schema migrations, deep integration with Github and CI/CD, and an agentic harness for your realtime analytical infrastructure in the cloud.
 
-[Get started with Boreal →](https://www.fiveonefour.com/boreal)
+[Get started with Fiveonefour hosting →](https://fiveonefour.boreal.cloud/sign-up)
 
 ## Deploy Yourself
 
