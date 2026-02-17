@@ -40,6 +40,10 @@ import {
   hasTableRemoved,
   hasTableUpdated,
   getTableChanges,
+  hasMvAdded,
+  hasMvRemoved,
+  hasMvUpdated,
+  getMvChanges,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -589,6 +593,253 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
 
         console.log(
           "✓ No drop+create operations for DeletionProtectedEngineTest engine change (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  // ==========================================================================
+  // MaterializedView LifeCycle Tests
+  // ==========================================================================
+
+  describe("EXTERNALLY_MANAGED materialized views", function () {
+    it("should NOT generate create operation for EXTERNALLY_MANAGED MV", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "externally-managed-mv-no-create",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing EXTERNALLY_MANAGED MV should not be created ---",
+        );
+
+        // ExternallyManagedMVTest is defined in models.ts with LifeCycle.EXTERNALLY_MANAGED
+        // It should NOT appear in the plan as an Added MV
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasCreate = hasMvAdded(plan, "ExternallyManagedMVTest");
+        expect(hasCreate).to.be.false;
+
+        console.log(
+          "✓ No Create operation for ExternallyManagedMVTest (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  describe("DELETION_PROTECTED materialized views", function () {
+    it("should NOT generate drop operation when DELETION_PROTECTED MV is removed from code", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "deletion-protected-mv-no-drop",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing DELETION_PROTECTED MV should not be dropped ---",
+        );
+
+        // DeletionProtectedMVTest exists from moose prod auto-migration
+        console.log("✓ DeletionProtectedMVTest exists from moose prod");
+
+        // Remove the MV from code by commenting it out
+        const modelsPath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "models.ts",
+        );
+        let modelsContent = fs.readFileSync(modelsPath, "utf-8");
+
+        // Comment out the entire deletionProtectedMV definition
+        modelsContent = modelsContent.replace(
+          /export const deletionProtectedMV = new MaterializedView[\s\S]*?lifeCycle: LifeCycle\.DELETION_PROTECTED,\n\}\);/,
+          "// REMOVED FOR TEST: deletionProtectedMV",
+        );
+
+        fs.writeFileSync(modelsPath, modelsContent);
+        console.log("✓ Removed DeletionProtectedMVTest from models.ts");
+
+        // Generate new plan - should NOT have a removal for DeletionProtectedMVTest
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasDrop = hasMvRemoved(plan, "DeletionProtectedMVTest");
+        expect(hasDrop).to.be.false;
+
+        console.log(
+          "✓ No Drop operation for DeletionProtectedMVTest (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("should NOT generate update (DROP+CREATE) when DELETION_PROTECTED MV query changes", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "deletion-protected-mv-no-update",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing DELETION_PROTECTED MV should not be updated ---",
+        );
+
+        // Modify the MV's SELECT statement to trigger an update
+        const modelsPath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "models.ts",
+        );
+        let modelsContent = fs.readFileSync(modelsPath, "utf-8");
+
+        // Change the SELECT for the deletion-protected MV
+        modelsContent = modelsContent.replace(
+          /export const deletionProtectedMV = new MaterializedView<MvLifeCycleAggregated>\(\{[\s\S]*?materializedViewName: "DeletionProtectedMVTest",[\s\S]*?selectStatement: sql`SELECT[\s\S]*?GROUP BY category`/,
+          `export const deletionProtectedMV = new MaterializedView<MvLifeCycleAggregated>({
+  materializedViewName: "DeletionProtectedMVTest",
+  tableName: "DeletionProtectedMVTarget",
+  orderByFields: ["category"],
+  selectStatement: sql\`SELECT
+    \${mvSourceColumns.category} as category,
+    count() + 1 as totalRows
+  FROM \${mvLifeCycleSourceTable}
+  GROUP BY category\``,
+        );
+
+        fs.writeFileSync(modelsPath, modelsContent);
+        console.log("✓ Modified DeletionProtectedMVTest SELECT statement");
+
+        // Generate new plan - should NOT have an update for DeletionProtectedMVTest
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasUpdate = hasMvUpdated(plan, "DeletionProtectedMVTest");
+        expect(hasUpdate).to.be.false;
+
+        console.log(
+          "✓ No Update operation for DeletionProtectedMVTest (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  describe("FULLY_MANAGED materialized views", function () {
+    it("should generate drop operation when FULLY_MANAGED MV is removed from code", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "fully-managed-mv-drop",
+      );
+
+      try {
+        console.log("\n--- Testing FULLY_MANAGED MV should be dropped ---");
+
+        // FullyManagedMVTest exists from moose prod auto-migration
+        console.log("✓ FullyManagedMVTest exists from moose prod");
+
+        // Remove the MV from code
+        const modelsPath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "models.ts",
+        );
+        let modelsContent = fs.readFileSync(modelsPath, "utf-8");
+
+        // Comment out the entire fullyManagedMV definition
+        modelsContent = modelsContent.replace(
+          /export const fullyManagedMV = new MaterializedView[\s\S]*?selectTables: \[mvLifeCycleSourceTable\],\n\}\);/,
+          "// REMOVED FOR TEST: fullyManagedMV",
+        );
+
+        fs.writeFileSync(modelsPath, modelsContent);
+        console.log("✓ Removed FullyManagedMVTest from models.ts");
+
+        // Generate new plan - SHOULD have a removal for FullyManagedMVTest
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const mvChanges = getMvChanges(plan, "FullyManagedMVTest");
+        console.log(
+          "MV changes for FullyManagedMVTest:",
+          JSON.stringify(mvChanges, null, 2),
+        );
+
+        const hasDrop = hasMvRemoved(plan, "FullyManagedMVTest");
+        console.log("hasMvRemoved result:", hasDrop);
+        expect(hasDrop).to.be.true;
+
+        console.log(
+          "✓ Drop operation exists for FullyManagedMVTest (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("should generate update (DROP+CREATE) when FULLY_MANAGED MV query changes", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "fully-managed-mv-update",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing FULLY_MANAGED MV should be updated on query change ---",
+        );
+
+        // Modify the MV's SELECT statement to trigger an update
+        const modelsPath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "models.ts",
+        );
+        let modelsContent = fs.readFileSync(modelsPath, "utf-8");
+
+        // Change the SELECT for the fully-managed MV
+        modelsContent = modelsContent.replace(
+          /export const fullyManagedMV = new MaterializedView<MvLifeCycleAggregated>\(\{[\s\S]*?materializedViewName: "FullyManagedMVTest",[\s\S]*?selectStatement: sql`SELECT[\s\S]*?GROUP BY category`/,
+          `export const fullyManagedMV = new MaterializedView<MvLifeCycleAggregated>({
+  materializedViewName: "FullyManagedMVTest",
+  tableName: "FullyManagedMVTarget",
+  orderByFields: ["category"],
+  selectStatement: sql\`SELECT
+    \${mvSourceColumns.category} as category,
+    count() + 1 as totalRows
+  FROM \${mvLifeCycleSourceTable}
+  GROUP BY category\``,
+        );
+
+        fs.writeFileSync(modelsPath, modelsContent);
+        console.log("✓ Modified FullyManagedMVTest SELECT statement");
+
+        // Generate new plan - SHOULD have an update for FullyManagedMVTest
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const mvChanges = getMvChanges(plan, "FullyManagedMVTest");
+        console.log(
+          "MV changes for FullyManagedMVTest:",
+          JSON.stringify(mvChanges, null, 2),
+        );
+
+        const hasUpdate = hasMvUpdated(plan, "FullyManagedMVTest");
+        console.log("hasMvUpdated result:", hasUpdate);
+        expect(hasUpdate).to.be.true;
+
+        console.log(
+          "✓ Update operation exists for FullyManagedMVTest (as expected)",
         );
       } finally {
         await cleanup();
