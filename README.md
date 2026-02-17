@@ -28,7 +28,7 @@ Because your entire analytical stack is captured in code, AI agents can read, wr
 - [Moose **OLAP**](https://docs.fiveonefour.com/moosestack/olap): Manage ClickHouse tables, materialized views, and migrations in code.
 - [Moose **Streaming**](https://docs.fiveonefour.com/moosestack/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
 - [Moose **Workflows**](https://docs.fiveonefour.com/moosestack/workflows): ETL pipelines and tasks with Temporal.
-- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, or bring your own API framework (Nextjs, Express, FastAPI, Fastify, , etc)
+- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, or bring your own API framework (Nextjs, Express, FastAPI, Fastify, etc)
 
 ## MooseStack Tooling:
 - [Moose **Dev**](https://docs.fiveonefour.com/moosestack/dev): Local dev server with hot-reloading infrastructure
