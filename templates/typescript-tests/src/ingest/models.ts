@@ -1042,7 +1042,7 @@ interface MvLifeCycleAggregated {
   totalRows: number & typia.tags.Type<"int64">;
 }
 
-const mvSourceColumns = mvLifeCycleSourceTable.columns<LifeCycleTestData>();
+const mvSourceColumns = mvLifeCycleSourceTable.columns;
 
 /**
  * EXTERNALLY_MANAGED MV - Moose should not create, update, or delete this MV
