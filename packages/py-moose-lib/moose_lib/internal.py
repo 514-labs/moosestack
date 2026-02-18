@@ -254,11 +254,7 @@ class KafkaConfigDict(BaseEngineConfigDict):
 
 
 class MergeConfigDict(BaseEngineConfigDict):
-    """Configuration for Merge engine - virtual table that reads from multiple tables.
-
-    The Merge engine does not store data itself. It provides a unified view
-    over multiple tables matching a regex pattern within a database.
-    """
+    """Configuration for Merge engine."""
 
     engine: Literal["Merge"] = "Merge"
     source_database: str
