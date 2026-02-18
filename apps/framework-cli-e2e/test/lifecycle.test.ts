@@ -972,11 +972,11 @@ export const externallyManagedMV = new MaterializedView<ExternalMVTarget>({
         // DeletionProtectedMV was auto-created by moose prod at startup
         console.log("✓ DeletionProtectedMV exists from moose prod startup");
 
-        // Remove DeletionProtectedMV from code by commenting it out
+        // Remove DeletionProtectedMV from code by commenting out the entire block
         modifyLifecycleMvsFile(
           testProjectDir,
-          "export const deletionProtectedMV = new MaterializedView",
-          "// REMOVED FOR TEST: export const deletionProtectedMV = new MaterializedView",
+          'export const deletionProtectedMV = new MaterializedView<LifecycleMVTarget>({\n  materializedViewName: "DeletionProtectedMV",\n  targetTable: {\n    name: "DeletionProtectedMVTarget",\n    orderByFields: ["id", "timestamp"],\n  },\n  selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,\n});',
+          '// export const deletionProtectedMV = new MaterializedView<LifecycleMVTarget>({\n//   materializedViewName: "DeletionProtectedMV",\n//   targetTable: {\n//     name: "DeletionProtectedMVTarget",\n//     orderByFields: ["id", "timestamp"],\n//   },\n//   selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n//   selectTables: [basicTypesTable],\n//   lifeCycle: LifeCycle.DELETION_PROTECTED,\n// });',
         );
         console.log("✓ Commented out deletionProtectedMV from lifecycleMvs.ts");
 
@@ -1010,10 +1010,11 @@ export const externallyManagedMV = new MaterializedView<ExternalMVTarget>({
         console.log("✓ DeletionProtectedMV exists from moose prod startup");
 
         // Change the SELECT statement of DeletionProtectedMV
+        // The search includes the lifeCycle line to scope the replacement to the DeletionProtected block
         modifyLifecycleMvsFile(
           testProjectDir,
-          "selectStatement: `SELECT id, timestamp FROM",
-          "selectStatement: `SELECT id, timestamp, stringField FROM",
+          "selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,",
+          "selectStatement: `SELECT id, timestamp, stringField FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,",
         );
         console.log("✓ Changed SELECT statement for DeletionProtectedMV");
 
@@ -1046,11 +1047,11 @@ export const externallyManagedMV = new MaterializedView<ExternalMVTarget>({
         // FullyManagedMV was auto-created by moose prod at startup
         console.log("✓ FullyManagedMV exists from moose prod startup");
 
-        // Remove FullyManagedMV from code
+        // Remove FullyManagedMV from code by commenting out the entire block
         modifyLifecycleMvsFile(
           testProjectDir,
-          "export const fullyManagedMV = new MaterializedView",
-          "// REMOVED FOR TEST: export const fullyManagedMV = new MaterializedView",
+          'export const fullyManagedMV = new MaterializedView<LifecycleMVTarget>({\n  materializedViewName: "FullyManagedMV",\n  targetTable: {\n    name: "FullyManagedMVTarget",\n    orderByFields: ["id", "timestamp"],\n  },\n  selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED\n});',
+          '// export const fullyManagedMV = new MaterializedView<LifecycleMVTarget>({\n//   materializedViewName: "FullyManagedMV",\n//   targetTable: {\n//     name: "FullyManagedMVTarget",\n//     orderByFields: ["id", "timestamp"],\n//   },\n//   selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n//   selectTables: [basicTypesTable],\n//   // lifeCycle defaults to FULLY_MANAGED\n// });',
         );
         console.log("✓ Commented out fullyManagedMV from lifecycleMvs.ts");
 

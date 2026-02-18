@@ -1349,6 +1349,25 @@ mod tests {
     }
 
     #[test]
+    fn test_guard_blocks_externally_managed_mv_update() {
+        // MV update = DROP+CREATE, so block if drop-protected (ExternallyManaged is drop-protected)
+        let before = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let after = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].table_name, "external_mv");
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewDrop
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
     fn test_guard_blocks_externally_managed_mv_create() {
         let mv = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
         let changes = vec![OlapChange::MaterializedView(Change::Added(Box::new(mv)))];
