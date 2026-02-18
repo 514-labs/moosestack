@@ -95,7 +95,9 @@ message ApiEndpoint {
   optional string version = 6;
   PrimitiveSignature source_primitive = 7;
   Metadata metadata = 8;
+  // Infrastructure components this API endpoint reads data from.
   repeated InfrastructureSignature pulls_data_from = 9;
+  // Infrastructure components this API endpoint writes data to.
   repeated InfrastructureSignature pushes_data_to = 10;
 }
 
@@ -507,7 +509,9 @@ message WebApp {
   string name = 1;
   string mount_path = 2;
   optional WebAppMetadata metadata = 3;
+  // Infrastructure components this web app reads data from.
   repeated InfrastructureSignature pulls_data_from = 4;
+  // Infrastructure components this web app writes data to.
   repeated InfrastructureSignature pushes_data_to = 5;
 }
 
