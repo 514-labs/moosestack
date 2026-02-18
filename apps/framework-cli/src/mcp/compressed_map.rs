@@ -137,7 +137,16 @@ impl CompressedInfraMap {
         self.components.push(component);
     }
 
+    /// Lazily rebuilds `connection_set` from `connections` after deserialization.
+    ///
+    /// This assumes `connections` is append-only while the map is in use.
+    /// If `connections` can be cleared or mutated in the future, this method
+    /// must rebuild `connection_set` unconditionally.
     fn ensure_connection_set(&mut self) {
+        debug_assert!(
+            !self.connections.is_empty() || self.connection_set.is_empty(),
+            "connections were cleared after connection_set was initialized"
+        );
         if self.connection_set.is_empty() && !self.connections.is_empty() {
             self.connection_set = self.connections.iter().cloned().collect();
         }
@@ -693,8 +702,7 @@ mod tests {
             vec![InfrastructureSignature::Topic {
                 id: "WorkflowTarget".to_string(),
             }],
-        )
-        .unwrap();
+        );
         infra_map
             .workflows
             .insert("lineage_workflow".to_string(), workflow);
