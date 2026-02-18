@@ -137,6 +137,10 @@ fn normalize_source_tables(tables: &[String], default_database: &str) -> HashSet
 /// Checks if two MaterializedViews are semantically equivalent.
 /// Compares target table, source tables (order-independent), and normalized SELECT SQL.
 /// Uses default_database to normalize `None` database references.
+///
+/// Note: `life_cycle` is intentionally excluded — it is Moose metadata and does not
+/// correspond to any ClickHouse DDL. A lifecycle-only change requires no DROP+CREATE
+/// and should not be surfaced as a ClickHouse structural difference.
 pub fn materialized_views_are_equivalent(
     mv1: &MaterializedView,
     mv2: &MaterializedView,
