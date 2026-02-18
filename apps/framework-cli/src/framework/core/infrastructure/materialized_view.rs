@@ -14,7 +14,7 @@
 //! - Clearer dependency tracking
 
 use protobuf::MessageField;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
@@ -87,6 +87,21 @@ impl TableReference {
     }
 }
 
+/// Deserializes a `LifeCycle` field that may be present as `null` in JSON.
+///
+/// `MaterializedView` uses `#[serde(rename_all = "camelCase")]`, so the Python SDK's
+/// `"lifeCycle": null` is recognized as the field (unlike `Table` where the camelCase key is
+/// simply ignored as unknown). A plain `#[serde(default)]` only applies when the field is
+/// *absent*; when it's present as `null`, serde would attempt to deserialize `null` as
+/// `LifeCycle` and fail. This deserializer treats `null` the same as a missing field.
+fn deserialize_nullable_life_cycle<'de, D>(d: D) -> Result<LifeCycle, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<LifeCycle>::deserialize(d)
+        .map(|opt| opt.unwrap_or_else(LifeCycle::default_for_deserialization))
+}
+
 /// Represents a ClickHouse Materialized View.
 ///
 /// A MaterializedView is a special view that:
@@ -126,7 +141,10 @@ pub struct MaterializedView {
 
     /// Lifecycle management policy for the materialized view.
     /// Controls whether Moose can drop or modify the MV automatically.
-    #[serde(default = "LifeCycle::default_for_deserialization")]
+    #[serde(
+        default = "LifeCycle::default_for_deserialization",
+        deserialize_with = "deserialize_nullable_life_cycle"
+    )]
     pub life_cycle: LifeCycle,
 }
 
