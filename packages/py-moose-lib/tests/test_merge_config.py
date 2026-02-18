@@ -23,7 +23,7 @@ def test_merge_engine_rejects_empty_tables_regexp():
 
 
 @pytest.mark.parametrize(
-    "config_kwargs, expected_error",
+    ("config_kwargs", "expected_error"),
     [
         ({"order_by_fields": ["event_id"]}, "MergeEngine does not support ORDER BY"),
         (

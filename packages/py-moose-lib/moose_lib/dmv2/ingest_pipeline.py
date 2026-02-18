@@ -165,8 +165,7 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
             # Validate that the engine is not read-only (Merge engine cannot be written to)
             if isinstance(table_config.engine, MergeEngine):
                 raise ValueError(
-                    f'IngestPipeline "{name}": Cannot use Merge engine as a table destination. '
-                    f"The Merge engine is read-only and does not support INSERT operations."
+                    f'IngestPipeline "{name}": Merge engine is read-only and cannot be used as a table destination.'
                 )
 
             if config.version:
