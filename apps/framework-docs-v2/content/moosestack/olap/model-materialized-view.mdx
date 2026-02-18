@@ -155,7 +155,7 @@ interface MaterializedViewConfig<T> {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python filename="ViewOptions.py" copy
-from moose_lib import MaterializedView, LifeCycle, sql
+from moose_lib import MaterializedView, MaterializedViewOptions, LifeCycle
 from source_table import source_table
 
 class MaterializedViewOptions(BaseModel):
@@ -187,7 +187,7 @@ ClickHouse cannot ALTER a materialized view's SELECT in place. When Moose detect
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="LifecycleMV.ts" copy
-import { MaterializedView, LifeCycle } from "@514labs/moose-lib";
+import { MaterializedView, LifeCycle, sql } from "@514labs/moose-lib";
 
 // DELETION_PROTECTED: Moose will auto-create but never drop or update
 export const protectedMV = new MaterializedView<TargetSchema>({

@@ -23,8 +23,8 @@ const createMockSchema = (): IJsonSchemaCollection.IV3_1 => ({
 
 const createMockColumns = (fields: string[]): Column[] =>
   fields.map((field) => ({
-    name: field as any,
-    data_type: "String" as any,
+    name: field as Column["name"],
+    data_type: "String" as Column["data_type"],
     required: true,
     unique: false,
     primary_key: false,
@@ -95,5 +95,24 @@ describe("MaterializedView lifeCycle serialization", () => {
 
     const infraMap = toInfraMap(getMooseInternal());
     expect(infraMap.materializedViews["default_mv"].lifeCycle).to.be.undefined;
+  });
+
+  it("should serialize FULLY_MANAGED lifeCycle to infra map", () => {
+    new MaterializedView<TestData>(
+      {
+        selectStatement: "SELECT id, value FROM source_table",
+        selectTables: [],
+        targetTable: { name: "target_table_fully_managed" },
+        materializedViewName: "fully_managed_mv",
+        lifeCycle: LifeCycle.FULLY_MANAGED,
+      },
+      createMockSchema(),
+      createMockColumns(["id", "value"]),
+    );
+
+    const infraMap = toInfraMap(getMooseInternal());
+    expect(infraMap.materializedViews["fully_managed_mv"].lifeCycle).to.equal(
+      LifeCycle.FULLY_MANAGED,
+    );
   });
 });

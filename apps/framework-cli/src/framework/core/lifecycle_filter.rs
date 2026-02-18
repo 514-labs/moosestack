@@ -365,8 +365,8 @@ fn filter_column_changes(
 pub struct LifecycleViolation {
     /// Human-readable description of the violation
     pub message: String,
-    /// Name of the table involved
-    pub table_name: String,
+    /// Name of the resource (table or materialized view) involved
+    pub resource_name: String,
     /// Database containing the table (None means default database)
     pub database: Option<String>,
     /// The lifecycle of the table
@@ -478,8 +478,8 @@ pub fn validate_lifecycle_compliance(
         // Log all violations for debugging
         for violation in &violations {
             let table_display = match &violation.database {
-                Some(db) => format!("{}.{}", db, violation.table_name),
-                None => violation.table_name.clone(),
+                Some(db) => format!("{}.{}", db, violation.resource_name),
+                None => violation.resource_name.clone(),
             };
             tracing::error!(
                 "LIFECYCLE GUARD VIOLATION: {} (table: {}, lifecycle: {:?}, type: {:?})",
@@ -511,7 +511,7 @@ fn check_materialized_view_change_compliance(
                         This is a bug - the diff/filter pipeline should have blocked this.",
                         mv.name, mv.life_cycle
                     ),
-                    table_name: mv.name.clone(),
+                    resource_name: mv.name.clone(),
                     database: mv.database.clone(),
                     life_cycle: mv.life_cycle,
                     violation_type: ViolationType::MaterializedViewDrop,
@@ -527,7 +527,7 @@ fn check_materialized_view_change_compliance(
                         {:?} lifecycle. This is a bug - the diff/filter pipeline should have blocked this.",
                         after.name, after.life_cycle
                     ),
-                    table_name: after.name.clone(),
+                    resource_name: after.name.clone(),
                     database: after.database.clone(),
                     life_cycle: after.life_cycle,
                     violation_type: ViolationType::MaterializedViewDrop,
@@ -542,7 +542,7 @@ fn check_materialized_view_change_compliance(
                         This is a bug - the diff/filter pipeline should have blocked this.",
                         mv.name, mv.life_cycle
                     ),
-                    table_name: mv.name.clone(),
+                    resource_name: mv.name.clone(),
                     database: mv.database.clone(),
                     life_cycle: mv.life_cycle,
                     violation_type: ViolationType::MaterializedViewCreate,
@@ -634,7 +634,7 @@ fn create_table_drop_violation(table: &Table, lifecycle: LifeCycle) -> Lifecycle
             table.display_name(),
             lifecycle
         ),
-        table_name: table.name.clone(),
+        resource_name: table.name.clone(),
         database: table.database.clone(),
         life_cycle: lifecycle,
         violation_type: ViolationType::TableDrop,
@@ -690,7 +690,7 @@ fn create_column_change_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type,
@@ -712,7 +712,7 @@ fn create_column_removal_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type: ViolationType::ColumnRemoval,
@@ -760,7 +760,7 @@ fn create_table_modification_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type: ViolationType::TableModification,
@@ -853,7 +853,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].resource_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
     }
@@ -865,7 +865,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "external_table");
+        assert_eq!(violations[0].resource_name, "external_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
     }
@@ -921,7 +921,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].resource_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
     }
 
@@ -970,8 +970,10 @@ mod tests {
         assert_eq!(violations.len(), 2, "Should collect all violations");
         assert!(violations
             .iter()
-            .any(|v| v.table_name == "protected_table1"));
-        assert!(violations.iter().any(|v| v.table_name == "external_table"));
+            .any(|v| v.resource_name == "protected_table1"));
+        assert!(violations
+            .iter()
+            .any(|v| v.resource_name == "external_table"));
     }
 
     #[test]
@@ -1006,7 +1008,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "transitioning_table");
+        assert_eq!(violations[0].resource_name, "transitioning_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         // The violation should report the TARGET lifecycle, not the old one
         assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
@@ -1293,7 +1295,7 @@ mod tests {
         let changes = vec![OlapChange::MaterializedView(Change::Removed(Box::new(mv)))];
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_mv");
+        assert_eq!(violations[0].resource_name, "protected_mv");
         assert_eq!(
             violations[0].violation_type,
             ViolationType::MaterializedViewDrop
@@ -1325,7 +1327,7 @@ mod tests {
         })];
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_mv");
+        assert_eq!(violations[0].resource_name, "protected_mv");
         assert_eq!(
             violations[0].violation_type,
             ViolationType::MaterializedViewDrop
@@ -1359,7 +1361,7 @@ mod tests {
         })];
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "external_mv");
+        assert_eq!(violations[0].resource_name, "external_mv");
         assert_eq!(
             violations[0].violation_type,
             ViolationType::MaterializedViewDrop
@@ -1373,7 +1375,7 @@ mod tests {
         let changes = vec![OlapChange::MaterializedView(Change::Added(Box::new(mv)))];
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "external_mv");
+        assert_eq!(violations[0].resource_name, "external_mv");
         assert_eq!(
             violations[0].violation_type,
             ViolationType::MaterializedViewCreate

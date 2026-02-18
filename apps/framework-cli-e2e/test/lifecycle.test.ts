@@ -1082,28 +1082,13 @@ export const externallyManagedMV = new MaterializedView<ExternalMVTarget>({
         // FullyManagedMV was auto-created by moose prod at startup
         console.log("✓ FullyManagedMV exists from moose prod startup");
 
-        // Modify the SELECT statement - change to use different columns
-        // Use replaceAll to update both occurrences in the file
-        const viewsPath = path.join(
+        // Modify the SELECT statement - use modifyLifecycleMvsFile with the comment
+        // included in the search string to scope the replacement to the FullyManagedMV block
+        modifyLifecycleMvsFile(
           testProjectDir,
-          "src",
-          "views",
-          "lifecycleMvs.ts",
+          "selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED",
+          "selectStatement: `SELECT id, timestamp, stringField FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED",
         );
-        const content = fs.readFileSync(viewsPath, "utf-8");
-        // Only change the FullyManagedMV's SELECT (second occurrence)
-        const parts = content.split("// lifeCycle defaults to FULLY_MANAGED");
-        if (parts.length !== 2) {
-          throw new Error("Could not find FullyManagedMV section");
-        }
-        const modified =
-          parts[0] +
-          "// lifeCycle defaults to FULLY_MANAGED" +
-          parts[1].replace(
-            "selectStatement: `SELECT id, timestamp FROM",
-            "selectStatement: `SELECT id, timestamp, stringField FROM",
-          );
-        fs.writeFileSync(viewsPath, modified);
         console.log("✓ Changed SELECT statement for FullyManagedMV");
 
         // Generate new plan - SHOULD have an Updated operation for FullyManagedMV
