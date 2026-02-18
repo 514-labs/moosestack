@@ -243,8 +243,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         config.table.engine === ClickHouseEngines.Merge
       ) {
         throw new Error(
-          `IngestPipeline "${name}": Cannot use Merge engine as a table destination. ` +
-            `The Merge engine is read-only and does not support INSERT operations.`,
+          `IngestPipeline "${name}": Merge engine is read-only and cannot be used as a table destination.`,
         );
       }
 
