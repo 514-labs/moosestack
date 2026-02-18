@@ -54,21 +54,34 @@ all_events = OlapTable[Event]("all_events", OlapConfig(
 
 ## Configuration Options
 
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
 | Option | Description |
 |--------|-------------|
 | `sourceDatabase` | Database to scan for source tables. Accepts a literal name, `currentDatabase()`, or `REGEXP('pattern')` |
 | `tablesRegexp` | Regular expression pattern to match table names within the source database |
 
-<Callout type="info" title="sourceDatabase values">
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+| Option | Description |
+|--------|-------------|
+| `source_database` | Database to scan for source tables. Accepts a literal name, `currentDatabase()`, or `REGEXP('pattern')` |
+| `tables_regexp` | Regular expression pattern to match table names within the source database |
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+The database field accepts:
 - **`currentDatabase()`** — matches the configured database, works across dev and prod without hardcoding
 - **Literal name** (e.g., `"analytics"`) — matches a specific database
 - **`REGEXP('pattern')`** — matches multiple databases by regex
-</Callout>
 
-<Callout type="warning" title="Merge Engine Limitations">
+## Limitations
+
 - **Read-only**: INSERT operations are not supported. Cannot be used as a destination in `IngestPipeline`.
 - **No ORDER BY, PARTITION BY, or SAMPLE BY**: These clauses are not supported on Merge tables.
-- **Other constant expressions** (e.g., `concat('a', 'b')`) for `sourceDatabase` will cause the table to be recreated on each restart. Use `currentDatabase()` or a literal name instead.
+- **Other constant expressions** (e.g., `concat('a', 'b')`) for `sourceDatabase` / `source_database` will cause the table to be recreated on each restart. ClickHouse evaluates and stores the result (e.g., `'ab'`), so the expression never matches Moose's configured value and the table is dropped and recreated every time. Use `currentDatabase()` or a literal name instead.
 
 For more details, see the [ClickHouse Merge documentation](https://clickhouse.com/docs/en/engines/table-engines/special/merge).
-</Callout>

@@ -825,67 +825,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("✅ Buffer engine table created successfully");
       });
 
-      it("should create Merge engine table with correct DDL", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-        // Verify source tables exist first
-        const sourceADDL = await withRetries(
-          async () => getTableDDL("MergeSourceA", "local"),
-          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
-        );
-        if (!sourceADDL.includes("ENGINE = MergeTree")) {
-          throw new Error(
-            `MergeSourceA should use MergeTree engine. DDL: ${sourceADDL}`,
-          );
-        }
-
-        // Verify the Merge table DDL
-        const mergeDDL = await withRetries(
-          async () => getTableDDL("MergeTest", "local"),
-          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
-        );
-        testLogger.info(`Merge table DDL: ${mergeDDL}`);
-
-        if (!mergeDDL.includes("ENGINE = Merge")) {
-          throw new Error(
-            `MergeTest should use Merge engine. DDL: ${mergeDDL}`,
-          );
-        }
-
-        // ClickHouse resolves currentDatabase() to the literal db name at creation time
-        if (!mergeDDL.includes("local")) {
-          throw new Error(
-            `MergeTest Merge engine should reference 'local' database (resolved from currentDatabase()). DDL: ${mergeDDL}`,
-          );
-        }
-
-        if (!mergeDDL.includes("^MergeSource.*")) {
-          throw new Error(
-            `MergeTest should have correct tables_regexp. DDL: ${mergeDDL}`,
-          );
-        }
-
-        // Verify no diff on restart: currentDatabase() must resolve stably so moose
-        // doesn't issue a false DROP+CREATE every time dev starts.
-        const plan = await runMoosePlanJson(
-          TEST_PROJECT_DIR,
-          CLI_PATH,
-          SERVER_CONFIG.url,
-          TEST_ADMIN_BEARER_TOKEN,
-          config.language === "python" ? TEST_PROJECT_DIR : undefined,
-        );
-        const mergeTableChanges = getTableChanges(plan, "MergeTest");
-        if (mergeTableChanges.length > 0) {
-          throw new Error(
-            `MergeTest should have no diff after startup, but plan shows changes: ${JSON.stringify(mergeTableChanges)}`,
-          );
-        }
-
-        testLogger.info(
-          "Merge engine table created successfully with stable currentDatabase() resolution",
-        );
-      });
-
       it("should create Kafka engine table and consume data via MV", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
@@ -1163,6 +1102,67 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             }
           },
           { attempts: 10, delayMs: 1000 },
+        );
+      });
+
+      it("should create Merge engine table with correct DDL", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Verify source tables exist first
+        const sourceADDL = await withRetries(
+          async () => getTableDDL("MergeSourceA", "local"),
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+        if (!sourceADDL.includes("ENGINE = MergeTree")) {
+          throw new Error(
+            `MergeSourceA should use MergeTree engine. DDL: ${sourceADDL}`,
+          );
+        }
+
+        // Verify the Merge table DDL
+        const mergeDDL = await withRetries(
+          async () => getTableDDL("MergeTest", "local"),
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+        testLogger.info(`Merge table DDL: ${mergeDDL}`);
+
+        if (!mergeDDL.includes("ENGINE = Merge")) {
+          throw new Error(
+            `MergeTest should use Merge engine. DDL: ${mergeDDL}`,
+          );
+        }
+
+        // ClickHouse resolves currentDatabase() to the literal db name at creation time
+        if (!mergeDDL.includes("local")) {
+          throw new Error(
+            `MergeTest Merge engine should reference 'local' database (resolved from currentDatabase()). DDL: ${mergeDDL}`,
+          );
+        }
+
+        if (!mergeDDL.includes("^MergeSource.*")) {
+          throw new Error(
+            `MergeTest should have correct tables_regexp. DDL: ${mergeDDL}`,
+          );
+        }
+
+        // Verify no diff on restart: currentDatabase() must resolve stably so moose
+        // doesn't issue a false DROP+CREATE every time dev starts.
+        const plan = await runMoosePlanJson(
+          TEST_PROJECT_DIR,
+          CLI_PATH,
+          SERVER_CONFIG.url,
+          TEST_ADMIN_BEARER_TOKEN,
+          config.language === "python" ? TEST_PROJECT_DIR : undefined,
+        );
+        const mergeTableChanges = getTableChanges(plan, "MergeTest");
+        if (mergeTableChanges.length > 0) {
+          throw new Error(
+            `MergeTest should have no diff after startup, but plan shows changes: ${JSON.stringify(mergeTableChanges)}`,
+          );
+        }
+
+        testLogger.info(
+          "Merge engine table created successfully with stable currentDatabase() resolution",
         );
       });
     }
