@@ -487,8 +487,10 @@ pub struct PartialWorkflow {
     pub retries: Option<u32>,
     pub timeout: Option<String>,
     pub schedule: Option<String>,
+    /// Infrastructure components this workflow reads data from (lineage).
     #[serde(default)]
     pub pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this workflow writes data to (lineage).
     #[serde(default)]
     pub pushes_data_to: Vec<InfrastructureSignature>,
 }
@@ -1432,8 +1434,7 @@ impl PartialInfrastructureMap {
                     partial_workflow.schedule.clone(),
                     partial_workflow.pulls_data_from.clone(),
                     partial_workflow.pushes_data_to.clone(),
-                )
-                .expect("Failed to create workflow from user code");
+                );
                 (partial_workflow.name.clone(), workflow)
             })
             .collect()
@@ -1499,9 +1500,11 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::InfrastructureSignature;
+    use crate::framework::core::infrastructure::{DataLineage, InfrastructureSignature};
     use crate::framework::languages::SupportedLanguages;
     use serde_json::json;
+    use std::collections::HashMap;
+    use std::path::Path;
 
     #[test]
     fn deserializes_workflow_lineage_from_camel_case_fields() {
@@ -1530,6 +1533,42 @@ mod tests {
         );
         assert_eq!(
             workflow.pushes_data_to(),
+            [InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_api_lineage_from_camel_case_fields() {
+        let payload = json!({
+            "apis": {
+                "lineageApi": {
+                    "name": "lineageApi",
+                    "queryParams": [],
+                    "responseSchema": {},
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders" }],
+                    "pushesDataTo": [{ "kind": "Topic", "id": "OrdersEvents" }]
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        let apis = partial.convert_api_endpoints(Path::new("app/index.ts"), &HashMap::new());
+        let api = apis
+            .values()
+            .find(|api| api.name == "lineageApi")
+            .expect("api should be converted");
+
+        assert_eq!(
+            api.pulls_data_from("default"),
+            [InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }]
+        );
+        assert_eq!(
+            api.pushes_data_to("default"),
             [InfrastructureSignature::Topic {
                 id: "OrdersEvents".to_string(),
             }]

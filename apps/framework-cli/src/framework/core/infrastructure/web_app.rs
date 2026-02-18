@@ -8,8 +8,10 @@ pub struct WebApp {
     pub mount_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<WebAppMetadata>,
+    /// Infrastructure components this web app reads data from (lineage).
     #[serde(default)]
     pub pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this web app writes data to (lineage).
     #[serde(default)]
     pub pushes_data_to: Vec<InfrastructureSignature>,
 }
