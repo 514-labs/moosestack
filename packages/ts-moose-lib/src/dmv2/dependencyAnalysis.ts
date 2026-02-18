@@ -1050,10 +1050,7 @@ function collectTaskFunctions(
 
 function collectAnalysisFiles(registry: RegistryLike): string[] {
   const files = new Set<string>();
-  const appDir = path.resolve(process.cwd(), getSourceDir());
-  for (const file of findSourceFiles(appDir)) {
-    files.add(file);
-  }
+  let requiresFallbackScan = false;
 
   const uniqueApis = new Set<any>();
   for (const api of registry.apis.values()) {
@@ -1067,6 +1064,8 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
       isSourceFilePath(sourceFile)
     ) {
       files.add(path.resolve(sourceFile));
+    } else {
+      requiresFallbackScan = true;
     }
   }
 
@@ -1078,6 +1077,8 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
       isSourceFilePath(sourceFile)
     ) {
       files.add(path.resolve(sourceFile));
+    } else {
+      requiresFallbackScan = true;
     }
   });
 
@@ -1089,8 +1090,17 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
       isSourceFilePath(sourceFile)
     ) {
       files.add(path.resolve(sourceFile));
+    } else {
+      requiresFallbackScan = true;
     }
   });
+
+  if (files.size === 0 || requiresFallbackScan) {
+    const appDir = path.resolve(process.cwd(), getSourceDir());
+    for (const file of findSourceFiles(appDir)) {
+      files.add(file);
+    }
+  }
 
   return [...files];
 }
@@ -1127,73 +1137,14 @@ function loadCompilerOptions(rootNames: string[]): {
     ts.sys,
     path.dirname(configPath),
   );
-
-  const combinedRoots = new Set<string>(
-    rootNames.map((file) => path.resolve(file)),
-  );
-  for (const file of parsed.fileNames) {
-    if (isSourceFilePath(file)) {
-      combinedRoots.add(path.resolve(file));
-    }
-  }
+  const normalizedRoots = [
+    ...new Set(rootNames.map((file) => path.resolve(file))),
+  ];
 
   return {
-    rootNames: [...combinedRoots],
+    rootNames: normalizedRoots,
     options: { ...fallback, ...parsed.options },
   };
-}
-
-function collectApiEntries(
-  program: ts.Program,
-  checker: ts.TypeChecker,
-): Map<string, ts.Expression> {
-  return collectNewExpressionEntries(
-    program,
-    checker,
-    new Set(["Api", "ConsumptionApi"]),
-    (node, tempCtx) => {
-      const name = resolveStaticString(node.arguments?.[0], tempCtx);
-      if (!name) {
-        return undefined;
-      }
-      const config = resolveObjectLiteralExpression(
-        node.arguments?.[2],
-        tempCtx,
-      );
-      const version =
-        config ?
-          resolveStaticString(
-            getObjectPropertyExpression(config, "version"),
-            tempCtx,
-          )
-        : undefined;
-      return version ? `${name}:${version}` : name;
-    },
-  );
-}
-
-function collectWorkflowEntries(
-  program: ts.Program,
-  checker: ts.TypeChecker,
-): Map<string, ts.Expression> {
-  return collectNewExpressionEntries(
-    program,
-    checker,
-    new Set(["Workflow"]),
-    (node, tempCtx) => resolveStaticString(node.arguments?.[0], tempCtx),
-  );
-}
-
-function collectWebAppEntries(
-  program: ts.Program,
-  checker: ts.TypeChecker,
-): Map<string, ts.Expression> {
-  return collectNewExpressionEntries(
-    program,
-    checker,
-    new Set(["WebApp"]),
-    (node, tempCtx) => resolveStaticString(node.arguments?.[0], tempCtx),
-  );
 }
 
 function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
@@ -1209,17 +1160,29 @@ function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
   };
 }
 
-function collectNewExpressionEntries(
+function collectLineageRootEntries(
   program: ts.Program,
   checker: ts.TypeChecker,
-  ctorNames: Set<string>,
-  resolveKey: (
-    node: ts.NewExpression,
-    ctx: AnalysisContext,
-  ) => string | undefined,
-): Map<string, ts.Expression> {
-  const entries = new Map<string, ts.Expression>();
+): {
+  apiEntries: Map<string, ts.Expression>;
+  workflowEntries: Map<string, ts.Expression>;
+  webAppEntries: Map<string, ts.Expression>;
+} {
+  const apiEntries = new Map<string, ts.Expression>();
+  const workflowEntries = new Map<string, ts.Expression>();
+  const webAppEntries = new Map<string, ts.Expression>();
   const tempCtx = createNameResolutionContext(checker);
+
+  const setIfNew = (
+    entries: Map<string, ts.Expression>,
+    key: string | undefined,
+    expression: ts.Expression,
+  ) => {
+    if (!key || entries.has(key)) {
+      return;
+    }
+    entries.set(key, expression);
+  };
 
   const visit = (node: ts.Node) => {
     if (
@@ -1228,11 +1191,31 @@ function collectNewExpressionEntries(
       node.arguments.length >= 2
     ) {
       const ctor = constructorNameFromNewExpression(node.expression, checker);
-      if (ctor && ctorNames.has(ctor)) {
-        const key = resolveKey(node, tempCtx);
-        if (key && !entries.has(key)) {
-          entries.set(key, node.arguments[1]);
-        }
+      if (ctor === "Api" || ctor === "ConsumptionApi") {
+        const name = resolveStaticString(node.arguments[0], tempCtx);
+        const config = resolveObjectLiteralExpression(
+          node.arguments[2],
+          tempCtx,
+        );
+        const version =
+          config ?
+            resolveStaticString(
+              getObjectPropertyExpression(config, "version"),
+              tempCtx,
+            )
+          : undefined;
+        const key =
+          name ?
+            version ? `${name}:${version}`
+            : name
+          : undefined;
+        setIfNew(apiEntries, key, node.arguments[1]);
+      } else if (ctor === "Workflow") {
+        const key = resolveStaticString(node.arguments[0], tempCtx);
+        setIfNew(workflowEntries, key, node.arguments[1]);
+      } else if (ctor === "WebApp") {
+        const key = resolveStaticString(node.arguments[0], tempCtx);
+        setIfNew(webAppEntries, key, node.arguments[1]);
       }
     }
     ts.forEachChild(node, visit);
@@ -1245,7 +1228,7 @@ function collectNewExpressionEntries(
     visit(sourceFile);
   }
 
-  return entries;
+  return { apiEntries, workflowEntries, webAppEntries };
 }
 
 function resolveWebAppRootFunctions(
@@ -1311,9 +1294,8 @@ export function analyzeRegistryLineage(
     functionCache: new Map<ts.Symbol, ts.FunctionLikeDeclaration[]>(),
   };
 
-  const apiEntries = collectApiEntries(program, checker);
-  const workflowEntries = collectWorkflowEntries(program, checker);
-  const webAppEntries = collectWebAppEntries(program, checker);
+  const { apiEntries, workflowEntries, webAppEntries } =
+    collectLineageRootEntries(program, checker);
 
   const apiByKey = new Map<string, DependencySignatures>();
   const seenApiKeys = new Set<string>();
