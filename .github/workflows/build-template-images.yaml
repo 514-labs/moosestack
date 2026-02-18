@@ -1,0 +1,32 @@
+name: Build Template Docker Images
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "templates/**"
+
+  workflow_dispatch:
+    inputs:
+      template:
+        type: string
+        description: "Specific template to rebuild (e.g. 'python-fastapi'), or 'all' to rebuild everything. Leave empty to auto-detect from latest commit."
+        required: false
+        default: ""
+      build_all:
+        type: boolean
+        description: "Build all templates"
+        required: false
+        default: false
+
+jobs:
+  build:
+    name: Build Template Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: echo "TODO: Implement template image building"
