@@ -335,6 +335,7 @@ impl Method {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::DataLineage;
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 
     #[test]
@@ -375,6 +376,58 @@ mod tests {
                 },
                 InfrastructureSignature::Topic {
                     id: "secondary_topic".to_string()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn proto_roundtrip_preserves_lineage_fields() {
+        let endpoint = ApiEndpoint {
+            name: "lineage_ingress".to_string(),
+            api_type: APIType::INGRESS {
+                target_topic_id: "target_topic".to_string(),
+                data_model: None,
+                dead_letter_queue: None,
+                schema: serde_json::Map::default(),
+            },
+            path: PathBuf::from("/ingest"),
+            method: Method::POST,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "lineage_ingress".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: None,
+            pulls_data_from: vec![InfrastructureSignature::Topic {
+                id: "source_topic".to_string(),
+            }],
+            pushes_data_to: vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "downstream_topic".to_string(),
+                },
+            ],
+        };
+
+        let roundtrip = ApiEndpoint::from_proto(endpoint.to_proto());
+
+        assert_eq!(
+            roundtrip.pulls_data_from("default"),
+            vec![InfrastructureSignature::Topic {
+                id: "source_topic".to_string(),
+            }]
+        );
+        assert_eq!(
+            roundtrip.pushes_data_to("default"),
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string()
+                },
+                InfrastructureSignature::Topic {
+                    id: "downstream_topic".to_string()
                 }
             ]
         );
