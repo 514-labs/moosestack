@@ -14,6 +14,7 @@ from .olap_table import OlapTable, OlapConfig
 from .stream import Stream, StreamConfig, DeadLetterQueue
 from .ingest_api import IngestApi, IngestConfig, IngestConfigWithDestination
 from .life_cycle import LifeCycle
+from moose_lib.blocks import MergeEngine
 
 
 class IngestPipelineConfig(BaseModel):
@@ -162,8 +163,6 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
             )
 
             # Validate that the engine is not read-only (Merge engine cannot be written to)
-            from moose_lib.blocks import MergeEngine
-
             if isinstance(table_config.engine, MergeEngine):
                 raise ValueError(
                     f'IngestPipeline "{name}": Cannot use Merge engine as a table destination. '

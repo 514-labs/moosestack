@@ -1,10 +1,18 @@
+---
+title: Merge
+description: ClickHouse table engine for a read-only view over multiple tables
+order: 8
+category: reference
+---
+
 import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
-#### Merge
+# Merge
+
 The `Merge` engine provides a read-only view over multiple tables matching a regex pattern.
 
 <LanguageTabs>
-  <LanguageTabContent value="typescript">
+  <LanguageTabContent value="typescript" label="TypeScript">
 ```ts filename="MergeTable.ts" copy
 import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
 
@@ -22,7 +30,7 @@ export const allEvents = new OlapTable<Event>("all_events", {
 });
 ```
   </LanguageTabContent>
-  <LanguageTabContent value="python">
+  <LanguageTabContent value="python" label="Python">
 ```py filename="MergeTable.py" copy
 from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import MergeEngine
@@ -49,7 +57,7 @@ all_events = OlapTable[Event]("all_events", OlapConfig(
 | Option | Description |
 |--------|-------------|
 | `sourceDatabase` | Database to scan for source tables. Accepts a literal name, `currentDatabase()`, or `REGEXP('pattern')` |
-| `tablesRegexp` | Regex pattern to match table names within the source database |
+| `tablesRegexp` | Regular expression pattern to match table names within the source database |
 
 <Callout type="info" title="sourceDatabase values">
 - **`currentDatabase()`** — matches the configured database, works across dev and prod without hardcoding
