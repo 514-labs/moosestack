@@ -399,17 +399,20 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     // Update mismatched MVs (exist in both but differ)
     for change in discrepancies.mismatched_materialized_views {
         match change {
-            OlapChange::MaterializedView(Change::Updated { before, .. }) => {
+            OlapChange::MaterializedView(Change::Updated { before, after }) => {
                 // We use 'before' (the actual MV from reality) because we want the
                 // reconciled map to reflect the current state of the database.
-                let name = &before.name;
+                // However, we preserve lifecycle from 'after' (the stored infra map)
+                // because ClickHouse doesn't store lifecycle info, so reality MVs
+                // always default to FullyManaged. Same pattern as tables (line 207).
+                let mut mv = *before;
                 debug!(
                     "Updating mismatched materialized view in infrastructure map to match reality: {}",
-                    name
+                    mv.name
                 );
-                reconciled_map
-                    .materialized_views
-                    .insert(name.clone(), *before);
+                mv.life_cycle = after.life_cycle;
+                let name = mv.name.clone();
+                reconciled_map.materialized_views.insert(name, mv);
             }
             _ => {
                 tracing::warn!(
@@ -1713,5 +1716,84 @@ mod tests {
 
         // They should be identical - this is the critical guarantee
         assert_eq!(direct_ops, migration_plan.operations);
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_mismatched_mv_preserves_lifecycle() {
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+
+        let project = create_test_project();
+        let db_name = &project.clickhouse_config.db_name;
+
+        // Create an MV in the stored infra map with DeletionProtected lifecycle
+        let stored_mv = MaterializedView {
+            life_cycle: LifeCycle::DeletionProtected,
+            database: Some(db_name.clone()),
+            ..MaterializedView::new(
+                "test_mv",
+                "SELECT id, count() as cnt FROM src GROUP BY id",
+                vec!["src".to_string()],
+                "target",
+            )
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: db_name.clone(),
+            ..InfrastructureMap::default()
+        };
+        infra_map
+            .materialized_views
+            .insert(stored_mv.name.clone(), stored_mv);
+
+        // Create a SQL resource that represents the same MV in reality but with
+        // a slightly different SELECT (e.g., ClickHouse normalized the SQL).
+        // This triggers a mismatch, and the reconciliation should preserve lifecycle.
+        let reality_sql = SqlResource {
+            name: "test_mv".to_string(),
+            database: None,
+            source_file: None,
+            source_line: None,
+            source_column: None,
+            setup: vec![
+                "CREATE MATERIALIZED VIEW IF NOT EXISTS `test_mv` TO `target` AS SELECT id, count() AS cnt FROM src GROUP BY id".to_string(),
+            ],
+            teardown: vec!["DROP VIEW IF EXISTS `test_mv`".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![reality_sql.clone()],
+        };
+
+        let mut target_mv_ids = HashSet::new();
+        target_mv_ids.insert("test_mv".to_string());
+
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &HashSet::new(),
+            &HashSet::new(),
+            &target_mv_ids,
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
+
+        // The reconciled MV should exist
+        let reconciled_mv = reconciled
+            .materialized_views
+            .get("test_mv")
+            .expect("MV should exist in reconciled map");
+
+        // Critical: lifecycle must be preserved from the stored infra map,
+        // NOT reset to FullyManaged from the reality MV.
+        assert_eq!(
+            reconciled_mv.life_cycle,
+            LifeCycle::DeletionProtected,
+            "MV lifecycle should be preserved from stored infra map during reconciliation"
+        );
     }
 }

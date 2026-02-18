@@ -1715,6 +1715,10 @@ impl InfrastructureMap {
                 }
             } else {
                 // Removal: check if lifecycle blocks dropping
+                tracing::debug!(
+                    "MV removal candidate '{}': life_cycle={:?}, respect_life_cycle={}, is_drop_protected={}",
+                    id, mv.life_cycle, respect_life_cycle, mv.life_cycle.is_drop_protected()
+                );
                 if respect_life_cycle && mv.life_cycle.is_drop_protected() {
                     tracing::warn!(
                         "Materialized view '{}' has {:?} lifecycle - blocking removal",
@@ -3154,28 +3158,45 @@ impl InfrastructureMap {
         let mut sql_resources_to_remove = Vec::new();
 
         for (key, sql_resource) in &self.sql_resources {
-            // Try to migrate to MaterializedView using shared helper
+            // Try to migrate to MaterializedView using shared helper.
+            // Only migrate if no first-class MV already exists with this name,
+            // to avoid overwriting lifecycle and other user-defined properties.
             if let Some(mv) =
                 Self::try_migrate_sql_resource_to_mv(sql_resource, &self.default_database)
             {
-                tracing::debug!(
-                    "Migrating SqlResource '{}' to MaterializedView in canonicalize_tables",
-                    sql_resource.name
-                );
-                self.materialized_views.insert(mv.name.clone(), mv);
+                if self.materialized_views.contains_key(&mv.name) {
+                    tracing::debug!(
+                        "Skipping SqlResource '{}' migration: first-class MaterializedView already exists",
+                        sql_resource.name
+                    );
+                } else {
+                    tracing::debug!(
+                        "Migrating SqlResource '{}' to MaterializedView in canonicalize_tables",
+                        sql_resource.name
+                    );
+                    self.materialized_views.insert(mv.name.clone(), mv);
+                }
                 sql_resources_to_remove.push(key.clone());
                 continue;
             }
 
-            // Try to migrate to View using shared helper
+            // Try to migrate to View using shared helper.
+            // Only migrate if no first-class View already exists with this name.
             if let Some(view) =
                 Self::try_migrate_sql_resource_to_view(sql_resource, &self.default_database)
             {
-                tracing::debug!(
-                    "Migrating SqlResource '{}' to View in canonicalize_tables",
-                    sql_resource.name
-                );
-                self.views.insert(view.name.clone(), view);
+                if self.views.contains_key(&view.name) {
+                    tracing::debug!(
+                        "Skipping SqlResource '{}' migration: first-class View already exists",
+                        sql_resource.name
+                    );
+                } else {
+                    tracing::debug!(
+                        "Migrating SqlResource '{}' to View in canonicalize_tables",
+                        sql_resource.name
+                    );
+                    self.views.insert(view.name.clone(), view);
+                }
                 sql_resources_to_remove.push(key.clone());
             }
         }
