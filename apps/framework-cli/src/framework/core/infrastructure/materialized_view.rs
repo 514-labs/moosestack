@@ -552,6 +552,20 @@ mod tests {
     }
 
     #[test]
+    fn test_materialized_view_life_cycle_serde_null() {
+        // Python SDK emits "lifeCycle": null when life_cycle is unset — must default to FullyManaged
+        let json = r#"{
+            "name": "test_mv",
+            "selectSql": "SELECT 1",
+            "sourceTables": [],
+            "targetTable": "target",
+            "lifeCycle": null
+        }"#;
+        let mv: MaterializedView = serde_json::from_str(json).unwrap();
+        assert_eq!(mv.life_cycle, LifeCycle::FullyManaged);
+    }
+
+    #[test]
     fn test_materialized_view_serde_camel_case() {
         let mv = MaterializedView::new(
             "test_mv",

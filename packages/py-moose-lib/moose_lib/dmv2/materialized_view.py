@@ -40,6 +40,13 @@ class MaterializedViewOptions(BaseModel):
         order_by_fields: Optional ordering key for the target table (required for
                          engines like ReplacingMergeTree).
         model_config: ConfigDict for Pydantic validation
+        life_cycle: Optional lifecycle management policy. Controls how Moose handles
+                    this materialized view when code definitions change. Valid values:
+                    LifeCycle.FULLY_MANAGED (default) — Moose auto-creates, updates
+                    (via DROP+CREATE), and drops the MV; LifeCycle.DELETION_PROTECTED —
+                    Moose auto-creates but will not drop or update the MV;
+                    LifeCycle.EXTERNALLY_MANAGED — Moose will not create, update, or
+                    drop the MV. Defaults to FULLY_MANAGED when not specified.
     """
 
     select_statement: str
@@ -73,6 +80,9 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         model_type (type[T]): The Pydantic model associated with the target table.
         select_sql (str): The SELECT SQL statement.
         source_tables (list[str]): Names of source tables the SELECT reads from.
+        life_cycle (LifeCycle | None): Lifecycle management policy. Controls how Moose
+            handles this MV when code definitions change. Defaults to FULLY_MANAGED when
+            not specified. See LifeCycle enum for available values.
     """
 
     kind: str = "MaterializedView"

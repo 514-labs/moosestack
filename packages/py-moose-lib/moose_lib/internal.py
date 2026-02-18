@@ -1142,7 +1142,7 @@ def to_infra_map() -> dict:
             target_table=mv.target_table.name,
             target_database=getattr(mv.target_table.config, "database", None),
             metadata=getattr(mv, "metadata", None),
-            life_cycle=(mv.life_cycle.value if mv.life_cycle else None),
+            life_cycle=(mv.life_cycle.value if mv.life_cycle else "FULLY_MANAGED"),
         )
 
     # Serialize custom views with structured data
