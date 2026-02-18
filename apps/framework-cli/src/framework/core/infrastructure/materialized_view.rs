@@ -87,19 +87,19 @@ impl TableReference {
     }
 }
 
-/// Deserializes a `LifeCycle` field that may be present as `null` in JSON.
+/// Deserializes a field that may be present as `null` in JSON, falling back to `T::default()`.
 ///
 /// `MaterializedView` uses `#[serde(rename_all = "camelCase")]`, so the Python SDK's
 /// `"lifeCycle": null` is recognized as the field (unlike `Table` where the camelCase key is
 /// simply ignored as unknown). A plain `#[serde(default)]` only applies when the field is
 /// *absent*; when it's present as `null`, serde would attempt to deserialize `null` as
-/// `LifeCycle` and fail. This deserializer treats `null` the same as a missing field.
-fn deserialize_nullable_life_cycle<'de, D>(d: D) -> Result<LifeCycle, D::Error>
+/// the target type and fail. This deserializer treats `null` the same as a missing field.
+fn deserialize_nullable_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
 {
-    Option::<LifeCycle>::deserialize(d)
-        .map(|opt| opt.unwrap_or_else(LifeCycle::default_for_deserialization))
+    Option::<T>::deserialize(d).map(|opt| opt.unwrap_or_default())
 }
 
 /// Represents a ClickHouse Materialized View.
@@ -141,10 +141,7 @@ pub struct MaterializedView {
 
     /// Lifecycle management policy for the materialized view.
     /// Controls whether Moose can drop or modify the MV automatically.
-    #[serde(
-        default = "LifeCycle::default_for_deserialization",
-        deserialize_with = "deserialize_nullable_life_cycle"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_as_default")]
     pub life_cycle: LifeCycle,
 }
 
@@ -485,7 +482,7 @@ mod tests {
 
         let mv_with_db = MaterializedView {
             database: Some("other_db".to_string()),
-            ..mv.clone()
+            ..mv
         };
         assert_eq!(mv_with_db.id("default_db"), "other_db_my_mv");
     }
