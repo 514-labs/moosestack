@@ -8,7 +8,7 @@ import { OlapTable } from "../src/dmv2/sdk/olapTable";
 import { LifeCycle } from "../src/dmv2/sdk/lifeCycle";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { Column } from "../src/dataModels/dataModelTypes";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 
 interface TestData {
   id: string;

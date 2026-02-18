@@ -1369,6 +1369,45 @@ mod tests {
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
     }
 
+    /// Tests that deliberately removing DeletionProtected via update allows the DROP+CREATE.
+    ///
+    /// Scenario: User removes @DeletionProtected annotation AND changes the SELECT statement.
+    /// Since MV update = DROP+CREATE, only the AFTER lifecycle matters — FullyManaged is not
+    /// drop-protected, so the update should proceed.
+    #[test]
+    fn test_guard_allows_mv_removal_of_deletion_protection() {
+        let before = create_test_mv("my_mv", LifeCycle::DeletionProtected);
+        let after = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Removing DeletionProtected via update should be allowed"
+        );
+    }
+
+    /// Tests that deliberately removing ExternallyManaged via update allows the DROP+CREATE.
+    ///
+    /// Scenario: User removes @ExternallyManaged annotation AND changes the SELECT statement.
+    /// Since the AFTER lifecycle is FullyManaged (not drop-protected), the update should proceed.
+    #[test]
+    fn test_guard_allows_mv_removal_of_externally_managed() {
+        let before = create_test_mv("my_mv", LifeCycle::ExternallyManaged);
+        let after = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Removing ExternallyManaged via update should be allowed"
+        );
+    }
+
     #[test]
     fn test_guard_blocks_externally_managed_mv_create() {
         let mv = create_test_mv("external_mv", LifeCycle::ExternallyManaged);

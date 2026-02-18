@@ -9,7 +9,7 @@ import { expect } from "chai";
 import { OlapTable, Key, ClickHouseEngines } from "../src/index";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { Column } from "../src/dataModels/dataModelTypes";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 
 // Mock schema and columns for testing
 const createMockSchema = (): IJsonSchemaCollection.IV3_1 => ({

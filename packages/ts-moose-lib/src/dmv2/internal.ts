@@ -15,7 +15,7 @@ import process from "process";
 import * as fs from "fs";
 import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
 import {
