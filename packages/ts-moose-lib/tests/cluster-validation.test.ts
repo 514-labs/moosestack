@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { OlapTable, ClickHouseEngines } from "../src/index";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 import { Column } from "../src/dataModels/dataModelTypes";
 
 interface TestModel {

@@ -2,6 +2,7 @@ import { ClickHouseEngines } from "../../dataModels/types";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
 import { View } from "./view";
+import { LifeCycle } from "./lifeCycle";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
@@ -57,6 +58,11 @@ export interface MaterializedViewConfig<T> {
 
   /** Optional metadata for the materialized view (e.g., description, source file). */
   metadata?: { [key: string]: any };
+
+  /** Optional lifecycle management policy for the materialized view.
+   * Controls whether Moose can drop or modify the MV automatically.
+   * Defaults to FULLY_MANAGED if not specified. */
+  lifeCycle?: LifeCycle;
 }
 
 const requireTargetTableName = (tableName: string | undefined): string => {
@@ -92,6 +98,9 @@ export class MaterializedView<TargetTable> {
 
   /** Optional metadata for the materialized view */
   metadata: { [key: string]: any };
+
+  /** Optional lifecycle management policy for the materialized view */
+  lifeCycle?: LifeCycle;
 
   /**
    * Creates a new MaterializedView instance.
@@ -155,6 +164,7 @@ export class MaterializedView<TargetTable> {
     this.sourceTables = options.selectTables.map((t) =>
       formatTableReference(t),
     );
+    this.lifeCycle = options.lifeCycle;
 
     // Initialize metadata, preserving user-provided metadata if any
     this.metadata = options.metadata ? { ...options.metadata } : {};

@@ -15,7 +15,7 @@ import process from "process";
 import * as fs from "fs";
 import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
 import {
@@ -552,6 +552,8 @@ interface MaterializedViewJson {
   targetDatabase?: string;
   /** Optional metadata for the materialized view (e.g., description, source file) */
   metadata?: { [key: string]: any };
+  /** Optional lifecycle management policy */
+  lifeCycle?: string;
 }
 
 /**
@@ -1232,6 +1234,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       targetTable: mv.targetTable.name,
       targetDatabase: mv.targetTable.config.database,
       metadata: mv.metadata,
+      lifeCycle: mv.lifeCycle,
     };
   });
 

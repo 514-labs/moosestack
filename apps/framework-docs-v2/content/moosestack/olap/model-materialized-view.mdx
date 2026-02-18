@@ -120,7 +120,7 @@ The ClickHouse `MATERIALIZED VIEW` object acts like a trigger: on new inserts in
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```typescript filename="ViewOptions.ts" copy
-import type { Sql } from "@514labs/moose-lib";
+import type { Sql, LifeCycle } from "@514labs/moose-lib";
 
 interface MaterializedViewConfig<T> {
   // Static SELECT that computes the destination rows
@@ -141,6 +141,9 @@ interface MaterializedViewConfig<T> {
         orderByFields?: (keyof T & string)[];
       };
 
+  // Controls how Moose manages the MV when code changes (default: FULLY_MANAGED)
+  lifeCycle?: LifeCycle;
+
   /** @deprecated prefer targetTable */
   tableName?: string;
   /** @deprecated prefer targetTable */
@@ -152,7 +155,7 @@ interface MaterializedViewConfig<T> {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python filename="ViewOptions.py" copy
-from moose_lib import MaterializedView, sql
+from moose_lib import MaterializedViewOptions, LifeCycle
 from source_table import source_table
 
 class MaterializedViewOptions(BaseModel):
@@ -162,6 +165,72 @@ class MaterializedViewOptions(BaseModel):
     select_tables: List[OlapTable | View]
     engine: ClickHouseEngines = ClickHouseEngines.MergeTree
     order_by_fields: List[str] = []
+    life_cycle: Optional[LifeCycle] = None  # Controls how Moose manages the MV (default: FULLY_MANAGED)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Lifecycle Management
+
+The `lifeCycle` option (TypeScript) / `life_cycle` option (Python) controls how Moose handles a materialized view when your code definitions change.
+
+| Value | Create | Update (SELECT change) | Remove from code |
+|---|---|---|---|
+| `FULLY_MANAGED` (default) | ✅ Auto-created | ✅ Auto-updated (DROP + CREATE) | ✅ Auto-dropped |
+| `DELETION_PROTECTED` | ✅ Auto-created | ❌ Blocked | ❌ Blocked |
+| `EXTERNALLY_MANAGED` | ❌ Blocked | ❌ Blocked | ❌ Blocked |
+
+<Callout type="info" title="MV updates require DROP + CREATE" compact>
+ClickHouse cannot ALTER a materialized view's SELECT in place. When Moose detects a SELECT change, it drops and recreates both the MV and its target table. `DELETION_PROTECTED` and `EXTERNALLY_MANAGED` lifecycles block this operation to protect data.
+</Callout>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="LifecycleMV.ts" copy
+import { MaterializedView, LifeCycle, sql } from "@514labs/moose-lib";
+
+// DELETION_PROTECTED: Moose will auto-create but never drop or update
+export const protectedMV = new MaterializedView<TargetSchema>({
+  selectStatement: sql`SELECT id, value FROM ${sourceTable}`,
+  selectTables: [sourceTable],
+  targetTable: { name: "protected_target", orderByFields: ["id"] },
+  materializedViewName: "protected_mv",
+  lifeCycle: LifeCycle.DELETION_PROTECTED,
+});
+
+// EXTERNALLY_MANAGED: Moose will not touch this MV at all
+export const externalMV = new MaterializedView<TargetSchema>({
+  selectStatement: sql`SELECT id, value FROM ${sourceTable}`,
+  selectTables: [sourceTable],
+  targetTable: { name: "external_target", orderByFields: ["id"] },
+  materializedViewName: "external_mv",
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="LifecycleMV.py" copy
+from moose_lib import MaterializedView, MaterializedViewOptions, LifeCycle
+
+# DELETION_PROTECTED: Moose will auto-create but never drop or update
+protected_mv = MaterializedView[TargetSchema](MaterializedViewOptions(
+    select_statement="SELECT id, value FROM {source_table}",
+    select_tables=[source_table],
+    table_name="protected_target",
+    order_by_fields=["id"],
+    materialized_view_name="protected_mv",
+    life_cycle=LifeCycle.DELETION_PROTECTED,
+))
+
+# EXTERNALLY_MANAGED: Moose will not touch this MV at all
+external_mv = MaterializedView[TargetSchema](MaterializedViewOptions(
+    select_statement="SELECT id, value FROM {source_table}",
+    select_tables=[source_table],
+    table_name="external_target",
+    order_by_fields=["id"],
+    materialized_view_name="external_mv",
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED,
+))
 ```
   </LanguageTabContent>
 </LanguageTabs>

@@ -399,17 +399,20 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     // Update mismatched MVs (exist in both but differ)
     for change in discrepancies.mismatched_materialized_views {
         match change {
-            OlapChange::MaterializedView(Change::Updated { before, .. }) => {
+            OlapChange::MaterializedView(Change::Updated { before, after }) => {
                 // We use 'before' (the actual MV from reality) because we want the
                 // reconciled map to reflect the current state of the database.
-                let name = &before.name;
+                let name = before.name.clone();
                 debug!(
                     "Updating mismatched materialized view in infrastructure map to match reality: {}",
                     name
                 );
-                reconciled_map
-                    .materialized_views
-                    .insert(name.clone(), *before);
+                let mut mv = *before;
+                // Preserve lifecycle from the infra map, matching the pattern used for tables.
+                // The reality MV always has FullyManaged since ClickHouse doesn't store
+                // lifecycle metadata; the infra map is the source of truth.
+                mv.life_cycle = after.life_cycle;
+                reconciled_map.materialized_views.insert(name, mv);
             }
             _ => {
                 tracing::warn!(

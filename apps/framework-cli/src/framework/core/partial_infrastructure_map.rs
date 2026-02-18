@@ -72,12 +72,13 @@ use crate::{
 ///
 /// This enum controls the behavior when there are differences between code definitions
 /// and the actual database schema or structure.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum LifeCycle {
     /// Full automatic management (default behavior).
     /// Moose will automatically modify database resources to match code definitions,
     /// including potentially destructive operations like dropping columns or tables.
+    #[default]
     FullyManaged,
 
     /// Deletion-protected automatic management.
@@ -92,9 +93,8 @@ pub enum LifeCycle {
 }
 
 impl LifeCycle {
-    // not implementing the Default trait to avoid accidentally setting this value
     pub fn default_for_deserialization() -> LifeCycle {
-        LifeCycle::FullyManaged
+        LifeCycle::default()
     }
 
     /// Returns true if this lifecycle protects the table from being dropped.

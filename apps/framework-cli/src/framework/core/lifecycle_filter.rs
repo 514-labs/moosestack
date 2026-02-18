@@ -34,9 +34,10 @@
 //! the diffing logic, it will be caught and rejected before reaching the database.
 //! This guard is called in `olap::execute_changes` as the last line of defense.
 
+use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, FilteredChange, OlapChange, TableChange,
+    Change, ColumnChange, FilteredChange, OlapChange, TableChange,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use std::collections::HashSet;
@@ -364,8 +365,8 @@ fn filter_column_changes(
 pub struct LifecycleViolation {
     /// Human-readable description of the violation
     pub message: String,
-    /// Name of the table involved
-    pub table_name: String,
+    /// Name of the resource (table or materialized view) involved
+    pub resource_name: String,
     /// Database containing the table (None means default database)
     pub database: Option<String>,
     /// The lifecycle of the table
@@ -387,6 +388,10 @@ pub enum ViolationType {
     ColumnModification,
     /// Attempted to modify an externally managed table (generic)
     TableModification,
+    /// Attempted to drop or update (DROP+CREATE) a protected materialized view
+    MaterializedViewDrop,
+    /// Attempted to create an externally managed materialized view
+    MaterializedViewCreate,
 }
 
 impl std::fmt::Display for LifecycleViolation {
@@ -453,15 +458,19 @@ pub fn validate_lifecycle_compliance(
         .collect();
 
     for change in changes {
-        // Only table changes have lifecycle protection - views, SQL resources, and
-        // materialized view population are fully managed by Moose
-        if let OlapChange::Table(table_change) = change {
-            check_table_change_compliance(
-                table_change,
-                default_database,
-                &added_table_lifecycles,
-                &mut violations,
-            );
+        match change {
+            OlapChange::Table(table_change) => {
+                check_table_change_compliance(
+                    table_change,
+                    default_database,
+                    &added_table_lifecycles,
+                    &mut violations,
+                );
+            }
+            OlapChange::MaterializedView(mv_change) => {
+                check_materialized_view_change_compliance(mv_change, &mut violations);
+            }
+            _ => {}
         }
     }
 
@@ -469,8 +478,8 @@ pub fn validate_lifecycle_compliance(
         // Log all violations for debugging
         for violation in &violations {
             let table_display = match &violation.database {
-                Some(db) => format!("{}.{}", db, violation.table_name),
-                None => violation.table_name.clone(),
+                Some(db) => format!("{}.{}", db, violation.resource_name),
+                None => violation.resource_name.clone(),
             };
             tracing::error!(
                 "LIFECYCLE GUARD VIOLATION: {} (table: {}, lifecycle: {:?}, type: {:?})",
@@ -482,6 +491,65 @@ pub fn validate_lifecycle_compliance(
         }
     };
     violations
+}
+
+/// Checks a materialized view change for lifecycle violations
+///
+/// MV update = DROP + CREATE in ClickHouse (no ALTER MATERIALIZED VIEW for SELECT changes).
+/// So both removals and updates are blocked for drop-protected MVs.
+/// Additions are blocked for externally-managed MVs.
+fn check_materialized_view_change_compliance(
+    mv_change: &Change<MaterializedView>,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    match mv_change {
+        Change::Removed(mv) => {
+            if mv.life_cycle.is_drop_protected() {
+                violations.push(LifecycleViolation {
+                    message: format!(
+                        "Attempted to DROP materialized view '{}' which has {:?} lifecycle. \
+                        This is a bug - the diff/filter pipeline should have blocked this.",
+                        mv.name, mv.life_cycle
+                    ),
+                    resource_name: mv.name.clone(),
+                    database: mv.database.clone(),
+                    life_cycle: mv.life_cycle,
+                    violation_type: ViolationType::MaterializedViewDrop,
+                });
+            }
+        }
+        Change::Updated { after, .. } => {
+            // MV update requires DROP+CREATE - block if drop-protected
+            if after.life_cycle.is_drop_protected() {
+                violations.push(LifecycleViolation {
+                    message: format!(
+                        "Attempted to UPDATE (DROP+CREATE) materialized view '{}' which has \
+                        {:?} lifecycle. This is a bug - the diff/filter pipeline should have blocked this.",
+                        after.name, after.life_cycle
+                    ),
+                    resource_name: after.name.clone(),
+                    database: after.database.clone(),
+                    life_cycle: after.life_cycle,
+                    violation_type: ViolationType::MaterializedViewDrop,
+                });
+            }
+        }
+        Change::Added(mv) => {
+            if mv.life_cycle.is_any_modification_protected() {
+                violations.push(LifecycleViolation {
+                    message: format!(
+                        "Attempted to CREATE materialized view '{}' which has {:?} lifecycle. \
+                        This is a bug - the diff/filter pipeline should have blocked this.",
+                        mv.name, mv.life_cycle
+                    ),
+                    resource_name: mv.name.clone(),
+                    database: mv.database.clone(),
+                    life_cycle: mv.life_cycle,
+                    violation_type: ViolationType::MaterializedViewCreate,
+                });
+            }
+        }
+    }
 }
 
 /// Checks a single table change for lifecycle violations
@@ -566,7 +634,7 @@ fn create_table_drop_violation(table: &Table, lifecycle: LifeCycle) -> Lifecycle
             table.display_name(),
             lifecycle
         ),
-        table_name: table.name.clone(),
+        resource_name: table.name.clone(),
         database: table.database.clone(),
         life_cycle: lifecycle,
         violation_type: ViolationType::TableDrop,
@@ -622,7 +690,7 @@ fn create_column_change_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type,
@@ -644,7 +712,7 @@ fn create_column_removal_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type: ViolationType::ColumnRemoval,
@@ -692,7 +760,7 @@ fn create_table_modification_violation(
             table.display_name(),
             table.life_cycle
         ),
-        table_name: table_name.to_string(),
+        resource_name: table_name.to_string(),
         database: table.database.clone(),
         life_cycle: table.life_cycle,
         violation_type: ViolationType::TableModification,
@@ -785,7 +853,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].resource_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
     }
@@ -797,7 +865,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "external_table");
+        assert_eq!(violations[0].resource_name, "external_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
     }
@@ -853,7 +921,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].resource_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
     }
 
@@ -902,8 +970,10 @@ mod tests {
         assert_eq!(violations.len(), 2, "Should collect all violations");
         assert!(violations
             .iter()
-            .any(|v| v.table_name == "protected_table1"));
-        assert!(violations.iter().any(|v| v.table_name == "external_table"));
+            .any(|v| v.resource_name == "protected_table1"));
+        assert!(violations
+            .iter()
+            .any(|v| v.resource_name == "external_table"));
     }
 
     #[test]
@@ -938,7 +1008,7 @@ mod tests {
 
         let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].table_name, "transitioning_table");
+        assert_eq!(violations[0].resource_name, "transitioning_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
         // The violation should report the TARGET lifecycle, not the old one
         assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
@@ -1192,5 +1262,186 @@ mod tests {
             ViolationType::TableModification
         );
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    // =========================================================================
+    // Tests for MaterializedView lifecycle guard
+    // =========================================================================
+
+    fn create_test_mv(
+        name: &str,
+        life_cycle: LifeCycle,
+    ) -> crate::framework::core::infrastructure::materialized_view::MaterializedView {
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+        let mut mv = MaterializedView::new(name, "SELECT 1", vec![], "target");
+        mv.life_cycle = life_cycle;
+        mv
+    }
+
+    #[test]
+    fn test_guard_allows_fully_managed_mv_drop() {
+        let mv = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Removed(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Should allow dropping FullyManaged MVs"
+        );
+    }
+
+    #[test]
+    fn test_guard_blocks_deletion_protected_mv_drop() {
+        let mv = create_test_mv("protected_mv", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::MaterializedView(Change::Removed(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].resource_name, "protected_mv");
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewDrop
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
+    }
+
+    #[test]
+    fn test_guard_blocks_externally_managed_mv_drop() {
+        let mv = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Removed(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewDrop
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_blocks_deletion_protected_mv_update() {
+        // MV update = DROP+CREATE, so block if drop-protected
+        let before = create_test_mv("protected_mv", LifeCycle::FullyManaged);
+        let after = create_test_mv("protected_mv", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].resource_name, "protected_mv");
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewDrop
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
+    }
+
+    #[test]
+    fn test_guard_allows_fully_managed_mv_update() {
+        let before = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let after = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Should allow updating FullyManaged MVs"
+        );
+    }
+
+    #[test]
+    fn test_guard_blocks_externally_managed_mv_update() {
+        // MV update = DROP+CREATE, so block if drop-protected (ExternallyManaged is drop-protected)
+        let before = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let after = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].resource_name, "external_mv");
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewDrop
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    /// Tests that deliberately removing DeletionProtected via update allows the DROP+CREATE.
+    ///
+    /// Scenario: User removes @DeletionProtected annotation AND changes the SELECT statement.
+    /// Since MV update = DROP+CREATE, only the AFTER lifecycle matters — FullyManaged is not
+    /// drop-protected, so the update should proceed.
+    #[test]
+    fn test_guard_allows_mv_removal_of_deletion_protection() {
+        let before = create_test_mv("my_mv", LifeCycle::DeletionProtected);
+        let after = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Removing DeletionProtected via update should be allowed"
+        );
+    }
+
+    /// Tests that deliberately removing ExternallyManaged via update allows the DROP+CREATE.
+    ///
+    /// Scenario: User removes @ExternallyManaged annotation AND changes the SELECT statement.
+    /// Since the AFTER lifecycle is FullyManaged (not drop-protected), the update should proceed.
+    #[test]
+    fn test_guard_allows_mv_removal_of_externally_managed() {
+        let before = create_test_mv("my_mv", LifeCycle::ExternallyManaged);
+        let after = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Removing ExternallyManaged via update should be allowed"
+        );
+    }
+
+    #[test]
+    fn test_guard_blocks_externally_managed_mv_create() {
+        let mv = create_test_mv("external_mv", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Added(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].resource_name, "external_mv");
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::MaterializedViewCreate
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_allows_fully_managed_mv_create() {
+        let mv = create_test_mv("my_mv", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::MaterializedView(Change::Added(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Should allow creating FullyManaged MVs"
+        );
+    }
+
+    #[test]
+    fn test_guard_allows_deletion_protected_mv_create() {
+        // DELETION_PROTECTED blocks drops but not creation
+        let mv = create_test_mv("protected_mv", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::MaterializedView(Change::Added(Box::new(mv)))];
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "Should allow creating DeletionProtected MVs"
+        );
     }
 }
