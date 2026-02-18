@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from ..blocks import ClickHouseEngines
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
+from .life_cycle import LifeCycle
 from ._registry import _materialized_views
 from ._source_capture import get_source_file_from_stack
 from .view import View
@@ -49,6 +50,7 @@ class MaterializedViewOptions(BaseModel):
     engine: Optional[ClickHouseEngines] = None
     order_by_fields: Optional[list[str]] = None
     metadata: Optional[dict] = None
+    life_cycle: Optional[LifeCycle] = None
     # Ensure arbitrary types are allowed for Pydantic validation
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -80,6 +82,7 @@ class MaterializedView(BaseTypedResource, Generic[T]):
     select_sql: str
     source_tables: list[str]
     metadata: Optional[dict] = None
+    life_cycle: Optional[LifeCycle] = None
 
     def __init__(
         self,
@@ -120,6 +123,7 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         self.config = options
         self.select_sql = options.select_statement
         self.source_tables = [_format_table_reference(t) for t in options.select_tables]
+        self.life_cycle = options.life_cycle
 
         # Initialize metadata, preserving user-provided metadata if any
         if options.metadata:

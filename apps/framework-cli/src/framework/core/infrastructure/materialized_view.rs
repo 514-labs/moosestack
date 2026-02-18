@@ -16,6 +16,8 @@
 use protobuf::MessageField;
 use serde::{Deserialize, Serialize};
 
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
+use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
 use crate::proto::infrastructure_map::{
     MaterializedView as ProtoMaterializedView, SelectQuery as ProtoSelectQuery,
     TableReference as ProtoTableReference,
@@ -121,6 +123,11 @@ pub struct MaterializedView {
     /// Optional metadata for the materialized view (e.g., description, source file)
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub metadata: Option<Metadata>,
+
+    /// Lifecycle management policy for the materialized view.
+    /// Controls whether Moose can drop or modify the MV automatically.
+    #[serde(default = "LifeCycle::default_for_deserialization")]
+    pub life_cycle: LifeCycle,
 }
 
 impl MaterializedView {
@@ -139,6 +146,7 @@ impl MaterializedView {
             target_table: target_table.into(),
             target_database: None,
             metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
         }
     }
 
@@ -233,6 +241,11 @@ impl MaterializedView {
                     special_fields: Default::default(),
                 }
             })),
+            life_cycle: match self.life_cycle {
+                LifeCycle::FullyManaged => ProtoLifeCycle::FULLY_MANAGED.into(),
+                LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
+                LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
+            },
             special_fields: Default::default(),
         }
     }
@@ -266,6 +279,12 @@ impl MaterializedView {
                 .map(|s| super::table::SourceLocation { file: s.file }),
         });
 
+        let life_cycle = match proto.life_cycle.enum_value_or_default() {
+            ProtoLifeCycle::FULLY_MANAGED => LifeCycle::FullyManaged,
+            ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
+            ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
+        };
+
         Self {
             name: proto.name,
             database: proto.database,
@@ -274,6 +293,7 @@ impl MaterializedView {
             target_table,
             target_database,
             metadata,
+            life_cycle,
         }
     }
 }
@@ -447,9 +467,70 @@ mod tests {
 
         let mv_with_db = MaterializedView {
             database: Some("other_db".to_string()),
-            ..mv
+            ..mv.clone()
         };
         assert_eq!(mv_with_db.id("default_db"), "other_db_my_mv");
+    }
+
+    #[test]
+    fn test_materialized_view_life_cycle_default() {
+        let mv = MaterializedView::new("test_mv", "SELECT 1", vec![], "target");
+        assert_eq!(mv.life_cycle, LifeCycle::FullyManaged);
+    }
+
+    #[test]
+    fn test_materialized_view_life_cycle_serde_default() {
+        // Deserializing JSON without lifeCycle should default to FullyManaged
+        let json = r#"{
+            "name": "test_mv",
+            "selectSql": "SELECT 1",
+            "sourceTables": [],
+            "targetTable": "target"
+        }"#;
+        let mv: MaterializedView = serde_json::from_str(json).unwrap();
+        assert_eq!(mv.life_cycle, LifeCycle::FullyManaged);
+    }
+
+    #[test]
+    fn test_materialized_view_life_cycle_serde_round_trip() {
+        let mut mv = MaterializedView::new("test_mv", "SELECT 1", vec![], "target");
+        mv.life_cycle = LifeCycle::DeletionProtected;
+
+        let json = serde_json::to_string(&mv).unwrap();
+        assert!(
+            json.contains("DELETION_PROTECTED"),
+            "Expected lifeCycle in JSON"
+        );
+
+        let deserialized: MaterializedView = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.life_cycle, LifeCycle::DeletionProtected);
+    }
+
+    #[test]
+    fn test_materialized_view_proto_round_trip() {
+        let mut mv = MaterializedView::new(
+            "test_mv",
+            "SELECT * FROM source",
+            vec!["source".to_string()],
+            "target",
+        );
+        mv.life_cycle = LifeCycle::ExternallyManaged;
+
+        let proto = mv.to_proto();
+        let restored = MaterializedView::from_proto(proto);
+        assert_eq!(restored.life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_materialized_view_proto_default_life_cycle() {
+        // Proto with default field (0 = FULLY_MANAGED) should deserialize to FullyManaged
+        use crate::proto::infrastructure_map::MaterializedView as ProtoMv;
+        let proto = ProtoMv {
+            name: "test".to_string(),
+            ..Default::default()
+        };
+        let mv = MaterializedView::from_proto(proto);
+        assert_eq!(mv.life_cycle, LifeCycle::FullyManaged);
     }
 
     #[test]

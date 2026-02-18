@@ -1724,6 +1724,7 @@ mod tests {
             select_sql: "SELECT * FROM source".to_string(),
             source_tables: vec!["source".to_string()],
             metadata: None,
+            life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
         };
 
         let mv2 = MaterializedView {
@@ -1734,6 +1735,7 @@ mod tests {
             select_sql: "SELECT * FROM source".to_string(),
             source_tables: vec!["source".to_string()],
             metadata: None,
+            life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
         };
 
         assert!(

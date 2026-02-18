@@ -72,7 +72,7 @@ use crate::{
 ///
 /// This enum controls the behavior when there are differences between code definitions
 /// and the actual database schema or structure.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum LifeCycle {
     /// Full automatic management (default behavior).

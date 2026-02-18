@@ -501,6 +501,7 @@ class MaterializedViewJson(BaseModel):
         target_table: Name of the target table where data is written.
         target_database: Optional database for the target table.
         metadata: Optional metadata for the materialized view (e.g., description, source file).
+        life_cycle: Optional lifecycle management policy.
     """
 
     model_config = model_config
@@ -512,6 +513,7 @@ class MaterializedViewJson(BaseModel):
     target_table: str
     target_database: Optional[str] = None
     metadata: Optional[dict] = None
+    life_cycle: Optional[str] = None
 
 
 class ViewJson(BaseModel):
@@ -1140,6 +1142,7 @@ def to_infra_map() -> dict:
             target_table=mv.target_table.name,
             target_database=getattr(mv.target_table.config, "database", None),
             metadata=getattr(mv, "metadata", None),
+            life_cycle=(mv.life_cycle.value if mv.life_cycle else None),
         )
 
     # Serialize custom views with structured data
