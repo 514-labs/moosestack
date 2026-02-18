@@ -7,3 +7,4 @@ export {
   getSourceFileInfo,
   type SourceFileInfo,
 } from "./stackTrace";
+export { findSourceFiles, isSourceFilePath } from "./sourceFiles";
