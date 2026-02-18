@@ -1222,7 +1222,7 @@ from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, Olap
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL
-from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine, MergeEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]
@@ -1570,6 +1570,30 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("target_database=\"default\""));
         assert!(result.contains("target_table=\"local_table\""));
         assert!(result.contains("sharding_key=\"rand()\""));
+    }
+
+    #[test]
+    fn test_merge_engine() {
+        let tables = vec![test_table(
+            "MergeTest",
+            vec![
+                test_column("id", ColumnType::String),
+                test_column("value", ColumnType::String),
+            ],
+            ClickhouseEngine::Merge {
+                source_database: "currentDatabase()".to_string(),
+                tables_regexp: "^events_.*$".to_string(),
+            },
+        )];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(result.contains("from moose_lib.blocks import"));
+        assert!(result.contains("MergeEngine"));
+
+        assert!(result.contains("engine=MergeEngine("));
+        assert!(result.contains("source_database=\"currentDatabase()\""));
+        assert!(result.contains("tables_regexp=\"^events_.*$\""));
     }
 
     #[test]

@@ -22,8 +22,22 @@ def test_merge_engine_rejects_empty_tables_regexp():
         MergeEngine(source_database="currentDatabase()", tables_regexp="")
 
 
-def test_merge_engine_rejects_order_by():
-    with pytest.raises(ValueError, match="MergeEngine does not support ORDER BY"):
+@pytest.mark.parametrize(
+    "config_kwargs, expected_error",
+    [
+        ({"order_by_fields": ["event_id"]}, "MergeEngine does not support ORDER BY"),
+        (
+            {"partition_by": "toYYYYMM(timestamp)"},
+            "MergeEngine does not support PARTITION BY",
+        ),
+        (
+            {"sample_by_expression": "event_id"},
+            "MergeEngine does not support SAMPLE BY",
+        ),
+    ],
+)
+def test_merge_engine_rejects_unsupported_clauses(config_kwargs, expected_error):
+    with pytest.raises(ValueError, match=expected_error):
         OlapTable[SampleEvent](
             "merge_table",
             OlapConfig(
@@ -31,35 +45,7 @@ def test_merge_engine_rejects_order_by():
                     source_database="currentDatabase()",
                     tables_regexp="^events_.*$",
                 ),
-                order_by_fields=["event_id"],
-            ),
-        )
-
-
-def test_merge_engine_rejects_partition_by():
-    with pytest.raises(ValueError, match="MergeEngine does not support PARTITION BY"):
-        OlapTable[SampleEvent](
-            "merge_table",
-            OlapConfig(
-                engine=MergeEngine(
-                    source_database="currentDatabase()",
-                    tables_regexp="^events_.*$",
-                ),
-                partition_by="toYYYYMM(timestamp)",
-            ),
-        )
-
-
-def test_merge_engine_rejects_sample_by():
-    with pytest.raises(ValueError, match="MergeEngine does not support SAMPLE BY"):
-        OlapTable[SampleEvent](
-            "merge_table",
-            OlapConfig(
-                engine=MergeEngine(
-                    source_database="currentDatabase()",
-                    tables_regexp="^events_.*$",
-                ),
-                sample_by_expression="event_id",
+                **config_kwargs,
             ),
         )
 
