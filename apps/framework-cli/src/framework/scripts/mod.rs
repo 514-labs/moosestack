@@ -36,17 +36,17 @@ impl Workflow {
         schedule: Option<String>,
         pulls_data_from: Vec<InfrastructureSignature>,
         pushes_data_to: Vec<InfrastructureSignature>,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Self {
         let config = WorkflowConfig::with_overrides(name.clone(), retries, timeout, schedule);
 
-        Ok(Self {
+        Self {
             name: name.clone(),
             path: PathBuf::from(name.clone()),
             config,
             language,
             pulls_data_from,
             pushes_data_to,
-        })
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -130,16 +130,22 @@ mod tests {
 
     #[test]
     fn test_workflow_proto_roundtrip() {
+        let expected_pulls = vec![InfrastructureSignature::Table {
+            id: "WorkflowSource".to_string(),
+        }];
+        let expected_pushes = vec![InfrastructureSignature::Topic {
+            id: "WorkflowTarget".to_string(),
+        }];
+
         let workflow = Workflow::from_user_code(
             "test_workflow".to_string(),
             SupportedLanguages::Typescript,
             Some(5),
             Some("60s".to_string()),
             Some("1h".to_string()),
-            vec![],
-            vec![],
-        )
-        .unwrap();
+            expected_pulls.clone(),
+            expected_pushes.clone(),
+        );
 
         let proto = workflow.to_proto();
         let restored = Workflow::from_proto(proto);
@@ -148,5 +154,7 @@ mod tests {
         assert_eq!(workflow.config().schedule, restored.config().schedule);
         assert_eq!(workflow.config().retries, restored.config().retries);
         assert_eq!(workflow.config().timeout, restored.config().timeout);
+        assert_eq!(restored.pulls_data_from(), expected_pulls);
+        assert_eq!(restored.pushes_data_to(), expected_pushes);
     }
 }

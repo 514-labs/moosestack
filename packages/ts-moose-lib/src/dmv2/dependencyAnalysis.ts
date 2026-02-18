@@ -3,6 +3,8 @@ import path from "node:path";
 import process from "node:process";
 import ts from "typescript";
 import { getSourceDir } from "../compiler-config";
+import { compilerLog } from "../commons";
+import { findSourceFiles, isSourceFilePath } from "./utils/sourceFiles";
 
 type SignatureKind =
   | "Table"
@@ -58,16 +60,8 @@ interface AnalysisContext {
   functionCache: Map<ts.Symbol, ts.FunctionLikeDeclaration[]>;
 }
 
-const SOURCE_EXTENSIONS = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mts",
-  ".cts",
-]);
-
 const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
+const warnedAmbiguousTableIds = new Set<string>();
 
 function createEmptyResult(): DependencyAnalysisResult {
   return {
@@ -75,50 +69,6 @@ function createEmptyResult(): DependencyAnalysisResult {
     workflowByName: new Map<string, DependencySignatures>(),
     webAppByName: new Map<string, DependencySignatures>(),
   };
-}
-
-function isSourceFilePath(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return SOURCE_EXTENSIONS.has(ext);
-}
-
-function findSourceFiles(dir: string): string[] {
-  const files: string[] = [];
-  if (!fs.existsSync(dir)) {
-    return files;
-  }
-
-  const stack = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name.startsWith(".")) {
-          continue;
-        }
-        stack.push(fullPath);
-      } else if (entry.isFile() && isSourceFilePath(fullPath)) {
-        if (
-          fullPath.endsWith(".d.ts") ||
-          fullPath.endsWith(".d.mts") ||
-          fullPath.endsWith(".d.cts")
-        ) {
-          continue;
-        }
-        files.push(path.resolve(fullPath));
-      }
-    }
-  }
-
-  return files;
 }
 
 function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
@@ -158,8 +108,14 @@ function resolveTableId(
   if (ids.includes(tableName)) {
     return tableName;
   }
-  if (ids.length === 1) {
-    return ids[0];
+  if (ids.length > 1) {
+    const warningKey = `${tableName}:${ids.join(",")}`;
+    if (!warnedAmbiguousTableIds.has(warningKey)) {
+      warnedAmbiguousTableIds.add(warningKey);
+      compilerLog(
+        `Warning: ambiguous table lineage reference '${tableName}' resolved to '${ids[0]}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
+      );
+    }
   }
   return ids[0];
 }
@@ -802,9 +758,13 @@ function isSqlTag(
 }
 
 function isUserCodeFunction(fn: ts.FunctionLikeDeclaration): boolean {
-  const fileName = fn.getSourceFile().fileName;
+  const fileName = path
+    .resolve(fn.getSourceFile().fileName)
+    .replace(/\\/g, "/");
+  const cwd = path.resolve(process.cwd()).replace(/\\/g, "/");
   return (
-    fileName.startsWith(process.cwd()) && !fileName.includes("/node_modules/")
+    (fileName === cwd || fileName.startsWith(`${cwd}/`)) &&
+    !fileName.includes("/node_modules/")
   );
 }
 
@@ -909,6 +869,9 @@ function analyzeFunctionGraph(
               if (WRITE_METHODS.has(methodName)) {
                 addPush(signature);
               } else {
+                // Heuristic: any non-write resource method call counts as a read.
+                // This may classify utility calls like `toString`/`valueOf` as pulls,
+                // but it keeps lineage inference conservative for current SDK usage.
                 addPull(signature);
               }
             }
@@ -1184,117 +1147,79 @@ function collectApiEntries(
   program: ts.Program,
   checker: ts.TypeChecker,
 ): Map<string, ts.Expression> {
-  const entries = new Map<string, ts.Expression>();
-
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isNewExpression(node) &&
-      node.arguments &&
-      node.arguments.length >= 2
-    ) {
-      const ctor = constructorNameFromNewExpression(node.expression, checker);
-      if (ctor === "Api" || ctor === "ConsumptionApi") {
-        const name = resolveStaticString(node.arguments[0], {
-          checker,
-          registryIndex: {
-            tableIdsByName: new Map(),
-            topicIdsByName: new Map(),
-          },
-          symbolResourceCache: new Map(),
-          taskExpressionCache: new Map(),
-          functionCache: new Map(),
-        });
-        if (name) {
-          let version: string | undefined;
-          const configExpr = node.arguments[2];
-          if (configExpr) {
-            const tempCtx: AnalysisContext = {
-              checker,
-              registryIndex: {
-                tableIdsByName: new Map(),
-                topicIdsByName: new Map(),
-              },
-              symbolResourceCache: new Map(),
-              taskExpressionCache: new Map(),
-              functionCache: new Map(),
-            };
-            const config = resolveObjectLiteralExpression(configExpr, tempCtx);
-            version =
-              config ?
-                resolveStaticString(
-                  getObjectPropertyExpression(config, "version"),
-                  tempCtx,
-                )
-              : undefined;
-          }
-          const key = version ? `${name}:${version}` : name;
-          if (!entries.has(key)) {
-            entries.set(key, node.arguments[1]);
-          }
-        }
+  return collectNewExpressionEntries(
+    program,
+    checker,
+    new Set(["Api", "ConsumptionApi"]),
+    (node, tempCtx) => {
+      const name = resolveStaticString(node.arguments?.[0], tempCtx);
+      if (!name) {
+        return undefined;
       }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  for (const sourceFile of program.getSourceFiles()) {
-    if (sourceFile.fileName.includes("/node_modules/")) {
-      continue;
-    }
-    visit(sourceFile);
-  }
-
-  return entries;
+      const config = resolveObjectLiteralExpression(
+        node.arguments?.[2],
+        tempCtx,
+      );
+      const version =
+        config ?
+          resolveStaticString(
+            getObjectPropertyExpression(config, "version"),
+            tempCtx,
+          )
+        : undefined;
+      return version ? `${name}:${version}` : name;
+    },
+  );
 }
 
 function collectWorkflowEntries(
   program: ts.Program,
   checker: ts.TypeChecker,
 ): Map<string, ts.Expression> {
-  const entries = new Map<string, ts.Expression>();
-
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isNewExpression(node) &&
-      node.arguments &&
-      node.arguments.length >= 2
-    ) {
-      const ctor = constructorNameFromNewExpression(node.expression, checker);
-      if (ctor === "Workflow") {
-        const tempCtx: AnalysisContext = {
-          checker,
-          registryIndex: {
-            tableIdsByName: new Map(),
-            topicIdsByName: new Map(),
-          },
-          symbolResourceCache: new Map(),
-          taskExpressionCache: new Map(),
-          functionCache: new Map(),
-        };
-        const name = resolveStaticString(node.arguments[0], tempCtx);
-        if (name && !entries.has(name)) {
-          entries.set(name, node.arguments[1]);
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  for (const sourceFile of program.getSourceFiles()) {
-    if (sourceFile.fileName.includes("/node_modules/")) {
-      continue;
-    }
-    visit(sourceFile);
-  }
-
-  return entries;
+  return collectNewExpressionEntries(
+    program,
+    checker,
+    new Set(["Workflow"]),
+    (node, tempCtx) => resolveStaticString(node.arguments?.[0], tempCtx),
+  );
 }
 
 function collectWebAppEntries(
   program: ts.Program,
   checker: ts.TypeChecker,
 ): Map<string, ts.Expression> {
+  return collectNewExpressionEntries(
+    program,
+    checker,
+    new Set(["WebApp"]),
+    (node, tempCtx) => resolveStaticString(node.arguments?.[0], tempCtx),
+  );
+}
+
+function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
+  return {
+    checker,
+    registryIndex: {
+      tableIdsByName: new Map(),
+      topicIdsByName: new Map(),
+    },
+    symbolResourceCache: new Map(),
+    taskExpressionCache: new Map(),
+    functionCache: new Map(),
+  };
+}
+
+function collectNewExpressionEntries(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  ctorNames: Set<string>,
+  resolveKey: (
+    node: ts.NewExpression,
+    ctx: AnalysisContext,
+  ) => string | undefined,
+): Map<string, ts.Expression> {
   const entries = new Map<string, ts.Expression>();
+  const tempCtx = createNameResolutionContext(checker);
 
   const visit = (node: ts.Node) => {
     if (
@@ -1303,20 +1228,10 @@ function collectWebAppEntries(
       node.arguments.length >= 2
     ) {
       const ctor = constructorNameFromNewExpression(node.expression, checker);
-      if (ctor === "WebApp") {
-        const tempCtx: AnalysisContext = {
-          checker,
-          registryIndex: {
-            tableIdsByName: new Map(),
-            topicIdsByName: new Map(),
-          },
-          symbolResourceCache: new Map(),
-          taskExpressionCache: new Map(),
-          functionCache: new Map(),
-        };
-        const name = resolveStaticString(node.arguments[0], tempCtx);
-        if (name && !entries.has(name)) {
-          entries.set(name, node.arguments[1]);
+      if (ctor && ctorNames.has(ctor)) {
+        const key = resolveKey(node, tempCtx);
+        if (key && !entries.has(key)) {
+          entries.set(key, node.arguments[1]);
         }
       }
     }

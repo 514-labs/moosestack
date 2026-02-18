@@ -12,7 +12,6 @@
  *           Its API might change without notice.
  */
 import process from "process";
-import * as fs from "fs";
 import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import type { IJsonSchemaCollection } from "typia";
@@ -48,56 +47,8 @@ import {
   hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
-import {
-  analyzeRegistryLineage,
-  type DependencyAnalysisResult,
-  type DependencySignatures,
-} from "./dependencyAnalysis";
-
-/**
- * Recursively finds all TypeScript/JavaScript files in a directory
- */
-function findSourceFiles(
-  dir: string,
-  extensions: string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
-): string[] {
-  const files: string[] = [];
-
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-
-      if (entry.isDirectory()) {
-        // Skip node_modules and hidden directories
-        if (entry.name !== "node_modules" && !entry.name.startsWith(".")) {
-          files.push(...findSourceFiles(fullPath, extensions));
-        }
-      } else if (entry.isFile()) {
-        // Skip TypeScript declaration files (.d.ts, .d.mts, .d.cts)
-        // These are never loaded at runtime, only used for type-checking
-        if (
-          entry.name.endsWith(".d.ts") ||
-          entry.name.endsWith(".d.mts") ||
-          entry.name.endsWith(".d.cts")
-        ) {
-          continue;
-        }
-
-        const ext = path.extname(entry.name);
-        if (extensions.includes(ext)) {
-          files.push(fullPath);
-        }
-      }
-    }
-  } catch (error) {
-    // Directory doesn't exist or can't be read
-    compilerLog(`Warning: Could not read directory ${dir}: ${error}`);
-  }
-
-  return files;
-}
+import { analyzeRegistryLineage } from "./dependencyAnalysis";
+import { findSourceFiles } from "./utils/sourceFiles";
 
 /**
  * Strips the file extension from a path, returning the "stem".
@@ -127,7 +78,9 @@ function findUnloadedFiles(): string[] {
   const compiledAppDir = path.resolve(cwd, getOutDir(), sourceDir);
 
   // Find all source files in the source directory
-  const allSourceFiles = findSourceFiles(appDir);
+  const allSourceFiles = findSourceFiles(appDir, (directory, error) => {
+    compilerLog(`Warning: Could not read directory ${directory}: ${error}`);
+  });
 
   // Build a set of stems from require.cache entries under the compiled directory.
   // e.g. ".moose/compiled/app/models.js" -> stem "models"
@@ -965,18 +918,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
-  const hasLineageRoots =
-    registry.apis.size > 0 ||
-    registry.workflows.size > 0 ||
-    registry.webApps.size > 0;
-  const lineage: DependencyAnalysisResult =
-    hasLineageRoots ?
-      analyzeRegistryLineage(registry)
-    : {
-        apiByKey: new Map<string, DependencySignatures>(),
-        workflowByName: new Map<string, DependencySignatures>(),
-        webAppByName: new Map<string, DependencySignatures>(),
-      };
+  const lineage = analyzeRegistryLineage(registry);
 
   registry.tables.forEach((table) => {
     const id =

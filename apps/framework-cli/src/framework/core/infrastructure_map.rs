@@ -7719,7 +7719,6 @@ mod diff_workflow_tests {
             vec![],
             vec![],
         )
-        .unwrap()
     }
 
     #[test]
