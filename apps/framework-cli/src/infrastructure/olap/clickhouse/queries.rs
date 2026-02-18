@@ -1119,12 +1119,14 @@ impl ClickhouseEngine {
 
         // Strip surrounding quotes from literal database names ('my_db' → my_db)
         // but keep expressions like REGEXP('...') intact
-        let source_database =
-            if source_database.starts_with('\'') && source_database.ends_with('\'') {
-                &source_database[1..source_database.len() - 1]
-            } else {
-                source_database
-            };
+        let source_database = if source_database.len() >= 2
+            && source_database.starts_with('\'')
+            && source_database.ends_with('\'')
+        {
+            &source_database[1..source_database.len() - 1]
+        } else {
+            source_database
+        };
 
         if source_database.is_empty() || tables_regexp.is_empty() {
             return Err(original_value);
@@ -7389,5 +7391,11 @@ ORDER BY (`event_time`)
             engine1.non_alterable_params_hash(),
             engine1.non_alterable_params_hash()
         );
+    }
+
+    #[test]
+    fn test_merge_parse_malformed_single_quote_source_database() {
+        // Malformed input ClickHouse would never produce. Without the len() >= 2 guard this panics.
+        let _result = ClickhouseEngine::try_from("Merge(', '^test')");
     }
 }

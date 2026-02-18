@@ -213,19 +213,28 @@ export function getTableChanges(
  * Run `moose plan --json` against a running moose server and return parsed output.
  *
  * @param projectDir - Directory of the Moose project to plan
- * @param cliPath - Path to the moose-cli binary (defaults to debug build)
- * @param serverUrl - URL of the running moose server (defaults to localhost:4000)
- * @param adminToken - Admin bearer token for authentication (defaults to test token)
- * @param pythonVenvDir - If the project is Python, pass the project dir so the
+ * @param options.cliPath - Path to the moose-cli binary (defaults to debug build)
+ * @param options.serverUrl - URL of the running moose server (defaults to localhost:4000)
+ * @param options.adminToken - Admin bearer token for authentication (defaults to test token)
+ * @param options.pythonVenvDir - If the project is Python, pass the project dir so the
  *   venv's PATH and VIRTUAL_ENV are set. Omit for TypeScript projects.
  */
 export async function runMoosePlanJson(
   projectDir: string,
-  cliPath: string = DEFAULT_CLI_PATH,
-  serverUrl: string = SERVER_CONFIG.url,
-  adminToken: string = TEST_ADMIN_BEARER_TOKEN,
-  pythonVenvDir?: string,
+  options?: {
+    cliPath?: string;
+    serverUrl?: string;
+    adminToken?: string;
+    pythonVenvDir?: string;
+  },
 ): Promise<PlanOutput> {
+  const {
+    cliPath = DEFAULT_CLI_PATH,
+    serverUrl = SERVER_CONFIG.url,
+    adminToken = TEST_ADMIN_BEARER_TOKEN,
+    pythonVenvDir,
+  } = options ?? {};
+
   const env: Record<string, string | undefined> = {
     ...process.env,
     // Dummy credentials required for S3Queue secret resolution
