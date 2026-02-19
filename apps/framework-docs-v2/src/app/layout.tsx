@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import "@/styles/globals.css";
 import { VercelToolbar } from "@vercel/toolbar/next";
 import { Apollo } from "@/components/apollo";
 import { CommonRoom } from "@/components/common-room";
+import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
 import { TopNavWithFlags } from "@/components/navigation/top-nav-with-flags";
 import { ScrollRestoration } from "@/components/scroll-restoration";
@@ -26,12 +28,15 @@ export default async function RootLayout({
   children: ReactNode;
 }>) {
   const shouldInjectToolbar = process.env.NODE_ENV === "development";
+  const cookieStore = await cookies();
+  const consentGranted =
+    cookieStore.get("moose-docs-cookie-consent")?.value === "granted";
 
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <Apollo />
-        <CommonRoom />
+        {consentGranted && <Apollo />}
+        {consentGranted && <CommonRoom />}
         <ScrollRestoration />
         <ThemeProvider
           attribute="class"
@@ -50,6 +55,7 @@ export default async function RootLayout({
             </LanguageProviderWrapper>
           </Suspense>
           <Toaster position="top-center" />
+          <CookieConsentBanner />
         </ThemeProvider>
         {shouldInjectToolbar && <VercelToolbar />}
       </body>

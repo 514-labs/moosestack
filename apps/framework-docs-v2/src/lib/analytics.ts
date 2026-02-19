@@ -17,8 +17,14 @@ export interface SearchEvent {
 class Analytics {
   private initialized = false;
 
+  private hasConsent(): boolean {
+    if (typeof document === "undefined") return false;
+    return document.cookie.includes("moose-docs-cookie-consent=granted");
+  }
+
   init() {
     if (this.initialized || typeof window === "undefined") return;
+    if (!this.hasConsent()) return;
 
     const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
     const posthogHost =
@@ -45,6 +51,7 @@ class Analytics {
    */
   pageView(path: string, language: "typescript" | "python") {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -61,6 +68,7 @@ class Analytics {
    */
   codeCopy(event: CodeCopyEvent) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -77,6 +85,7 @@ class Analytics {
    */
   search(event: SearchEvent) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -97,6 +106,7 @@ class Analytics {
     language: "typescript" | "python",
   ) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
