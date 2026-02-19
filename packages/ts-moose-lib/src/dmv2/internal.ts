@@ -47,7 +47,10 @@ import {
   hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
-import { analyzeRegistryLineage } from "./dependencyAnalysis";
+import {
+  analyzeRegistryLineage,
+  type DependencyAnalysisResult,
+} from "./dependencyAnalysis";
 import { findSourceFiles } from "./utils/sourceFiles";
 
 /**
@@ -115,22 +118,156 @@ function findUnloadedFiles(): string[] {
 export const isClientOnlyMode = (): boolean =>
   process.env.MOOSE_CLIENT_ONLY === "true";
 
+class MutationTrackingMap<K, V> extends Map<K, V> {
+  private onMutate: (() => void) | undefined;
+
+  constructor(entries?: Iterable<readonly [K, V]>, onMutate?: () => void) {
+    super(entries);
+    this.onMutate = onMutate;
+  }
+
+  setMutationListener(onMutate: () => void): void {
+    this.onMutate = onMutate;
+  }
+
+  override set(key: K, value: V): this {
+    super.set(key, value);
+    this.onMutate?.();
+    return this;
+  }
+
+  override delete(key: K): boolean {
+    const deleted = super.delete(key);
+    if (deleted) {
+      this.onMutate?.();
+    }
+    return deleted;
+  }
+
+  override clear(): void {
+    if (this.size === 0) {
+      return;
+    }
+    super.clear();
+    this.onMutate?.();
+  }
+}
+
+type MooseInternalRegistry = {
+  tables: Map<string, OlapTable<any>>;
+  streams: Map<string, Stream<any>>;
+  ingestApis: Map<string, IngestApi<any>>;
+  apis: Map<string, Api<any>>;
+  sqlResources: Map<string, SqlResource>;
+  workflows: Map<string, Workflow>;
+  webApps: Map<string, WebApp>;
+  materializedViews: Map<string, MaterializedView<any>>;
+  views: Map<string, View>;
+};
+
+let registryMutationVersion = 0;
+let lineageCache:
+  | {
+      registry: MooseInternalRegistry;
+      version: number;
+      result: DependencyAnalysisResult;
+    }
+  | undefined;
+
+const markRegistryMutated = () => {
+  registryMutationVersion += 1;
+  lineageCache = undefined;
+};
+
+function toTrackingMap<V>(
+  map: Map<string, V> | undefined,
+): MutationTrackingMap<string, V> {
+  if (map instanceof MutationTrackingMap) {
+    map.setMutationListener(markRegistryMutated);
+    return map;
+  }
+  return new MutationTrackingMap<string, V>(
+    map?.entries(),
+    markRegistryMutated,
+  );
+}
+
+function createRegistryFrom(
+  existing?: Partial<MooseInternalRegistry>,
+): MooseInternalRegistry {
+  return {
+    tables: toTrackingMap(existing?.tables),
+    streams: toTrackingMap(existing?.streams),
+    ingestApis: toTrackingMap(existing?.ingestApis),
+    apis: toTrackingMap(existing?.apis),
+    sqlResources: toTrackingMap(existing?.sqlResources),
+    workflows: toTrackingMap(existing?.workflows),
+    webApps: toTrackingMap(existing?.webApps),
+    materializedViews: toTrackingMap(existing?.materializedViews),
+    views: toTrackingMap(existing?.views),
+  };
+}
+
 /**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
  */
-const moose_internal = {
-  tables: new Map<string, OlapTable<any>>(),
-  streams: new Map<string, Stream<any>>(),
-  ingestApis: new Map<string, IngestApi<any>>(),
-  apis: new Map<string, Api<any>>(),
-  sqlResources: new Map<string, SqlResource>(),
-  workflows: new Map<string, Workflow>(),
-  webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
-  views: new Map<string, View>(),
+const moose_internal: MooseInternalRegistry = {
+  tables: new MutationTrackingMap<string, OlapTable<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  streams: new MutationTrackingMap<string, Stream<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  ingestApis: new MutationTrackingMap<string, IngestApi<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  apis: new MutationTrackingMap<string, Api<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  sqlResources: new MutationTrackingMap<string, SqlResource>(
+    undefined,
+    markRegistryMutated,
+  ),
+  workflows: new MutationTrackingMap<string, Workflow>(
+    undefined,
+    markRegistryMutated,
+  ),
+  webApps: new MutationTrackingMap<string, WebApp>(
+    undefined,
+    markRegistryMutated,
+  ),
+  materializedViews: new MutationTrackingMap<string, MaterializedView<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  views: new MutationTrackingMap<string, View>(undefined, markRegistryMutated),
 };
+
+function getCachedLineage(
+  registry: MooseInternalRegistry,
+): DependencyAnalysisResult {
+  if (
+    lineageCache &&
+    lineageCache.registry === registry &&
+    lineageCache.version === registryMutationVersion
+  ) {
+    return lineageCache.result;
+  }
+
+  const result = analyzeRegistryLineage(registry);
+  lineageCache = {
+    registry,
+    version: registryMutationVersion,
+    result,
+  };
+  return result;
+}
 /**
  * Default retention period for streams if not specified (7 days in seconds).
  */
@@ -937,7 +1074,7 @@ function convertTableConfigToEngineConfig(
   return undefined;
 }
 
-export const toInfraMap = (registry: typeof moose_internal) => {
+export const toInfraMap = (registry: MooseInternalRegistry) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
   const ingestApis: { [key: string]: IngestApiJson } = {};
@@ -947,7 +1084,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
-  const lineage = analyzeRegistryLineage(registry);
+  const lineage = getCachedLineage(registry);
 
   registry.tables.forEach((table) => {
     const id =
@@ -1273,13 +1410,23 @@ export const toInfraMap = (registry: typeof moose_internal) => {
  *
  * @returns The internal Moose resource registry.
  */
-export const getMooseInternal = (): typeof moose_internal =>
-  (globalThis as any).moose_internal;
+const initializeMooseInternalRegistry = () => {
+  const existing = (globalThis as any).moose_internal as
+    | Partial<MooseInternalRegistry>
+    | undefined;
 
-// work around for variable visibility in compiler output
-if (getMooseInternal() === undefined) {
-  (globalThis as any).moose_internal = moose_internal;
-}
+  if (existing === undefined) {
+    (globalThis as any).moose_internal = moose_internal;
+    return;
+  }
+
+  (globalThis as any).moose_internal = createRegistryFrom(existing);
+};
+
+initializeMooseInternalRegistry();
+
+export const getMooseInternal = (): MooseInternalRegistry =>
+  (globalThis as any).moose_internal;
 
 /**
  * Loads the user's application entry point (`app/index.ts`) to register resources,
