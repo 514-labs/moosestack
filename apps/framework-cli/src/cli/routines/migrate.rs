@@ -614,7 +614,7 @@ pub async fn execute_migration(
                             "Reconciliation".to_string(),
                             "Failed to reconcile state with ClickHouse reality".to_string(),
                         ),
-                        anyhow::anyhow!("{:?}", e),
+                        e,
                     )
                 })?
         } else {
