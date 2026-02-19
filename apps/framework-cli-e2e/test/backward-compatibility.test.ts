@@ -111,6 +111,73 @@ async function checkLatestPublishedCLI(): Promise<void> {
 }
 
 /**
+ * Ensure generated TypeScript project uses latest published Moose packages.
+ */
+function enforceLatestTypeScriptDependencies(projectDir: string): void {
+  const packageJsonPath = path.join(projectDir, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+
+  const dependencies = (packageJson.dependencies ??= {});
+  const devDependencies = (packageJson.devDependencies ??= {});
+
+  // Enforce latest Moose packages for backward compatibility initialization.
+  dependencies["@514labs/moose-lib"] = "latest";
+  devDependencies["@514labs/moose-cli"] = "latest";
+
+  // Keep compatibility alias used across e2e tests.
+  if (dependencies["@confluentinc/kafka-javascript"]) {
+    dependencies["@514labs/kafka-javascript"] =
+      dependencies["@confluentinc/kafka-javascript"];
+    delete dependencies["@confluentinc/kafka-javascript"];
+  }
+
+  fs.writeFileSync(
+    packageJsonPath,
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+  );
+}
+
+/**
+ * Ensure generated Python project uses latest published Moose packages.
+ */
+function enforceLatestPythonRequirements(projectDir: string): void {
+  const requirementsPath = path.join(projectDir, "requirements.txt");
+  const lines = fs.readFileSync(requirementsPath, "utf-8").split(/\r?\n/);
+
+  let hasMooseCli = false;
+  let hasMooseLib = false;
+
+  const normalizedLines = lines.map((line) => {
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+
+    if (lower.startsWith("moose-cli")) {
+      hasMooseCli = true;
+      return "moose-cli";
+    }
+
+    if (lower.startsWith("moose-lib")) {
+      hasMooseLib = true;
+      return "moose-lib";
+    }
+
+    return line;
+  });
+
+  if (!hasMooseCli) {
+    normalizedLines.push("moose-cli");
+  }
+  if (!hasMooseLib) {
+    normalizedLines.push("moose-lib");
+  }
+
+  fs.writeFileSync(
+    requirementsPath,
+    `${normalizedLines.join("\n").trimEnd()}\n`,
+  );
+}
+
+/**
  * Setup TypeScript project with latest npm moose-lib
  */
 async function setupTypeScriptProjectWithLatestNpm(
@@ -143,15 +210,7 @@ async function setupTypeScriptProjectWithLatestNpm(
     "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
   );
 
-  let packageJson = path.join(projectDir, "package.json");
-  let content = fs.readFileSync(packageJson, "utf-8");
-  fs.writeFileSync(
-    packageJson,
-    content.replace(
-      "@confluentinc/kafka-javascript",
-      "@514labs/kafka-javascript",
-    ),
-  );
+  enforceLatestTypeScriptDependencies(projectDir);
 
   await new Promise<void>((resolve, reject) => {
     const installCmd = spawn("pnpm", ["install"], {
@@ -199,6 +258,7 @@ async function setupPythonProjectWithLatestPypi(
   testLogger.info(
     "Setting up Python virtual environment and installing dependencies (using latest moose-lib)...",
   );
+  enforceLatestPythonRequirements(projectDir);
   await new Promise<void>((resolve, reject) => {
     // Use python3.13 specifically to avoid Python 3.14 compatibility issues
     const setupCmd = process.platform === "win32" ? "python" : "python3.13";
