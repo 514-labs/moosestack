@@ -2,9 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import ts from "typescript";
+
 import { getSourceDir } from "../compiler-config";
 import { compilerLog } from "../commons";
-import { findSourceFiles, isSourceFilePath } from "./utils/sourceFiles";
+import { findSourceFiles, isSourceFilePath } from "./utils";
 
 type SignatureKind =
   | "Table"
@@ -44,6 +45,7 @@ interface RegistryIndex {
   topicIdsByName: Map<string, string[]>;
   tableIds: Set<string>;
   topicIds: Set<string>;
+  warnedAmbiguousTableIds: Set<string>;
 }
 
 type ResourceRef =
@@ -67,7 +69,6 @@ interface AnalysisContext {
 }
 
 const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
-const warnedAmbiguousTableIds = new Set<string>();
 
 function createEmptyResult(): DependencyAnalysisResult {
   return {
@@ -99,7 +100,13 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
     topicIdsByName.set(streamName, existing);
   });
 
-  return { tableIdsByName, topicIdsByName, tableIds, topicIds };
+  return {
+    tableIdsByName,
+    topicIdsByName,
+    tableIds,
+    topicIds,
+    warnedAmbiguousTableIds: new Set<string>(),
+  };
 }
 
 function resolveTableId(
@@ -142,8 +149,8 @@ function resolveTableId(
   }
   if (ids.length > 1) {
     const warningKey = `${tableName}:${ids.join(",")}`;
-    if (!warnedAmbiguousTableIds.has(warningKey)) {
-      warnedAmbiguousTableIds.add(warningKey);
+    if (!index.warnedAmbiguousTableIds.has(warningKey)) {
+      index.warnedAmbiguousTableIds.add(warningKey);
       compilerLog(
         `Warning: ambiguous table lineage reference '${tableName}' resolved to '${ids[0]}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
       );
@@ -463,28 +470,18 @@ function resolveAliasedSymbol(
 
 function unwrapExpression(expression: ts.Expression): ts.Expression {
   let current = expression;
+  type WrapperExpression =
+    | ts.ParenthesizedExpression
+    | ts.AsExpression
+    | ts.TypeAssertion
+    | ts.NonNullExpression;
   while (
     ts.isParenthesizedExpression(current) ||
     ts.isAsExpression(current) ||
     ts.isTypeAssertionExpression(current) ||
     ts.isNonNullExpression(current)
   ) {
-    if (ts.isParenthesizedExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-    if (ts.isAsExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-    if (ts.isTypeAssertionExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-    if (ts.isNonNullExpression(current)) {
-      current = current.expression;
-      continue;
-    }
+    current = (current as WrapperExpression).expression;
   }
   return current;
 }
@@ -518,7 +515,7 @@ function resolveStaticString(
   }
 
   if (ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped)) {
-    let symbol = resolveAliasedSymbol(
+    const symbol = resolveAliasedSymbol(
       ctx.checker.getSymbolAtLocation(unwrapped),
       ctx.checker,
     );
@@ -567,7 +564,7 @@ function resolveObjectLiteralExpression(
   }
 
   if (ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped)) {
-    let symbol = resolveAliasedSymbol(
+    const symbol = resolveAliasedSymbol(
       ctx.checker.getSymbolAtLocation(unwrapped),
       ctx.checker,
     );
@@ -1460,6 +1457,72 @@ function resolveTaskExpression(
   return undefined;
 }
 
+function resolveArrayLiteralExpression(
+  expression: ts.Expression | undefined,
+  ctx: AnalysisContext,
+  visitedSymbols = new Set<ts.Symbol>(),
+): ts.ArrayLiteralExpression | undefined {
+  if (!expression) {
+    return undefined;
+  }
+
+  const unwrapped = unwrapExpression(expression);
+  if (ts.isArrayLiteralExpression(unwrapped)) {
+    return unwrapped;
+  }
+
+  if (ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped)) {
+    const symbol = resolveAliasedSymbol(
+      ctx.checker.getSymbolAtLocation(unwrapped),
+      ctx.checker,
+    );
+    if (!symbol || visitedSymbols.has(symbol)) {
+      return undefined;
+    }
+    visitedSymbols.add(symbol);
+
+    for (const declaration of symbol.declarations ?? []) {
+      const initializer = resolveSymbolInitializerExpression(declaration);
+      if (!initializer) {
+        continue;
+      }
+      const resolved = resolveArrayLiteralExpression(
+        initializer,
+        ctx,
+        visitedSymbols,
+      );
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function collectTaskFunctionsFromOnCompleteElement(
+  element: ts.Expression,
+  ctx: AnalysisContext,
+  visitedTasks: Set<string>,
+): ts.FunctionLikeDeclaration[] {
+  if (ts.isSpreadElement(element)) {
+    const spreadArray = resolveArrayLiteralExpression(element.expression, ctx);
+    if (spreadArray) {
+      return spreadArray.elements.flatMap((nestedElement) =>
+        collectTaskFunctionsFromOnCompleteElement(
+          nestedElement,
+          ctx,
+          visitedTasks,
+        ),
+      );
+    }
+
+    return collectTaskFunctions(element.expression, ctx, visitedTasks);
+  }
+
+  return collectTaskFunctions(element, ctx, visitedTasks);
+}
+
 function collectTaskFunctions(
   taskExpression: ts.Expression | undefined,
   ctx: AnalysisContext,
@@ -1501,9 +1564,13 @@ function collectTaskFunctions(
     const arrayLiteral = unwrapExpression(onComplete);
     if (ts.isArrayLiteralExpression(arrayLiteral)) {
       for (const element of arrayLiteral.elements) {
-        if (ts.isExpression(element)) {
-          functions.push(...collectTaskFunctions(element, ctx, visitedTasks));
-        }
+        functions.push(
+          ...collectTaskFunctionsFromOnCompleteElement(
+            element,
+            ctx,
+            visitedTasks,
+          ),
+        );
       }
     }
   }
@@ -1560,7 +1627,9 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
 
   if (files.size === 0 || requiresFallbackScan) {
     const appDir = path.resolve(process.cwd(), getSourceDir());
-    for (const file of findSourceFiles(appDir)) {
+    for (const file of findSourceFiles(appDir, (directory, error) => {
+      compilerLog(`Warning: Could not read directory ${directory}: ${error}`);
+    })) {
       files.add(file);
     }
   }
@@ -1618,6 +1687,7 @@ function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
       topicIdsByName: new Map(),
       tableIds: new Set(),
       topicIds: new Set(),
+      warnedAmbiguousTableIds: new Set(),
     },
     symbolResourceCache: new Map(),
     taskExpressionCache: new Map(),
@@ -1669,11 +1739,7 @@ function collectLineageRootEntries(
               tempCtx,
             )
           : undefined;
-        const key =
-          name ?
-            version ? `${name}:${version}`
-            : name
-          : undefined;
+        const key = apiKey(name, version);
         setIfNew(apiEntries, key, node.arguments[1]);
       } else if (ctor === "Workflow") {
         const key = resolveStaticString(node.arguments[0], tempCtx);
@@ -1694,6 +1760,17 @@ function collectLineageRootEntries(
   }
 
   return { apiEntries, workflowEntries, webAppEntries };
+}
+
+function apiKey(
+  name: string | undefined,
+  version?: string,
+): string | undefined {
+  if (!name) {
+    return undefined;
+  }
+
+  return version ? `${name}:${version}` : name;
 }
 
 function resolveWebAppRootFunctions(
@@ -1739,80 +1816,93 @@ export function analyzeRegistryLineage(
     return createEmptyResult();
   }
 
-  const files = collectAnalysisFiles(registry);
-  if (files.length === 0) {
+  try {
+    const files = collectAnalysisFiles(registry);
+    if (files.length === 0) {
+      return createEmptyResult();
+    }
+
+    const { rootNames, options } = loadCompilerOptions(files);
+    const program = ts.createProgram({
+      rootNames,
+      options,
+    });
+    const checker = program.getTypeChecker();
+
+    const ctx: AnalysisContext = {
+      checker,
+      registryIndex: buildRegistryIndex(registry),
+      symbolResourceCache: new Map<ts.Symbol, ResourceRef | null>(),
+      taskExpressionCache: new Map<string, ts.NewExpression | null>(),
+      functionCache: new Map<ts.Symbol, ts.FunctionLikeDeclaration[]>(),
+    };
+
+    const { apiEntries, workflowEntries, webAppEntries } =
+      collectLineageRootEntries(program, checker);
+
+    const apiByKey = new Map<string, DependencySignatures>();
+    const seenApiKeys = new Set<string>();
+    registry.apis.forEach((api: any) => {
+      const key = apiKey(api?.name, api?.config?.version);
+      if (!key || seenApiKeys.has(key)) {
+        return;
+      }
+      seenApiKeys.add(key);
+
+      const handlerExpression = apiEntries.get(key);
+      if (!handlerExpression) {
+        apiByKey.set(key, { pullsDataFrom: [], pushesDataTo: [] });
+        return;
+      }
+
+      const roots = resolveFunctionNodesFromExpression(handlerExpression, ctx);
+      apiByKey.set(key, analyzeFunctionGraph(roots, ctx));
+    });
+
+    const workflowByName = new Map<string, DependencySignatures>();
+    registry.workflows.forEach((workflow: any, workflowName: string) => {
+      const configExpression = workflowEntries.get(workflowName);
+      if (!configExpression) {
+        workflowByName.set(workflowName, {
+          pullsDataFrom: [],
+          pushesDataTo: [],
+        });
+        return;
+      }
+      const configObject = resolveObjectLiteralExpression(
+        configExpression,
+        ctx,
+      );
+      const startingTaskExpression =
+        configObject ?
+          getObjectPropertyExpression(configObject, "startingTask")
+        : undefined;
+      const roots = collectTaskFunctions(
+        startingTaskExpression,
+        ctx,
+        new Set<string>(),
+      );
+      workflowByName.set(workflowName, analyzeFunctionGraph(roots, ctx));
+    });
+
+    const webAppByName = new Map<string, DependencySignatures>();
+    registry.webApps.forEach((webApp: any, webAppName: string) => {
+      const handlerExpression = webAppEntries.get(webAppName);
+      if (!handlerExpression) {
+        webAppByName.set(webAppName, { pullsDataFrom: [], pushesDataTo: [] });
+        return;
+      }
+
+      const roots = resolveWebAppRootFunctions(handlerExpression, ctx);
+      webAppByName.set(webAppName, analyzeFunctionGraph(roots, ctx));
+    });
+
+    return { apiByKey, workflowByName, webAppByName };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    compilerLog(
+      `Warning: lineage analysis failed; returning empty lineage results. ${message}`,
+    );
     return createEmptyResult();
   }
-
-  const { rootNames, options } = loadCompilerOptions(files);
-  const program = ts.createProgram({
-    rootNames,
-    options,
-  });
-  const checker = program.getTypeChecker();
-
-  const ctx: AnalysisContext = {
-    checker,
-    registryIndex: buildRegistryIndex(registry),
-    symbolResourceCache: new Map<ts.Symbol, ResourceRef | null>(),
-    taskExpressionCache: new Map<string, ts.NewExpression | null>(),
-    functionCache: new Map<ts.Symbol, ts.FunctionLikeDeclaration[]>(),
-  };
-
-  const { apiEntries, workflowEntries, webAppEntries } =
-    collectLineageRootEntries(program, checker);
-
-  const apiByKey = new Map<string, DependencySignatures>();
-  const seenApiKeys = new Set<string>();
-  registry.apis.forEach((api: any) => {
-    const key =
-      api?.config?.version ? `${api.name}:${api.config.version}` : api.name;
-    if (!key || seenApiKeys.has(key)) {
-      return;
-    }
-    seenApiKeys.add(key);
-
-    const handlerExpression = apiEntries.get(key);
-    if (!handlerExpression) {
-      apiByKey.set(key, { pullsDataFrom: [], pushesDataTo: [] });
-      return;
-    }
-
-    const roots = resolveFunctionNodesFromExpression(handlerExpression, ctx);
-    apiByKey.set(key, analyzeFunctionGraph(roots, ctx));
-  });
-
-  const workflowByName = new Map<string, DependencySignatures>();
-  registry.workflows.forEach((workflow: any, workflowName: string) => {
-    const configExpression = workflowEntries.get(workflowName);
-    if (!configExpression) {
-      workflowByName.set(workflowName, { pullsDataFrom: [], pushesDataTo: [] });
-      return;
-    }
-    const configObject = resolveObjectLiteralExpression(configExpression, ctx);
-    const startingTaskExpression =
-      configObject ?
-        getObjectPropertyExpression(configObject, "startingTask")
-      : undefined;
-    const roots = collectTaskFunctions(
-      startingTaskExpression,
-      ctx,
-      new Set<string>(),
-    );
-    workflowByName.set(workflowName, analyzeFunctionGraph(roots, ctx));
-  });
-
-  const webAppByName = new Map<string, DependencySignatures>();
-  registry.webApps.forEach((webApp: any, webAppName: string) => {
-    const handlerExpression = webAppEntries.get(webAppName);
-    if (!handlerExpression) {
-      webAppByName.set(webAppName, { pullsDataFrom: [], pushesDataTo: [] });
-      return;
-    }
-
-    const roots = resolveWebAppRootFunctions(handlerExpression, ctx);
-    webAppByName.set(webAppName, analyzeFunctionGraph(roots, ctx));
-  });
-
-  return { apiByKey, workflowByName, webAppByName };
 }
