@@ -421,10 +421,6 @@ async fn watch(
                                     // Show success message for incremental builds
                                     display_compilation_success(&event);
 
-                                    // Trigger infrastructure planning for incremental changes
-                                    let _processing_guard =
-                                        processing_coordinator.begin_processing().await;
-
                                     let project_clone = project.clone();
                                     let result: anyhow::Result<()> = with_spinner_completion_async(
                                         "Processing infrastructure changes",
@@ -452,6 +448,9 @@ async fn watch(
                                                     .await?;
 
                                                     display::show_changes(&plan_result);
+                                                    // Hold the mutation guard only for execution/persist steps.
+                                                    let _processing_guard =
+                                                        processing_coordinator.begin_processing().await;
                                                     let mut project_registries =
                                                         project_registries.write().await;
 
