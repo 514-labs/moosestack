@@ -14,6 +14,6 @@
   },
   "dependencies": {
     "@514labs/moose-lib": "0.6.402",
-    "typia": "^9.6.1"
+    "typia": "^11.0.3"
   }
 }
