@@ -1166,6 +1166,13 @@ pub async fn top_command_handler(
             json,
         } => {
             info!("Running plan command");
+
+            // Set QUIET_STDOUT early to redirect any messages (like config warnings)
+            // to stderr, keeping stdout clean for JSON output
+            if *json {
+                QUIET_STDOUT.store(true, Ordering::Relaxed);
+            }
+
             let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
