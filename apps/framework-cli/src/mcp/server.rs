@@ -96,9 +96,12 @@ impl ServerHandler for MooseMcpHandler {
         param: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        // Wait for any in-progress file watcher processing to complete
-        // This ensures we read stable infrastructure state
-        self.processing_coordinator.wait_for_stable_state().await;
+        // Hold a read guard for the full tool execution so watcher mutations
+        // cannot interleave with MCP operations.
+        let _stable_state_guard = self
+            .processing_coordinator
+            .acquire_stable_state_guard()
+            .await;
 
         match param.name.as_ref() {
             "get_logs" => Ok(logs::handle_call(param.arguments.as_ref())),
