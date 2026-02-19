@@ -1,6 +1,7 @@
 "use client";
 
 import posthog from "posthog-js";
+import { CONSENT_COOKIE_NAME, hasAnalyticsConsent } from "./consent-cookie";
 
 export interface CodeCopyEvent {
   code: string;
@@ -19,7 +20,12 @@ class Analytics {
 
   private hasConsent(): boolean {
     if (typeof document === "undefined") return false;
-    return document.cookie.includes("moose-docs-cookie-consent=granted");
+    const match = document.cookie.match(
+      new RegExp(`(?:^|; )${CONSENT_COOKIE_NAME}=([^;]*)`),
+    );
+    return hasAnalyticsConsent(
+      match?.[1] ? decodeURIComponent(match[1]) : undefined,
+    );
   }
 
   init() {
