@@ -1108,6 +1108,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
+        await waitForStreamingFunctions(180_000);
+
         // Verify source tables exist first
         const sourceADDL = await withRetries(
           async () => getTableDDL("MergeSourceA", "local"),
