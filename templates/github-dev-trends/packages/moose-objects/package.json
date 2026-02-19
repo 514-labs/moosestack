@@ -13,7 +13,7 @@
     "ts-patch": "^3.3.0"
   },
   "dependencies": {
-    "@514labs/moose-lib": "0.6.309",
+    "@514labs/moose-lib": "0.6.402",
     "typia": "^9.6.1"
   }
 }
