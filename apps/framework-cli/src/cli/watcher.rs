@@ -260,9 +260,6 @@ async fn watch(
                     receiver_ack.send_replace(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
                     rx.mark_unchanged();
 
-                    // Begin processing - guard will mark complete on drop
-                    let _processing_guard = processing_coordinator.begin_processing().await;
-
                     let result: anyhow::Result<()> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
@@ -280,6 +277,8 @@ async fn watch(
                                     .await?;
 
                                     display::show_changes(&plan_result);
+                                    // Hold the mutation guard only for execution/persist steps.
+                                    let _processing_guard = processing_coordinator.begin_processing().await;
                                     let mut project_registries = project_registries.write().await;
 
                                     let execution_result = with_timing_async("Execution", async {

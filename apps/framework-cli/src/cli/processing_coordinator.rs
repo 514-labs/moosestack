@@ -8,7 +8,7 @@
 //!
 //! The coordinator uses an RwLock-based synchronization pattern:
 //! - File watcher holds a write lock during infrastructure processing
-//! - MCP tools acquire a read lock to ensure stable state before reading
+//! - MCP tools hold a read lock for the full tool execution
 //! - Multiple MCP tools can read concurrently when no processing is occurring
 //!
 //! ## Usage
@@ -20,8 +20,8 @@
 //! // Guard drops, releasing write lock
 //!
 //! // In MCP tool:
-//! coordinator.wait_for_stable_state().await;
-//! // Now safe to read infrastructure state
+//! let _stable_guard = coordinator.acquire_stable_state_guard().await;
+//! // Read infra state while watcher mutations are paused
 //! ```
 
 use std::sync::Arc;
@@ -34,11 +34,11 @@ use tokio::sync::RwLock;
 ///
 /// Uses an RwLock where:
 /// - Write lock = processing in progress (file watcher holds it)
-/// - Read lock = verifying stable state (MCP tools acquire briefly)
+/// - Read lock = stable-state window for MCP tool execution
 #[derive(Clone)]
 pub struct ProcessingCoordinator {
     /// RwLock for synchronization
-    /// Write lock held during processing, read lock acquired to verify stability
+    /// Write lock held during processing, read lock held during MCP tool execution
     lock: Arc<RwLock<()>>,
 }
 
@@ -72,24 +72,25 @@ impl ProcessingCoordinator {
         }
     }
 
-    /// Wait for any in-progress processing to complete.
+    /// Acquire a read guard that guarantees stable state for its lifetime.
     ///
-    /// This method acquires a read lock, which will block if processing is in progress.
-    /// Once the read lock is acquired, the state is guaranteed to be stable.
-    /// The read lock is immediately released after acquisition.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // Before reading infrastructure state:
-    /// coordinator.wait_for_stable_state().await;
-    /// // Now safe to read from Redis, ClickHouse, etc.
-    /// ```
-    pub async fn wait_for_stable_state(&self) {
+    /// MCP handlers should hold this guard while executing a tool to prevent
+    /// concurrent infrastructure mutations from watchers.
+    pub async fn acquire_stable_state_guard(&self) -> StableStateGuard {
         tracing::trace!("[ProcessingCoordinator] Waiting for stable state (acquiring read lock)");
-        let _read_guard = self.lock.read().await;
-        tracing::trace!("[ProcessingCoordinator] State is stable (read lock acquired)");
-        // Read lock is dropped here, allowing processing to proceed if needed
+        let read_guard = self.lock.clone().read_owned().await;
+        tracing::trace!("[ProcessingCoordinator] Stable state read lock acquired");
+        StableStateGuard {
+            _read_guard: read_guard,
+        }
+    }
+
+    /// Wait for any in-progress processing to complete and release immediately.
+    ///
+    /// This is useful when callers only need a barrier and do not need to hold
+    /// stable state for additional work.
+    pub async fn wait_for_stable_state(&self) {
+        let _guard = self.acquire_stable_state_guard().await;
     }
 }
 
@@ -111,6 +112,20 @@ impl Drop for ProcessingGuard {
     fn drop(&mut self) {
         tracing::debug!("[ProcessingCoordinator] Processing complete, releasing write lock");
         // Write guard drops automatically, releasing the lock
+    }
+}
+
+/// RAII guard that holds a read lock while MCP tools execute.
+///
+/// While this guard is alive, watchers cannot acquire the write lock for
+/// infrastructure mutations.
+pub struct StableStateGuard {
+    _read_guard: tokio::sync::OwnedRwLockReadGuard<()>,
+}
+
+impl Drop for StableStateGuard {
+    fn drop(&mut self) {
+        tracing::trace!("[ProcessingCoordinator] Stable state read lock released");
     }
 }
 
@@ -348,5 +363,56 @@ mod tests {
                 .unwrap();
             assert_eq!(result, i);
         }
+    }
+
+    #[tokio::test]
+    async fn test_stable_state_guard_blocks_processing() {
+        let coordinator = ProcessingCoordinator::new();
+        let stable_guard = coordinator.acquire_stable_state_guard().await;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let coordinator_clone = coordinator.clone();
+        let processing_task = tokio::spawn(async move {
+            tx.send(()).await.unwrap();
+            let _guard = coordinator_clone.begin_processing().await;
+        });
+
+        rx.recv().await.unwrap();
+        sleep(Duration::from_millis(20)).await;
+        assert!(!processing_task.is_finished());
+
+        drop(stable_guard);
+        tokio::time::timeout(Duration::from_secs(1), processing_task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_processing_blocks_stable_state_guard_until_release() {
+        let coordinator = ProcessingCoordinator::new();
+        let processing_guard = coordinator.begin_processing().await;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let coordinator_clone = coordinator.clone();
+        let stable_state_task = tokio::spawn(async move {
+            let stable_guard = coordinator_clone.acquire_stable_state_guard().await;
+            tx.send(()).await.unwrap();
+            stable_guard
+        });
+
+        // Task should be blocked while write lock is held.
+        sleep(Duration::from_millis(20)).await;
+        assert!(!stable_state_task.is_finished());
+
+        // Releasing write lock should allow MCP-style stable-state acquisition.
+        drop(processing_guard);
+
+        let stable_guard = tokio::time::timeout(Duration::from_secs(1), stable_state_task)
+            .await
+            .unwrap()
+            .unwrap();
+        rx.recv().await.unwrap();
+        drop(stable_guard);
     }
 }
