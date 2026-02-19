@@ -5,7 +5,7 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
-use crate::framework::core::plan::reconcile_with_reality;
+use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
@@ -570,73 +570,11 @@ pub async fn execute_migration(
 
     // Wrap all operations to ensure lock cleanup on any error
     let result = async {
-        // Load current state from ClickHouse state table and reconcile with reality
-        let current_infra_map = state_storage
-            .load_infrastructure_map()
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "State".to_string(),
-                        "Failed to load infrastructure state from ClickHouse".to_string(),
-                    ),
-                    e,
-                )
-            })?
-            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
-
-        let current_infra_map = if project.features.olap {
-            use std::collections::HashSet;
-
-            // current_infra_map should have gone through fixup_default_db, but better safe than sorry
-            let target_table_ids: HashSet<String> = current_infra_map
-                .tables
-                .values()
-                .map(|t| t.id(&current_infra_map.default_database))
-                .collect();
-
-            let target_sql_resource_ids: HashSet<String> =
-                current_infra_map.sql_resources.keys().cloned().collect();
-
-            let target_materialized_view_ids: HashSet<String> = current_infra_map
-                .materialized_views
-                .keys()
-                .cloned()
-                .collect();
-
-            let target_view_ids: HashSet<String> =
-                current_infra_map.views.keys().cloned().collect();
-
-            let olap_client = create_client(clickhouse_config.clone());
-
-            // We already have the current_infra_map loaded, so reconcile it directly
-            // instead of reloading from storage via load_reconciled_infrastructure
-            reconcile_with_reality(
-                project,
-                &current_infra_map,
-                &target_table_ids,
-                &target_sql_resource_ids,
-                &target_materialized_view_ids,
-                &target_view_ids,
-                olap_client,
-            )
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "Reconciliation".to_string(),
-                        "Failed to reconcile state with ClickHouse reality".to_string(),
-                    ),
-                    anyhow::anyhow!("{:?}", e),
-                )
-            })?
-        } else {
-            current_infra_map
-        };
-
-        let current_tables = &current_infra_map.tables;
-
-        // Load target state from current code with credentials resolved for migration DDL
+        // Load target state from current code first—we need its resource IDs to
+        // correctly filter which unmapped ClickHouse objects to adopt during
+        // reconciliation.  Without this, a fresh Redis (no stored state) would
+        // produce an empty filter, causing reconciliation to ignore every
+        // pre-existing table and the drift check to report them all as "removed".
         let target_infra_map = InfrastructureMap::load_from_user_code(project, true)
             .await
             .map_err(|e| {
@@ -648,6 +586,42 @@ pub async fn execute_migration(
                     e,
                 )
             })?;
+
+        // Load current state from state storage and reconcile with reality
+        let current_infra_map = state_storage
+            .load_infrastructure_map()
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "State".to_string(),
+                        "Failed to load infrastructure state".to_string(),
+                    ),
+                    e,
+                )
+            })?
+            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
+
+        let current_infra_map = if project.features.olap {
+            let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
+            let olap_client = create_client(clickhouse_config.clone());
+
+            reconcile_with_reality(project, &current_infra_map, &filter, olap_client)
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Reconciliation".to_string(),
+                            "Failed to reconcile state with ClickHouse reality".to_string(),
+                        ),
+                        e,
+                    )
+                })?
+        } else {
+            current_infra_map
+        };
+
+        let current_tables = &current_infra_map.tables;
 
         // Execute migration
         execute_migration_plan(
