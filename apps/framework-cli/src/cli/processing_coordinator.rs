@@ -21,7 +21,7 @@
 //!
 //! // In MCP tool:
 //! let _stable_guard = coordinator.acquire_stable_state_guard().await;
-//! Read infra state while watcher mutations are paused
+//! // Read infra state while watcher mutations are paused
 //! ```
 
 use std::sync::Arc;
