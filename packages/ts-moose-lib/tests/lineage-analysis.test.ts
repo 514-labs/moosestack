@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { expect } from "chai";
 import {
   Api,
@@ -6,9 +8,10 @@ import {
   Task,
   WebApp,
   Workflow,
+  IngestPipeline,
 } from "../src/dmv2/index";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
-import { sql } from "../src/index";
+import { ApiHelpers, sql } from "../src/index";
 
 describe("Lineage Analysis", () => {
   beforeEach(() => {
@@ -54,6 +57,330 @@ describe("Lineage Analysis", () => {
       id: "LineageApiTable",
       kind: "Table",
     });
+  });
+
+  it("infers pulls_data_from for ApiHelpers.table helper calls", () => {
+    interface ApiParams {
+      metric: string;
+    }
+
+    interface ApiResponse {
+      id: string;
+    }
+
+    interface TableRow {
+      id: string;
+    }
+
+    new OlapTable<TableRow>("LineageApiHelpersTable");
+
+    const getTableRef = (_metric: string) =>
+      ApiHelpers.table("LineageApiHelpersTable");
+
+    const handler = async (
+      params: ApiParams,
+      { client }: any,
+    ): Promise<ApiResponse[]> => {
+      await client.query.execute(
+        sql`SELECT * FROM ${getTableRef(params.metric)}`,
+      );
+      return [];
+    };
+
+    new Api<ApiParams, ApiResponse[]>("lineageApiHelpers", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.apis.lineageApiHelpers.pullsDataFrom).to.deep.include({
+      id: "LineageApiHelpersTable",
+      kind: "Table",
+    });
+  });
+
+  it("infers pulls_data_from through transpiled-style comma callee calls", () => {
+    interface ApiParams {
+      metric: string;
+    }
+
+    interface ApiResponse {
+      id: string;
+    }
+
+    interface TableRow {
+      id: string;
+    }
+
+    new OlapTable<TableRow>("LineageCommaCallTable");
+
+    const getTableRef = (_metric: string) =>
+      ApiHelpers.table("LineageCommaCallTable");
+
+    const invokeLikeTranspiledImportCall = (metric: string) =>
+      // @ts-expect-error - emulate transpiled import call shape `(0, fn)(...)`.
+      (0, getTableRef)(metric);
+
+    const handler = async (
+      params: ApiParams,
+      { client }: any,
+    ): Promise<ApiResponse[]> => {
+      await client.query.execute(
+        sql`SELECT * FROM ${invokeLikeTranspiledImportCall(params.metric)}`,
+      );
+      return [];
+    };
+
+    new Api<ApiParams, ApiResponse[]>("lineageCommaCallApi", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.apis.lineageCommaCallApi.pullsDataFrom).to.deep.include({
+      id: "LineageCommaCallTable",
+      kind: "Table",
+    });
+  });
+
+  it("infers pulls_data_from for compiled-style sql(...) calls", () => {
+    interface QueryParams {}
+
+    interface ApiResponse {
+      id: string;
+    }
+
+    interface TableRow {
+      id: string;
+    }
+
+    const table = new OlapTable<TableRow>("LineageSqlCallTable");
+
+    const handler = async (
+      _params: QueryParams,
+      { client }: any,
+    ): Promise<ApiResponse[]> => {
+      await client.query.execute(sql(["SELECT * FROM ", ""] as const, table));
+      return [];
+    };
+
+    new Api<QueryParams, ApiResponse[]>("lineageSqlCallApi", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.apis.lineageSqlCallApi.pullsDataFrom).to.deep.include({
+      id: "LineageSqlCallTable",
+      kind: "Table",
+    });
+  });
+
+  it("infers pulls_data_from from sql table-name fragments", () => {
+    interface QueryParams {}
+
+    interface ApiResponse {
+      id: string;
+    }
+
+    interface TableRow {
+      id: string;
+    }
+
+    new OlapTable<TableRow>("LineageSqlFragmentTable");
+
+    const buildQuery = () => {
+      const tableName = sql`LineageSqlFragmentTable`;
+      return sql`SELECT * FROM ${tableName}`;
+    };
+
+    const handler = async (
+      _params: QueryParams,
+      { client }: any,
+    ): Promise<ApiResponse[]> => {
+      await client.query.execute(buildQuery());
+      return [];
+    };
+
+    new Api<QueryParams, ApiResponse[]>("lineageSqlFragmentApi", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.apis.lineageSqlFragmentApi.pullsDataFrom).to.deep.include({
+      id: "LineageSqlFragmentTable",
+      kind: "Table",
+    });
+  });
+
+  it("maps ingest pipeline SQL table aliases to local table ids", () => {
+    interface PipelineRow {
+      deployId: string;
+      timestampMs: number;
+      type: string;
+      stepName: string;
+      severity: string;
+    }
+
+    new IngestPipeline<PipelineRow>("LineagePipelineSqlAlias", {
+      table: true,
+      stream: true,
+      ingestApi: true,
+      version: "0.0",
+    });
+
+    interface QueryParams {}
+
+    const handler = async (_params: QueryParams, { client }: any) => {
+      const tableName = sql`LineagePipelineSqlAlias_0_0`;
+      await client.query.execute(sql`SELECT * FROM ${tableName}`);
+      return [];
+    };
+
+    new Api<QueryParams, any[]>("lineagePipelineSqlAliasApi", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    const candidateTableIds = new Set(
+      [...getMooseInternal().tables.keys()].filter((id) =>
+        id.includes("LineagePipelineSqlAlias"),
+      ),
+    );
+    expect(candidateTableIds.size).to.be.greaterThan(0);
+
+    const pulls = infra.apis.lineagePipelineSqlAliasApi.pullsDataFrom;
+    expect(
+      pulls.some(
+        (pull) => pull.kind === "Table" && candidateTableIds.has(pull.id),
+      ),
+      `Expected pulls to include one of ${JSON.stringify([...candidateTableIds])}. Actual: ${JSON.stringify(pulls)}`,
+    ).to.equal(true);
+  });
+
+  it("infers pulls_data_from for CommonJS exported table symbols", () => {
+    const generatedDir = path.join(__dirname, ".lineage-generated");
+    fs.mkdirSync(generatedDir, { recursive: true });
+
+    const fixturePath = path.join(
+      generatedDir,
+      `lineage-cjs-${Date.now()}-${Math.random().toString(16).slice(2)}.api.js`,
+    );
+    const mooseLibEntry = path.resolve(__dirname, "../src/index.ts");
+
+    const fixtureSource = `
+const { Api, OlapTable, sql } = require(${JSON.stringify(mooseLibEntry)});
+
+const schema = {
+  version: "3.1",
+  schemas: [{ type: "object", properties: {}, required: [] }],
+  components: { schemas: {} },
+};
+const columns = [];
+
+exports.LineageCommonJsTable = new OlapTable(
+  "LineageCommonJsTable",
+  {},
+  schema,
+  columns
+);
+exports.LineageCommonJsApi = new Api(
+  "lineageCommonJsApi",
+  async (_params, { client }) => {
+    await client.query.execute(sql\`SELECT * FROM \${exports.LineageCommonJsTable}\`);
+    return [];
+  },
+  { version: "0.0" },
+  schema,
+  columns
+);
+`;
+
+    fs.writeFileSync(fixturePath, fixtureSource, "utf8");
+
+    try {
+      delete require.cache[require.resolve(fixturePath)];
+      require(fixturePath);
+
+      const infra = toInfraMap(getMooseInternal());
+      const commonJsApi =
+        infra.apis.lineageCommonJsApi ?? infra.apis["lineageCommonJsApi:0.0"];
+      expect(commonJsApi?.pullsDataFrom).to.deep.include({
+        id: "LineageCommonJsTable",
+        kind: "Table",
+      });
+    } finally {
+      try {
+        delete require.cache[require.resolve(fixturePath)];
+      } catch {
+        // Ignore cleanup misses for generated fixture modules.
+      }
+      fs.rmSync(fixturePath, { force: true });
+    }
+  });
+
+  it("infers pulls_data_from for compiled template-object sql fallbacks", () => {
+    const generatedDir = path.join(__dirname, ".lineage-generated");
+    fs.mkdirSync(generatedDir, { recursive: true });
+
+    const fixturePath = path.join(
+      generatedDir,
+      `lineage-cjs-templateobj-${Date.now()}-${Math.random().toString(16).slice(2)}.api.js`,
+    );
+    const mooseLibEntry = path.resolve(__dirname, "../src/index.ts");
+
+    const fixtureSource = `
+const { Api, OlapTable, sql } = require(${JSON.stringify(mooseLibEntry)});
+
+const schema = {
+  version: "3.1",
+  schemas: [{ type: "object", properties: {}, required: [] }],
+  components: { schemas: {} },
+};
+const columns = [];
+
+new OlapTable("LineageCompiledTemplateObjectTable", {}, schema, columns);
+
+function __makeTemplateObject(cooked, raw) {
+  cooked.raw = raw;
+  return cooked;
+}
+var templateObject_1;
+var templateObject_2;
+var tableName = sql(
+  templateObject_1 || (templateObject_1 = __makeTemplateObject(
+    ["LineageCompiledTemplateObjectTable"],
+    ["LineageCompiledTemplateObjectTable"]
+  ))
+);
+
+new Api(
+  "lineageCompiledTemplateObjectApi",
+  async (_params, { client }) => {
+    await client.query.execute(sql(
+      templateObject_2 || (templateObject_2 = __makeTemplateObject(
+        ["SELECT * FROM ", ""],
+        ["SELECT * FROM ", ""]
+      )),
+      tableName
+    ));
+    return [];
+  },
+  { version: "0.0" },
+  schema,
+  columns
+);
+`;
+
+    fs.writeFileSync(fixturePath, fixtureSource, "utf8");
+
+    try {
+      delete require.cache[require.resolve(fixturePath)];
+      require(fixturePath);
+
+      const infra = toInfraMap(getMooseInternal());
+      const api =
+        infra.apis.lineageCompiledTemplateObjectApi ??
+        infra.apis["lineageCompiledTemplateObjectApi:0.0"];
+      expect(api?.pullsDataFrom).to.deep.include({
+        id: "LineageCompiledTemplateObjectTable",
+        kind: "Table",
+      });
+    } finally {
+      try {
+        delete require.cache[require.resolve(fixturePath)];
+      } catch {
+        // Ignore cleanup misses for generated fixture modules.
+      }
+      fs.rmSync(fixturePath, { force: true });
+    }
   });
 
   it("invalidates cached lineage when API registry mutates", () => {
