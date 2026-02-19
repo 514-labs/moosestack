@@ -15,7 +15,7 @@ function getCookie(): string | null {
   const match = document.cookie.match(
     new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`),
   );
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 export function CookieConsentBanner() {
