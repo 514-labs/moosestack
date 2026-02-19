@@ -1,0 +1,164 @@
+---
+authors: Codex (drafted from user whiteboard)
+title: ClickHouse Performance Testing Harness UX for AI Coding Agents
+state: discussion
+---
+
+## Objective
+
+Define a UX and execution model for an agent-driven harness that proposes, runs, and compares ClickHouse optimizations safely and reproducibly.
+
+## Problem Statement
+
+Today, optimization attempts are ad hoc and difficult to compare:
+
+- Inputs differ across attempts.
+- Environment drift introduces noisy results.
+- Correctness can regress while latency appears to improve.
+- Recommendations are hard to trust without side-by-side evidence.
+
+We need a system where AI coding agents can generate optimization branches, run them under equivalent conditions, and present a recommendation with confidence.
+
+## User Story
+
+> Given a model or query pipeline, help me reduce resource consumption and/or execution time **without changing outputs**.
+
+## UX Principles
+
+1. **Comparable by default**: every experiment uses the same input slice and test plan.
+2. **Safe iteration**: each branch runs in an isolated and resettable environment.
+3. **Correctness first**: performance wins are only valid if outputs match baseline.
+4. **Actionable output**: user gets ranked recommendations and an apply path.
+5. **Fast feedback loop**: users can review, modify, and rerun plans quickly.
+
+## Primary User Flow
+
+1. **Prompt intake**
+   - User submits an objective (for example: optimize compute usage for pipeline X).
+2. **Plan generation**
+   - Agent analyzes current implementation and produces optimization branches.
+3. **Branch execution**
+   - Harness spins up equivalent isolated environments for each branch.
+4. **Validation + benchmarking**
+   - Harness runs correctness checks, then captures performance metrics.
+5. **Result synthesis**
+   - Harness produces a report with tradeoffs, confidence, and recommendation.
+6. **Decision point**
+   - User can:
+     - accept recommendation,
+     - request revised plan,
+     - apply selected branch.
+
+## Information Architecture (UX Surfaces)
+
+### 1) Run Setup
+
+- Prompt / optimization objective
+- Target scope (model, query, pipeline, or table path)
+- Dataset slice selector
+- Baseline source (current main branch / tagged build)
+- Number of branch variants to generate
+
+### 2) Experiment Plan Review
+
+For each branch:
+
+- Hypothesis (what should improve and why)
+- Proposed changes (query rewrite, schema/index/partition/order strategy, etc.)
+- Risk level
+- Expected metric movement
+
+User actions:
+
+- approve all
+- disable selected branch
+- edit constraints (max runtime, cost budget)
+- regenerate plan
+
+### 3) Live Run Dashboard
+
+- Branch state: queued / running / blocked / complete
+- Time elapsed per phase
+- Logs and errors
+- Retry controls
+
+### 4) Results + Recommendation
+
+- Summary table across baseline + branches
+- Correctness status (pass/fail)
+- p50/p95 runtime
+- CPU and memory consumption
+- Query scan/read volume
+- Confidence score and recommendation rationale
+- “Apply branch” CTA
+
+## Functional Requirements
+
+### Validation Harness
+
+- Lock a canonical test recipe for all branches in the same run.
+- Ensure all branches use identical benchmark inputs and runtime parameters.
+
+### Data Slices + Seed/Backfill
+
+- Support deterministic data slice definitions.
+- Materialize the same slice for baseline and all branches before test start.
+
+### DB Reset
+
+- Provide a reset operation after each run (or each branch phase).
+- Reset must restore schema and data to the same starting state.
+
+### Test Runs
+
+- Trigger full pipeline run and/or query-level microbenchmarks.
+- Store run artifacts (logs, metrics, execution plan snapshots).
+
+### Cross-Branch Coordination
+
+- Prevent duplicate experiments (same change intent and diff fingerprint).
+- Keep branch metadata normalized for fair comparison.
+
+### Environment Isolation
+
+- One isolated environment per branch + one baseline environment.
+- Pin engine/config versions for run equivalence.
+
+### Correctness / Result Validation
+
+- Branch output must match baseline output according to configured comparator.
+- Any mismatch disqualifies branch from recommendation unless explicitly overridden.
+
+## Success Metrics
+
+- **Trust**: % of accepted recommendations that pass post-apply regression tests.
+- **Performance impact**: median p95 improvement of accepted branches.
+- **Efficiency**: time from prompt to recommendation.
+- **Agent quality**: ratio of valid (non-duplicate, correctness-passing) branches.
+
+## Failure States & UX Handling
+
+- **Correctness failed**: mark branch as invalid, include diff sample.
+- **Environment drift detected**: invalidate run and prompt rerun.
+- **Insufficient data slice**: block run setup with remediation guidance.
+- **Timeout/resource budget exceeded**: partial results with warning and rerun options.
+
+## Out of Scope (v1)
+
+- Automatic production rollout.
+- Multi-objective global optimization across unrelated pipelines.
+- Human-free autonomous merge and deploy.
+
+## Open Questions
+
+1. How strict should output equivalence be (exact, tolerance, semantic)?
+2. Should schema-changing experiments run in the same harness or in a separate migration mode?
+3. What default branch count balances exploration quality vs. runtime cost?
+4. How should confidence be computed (statistical significance vs. heuristic score)?
+
+## Suggested Next Steps
+
+1. Align on v1 comparator semantics and performance KPIs.
+2. Define canonical run artifact schema (metrics, logs, query plans, diffs).
+3. Build a thin CLI/UX prototype with: setup → plan review → run dashboard → recommendation.
+4. Add a gold-standard scenario set to evaluate recommendation quality over time.
