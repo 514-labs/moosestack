@@ -1,0 +1,88 @@
+---
+title: Merge
+description: ClickHouse table engine for a read-only view over multiple tables
+order: 8
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Merge
+
+The `Merge` engine provides a read-only view over multiple tables matching a regex pattern.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+```ts filename="MergeTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+interface Event {
+  eventId: string;
+  userId: string;
+  timestamp: number;
+}
+
+// Read-only view over all tables matching ^events_.*$ in the current database
+export const allEvents = new OlapTable<Event>("all_events", {
+  engine: ClickHouseEngines.Merge,
+  sourceDatabase: "currentDatabase()",
+  tablesRegexp: "^events_.*$",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+```py filename="MergeTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeEngine
+from pydantic import BaseModel
+
+class Event(BaseModel):
+    event_id: str
+    user_id: str
+    timestamp: int
+
+# Read-only view over all tables matching ^events_.*$ in the current database
+all_events = OlapTable[Event]("all_events", OlapConfig(
+    engine=MergeEngine(
+        source_database="currentDatabase()",
+        tables_regexp="^events_.*$",
+    )
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+| Option | Description |
+|--------|-------------|
+| `sourceDatabase` | Database to scan for source tables. Accepts a literal name, `currentDatabase()`, or `REGEXP('pattern')` |
+| `tablesRegexp` | Regular expression pattern to match table names within the source database |
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+| Option | Description |
+|--------|-------------|
+| `source_database` | Database to scan for source tables. Accepts a literal name, `currentDatabase()`, or `REGEXP('pattern')` |
+| `tables_regexp` | Regular expression pattern to match table names within the source database |
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+The database field accepts:
+- **`currentDatabase()`** — matches the configured database, works across dev and prod without hardcoding
+- **Literal name** (e.g., `"analytics"`) — matches a specific database
+- **`REGEXP('pattern')`** — matches multiple databases by regex
+
+## Limitations
+
+- **Read-only**: INSERT operations are not supported. Cannot be used as a destination in `IngestPipeline`.
+- **No ORDER BY, PARTITION BY, or SAMPLE BY**: These clauses are not supported on Merge tables.
+- **Self-hosted only**: Not supported on ClickHouse Cloud ([see supported engines](https://clickhouse.com/docs/whats-new/cloud-compatibility)).
+- **Other constant expressions** (e.g., `concat('a', 'b')`) for source database will cause the table to be recreated on each restart. ClickHouse evaluates and stores the result (e.g., `'ab'`), so the expression never matches Moose's configured value and the table is dropped and recreated every time. Use `currentDatabase()` or a literal name instead.
+
+For more details, see the [ClickHouse Merge documentation](https://clickhouse.com/docs/en/engines/table-engines/special/merge).

@@ -316,6 +316,12 @@ interface KafkaEngineConfig {
   format: string;
 }
 
+interface MergeEngineConfig {
+  engine: "Merge";
+  sourceDatabase: string;
+  tablesRegexp: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -337,7 +343,8 @@ type EngineConfig =
   | BufferEngineConfig
   | DistributedEngineConfig
   | IcebergS3EngineConfig
-  | KafkaEngineConfig;
+  | KafkaEngineConfig
+  | MergeEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -890,6 +897,23 @@ function convertKafkaEngineConfig(
 }
 
 /**
+ * Convert Merge engine config
+ */
+function convertMergeEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Merge) {
+    return undefined;
+  }
+
+  return {
+    engine: "Merge",
+    sourceDatabase: config.sourceDatabase,
+    tablesRegexp: config.tablesRegexp,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -937,6 +961,11 @@ function convertTableConfigToEngineConfig(
   // Handle Kafka
   if (engine === ClickHouseEngines.Kafka) {
     return convertKafkaEngineConfig(config);
+  }
+
+  // Handle Merge
+  if (engine === ClickHouseEngines.Merge) {
+    return convertMergeEngineConfig(config);
   }
 
   return undefined;

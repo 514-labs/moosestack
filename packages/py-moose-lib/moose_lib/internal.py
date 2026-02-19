@@ -253,6 +253,14 @@ class KafkaConfigDict(BaseEngineConfigDict):
     format: str
 
 
+class MergeConfigDict(BaseEngineConfigDict):
+    """Configuration for Merge engine."""
+
+    engine: Literal["Merge"] = "Merge"
+    source_database: str
+    tables_regexp: str
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -273,6 +281,7 @@ EngineConfigDict = Union[
     DistributedConfigDict,
     IcebergS3ConfigDict,
     KafkaConfigDict,
+    MergeConfigDict,
 ]
 
 
@@ -718,7 +727,15 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
         DistributedEngine,
         IcebergS3Engine,
         KafkaEngine,
+        MergeEngine,
     )
+
+    # Try Merge
+    if isinstance(engine, MergeEngine):
+        return MergeConfigDict(
+            source_database=engine.source_database,
+            tables_regexp=engine.tables_regexp,
+        )
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):

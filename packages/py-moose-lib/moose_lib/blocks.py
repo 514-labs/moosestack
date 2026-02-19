@@ -19,6 +19,7 @@ class ClickHouseEngines(Enum):
     Distributed = "Distributed"
     IcebergS3 = "IcebergS3"
     Kafka = "Kafka"
+    Merge = "Merge"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -505,6 +506,31 @@ class KafkaEngine(EngineConfig):
             raise ValueError("Kafka engine requires 'group_name'")
         if not self.format:
             raise ValueError("Kafka engine requires 'format'")
+
+
+@dataclass
+class MergeEngine(EngineConfig):
+    """Configuration for Merge engine - read-only view over multiple tables matching a regex pattern.
+
+    Args:
+        source_database: Database to scan for source tables
+            (literal name, currentDatabase(), or REGEXP(...))
+        tables_regexp: Regex pattern to match table names in the source database
+
+    Note:
+        - Merge engine is read-only; INSERT operations are not supported
+        - Does not support ORDER BY, PARTITION BY, or SAMPLE BY clauses
+    """
+
+    source_database: str
+    tables_regexp: str
+
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.source_database:
+            raise ValueError("Merge engine requires 'source_database'")
+        if not self.tables_regexp:
+            raise ValueError("Merge engine requires 'tables_regexp'")
 
 
 # ==========================

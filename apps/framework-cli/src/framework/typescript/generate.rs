@@ -934,6 +934,14 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 writeln!(output, "    groupName: {:?},", group_name).unwrap();
                 writeln!(output, "    format: {:?},", format).unwrap();
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Merge {
+                source_database,
+                tables_regexp,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.Merge,").unwrap();
+                writeln!(output, "    sourceDatabase: {:?},", source_database).unwrap();
+                writeln!(output, "    tablesRegexp: {:?},", tables_regexp).unwrap();
+            }
         }
         // Skip version for externally managed tables — the infra map appends
         // `_{version}` to the table name, which would corrupt external table names

@@ -282,6 +282,25 @@ export const BufferTable = new OlapTable<EngineTestData>("BufferTest", {
   maxBytes: 104857600,
 });
 
+// Test Merge engine - virtual read-only view over tables matching a regex
+// Source tables that the Merge table will read from
+export const MergeSourceA = new OlapTable<EngineTestData>("MergeSourceA", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
+});
+
+export const MergeSourceB = new OlapTable<EngineTestData>("MergeSourceB", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
+});
+
+// Merge table: reads from all tables matching ^MergeSource.* in the current database
+export const MergeTable = new OlapTable<EngineTestData>("MergeTest", {
+  engine: ClickHouseEngines.Merge,
+  sourceDatabase: "currentDatabase()",
+  tablesRegexp: "^MergeSource.*",
+});
+
 /**
  * Export all test tables for verification that engine configurations
  * can be properly instantiated and don't throw errors during table creation.
@@ -306,6 +325,9 @@ export const allEngineTestTables = [
   ReplicatedVersionedCollapsingMergeTreeTable,
   SampleByTable,
   TTLTable,
+  MergeSourceA,
+  MergeSourceB,
+  MergeTable,
   BufferDestinationTable,
   BufferTable,
   DefaultTable,
