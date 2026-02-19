@@ -143,7 +143,9 @@ pub fn tool_definition() -> Tool {
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
+        execution: None,
         icons: None,
+        meta: None,
         output_schema: None,
         title: Some("Get Project Issues".into()),
     }
