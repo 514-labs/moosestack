@@ -9,12 +9,14 @@ interface ConsentContextValue {
   hasConsented: boolean;
   /** Whether analytics tracking is allowed */
   analyticsAllowed: boolean;
+  /** Whether marketing tracking is allowed */
+  marketingAllowed: boolean;
   /** Accept all tracking */
   acceptAll: () => void;
   /** Reject all tracking */
   rejectAll: () => void;
   /** Save granular preferences */
-  savePreferences: (prefs: { analytics: boolean }) => void;
+  savePreferences: (prefs: { analytics: boolean; marketing: boolean }) => void;
 }
 
 const ConsentContext = createContext<ConsentContextValue | null>(null);
@@ -42,6 +44,7 @@ export function ConsentProvider({
     const state: ConsentState = {
       version: 1,
       analytics: true,
+      marketing: true,
       updatedAt: new Date().toISOString(),
     };
     setConsentCookie(state);
@@ -52,27 +55,33 @@ export function ConsentProvider({
     const state: ConsentState = {
       version: 1,
       analytics: false,
+      marketing: false,
       updatedAt: new Date().toISOString(),
     };
     setConsentCookie(state);
     setConsent(state);
   }, []);
 
-  const savePreferences = useCallback((prefs: { analytics: boolean }) => {
-    const state: ConsentState = {
-      version: 1,
-      analytics: prefs.analytics,
-      updatedAt: new Date().toISOString(),
-    };
-    setConsentCookie(state);
-    setConsent(state);
-  }, []);
+  const savePreferences = useCallback(
+    (prefs: { analytics: boolean; marketing: boolean }) => {
+      const state: ConsentState = {
+        version: 1,
+        analytics: prefs.analytics,
+        marketing: prefs.marketing,
+        updatedAt: new Date().toISOString(),
+      };
+      setConsentCookie(state);
+      setConsent(state);
+    },
+    [],
+  );
 
   return (
     <ConsentContext.Provider
       value={{
         hasConsented: consent !== null,
         analyticsAllowed: consent?.analytics === true,
+        marketingAllowed: consent?.marketing === true,
         acceptAll,
         rejectAll,
         savePreferences,

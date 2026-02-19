@@ -34,14 +34,14 @@ export default async function RootLayout({
   const initialConsent = parseConsentCookie(
     cookieStore.get(CONSENT_COOKIE_NAME)?.value,
   );
-  const consentGranted = initialConsent?.analytics === true;
+  const marketingGranted = initialConsent?.marketing === true;
 
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
         <ConsentProvider initialConsent={initialConsent}>
-          {consentGranted && <Apollo />}
-          {consentGranted && <CommonRoom />}
+          {marketingGranted && <Apollo />}
+          {marketingGranted && <CommonRoom />}
           <ScrollRestoration />
           <ThemeProvider
             attribute="class"

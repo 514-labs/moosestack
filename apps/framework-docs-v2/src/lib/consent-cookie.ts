@@ -3,6 +3,7 @@ export const CONSENT_COOKIE_NAME = "514-cookie-consent";
 export interface ConsentState {
   version: number;
   analytics: boolean;
+  marketing: boolean;
   updatedAt: string;
 }
 
@@ -14,7 +15,8 @@ export function parseConsentCookie(
     const parsed = JSON.parse(value) as ConsentState;
     if (
       typeof parsed.version !== "number" ||
-      typeof parsed.analytics !== "boolean"
+      typeof parsed.analytics !== "boolean" ||
+      typeof parsed.marketing !== "boolean"
     ) {
       return null;
     }
@@ -31,4 +33,9 @@ export function serializeConsentState(state: ConsentState): string {
 export function hasAnalyticsConsent(value: string | undefined): boolean {
   const state = parseConsentCookie(value);
   return state?.analytics === true;
+}
+
+export function hasMarketingConsent(value: string | undefined): boolean {
+  const state = parseConsentCookie(value);
+  return state?.marketing === true;
 }

@@ -6,22 +6,21 @@ import { useConsent } from "@/lib/consent-context";
 function Toggle({
   checked,
   onChange,
-  disabled,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
-  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      disabled={disabled}
-      onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors ${
-        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-      } ${checked ? "bg-neutral-900 dark:bg-white" : "bg-neutral-300 dark:bg-neutral-600"}`}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${
+        checked ?
+          "bg-neutral-900 dark:bg-white"
+        : "bg-neutral-300 dark:bg-neutral-600"
+      }`}
     >
       <span
         className={`pointer-events-none block size-5 rounded-full shadow-md transition-transform ${
@@ -37,27 +36,18 @@ function Toggle({
 function CustomizeView({
   analyticsEnabled,
   setAnalyticsEnabled,
+  marketingEnabled,
+  setMarketingEnabled,
   onSave,
   onBack,
 }: {
   analyticsEnabled: boolean;
   setAnalyticsEnabled: (v: boolean) => void;
+  marketingEnabled: boolean;
+  setMarketingEnabled: (v: boolean) => void;
   onSave: () => void;
   onBack: () => void;
 }) {
-  const categories = [
-    {
-      name: "Strictly Needed",
-      enabled: true,
-      locked: true,
-    },
-    {
-      name: "Analytics",
-      enabled: analyticsEnabled,
-      locked: false,
-    },
-  ];
-
   return (
     <>
       <div className="flex flex-col gap-1.5">
@@ -67,7 +57,7 @@ function CustomizeView({
         <p className="text-sm leading-5 text-neutral-500 dark:text-neutral-400">
           This website uses the following services.{" "}
           <a
-            href="https://fiveonefour.com/privacy"
+            href="https://www.fiveonefour.com/legal/privacy.pdf"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-neutral-900 dark:hover:text-white"
@@ -78,23 +68,18 @@ function CustomizeView({
       </div>
 
       <div className="flex flex-col">
-        {categories.map((cat) => (
-          <div
-            key={cat.name}
-            className="flex items-center justify-between py-2.5"
-          >
-            <span className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
-              {cat.name}
-            </span>
-            <Toggle
-              checked={cat.enabled}
-              onChange={(v) => {
-                if (cat.name === "Analytics") setAnalyticsEnabled(v);
-              }}
-              disabled={cat.locked}
-            />
-          </div>
-        ))}
+        <div className="flex items-center justify-between py-2.5">
+          <span className="text-base font-medium text-neutral-900 dark:text-white">
+            Analytics
+          </span>
+          <Toggle checked={analyticsEnabled} onChange={setAnalyticsEnabled} />
+        </div>
+        <div className="flex items-center justify-between py-2.5">
+          <span className="text-base font-medium text-neutral-900 dark:text-white">
+            Marketing
+          </span>
+          <Toggle checked={marketingEnabled} onChange={setMarketingEnabled} />
+        </div>
       </div>
 
       <div className="flex gap-6">
@@ -129,21 +114,17 @@ function BannerView({
           We value your privacy
         </h2>
         <p className="text-sm leading-5 text-neutral-500 dark:text-neutral-400">
-          Our site uses, and allows third parties to use, cookies and other
-          tracking technologies to enable and improve site functionality,
-          analyze site use, generate user and site analytics, and facilitate
-          advertising. As explained in our{" "}
+          This site uses cookies to improve your browsing experience, analyze
+          site traffic, and show personalized content. See our{" "}
           <a
-            href="https://fiveonefour.com/privacy"
+            href="https://www.fiveonefour.com/legal/privacy.pdf"
             target="_blank"
             rel="noopener noreferrer"
             className="text-neutral-900 underline dark:text-white"
           >
             Privacy Policy
           </a>
-          , we may transfer data to third parties through use of these tracking
-          technologies. By clicking &ldquo;accept all&rdquo; you agree to our
-          cookie use.
+          .
         </p>
       </div>
 
@@ -169,6 +150,7 @@ export function ConsentBanner() {
   const { hasConsented, acceptAll, savePreferences } = useConsent();
   const [view, setView] = useState<"banner" | "customize">("banner");
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  const [marketingEnabled, setMarketingEnabled] = useState(true);
 
   if (hasConsented) return null;
 
@@ -176,7 +158,7 @@ export function ConsentBanner() {
     <div
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed bottom-4 right-4 z-[9999] flex w-full max-w-lg flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+      className="fixed inset-x-3 bottom-3 z-[9999] flex flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-lg dark:border-neutral-800 dark:bg-neutral-900 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
     >
       {view === "banner" ?
         <BannerView
@@ -186,7 +168,14 @@ export function ConsentBanner() {
       : <CustomizeView
           analyticsEnabled={analyticsEnabled}
           setAnalyticsEnabled={setAnalyticsEnabled}
-          onSave={() => savePreferences({ analytics: analyticsEnabled })}
+          marketingEnabled={marketingEnabled}
+          setMarketingEnabled={setMarketingEnabled}
+          onSave={() =>
+            savePreferences({
+              analytics: analyticsEnabled,
+              marketing: marketingEnabled,
+            })
+          }
           onBack={() => setView("banner")}
         />
       }
