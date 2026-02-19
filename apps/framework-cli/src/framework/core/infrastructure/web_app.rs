@@ -114,11 +114,27 @@ pub fn diff_web_apps(
     (added, removed, updated)
 }
 
-fn web_apps_equal_ignore_metadata(a: &WebApp, b: &WebApp) -> bool {
-    a.name == b.name
-        && a.mount_path == b.mount_path
-        && a.pulls_data_from == b.pulls_data_from
-        && a.pushes_data_to == b.pushes_data_to
+#[derive(PartialEq)]
+struct WebAppComparableForDiff<'a> {
+    name: &'a str,
+    mount_path: &'a str,
+    pulls_data_from: &'a [InfrastructureSignature],
+    pushes_data_to: &'a [InfrastructureSignature],
+}
+
+impl<'a> From<&'a WebApp> for WebAppComparableForDiff<'a> {
+    fn from(web_app: &'a WebApp) -> Self {
+        Self {
+            name: web_app.name.as_str(),
+            mount_path: web_app.mount_path.as_str(),
+            pulls_data_from: web_app.pulls_data_from.as_slice(),
+            pushes_data_to: web_app.pushes_data_to.as_slice(),
+        }
+    }
+}
+
+pub(crate) fn web_apps_equal_ignore_metadata(a: &WebApp, b: &WebApp) -> bool {
+    WebAppComparableForDiff::from(a) == WebAppComparableForDiff::from(b)
 }
 
 #[cfg(test)]
