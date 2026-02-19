@@ -109,6 +109,45 @@ export function hasTableUpdated(plan: PlanOutput, tableName: string): boolean {
 }
 
 /**
+ * Check if a materialized view was added (Created)
+ */
+export function hasMvAdded(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Added) return false;
+    return mvChange.Added.name === mvName;
+  });
+}
+
+/**
+ * Check if a materialized view was removed (Dropped)
+ */
+export function hasMvRemoved(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Removed) return false;
+    return mvChange.Removed.name === mvName;
+  });
+}
+
+/**
+ * Check if a materialized view was updated (SELECT change, etc.)
+ */
+export function hasMvUpdated(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Updated) return false;
+    return (
+      mvChange.Updated.before?.name === mvName ||
+      mvChange.Updated.after?.name === mvName
+    );
+  });
+}
+
+/**
  * Get all table changes for a specific table
  * Compares by table ID (includes database) for unambiguous identification
  */

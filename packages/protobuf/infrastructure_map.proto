@@ -253,6 +253,8 @@ message MaterializedView {
   TableReference target_table = 4;
   // Optional metadata for the materialized view (e.g., description, source file)
   optional Metadata metadata = 5;
+  // Lifecycle management policy for the materialized view
+  LifeCycle life_cycle = 6;
 }
 
 message TopicToTableSyncProcess {

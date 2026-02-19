@@ -1,4 +1,4 @@
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import type { IJsonSchemaCollection } from "typia";
 import { Column } from "../dataModels/dataModelTypes";
 import { getSourceFileInfo } from "./utils/stackTrace";
 

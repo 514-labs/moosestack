@@ -40,6 +40,9 @@ import {
   hasTableRemoved,
   hasTableUpdated,
   getTableChanges,
+  hasMvAdded,
+  hasMvRemoved,
+  hasMvUpdated,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -860,6 +863,242 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
 
         console.log(
           `✓ Operations found for FullyManagedEngineTest engine change: ${JSON.stringify(tableChanges.map((o) => o.type))}`,
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  describe("MATERIALIZED VIEW LifeCycle", function () {
+    /**
+     * Helper to modify the views/lifecycleMvs.ts file in a test project.
+     */
+    function modifyLifecycleMvsFile(
+      projectDir: string,
+      searchString: string,
+      replaceString: string,
+    ): void {
+      const viewsPath = path.join(
+        projectDir,
+        "src",
+        "views",
+        "lifecycleMvs.ts",
+      );
+      const content = fs.readFileSync(viewsPath, "utf-8");
+      const replaced = content.replace(searchString, replaceString);
+      if (content === replaced) {
+        throw new Error(
+          `Replacement failed in lifecycleMvs.ts: pattern not found`,
+        );
+      }
+      fs.writeFileSync(viewsPath, replaced);
+    }
+
+    it("EXTERNALLY_MANAGED MV: should NOT generate create operation", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "mv-externally-managed-no-create",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing EXTERNALLY_MANAGED MV should not be created ---",
+        );
+
+        // Add a new EXTERNALLY_MANAGED MV after the server starts
+        const newMvPath = path.join(
+          testProjectDir,
+          "src",
+          "views",
+          "externalMv.ts",
+        );
+
+        fs.writeFileSync(
+          newMvPath,
+          `
+import { MaterializedView, LifeCycle, Key, DateTime } from "@514labs/moose-lib";
+import { BasicTypesPipeline } from "../ingest/models";
+
+interface ExternalMVTarget {
+  id: Key<string>;
+  timestamp: DateTime;
+}
+
+const basicTypesTable = BasicTypesPipeline.table!;
+
+export const externallyManagedMV = new MaterializedView<ExternalMVTarget>({
+  materializedViewName: "ExternallyManagedMV",
+  targetTable: {
+    name: "ExternallyManagedMVTarget",
+    orderByFields: ["id", "timestamp"],
+  },
+  selectStatement: \`SELECT id, timestamp FROM \\\`\${basicTypesTable.name}\\\`\`,
+  selectTables: [basicTypesTable],
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+`.trim(),
+        );
+
+        console.log("✓ Added new EXTERNALLY_MANAGED MV file");
+
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        // ExternallyManagedMV should NOT have any Added operation
+        const hasCreate = hasMvAdded(plan, "ExternallyManagedMV");
+        expect(hasCreate).to.be.false;
+
+        console.log(
+          "✓ No create operation for ExternallyManagedMV (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("DELETION_PROTECTED MV: should NOT generate drop when removed from code", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "mv-deletion-protected-no-drop",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing DELETION_PROTECTED MV should not be dropped ---",
+        );
+
+        // DeletionProtectedMV was auto-created by moose prod at startup
+        console.log("✓ DeletionProtectedMV exists from moose prod startup");
+
+        // Remove DeletionProtectedMV from code by commenting out the entire block
+        modifyLifecycleMvsFile(
+          testProjectDir,
+          'export const deletionProtectedMV = new MaterializedView<LifecycleMVTarget>({\n  materializedViewName: "DeletionProtectedMV",\n  targetTable: {\n    name: "DeletionProtectedMVTarget",\n    orderByFields: ["id", "timestamp"],\n  },\n  selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,\n});',
+          '// export const deletionProtectedMV = new MaterializedView<LifecycleMVTarget>({\n//   materializedViewName: "DeletionProtectedMV",\n//   targetTable: {\n//     name: "DeletionProtectedMVTarget",\n//     orderByFields: ["id", "timestamp"],\n//   },\n//   selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n//   selectTables: [basicTypesTable],\n//   lifeCycle: LifeCycle.DELETION_PROTECTED,\n// });',
+        );
+        console.log("✓ Commented out deletionProtectedMV from lifecycleMvs.ts");
+
+        // Generate new plan - should NOT have a Removed operation for DeletionProtectedMV
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasDrop = hasMvRemoved(plan, "DeletionProtectedMV");
+        expect(hasDrop).to.be.false;
+
+        console.log(
+          "✓ No drop operation for DeletionProtectedMV (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("DELETION_PROTECTED MV: should NOT generate update when SELECT changes", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "mv-deletion-protected-no-update",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing DELETION_PROTECTED MV should not be updated on SELECT change ---",
+        );
+
+        // DeletionProtectedMV was auto-created by moose prod at startup
+        console.log("✓ DeletionProtectedMV exists from moose prod startup");
+
+        // Change the SELECT statement of DeletionProtectedMV
+        // The search includes the lifeCycle line to scope the replacement to the DeletionProtected block
+        modifyLifecycleMvsFile(
+          testProjectDir,
+          "selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,",
+          "selectStatement: `SELECT id, timestamp, stringField FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  lifeCycle: LifeCycle.DELETION_PROTECTED,",
+        );
+        console.log("✓ Changed SELECT statement for DeletionProtectedMV");
+
+        // Generate new plan - should NOT have an Updated operation for DeletionProtectedMV
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasUpdate = hasMvUpdated(plan, "DeletionProtectedMV");
+        expect(hasUpdate).to.be.false;
+
+        console.log(
+          "✓ No update operation for DeletionProtectedMV SELECT change (as expected)",
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("FULLY_MANAGED MV: should generate drop when removed from code", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "mv-fully-managed-drop",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing FULLY_MANAGED MV should be dropped when removed ---",
+        );
+
+        // FullyManagedMV was auto-created by moose prod at startup
+        console.log("✓ FullyManagedMV exists from moose prod startup");
+
+        // Remove FullyManagedMV from code by commenting out the entire block
+        modifyLifecycleMvsFile(
+          testProjectDir,
+          'export const fullyManagedMV = new MaterializedView<LifecycleMVTarget>({\n  materializedViewName: "FullyManagedMV",\n  targetTable: {\n    name: "FullyManagedMVTarget",\n    orderByFields: ["id", "timestamp"],\n  },\n  selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED\n});',
+          '// export const fullyManagedMV = new MaterializedView<LifecycleMVTarget>({\n//   materializedViewName: "FullyManagedMV",\n//   targetTable: {\n//     name: "FullyManagedMVTarget",\n//     orderByFields: ["id", "timestamp"],\n//   },\n//   selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n//   selectTables: [basicTypesTable],\n//   // lifeCycle defaults to FULLY_MANAGED\n// });',
+        );
+        console.log("✓ Commented out fullyManagedMV from lifecycleMvs.ts");
+
+        // Generate new plan - SHOULD have a Removed operation for FullyManagedMV
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasDrop = hasMvRemoved(plan, "FullyManagedMV");
+        expect(hasDrop).to.be.true;
+
+        console.log("✓ Drop operation exists for FullyManagedMV (as expected)");
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("FULLY_MANAGED MV: should generate update when SELECT changes", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } = await setupTestEnvironment(
+        "mv-fully-managed-update",
+      );
+
+      try {
+        console.log(
+          "\n--- Testing FULLY_MANAGED MV should generate update on SELECT change ---",
+        );
+
+        // FullyManagedMV was auto-created by moose prod at startup
+        console.log("✓ FullyManagedMV exists from moose prod startup");
+
+        // Modify the SELECT statement - use modifyLifecycleMvsFile with the comment
+        // included in the search string to scope the replacement to the FullyManagedMV block
+        modifyLifecycleMvsFile(
+          testProjectDir,
+          "selectStatement: `SELECT id, timestamp FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED",
+          "selectStatement: `SELECT id, timestamp, stringField FROM \\`${basicTypesTable.name}\\``,\n  selectTables: [basicTypesTable],\n  // lifeCycle defaults to FULLY_MANAGED",
+        );
+        console.log("✓ Changed SELECT statement for FullyManagedMV");
+
+        // Generate new plan - SHOULD have an Updated operation for FullyManagedMV
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const hasUpdate = hasMvUpdated(plan, "FullyManagedMV");
+        expect(hasUpdate).to.be.true;
+
+        console.log(
+          "✓ Update operation exists for FullyManagedMV SELECT change (as expected)",
         );
       } finally {
         await cleanup();
