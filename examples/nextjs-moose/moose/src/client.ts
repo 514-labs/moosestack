@@ -1,4 +1,4 @@
-import { getMooseClients, Sql, QueryClient, sql } from "@514labs/moose-lib";
+import { getMooseClients, Sql, QueryClient } from "@514labs/moose-lib";
 
 async function getClickhouseClient(): Promise<QueryClient> {
   const { client } = await getMooseClients({
