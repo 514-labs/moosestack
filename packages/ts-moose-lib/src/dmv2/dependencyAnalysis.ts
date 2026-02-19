@@ -42,6 +42,8 @@ interface RegistryLike {
 interface RegistryIndex {
   tableIdsByName: Map<string, string[]>;
   topicIdsByName: Map<string, string[]>;
+  tableIds: Set<string>;
+  topicIds: Set<string>;
 }
 
 type ResourceRef =
@@ -51,6 +53,10 @@ type ResourceRef =
   | { kind: "MaterializedView"; id: string; targetTableId?: string }
   | { kind: "SqlResource"; id: string }
   | { kind: "IngestPipeline"; streamId?: string; tableId?: string };
+
+type SqlResolvedResourceRef =
+  | { kind: "Table"; id: string }
+  | { kind: "Topic"; id: string };
 
 interface AnalysisContext {
   checker: ts.TypeChecker;
@@ -74,8 +80,11 @@ function createEmptyResult(): DependencyAnalysisResult {
 function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
   const tableIdsByName = new Map<string, string[]>();
   const topicIdsByName = new Map<string, string[]>();
+  const tableIds = new Set<string>();
+  const topicIds = new Set<string>();
 
   registry.tables.forEach((table: any, id: string) => {
+    tableIds.add(id);
     const baseName = typeof table?.name === "string" ? table.name : id;
     const existing = tableIdsByName.get(baseName) ?? [];
     existing.push(id);
@@ -83,13 +92,14 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
   });
 
   registry.streams.forEach((stream: any, id: string) => {
+    topicIds.add(id);
     const streamName = typeof stream?.name === "string" ? stream.name : id;
     const existing = topicIdsByName.get(streamName) ?? [];
     existing.push(id);
     topicIdsByName.set(streamName, existing);
   });
 
-  return { tableIdsByName, topicIdsByName };
+  return { tableIdsByName, topicIdsByName, tableIds, topicIds };
 }
 
 function resolveTableId(
@@ -98,6 +108,28 @@ function resolveTableId(
   index: RegistryIndex,
 ): string {
   if (version) {
+    const candidates = new Set<string>([`${tableName}_${version}`]);
+    if (version.includes(".")) {
+      candidates.add(`${tableName}_${version.replace(/\./g, "_")}`);
+    }
+
+    for (const candidate of candidates) {
+      if (index.tableIds.has(candidate)) {
+        return candidate;
+      }
+
+      const ids = index.tableIdsByName.get(candidate) ?? [];
+      if (ids.length === 1) {
+        return ids[0];
+      }
+      if (ids.length > 1) {
+        if (ids.includes(candidate)) {
+          return candidate;
+        }
+        return ids[0];
+      }
+    }
+
     return `${tableName}_${version}`;
   }
 
@@ -129,6 +161,263 @@ function resolveTopicId(topicName: string, index: RegistryIndex): string {
     return topicName;
   }
   return ids[0];
+}
+
+function normalizeSqlIdentifier(token: string): string {
+  let normalized = token.trim();
+  normalized = normalized.replace(/^[`"'\[]+/, "");
+  normalized = normalized.replace(/[`"'\]]+$/, "");
+  return normalized;
+}
+
+function resolveResourceFromSqlIdentifier(
+  identifier: string,
+  index: RegistryIndex,
+): SqlResolvedResourceRef | undefined {
+  const normalized = normalizeSqlIdentifier(identifier);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const candidates = new Set<string>([normalized]);
+  if (normalized.includes(".")) {
+    const parts = normalized.split(".");
+    const suffix = parts[parts.length - 1];
+    if (suffix && suffix !== normalized) {
+      candidates.add(suffix);
+    }
+  }
+
+  for (const candidate of [...candidates]) {
+    const versionedMatch = candidate.match(/^(.+)_\d+_\d+$/);
+    if (versionedMatch?.[1]) {
+      candidates.add(versionedMatch[1]);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (index.tableIds.has(candidate)) {
+      return { kind: "Table", id: candidate };
+    }
+    if (index.tableIdsByName.has(candidate)) {
+      return { kind: "Table", id: resolveTableId(candidate, undefined, index) };
+    }
+    if (index.topicIds.has(candidate)) {
+      return { kind: "Topic", id: candidate };
+    }
+    if (index.topicIdsByName.has(candidate)) {
+      return { kind: "Topic", id: resolveTopicId(candidate, index) };
+    }
+  }
+
+  return undefined;
+}
+
+function inferResourcesFromSqlText(
+  text: string,
+  index: RegistryIndex,
+): SqlResolvedResourceRef[] {
+  const refs = new Map<string, SqlResolvedResourceRef>();
+  const addRef = (ref: SqlResolvedResourceRef | undefined) => {
+    if (!ref) {
+      return;
+    }
+    refs.set(`${ref.kind}:${ref.id}`, ref);
+  };
+
+  const trimmed = text.trim();
+  if (trimmed && !/\s/.test(trimmed)) {
+    addRef(resolveResourceFromSqlIdentifier(trimmed, index));
+  }
+
+  const relationPattern =
+    /\b(?:from|join|into|update|table)\s+([`"'\[]?[A-Za-z_][A-Za-z0-9_.]*[`"'\]]?)/gi;
+  for (const match of text.matchAll(relationPattern)) {
+    addRef(resolveResourceFromSqlIdentifier(match[1], index));
+  }
+
+  return [...refs.values()];
+}
+
+function collectSqlTextFragmentsFromExpression(
+  expression: ts.Expression,
+  ctx: AnalysisContext,
+  fragments: string[],
+  visitedSymbols = new Set<ts.Symbol>(),
+) {
+  const unwrapped = unwrapExpression(expression);
+
+  if (
+    ts.isStringLiteral(unwrapped) ||
+    ts.isNoSubstitutionTemplateLiteral(unwrapped)
+  ) {
+    fragments.push(unwrapped.text);
+    return;
+  }
+
+  if (ts.isTemplateExpression(unwrapped)) {
+    fragments.push(unwrapped.head.text);
+    for (const span of unwrapped.templateSpans) {
+      fragments.push(span.literal.text);
+    }
+    return;
+  }
+
+  if (ts.isTaggedTemplateExpression(unwrapped)) {
+    if (isSqlTag(unwrapped.tag, ctx.checker)) {
+      const resources = inferResourcesFromSqlTemplate(unwrapped.template, ctx);
+      for (const resource of resources) {
+        fragments.push(resource.id);
+      }
+    }
+    return;
+  }
+
+  if (ts.isArrayLiteralExpression(unwrapped)) {
+    for (const element of unwrapped.elements) {
+      if (ts.isExpression(element)) {
+        collectSqlTextFragmentsFromExpression(
+          element,
+          ctx,
+          fragments,
+          visitedSymbols,
+        );
+      }
+    }
+    return;
+  }
+
+  if (ts.isCallExpression(unwrapped)) {
+    for (const arg of unwrapped.arguments) {
+      collectSqlTextFragmentsFromExpression(
+        arg,
+        ctx,
+        fragments,
+        visitedSymbols,
+      );
+    }
+    return;
+  }
+
+  if (ts.isObjectLiteralExpression(unwrapped)) {
+    for (const property of unwrapped.properties) {
+      if (ts.isPropertyAssignment(property)) {
+        collectSqlTextFragmentsFromExpression(
+          property.initializer,
+          ctx,
+          fragments,
+          visitedSymbols,
+        );
+      }
+    }
+    return;
+  }
+
+  if (ts.isConditionalExpression(unwrapped)) {
+    collectSqlTextFragmentsFromExpression(
+      unwrapped.whenTrue,
+      ctx,
+      fragments,
+      visitedSymbols,
+    );
+    collectSqlTextFragmentsFromExpression(
+      unwrapped.whenFalse,
+      ctx,
+      fragments,
+      visitedSymbols,
+    );
+    return;
+  }
+
+  if (ts.isBinaryExpression(unwrapped)) {
+    collectSqlTextFragmentsFromExpression(
+      unwrapped.left,
+      ctx,
+      fragments,
+      visitedSymbols,
+    );
+    collectSqlTextFragmentsFromExpression(
+      unwrapped.right,
+      ctx,
+      fragments,
+      visitedSymbols,
+    );
+    return;
+  }
+
+  if (ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped)) {
+    const staticValue = resolveStaticString(unwrapped, ctx);
+    if (staticValue !== undefined) {
+      fragments.push(staticValue);
+      return;
+    }
+
+    const symbol = resolveAliasedSymbol(
+      ctx.checker.getSymbolAtLocation(unwrapped),
+      ctx.checker,
+    );
+    if (!symbol || visitedSymbols.has(symbol)) {
+      return;
+    }
+    visitedSymbols.add(symbol);
+
+    for (const declaration of symbol.declarations ?? []) {
+      const initializer = resolveSymbolInitializerExpression(declaration);
+      if (!initializer) {
+        continue;
+      }
+      collectSqlTextFragmentsFromExpression(
+        initializer,
+        ctx,
+        fragments,
+        visitedSymbols,
+      );
+    }
+  }
+}
+
+function inferResourcesFromSqlTemplate(
+  template: ts.TemplateLiteral,
+  ctx: AnalysisContext,
+): SqlResolvedResourceRef[] {
+  const refs = new Map<string, SqlResolvedResourceRef>();
+  const addFromText = (text: string) => {
+    for (const ref of inferResourcesFromSqlText(text, ctx.registryIndex)) {
+      refs.set(`${ref.kind}:${ref.id}`, ref);
+    }
+  };
+
+  if (ts.isNoSubstitutionTemplateLiteral(template)) {
+    addFromText(template.text);
+    return [...refs.values()];
+  }
+
+  addFromText(template.head.text);
+  for (const span of template.templateSpans) {
+    addFromText(span.literal.text);
+  }
+
+  return [...refs.values()];
+}
+
+function inferResourcesFromSqlCallArguments(
+  argumentsList: readonly ts.Expression[],
+  ctx: AnalysisContext,
+): SqlResolvedResourceRef[] {
+  const refs = new Map<string, SqlResolvedResourceRef>();
+  const fragments: string[] = [];
+
+  for (const arg of argumentsList) {
+    collectSqlTextFragmentsFromExpression(arg, ctx, fragments);
+  }
+
+  for (const fragment of fragments) {
+    for (const ref of inferResourcesFromSqlText(fragment, ctx.registryIndex)) {
+      refs.set(`${ref.kind}:${ref.id}`, ref);
+    }
+  }
+
+  return [...refs.values()];
 }
 
 function getObjectPropertyExpression(
@@ -196,6 +485,17 @@ function unwrapExpression(expression: ts.Expression): ts.Expression {
       current = current.expression;
       continue;
     }
+  }
+  return current;
+}
+
+function unwrapCallTargetExpression(expression: ts.Expression): ts.Expression {
+  let current = unwrapExpression(expression);
+  while (
+    ts.isBinaryExpression(current) &&
+    current.operatorToken.kind === ts.SyntaxKind.CommaToken
+  ) {
+    current = unwrapExpression(current.right);
   }
   return current;
 }
@@ -537,30 +837,44 @@ function resolveResourceFromSymbol(
   ctx.symbolResourceCache.set(resolvedSymbol, null);
 
   for (const declaration of resolvedSymbol.declarations ?? []) {
-    if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
-      const resource = resolveResourceFromExpression(
-        declaration.initializer,
-        ctx,
-        bindings,
-      );
-      if (resource) {
-        ctx.symbolResourceCache.set(resolvedSymbol, resource);
-        return resource;
-      }
-    } else if (ts.isPropertyAssignment(declaration)) {
-      const resource = resolveResourceFromExpression(
-        declaration.initializer,
-        ctx,
-        bindings,
-      );
-      if (resource) {
-        ctx.symbolResourceCache.set(resolvedSymbol, resource);
-        return resource;
-      }
+    const initializer = resolveSymbolInitializerExpression(declaration);
+    if (!initializer) {
+      continue;
+    }
+
+    const resource = resolveResourceFromExpression(initializer, ctx, bindings);
+    if (resource) {
+      ctx.symbolResourceCache.set(resolvedSymbol, resource);
+      return resource;
     }
   }
 
   ctx.symbolResourceCache.set(resolvedSymbol, null);
+  return undefined;
+}
+
+function resolveSymbolInitializerExpression(
+  declaration: ts.Declaration,
+): ts.Expression | undefined {
+  if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+    return declaration.initializer;
+  }
+
+  if (ts.isPropertyAssignment(declaration)) {
+    return declaration.initializer;
+  }
+
+  if (
+    (ts.isPropertyAccessExpression(declaration) ||
+      ts.isElementAccessExpression(declaration) ||
+      ts.isIdentifier(declaration)) &&
+    ts.isBinaryExpression(declaration.parent) &&
+    declaration.parent.left === declaration &&
+    declaration.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  ) {
+    return declaration.parent.right;
+  }
+
   return undefined;
 }
 
@@ -584,6 +898,29 @@ function resolveResourceFromExpression(
 
   if (ts.isNewExpression(unwrapped)) {
     return resolveResourceFromNewExpression(unwrapped, ctx);
+  }
+
+  if (
+    ts.isTaggedTemplateExpression(unwrapped) &&
+    isSqlTag(unwrapped.tag, ctx.checker)
+  ) {
+    const inferred = inferResourcesFromSqlTemplate(unwrapped.template, ctx);
+    if (inferred.length === 1) {
+      return inferred[0];
+    }
+  }
+
+  if (ts.isCallExpression(unwrapped)) {
+    const calleeExpression = unwrapCallTargetExpression(unwrapped.expression);
+    if (isSqlTag(calleeExpression as ts.LeftHandSideExpression, ctx.checker)) {
+      const inferred = inferResourcesFromSqlCallArguments(
+        unwrapped.arguments,
+        ctx,
+      );
+      if (inferred.length === 1) {
+        return inferred[0];
+      }
+    }
   }
 
   if (ts.isIdentifier(unwrapped)) {
@@ -804,6 +1141,92 @@ function bindingIdentityForFunction(
   return parts.join("|");
 }
 
+const API_HELPER_IDENTIFIERS = new Set(["ApiHelpers", "ConsumptionHelpers"]);
+
+function isApiHelperObjectExpression(
+  expression: ts.Expression,
+  ctx: AnalysisContext,
+  visitedSymbols = new Set<ts.Symbol>(),
+): boolean {
+  const unwrapped = unwrapExpression(expression);
+
+  if (ts.isIdentifier(unwrapped)) {
+    if (API_HELPER_IDENTIFIERS.has(unwrapped.text)) {
+      return true;
+    }
+
+    const symbol = resolveAliasedSymbol(
+      ctx.checker.getSymbolAtLocation(unwrapped),
+      ctx.checker,
+    );
+    if (!symbol || visitedSymbols.has(symbol)) {
+      return false;
+    }
+    visitedSymbols.add(symbol);
+
+    if (API_HELPER_IDENTIFIERS.has(symbol.name)) {
+      return true;
+    }
+
+    for (const declaration of symbol.declarations ?? []) {
+      if (ts.isImportSpecifier(declaration)) {
+        const importedName =
+          declaration.propertyName?.text ?? declaration.name.text;
+        if (API_HELPER_IDENTIFIERS.has(importedName)) {
+          return true;
+        }
+      }
+
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        if (
+          isApiHelperObjectExpression(
+            declaration.initializer,
+            ctx,
+            visitedSymbols,
+          )
+        ) {
+          return true;
+        }
+      }
+
+      if (ts.isPropertyAssignment(declaration)) {
+        if (
+          isApiHelperObjectExpression(
+            declaration.initializer,
+            ctx,
+            visitedSymbols,
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  if (ts.isPropertyAccessExpression(unwrapped)) {
+    if (API_HELPER_IDENTIFIERS.has(unwrapped.name.text)) {
+      return true;
+    }
+    return isApiHelperObjectExpression(
+      unwrapped.expression,
+      ctx,
+      visitedSymbols,
+    );
+  }
+
+  if (ts.isElementAccessExpression(unwrapped)) {
+    return isApiHelperObjectExpression(
+      unwrapped.expression,
+      ctx,
+      visitedSymbols,
+    );
+  }
+
+  return false;
+}
+
 function analyzeFunctionGraph(
   roots: ts.FunctionLikeDeclaration[],
   ctx: AnalysisContext,
@@ -841,6 +1264,13 @@ function analyzeFunctionGraph(
         ts.isTaggedTemplateExpression(node) &&
         isSqlTag(node.tag, ctx.checker)
       ) {
+        for (const inferred of inferResourcesFromSqlTemplate(
+          node.template,
+          ctx,
+        )) {
+          addPull(toSignature(inferred));
+        }
+
         const template = node.template;
         if (ts.isTemplateExpression(template)) {
           for (const span of template.templateSpans) {
@@ -856,10 +1286,43 @@ function analyzeFunctionGraph(
       }
 
       if (ts.isCallExpression(node)) {
-        if (ts.isPropertyAccessExpression(node.expression)) {
-          const methodName = node.expression.name.text;
+        const calleeExpression = unwrapCallTargetExpression(node.expression);
+
+        if (
+          isSqlTag(calleeExpression as ts.LeftHandSideExpression, ctx.checker)
+        ) {
+          for (const inferred of inferResourcesFromSqlCallArguments(
+            node.arguments,
+            ctx,
+          )) {
+            addPull(toSignature(inferred));
+          }
+
+          for (const arg of node.arguments) {
+            const ref = resolveResourceFromExpression(arg, ctx, bindings);
+            const signature = ref ? toSignature(ref) : undefined;
+            addPull(signature);
+          }
+        }
+
+        if (ts.isPropertyAccessExpression(calleeExpression)) {
+          const methodName = calleeExpression.name.text;
+
+          if (
+            methodName === "table" &&
+            isApiHelperObjectExpression(calleeExpression.expression, ctx)
+          ) {
+            const tableName = resolveStaticString(node.arguments?.[0], ctx);
+            if (tableName) {
+              addPull({
+                kind: "Table",
+                id: resolveTableId(tableName, undefined, ctx.registryIndex),
+              });
+            }
+          }
+
           const ref = resolveResourceFromExpression(
-            node.expression.expression,
+            calleeExpression.expression,
             ctx,
             bindings,
           );
@@ -878,7 +1341,7 @@ function analyzeFunctionGraph(
           }
         }
 
-        const calleeSymbol = ctx.checker.getSymbolAtLocation(node.expression);
+        const calleeSymbol = ctx.checker.getSymbolAtLocation(calleeExpression);
         const callees = getFunctionLikeDeclarations(calleeSymbol, ctx).filter(
           isUserCodeFunction,
         );
@@ -1153,6 +1616,8 @@ function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
     registryIndex: {
       tableIdsByName: new Map(),
       topicIdsByName: new Map(),
+      tableIds: new Set(),
+      topicIds: new Set(),
     },
     symbolResourceCache: new Map(),
     taskExpressionCache: new Map(),
