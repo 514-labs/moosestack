@@ -1106,7 +1106,7 @@ impl InfrastructureMap {
 
         for (id, webapp) in self_web_apps {
             if let Some(target_webapp) = target_web_apps.get(id) {
-                if webapp != target_webapp {
+                if !web_apps_equal_ignore_metadata(webapp, target_webapp) {
                     tracing::debug!("WebApp updated: {}", id);
                     webapp_updates += 1;
                     web_app_changes.push(WebAppChange::WebApp(Change::Updated {
@@ -3505,11 +3505,28 @@ fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
 /// # Returns
 /// `true` if the API endpoints are equal ignoring metadata, `false` otherwise
 fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool {
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.metadata = None;
-    b.metadata = None;
-    a == b
+    a.name == b.name
+        && a.api_type == b.api_type
+        && a.path == b.path
+        && a.method == b.method
+        && a.version == b.version
+        && a.source_primitive == b.source_primitive
+        && a.pulls_data_from == b.pulls_data_from
+        && a.pushes_data_to == b.pushes_data_to
+}
+
+/// Check if two WebApps are equal, ignoring metadata.
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+/// Lineage fields remain part of equality and intentionally trigger updates.
+fn web_apps_equal_ignore_metadata(
+    a: &super::infrastructure::web_app::WebApp,
+    b: &super::infrastructure::web_app::WebApp,
+) -> bool {
+    a.name == b.name
+        && a.mount_path == b.mount_path
+        && a.pulls_data_from == b.pulls_data_from
+        && a.pushes_data_to == b.pushes_data_to
 }
 
 /// Check if two workflow configurations are equal
@@ -8084,6 +8101,109 @@ mod mirrorable_external_tables_tests {
         assert!(
             !mirrorable.iter().any(|t| t.name == "managed_mergetree"),
             "FullyManaged table should not be mirrorable (wrong lifecycle)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lineage_diff_equality_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
+    use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+    use crate::framework::core::infrastructure::web_app::WebApp;
+    use crate::framework::core::infrastructure::InfrastructureSignature;
+
+    fn test_api_endpoint() -> ApiEndpoint {
+        ApiEndpoint {
+            name: "lineage_api".to_string(),
+            api_type: APIType::EGRESS {
+                query_params: vec![],
+                output_schema: serde_json::Value::Null,
+            },
+            path: std::path::PathBuf::from("lineage_api"),
+            method: Method::GET,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "lineage_api".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: Some(Metadata {
+                description: Some("before".to_string()),
+                source: Some(SourceLocation {
+                    file: "app/api.ts".to_string(),
+                }),
+            }),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![],
+        }
+    }
+
+    fn test_web_app() -> WebApp {
+        WebApp {
+            name: "lineage_web".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: Some(
+                crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                    description: Some("before".to_string()),
+                },
+            ),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![],
+        }
+    }
+
+    #[test]
+    fn api_endpoint_equality_ignores_metadata_but_tracks_lineage() {
+        let base = test_api_endpoint();
+
+        let mut metadata_only = base.clone();
+        metadata_only.metadata = Some(Metadata {
+            description: Some("after".to_string()),
+            source: Some(SourceLocation {
+                file: "app/other.ts".to_string(),
+            }),
+        });
+        assert!(
+            api_endpoints_equal_ignore_metadata(&base, &metadata_only),
+            "Metadata-only changes should be ignored for API endpoint diffs"
+        );
+
+        let mut lineage_changed = base.clone();
+        lineage_changed.pulls_data_from = vec![InfrastructureSignature::Table {
+            id: "OrdersV2".to_string(),
+        }];
+        assert!(
+            !api_endpoints_equal_ignore_metadata(&base, &lineage_changed),
+            "Lineage changes should be treated as API endpoint updates"
+        );
+    }
+
+    #[test]
+    fn web_app_equality_ignores_metadata_but_tracks_lineage() {
+        let base = test_web_app();
+
+        let mut metadata_only = base.clone();
+        metadata_only.metadata = Some(
+            crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                description: Some("after".to_string()),
+            },
+        );
+        assert!(
+            web_apps_equal_ignore_metadata(&base, &metadata_only),
+            "Metadata-only changes should be ignored for WebApp diffs"
+        );
+
+        let mut lineage_changed = base.clone();
+        lineage_changed.pushes_data_to = vec![InfrastructureSignature::Topic {
+            id: "OrdersEvents".to_string(),
+        }];
+        assert!(
+            !web_apps_equal_ignore_metadata(&base, &lineage_changed),
+            "Lineage changes should be treated as WebApp updates"
         );
     }
 }

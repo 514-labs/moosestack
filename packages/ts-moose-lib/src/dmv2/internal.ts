@@ -50,8 +50,9 @@ import {
 import {
   analyzeRegistryLineage,
   type DependencyAnalysisResult,
+  type InfrastructureSignatureJson,
 } from "./dependencyAnalysis";
-import { findSourceFiles } from "./utils/sourceFiles";
+import { findSourceFiles } from "./utils";
 
 /**
  * Strips the file extension from a path, returning the "stem".
@@ -580,24 +581,6 @@ interface ApiJson {
   pullsDataFrom: InfrastructureSignatureJson[];
   /** Components that this API writes to. */
   pushesDataTo: InfrastructureSignatureJson[];
-}
-
-/**
- * Represents the unique signature of an infrastructure component (Table, Topic, etc.).
- * Used for defining dependencies between SQL resources.
- */
-interface InfrastructureSignatureJson {
-  /** A unique identifier for the resource instance (often name + version). */
-  id: string;
-  /** The kind/type of the infrastructure component. */
-  kind:
-    | "Table"
-    | "Topic"
-    | "ApiEndpoint"
-    | "TopicToTableSyncProcess"
-    | "View"
-    | "MaterializedView"
-    | "SqlResource";
 }
 
 interface WorkflowJson {
