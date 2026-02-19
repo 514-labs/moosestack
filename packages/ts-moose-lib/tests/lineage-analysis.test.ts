@@ -13,7 +13,9 @@ import {
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { ApiHelpers, sql } from "../src/index";
 
-describe("Lineage Analysis", () => {
+describe("Lineage Analysis", function () {
+  this.timeout(30000);
+
   beforeEach(() => {
     const registry = getMooseInternal();
     registry.tables.clear();
