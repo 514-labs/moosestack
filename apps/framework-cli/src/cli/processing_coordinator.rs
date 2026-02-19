@@ -104,6 +104,7 @@ impl Default for ProcessingCoordinator {
 ///
 /// This ensures that even if processing fails or panics, the write lock will be
 /// released, allowing MCP tools to proceed.
+#[must_use]
 pub struct ProcessingGuard {
     _write_guard: tokio::sync::OwnedRwLockWriteGuard<()>,
 }
@@ -119,6 +120,7 @@ impl Drop for ProcessingGuard {
 ///
 /// While this guard is alive, watchers cannot acquire the write lock for
 /// infrastructure mutations.
+#[must_use]
 pub struct StableStateGuard {
     _read_guard: tokio::sync::OwnedRwLockReadGuard<()>,
 }
