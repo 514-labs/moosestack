@@ -56,6 +56,57 @@ describe("Lineage Analysis", () => {
     });
   });
 
+  it("invalidates cached lineage when API registry mutates", () => {
+    interface ApiParams {
+      id?: string;
+    }
+
+    interface ApiResponse {
+      id: string;
+    }
+
+    interface TableRow {
+      id: string;
+    }
+
+    const firstTable = new OlapTable<TableRow>("LineageCacheTableA");
+    const secondTable = new OlapTable<TableRow>("LineageCacheTableB");
+
+    const firstHandler = async (_params: ApiParams): Promise<ApiResponse[]> => {
+      sql`SELECT ${firstTable.columns.id} FROM ${firstTable}`;
+      return [];
+    };
+    new Api<ApiParams, ApiResponse[]>("lineageCacheApiA", firstHandler);
+
+    const firstInfra = toInfraMap(getMooseInternal());
+    expect(firstInfra.apis.lineageCacheApiA.pullsDataFrom).to.deep.include({
+      id: "LineageCacheTableA",
+      kind: "Table",
+    });
+
+    getMooseInternal().apis.clear();
+
+    const secondHandler = async (
+      _params: ApiParams,
+    ): Promise<ApiResponse[]> => {
+      sql`SELECT ${secondTable.columns.id} FROM ${secondTable}`;
+      return [];
+    };
+    new Api<ApiParams, ApiResponse[]>("lineageCacheApiB", secondHandler);
+
+    const secondInfra = toInfraMap(getMooseInternal());
+    expect(secondInfra.apis.lineageCacheApiB.pullsDataFrom).to.deep.include({
+      id: "LineageCacheTableB",
+      kind: "Table",
+    });
+    expect(secondInfra.apis.lineageCacheApiB.pullsDataFrom).to.not.deep.include(
+      {
+        id: "LineageCacheTableA",
+        kind: "Table",
+      },
+    );
+  });
+
   it("infers transitive pushes_data_to for workflow task call chains", () => {
     interface WorkflowRow {
       id: string;
