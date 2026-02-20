@@ -2,32 +2,15 @@
 
 import { useState } from "react";
 import { useConsent } from "@/lib/consent-context";
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${
-        checked ? "bg-primary" : "bg-input"
-      }`}
-    >
-      <span
-        className={`pointer-events-none block size-5 rounded-full bg-background shadow-md transition-transform ${
-          checked ? "translate-x-5" : "translate-x-0.5"
-        }`}
-      />
-    </button>
-  );
-}
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 function CustomizeView({
   analyticsEnabled,
@@ -46,7 +29,7 @@ function CustomizeView({
 }) {
   return (
     <>
-      <div className="flex flex-col gap-1.5">
+      <CardHeader className="p-0">
         <h2 className="text-xl font-semibold leading-7">Cookie Preferences</h2>
         <p className="text-sm leading-5 text-muted-foreground">
           This website uses the following services.{" "}
@@ -59,33 +42,39 @@ function CustomizeView({
             Learn more
           </a>
         </p>
-      </div>
+      </CardHeader>
 
-      <div className="flex flex-col">
+      <CardContent className="flex flex-col p-0">
         <div className="flex items-center justify-between py-2.5">
-          <span className="text-base font-medium">Analytics</span>
-          <Toggle checked={analyticsEnabled} onChange={setAnalyticsEnabled} />
+          <Label htmlFor="analytics-toggle" className="text-base font-medium">
+            Analytics
+          </Label>
+          <Switch
+            id="analytics-toggle"
+            checked={analyticsEnabled}
+            onCheckedChange={setAnalyticsEnabled}
+          />
         </div>
         <div className="flex items-center justify-between py-2.5">
-          <span className="text-base font-medium">Marketing</span>
-          <Toggle checked={marketingEnabled} onChange={setMarketingEnabled} />
+          <Label htmlFor="marketing-toggle" className="text-base font-medium">
+            Marketing
+          </Label>
+          <Switch
+            id="marketing-toggle"
+            checked={marketingEnabled}
+            onCheckedChange={setMarketingEnabled}
+          />
         </div>
-      </div>
+      </CardContent>
 
-      <div className="flex items-center gap-2 pt-2">
-        <button
-          onClick={onBack}
-          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
-        >
+      <CardFooter className="gap-2 p-0 pt-2">
+        <Button variant="secondary" onClick={onBack}>
           Back
-        </button>
-        <button
-          onClick={onSave}
-          className="ml-auto h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        </Button>
+        <Button className="ml-auto" onClick={onSave}>
           Save Preferences
-        </button>
-      </div>
+        </Button>
+      </CardFooter>
     </>
   );
 }
@@ -101,7 +90,7 @@ function BannerView({
 }) {
   return (
     <>
-      <div className="flex flex-col gap-1.5">
+      <CardHeader className="p-0">
         <h2 className="text-xl font-semibold leading-7">
           We value your privacy
         </h2>
@@ -118,28 +107,19 @@ function BannerView({
           </a>
           .
         </p>
-      </div>
+      </CardHeader>
 
-      <div className="flex items-center gap-2 pt-2">
-        <button
-          onClick={onRejectAll}
-          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
-        >
+      <CardFooter className="gap-2 p-0 pt-2">
+        <Button variant="secondary" onClick={onRejectAll}>
           Reject All
-        </button>
-        <button
-          onClick={onCustomize}
-          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onCustomize}>
           Customize
-        </button>
-        <button
-          onClick={onAcceptAll}
-          className="ml-auto h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        </Button>
+        <Button className="ml-auto" onClick={onAcceptAll}>
           Accept All
-        </button>
-      </div>
+        </Button>
+      </CardFooter>
     </>
   );
 }
@@ -153,10 +133,10 @@ export function ConsentBanner() {
   if (hasConsented) return null;
 
   return (
-    <div
+    <Card
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-6 z-[9999] flex flex-col gap-4 rounded-xl border bg-card p-5 text-card-foreground shadow-lg sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
+      className="fixed inset-x-3 bottom-6 z-[9999] flex flex-col gap-4 p-5 shadow-lg sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
     >
       {view === "banner" ?
         <BannerView
@@ -178,6 +158,6 @@ export function ConsentBanner() {
           onBack={() => setView("banner")}
         />
       }
-    </div>
+    </Card>
   );
 }
