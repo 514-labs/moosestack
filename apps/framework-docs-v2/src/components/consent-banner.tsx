@@ -127,8 +127,8 @@ function BannerView({
 export function ConsentBanner() {
   const { hasConsented, acceptAll, rejectAll, savePreferences } = useConsent();
   const [view, setView] = useState<"banner" | "customize">("banner");
-  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
-  const [marketingEnabled, setMarketingEnabled] = useState(true);
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
+  const [marketingEnabled, setMarketingEnabled] = useState(false);
 
   if (hasConsented) return null;
 
