@@ -120,6 +120,7 @@ use super::{Message, MessageType};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
+use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -1268,30 +1269,9 @@ pub async fn remote_plan(
             );
         }
 
-        let table_names: HashSet<String> = local_infra_map
-            .tables
-            .values()
-            .map(|t| t.id(&local_infra_map.default_database))
-            .collect();
+        let filter = ReconciliationFilter::from_infra_map(&local_infra_map);
 
-        let sql_resource_ids: HashSet<String> =
-            local_infra_map.sql_resources.keys().cloned().collect();
-
-        let materialized_view_ids: HashSet<String> =
-            local_infra_map.materialized_views.keys().cloned().collect();
-
-        let view_ids: HashSet<String> = local_infra_map.views.keys().cloned().collect();
-
-        get_remote_inframap_serverless(
-            project,
-            clickhouse_url,
-            None,
-            &table_names,
-            &sql_resource_ids,
-            &materialized_view_ids,
-            &view_ids,
-        )
-        .await?
+        get_remote_inframap_serverless(project, clickhouse_url, None, &filter).await?
     } else {
         // Moose server flow
         if !json {
@@ -1478,27 +1458,10 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            let target_table_ids: HashSet<String> = local_infra_map
-                .tables
-                .values()
-                .map(|t| t.id(&local_infra_map.default_database))
-                .collect();
-            let target_sql_resource_ids: HashSet<String> =
-                local_infra_map.sql_resources.keys().cloned().collect();
-            let target_materialized_view_ids: HashSet<String> =
-                local_infra_map.materialized_views.keys().cloned().collect();
-            let target_view_ids: HashSet<String> = local_infra_map.views.keys().cloned().collect();
+            let filter = ReconciliationFilter::from_infra_map(&local_infra_map);
 
-            get_remote_inframap_serverless(
-                project,
-                clickhouse_url,
-                redis_url.as_deref(),
-                &target_table_ids,
-                &target_sql_resource_ids,
-                &target_materialized_view_ids,
-                &target_view_ids,
-            )
-            .await?
+            get_remote_inframap_serverless(project, clickhouse_url, redis_url.as_deref(), &filter)
+                .await?
         }
     };
 
@@ -1561,10 +1524,7 @@ async fn get_remote_inframap_serverless(
     project: &Project,
     clickhouse_url: &str,
     redis_url: Option<&str>,
-    target_table_ids: &HashSet<String>,
-    target_sql_resource_ids: &HashSet<String>,
-    target_materialized_view_ids: &HashSet<String>,
-    target_view_ids: &HashSet<String>,
+    filter: &ReconciliationFilter,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
     use crate::infrastructure::olap::clickhouse::create_client;
@@ -1584,10 +1544,7 @@ async fn get_remote_inframap_serverless(
         project,
         &*state_storage,
         olap_client,
-        target_table_ids,
-        target_sql_resource_ids,
-        target_materialized_view_ids,
-        target_view_ids,
+        filter,
     )
     .await?;
 

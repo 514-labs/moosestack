@@ -3502,7 +3502,6 @@ async fn get_admin_reconciled_inframap(
 ) -> Result<InfrastructureMap, crate::framework::core::plan::PlanningError> {
     use crate::framework::core::state_storage::StateStorageBuilder;
     use crate::infrastructure::olap::clickhouse;
-    use std::collections::HashSet;
 
     // Build state storage from project configuration.
     // This provides access to the persisted infrastructure map (stored in Redis or ClickHouse).
@@ -3530,21 +3529,10 @@ async fn get_admin_reconciled_inframap(
     };
 
     // For admin endpoints, reconcile all currently managed tables and SQL resources only.
-    // Pass the managed table IDs as target_table_ids - this ensures that
-    // reconcile_with_reality only operates on resources that are already managed by Moose.
-    let target_table_ids: HashSet<String> = current_map
-        .tables
-        .values()
-        .map(|t| t.id(&current_map.default_database))
-        .collect();
-
-    let target_sql_resource_ids: HashSet<String> =
-        current_map.sql_resources.keys().cloned().collect();
-
-    let target_materialized_view_ids: HashSet<String> =
-        current_map.materialized_views.keys().cloned().collect();
-
-    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
+    // Use the current map's resource IDs as the filter—this ensures that
+    // reconcile_with_reality only operates on resources already managed by Moose,
+    // not external tables that happen to exist in the same database.
+    let filter = crate::framework::core::plan::ReconciliationFilter::from_infra_map(&current_map);
 
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
@@ -3555,10 +3543,7 @@ async fn get_admin_reconciled_inframap(
         crate::framework::core::plan::reconcile_with_reality(
             project,
             &current_map,
-            &target_table_ids,
-            &target_sql_resource_ids,
-            &target_materialized_view_ids,
-            &target_view_ids,
+            &filter,
             clickhouse_client,
         )
         .await?
