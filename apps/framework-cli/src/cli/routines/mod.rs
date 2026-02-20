@@ -468,11 +468,8 @@ pub async fn start_development_mode(
     settings: &Settings,
     enable_mcp: bool,
 ) -> anyhow::Result<()> {
-    // Set global flag so ensure_typescript_compiled knows to skip
-    // (tspc --watch handles compilation in dev mode)
     use crate::utilities::constants::IS_DEV_MODE;
     use std::sync::atomic::Ordering;
-    IS_DEV_MODE.store(true, Ordering::Relaxed);
 
     display::show_message_wrapper(
         MessageType::Info,
@@ -516,8 +513,29 @@ pub async fn start_development_mode(
     // For TypeScript, initial compilation is required (no ts-node fallback). Fail fast if it fails.
     let ts_compile_handle = if project.language == SupportedLanguages::Typescript {
         use crate::cli::ts_compilation_watcher::spawn_and_await_initial_compile;
+        use crate::framework::typescript::parser::ensure_typescript_compiled;
         match spawn_and_await_initial_compile(&project).await {
-            Ok(handle) => Some(handle),
+            Ok(Some(handle)) => {
+                // tspc --watch is working; set IS_DEV_MODE so ensure_typescript_compiled
+                // is a no-op (tspc --watch handles compilation going forward)
+                IS_DEV_MODE.store(true, Ordering::Relaxed);
+                Some(handle)
+            }
+            Ok(None) => {
+                // Old moose-tspc without --watch support: run single compilation,
+                // then use FileWatcher for watching changes
+                warn!("moose-tspc does not support --watch; using file watcher fallback");
+                display::show_message_wrapper(
+                    MessageType::Highlight,
+                    Message {
+                        action: "Fallback".to_string(),
+                        details: "moose-tspc does not support --watch; using file watcher"
+                            .to_string(),
+                    },
+                );
+                ensure_typescript_compiled(&project)?;
+                None
+            }
             Err(e) => {
                 error!("Initial TypeScript compilation failed: {}", e);
                 display::show_message_wrapper(
@@ -740,44 +758,38 @@ pub async fn start_development_mode(
     // Create shutdown channel for graceful watcher termination
     let (watcher_shutdown_tx, watcher_shutdown_rx) = tokio::sync::watch::channel(false);
 
-    // Use TypeScript compilation watcher for TS projects (incremental compilation)
-    // Use file watcher for Python projects
+    // Use TypeScript compilation watcher when tspc --watch is available (ts_compile_handle is Some),
+    // otherwise use file watcher (Python projects, or TypeScript with old moose-tspc)
     let state_storage = Arc::new(state_storage);
-    match project.language {
-        SupportedLanguages::Typescript => {
-            // Pass the handle from spawn_and_await_initial_compile() if we have one.
-            // This continues watching the already-running tspc process instead of
-            // spawning a new one, and ensures we don't trigger duplicate plan_changes.
-            let ts_watcher = TsCompilationWatcher::new();
-            ts_watcher.start(
-                project.clone(),
-                route_update_channel,
-                webapp_update_channel,
-                infra_map,
-                process_registry.clone(),
-                metrics.clone(),
-                state_storage,
-                settings.clone(),
-                processing_coordinator.clone(),
-                watcher_shutdown_rx,
-                ts_compile_handle,
-            )?;
-        }
-        SupportedLanguages::Python => {
-            let file_watcher = FileWatcher::new();
-            file_watcher.start(
-                project.clone(),
-                route_update_channel,
-                webapp_update_channel,
-                infra_map,
-                process_registry.clone(),
-                metrics.clone(),
-                state_storage,
-                settings.clone(),
-                processing_coordinator.clone(),
-                watcher_shutdown_rx,
-            )?;
-        }
+    if let Some(handle) = ts_compile_handle {
+        let ts_watcher = TsCompilationWatcher::new();
+        ts_watcher.start(
+            project.clone(),
+            route_update_channel,
+            webapp_update_channel,
+            infra_map,
+            process_registry.clone(),
+            metrics.clone(),
+            state_storage,
+            settings.clone(),
+            processing_coordinator.clone(),
+            watcher_shutdown_rx,
+            Some(handle),
+        )?;
+    } else {
+        let file_watcher = FileWatcher::new();
+        file_watcher.start(
+            project.clone(),
+            route_update_channel,
+            webapp_update_channel,
+            infra_map,
+            process_registry.clone(),
+            metrics.clone(),
+            state_storage,
+            settings.clone(),
+            processing_coordinator.clone(),
+            watcher_shutdown_rx,
+        )?;
     }
 
     // Log MCP server status
