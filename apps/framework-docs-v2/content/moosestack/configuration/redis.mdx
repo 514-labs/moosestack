@@ -31,3 +31,21 @@ key_prefix = "MS"
 |:----|:-------------|:--------|:------------|
 | `url` | `MOOSE_REDIS_CONFIG__URL` | "redis://127.0.0.1:6379" | Full connection URL. |
 | `key_prefix` | `MOOSE_REDIS_CONFIG__KEY_PREFIX` | "MS" | Prefix for keys used by Moose. |
+
+## Docker Compose Port Binding
+
+When running `moose dev`, Moose generates a `docker-compose.yml` that exposes Redis on the host. The host-side port is derived from the port in `url`:
+
+```toml filename="moose.config.toml"
+[redis_config]
+url = "redis://127.0.0.1:6380"  # host port → 6380
+```
+
+This produces the following mapping in `.moose/docker-compose.yml`:
+
+```yaml
+ports:
+  - "6380:6379"  # host:container
+```
+
+The container-side port is always `6379` (the Redis default). Only the host-side port changes based on your `url`.

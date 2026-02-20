@@ -55,6 +55,7 @@
 ///
 use futures::StreamExt;
 use redis::{AsyncCommands, Client};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -216,6 +217,26 @@ impl RedisConfig {
                 }
             );
         }
+    }
+
+    /// Returns the effective Redis port for host-side binding (e.g. in Docker port mappings).
+    ///
+    /// When the `url` field is configured, the port is extracted from it.
+    /// Otherwise the explicit `port` field is used.
+    ///
+    /// # Returns
+    ///
+    /// The effective port number to expose on the host
+    pub fn effective_port(&self) -> u16 {
+        let using_url = self.url != Self::default_url();
+        if using_url {
+            // Use the URL parser to extract the port, correctly handling IPv6
+            // addresses, credentials with colons, paths, and query strings.
+            if let Some(port) = Url::parse(&self.url).ok().and_then(|u| u.port()) {
+                return port;
+            }
+        }
+        self.port
     }
 
     /// Returns the effective Redis URL, prioritizing URL field over individual fields.
@@ -1034,5 +1055,69 @@ impl RedisClient {
 
     pub fn get_service_name(&self) -> &str {
         &self.service_name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_url(url: &str) -> RedisConfig {
+        RedisConfig {
+            url: url.to_string(),
+            ..RedisConfig::default()
+        }
+    }
+
+    #[test]
+    fn test_effective_port_default() {
+        assert_eq!(RedisConfig::default().effective_port(), 6379);
+    }
+
+    #[test]
+    fn test_effective_port_from_url() {
+        assert_eq!(
+            config_with_url("redis://127.0.0.1:6380").effective_port(),
+            6380
+        );
+    }
+
+    #[test]
+    fn test_effective_port_url_with_db_path() {
+        // redis://host:port/db — path suffix must not break port parsing
+        assert_eq!(
+            config_with_url("redis://127.0.0.1:6380/0").effective_port(),
+            6380
+        );
+    }
+
+    #[test]
+    fn test_effective_port_url_with_query() {
+        // redis://host:port?protocol=resp3 — query suffix must not break port parsing
+        assert_eq!(
+            config_with_url("redis://127.0.0.1:6380?protocol=resp3").effective_port(),
+            6380
+        );
+    }
+
+    #[test]
+    fn test_effective_port_url_no_port_falls_back_to_field() {
+        // URL without explicit port: fall back to the struct's port field
+        let cfg = RedisConfig {
+            url: "redis://myhost".to_string(),
+            port: 6381,
+            ..RedisConfig::default()
+        };
+        assert_eq!(cfg.effective_port(), 6381);
+    }
+
+    #[test]
+    fn test_effective_port_explicit_port_field() {
+        // No custom URL: use the port field directly
+        let cfg = RedisConfig {
+            port: 6382,
+            ..RedisConfig::default()
+        };
+        assert_eq!(cfg.effective_port(), 6382);
     }
 }
