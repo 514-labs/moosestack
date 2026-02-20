@@ -55,6 +55,7 @@
 ///
 use futures::StreamExt;
 use redis::{AsyncCommands, Client};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -229,15 +230,10 @@ impl RedisConfig {
     pub fn effective_port(&self) -> u16 {
         let using_url = self.url != Self::default_url();
         if using_url {
-            // Extract port from the URL string (e.g. "redis://127.0.0.1:6380" → 6380).
-            // Strip path (/db), query (?...) and fragment (#...) before parsing so that
-            // URLs like "redis://127.0.0.1:6380/0" or "redis://host:6380?protocol=resp3"
-            // are handled correctly.
-            if let Some((_, port_str)) = self.url.rsplit_once(':') {
-                let port_str = port_str.split(['/', '?', '#']).next().unwrap_or(port_str);
-                if let Ok(port) = port_str.parse::<u16>() {
-                    return port;
-                }
+            // Use the URL parser to extract the port, correctly handling IPv6
+            // addresses, credentials with colons, paths, and query strings.
+            if let Some(port) = Url::parse(&self.url).ok().and_then(|u| u.port()) {
+                return port;
             }
         }
         self.port
