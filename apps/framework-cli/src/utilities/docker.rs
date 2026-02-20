@@ -251,7 +251,10 @@ impl DockerClient {
                 "CLICKHOUSE_HOST_PORT",
                 project.clickhouse_config.host_port.to_string(),
             )
-            .env("REDIS_PORT", project.redis_config.port.to_string());
+            .env(
+                "REDIS_PORT",
+                project.redis_config.effective_port().to_string(),
+            );
 
         let child = child
             .stdout(Stdio::piped())

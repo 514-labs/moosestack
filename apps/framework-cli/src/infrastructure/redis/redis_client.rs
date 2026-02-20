@@ -218,6 +218,27 @@ impl RedisConfig {
         }
     }
 
+    /// Returns the effective Redis port for host-side binding (e.g. in Docker port mappings).
+    ///
+    /// When the `url` field is configured, the port is extracted from it.
+    /// Otherwise the explicit `port` field is used.
+    ///
+    /// # Returns
+    ///
+    /// The effective port number to expose on the host
+    pub fn effective_port(&self) -> u16 {
+        let using_url = self.url != Self::default_url();
+        if using_url {
+            // Extract port from the URL string (e.g. "redis://127.0.0.1:6380" → 6380)
+            if let Some((_, port_str)) = self.url.rsplit_once(':') {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    return port;
+                }
+            }
+        }
+        self.port
+    }
+
     /// Returns the effective Redis URL, prioritizing URL field over individual fields.
     ///
     /// This method prioritizes the URL field when both URL and individual fields are set,
