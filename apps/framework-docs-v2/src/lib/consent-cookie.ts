@@ -12,7 +12,8 @@ export function parseConsentCookie(
 ): ConsentState | null {
   if (!value) return null;
   try {
-    const parsed = JSON.parse(value) as ConsentState;
+    const decoded = decodeURIComponent(value);
+    const parsed = JSON.parse(decoded) as ConsentState;
     if (
       typeof parsed.version !== "number" ||
       typeof parsed.analytics !== "boolean" ||
@@ -33,9 +34,4 @@ export function serializeConsentState(state: ConsentState): string {
 export function hasAnalyticsConsent(value: string | undefined): boolean {
   const state = parseConsentCookie(value);
   return state?.analytics === true;
-}
-
-export function hasMarketingConsent(value: string | undefined): boolean {
-  const state = parseConsentCookie(value);
-  return state?.marketing === true;
 }

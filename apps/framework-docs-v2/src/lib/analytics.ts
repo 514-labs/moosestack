@@ -23,9 +23,7 @@ class Analytics {
     const match = document.cookie.match(
       new RegExp(`(?:^|; )${CONSENT_COOKIE_NAME}=([^;]*)`),
     );
-    return hasAnalyticsConsent(
-      match?.[1] ? decodeURIComponent(match[1]) : undefined,
-    );
+    return hasAnalyticsConsent(match?.[1]);
   }
 
   init() {

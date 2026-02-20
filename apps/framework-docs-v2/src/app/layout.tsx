@@ -4,9 +4,8 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import "@/styles/globals.css";
 import { VercelToolbar } from "@vercel/toolbar/next";
-import { Apollo } from "@/components/apollo";
-import { CommonRoom } from "@/components/common-room";
 import { ConsentBanner } from "@/components/consent-banner";
+import { MarketingScripts } from "@/components/marketing-scripts";
 import { ConsentProvider } from "@/lib/consent-context";
 import { CONSENT_COOKIE_NAME, parseConsentCookie } from "@/lib/consent-cookie";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
@@ -34,14 +33,11 @@ export default async function RootLayout({
   const initialConsent = parseConsentCookie(
     cookieStore.get(CONSENT_COOKIE_NAME)?.value,
   );
-  const marketingGranted = initialConsent?.marketing === true;
-
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
         <ConsentProvider initialConsent={initialConsent}>
-          {marketingGranted && <Apollo />}
-          {marketingGranted && <CommonRoom />}
+          <MarketingScripts />
           <ScrollRestoration />
           <ThemeProvider
             attribute="class"
