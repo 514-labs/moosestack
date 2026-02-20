@@ -154,7 +154,7 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "${CLICKHOUSE_HOST_PORT:-18123}:8123"
-      - "9000:9000"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     networks:
       - clickhouse-network
     healthcheck:
