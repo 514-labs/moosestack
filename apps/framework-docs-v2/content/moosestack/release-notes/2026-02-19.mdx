@@ -46,17 +46,9 @@ import { Callout } from "@/components/mdx";
   
   # Or use interactive mode to select from available projects
   boreal link
-  
-  # Check deployment status in Boreal dashboard
-  echo "View deployment: https://fiveonefour.boreal.cloud/acme/analytics-api/deployments"
   ```
 
   This example shows the complete workflow for using the new Boreal CLI commands to set up new projects and link existing repositories. The setup command handles cloning, branch creation, and deployment configuration, while the link command connects existing local repos to Boreal projects for streamlined deployments.
-
-**Enable TypeScript MCP template for one-click deployment** (Dave Seleno)
-  The TypeScript MCP template is now available for one-click deployment in Boreal, allowing users to quickly deploy an AI chat app that can query their data using the Model Context Protocol integration.
-
-  PR: [#3478](https://github.com/514-labs/moose/pull/3478)
 
 **Add update command to 514 CLI** (Nicolas Joseph)
   Added a new `514 update` command that allows users to update both the 514 and moose CLIs to their latest versions. The CLI now also automatically checks for updates and displays notifications when newer versions are available, helping users stay current with the latest features and fixes.
@@ -66,25 +58,6 @@ import { Callout } from "@/components/mdx";
   ```bash
   # Update both 514 and moose CLIs to latest versions
   514 update
-  
-  # Update only the 514 CLI
-  514 update 514
-  
-  # Update only the moose CLI
-  514 update moose
-  
-  # The CLI also checks for updates automatically and shows notifications
-  # when running other commands (unless in JSON mode or disabled)
-  514 deploy my-app
-  # Output might include: "A newer 514 CLI is available: v1.2.3 (current: v1.2.0). Run: 514 update 514"
-  
-  # Disable automatic update checks if needed
-  export HOSTING_CLI_DISABLE_UPDATE_CHECK=true
-  514 deploy my-app  # No update notification will be shown
-  
-  # Customize update check frequency (in seconds, default is 24 hours)
-  export HOSTING_CLI_UPDATE_CHECK_TTL_SECONDS=3600  # Check every hour
-  514 status
   ```
 
   This example shows how to use the new 514 update command to keep your CLI tools current. The command can update both CLIs together or individually, and includes automatic update notifications to help users stay informed about new versions.
@@ -110,11 +83,6 @@ import { Callout } from "@/components/mdx";
 
   📸 *[Screenshot needed: Users can now connect their Vercel projects to Boreal for automated deployments and environment variable synchronization. This integration allows teams to link their Vercel projects with their data applications, enabling seamless deployment workflows and automatic environment configuration management.]*
 
-**Redesigned project creation experience** (groy-514)
-  Complete overhaul of the project creation flow with improved UI/UX, step-by-step wizard interface, better template selection, and enhanced data services configuration. The new onboarding experience guides users through project setup more intuitively with visual improvements and streamlined workflows for GitHub integration, infrastructure configuration, and template deployment.
-
-  📸 *[Screenshot needed: Complete overhaul of the project creation flow with improved UI/UX, step-by-step wizard interface, better template selection, and enhanced data services configuration. The new onboarding experience guides users through project setup more intuitively with visual improvements and streamlined workflows for GitHub integration, infrastructure configuration, and template deployment.]*
-
 ### Improvements
 - Faster template deployments using pre-built images: Template-based projects now deploy immediately using pre-built Docker images instead of waiting for the build process to complete, significantly reducing deployment time for new projects. (Mitchell Suzuki)
 - Rebrand from Boreal to Fiveonefour Hosting throughout the platform: Updated all user-facing text, logos, and branding elements from "Boreal" to "Fiveonefour Hosting" across the entire platform interface. (groy-514)
@@ -124,23 +92,15 @@ import { Callout } from "@/components/mdx";
 - Improve organization switching with visual feedback: Organization switching now shows a loading screen with progress feedback and disables UI interactions during the switch to prevent conflicts. (groy-514)
 - Add clarifying note for existing database option: Added a helpful note explaining that existing tables remain unchanged when using an existing ClickHouse database for new projects. (groy-514)
 - Improve branch page layout with better text truncation: The branch pages top bar now properly handles long repository names and URLs with improved text truncation and responsive layout. (groy-514)
-- Improve project creation flow with enhanced step transitions and visual feedback: The project creation wizard now provides better visual feedback with a loading spinner on the deploy button, smoother step transitions with animations, and error-only display for deployment steps, making the project setup process clearer and more intuitive. (groy-514)
-- Remove GitHub authentication requirement for project creation: Users can now create projects from templates without being blocked by GitHub authentication requirements, streamlining the project creation flow. (groy-514)
-- Faster deployment times with cluster node warming: Deployments now start faster by pre-warming cluster nodes and scheduling applications on ready infrastructure, reducing cold start delays. (Mitchell Suzuki)
 
 ### Bug Fixes
-- Fix logs with identical timestamps and content selecting together: Fixed an issue in the logs viewer where multiple log entries with the same timestamp and content would all be selected when clicking on one. PR: [#3481](https://github.com/514-labs/moose/pull/3481), [#1405](https://github.com/514-labs/moose/pull/1405), [#1427](https://github.com/514-labs/moose/pull/1427) (Lucio Franco)
+- Fix logs with identical timestamps and content selecting together: Fixed an issue in the logs viewer where multiple log entries with the same timestamp and content would all be selected when clicking on one. PR: [#3481](https://github.com/514-labs/moosestack/pull/3481), [#1405](https://github.com/514-labs/moosestack/pull/1405), [#1427](https://github.com/514-labs/moosestack/pull/1427) (Lucio Franco)
 - Fix mobile website display issues: Fixed display and layout issues on the mobile version of the marketing website, improving user experience on mobile devices. (George Anderson)
 - Fix duplicate deployments during template project creation: Fixed an issue where template projects would trigger duplicate deployments due to race conditions between project creation and push webhooks. (Dave Seleno)
 
 ## 🦌 Moose
 
 ### New Features
-**Application logging documentation for Moose apps** (Lucio Franco)
-  Added comprehensive documentation for logging within Moose applications. Developers can now use standard console methods in TypeScript or print/logging module in Python to generate structured JSON logs. The logs are automatically enriched with context like API names and request IDs, making them easy to trace and filter in log aggregation systems.
-
-  PR: [#3481](https://github.com/514-labs/moose/pull/3481), [#1405](https://github.com/514-labs/moose/pull/1405), [#1427](https://github.com/514-labs/moose/pull/1427) | Docs: [/moosestack/metrics](https://docs.moosejs.com/moosestack/metrics)
-
 **Add lifecycle management support to materialized views** (Dave Seleno)
   Materialized views now support lifecycle management with three options: FULLY_MANAGED (default - Moose manages creation, updates, and deletion), DELETION_PROTECTED (prevents accidental deletion and updates), and EXTERNALLY_MANAGED (user manages the view outside of Moose). This gives users fine-grained control over how their materialized views are managed in production environments.
 
@@ -210,29 +170,29 @@ import { Callout } from "@/components/mdx";
 
   This example shows how to use the three lifecycle management options for materialized views: FULLY_MANAGED (default) for automatic management, DELETION_PROTECTED to prevent accidental changes to critical views, and EXTERNALLY_MANAGED for views managed outside of Moose.
 
-  PR: [#3598](https://github.com/514-labs/moose/pull/3598) | Docs: [/moosestack/olap/model-materialized-view](https://docs.moosejs.com/moosestack/olap/model-materialized-view)
+  PR: [#3598](https://github.com/514-labs/moosestack/pull/3598) | Docs: [/moosestack/olap/model-materialized-view](https://docs.moosejs.com/moosestack/olap/model-materialized-view)
 
 **Initial hosting documentation for 514 CLI** (Olivia Kane)
   Added comprehensive hosting documentation including CLI authentication, project setup, deployment workflows, and troubleshooting guides. This provides the foundational documentation for users getting started with MooseStack's managed hosting platform.
 
-  PR: [#3586](https://github.com/514-labs/moose/pull/3586) | Docs: [/hosting/cli/auth](https://docs.moosejs.com/hosting/cli/auth)
+  PR: [#3586](https://github.com/514-labs/moosestack/pull/3586) | Docs: [/hosting/cli/auth](https://docs.moosejs.com/hosting/cli/auth)
 
 **Add interactive tutorial customization wizard** (Johanan Ottensooser)
   Tutorials now include an interactive wizard that lets users customize the guide content based on their specific setup (database type, operating system, language preferences). The wizard preserves user selections across page navigation and dynamically shows relevant code examples and instructions tailored to their configuration.
 
   📸 *[Screenshot needed: Tutorials now include an interactive wizard that lets users customize the guide content based on their specific setup (database type, operating system, language preferences). The wizard preserves user selections across page navigation and dynamically shows relevant code examples and instructions tailored to their configuration.]*
 
-  PR: [#3501](https://github.com/514-labs/moose/pull/3501) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards)
+  PR: [#3501](https://github.com/514-labs/moosestack/pull/3501) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards)
 
 **Add Windows Setup documentation** (Johanan Ottensooser)
   Added comprehensive Windows setup guide for MooseStack using WSL2. The new documentation provides step-by-step instructions for Windows users to set up WSL2, Docker Desktop, Node.js, and MooseStack on their systems.
 
-  PR: [#3566](https://github.com/514-labs/moose/pull/3566) | Docs: [/moosestack/help/windows-setup](https://docs.moosejs.com/moosestack/help/windows-setup)
+  PR: [#3566](https://github.com/514-labs/moosestack/pull/3566) | Docs: [/moosestack/help/windows-setup](https://docs.moosejs.com/moosestack/help/windows-setup)
 
 **Add comprehensive documentation for externally managed tables** (Nicolas Joseph)
   Added extensive documentation for working with CDC-enabled ClickHouse databases and externally managed tables, including configuration options for local development mirrors, remote connections, and a complete guide for building on existing CDC pipelines like ClickPipes, PeerDB, and Debezium.
 
-  PR: [#3492](https://github.com/514-labs/moose/pull/3492) | Docs: [/moosestack/dev/cdc-managed-tables](https://docs.moosejs.com/moosestack/dev/cdc-managed-tables)
+  PR: [#3492](https://github.com/514-labs/moosestack/pull/3492) | Docs: [/moosestack/dev/cdc-managed-tables](https://docs.moosejs.com/moosestack/dev/cdc-managed-tables)
 
 **Add external table mirroring in dev mode** (Nicolas Joseph)
   Developers can now automatically create local mirror tables for externally managed tables during development. When enabled via `create_local_mirrors = true` in moose.config.toml, the dev server will mirror remote table schemas and optionally sample data to local ClickHouse, making it easier to develop and test with external data sources without requiring direct access to production systems.
@@ -269,262 +229,32 @@ import { Callout } from "@/components/mdx";
 
   This configuration enables external table mirroring in development mode. When enabled, the dev server automatically creates local mirror tables for any EXTERNALLY_MANAGED tables, optionally copying sample data from production systems to make local development easier.
 
-  PR: [#3491](https://github.com/514-labs/moose/pull/3491) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
-
-**Add short aliases for all CLI commands** (Johanan Ottensooser)
-  All CLI commands now support short aliases for faster command line usage. For example, you can use `moose d` instead of `moose dev`, `moose b` instead of `moose build`, and many others. This improves developer productivity by reducing typing while maintaining full backward compatibility with existing commands.
-
-  **Using Moose CLI Short Aliases for Faster Development**
-
-  ```bash
-  # Initialize a new Moose project using short alias
-  moose i my-analytics-app
-  cd my-analytics-app
-  
-  # Start development environment with short alias
-  moose d
-  
-  # Build the project using short alias  
-  moose b
-  
-  # Check project for errors using short alias
-  moose c
-  
-  # View data from a table using short alias
-  moose pk user_events --limit 10
-  
-  # Generate API tokens using short alias
-  moose g hash-token --json
-  
-  # View logs in real-time using short alias
-  moose l --follow
-  
-  # Clean up development environment using short alias
-  moose cl
-  
-  # Run a workflow using short alias
-  moose w r data-processing --input '{"batch_size": 1000}'
-  
-  # Query ClickHouse directly using short alias
-  moose q "SELECT COUNT(*) FROM user_events WHERE created_at > now() - INTERVAL 1 DAY"
-  ```
-
-  This example shows how to use the new short aliases for common Moose CLI commands during a typical development workflow. The aliases reduce typing while maintaining the same functionality as the full command names, improving developer productivity when building data pipelines.
-
-  PR: [#3497](https://github.com/514-labs/moose/pull/3497) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
-
-**Add remote ClickHouse database configuration and secure credential storage** (Nicolas Joseph)
-  Users can now configure remote ClickHouse databases in their moose.config.toml file and connect to external ClickHouse instances. The CLI securely stores database credentials in the OS keychain and prompts for them when needed, enabling teams to work with hosted ClickHouse databases instead of only local Docker instances.
-
-  **Configure remote ClickHouse in moose.config.toml**
-
-  ```toml
-  # moose.config.toml - Configure your MooseStack project
-  
-  [project]
-  name = "analytics-pipeline"
-  language = "typescript"
-  
-  # Configure remote ClickHouse database connection
-  [dev.remote_clickhouse]
-  host = "clickhouse.company.com"
-  port = 8443
-  database = "analytics_db"
-  protocol = "http"
-  use_ssl = true
-  
-  # Other configuration sections
-  [docker]
-  enabled = false  # Disable local Docker when using remote ClickHouse
-  
-  [kafka]
-  host = "localhost"
-  port = 9092
-  ```
-
-  This example shows how to configure a remote ClickHouse database in the moose.config.toml file. When you run `moose dev`, the CLI will securely prompt for and store your database credentials in the OS keychain, enabling your team to connect to hosted ClickHouse instances instead of local Docker containers.
-
-  PR: [#3489](https://github.com/514-labs/moose/pull/3489) | Docs: [/moosestack/olap](https://docs.moosejs.com/moosestack/olap)
-
-**Add interactive browsing and web integration to `moose docs`** (Johanan Ottensooser)
-  The `moose docs` command now supports interactive browsing with `moose docs browse`, section-level navigation for guides using anchors (e.g., `moose docs guides/chat-in-your-app#overview`), and a `--web` flag to open documentation pages directly in your browser. This makes it easier to explore and navigate the documentation from the command line.
-
-  **Enhanced moose docs with interactive browsing and web support**
-
-  ```bash
-  # View the main documentation index
-  moose docs
-  
-  # Browse documentation interactively and select a page
-  moose docs browse
-  
-  # Open a specific page in your browser instead of terminal
-  moose docs moosestack/olap --web
-  
-  # Navigate to a specific section of a guide
-  moose docs guides/chat-in-your-app#setup
-  
-  # Search for documentation pages
-  moose docs search "materialized views"
-  
-  # View Python-specific documentation 
-  moose docs --lang py moosestack/data-modeling
-  
-  # Get raw markdown output for scripting
-  moose docs moosestack/olap --raw | grep "CREATE TABLE"
-  
-  # Interactive browsing with web integration
-  moose docs browse --web  # Select page and open in browser
-  
-  # View expanded documentation tree
-  moose docs --expand
-  ```
-
-  This example demonstrates the enhanced `moose docs` command with interactive browsing, section-level navigation using anchors, and web integration. Users can now browse docs interactively, jump to specific guide sections, and open documentation directly in their browser from the command line.
-
-  PR: [#3468](https://github.com/514-labs/moose/pull/3468) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
-
-**Add generate dockerfile command for Docker customization** (Mitchell Suzuki)
-  Added new `moose generate dockerfile` command that creates a customizable Dockerfile without building Docker images. This allows developers to generate and modify the Dockerfile for their deployment needs before running the build process. The command requires `custom_dockerfile = true` in moose.config.toml and places the Dockerfile at the configured path (default: ./Dockerfile).
-
-  **Generate and customize Dockerfile for Moose deployment**
-
-  ```bash
-  # First, enable custom dockerfile mode in your moose.config.toml
-  cat >> moose.config.toml << EOF
-  [docker_config]
-  custom_dockerfile = true
-  dockerfile_path = "./Dockerfile"
-  EOF
-  
-  # Generate the Dockerfile without building images
-  moose generate dockerfile
-  
-  # Now you can customize the generated Dockerfile
-  # Add custom dependencies, caching layers, etc.
-  cat >> Dockerfile << EOF
-  
-  # Add custom dependencies
-  RUN apt-get update && apt-get install -y \\
-      curl \\
-      jq \\
-      && rm -rf /var/lib/apt/lists/*
-  
-  # Add custom environment variables
-  ENV CUSTOM_CONFIG_PATH=/app/config
-  EOF
-  
-  # Build the Docker image with your customizations
-  moose build --docker
-  
-  # Or build for specific architecture
-  moose build --docker --amd64
-  ```
-
-  This example shows how to use the new generate dockerfile command to create a customizable Dockerfile for a Moose data pipeline project. The workflow demonstrates enabling custom dockerfile mode, generating the base Dockerfile, customizing it with additional dependencies, and building the final Docker image.
-
-  PR: [#3475](https://github.com/514-labs/moose/pull/3475) | Docs: [/moosestack/configuration/docker](https://docs.moosejs.com/moosestack/configuration/docker)
-
-**Custom Dockerfile support for Docker deployments** (Mitchell Suzuki)
-  Moose now supports custom Dockerfiles for deployment packaging. Enable `custom_dockerfile = true` in moose.config.toml or use the `--custom-dockerfile` flag during project initialization to have Moose generate a Dockerfile in your project root that you can customize. This allows you to add system dependencies, configure caching, or adjust build stages while still using `moose build --docker` to build images.
-
-  **Enable custom Dockerfile in moose.config.toml**
-
-  ```toml
-  # moose.config.toml
-  name = "my-analytics-platform"
-  
-  [database_config]
-  host = "localhost"
-  port = 5432
-  database = "analytics"
-  
-  [infrastructure]
-  olap = true
-  streaming = true
-  
-  # Enable custom Dockerfile for deployment
-  [docker_config]
-  custom_dockerfile = true
-  dockerfile_path = "./Dockerfile"
-  ```
-
-  This example shows how to enable custom Dockerfile support in a Moose project by setting custom_dockerfile = true in moose.config.toml. Once enabled, running 'moose build --docker' will generate a Dockerfile in your project root that you can customize with additional dependencies or build steps.
-
-  PR: [#3474](https://github.com/514-labs/moose/pull/3474) | Docs: [/moosestack/configuration/docker](https://docs.moosejs.com/moosestack/configuration/docker)
-
-**Add /llm.txt endpoint for LLM documentation discovery** (Johanan Ottensooser)
-  Added a new /llm.txt endpoint that provides plain text versions of documentation for improved LLM consumption. This complements the existing /llm.md endpoint and enables better AI-powered documentation search and assistance. The endpoint supports language-specific filtering and handles both static and dynamic guide content.
-
-  PR: [#3471](https://github.com/514-labs/moose/pull/3471) | Docs: [/guides/chat-in-your-app-usecase-notation](https://docs.moosejs.com/guides/chat-in-your-app-usecase-notation)
-
-**Add optional email to moose feedback command** (Johanan Ottensooser)
-  The moose feedback command now supports an optional --email flag to provide your email address for follow-up responses. If no email is provided via the flag, users are interactively prompted to optionally enter one. Email validation is included with retry options for invalid addresses.
-
-  **Using moose feedback with optional email support**
-
-  ```bash
-  # Basic feedback without email
-  moose feedback "The streaming aggregations are working perfectly!"
-  
-  # Feedback with email for follow-up
-  moose feedback "Would love to see more Python examples in docs" --email developer@company.com
-  
-  # Interactive feedback (will prompt for optional email)
-  moose feedback "Great performance improvements in v0.3!"
-  # Output: Your email (optional, press Enter to skip):
-  # > user@example.com
-  
-  # Report a bug with email
-  moose feedback "Memory leak in aggregation processing" --bug
-  
-  # Join the community
-  moose feedback --community
-  
-  # Get help with all feedback options
-  moose feedback
-  ```
-
-  Demonstrates the enhanced moose feedback command with optional email functionality. Shows how users can provide feedback with or without email addresses, either via the --email flag or interactive prompts, enabling better follow-up on user issues and suggestions.
-
-  PR: [#3469](https://github.com/514-labs/moose/pull/3469) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+  PR: [#3491](https://github.com/514-labs/moosestack/pull/3491) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
 
 ### Improvements
-- Update 514 CLI documentation with comprehensive command reference: Updated the 514 hosting CLI documentation with complete command reference including new pages for orgs, projects, update commands, and comprehensive options for all existing commands. PR: [#3595](https://github.com/514-labs/moose/pull/3595) | Docs: [/hosting/cli](https://docs.moosejs.com/hosting/cli) (Nicolas Joseph)
-- Remove Boreal branding from CLI help command: Updated CLI help text to use generic hosting platform terminology instead of specific Boreal branding. PR: [#3590](https://github.com/514-labs/moose/pull/3590) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Lucio Franco)
-- Update documentation to reflect Fiveonefour hosting rebrand: Documentation now consistently refers to "Fiveonefour hosting" instead of "Boreal" throughout all guides and tutorials to reflect the platform rebrand. PR: [#3589](https://github.com/514-labs/moose/pull/3589) | Docs: [/guides/chat-in-your-app/tutorial](https://docs.moosejs.com/guides/chat-in-your-app/tutorial) (Olivia Kane)
-- Updated documentation and messaging to highlight AI agent capabilities: Updated README with improved messaging that emphasizes MooseStack's AI agent harness capabilities and ClickHouse-native framework positioning, making it clearer how developers and AI coding agents can work together on analytical backends. PR: [#3588](https://github.com/514-labs/moose/pull/3588) | Docs: [/moosestack/getting-started/quickstart](https://docs.moosejs.com/moosestack/getting-started/quickstart) (Chris Crane)
-- Rewrite performant dashboards guide with AI agent harness approach: The performant dashboards guide now focuses on using MooseStack as an "agent harness" for AI-assisted migration of analytical workloads from OLTP to ClickHouse, with new architecture diagrams, expanded coverage of source databases (Postgres, SQL Server), and detailed explanation of the three-pillar approach (Code, Cadence, Context) that helps AI agents successfully migrate dashboard logic. PR: [#3587](https://github.com/514-labs/moose/pull/3587) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
-- Improve phase 1 dashboard migration documentation: Enhanced the phase 1 translation instructions in the performant dashboards guide with clearer path resolution requirements, better test case guidance, and improved workflow explanations. PR: [#3583](https://github.com/514-labs/moose/pull/3583) | Docs: [/shared/guides/performant-dashboards/phase-1-translation](https://docs.moosejs.com/shared/guides/performant-dashboards/phase-1-translation) (Olivia Kane)
-- Use incremental TypeScript compilation in development: Development mode now uses `tspc --watch` for incremental TypeScript compilation, providing faster rebuilds and better hot-reload performance during local development. PR: [#3434](https://github.com/514-labs/moose/pull/3434) | Docs: [/moosestack/configuration/dev-environment](https://docs.moosejs.com/moosestack/configuration/dev-environment) (George Leung)
-- Add Guides card to docs home page: Added a new Guides section to the documentation home page, providing step-by-step tutorials for building real applications with MooseStack. PR: [#3581](https://github.com/514-labs/moose/pull/3581) | Docs: [/guides](https://docs.moosejs.com/guides) (Johanan Ottensooser)
-- Improve performant dashboards tutorial structure and readability: Restructured the performant dashboards tutorial with clearer sections, improved visual formatting using bullet point cards, and streamlined the three-phase migration workflow to make it easier to follow. PR: [#3575](https://github.com/514-labs/moose/pull/3575) | Docs: [/guides/performant-dashboards/tutorial](https://docs.moosejs.com/guides/performant-dashboards/tutorial) (Olivia Kane)
-- Improved interactive guide structure for performant dashboards: Refactored the performant dashboards migration guide to use a modular structure with reusable components, improved the guide stepper interface with clearer "What You Need" and "What You Get" sections, and enhanced the interactive guide experience with better prompt generation capabilities. PR: [#3503](https://github.com/514-labs/moose/pull/3503) | Docs: [/guides/performant-dashboards/tutorial](https://docs.moosejs.com/guides/performant-dashboards/tutorial) (Olivia Kane)
-- Add CLI docs integration with AI clients example: Added example showing how to pipe Moose documentation to AI clients using the `--raw` flag, enabling users to get AI assistance on specific documentation sections. PR: [#3569](https://github.com/514-labs/moose/pull/3569) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Johanan Ottensooser)
-- Remove beta status from chat-in-your-app documentation: The chat-in-your-app guide pages are no longer marked as beta, indicating the feature is now stable and ready for production use. PR: [#3570](https://github.com/514-labs/moose/pull/3570) | Docs: [/guides/chat-in-your-app/overview](https://docs.moosejs.com/guides/chat-in-your-app/overview) (Johanan Ottensooser)
-- Restructure chat guide with collapsible navigation: The chat-in-your-app guide now has a cleaner structure with separate sections for overview, build decisions, and tutorial, making it easier to navigate and follow step-by-step. PR: [#3561](https://github.com/514-labs/moose/pull/3561) | Docs: [/guides/chat-in-your-app](https://docs.moosejs.com/guides/chat-in-your-app) (Johanan Ottensooser)
-- Allow hyphens in ClickHouse identifiers: Database and cluster names can now include hyphens, enabling compatibility with cloud-hosted ClickHouse instances that commonly use hyphenated naming conventions. PR: [#3488](https://github.com/514-labs/moose/pull/3488) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) (Nicolas Joseph)
-- Add explicit Node.js installation instructions for WSL2: Added detailed instructions for installing Node.js inside WSL2 using nvm, preventing the common mistake of installing the Windows version of Node.js which doesn't work with MooseStack. PR: [#3493](https://github.com/514-labs/moose/pull/3493) | Docs: [/shared/prerequisites/wsl-setup](https://docs.moosejs.com/shared/prerequisites/wsl-setup) (Johanan Ottensooser)
-- Refactor guide steps for performant dashboards tutorial: Restructured and improved the performant dashboards guide with better formatting, clearer step organization, and enhanced interactive elements for a smoother learning experience. PR: [#3486](https://github.com/514-labs/moose/pull/3486) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Olivia Kane)
-- Improve MCP server configuration documentation: Added comprehensive setup instructions for connecting MCP clients to the Moose MCP server, including both Claude Code CLI commands and mcp.json configuration examples. PR: [#3485](https://github.com/514-labs/moose/pull/3485) (Johanan Ottensooser)
-- Improve template descriptions and onboarding flow: Updated project template descriptions to be clearer and more consistent, and improved the post-installation instructions with better formatting and guidance. PR: [#3483](https://github.com/514-labs/moose/pull/3483) (Olivia Kane)
-- Update MCP SDK to version 1.26.0 with improved tool registration API: Updated the Model Context Protocol SDK to version 1.26.0, which includes a new tool registration API that provides better structure for MCP tools with separate description and inputSchema fields. PR: [#3480](https://github.com/514-labs/moose/pull/3480) (Copilot)
-- Add authentication support to MCP server Claude Code setup: The MCP server template now includes authentication configuration with bearer token support when connecting to Claude Code. PR: [#3472](https://github.com/514-labs/moose/pull/3472) (Chris Crane)
-- Update code syntax highlighting theme in documentation: Code examples in the documentation now use GitHub's syntax highlighting theme instead of Vitesse theme for better readability. PR: [#3470](https://github.com/514-labs/moose/pull/3470) (Johanan Ottensooser)
+- Update 514 CLI documentation with comprehensive command reference: Updated the 514 hosting CLI documentation with complete command reference including new pages for orgs, projects, update commands, and comprehensive options for all existing commands. PR: [#3595](https://github.com/514-labs/moosestack/pull/3595) | Docs: [/hosting/cli](https://docs.moosejs.com/hosting/cli) (Nicolas Joseph)
+- Remove Boreal branding from CLI help command: Updated CLI help text to use generic hosting platform terminology instead of specific Boreal branding. PR: [#3590](https://github.com/514-labs/moosestack/pull/3590) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Lucio Franco)
+- Update documentation to reflect Fiveonefour hosting rebrand: Documentation now consistently refers to "Fiveonefour hosting" instead of "Boreal" throughout all guides and tutorials to reflect the platform rebrand. PR: [#3589](https://github.com/514-labs/moosestack/pull/3589) | Docs: [/guides/chat-in-your-app/tutorial](https://docs.moosejs.com/guides/chat-in-your-app/tutorial) (Olivia Kane)
+- Updated documentation and messaging to highlight AI agent capabilities: Updated README with improved messaging that emphasizes MooseStack's AI agent harness capabilities and ClickHouse-native framework positioning, making it clearer how developers and AI coding agents can work together on analytical backends. PR: [#3588](https://github.com/514-labs/moosestack/pull/3588) | Docs: [/moosestack/getting-started/quickstart](https://docs.moosejs.com/moosestack/getting-started/quickstart) (Chris Crane)
+- Rewrite performant dashboards guide with AI agent harness approach: The performant dashboards guide now focuses on using MooseStack as an "agent harness" for AI-assisted migration of analytical workloads from OLTP to ClickHouse, with new architecture diagrams, expanded coverage of source databases (Postgres, SQL Server), and detailed explanation of the three-pillar approach (Code, Cadence, Context) that helps AI agents successfully migrate dashboard logic. PR: [#3587](https://github.com/514-labs/moosestack/pull/3587) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
+- Improve phase 1 dashboard migration documentation: Enhanced the phase 1 translation instructions in the performant dashboards guide with clearer path resolution requirements, better test case guidance, and improved workflow explanations. PR: [#3583](https://github.com/514-labs/moosestack/pull/3583) | Docs: [/shared/guides/performant-dashboards/phase-1-translation](https://docs.moosejs.com/shared/guides/performant-dashboards/phase-1-translation) (Olivia Kane)
+- Add Guides card to docs home page: Added a new Guides section to the documentation home page, providing step-by-step tutorials for building real applications with MooseStack. PR: [#3581](https://github.com/514-labs/moosestack/pull/3581) | Docs: [/guides](https://docs.moosejs.com/guides) (Johanan Ottensooser)
+- Improve performant dashboards tutorial structure and readability: Restructured the performant dashboards tutorial with clearer sections, improved visual formatting using bullet point cards, and streamlined the three-phase migration workflow to make it easier to follow. PR: [#3575](https://github.com/514-labs/moosestack/pull/3575) | Docs: [/guides/performant-dashboards/tutorial](https://docs.moosejs.com/guides/performant-dashboards/tutorial) (Olivia Kane)
+- Add CLI docs integration with AI clients example: Added example showing how to pipe Moose documentation to AI clients using the `--raw` flag, enabling users to get AI assistance on specific documentation sections. PR: [#3569](https://github.com/514-labs/moosestack/pull/3569) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Johanan Ottensooser)
+- Remove beta status from chat-in-your-app documentation: The chat-in-your-app guide pages are no longer marked as beta, indicating the feature is now stable and ready for production use. PR: [#3570](https://github.com/514-labs/moosestack/pull/3570) | Docs: [/guides/chat-in-your-app/overview](https://docs.moosejs.com/guides/chat-in-your-app/overview) (Johanan Ottensooser)
+- Restructure chat guide with collapsible navigation: The chat-in-your-app guide now has a cleaner structure with separate sections for overview, build decisions, and tutorial, making it easier to navigate and follow step-by-step. PR: [#3561](https://github.com/514-labs/moosestack/pull/3561) | Docs: [/guides/chat-in-your-app](https://docs.moosejs.com/guides/chat-in-your-app) (Johanan Ottensooser)
+- Refactor guide steps for performant dashboards tutorial: Restructured and improved the performant dashboards guide with better formatting, clearer step organization, and enhanced interactive elements for a smoother learning experience. PR: [#3486](https://github.com/514-labs/moosestack/pull/3486) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Olivia Kane)
+- Improve MCP server configuration documentation: Added comprehensive setup instructions for connecting MCP clients to the Moose MCP server, including both Claude Code CLI commands and mcp.json configuration examples. PR: [#3485](https://github.com/514-labs/moosestack/pull/3485) (Johanan Ottensooser)
+- Improve template descriptions and onboarding flow: Updated project template descriptions to be clearer and more consistent, and improved the post-installation instructions with better formatting and guidance. PR: [#3483](https://github.com/514-labs/moosestack/pull/3483) (Olivia Kane)
+- Update MCP SDK to version 1.26.0 with improved tool registration API: Updated the Model Context Protocol SDK to version 1.26.0, which includes a new tool registration API that provides better structure for MCP tools with separate description and inputSchema fields. PR: [#3480](https://github.com/514-labs/moosestack/pull/3480) (Copilot)
+- Add authentication support to MCP server Claude Code setup: The MCP server template now includes authentication configuration with bearer token support when connecting to Claude Code. PR: [#3472](https://github.com/514-labs/moosestack/pull/3472) (Chris Crane)
 
 ### Bug Fixes
-- Fix mobile menu overlay positioning: Fixed mobile menu positioning to properly overlay content instead of being positioned inline in the documentation site. PR: [#3594](https://github.com/514-labs/moose/pull/3594) (George Anderson)
-- Fix dashboard guide card title: Fixed the navigation card title for the dashboard performance guide to match the actual page title. PR: [#3580](https://github.com/514-labs/moose/pull/3580) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
-- Fix code generation for externally managed tables: Fixed an issue where code generation from remote ClickHouse databases would incorrectly include the remote database name in generated table definitions, causing local development to fail when tables were marked as externally managed. PR: [#3490](https://github.com/514-labs/moose/pull/3490) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) (Nicolas Joseph)
-- Fix workflow polling mechanism: Fixed an issue with workflow polling that could cause inefficient monitoring and potential execution problems in long-running workflow tasks. PR: [#3466](https://github.com/514-labs/moose/pull/3466) | Docs: [/moosestack/workflows](https://docs.moosejs.com/moosestack/workflows) (Jonathan Widjaja)
+- Fix mobile menu overlay positioning: Fixed mobile menu positioning to properly overlay content instead of being positioned inline in the documentation site. PR: [#3594](https://github.com/514-labs/moosestack/pull/3594) (George Anderson)
+- Fix dashboard guide card title: Fixed the navigation card title for the dashboard performance guide to match the actual page title. PR: [#3580](https://github.com/514-labs/moosestack/pull/3580) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
 
 ## 📦 infrastructure
 
 ### Improvements
 - Improve deployment reliability by always pulling latest images: Deployments now always pull the latest version of container images tagged with ":latest", ensuring users get the most up-to-date application versions and preventing issues with cached outdated images. (Mitchell Suzuki)
 - Reduce deployment startup times from 20 minutes to 3.5 minutes: Application deployments now start up significantly faster with reduced startup probe failure thresholds and timeout values. (Lucio Franco)
-- Improve deployment performance and multi-tenant isolation: Moose deployments now start faster by preferring pre-warmed nodes when available, and multi-tenant environments get stronger isolation to prevent performance interference between organizations. (Mitchell Suzuki)
-- Improve deployment availability during system maintenance: Moose deployments now remain available during planned system maintenance and node upgrades through automatic pod disruption management. (Mitchell Suzuki)
-- Faster deployment startup times with cluster warm pool: Moose deployments now start significantly faster by using pre-warmed nodes that are ready to run applications immediately. (Mitchell Suzuki)
-
-
