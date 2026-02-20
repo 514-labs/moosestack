@@ -1,0 +1,260 @@
+---
+title: February 19, 2026
+description: Release notes for February 19, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 19, 2026
+
+
+
+## 🐻 Boreal
+
+### New Features
+**Deploy branches on git push without requiring pull requests** (Mitchell Suzuki)
+  Branch deployments can now be triggered by pushing to any branch in your repository, not just through pull request workflows. This streamlines the development workflow by automatically creating preview environments for feature branches as soon as code is pushed, enabling faster iteration and testing of changes before opening a PR.
+
+**New Boreal CLI with setup and link commands for project onboarding** (Lucio Franco)
+  Introduced the new Boreal CLI with comprehensive project setup capabilities. The `boreal setup <org>/<project>` command clones projects locally with optional branch creation and deployment setup. The `boreal link` command connects existing local repositories to Boreal projects for streamlined deployment workflows. Both commands support authentication, interactive and non-interactive modes, and provide clear guidance for next steps in the development workflow.
+
+  **Boreal CLI setup and link commands for project onboar
+  ```bash
+  # Clone and set up a new project from Boreal
+  boreal setup acme/analytics-api --path ./my-analytics-app --branch feature/new-dashboard
+  
+  # Navigate to the project directory
+  cd my-analytics-app
+  
+  # The setup command automatically:
+  # - Clones the repository
+  # - Creates the specified branch
+  # - Links the repo to Boreal project
+  # - Sets up deployment configuration
+  
+  # Make your changes
+  echo "console.log('Hello from analytics API');" > src/index.js
+  
+  # Push changes to trigger deployment
+  git add .
+  git commit -m "Add initial analytics endpoint"
+  git push origin feature/new-dashboard
+  
+  # Link an existing local repository to a Boreal project
+  cd /path/to/existing/repo
+  boreal link --project acme/marketing-dashboard --yes
+  
+  # Or use interactive mode to select from available projects
+  boreal link
+  ```
+
+  This example shows the complete workflow for using the new Boreal CLI commands to set up new projects and link existing repositories. The setup command handles cloning, branch creation, and deployment configuration, while the link command connects existing local repos to Boreal projects for streamlined deployments.
+
+**Add update command to 514 CLI** (Nicolas Joseph)
+  Added a new `514 update` command that allows users to update both the 514 and moose CLIs to their latest versions. The CLI now also automatically checks for updates and displays notifications when newer versions are available, helping users stay current with the latest features and fixes.
+
+  **Using the 514 update command to keep CLIs current**
+
+  ```bash
+  # Update both 514 and moose CLIs to latest versions
+  514 update
+  ```
+
+  This example shows how to use the new 514 update command to keep your CLI tools current. The command can update both CLIs together or individually, and includes automatic update notifications to help users stay informed about new versions.
+
+**Start developing feature now available to all users** (groy-514)
+  The "Start Developing" feature, which provides guided steps to help users begin development on their MooseStack projects, is now available to all users without experimental flags. This feature appears in deployment details pages and branch management sections, making it easier for users to get started with their projects.
+
+  📸 *[Screenshot needed: The "Start Developing" feature, which provides guided steps to help users begin development on their MooseStack projects, is now available to all users without experimental flags. This feature appears in deployment details pages and branch management sections, making it easier for users to get started with their projects.]*
+
+**Lineage feature now globally available** (groy-514)
+  The lineage visualization feature has been promoted from experimental to generally available. Users can now access data lineage views without experimental feature flags enabled. The lineage page is accessible through the branch navigation and displays directly on the overview page.
+
+  📸 *[Screenshot needed: The lineage visualization feature has been promoted from experimental to generally available. Users can now access data lineage views without experimental feature flags enabled. The lineage page is accessible through the branch navigation and displays directly on the overview page.]*
+
+
+**Add "Get Started Developing" panel to deployment details page** (groy-514)
+  Added a new "Get Started Developing" section to deployment pages that provides step-by-step guidance for cloning projects, creating branches, and starting development. This panel helps users quickly set up their local development environment after viewing deployments.
+
+  📸 *[Screenshot needed: Added a new "Get Started Developing" section to deployment pages that provides step-by-step guidance for cloning projects, creating branches, and starting development. This panel helps users quickly set up their local development environment after viewing deployments.]*
+
+**Add Vercel integration for automated deployments** (George Anderson)
+  Users can now connect their Vercel projects to Boreal for automated deployments and environment variable synchronization. This integration allows teams to link their Vercel projects with their data applications, enabling seamless deployment workflows and automatic environment configuration management.
+
+  📸 *[Screenshot needed: Users can now connect their Vercel projects to Boreal for automated deployments and environment variable synchronization. This integration allows teams to link their Vercel projects with their data applications, enabling seamless deployment workflows and automatic environment configuration management.]*
+
+### Improvements
+- Faster template deployments using pre-built images: Template-based projects now deploy immediately using pre-built Docker images instead of waiting for the build process to complete, significantly reducing deployment time for new projects. (Mitchell Suzuki)
+- Rebrand from Boreal to Fiveonefour Hosting throughout the platform: Updated all user-facing text, logos, and branding elements from "Boreal" to "Fiveonefour Hosting" across the entire platform interface. (groy-514)
+- Improve CLI project selection with URLs and IDs: The CLI now accepts project URLs, UUIDs, and bare project names in addition to org/project slug format when selecting projects. (Lucio Franco)
+- Streamline organization selection during CLI login: The CLI now automatically prompts users to select an organization after login, and auto-selects when only one organization is available, eliminating the need for separate org switch commands. (Lucio Franco)
+- Improve CLI messaging with modern formatting: CLI commands now use cleaner formatting with checkmarks, better error messages, and more helpful guidance for next steps. (Lucio Franco)
+- Improve organization switching with visual feedback: Organization switching now shows a loading screen with progress feedback and disables UI interactions during the switch to prevent conflicts. (groy-514)
+- Add clarifying note for existing database option: Added a helpful note explaining that existing tables remain unchanged when using an existing ClickHouse database for new projects. (groy-514)
+- Improve branch page layout with better text truncation: The branch pages top bar now properly handles long repository names and URLs with improved text truncation and responsive layout. (groy-514)
+
+### Bug Fixes
+- Fix logs with identical timestamps and content selecting together: Fixed an issue in the logs viewer where multiple log entries with the same timestamp and content would all be selected when clicking on one. PR: [#3481](https://github.com/514-labs/moosestack/pull/3481), [#1405](https://github.com/514-labs/moosestack/pull/1405), [#1427](https://github.com/514-labs/moosestack/pull/1427) (Lucio Franco)
+- Fix mobile website display issues: Fixed display and layout issues on the mobile version of the marketing website, improving user experience on mobile devices. (George Anderson)
+- Fix duplicate deployments during template project creation: Fixed an issue where template projects would trigger duplicate deployments due to race conditions between project creation and push webhooks. (Dave Seleno)
+
+## 🦌 Moose
+
+### New Features
+**Add lifecycle management support to materialized views** (Dave Seleno)
+  Materialized views now support lifecycle management with three options: FULLY_MANAGED (default - Moose manages creation, updates, and deletion), DELETION_PROTECTED (prevents accidental deletion and updates), and EXTERNALLY_MANAGED (user manages the view outside of Moose). This gives users fine-grained control over how their materialized views are managed in production environments.
+
+  **Materialized View Lifecycle Management Options**
+
+  ```typescript
+  import { MaterializedView, LifeCycle, Key, DateTime } from "@514labs/moose-lib";
+  import { UserActivity } from "../ingest/models";
+  
+  // Define the aggregated data structure
+  interface UserActivitySummary {
+    userId: Key<string>;
+    totalEvents: number;
+    lastActivity: DateTime;
+  }
+  
+  const userActivityTable = UserActivity.table!;
+  
+  // FULLY_MANAGED (default) - Moose handles everything
+  export const userSummaryMV = new MaterializedView<UserActivitySummary>({
+    materializedViewName: "UserActivitySummary",
+    targetTable: {
+      name: "UserActivitySummaryTable",
+      orderByFields: ["userId", "lastActivity"],
+    },
+    selectStatement: `
+      SELECT 
+        userId,
+        count() as totalEvents,
+        max(timestamp) as lastActivity
+      FROM \`${userActivityTable.name}\`
+      GROUP BY userId
+    `,
+    selectTables: [userActivityTable],
+    // lifeCycle defaults to FULLY_MANAGED - Moose creates, updates, and deletes
+  });
+  
+  // DELETION_PROTECTED - Prevents accidental deletion or updates
+  export const criticalReportMV = new MaterializedView<UserActivitySummary>({
+    materializedViewName: "CriticalUserReport", 
+    targetTable: {
+      name: "CriticalUserReportTable",
+      orderByFields: ["userId"],
+    },
+    selectStatement: `
+      SELECT userId, count() as totalEvents, max(timestamp) as lastActivity
+      FROM \`${userActivityTable.name}\`
+      WHERE userId IN (SELECT userId FROM premium_users)
+      GROUP BY userId
+    `,
+    selectTables: [userActivityTable],
+    lifeCycle: LifeCycle.DELETION_PROTECTED, // Prevents drops/updates
+  });
+  
+  // EXTERNALLY_MANAGED - User manages the view outside of Moose
+  export const externalReportMV = new MaterializedView<UserActivitySummary>({
+    materializedViewName: "ExternalUserReport",
+    targetTable: {
+      name: "ExternalUserReportTable", 
+      orderByFields: ["userId"],
+    },
+    selectStatement: `SELECT userId, 0 as totalEvents, now() as lastActivity FROM users`,
+    selectTables: [userActivityTable],
+    lifeCycle: LifeCycle.EXTERNALLY_MANAGED, // Moose won't create or manage this view
+  });
+  ```
+
+  This example shows how to use the three lifecycle management options for materialized views: FULLY_MANAGED (default) for automatic management, DELETION_PROTECTED to prevent accidental changes to critical views, and EXTERNALLY_MANAGED for views managed outside of Moose.
+
+  PR: [#3598](https://github.com/514-labs/moosestack/pull/3598) | Docs: [/moosestack/olap/model-materialized-view](https://docs.moosejs.com/moosestack/olap/model-materialized-view)
+
+**Initial hosting documentation for 514 CLI** (Olivia Kane)
+  Added comprehensive hosting documentation including CLI authentication, project setup, deployment workflows, and troubleshooting guides. This provides the foundational documentation for users getting started with MooseStack's managed hosting platform.
+
+  PR: [#3586](https://github.com/514-labs/moosestack/pull/3586) | Docs: [/hosting/cli/auth](https://docs.moosejs.com/hosting/cli/auth)
+
+**Add interactive tutorial customization wizard** (Johanan Ottensooser)
+  Tutorials now include an interactive wizard that lets users customize the guide content based on their specific setup (database type, operating system, language preferences). The wizard preserves user selections across page navigation and dynamically shows relevant code examples and instructions tailored to their configuration.
+
+  📸 *[Screenshot needed: Tutorials now include an interactive wizard that lets users customize the guide content based on their specific setup (database type, operating system, language preferences). The wizard preserves user selections across page navigation and dynamically shows relevant code examples and instructions tailored to their configuration.]*
+
+  PR: [#3501](https://github.com/514-labs/moosestack/pull/3501) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards)
+
+**Add Windows Setup documentation** (Johanan Ottensooser)
+  Added comprehensive Windows setup guide for MooseStack using WSL2. The new documentation provides step-by-step instructions for Windows users to set up WSL2, Docker Desktop, Node.js, and MooseStack on their systems.
+
+  PR: [#3566](https://github.com/514-labs/moosestack/pull/3566) | Docs: [/moosestack/help/windows-setup](https://docs.moosejs.com/moosestack/help/windows-setup)
+
+**Add comprehensive documentation for externally managed tables** (Nicolas Joseph)
+  Added extensive documentation for working with CDC-enabled ClickHouse databases and externally managed tables, including configuration options for local development mirrors, remote connections, and a complete guide for building on existing CDC pipelines like ClickPipes, PeerDB, and Debezium.
+
+  PR: [#3492](https://github.com/514-labs/moosestack/pull/3492) | Docs: [/moosestack/dev/cdc-managed-tables](https://docs.moosejs.com/moosestack/dev/cdc-managed-tables)
+
+**Add external table mirroring in dev mode** (Nicolas Joseph)
+  Developers can now automatically create local mirror tables for externally managed tables during development. When enabled via `create_local_mirrors = true` in moose.config.toml, the dev server will mirror remote table schemas and optionally sample data to local ClickHouse, making it easier to develop and test with external data sources without requiring direct access to production systems.
+
+  **Enable external table mirroring in moose.config.toml**
+
+  ```toml
+  # moose.config.toml
+  [project]
+  name = "my-analytics-app"
+  
+  # ClickHouse configuration for local development
+  [clickhouse]
+  host = "localhost"
+  port = 9000
+  db_name = "analytics_dev"
+  
+  # Development mode configuration
+  [dev.externally_managed.tables]
+  # Enable automatic creation of local mirror tables for external tables
+  create_local_mirrors = true
+  
+  # Number of sample rows to copy from remote tables (0 = schema only)
+  sample_size = 1000
+  
+  # Whether to refresh mirrors on startup (drop and recreate)
+  refresh_on_startup = true
+  
+  # Optional: Remote ClickHouse connection for mirroring
+  [clickhouse.remote]
+  url = "https://production-clickhouse.company.com:8443"
+  # username and password stored securely via keyring
+  ```
+
+  This configuration enables external table mirroring in development mode. When enabled, the dev server automatically creates local mirror tables for any EXTERNALLY_MANAGED tables, optionally copying sample data from production systems to make local development easier.
+
+  PR: [#3491](https://github.com/514-labs/moosestack/pull/3491) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
+
+### Improvements
+- Update 514 CLI documentation with comprehensive command reference: Updated the 514 hosting CLI documentation with complete command reference including new pages for orgs, projects, update commands, and comprehensive options for all existing commands. PR: [#3595](https://github.com/514-labs/moosestack/pull/3595) | Docs: [/hosting/cli](https://docs.moosejs.com/hosting/cli) (Nicolas Joseph)
+- Remove Boreal branding from CLI help command: Updated CLI help text to use generic hosting platform terminology instead of specific Boreal branding. PR: [#3590](https://github.com/514-labs/moosestack/pull/3590) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Lucio Franco)
+- Update documentation to reflect Fiveonefour hosting rebrand: Documentation now consistently refers to "Fiveonefour hosting" instead of "Boreal" throughout all guides and tutorials to reflect the platform rebrand. PR: [#3589](https://github.com/514-labs/moosestack/pull/3589) | Docs: [/guides/chat-in-your-app/tutorial](https://docs.moosejs.com/guides/chat-in-your-app/tutorial) (Olivia Kane)
+- Updated documentation and messaging to highlight AI agent capabilities: Updated README with improved messaging that emphasizes MooseStack's AI agent harness capabilities and ClickHouse-native framework positioning, making it clearer how developers and AI coding agents can work together on analytical backends. PR: [#3588](https://github.com/514-labs/moosestack/pull/3588) | Docs: [/moosestack/getting-started/quickstart](https://docs.moosejs.com/moosestack/getting-started/quickstart) (Chris Crane)
+- Rewrite performant dashboards guide with AI agent harness approach: The performant dashboards guide now focuses on using MooseStack as an "agent harness" for AI-assisted migration of analytical workloads from OLTP to ClickHouse, with new architecture diagrams, expanded coverage of source databases (Postgres, SQL Server), and detailed explanation of the three-pillar approach (Code, Cadence, Context) that helps AI agents successfully migrate dashboard logic. PR: [#3587](https://github.com/514-labs/moosestack/pull/3587) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
+- Improve phase 1 dashboard migration documentation: Enhanced the phase 1 translation instructions in the performant dashboards guide with clearer path resolution requirements, better test case guidance, and improved workflow explanations. PR: [#3583](https://github.com/514-labs/moosestack/pull/3583) | Docs: [/shared/guides/performant-dashboards/phase-1-translation](https://docs.moosejs.com/shared/guides/performant-dashboards/phase-1-translation) (Olivia Kane)
+- Add Guides card to docs home page: Added a new Guides section to the documentation home page, providing step-by-step tutorials for building real applications with MooseStack. PR: [#3581](https://github.com/514-labs/moosestack/pull/3581) | Docs: [/guides](https://docs.moosejs.com/guides) (Johanan Ottensooser)
+- Improve performant dashboards tutorial structure and readability: Restructured the performant dashboards tutorial with clearer sections, improved visual formatting using bullet point cards, and streamlined the three-phase migration workflow to make it easier to follow. PR: [#3575](https://github.com/514-labs/moosestack/pull/3575) | Docs: [/guides/performant-dashboards/tutorial](https://docs.moosejs.com/guides/performant-dashboards/tutorial) (Olivia Kane)
+- Add CLI docs integration with AI clients example: Added example showing how to pipe Moose documentation to AI clients using the `--raw` flag, enabling users to get AI assistance on specific documentation sections. PR: [#3569](https://github.com/514-labs/moosestack/pull/3569) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) (Johanan Ottensooser)
+- Remove beta status from chat-in-your-app documentation: The chat-in-your-app guide pages are no longer marked as beta, indicating the feature is now stable and ready for production use. PR: [#3570](https://github.com/514-labs/moosestack/pull/3570) | Docs: [/guides/chat-in-your-app/overview](https://docs.moosejs.com/guides/chat-in-your-app/overview) (Johanan Ottensooser)
+- Restructure chat guide with collapsible navigation: The chat-in-your-app guide now has a cleaner structure with separate sections for overview, build decisions, and tutorial, making it easier to navigate and follow step-by-step. PR: [#3561](https://github.com/514-labs/moosestack/pull/3561) | Docs: [/guides/chat-in-your-app](https://docs.moosejs.com/guides/chat-in-your-app) (Johanan Ottensooser)
+- Refactor guide steps for performant dashboards tutorial: Restructured and improved the performant dashboards guide with better formatting, clearer step organization, and enhanced interactive elements for a smoother learning experience. PR: [#3486](https://github.com/514-labs/moosestack/pull/3486) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Olivia Kane)
+- Improve MCP server configuration documentation: Added comprehensive setup instructions for connecting MCP clients to the Moose MCP server, including both Claude Code CLI commands and mcp.json configuration examples. PR: [#3485](https://github.com/514-labs/moosestack/pull/3485) (Johanan Ottensooser)
+- Improve template descriptions and onboarding flow: Updated project template descriptions to be clearer and more consistent, and improved the post-installation instructions with better formatting and guidance. PR: [#3483](https://github.com/514-labs/moosestack/pull/3483) (Olivia Kane)
+- Update MCP SDK to version 1.26.0 with improved tool registration API: Updated the Model Context Protocol SDK to version 1.26.0, which includes a new tool registration API that provides better structure for MCP tools with separate description and inputSchema fields. PR: [#3480](https://github.com/514-labs/moosestack/pull/3480) (Copilot)
+- Add authentication support to MCP server Claude Code setup: The MCP server template now includes authentication configuration with bearer token support when connecting to Claude Code. PR: [#3472](https://github.com/514-labs/moosestack/pull/3472) (Chris Crane)
+
+### Bug Fixes
+- Fix mobile menu overlay positioning: Fixed mobile menu positioning to properly overlay content instead of being positioned inline in the documentation site. PR: [#3594](https://github.com/514-labs/moosestack/pull/3594) (George Anderson)
+- Fix dashboard guide card title: Fixed the navigation card title for the dashboard performance guide to match the actual page title. PR: [#3580](https://github.com/514-labs/moosestack/pull/3580) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) (Johanan Ottensooser)
+
+## 📦 infrastructure
+
+### Improvements
+- Improve deployment reliability by always pulling latest images: Deployments now always pull the latest version of container images tagged with ":latest", ensuring users get the most up-to-date application versions and preventing issues with cached outdated images. (Mitchell Suzuki)
+- Reduce deployment startup times from 20 minutes to 3.5 minutes: Application deployments now start up significantly faster with reduced startup probe failure thresholds and timeout values. (Lucio Franco)
