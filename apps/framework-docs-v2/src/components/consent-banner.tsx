@@ -72,16 +72,16 @@ function CustomizeView({
         </div>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex items-center gap-2 pt-2">
         <button
           onClick={onBack}
-          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Back
         </button>
         <button
           onClick={onSave}
-          className="flex h-10 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="ml-auto h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Save Preferences
         </button>
@@ -120,22 +120,22 @@ function BannerView({
         </p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex items-center gap-2 pt-2">
         <button
           onClick={onRejectAll}
-          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Reject All
         </button>
         <button
           onClick={onCustomize}
-          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Customize
         </button>
         <button
           onClick={onAcceptAll}
-          className="flex h-10 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="ml-auto h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Accept All
         </button>
@@ -156,7 +156,7 @@ export function ConsentBanner() {
     <div
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-3 z-[9999] flex flex-col gap-6 rounded-xl border bg-card p-5 text-card-foreground shadow-lg sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
+      className="fixed inset-x-3 bottom-6 z-[9999] flex flex-col gap-4 rounded-xl border bg-card p-5 text-card-foreground shadow-lg sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
     >
       {view === "banner" ?
         <BannerView
