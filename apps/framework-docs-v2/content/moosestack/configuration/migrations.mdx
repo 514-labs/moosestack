@@ -11,9 +11,18 @@ Control how Moose handles database migrations and schema changes.
 ```toml filename="moose.config.toml"
 [migration_config]
 # Operations to ignore during migration plan generation and drift detection
-# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl", "ModifyPartitionBy", "IgnoreStringLowCardinalityDifferences"]
 ```
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
 | `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | [] | List of migration operations to ignore during plan generation. |
+
+## Available Operations
+
+| Operation | Description |
+|:----------|:------------|
+| `ModifyTableTtl` | Ignore changes to table-level TTL settings. |
+| `ModifyColumnTtl` | Ignore changes to column-level TTL settings. |
+| `ModifyPartitionBy` | Ignore changes to partition key expressions. |
+| `IgnoreStringLowCardinalityDifferences` | Treat `LowCardinality(String)` and `String` as equivalent during schema comparison. Useful when ClickHouse automatically applies `LowCardinality` to string columns. |
