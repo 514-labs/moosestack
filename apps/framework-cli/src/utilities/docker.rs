@@ -252,6 +252,10 @@ impl DockerClient {
                 project.clickhouse_config.host_port.to_string(),
             )
             .env(
+                "CLICKHOUSE_NATIVE_PORT",
+                project.clickhouse_config.native_port.to_string(),
+            )
+            .env(
                 "REDIS_PORT",
                 project.redis_config.effective_port().to_string(),
             );
