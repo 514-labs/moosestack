@@ -1,3 +1,4 @@
+use super::InfrastructureSignature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -7,6 +8,12 @@ pub struct WebApp {
     pub mount_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<WebAppMetadata>,
+    /// Infrastructure components this web app reads data from (lineage).
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this web app writes data to (lineage).
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21,6 +28,8 @@ impl WebApp {
             name,
             mount_path,
             metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
         }
     }
 
@@ -34,6 +43,8 @@ impl WebApp {
             name: self.name.clone(),
             mount_path: self.mount_path.clone(),
             metadata: self.metadata.as_ref().map(|m| m.to_proto()).into(),
+            pulls_data_from: self.pulls_data_from.iter().map(|s| s.to_proto()).collect(),
+            pushes_data_to: self.pushes_data_to.iter().map(|s| s.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -43,6 +54,18 @@ impl WebApp {
             name: proto.name.clone(),
             mount_path: proto.mount_path.clone(),
             metadata: proto.metadata.as_ref().map(WebAppMetadata::from_proto),
+            pulls_data_from: proto
+                .pulls_data_from
+                .iter()
+                .cloned()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
+            pushes_data_to: proto
+                .pushes_data_to
+                .iter()
+                .cloned()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
         }
     }
 }
@@ -72,7 +95,7 @@ pub fn diff_web_apps(
 
     for (name, target_app) in target {
         match current.get(name) {
-            Some(current_app) if current_app != target_app => {
+            Some(current_app) if !web_apps_equal_ignore_metadata(current_app, target_app) => {
                 updated.push((current_app.clone(), target_app.clone()));
             }
             None => {
@@ -89,4 +112,98 @@ pub fn diff_web_apps(
     }
 
     (added, removed, updated)
+}
+
+#[derive(PartialEq)]
+struct WebAppComparableForDiff<'a> {
+    name: &'a str,
+    mount_path: &'a str,
+    pulls_data_from: &'a [InfrastructureSignature],
+    pushes_data_to: &'a [InfrastructureSignature],
+}
+
+impl<'a> From<&'a WebApp> for WebAppComparableForDiff<'a> {
+    fn from(web_app: &'a WebApp) -> Self {
+        Self {
+            name: web_app.name.as_str(),
+            mount_path: web_app.mount_path.as_str(),
+            pulls_data_from: web_app.pulls_data_from.as_slice(),
+            pushes_data_to: web_app.pushes_data_to.as_slice(),
+        }
+    }
+}
+
+pub(crate) fn web_apps_equal_ignore_metadata(a: &WebApp, b: &WebApp) -> bool {
+    WebAppComparableForDiff::from(a) == WebAppComparableForDiff::from(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webapp_proto_roundtrip_preserves_lineage() {
+        let web_app = WebApp {
+            name: "lineageWebApp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: Some(WebAppMetadata {
+                description: Some("Lineage test".to_string()),
+            }),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }],
+        };
+
+        let proto = web_app.to_proto();
+        let roundtrip = WebApp::from_proto(&proto);
+        assert_eq!(roundtrip, web_app);
+    }
+
+    #[test]
+    fn diff_ignores_metadata_but_detects_lineage_changes() {
+        let base = WebApp {
+            name: "lineageWebApp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: Some(WebAppMetadata {
+                description: Some("before".to_string()),
+            }),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }],
+        };
+
+        let mut current = HashMap::new();
+        current.insert(base.name.clone(), base.clone());
+
+        let mut metadata_only = base.clone();
+        metadata_only.metadata = Some(WebAppMetadata {
+            description: Some("after".to_string()),
+        });
+
+        let mut target = HashMap::new();
+        target.insert(metadata_only.name.clone(), metadata_only);
+        let (_, _, updated) = diff_web_apps(&current, &target);
+        assert!(
+            updated.is_empty(),
+            "Metadata-only WebApp changes should be ignored"
+        );
+
+        let mut lineage_changed = base;
+        lineage_changed.pushes_data_to = vec![InfrastructureSignature::Topic {
+            id: "OrdersEventsV2".to_string(),
+        }];
+        target.insert(lineage_changed.name.clone(), lineage_changed);
+        let (_, _, updated) = diff_web_apps(&current, &target);
+        assert_eq!(
+            updated.len(),
+            1,
+            "Lineage changes should produce a WebApp update"
+        );
+    }
 }

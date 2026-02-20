@@ -5,7 +5,7 @@
 //! Components reference MCP resources for detailed information.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::framework::core::infrastructure::table::Metadata;
@@ -21,6 +21,8 @@ pub struct CompressedInfraMap {
     pub components: Vec<ComponentNode>,
     /// Connections between components showing data flow
     pub connections: Vec<Connection>,
+    #[serde(skip, default)]
+    connection_set: HashSet<Connection>,
     /// Summary statistics about the infrastructure
     pub stats: MapStats,
 }
@@ -41,7 +43,7 @@ pub struct ComponentNode {
 }
 
 /// Connection between two components showing data flow
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Connection {
     /// Source component ID
     pub from: String,
@@ -79,7 +81,7 @@ pub enum ComponentType {
 }
 
 /// Type of connection between components
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionType {
     /// Topic data is ingested into a table
@@ -115,6 +117,7 @@ impl CompressedInfraMap {
         Self {
             components: Vec::new(),
             connections: Vec::new(),
+            connection_set: HashSet::new(),
             stats: MapStats {
                 total_components: 0,
                 by_type: HashMap::new(),
@@ -134,8 +137,27 @@ impl CompressedInfraMap {
         self.components.push(component);
     }
 
+    /// Lazily rebuilds `connection_set` from `connections` after deserialization.
+    ///
+    /// This assumes `connections` is append-only while the map is in use.
+    /// If `connections` can be cleared or mutated in the future, this method
+    /// must rebuild `connection_set` unconditionally.
+    fn ensure_connection_set(&mut self) {
+        debug_assert!(
+            !self.connections.is_empty() || self.connection_set.is_empty(),
+            "connections were cleared after connection_set was initialized"
+        );
+        if self.connection_set.is_empty() && !self.connections.is_empty() {
+            self.connection_set = self.connections.iter().cloned().collect();
+        }
+    }
+
     /// Add a connection to the map
     pub fn add_connection(&mut self, connection: Connection) {
+        self.ensure_connection_set();
+        if !self.connection_set.insert(connection.clone()) {
+            return;
+        }
         self.stats.total_connections += 1;
         self.connections.push(connection);
     }
@@ -274,10 +296,23 @@ fn add_api_endpoints(compressed: &mut CompressedInfraMap, infra_map: &Infrastruc
                 });
             }
             APIType::EGRESS { .. } => {
-                // EGRESS APIs query from tables/views, but the connection would require
-                // analyzing the SQL query to determine which tables are accessed
-                // Skip for now as this requires query parsing
+                // EGRESS API lineage is provided via pulls_data_from/pushes_data_to.
             }
+        }
+
+        for source in &api.pulls_data_from {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+        for target in &api.pushes_data_to {
+            compressed.add_connection(Connection {
+                from: key.clone(),
+                to: target.id().to_string(),
+                connection_type: ConnectionType::PushesTo,
+            });
         }
     }
 }
@@ -351,6 +386,22 @@ fn add_workflows(compressed: &mut CompressedInfraMap, infra_map: &Infrastructure
             name: workflow.name().to_string(),
             source_file: format!("{}{}", WORKFLOW_SOURCE_PATH_PREFIX, workflow.name()),
         });
+
+        for source in workflow.pulls_data_from() {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+
+        for target in workflow.pushes_data_to() {
+            compressed.add_connection(Connection {
+                from: key.clone(),
+                to: target.id().to_string(),
+                connection_type: ConnectionType::PushesTo,
+            });
+        }
     }
 }
 
@@ -363,6 +414,22 @@ fn add_web_apps(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureM
             name: web_app.name.clone(),
             source_file: String::new(), // Web apps don't have source file tracking
         });
+
+        for source in &web_app.pulls_data_from {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+
+        for target in &web_app.pushes_data_to {
+            compressed.add_connection(Connection {
+                from: key.clone(),
+                to: target.id().to_string(),
+                connection_type: ConnectionType::PushesTo,
+            });
+        }
     }
 }
 
@@ -451,6 +518,13 @@ pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
+    use crate::framework::core::infrastructure::web_app::WebApp;
+    use crate::framework::core::infrastructure::InfrastructureSignature;
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+    use crate::framework::languages::SupportedLanguages;
+    use crate::framework::scripts::Workflow;
+    use std::path::PathBuf;
 
     #[test]
     fn test_compressed_map_add_component() {
@@ -481,6 +555,24 @@ mod tests {
         assert_eq!(map.stats.total_connections, 1);
         assert_eq!(map.get_outgoing_connections("api1").len(), 1);
         assert_eq!(map.get_incoming_connections("topic1").len(), 1);
+    }
+
+    #[test]
+    fn test_connection_dedup_after_deserialization() {
+        let mut map = CompressedInfraMap::new();
+        let connection = Connection {
+            from: "api1".to_string(),
+            to: "topic1".to_string(),
+            connection_type: ConnectionType::Produces,
+        };
+        map.add_connection(connection.clone());
+
+        let serialized = serde_json::to_string(&map).unwrap();
+        let mut deserialized: CompressedInfraMap = serde_json::from_str(&serialized).unwrap();
+        deserialized.add_connection(connection);
+
+        assert_eq!(deserialized.connections.len(), 1);
+        assert_eq!(deserialized.stats.total_connections, 1);
     }
 
     #[test]
@@ -553,5 +645,109 @@ mod tests {
         let path = "/Users/app/project/app/datamodels/User.ts";
         let result = make_relative_path(path);
         assert_eq!(result, "app/datamodels/User.ts");
+    }
+
+    #[test]
+    fn test_api_lineage_connections_are_included() {
+        let mut infra_map = InfrastructureMap::default();
+        let api = ApiEndpoint {
+            name: "bar".to_string(),
+            api_type: APIType::EGRESS {
+                query_params: vec![],
+                output_schema: serde_json::Value::Null,
+            },
+            path: PathBuf::from("bar"),
+            method: Method::GET,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "bar".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: None,
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "MyTable".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "MyTopic".to_string(),
+            }],
+        };
+        let api_id = api.id();
+        infra_map.api_endpoints.insert(api_id.clone(), api);
+
+        let compressed = build_compressed_map(&infra_map);
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "MyTable"
+                && connection.to == api_id
+                && connection.connection_type == ConnectionType::PullsFrom
+        }));
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == api_id
+                && connection.to == "MyTopic"
+                && connection.connection_type == ConnectionType::PushesTo
+        }));
+    }
+
+    #[test]
+    fn test_workflow_lineage_connections_are_included() {
+        let mut infra_map = InfrastructureMap::default();
+        let workflow = Workflow::from_user_code(
+            "lineage_workflow".to_string(),
+            SupportedLanguages::Typescript,
+            None,
+            None,
+            None,
+            vec![InfrastructureSignature::Table {
+                id: "WorkflowSource".to_string(),
+            }],
+            vec![InfrastructureSignature::Topic {
+                id: "WorkflowTarget".to_string(),
+            }],
+        );
+        infra_map
+            .workflows
+            .insert("lineage_workflow".to_string(), workflow);
+
+        let compressed = build_compressed_map(&infra_map);
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "WorkflowSource"
+                && connection.to == "lineage_workflow"
+                && connection.connection_type == ConnectionType::PullsFrom
+        }));
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "lineage_workflow"
+                && connection.to == "WorkflowTarget"
+                && connection.connection_type == ConnectionType::PushesTo
+        }));
+    }
+
+    #[test]
+    fn test_webapp_lineage_connections_are_included() {
+        let mut infra_map = InfrastructureMap::default();
+        let web_app = WebApp {
+            name: "lineage_webapp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: None,
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "WebAppSource".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "WebAppTarget".to_string(),
+            }],
+        };
+        infra_map
+            .web_apps
+            .insert("lineage_webapp".to_string(), web_app);
+
+        let compressed = build_compressed_map(&infra_map);
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "WebAppSource"
+                && connection.to == "lineage_webapp"
+                && connection.connection_type == ConnectionType::PullsFrom
+        }));
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "lineage_webapp"
+                && connection.to == "WebAppTarget"
+                && connection.connection_type == ConnectionType::PushesTo
+        }));
     }
 }

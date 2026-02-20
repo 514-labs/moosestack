@@ -16,6 +16,7 @@ use protobuf::{EnumOrUnknown, MessageField};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +59,12 @@ pub struct ApiEndpoint {
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
+    /// Infrastructure components this API reads data from (lineage).
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    /// Infrastructure components this API writes data to (lineage).
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 impl ApiEndpoint {
@@ -84,6 +91,8 @@ impl ApiEndpoint {
                 primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
         }
     }
 
@@ -140,6 +149,8 @@ impl ApiEndpoint {
                     special_fields: Default::default(),
                 }
             })),
+            pulls_data_from: self.pulls_data_from.iter().map(|s| s.to_proto()).collect(),
+            pushes_data_to: self.pushes_data_to.iter().map(|s| s.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -168,6 +179,16 @@ impl ApiEndpoint {
                     .into_option()
                     .map(|s| super::table::SourceLocation { file: s.file }),
             }),
+            pulls_data_from: proto
+                .pulls_data_from
+                .into_iter()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
+            pushes_data_to: proto
+                .pushes_data_to
+                .into_iter()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
         }
     }
 }
@@ -199,13 +220,15 @@ impl From<EndpointFile> for ApiEndpoint {
                 primitive_type: PrimitiveTypes::ConsumptionAPI,
             },
             metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
         }
     }
 }
 
 impl DataLineage for ApiEndpoint {
     fn pulls_data_from(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
-        vec![]
+        self.pulls_data_from.clone()
     }
 
     fn pushes_data_to(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
@@ -213,11 +236,19 @@ impl DataLineage for ApiEndpoint {
             APIType::INGRESS {
                 target_topic_id, ..
             } => {
-                vec![InfrastructureSignature::Topic {
+                let mut pushes = vec![InfrastructureSignature::Topic {
                     id: target_topic_id.clone(),
-                }]
+                }];
+                pushes.extend(self.pushes_data_to.iter().cloned());
+
+                // Preserve insertion order while deduplicating.
+                let mut seen = HashSet::new();
+                pushes
+                    .into_iter()
+                    .filter(|signature| seen.insert(signature.clone()))
+                    .collect()
             }
-            APIType::EGRESS { .. } => vec![],
+            APIType::EGRESS { .. } => self.pushes_data_to.clone(),
         }
     }
 }
@@ -298,5 +329,107 @@ impl Method {
             ProtoMethod::PUT => Method::PUT,
             ProtoMethod::DELETE => Method::DELETE,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::DataLineage;
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+
+    #[test]
+    fn ingress_pushes_data_to_is_deterministic_and_deduplicated() {
+        let endpoint = ApiEndpoint {
+            name: "test".to_string(),
+            api_type: APIType::INGRESS {
+                target_topic_id: "target_topic".to_string(),
+                data_model: None,
+                dead_letter_queue: None,
+                schema: serde_json::Map::default(),
+            },
+            path: PathBuf::from("/ingest"),
+            method: Method::POST,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "secondary_topic".to_string(),
+                },
+            ],
+        };
+
+        let lineage = endpoint.pushes_data_to("default");
+        assert_eq!(
+            lineage,
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string()
+                },
+                InfrastructureSignature::Topic {
+                    id: "secondary_topic".to_string()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn proto_roundtrip_preserves_lineage_fields() {
+        let endpoint = ApiEndpoint {
+            name: "lineage_ingress".to_string(),
+            api_type: APIType::INGRESS {
+                target_topic_id: "target_topic".to_string(),
+                data_model: None,
+                dead_letter_queue: None,
+                schema: serde_json::Map::default(),
+            },
+            path: PathBuf::from("/ingest"),
+            method: Method::POST,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "lineage_ingress".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: None,
+            pulls_data_from: vec![InfrastructureSignature::Topic {
+                id: "source_topic".to_string(),
+            }],
+            pushes_data_to: vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "downstream_topic".to_string(),
+                },
+            ],
+        };
+
+        let roundtrip = ApiEndpoint::from_proto(endpoint.to_proto());
+
+        assert_eq!(
+            roundtrip.pulls_data_from("default"),
+            vec![InfrastructureSignature::Topic {
+                id: "source_topic".to_string(),
+            }]
+        );
+        assert_eq!(
+            roundtrip.pushes_data_to("default"),
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "target_topic".to_string()
+                },
+                InfrastructureSignature::Topic {
+                    id: "downstream_topic".to_string()
+                }
+            ]
+        );
     }
 }

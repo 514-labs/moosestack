@@ -33,7 +33,7 @@
 //!
 //! This module is essential for maintaining consistency between the defined infrastructure
 //! and the actual deployed components.
-use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
+use super::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
@@ -42,6 +42,8 @@ use super::infrastructure::table::{Column, OrderBy, Table};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
+use super::infrastructure::web_app::web_apps_equal_ignore_metadata;
+use super::infrastructure::InfrastructureSignature;
 use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
@@ -53,6 +55,7 @@ use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::framework::typescript::parser::ensure_typescript_compiled;
+use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -1108,7 +1111,7 @@ impl InfrastructureMap {
 
         for (id, webapp) in self_web_apps {
             if let Some(target_webapp) = target_web_apps.get(id) {
-                if webapp != target_webapp {
+                if !web_apps_equal_ignore_metadata(webapp, target_webapp) {
                     tracing::debug!("WebApp updated: {}", id);
                     webapp_updates += 1;
                     web_app_changes.push(WebAppChange::WebApp(Change::Updated {
@@ -1249,7 +1252,7 @@ impl InfrastructureMap {
     ///
     /// This method identifies added, removed, and updated workflows by comparing
     /// the source and target workflow maps. A workflow is considered updated when
-    /// its configuration (schedule, retries, timeout) has changed.
+    /// its configuration (schedule, retries, timeout) or lineage has changed.
     ///
     /// # Arguments
     /// * `self_workflows` - HashMap of source workflows to compare from
@@ -3562,18 +3565,63 @@ fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
 ///
 /// # Returns
 /// `true` if the API endpoints are equal ignoring metadata, `false` otherwise
+#[derive(PartialEq)]
+struct ApiEndpointComparableForDiff<'a> {
+    name: &'a str,
+    api_type: &'a APIType,
+    path: &'a Path,
+    method: &'a Method,
+    version: Option<&'a Version>,
+    source_primitive: &'a PrimitiveSignature,
+    pulls_data_from: &'a [InfrastructureSignature],
+    pushes_data_to: &'a [InfrastructureSignature],
+}
+
+impl<'a> From<&'a ApiEndpoint> for ApiEndpointComparableForDiff<'a> {
+    fn from(api_endpoint: &'a ApiEndpoint) -> Self {
+        Self {
+            name: api_endpoint.name.as_str(),
+            api_type: &api_endpoint.api_type,
+            path: api_endpoint.path.as_path(),
+            method: &api_endpoint.method,
+            version: api_endpoint.version.as_ref(),
+            source_primitive: &api_endpoint.source_primitive,
+            pulls_data_from: api_endpoint.pulls_data_from.as_slice(),
+            pushes_data_to: api_endpoint.pushes_data_to.as_slice(),
+        }
+    }
+}
+
 fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool {
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.metadata = None;
-    b.metadata = None;
-    a == b
+    ApiEndpointComparableForDiff::from(a) == ApiEndpointComparableForDiff::from(b)
+}
+
+#[derive(PartialEq)]
+struct WorkflowConfigComparableForDiff<'a> {
+    schedule: &'a str,
+    retries: u32,
+    timeout: &'a str,
+    pulls_data_from: &'a [InfrastructureSignature],
+    pushes_data_to: &'a [InfrastructureSignature],
+}
+
+impl<'a> From<&'a Workflow> for WorkflowConfigComparableForDiff<'a> {
+    fn from(workflow: &'a Workflow) -> Self {
+        Self {
+            schedule: workflow.config().schedule.as_str(),
+            retries: workflow.config().retries,
+            timeout: workflow.config().timeout.as_str(),
+            pulls_data_from: workflow.pulls_data_from(),
+            pushes_data_to: workflow.pushes_data_to(),
+        }
+    }
 }
 
 /// Check if two workflow configurations are equal
 ///
-/// Compares the schedule, retries, and timeout settings between two workflows.
-/// These are the configuration values that affect how Temporal runs the workflow.
+/// Compares the schedule, retries, timeout, and lineage settings between two workflows.
+/// These are the values that affect how Temporal runs the workflow and how
+/// downstream lineage should be represented.
 ///
 /// # Arguments
 /// * `a` - The first workflow to compare
@@ -3582,9 +3630,7 @@ fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool
 /// # Returns
 /// `true` if the configurations are equal, `false` otherwise
 fn workflows_config_equal(a: &Workflow, b: &Workflow) -> bool {
-    a.config().schedule == b.config().schedule
-        && a.config().retries == b.config().retries
-        && a.config().timeout == b.config().timeout
+    WorkflowConfigComparableForDiff::from(a) == WorkflowConfigComparableForDiff::from(b)
 }
 
 /// Computes the detailed differences between two table versions
@@ -7702,10 +7748,22 @@ mod normalize_tests {
 #[cfg(test)]
 mod diff_workflow_tests {
     use super::*;
+    use crate::framework::core::infrastructure::InfrastructureSignature;
     use crate::framework::languages::SupportedLanguages;
     use crate::framework::scripts::Workflow;
 
     fn create_test_workflow(name: &str, schedule: &str, retries: u32, timeout: &str) -> Workflow {
+        create_test_workflow_with_lineage(name, schedule, retries, timeout, vec![], vec![])
+    }
+
+    fn create_test_workflow_with_lineage(
+        name: &str,
+        schedule: &str,
+        retries: u32,
+        timeout: &str,
+        pulls_data_from: Vec<InfrastructureSignature>,
+        pushes_data_to: Vec<InfrastructureSignature>,
+    ) -> Workflow {
         Workflow::from_user_code(
             name.to_string(),
             SupportedLanguages::Typescript,
@@ -7716,8 +7774,9 @@ mod diff_workflow_tests {
             } else {
                 Some(schedule.to_string())
             },
+            pulls_data_from,
+            pushes_data_to,
         )
-        .unwrap()
     }
 
     #[test]
@@ -7850,6 +7909,58 @@ mod diff_workflow_tests {
             changes.is_empty(),
             "No changes expected for identical workflows"
         );
+    }
+
+    #[test]
+    fn test_workflow_lineage_change_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow_with_lineage(
+            "my_workflow",
+            "1h",
+            3,
+            "30s",
+            vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            vec![],
+        );
+        let workflow_v2 = create_test_workflow_with_lineage(
+            "my_workflow",
+            "1h",
+            3,
+            "30s",
+            vec![InfrastructureSignature::Table {
+                id: "OrdersV2".to_string(),
+            }],
+            vec![],
+        );
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert_eq!(
+                    before.pulls_data_from(),
+                    &[InfrastructureSignature::Table {
+                        id: "Orders".to_string()
+                    }]
+                );
+                assert_eq!(
+                    after.pulls_data_from(),
+                    &[InfrastructureSignature::Table {
+                        id: "OrdersV2".to_string()
+                    }]
+                );
+            }
+            _ => panic!("Expected Updated change"),
+        }
     }
 
     #[test]
@@ -8141,6 +8252,109 @@ mod mirrorable_external_tables_tests {
         assert!(
             !mirrorable.iter().any(|t| t.name == "managed_mergetree"),
             "FullyManaged table should not be mirrorable (wrong lifecycle)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lineage_diff_equality_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
+    use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+    use crate::framework::core::infrastructure::web_app::WebApp;
+    use crate::framework::core::infrastructure::InfrastructureSignature;
+
+    fn test_api_endpoint() -> ApiEndpoint {
+        ApiEndpoint {
+            name: "lineage_api".to_string(),
+            api_type: APIType::EGRESS {
+                query_params: vec![],
+                output_schema: serde_json::Value::Null,
+            },
+            path: std::path::PathBuf::from("lineage_api"),
+            method: Method::GET,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "lineage_api".to_string(),
+                primitive_type: PrimitiveTypes::ConsumptionAPI,
+            },
+            metadata: Some(Metadata {
+                description: Some("before".to_string()),
+                source: Some(SourceLocation {
+                    file: "app/api.ts".to_string(),
+                }),
+            }),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![],
+        }
+    }
+
+    fn test_web_app() -> WebApp {
+        WebApp {
+            name: "lineage_web".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: Some(
+                crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                    description: Some("before".to_string()),
+                },
+            ),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![],
+        }
+    }
+
+    #[test]
+    fn api_endpoint_equality_ignores_metadata_but_tracks_lineage() {
+        let base = test_api_endpoint();
+
+        let mut metadata_only = base.clone();
+        metadata_only.metadata = Some(Metadata {
+            description: Some("after".to_string()),
+            source: Some(SourceLocation {
+                file: "app/other.ts".to_string(),
+            }),
+        });
+        assert!(
+            api_endpoints_equal_ignore_metadata(&base, &metadata_only),
+            "Metadata-only changes should be ignored for API endpoint diffs"
+        );
+
+        let mut lineage_changed = base.clone();
+        lineage_changed.pulls_data_from = vec![InfrastructureSignature::Table {
+            id: "OrdersV2".to_string(),
+        }];
+        assert!(
+            !api_endpoints_equal_ignore_metadata(&base, &lineage_changed),
+            "Lineage changes should be treated as API endpoint updates"
+        );
+    }
+
+    #[test]
+    fn web_app_equality_ignores_metadata_but_tracks_lineage() {
+        let base = test_web_app();
+
+        let mut metadata_only = base.clone();
+        metadata_only.metadata = Some(
+            crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                description: Some("after".to_string()),
+            },
+        );
+        assert!(
+            web_apps_equal_ignore_metadata(&base, &metadata_only),
+            "Metadata-only changes should be ignored for WebApp diffs"
+        );
+
+        let mut lineage_changed = base.clone();
+        lineage_changed.pushes_data_to = vec![InfrastructureSignature::Topic {
+            id: "OrdersEvents".to_string(),
+        }];
+        assert!(
+            !web_apps_equal_ignore_metadata(&base, &lineage_changed),
+            "Lineage changes should be treated as WebApp updates"
         );
     }
 }
