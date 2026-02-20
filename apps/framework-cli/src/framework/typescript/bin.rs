@@ -37,11 +37,15 @@ fn check_moose_lib_version(project_path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to run moose-runner print-version: {e}"))?;
 
     if !output.status.success() {
-        return Err(format!(
-            "Version mismatch: installed @514labs/moose-lib does not support version checking \
-             and is older than the Moose CLI ({CLI_VERSION}). \
-             Please run `npm install @514labs/moose-lib@{CLI_VERSION}` to update."
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("unknown command") {
+            return Err(format!(
+                "Version mismatch: installed @514labs/moose-lib does not support version checking \
+                 and is older than the Moose CLI ({CLI_VERSION}). \
+                 Please install @514labs/moose-lib@{CLI_VERSION}."
+            ));
+        }
+        return Err(format!("Failed to check moose-lib version: {stderr}"));
     }
 
     let lib_version = String::from_utf8_lossy(&output.stdout);
@@ -50,7 +54,7 @@ fn check_moose_lib_version(project_path: &Path) -> Result<(), String> {
         return Err(format!(
             "Version mismatch: installed @514labs/moose-lib is {lib_version}, \
              but the Moose CLI is {CLI_VERSION}. \
-             Please run `npm install @514labs/moose-lib@{CLI_VERSION}` to update."
+             Please install @514labs/moose-lib@{CLI_VERSION}."
         ));
     }
 
