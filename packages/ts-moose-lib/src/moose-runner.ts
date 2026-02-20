@@ -4,6 +4,9 @@
 // arguments passed to the file.
 // It loads pre-compiled JavaScript - no ts-node required.
 
+import { readFileSync } from "fs";
+import { join } from "path";
+
 import { dumpMooseInternal } from "./dmv2/internal";
 import { runApis } from "./consumption-apis/runner";
 import { runStreamingFunctions } from "./streaming-functions/runner";
@@ -14,12 +17,23 @@ import { Command } from "commander";
 
 import type { StreamingFunctionArgs } from "./streaming-functions/runner";
 
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8"),
+);
+
 const program = new Command();
 
 program
   .name("moose-runner")
   .description("Moose runner for various operations")
-  .version("1.0.0");
+  .version(packageJson.version);
+
+program
+  .command("print-version")
+  .description("Print the installed moose-lib version")
+  .action(() => {
+    process.stdout.write(packageJson.version);
+  });
 
 program
   .command("dmv2-serializer")

@@ -1,10 +1,61 @@
-use crate::utilities::constants::TSCONFIG_JSON;
+use crate::utilities::constants::{CLI_VERSION, TSCONFIG_JSON};
+use std::sync::OnceLock;
 use std::{env, path::Path, process::Stdio};
+use tracing::info;
 
 use crate::project::Project;
 use tokio::process::{Child, Command};
 
 const RUNNER_COMMAND: &str = "moose-runner";
+
+static VERSION_CHECK_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
+
+fn bin_path(project_path: &Path) -> String {
+    let path = env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
+    format!(
+        "{}/node_modules/.bin:{}",
+        project_path.to_str().unwrap(),
+        path
+    )
+}
+
+/// Runs `moose-runner print-version` and compares the installed moose-lib version
+/// against the CLI version. Skips the check for dev builds.
+fn check_moose_lib_version(project_path: &Path) -> Result<(), String> {
+    if CLI_VERSION == "0.0.1" || CLI_VERSION.contains("dev") {
+        return Ok(());
+    }
+
+    let output = std::process::Command::new(RUNNER_COMMAND)
+        .arg("print-version")
+        .env("PATH", bin_path(project_path))
+        .env("NODE_NO_WARNINGS", "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run moose-runner print-version: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Version mismatch: installed @514labs/moose-lib does not support version checking \
+             and is older than the Moose CLI ({CLI_VERSION}). \
+             Please run `npm install @514labs/moose-lib@{CLI_VERSION}` to update."
+        ));
+    }
+
+    let lib_version = String::from_utf8_lossy(&output.stdout);
+    if lib_version.trim() != CLI_VERSION {
+        return Err(format!(
+            "Version mismatch: installed @514labs/moose-lib is {lib_version}, \
+             but the Moose CLI is {CLI_VERSION}. \
+             Please run `npm install @514labs/moose-lib@{CLI_VERSION}` to update."
+        ));
+    }
+
+    info!("moose-lib version check passed: {}", lib_version);
+    Ok(())
+}
 
 pub fn run(
     binary_command: &str,
@@ -12,21 +63,18 @@ pub fn run(
     args: &[&str],
     project: &Project,
 ) -> Result<Child, std::io::Error> {
+    let check = VERSION_CHECK_RESULT.get_or_init(|| check_moose_lib_version(project_path));
+    if let Err(msg) = check {
+        return Err(std::io::Error::other(msg.clone()));
+    }
+
     let mut command = Command::new(RUNNER_COMMAND);
 
     command.arg(binary_command);
 
-    // This adds the node_modules/.bin to the PATH so that we can run moose-tspc
-    let path = env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
-    let bin_path = format!(
-        "{}/node_modules/.bin:{}",
-        project_path.to_str().unwrap(),
-        path
-    );
-
     command
         .env("TS_NODE_PROJECT", project_path.join(TSCONFIG_JSON))
-        .env("PATH", bin_path)
+        .env("PATH", bin_path(project_path))
         .env("TS_NODE_COMPILER_HOST", "true")
         .env("NODE_NO_WARNINGS", "1")
         .env("TS_NODE_EMIT", "true")
