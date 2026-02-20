@@ -1,6 +1,7 @@
 "use client";
 
 import posthog from "posthog-js";
+import { CONSENT_COOKIE_NAME, hasAnalyticsConsent } from "./consent-cookie";
 
 export interface CodeCopyEvent {
   code: string;
@@ -17,8 +18,17 @@ export interface SearchEvent {
 class Analytics {
   private initialized = false;
 
+  private hasConsent(): boolean {
+    if (typeof document === "undefined") return false;
+    const match = document.cookie.match(
+      new RegExp(`(?:^|; )${CONSENT_COOKIE_NAME}=([^;]*)`),
+    );
+    return hasAnalyticsConsent(match?.[1]);
+  }
+
   init() {
     if (this.initialized || typeof window === "undefined") return;
+    if (!this.hasConsent()) return;
 
     const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
     const posthogHost =
@@ -45,6 +55,7 @@ class Analytics {
    */
   pageView(path: string, language: "typescript" | "python") {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -61,6 +72,7 @@ class Analytics {
    */
   codeCopy(event: CodeCopyEvent) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -77,6 +89,7 @@ class Analytics {
    */
   search(event: SearchEvent) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
@@ -97,6 +110,7 @@ class Analytics {
     language: "typescript" | "python",
   ) {
     this.init();
+    if (!this.initialized) return;
 
     // Send to PostHog
     if (posthog) {
