@@ -12,19 +12,13 @@ import { Callout } from "@/components/mdx";
 ## 🐻 Boreal
 
 ### New Features
-**Real-time deployment status monitoring with live Kubernetes updates** (Mitchell Suzuki)
-  Added a comprehensive deployment status monitoring system that provides real-time updates on your application deployments. The system now actively monitors pod health, container status, and deployment progress, immediately surfacing issues like crash loops or image pull failures. Deployment statuses are pushed proactively when changes occur, eliminating the need for manual polling and providing instant visibility into your infrastructure health.
-
-  📸 *[Screenshot needed: Added a comprehensive deployment status monitoring system that provides real-time updates on your application deployments. The system now actively monitors pod health, container status, and deployment progress, immediately surfacing issues like crash loops or image pull failures. Deployment statuses are pushed proactively when changes occur, eliminating the need for manual polling and providing instant visibility into your infrastructure health.]*
-
 **Deploy branches on git push without requiring pull requests** (Mitchell Suzuki)
   Branch deployments can now be triggered by pushing to any branch in your repository, not just through pull request workflows. This streamlines the development workflow by automatically creating preview environments for feature branches as soon as code is pushed, enabling faster iteration and testing of changes before opening a PR.
 
 **New Boreal CLI with setup and link commands for project onboarding** (Lucio Franco)
   Introduced the new Boreal CLI with comprehensive project setup capabilities. The `boreal setup <org>/<project>` command clones projects locally with optional branch creation and deployment setup. The `boreal link` command connects existing local repositories to Boreal projects for streamlined deployment workflows. Both commands support authentication, interactive and non-interactive modes, and provide clear guidance for next steps in the development workflow.
 
-  **Boreal CLI setup and link commands for project onboarding**
-
+  **Boreal CLI setup and link commands for project onboar
   ```bash
   # Clone and set up a new project from Boreal
   boreal setup acme/analytics-api --path ./my-analytics-app --branch feature/new-dashboard
@@ -59,47 +53,10 @@ import { Callout } from "@/components/mdx";
 
   This example shows the complete workflow for using the new Boreal CLI commands to set up new projects and link existing repositories. The setup command handles cloning, branch creation, and deployment configuration, while the link command connects existing local repos to Boreal projects for streamlined deployments.
 
-**Environment isolation and preview deployment controls** (Mitchell Suzuki)
-  Implemented comprehensive environment isolation to prevent production data corruption when using the same GitHub app across production and preview environments. Added safeguards for production organizations in preview environments, webhook fanout to preview deployments for testing, and controls to prevent deployment race conditions between environments. The 514-demos organization and new preview organizations can now safely perform deployments in their respective environments.
-
 **Enable TypeScript MCP template for one-click deployment** (Dave Seleno)
   The TypeScript MCP template is now available for one-click deployment in Boreal, allowing users to quickly deploy an AI chat app that can query their data using the Model Context Protocol integration.
 
   PR: [#3478](https://github.com/514-labs/moose/pull/3478)
-
-**Add CLI docs command for in-terminal documentation access** (Lucio Franco)
-  Added a new `docs` command to the hosting CLI that allows users to browse and read documentation directly from the terminal. Users can view the table of contents with `docs`, read specific pages with `docs <slug>`, view page sections with `docs <slug>#<section>`, and search documentation with `docs search <query>`. The command supports both tree and raw output formats, making documentation accessible without leaving the command line.
-
-  **Using the CLI docs command for in-terminal documentation**
-
-  ```bash
-  # View the complete documentation table of contents
-  moose docs
-  
-  # Browse a specific documentation page
-  moose docs moosestack/data-modeling
-  
-  # View a specific section of a guide
-  moose docs moosestack/olap/model-table#streaming-imports
-  
-  # Search through all documentation
-  moose docs search "aggregation functions"
-  
-  # Expand the table of contents to show all pages
-  moose docs --expand
-  
-  # Get raw output (useful for scripts or piping)
-  moose docs --raw
-  
-  # View sections available in a specific guide
-  moose docs moosestack/streaming/consumption  # Shows H2 and H3 headings
-  
-  # Chain commands to find and read documentation
-  moose docs search "PostgreSQL" | head -5
-  moose docs database/postgresql-integration
-  ```
-
-  This example shows how to use the new CLI docs command to browse MooseStack documentation directly from the terminal. Users can view the table of contents, read specific pages, jump to sections within guides, and search across all documentation without leaving their command line.
 
 **Add update command to 514 CLI** (Nicolas Joseph)
   Added a new `514 update` command that allows users to update both the 514 and moose CLIs to their latest versions. The CLI now also automatically checks for updates and displays notifications when newer versions are available, helping users stay current with the latest features and fixes.
@@ -142,82 +99,6 @@ import { Callout } from "@/components/mdx";
 
   📸 *[Screenshot needed: The lineage visualization feature has been promoted from experimental to generally available. Users can now access data lineage views without experimental feature flags enabled. The lineage page is accessible through the branch navigation and displays directly on the overview page.]*
 
-**Boreal CLI distribution and installation system** (Nicolas Joseph)
-  The Boreal CLI is now available for distribution with automated builds for multiple platforms (Linux x64/ARM64, macOS x64/ARM64), code signing for security, and a streamlined installation process. Users can now easily install and use the CLI to manage their Boreal projects and deployments across different operating systems.
-
-**Add node details panel to lineage view with improved UI** (groy-514)
-  Added a new node details panel to the lineage visualization that shows detailed information when clicking on nodes. The lineage view now includes smooth animations for better visual feedback, and the Boreal logo in the header is now clickable to navigate back to projects. Also fixed a bug where logs filters from URL parameters weren't working correctly on initial page load.
-
-  📸 *[Screenshot needed: Added a new node details panel to the lineage visualization that shows detailed information when clicking on nodes. The lineage view now includes smooth animations for better visual feedback, and the Boreal logo in the header is now clickable to navigate back to projects. Also fixed a bug where logs filters from URL parameters weren't working correctly on initial page load.]*
-
-**Add dedicated lineage page with improved graph visualization** (groy-514)
-  Added a new dedicated lineage page to visualize data flow and dependencies in your projects. The lineage graph now features improved layout algorithms, better visual design, and enhanced node types for clearer understanding of data relationships. Users can access lineage visualization both from the overview page and the new dedicated lineage page in the navigation.
-
-  📸 *[Screenshot needed: Added a new dedicated lineage page to visualize data flow and dependencies in your projects. The lineage graph now features improved layout algorithms, better visual design, and enhanced node types for clearer understanding of data relationships. Users can access lineage visualization both from the overview page and the new dedicated lineage page in the navigation.]*
-
-**Add organization management commands to Boreal CLI** (Lucio Franco)
-  The Boreal CLI now includes organization management capabilities with `boreal orgs list` to view all accessible organizations and `boreal orgs switch` to change the active organization context. This enables users to manage multiple organizations directly from the command line without needing to use the web interface.
-
-  **Managing Organizations with Boreal CLI**
-
-  ```bash
-  # List all accessible organizations
-  boreal orgs list
-  
-  # Output shows organizations with current one marked with *:
-  # ID                                   NAME           SLUG
-  # org_123abc...def                    Acme Corp      acme-corp      *
-  # org_456ghi...jkl                    DevTeam Inc    devteam-inc
-  
-  # Switch to a different organization by name
-  boreal orgs switch "DevTeam Inc"
-  # Output: Switched to organization: DevTeam Inc (devteam-inc)
-  
-  # Switch using organization slug
-  boreal orgs switch devteam-inc
-  
-  # Switch using organization ID
-  boreal orgs switch org_456ghi...jkl
-  
-  # List organizations in JSON format for scripting
-  boreal orgs list --json > organizations.json
-  
-  # Verify current organization context
-  boreal auth whoami
-  # Shows current user and active organization
-  ```
-
-  This example shows the complete workflow for managing organizations using the new Boreal CLI commands. Users can list all accessible organizations, switch between them using various identifiers (name, slug, or ID), and verify their current context.
-
-**CLI authentication with Clerk API keys** (Lucio Franco)
-  Added authentication support for the Boreal CLI using Clerk API keys. Users can now authenticate their CLI sessions through a web-based flow that opens in their browser and generates secure API keys for CLI access. This enables secure command-line interactions with Boreal projects and services.
-
-  **Authenticating Boreal CLI with browser-based login flow**
-
-  ```bash
-  # First, authenticate your CLI session
-  boreal auth login
-  
-  # This opens a browser window for secure authentication
-  # After successful login, your session is authenticated
-  
-  # Now you can use authenticated CLI commands
-  boreal project list
-  
-  # Deploy your changes to production
-  boreal deploy --environment production
-  
-  # View your project status
-  boreal status
-  
-  # Check authentication status anytime
-  boreal auth status
-  
-  # Logout when needed
-  boreal auth logout
-  ```
-
-  Shows the complete authentication flow for the Boreal CLI using Clerk API keys. Users run 'boreal auth login' which opens a browser for secure authentication, then can use all CLI commands that require authentication like deploying projects and managing environments.
 
 **Add "Get Started Developing" panel to deployment details page** (groy-514)
   Added a new "Get Started Developing" section to deployment pages that provides step-by-step guidance for cloning projects, creating branches, and starting development. This panel helps users quickly set up their local development environment after viewing deployments.
@@ -234,65 +115,13 @@ import { Callout } from "@/components/mdx";
 
   📸 *[Screenshot needed: Complete overhaul of the project creation flow with improved UI/UX, step-by-step wizard interface, better template selection, and enhanced data services configuration. The new onboarding experience guides users through project setup more intuitively with visual improvements and streamlined workflows for GitHub integration, infrastructure configuration, and template deployment.]*
 
-**Add new `ops` CLI tool for operations tasks** (Lucio Franco)
-  Added a new CLI tool called `ops` for Boreal operations tasks. The tool provides a foundation for deployment, maintenance, and other operational commands, with an install script that makes it globally available on user systems.
-
-  **Using the new ops CLI tool for Boreal operations**
-
-  ```bash
-  # Install the ops CLI tool globally
-  pnpm ops:install
-  
-  # Verify installation worked
-  ops --version
-  # Output: 0.0.1
-  
-  # View available commands and options
-  ops --help
-  # Output: 
-  # Boreal Operations CLI
-  # 
-  # Usage: ops [options] [command]
-  # 
-  # Options:
-  #   -V, --version   display version number
-  #   -h, --help      display help for command
-  
-  # Example of adding a custom deployment command
-  # In your ops CLI extension:
-  ops deploy --environment production --branch main
-  
-  # Example of adding a maintenance command
-  ops maintenance --mode enable --duration 30m
-  
-  # The CLI is built on Commander.js, so you can extend it
-  # by adding new commands to src/cli.ts following the pattern:
-  #
-  # program
-  #   .command("deploy")
-  #   .description("Deploy application to specified environment")
-  #   .option("-e, --environment <env>", "Target environment")
-  #   .option("-b, --branch <branch>", "Git branch to deploy")
-  #   .action(async (options) => {
-  #     console.log(`Deploying ${options.branch} to ${options.environment}...`);
-  #   });
-  ```
-
-  This example shows how to install and use the new ops CLI tool for Boreal operations tasks. The CLI provides a foundation for deployment, maintenance, and other operational commands that can be extended with custom functionality.
-
 ### Improvements
-- Improved data lineage graph layout and display mode switching: Data pipeline components in the lineage view are now displayed on the same axis for better visual clarity, and switching between text and icon display modes no longer causes timing issues or visual glitches. (groy-514)
-- Improve CLI authentication error messages: Commands now show clear authentication errors with helpful instructions when users aren't logged in, instead of cryptic API errors. (Lucio Franco)
-- Improve setup flow with NBA (Next Best Action) guidance: The hosting CLI setup command now provides clearer next steps with an NBA prompt template for AI assistants, helping users understand how to proceed after project setup with structured guidance for exploring the project, searching docs, and creating implementation plans. (Lucio Franco)
-- Faster re-deployments using existing build images: Re-deployments now skip the build phase and reuse the existing Docker image when available, significantly reducing deployment time. (Mitchell Suzuki)
 - Faster template deployments using pre-built images: Template-based projects now deploy immediately using pre-built Docker images instead of waiting for the build process to complete, significantly reducing deployment time for new projects. (Mitchell Suzuki)
-- Update dashboard logo to new 514 branding: The Boreal dashboard now displays the new 514 logo in both light and dark themes, replacing the previous Boreal branding with updated SVG assets. (groy-514)
 - Rebrand from Boreal to Fiveonefour Hosting throughout the platform: Updated all user-facing text, logos, and branding elements from "Boreal" to "Fiveonefour Hosting" across the entire platform interface. (groy-514)
 - Improve CLI project selection with URLs and IDs: The CLI now accepts project URLs, UUIDs, and bare project names in addition to org/project slug format when selecting projects. (Lucio Franco)
 - Streamline organization selection during CLI login: The CLI now automatically prompts users to select an organization after login, and auto-selects when only one organization is available, eliminating the need for separate org switch commands. (Lucio Franco)
 - Improve CLI messaging with modern formatting: CLI commands now use cleaner formatting with checkmarks, better error messages, and more helpful guidance for next steps. (Lucio Franco)
 - Improve organization switching with visual feedback: Organization switching now shows a loading screen with progress feedback and disables UI interactions during the switch to prevent conflicts. (groy-514)
-- Update CLI authorization page branding: Updated CLI authorization page text to use "514 CLI" and "Fiveonefour" instead of "Boreal CLI" branding. (Lucio Franco)
 - Add clarifying note for existing database option: Added a helpful note explaining that existing tables remain unchanged when using an existing ClickHouse database for new projects. (groy-514)
 - Improve branch page layout with better text truncation: The branch pages top bar now properly handles long repository names and URLs with improved text truncation and responsive layout. (groy-514)
 - Improve project creation flow with enhanced step transitions and visual feedback: The project creation wizard now provides better visual feedback with a loading spinner on the deploy button, smoother step transitions with animations, and error-only display for deployment steps, making the project setup process clearer and more intuitive. (groy-514)
@@ -302,11 +131,7 @@ import { Callout } from "@/components/mdx";
 ### Bug Fixes
 - Fix logs with identical timestamps and content selecting together: Fixed an issue in the logs viewer where multiple log entries with the same timestamp and content would all be selected when clicking on one. PR: [#3481](https://github.com/514-labs/moose/pull/3481), [#1405](https://github.com/514-labs/moose/pull/1405), [#1427](https://github.com/514-labs/moose/pull/1427) (Lucio Franco)
 - Fix mobile website display issues: Fixed display and layout issues on the mobile version of the marketing website, improving user experience on mobile devices. (George Anderson)
-- Fix CLI authorization for users without organizations: Fixed an issue where authenticated CLI users without organizations were incorrectly redirected to the organization creation page during CLI authorization flow. (Lucio Franco)
-- Fix hosting CLI production URL: Fixed the default production URL in the Boreal CLI to use the correct www subdomain. (Lucio Franco)
 - Fix duplicate deployments during template project creation: Fixed an issue where template projects would trigger duplicate deployments due to race conditions between project creation and push webhooks. (Dave Seleno)
-- Fix duplicate deployments during project creation: Fixed an issue where webhook events could trigger duplicate deployments during project creation by reverting auto-deploy disabling logic. (Dave Seleno)
-- Fix duplicate deployments during project creation: Fixed an issue where webhook events could trigger duplicate deployments during template project creation, ensuring only one deployment runs for the initial project setup. (Dave Seleno)
 
 ## 🦌 Moose
 
@@ -403,11 +228,6 @@ import { Callout } from "@/components/mdx";
   Added comprehensive Windows setup guide for MooseStack using WSL2. The new documentation provides step-by-step instructions for Windows users to set up WSL2, Docker Desktop, Node.js, and MooseStack on their systems.
 
   PR: [#3566](https://github.com/514-labs/moose/pull/3566) | Docs: [/moosestack/help/windows-setup](https://docs.moosejs.com/moosestack/help/windows-setup)
-
-**Update release notes and navigation for February 2026 updates** (Carlos Justiniano)
-  Added comprehensive release notes for February 12, 2026 featuring major new capabilities including the interactive `moose docs` command for CLI documentation browsing, remote ClickHouse development support with keychain credential storage, `moose generate dockerfile` subcommand for Docker customization, and Boreal's redesigned project creation wizard. The release includes numerous improvements to developer experience, documentation enhancements, and bug fixes across both Moose and Boreal platforms.
-
-  PR: [#3502](https://github.com/514-labs/moose/pull/3502) | Docs: [/moosestack/release-notes/2026-02-12](https://docs.moosejs.com/moosestack/release-notes/2026-02-12)
 
 **Add comprehensive documentation for externally managed tables** (Nicolas Joseph)
   Added extensive documentation for working with CDC-enabled ClickHouse databases and externally managed tables, including configuration options for local development mirrors, remote connections, and a complete guide for building on existing CDC pipelines like ClickPipes, PeerDB, and Debezium.
@@ -563,148 +383,6 @@ import { Callout } from "@/components/mdx";
   This example demonstrates the enhanced `moose docs` command with interactive browsing, section-level navigation using anchors, and web integration. Users can now browse docs interactively, jump to specific guide sections, and open documentation directly in their browser from the command line.
 
   PR: [#3468](https://github.com/514-labs/moose/pull/3468) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
-
-**Add GuideStepper interactive documentation component with checkpoint workflow** (Olivia Kane)
-  Documentation authors can now create multi-phase interactive guides using the new GuideStepper component. Each phase contains checkpoints that users can mark complete, with a "Copy Prompt" feature that concatenates checkpoint content into markdown for use with AI coding assistants. This enables more structured, workflow-oriented documentation that integrates with developer tooling.
-
-  **Interactive migration guide with GuideStepper checkpoints**
-
-  ```mdx
-  # Database Migration Guide
-  
-  This guide walks you through migrating your analytics endpoint from REST to Moose streaming architecture.
-  
-  <GuideStepper id="analytics-migration" persist>
-    <GuideStepper.Step
-      id="parity-phase"
-      number={1}
-      title="Achieve Parity"
-      summary="Replicate existing endpoint behavior with Moose data models"
-    >
-      <GuideStepper.AtAGlance title="Before Starting Checkpoints">
-        Attach these files to your AI assistant before running the migration prompts:
-        
-        - `src/api/analytics.ts` (current endpoint)
-        - `database/user_events.sql` (existing schema)
-        - `tests/analytics.test.ts` (test cases for validation)
-      </GuideStepper.AtAGlance>
-  
-      <GuideStepper.Checkpoint id="create-data-model" title="Create Moose data model">
-        Define your data model to match the existing database schema:
-  
-        ```typescript
-        // datamodels/UserEvent.ts
-        export interface UserEvent extends DataModel {
-          id: string;
-          userId: string;
-          eventType: 'page_view' | 'click' | 'conversion';
-          timestamp: Date;
-          properties: Record<string, any>;
-          sessionId?: string;
-        }
-        ```
-      </GuideStepper.Checkpoint>
-  
-      <GuideStepper.Checkpoint id="verify-ingestion" title="Test data ingestion">
-        Verify events flow into your new model correctly:
-  
-        ```bash
-        # Send test event to verify ingestion
-        curl -X POST http://localhost:4000/ingest/UserEvent \
-          -H "Content-Type: application/json" \
-          -d '{"id":"test-1","userId":"user-123","eventType":"click","timestamp":"2024-01-15T10:30:00Z","properties":{"page":"/dashboard"}}'
-        
-        # Query to verify data arrived
-        moose query "SELECT * FROM UserEvent WHERE id = 'test-1'"
-        ```
-      </GuideStepper.Checkpoint>
-  
-      <GuideStepper.Checkpoint id="replicate-queries" title="Replicate existing analytics queries">
-        Convert your REST endpoint logic to Moose aggregations:
-  
-        ```typescript
-        // aggregations/DailyAnalytics.ts
-        export default {
-          select: `
-            SELECT 
-              DATE(timestamp) as date,
-              eventType,
-              COUNT(*) as event_count,
-              COUNT(DISTINCT userId) as unique_users
-            FROM UserEvent
-            WHERE timestamp >= now() - INTERVAL 30 DAY
-            GROUP BY DATE(timestamp), eventType
-            ORDER BY date DESC
-          `,
-          orderBy: 'date DESC'
-        };
-        ```
-      </GuideStepper.Checkpoint>
-    </GuideStepper.Step>
-  
-    <GuideStepper.Step
-      id="optimization-phase"
-      number={2}
-      title="Optimize Performance"
-      summary="Precompute heavy aggregations for faster query performance"
-    >
-      <GuideStepper.Checkpoint id="design-serving-table" title="Design optimized serving table">
-        Create a materialized view for fast dashboard queries:
-  
-        ```typescript
-        // blocks/HourlyEventStats.ts
-        export default {
-          sql: `
-            SELECT
-              toStartOfHour(timestamp) as hour,
-              eventType,
-              userId,
-              COUNT(*) as events,
-              uniqState(sessionId) as unique_sessions
-            FROM UserEvent
-            WHERE timestamp >= now() - INTERVAL 7 DAY
-            GROUP BY hour, eventType, userId
-          `,
-          engine: 'AggregatingMergeTree',
-          orderBy: 'hour, eventType'
-        };
-        ```
-      </GuideStepper.Checkpoint>
-  
-      <GuideStepper.Checkpoint id="update-api-endpoints" title="Update API to use optimized tables">
-        Replace slow queries with fast lookups from your serving tables:
-  
-        ```typescript
-        // functions/analytics.ts
-        export default async function handler(req: MooseRequest) {
-          const { startDate, endDate, eventType } = req.query;
-          
-          // Query optimized serving table instead of raw events
-          const stats = await req.moose.query(`
-            SELECT 
-              hour,
-              sum(events) as total_events,
-              uniqMerge(unique_sessions) as sessions
-            FROM HourlyEventStats
-            WHERE hour BETWEEN '${startDate}' AND '${endDate}'
-            ${eventType ? `AND eventType = '${eventType}'` : ''}
-            GROUP BY hour
-            ORDER BY hour
-          `);
-          
-          return { analytics: stats };
-        }
-        ```
-      </GuideStepper.Checkpoint>
-    </GuideStepper.Step>
-  </GuideStepper>
-  ```
-
-  Demonstrates how to create interactive documentation guides using the new GuideStepper component with checkpoints and "Copy Prompt" functionality. Shows a realistic database migration workflow with code examples and AI assistant integration.
-
-  📸 *[Screenshot needed: Documentation authors can now create multi-phase interactive guides using the new GuideStepper component. Each phase contains checkpoints that users can mark complete, with a "Copy Prompt" feature that concatenates checkpoint content into markdown for use with AI coding assistants. This enables more structured, workflow-oriented documentation that integrates with developer tooling.]*
-
-  PR: [#3465](https://github.com/514-labs/moose/pull/3465) | Docs: [/guides/test-guides/interactive-guide-demo](https://docs.moosejs.com/guides/test-guides/interactive-guide-demo)
 
 **Add generate dockerfile command for Docker customization** (Mitchell Suzuki)
   Added new `moose generate dockerfile` command that creates a customizable Dockerfile without building Docker images. This allows developers to generate and modify the Dockerfile for their deployment needs before running the build process. The command requires `custom_dockerfile = true` in moose.config.toml and places the Dockerfile at the configured path (default: ./Dockerfile).
