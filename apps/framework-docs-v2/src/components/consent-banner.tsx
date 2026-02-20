@@ -17,16 +17,12 @@ function Toggle({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${
-        checked ?
-          "bg-neutral-900 dark:bg-white"
-        : "bg-neutral-300 dark:bg-neutral-600"
+        checked ? "bg-primary" : "bg-input"
       }`}
     >
       <span
-        className={`pointer-events-none block size-5 rounded-full shadow-md transition-transform ${
-          checked ?
-            "translate-x-5 bg-white dark:bg-neutral-900"
-          : "translate-x-0.5 bg-neutral-900 dark:bg-white"
+        className={`pointer-events-none block size-5 rounded-full bg-background shadow-md transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0.5"
         }`}
       />
     </button>
@@ -51,16 +47,14 @@ function CustomizeView({
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-xl font-semibold leading-7 text-neutral-900 dark:text-white">
-          Cookie Preferences
-        </h2>
-        <p className="text-sm leading-5 text-neutral-500 dark:text-neutral-400">
+        <h2 className="text-xl font-semibold leading-7">Cookie Preferences</h2>
+        <p className="text-sm leading-5 text-muted-foreground">
           This website uses the following services.{" "}
           <a
             href="https://www.fiveonefour.com/legal/privacy.pdf"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-neutral-900 dark:hover:text-white"
+            className="underline hover:text-foreground"
           >
             Learn more
           </a>
@@ -69,15 +63,11 @@ function CustomizeView({
 
       <div className="flex flex-col">
         <div className="flex items-center justify-between py-2.5">
-          <span className="text-base font-medium text-neutral-900 dark:text-white">
-            Analytics
-          </span>
+          <span className="text-base font-medium">Analytics</span>
           <Toggle checked={analyticsEnabled} onChange={setAnalyticsEnabled} />
         </div>
         <div className="flex items-center justify-between py-2.5">
-          <span className="text-base font-medium text-neutral-900 dark:text-white">
-            Marketing
-          </span>
+          <span className="text-base font-medium">Marketing</span>
           <Toggle checked={marketingEnabled} onChange={setMarketingEnabled} />
         </div>
       </div>
@@ -85,13 +75,13 @@ function CustomizeView({
       <div className="flex gap-6">
         <button
           onClick={onBack}
-          className="flex h-10 flex-1 items-center justify-center rounded-md border border-neutral-300 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white dark:hover:bg-neutral-700"
+          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Back
         </button>
         <button
           onClick={onSave}
-          className="flex h-10 flex-1 items-center justify-center rounded-md bg-neutral-900 text-sm font-medium text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+          className="flex h-10 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Save Preferences
         </button>
@@ -101,26 +91,28 @@ function CustomizeView({
 }
 
 function BannerView({
+  onRejectAll,
   onCustomize,
   onAcceptAll,
 }: {
+  onRejectAll: () => void;
   onCustomize: () => void;
   onAcceptAll: () => void;
 }) {
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-xl font-semibold leading-7 text-neutral-900 dark:text-white">
+        <h2 className="text-xl font-semibold leading-7">
           We value your privacy
         </h2>
-        <p className="text-sm leading-5 text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm leading-5 text-muted-foreground">
           This site uses cookies to improve your browsing experience, analyze
           site traffic, and show personalized content. See our{" "}
           <a
             href="https://www.fiveonefour.com/legal/privacy.pdf"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-neutral-900 underline dark:text-white"
+            className="text-foreground underline"
           >
             Privacy Policy
           </a>
@@ -128,16 +120,22 @@ function BannerView({
         </p>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex gap-3">
+        <button
+          onClick={onRejectAll}
+          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+        >
+          Reject All
+        </button>
         <button
           onClick={onCustomize}
-          className="flex h-10 flex-1 items-center justify-center rounded-md border border-neutral-300 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white dark:hover:bg-neutral-700"
+          className="flex h-10 flex-1 items-center justify-center rounded-md border border-input bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Customize
         </button>
         <button
           onClick={onAcceptAll}
-          className="flex h-10 flex-1 items-center justify-center rounded-md bg-neutral-900 text-sm font-medium text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+          className="flex h-10 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Accept All
         </button>
@@ -147,7 +145,7 @@ function BannerView({
 }
 
 export function ConsentBanner() {
-  const { hasConsented, acceptAll, savePreferences } = useConsent();
+  const { hasConsented, acceptAll, rejectAll, savePreferences } = useConsent();
   const [view, setView] = useState<"banner" | "customize">("banner");
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [marketingEnabled, setMarketingEnabled] = useState(true);
@@ -158,10 +156,11 @@ export function ConsentBanner() {
     <div
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-3 z-[9999] flex flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-lg dark:border-neutral-800 dark:bg-neutral-900 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
+      className="fixed inset-x-3 bottom-3 z-[9999] flex flex-col gap-6 rounded-xl border bg-card p-5 text-card-foreground shadow-lg sm:inset-x-auto sm:bottom-4 sm:right-4 sm:max-w-lg"
     >
       {view === "banner" ?
         <BannerView
+          onRejectAll={rejectAll}
           onCustomize={() => setView("customize")}
           onAcceptAll={acceptAll}
         />
