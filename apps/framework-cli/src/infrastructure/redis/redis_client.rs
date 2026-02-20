@@ -1103,17 +1103,21 @@ mod tests {
     #[test]
     fn test_effective_port_url_no_port_falls_back_to_field() {
         // URL without explicit port: fall back to the struct's port field
-        let mut cfg = RedisConfig::default();
-        cfg.url = "redis://myhost".to_string();
-        cfg.port = 6381;
+        let cfg = RedisConfig {
+            url: "redis://myhost".to_string(),
+            port: 6381,
+            ..RedisConfig::default()
+        };
         assert_eq!(cfg.effective_port(), 6381);
     }
 
     #[test]
     fn test_effective_port_explicit_port_field() {
         // No custom URL: use the port field directly
-        let mut cfg = RedisConfig::default();
-        cfg.port = 6382;
+        let cfg = RedisConfig {
+            port: 6382,
+            ..RedisConfig::default()
+        };
         assert_eq!(cfg.effective_port(), 6382);
     }
 }
