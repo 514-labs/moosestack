@@ -75,7 +75,7 @@ function CustomizeView({
       <div className="flex items-center gap-2 pt-2">
         <button
           onClick={onBack}
-          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Back
         </button>
@@ -123,13 +123,13 @@ function BannerView({
       <div className="flex items-center gap-2 pt-2">
         <button
           onClick={onRejectAll}
-          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Reject All
         </button>
         <button
           onClick={onCustomize}
-          className="h-9 rounded-md border border-input bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+          className="h-9 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
           Customize
         </button>
