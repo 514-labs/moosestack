@@ -3,6 +3,7 @@
 //! This module provides utilities for displaying data in formatted tables
 //! with consistent styling and layout.
 
+use super::context::{tui_channel, DisplayMessage};
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
 
 /// Displays a formatted table with headers and data rows.
@@ -30,6 +31,17 @@ use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArra
 /// );
 /// ```
 pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
+    // Check for TUI context - route to TUI if available
+    if let Some(sender) = tui_channel() {
+        sender.send(DisplayMessage::Table {
+            title,
+            headers,
+            rows,
+        });
+        return;
+    }
+
+    // Build and display table normally
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
