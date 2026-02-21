@@ -1385,6 +1385,16 @@ const guidesNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
     status: "draft",
   },
+  {
+    type: "page",
+    slug: "guides/supabase-cdc",
+    title: "Real-Time CDC from Supabase",
+    description:
+      "Sync your Supabase PostgreSQL data to ClickHouse in real-time using Moose workflows",
+    icon: IconBolt,
+    languages: ["typescript"],
+    status: "draft",
+  },
 
   // ===========================================
   // Additional Draft Guides (organized by section)
