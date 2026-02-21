@@ -1363,6 +1363,16 @@ const guidesNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "guides/sap-hana-cdc-to-clickhouse",
+    title: "SAP HANA CDC",
+    description:
+      "Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows.",
+    icon: IconBolt,
+    languages: ["python"],
+    status: "draft",
+  },
+  {
+    type: "page",
     slug: "guides/customer-data-platform",
     title: "Customer Data Platform (CDP)",
     icon: IconUsers,
@@ -1444,14 +1454,6 @@ const guidesNavigationConfig: NavigationConfig = [
         slug: "guides/data-management/impact-analysis",
         title: "Impact Analysis",
         icon: IconChartDots,
-        languages: ["typescript", "python"],
-        status: "draft",
-      },
-      {
-        type: "page",
-        slug: "guides/data-management/change-data-capture",
-        title: "Change Data Capture",
-        icon: IconBolt,
         languages: ["typescript", "python"],
         status: "draft",
       },

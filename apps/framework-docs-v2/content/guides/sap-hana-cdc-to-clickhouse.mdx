@@ -1,0 +1,437 @@
+---
+title: SAP HANA CDC to ClickHouse
+description: Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows with trigger-based capture and incremental sync
+previewVariant: "migrations"
+languages: ["python"]
+tags: ["CDC", "Workflows", "ClickHouse"]
+---
+
+import { Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+
+# SAP HANA CDC to ClickHouse
+
+<Callout type="info" title="TL;DR">
+* Trigger-based CDC captures INSERT/UPDATE/DELETE operations from SAP HANA tables in real-time
+* Auto-generate Pydantic models from SAP HANA schema using the introspection CLI
+* Initial load + incremental sync via Moose workflows with built-in retry logic
+* Multi-client support enables independent progress tracking for different consumers
+
+This guide walks you through setting up a complete CDC pipeline from SAP HANA to ClickHouse using Moose workflows.
+</Callout>
+
+## Overview
+
+### What is CDC and Why Use It?
+
+Change Data Capture (CDC) is a technique for tracking row-level changes (inserts, updates, deletes) in a source database and replicating them to a destination system. For SAP HANA to ClickHouse pipelines, CDC provides:
+
+- **Real-time analytics**: Query the latest SAP data in ClickHouse without impacting production SAP HANA performance
+- **Historical tracking**: Capture every change for audit trails and point-in-time analysis
+- **Incremental sync**: Only transfer changed data, reducing bandwidth and processing time
+- **Operational isolation**: Analytical workloads run on ClickHouse while SAP HANA handles transactions
+
+### Architecture
+
+This CDC implementation uses database triggers to capture changes, storing them in a dedicated CDC table that Moose workflows read and sync to ClickHouse.
+
+```mermaid
+flowchart LR
+    subgraph sap["SAP HANA Database"]
+        tables["Source Tables<br/>(EKKO, EKPO, etc.)"]
+        triggers["CDC Triggers<br/>(INSERT/UPDATE/DELETE)"]
+        cdc_table["CDC_CHANGES Table"]
+        status["CDC_CLIENT_STATUS"]
+        tables --> triggers
+        triggers --> cdc_table
+    end
+
+    subgraph moose["Moose Runtime"]
+        workflow["CDC Workflow<br/>(scheduled every 60s)"]
+        initial["Initial Load Task"]
+        sync["Sync Changes Task"]
+        prune_wf["Prune Workflow<br/>(daily)"]
+        workflow --> initial
+        initial --> sync
+    end
+
+    subgraph clickhouse["ClickHouse"]
+        olap["OLAP Tables"]
+    end
+
+    cdc_table --> workflow
+    status --> workflow
+    workflow --> olap
+    prune_wf --> cdc_table
+```
+
+### Key Concepts
+
+**Trigger-Based Capture**: Database triggers fire on INSERT, UPDATE, and DELETE operations, serializing row data as JSON and writing to a central CDC_CHANGES table.
+
+**Change Events**: Each captured change includes:
+- `CHANGE_ID`: Auto-incrementing identifier for ordering
+- `TRIGGER_TYPE`: Operation type (INSERT, UPDATE, DELETE)
+- `OLD_VALUES` / `NEW_VALUES`: JSON-serialized row data
+- `CHANGE_TIMESTAMP`: When the change occurred
+- `TRANSACTION_ID`: SAP HANA transaction identifier
+
+**Client Status Tracking**: The CDC_CLIENT_STATUS table tracks each consumer's progress through the change stream, enabling:
+- Multiple independent consumers reading at different rates
+- Resume from last position after failures
+- Table-level status (NEW vs ACTIVE)
+
+## Prerequisites
+
+<BulletPointsCard
+  title="Before you begin"
+  bulletStyle="check"
+  compact={true}
+  bullets={[
+    {
+      title: "Python Moose project initialized",
+      description: "Run `moose init my-project python` if you don't have one"
+    },
+    {
+      title: "SAP HANA database access",
+      description: "With privileges to create triggers and tables in the CDC schema"
+    },
+    {
+      title: "Network connectivity",
+      description: "Your Moose runtime must be able to reach SAP HANA on the configured port"
+    },
+    {
+      title: "Familiarity with data warehouses guide",
+      description: "This guide assumes you understand dimensional modeling and Moose workflows",
+      link: { text: "Read the guide", href: "/guides/data-warehouses" }
+    }
+  ]}
+/>
+
+## Quick Start
+
+### 1. Install the Pipeline
+
+Run the registry installer to download the SAP HANA CDC pipeline:
+
+```bash
+bash -i <(curl https://registry.514.ai/install.sh) --type pipeline sap_hana_cdc_to_clickhouse v1 514-labs python default
+```
+
+This creates a new directory with the complete pipeline including workflows, initialization scripts, and utilities.
+
+### 2. Install Dependencies
+
+Navigate to the pipeline directory and install Python dependencies:
+
+```bash
+cd sap_hana_cdc_to_clickhouse
+pip install -r requirements.txt
+```
+
+### 3. Set Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# SAP HANA Connection
+SAP_HANA_HOST=your-sap-hana-host.com
+SAP_HANA_PORT=30015
+SAP_HANA_USERNAME=CDC_USER
+SAP_HANA_PASSWORD=your-secure-password
+
+# CDC Configuration
+SAP_HANA_CLIENT_ID=moose_cdc_client
+SAP_HANA_SOURCE_SCHEMA=SAPHANADB
+SAP_HANA_CDC_SCHEMA=SAPHANADB
+SAP_HANA_TABLES=EKKO,EKPO,MARA,VBAK,VBAP
+
+# Optional: Retention for CDC table pruning
+SAP_HANA_CDC_RETENTION_DAYS=7
+```
+
+<Callout type="warning" title="Security">
+Never commit `.env` files to version control. Add `.env` to your `.gitignore` file.
+</Callout>
+
+### 4. Initialize CDC Infrastructure
+
+Run the initialization script to create triggers and CDC tables in SAP HANA:
+
+```bash
+python init_cdc.py --init-all --tables EKKO,EKPO,MARA
+```
+
+This command:
+1. Introspects table schemas from SAP HANA
+2. Generates Pydantic models in `app/ingest/cdc.py`
+3. Creates CDC_CHANGES and CDC_CLIENT_STATUS tables
+4. Creates INSERT/UPDATE/DELETE triggers for each table
+
+### 5. Start Moose Development Server
+
+```bash
+moose dev
+```
+
+The CDC workflow runs automatically every 60 seconds, performing:
+1. Initial load for any NEW tables (full table copy)
+2. Incremental sync of changes from the CDC_CHANGES table
+
+### 6. Verify the Pipeline
+
+Check that data is flowing:
+
+```bash
+# Query ClickHouse to verify data
+moose query "SELECT count() FROM ekko"
+
+# Check CDC status
+moose query "SELECT * FROM CDC_CLIENT_STATUS WHERE CLIENT_ID = 'moose_cdc_client'"
+```
+
+## How CDC Works
+
+### Trigger Creation
+
+When you run `--create-database-triggers`, the connector creates three triggers per table (INSERT, UPDATE, and DELETE). Each trigger captures row data as JSON and writes it to the CDC_CHANGES table, with UPDATE triggers capturing both old and new values, and DELETE triggers capturing old values.
+
+### CDC_CHANGES Table Schema
+
+The CDC_CHANGES table stores all captured changes with columns for change ID, table identification, trigger type, timestamp, transaction ID, and JSON-serialized old/new values.
+
+### CDC_CLIENT_STATUS Table Schema
+
+The CDC_CLIENT_STATUS table tracks each client's progress through the change stream with columns for client ID, schema/table identification, last processed change ID, status (NEW or ACTIVE), and timestamps.
+
+### Table Status Lifecycle
+
+Each table tracked by the CDC system goes through these states:
+
+1. **NEW**: Table is registered but hasn't completed initial load
+2. **ACTIVE**: Initial load complete, now processing incremental changes
+
+The workflow handles this automatically:
+- NEW tables trigger a full table scan and bulk insert
+- ACTIVE tables only process changes after their `LAST_PROCESSED_CHANGE_ID`
+
+## Workflows
+
+### CDC Workflow
+
+The main CDC workflow runs on a schedule (default: every 60 seconds) and orchestrates two tasks:
+
+1. **Initial Load Task**: Processes tables with status=NEW by paginating through all rows and performing a full table copy, then marking them as ACTIVE
+2. **Sync Changes Task**: Processes incremental changes from the CDC_CHANGES table for ACTIVE tables, reading batches of changes and updating the client status after successful processing
+
+The workflow is configured with automatic retries (3 attempts), timeout handling (300 seconds), and runs the initial load task first, followed by the sync changes task.
+
+### Prune Workflow
+
+To prevent the CDC_CHANGES table from growing indefinitely, a daily prune workflow deletes old entries based on the configured retention period (default: 7 days from the `SAP_HANA_CDC_RETENTION_DAYS` environment variable). The workflow runs once per day with a 600-second timeout and automatic retry on failure.
+
+## Configuration Options
+
+### Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SAP_HANA_HOST` | Yes | `localhost` | SAP HANA server hostname |
+| `SAP_HANA_PORT` | No | `30015` | SAP HANA server port |
+| `SAP_HANA_USERNAME` | Yes | `SYSTEM` | Database username |
+| `SAP_HANA_PASSWORD` | Yes | - | Database password |
+| `SAP_HANA_CLIENT_ID` | No | `default_client` | Unique identifier for this CDC consumer |
+| `SAP_HANA_TABLES` | Yes | - | Comma-separated list of tables to track |
+| `SAP_HANA_SOURCE_SCHEMA` | No | `SAPHANADB` | Schema containing source tables |
+| `SAP_HANA_CDC_SCHEMA` | No | `SAPHANADB` | Schema for CDC infrastructure tables |
+| `SAP_HANA_CDC_RETENTION_DAYS` | No | `7` | Days to retain CDC entries before pruning |
+
+### Views vs Tables Support
+
+The CDC connector handles both tables and views, with an important distinction:
+
+- **Tables**: Full CDC support with INSERT/UPDATE/DELETE triggers
+- **Views**: Initial load only (no triggers, as views are read-only)
+
+The connector automatically detects views and skips trigger creation. Views are still introspected and can be included in `SAP_HANA_TABLES`. They will receive an initial load but won't capture ongoing changes.
+
+### Multi-Client Setup
+
+Run multiple independent CDC consumers by using different `SAP_HANA_CLIENT_ID` values:
+
+```bash
+# Production analytics pipeline
+SAP_HANA_CLIENT_ID=prod_analytics
+
+# Real-time dashboard feed
+SAP_HANA_CLIENT_ID=realtime_dashboard
+
+# Data science sandbox
+SAP_HANA_CLIENT_ID=ds_sandbox
+```
+
+Each client maintains its own progress through the change stream, enabling:
+- Different sync frequencies
+- Independent failure recovery
+- Isolated testing without affecting production pipelines
+
+## CLI Operations
+
+The `init_cdc.py` script provides several operations:
+
+### Full Initialization
+
+```bash
+python init_cdc.py --init-all --tables EKKO,EKPO,MARA
+```
+
+Equivalent to running `--generate-models` and `--create-database-triggers` together.
+
+### Generate Models Only
+
+```bash
+python init_cdc.py --generate-models --tables EKKO,EKPO
+```
+
+Introspects SAP HANA schemas and generates Pydantic models without creating triggers. Useful for:
+- Previewing generated code before deployment
+- Regenerating models after schema changes
+
+### Create Database Triggers Only
+
+```bash
+python init_cdc.py --create-database-triggers --tables EKKO,EKPO
+```
+
+Creates CDC infrastructure (tables and triggers) without regenerating models. Useful when models already exist.
+
+### Reset CDC Status
+
+```bash
+python init_cdc.py --reset-cdc-status
+```
+
+Resets all tables to `NEW` status, triggering a full re-sync on next workflow run. Use with caution in production.
+
+### Drop CDC Infrastructure
+
+```bash
+python init_cdc.py --drop-cdc
+```
+
+Removes all triggers and CDC tables. **This is destructive** and will lose all pending changes.
+
+### Recreate CDC Infrastructure
+
+```bash
+python init_cdc.py --recreate-cdc-tables
+```
+
+Drops and recreates CDC infrastructure. Combines `--drop-cdc` followed by `--create-database-triggers`.
+
+### Load Tables from File
+
+```bash
+python init_cdc.py --init-all --tables-from-file tables.txt
+```
+
+Where `tables.txt` contains one table name per line:
+
+```
+EKKO
+EKPO
+MARA
+VBAK
+VBAP
+```
+
+## Troubleshooting
+
+### Common Issues
+
+<ToggleBlock openText="Show troubleshooting guide" closeText="Hide troubleshooting guide">
+
+**Connection Refused**
+
+```
+hdbcli.dbapi.Error: (-10709, 'Connection failed')
+```
+
+- Verify `SAP_HANA_HOST` and `SAP_HANA_PORT` are correct
+- Check network connectivity: `telnet your-host 30015`
+- Ensure the SAP HANA instance is running
+
+**Insufficient Privileges**
+
+```
+hdbcli.dbapi.Error: insufficient privilege: CREATE TRIGGER
+```
+
+The CDC user needs these privileges:
+```sql
+GRANT CREATE ANY ON SCHEMA SAPHANADB TO CDC_USER;
+GRANT INSERT, UPDATE, DELETE ON SCHEMA SAPHANADB TO CDC_USER;
+GRANT SELECT ON SYS.TRIGGERS TO CDC_USER;
+```
+
+**Table Not Found**
+
+```
+ValueError: Table 'EKKO' not found in schema 'SAPHANADB'
+```
+
+- Verify the table exists: `SELECT * FROM TABLES WHERE TABLE_NAME = 'EKKO'`
+- Check schema name matches `SAP_HANA_SOURCE_SCHEMA`
+- Table names are case-sensitive in SAP HANA
+
+**Trigger Already Exists**
+
+```
+hdbcli.dbapi.Error: trigger already exists
+```
+
+The connector checks for existing triggers before creation, but if you hit this:
+```bash
+python init_cdc.py --recreate-cdc-tables --tables EKKO
+```
+
+**Memory Errors During Initial Load**
+
+For large tables, you can adjust the page size in the workflow to use smaller batches (e.g., 10,000 rows instead of the default 100,000).
+
+**Stale Connection Errors**
+
+The connector includes connection pool management with automatic retry logic that refreshes connections on errors. This happens automatically, but can also be triggered manually if needed.
+
+</ToggleBlock>
+
+### Monitoring
+
+Monitor CDC health by querying the CDC_CHANGES and CDC_CLIENT_STATUS tables. You can track:
+
+- **Overall CDC lag**: Compare the latest change timestamp with the last processed timestamp
+- **Pending changes per table**: Count unprocessed changes for each table based on change IDs
+- **CDC table size**: Monitor the total number of entries in the CDC_CHANGES table
+
+The connector provides built-in methods for accessing this monitoring data programmatically.
+
+## Summary
+
+You now have a complete CDC pipeline from SAP HANA to ClickHouse using Moose workflows. The key components are:
+
+1. **Trigger-based capture**: Database triggers serialize changes to a CDC_CHANGES table
+2. **Client status tracking**: Each consumer maintains its position independently
+3. **Initial load + incremental sync**: Workflows handle both full table copies and ongoing changes
+4. **Automatic pruning**: Daily cleanup prevents unbounded table growth
+
+## Next Steps
+
+- **Add more tables**: Update `SAP_HANA_TABLES` and rerun `--init-all`
+- **Customize sync frequency**: Adjust `schedule="@every 60s"` in the workflow
+- **Build dashboards**: Query your ClickHouse tables with Metabase or Grafana
+- **Set up alerting**: Monitor CDC lag and trigger alerts when it exceeds thresholds
+
+## Related Resources
+
+- [Data Warehouses Guide](/guides/data-warehouses) - Build analytical data models
+- [Moose Workflows](/moosestack/workflows) - Learn more about workflow orchestration
+- [ClickHouse Configuration](/moosestack/configuration/clickhouse) - Tune ClickHouse settings
