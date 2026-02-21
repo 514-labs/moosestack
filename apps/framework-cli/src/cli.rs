@@ -1084,6 +1084,7 @@ pub async fn top_command_handler(
         },
         Commands::Prod {
             start_include_dependencies,
+            exit_after_init,
         } => {
             info!("Running prod command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -1143,14 +1144,20 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            routines::start_production_mode(&settings, project_arc, arc_metrics, redis_client)
-                .await
-                .map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "Prod".to_string(),
-                        details: format!("Failed to start production mode: {e:?}"),
-                    })
-                })?;
+            routines::start_production_mode(
+                &settings,
+                project_arc,
+                arc_metrics,
+                redis_client,
+                *exit_after_init,
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "Prod".to_string(),
+                    details: format!("Failed to start production mode: {e:?}"),
+                })
+            })?;
 
             wait_for_usage_capture(capture_handle).await;
 

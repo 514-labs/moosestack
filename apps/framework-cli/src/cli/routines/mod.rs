@@ -826,6 +826,7 @@ pub async fn start_development_mode(
 /// * `project` - Arc wrapped Project instance containing configuration
 /// * `metrics` - Arc wrapped Metrics instance for monitoring
 /// * `redis_client` - Arc and Mutex wrapped RedisClient for caching
+/// * `exit_after_init` - If true, exit after infrastructure setup (for Kubernetes init containers)
 ///
 /// # Returns
 /// * `anyhow::Result<()>` - Success or error result
@@ -834,6 +835,7 @@ pub async fn start_production_mode(
     project: Arc<Project>,
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
+    exit_after_init: bool,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Success,
@@ -985,6 +987,19 @@ pub async fn start_production_mode(
     state_storage
         .store_infrastructure_map(&plan.target_infra_map)
         .await?;
+
+    // Exit early if requested (for Kubernetes init containers)
+    if exit_after_init {
+        info!("Infrastructure initialization complete. Exiting (--exit-after-init).");
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "Completed".to_string(),
+                details: "infrastructure initialization (--exit-after-init)".to_string(),
+            },
+        );
+        return Ok(());
+    }
 
     let infra_map: &'static InfrastructureMap = Box::leak(Box::new(plan.target_infra_map));
 
