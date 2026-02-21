@@ -8,7 +8,7 @@ JSON format expected by the Moose infrastructure management system.
 """
 
 from importlib import import_module
-from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
+from typing import Literal, Optional, List, Any, Dict, Union
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 import os
@@ -499,6 +499,44 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
+class DurationJson(BaseModel):
+    """Internal representation of a duration (value + unit) for serialization."""
+
+    model_config = model_config
+
+    value: int
+    unit: str
+
+
+class RefreshIntervalJson(BaseModel):
+    """Internal representation of a refresh interval for serialization.
+
+    Matches Rust's RefreshInterval enum with serde(tag = "type").
+    """
+
+    model_config = model_config
+
+    type: Literal["every", "after"]
+    value: int
+    unit: str
+
+
+class RefreshConfigJson(BaseModel):
+    """Internal representation of refresh config for serialization.
+
+    Only present for refreshable MVs. Incremental MVs have refresh_config = None.
+    Matches Rust's RefreshableConfig struct.
+    """
+
+    model_config = model_config
+
+    interval: RefreshIntervalJson
+    offset: Optional[DurationJson] = None
+    randomize: Optional[DurationJson] = None
+    depends_on: Optional[List[str]] = None
+    append: Optional[bool] = None
+
+
 class MaterializedViewJson(BaseModel):
     """Internal representation of a structured Materialized View for serialization.
 
@@ -510,6 +548,7 @@ class MaterializedViewJson(BaseModel):
         target_table: Name of the target table where data is written.
         target_database: Optional database for the target table.
         metadata: Optional metadata for the materialized view (e.g., description, source file).
+        refresh_config: Refresh config for refreshable MVs. None = incremental MV.
         life_cycle: Optional lifecycle management policy.
     """
 
@@ -522,6 +561,7 @@ class MaterializedViewJson(BaseModel):
     target_table: str
     target_database: Optional[str] = None
     metadata: Optional[dict] = None
+    refresh_config: Optional[RefreshConfigJson] = None
     life_cycle: Optional[str] = None
 
 
@@ -575,6 +615,11 @@ class InfrastructureMap(BaseModel):
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
     unloaded_files: list[str] = []
+
+
+def _duration_to_json(value: int, unit: str) -> DurationJson:
+    """Convert a duration (value + unit) to its JSON representation."""
+    return DurationJson(value=value, unit=unit)
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -1152,6 +1197,36 @@ def to_infra_map() -> dict:
 
     # Serialize materialized views with structured data
     for name, mv in get_materialized_views().items():
+        # Convert refresh_config to JSON format (only for refreshable MVs)
+        refresh_config_json: Optional[RefreshConfigJson] = None
+
+        if mv.refresh_config is not None:
+            refresh_config_json = RefreshConfigJson(
+                interval=RefreshIntervalJson(
+                    type=mv.refresh_config.interval.type,
+                    value=mv.refresh_config.interval.value,
+                    unit=mv.refresh_config.interval.unit,
+                ),
+                offset=(
+                    _duration_to_json(
+                        mv.refresh_config.offset.value,
+                        mv.refresh_config.offset.unit,
+                    )
+                    if mv.refresh_config.offset
+                    else None
+                ),
+                randomize=(
+                    _duration_to_json(
+                        mv.refresh_config.randomize.value,
+                        mv.refresh_config.randomize.unit,
+                    )
+                    if mv.refresh_config.randomize
+                    else None
+                ),
+                depends_on=mv.refresh_config.depends_on,
+                append=mv.refresh_config.append,
+            )
+
         materialized_views[name] = MaterializedViewJson(
             name=mv.name,
             select_sql=mv.select_sql,
@@ -1159,6 +1234,7 @@ def to_infra_map() -> dict:
             target_table=mv.target_table.name,
             target_database=getattr(mv.target_table.config, "database", None),
             metadata=getattr(mv, "metadata", None),
+            refresh_config=refresh_config_json,
             life_cycle=(mv.life_cycle.value if mv.life_cycle else "FULLY_MANAGED"),
         )
 

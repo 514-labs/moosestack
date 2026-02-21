@@ -755,11 +755,26 @@ pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String
     intermediate.trim().to_string()
 }
 
+/// Regex pattern to match REFRESH clause in CREATE MATERIALIZED VIEW statements.
+/// This matches REFRESH EVERY/AFTER with optional OFFSET, RANDOMIZE, DEPENDS ON, and APPEND.
+/// The clause appears between the view name and the TO clause.
+/// Pattern: ` REFRESH ... TO ` is replaced with ` TO ` to strip the REFRESH clause.
+static REFRESH_CLAUSE_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\s+REFRESH\s+(?:EVERY|AFTER)\s+.*?\s+TO\s+")
+        .expect("REFRESH_CLAUSE_PATTERN regex should compile")
+});
+
 pub fn parse_create_materialized_view(
     sql: &str,
 ) -> Result<MaterializedViewStatement, SqlParseError> {
+    // Strip REFRESH clause before parsing since sqlparser doesn't support it.
+    // The REFRESH clause appears between the view name and TO clause:
+    // CREATE MATERIALIZED VIEW name REFRESH EVERY 1 HOUR TO target AS SELECT...
+    // We replace " REFRESH ... TO " with " TO " so sqlparser can parse the statement.
+    let sql_without_refresh = REFRESH_CLAUSE_PATTERN.replace(sql, " TO ").to_string();
+
     let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, sql)?;
+    let ast = Parser::parse_sql(&dialect, &sql_without_refresh)?;
 
     if ast.len() != 1 {
         return Err(SqlParseError::NotMaterializedView);

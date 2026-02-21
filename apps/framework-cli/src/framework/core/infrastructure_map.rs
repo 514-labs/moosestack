@@ -46,7 +46,9 @@ use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
-use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+use crate::framework::core::infrastructure::materialized_view::{
+    MaterializedView, RefreshInterval, RefreshableConfig,
+};
 use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::core::lifecycle_filter;
 use crate::framework::languages::SupportedLanguages;
@@ -2877,6 +2879,121 @@ impl InfrastructureMap {
         })
     }
 
+    /// Parses the REFRESH clause from a CREATE MATERIALIZED VIEW statement.
+    /// Extracts: interval (EVERY/AFTER), OFFSET, RANDOMIZE, DEPENDS ON, and APPEND.
+    ///
+    /// Returns Some(RefreshableConfig) if a REFRESH clause is found, None otherwise.
+    ///
+    /// # Example SQL patterns
+    ///
+    /// - `REFRESH EVERY 1 HOUR`
+    /// - `REFRESH AFTER 30 MINUTE OFFSET 5 MINUTE`
+    /// - `REFRESH EVERY 1 DAY RANDOMIZE FOR 10 SECOND`
+    /// - `REFRESH EVERY 1 HOUR DEPENDS ON other_mv`
+    /// - `REFRESH EVERY 1 DAY DEPENDS ON mv1, mv2 APPEND`
+    fn parse_refresh_clause(sql: &str) -> Option<RefreshableConfig> {
+        use regex::Regex;
+        use std::sync::LazyLock;
+
+        use crate::framework::core::infrastructure::materialized_view::{Duration, TimeUnit};
+
+        // Pattern to match REFRESH EVERY/AFTER <n> <unit>
+        static REFRESH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(
+                r"(?i)REFRESH\s+(EVERY|AFTER)\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)",
+            )
+            .expect("REFRESH_PATTERN regex should compile")
+        });
+
+        // Pattern to match OFFSET <n> <unit>
+        static OFFSET_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)OFFSET\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)")
+                .expect("OFFSET_PATTERN regex should compile")
+        });
+
+        // Pattern to match RANDOMIZE FOR <n> <unit>
+        static RANDOMIZE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)RANDOMIZE\s+FOR\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)")
+                .expect("RANDOMIZE_PATTERN regex should compile")
+        });
+
+        // Pattern to match DEPENDS ON <mv_list>
+        // MV names can be: mv_name, `mv_name`, database.mv_name, `database`.`mv_name`
+        // The .+? is non-greedy and will match until the suffix pattern matches
+        static DEPENDS_ON_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)DEPENDS\s+ON\s+(.+?)(?:\s+TO\s+|\s+APPEND|\s*$)")
+                .expect("DEPENDS_ON_PATTERN regex should compile")
+        });
+
+        // Pattern to match APPEND
+        static APPEND_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)\bAPPEND\b").expect("APPEND_PATTERN regex should compile")
+        });
+
+        // Parse the main interval (required)
+        let caps = REFRESH_PATTERN.captures(sql)?;
+        let mode = caps.get(1)?.as_str().to_uppercase();
+        let value: u64 = caps.get(2)?.as_str().parse().ok()?;
+        let unit_str = caps.get(3)?.as_str();
+        let unit = TimeUnit::parse(unit_str)?;
+
+        let interval = match mode.as_str() {
+            "EVERY" => RefreshInterval::Every {
+                value,
+                unit: unit.clone(),
+            },
+            "AFTER" => RefreshInterval::After { value, unit },
+            _ => return None,
+        };
+
+        // Parse optional OFFSET
+        let offset = OFFSET_PATTERN.captures(sql).and_then(|caps| {
+            let value: u64 = caps.get(1)?.as_str().parse().ok()?;
+            let unit = TimeUnit::parse(caps.get(2)?.as_str())?;
+            Some(Duration::new(value, unit))
+        });
+
+        // Parse optional RANDOMIZE
+        let randomize = RANDOMIZE_PATTERN.captures(sql).and_then(|caps| {
+            let value: u64 = caps.get(1)?.as_str().parse().ok()?;
+            let unit = TimeUnit::parse(caps.get(2)?.as_str())?;
+            Some(Duration::new(value, unit))
+        });
+
+        // Parse optional DEPENDS ON
+        let depends_on = DEPENDS_ON_PATTERN
+            .captures(sql)
+            .map(|caps| {
+                let mv_list = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                // Split by comma, trim whitespace, remove backticks and database prefixes
+                mv_list
+                    .split(',')
+                    .map(|s| {
+                        let trimmed = s.trim().replace('`', "");
+                        // Remove database prefix if present (e.g., "local.MV_name" -> "MV_name")
+                        if let Some(dot_pos) = trimmed.rfind('.') {
+                            trimmed[dot_pos + 1..].to_string()
+                        } else {
+                            trimmed
+                        }
+                    })
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        // Parse optional APPEND
+        let append = APPEND_PATTERN.is_match(sql);
+
+        Some(RefreshableConfig {
+            interval,
+            offset,
+            randomize,
+            depends_on,
+            append,
+        })
+    }
+
     /// Attempts to migrate a SqlResource to a MaterializedView.
     /// Returns None if the SqlResource is not a moose-lib generated materialized view.
     pub fn try_migrate_sql_resource_to_mv(
@@ -2887,6 +3004,12 @@ impl InfrastructureMap {
 
         // Must have exactly one setup and one teardown statement
         if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+            tracing::debug!(
+                "MV migration failed for '{}': setup={}, teardown={} (expected 1 each)",
+                sql_resource.name,
+                sql_resource.setup.len(),
+                sql_resource.teardown.len()
+            );
             return None;
         }
 
@@ -2895,19 +3018,47 @@ impl InfrastructureMap {
 
         // Check teardown matches moose-lib pattern
         if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
+            tracing::debug!(
+                "MV migration failed for '{}': teardown doesn't start with DROP VIEW IF EXISTS. Got: {}",
+                sql_resource.name,
+                &teardown_sql[..std::cmp::min(50, teardown_sql.len())]
+            );
             return None;
         }
 
         // Check setup matches moose-lib MV pattern
         if !setup_sql.starts_with("CREATE MATERIALIZED VIEW IF NOT EXISTS") {
+            tracing::debug!(
+                "MV migration failed for '{}': setup doesn't start with CREATE MATERIALIZED VIEW IF NOT EXISTS. Got: {}",
+                sql_resource.name,
+                &setup_sql[..std::cmp::min(80, setup_sql.len())]
+            );
             return None;
         }
         if !setup_sql.contains(" TO ") {
+            tracing::debug!(
+                "MV migration failed for '{}': setup doesn't contain ' TO '",
+                sql_resource.name
+            );
             return None;
         }
 
         // Parse the CREATE MATERIALIZED VIEW statement
-        let parsed = parse_create_materialized_view(setup_sql).ok()?;
+        let parsed = match parse_create_materialized_view(setup_sql) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!(
+                    "MV migration failed for '{}': parse error: {:?}. SQL: {}",
+                    sql_resource.name,
+                    e,
+                    &setup_sql[..std::cmp::min(200, setup_sql.len())]
+                );
+                return None;
+            }
+        };
+
+        // Parse REFRESH clause if present (for refreshable MVs)
+        let refresh_config = Self::parse_refresh_clause(setup_sql);
 
         // Convert source tables to unqualified names for consistency
         let source_tables: Vec<String> = parsed
@@ -2937,6 +3088,7 @@ impl InfrastructureMap {
             target_database: parsed.target_database,
             metadata,
             life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+            refresh_config,
         })
     }
 
@@ -4365,6 +4517,130 @@ mod tests {
         assert_eq!(
             table_removals, 1,
             "When respect_life_cycle=false, drops should not be blocked"
+        );
+    }
+}
+
+#[cfg(test)]
+mod parse_refresh_clause_tests {
+    use super::InfrastructureMap;
+    use crate::framework::core::infrastructure::materialized_view::{
+        Duration, RefreshInterval, TimeUnit,
+    };
+
+    #[test]
+    fn test_depends_on_with_names_containing_t() {
+        // This test verifies the fix for the regex bug where [^T]+? would fail
+        // to match MV names containing 't' like "test_mv", "my_table", etc.
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON test_mv TO `local`.`target_table`";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.depends_on, vec!["test_mv"]);
+    }
+
+    #[test]
+    fn test_depends_on_multiple_mvs_with_t() {
+        let sql = "REFRESH EVERY 1 DAY DEPENDS ON test_mv, my_table, another_one APPEND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.depends_on,
+            vec!["test_mv", "my_table", "another_one"]
+        );
+        assert!(config.append);
+    }
+
+    #[test]
+    fn test_depends_on_with_backticks() {
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON `test_mv`, `local`.`table_name` TO target";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        // The database prefix should be stripped
+        assert_eq!(config.depends_on, vec!["test_mv", "table_name"]);
+    }
+
+    #[test]
+    fn test_depends_on_at_end_of_string() {
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON DailyStats_MV";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.depends_on, vec!["DailyStats_MV"]);
+    }
+
+    #[test]
+    fn test_basic_refresh_every() {
+        let sql = "REFRESH EVERY 1 HOUR";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Hour
+            }
+        );
+    }
+
+    #[test]
+    fn test_basic_refresh_after() {
+        let sql = "REFRESH AFTER 30 MINUTE";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::After {
+                value: 30,
+                unit: TimeUnit::Minute
+            }
+        );
+    }
+
+    #[test]
+    fn test_offset_only_valid_with_every() {
+        let sql = "REFRESH EVERY 1 HOUR OFFSET 5 MINUTE";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.offset, Some(Duration::new(5, TimeUnit::Minute)));
+    }
+
+    #[test]
+    fn test_randomize() {
+        let sql = "REFRESH EVERY 5 MINUTE RANDOMIZE FOR 30 SECOND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.randomize, Some(Duration::new(30, TimeUnit::Second)));
+    }
+
+    #[test]
+    fn test_full_config() {
+        let sql =
+            "REFRESH EVERY 1 DAY OFFSET 1 HOUR RANDOMIZE FOR 5 MINUTE DEPENDS ON mv1, mv2 APPEND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Day
+            }
+        );
+        assert_eq!(config.offset, Some(Duration::new(1, TimeUnit::Hour)));
+        assert_eq!(config.randomize, Some(Duration::new(5, TimeUnit::Minute)));
+        assert_eq!(config.depends_on, vec!["mv1", "mv2"]);
+        assert!(config.append);
+    }
+
+    #[test]
+    fn test_month_year_units() {
+        let sql = "REFRESH EVERY 1 MONTH";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Month
+            }
+        );
+
+        let sql = "REFRESH EVERY 1 YEAR";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.interval,
+            RefreshInterval::Every {
+                value: 1,
+                unit: TimeUnit::Year
+            }
         );
     }
 }

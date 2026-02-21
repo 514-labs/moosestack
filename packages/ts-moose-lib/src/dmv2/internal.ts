@@ -39,7 +39,10 @@ import {
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
-import { MaterializedView } from "./sdk/materializedView";
+import {
+  MaterializedView,
+  RefreshableMaterializedView,
+} from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import {
   getSourceDir,
@@ -170,7 +173,10 @@ const moose_internal = {
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
+  materializedViews: new Map<
+    string,
+    MaterializedView<any> | RefreshableMaterializedView<any>
+  >(),
   views: new Map<string, View>(),
 };
 /**
@@ -542,6 +548,40 @@ interface SqlResourceJson {
 }
 
 /**
+ * JSON representation of a refresh interval.
+ */
+interface RefreshIntervalJson {
+  type: "every" | "after";
+  /** The numeric value of the interval */
+  value: number;
+  /** The time unit */
+  unit: string;
+}
+
+/**
+ * JSON representation of a duration (value + unit).
+ */
+interface DurationJson {
+  /** The numeric value */
+  value: number;
+  /** The time unit */
+  unit: string;
+}
+
+/**
+ * JSON representation of refreshable MV configuration.
+ */
+interface RefreshConfigJson {
+  interval: RefreshIntervalJson;
+  /** Offset duration */
+  offset?: DurationJson;
+  /** Randomize window duration */
+  randomize?: DurationJson;
+  dependsOn?: string[];
+  append?: boolean;
+}
+
+/**
  * JSON representation of a structured Materialized View.
  */
 interface MaterializedViewJson {
@@ -561,6 +601,8 @@ interface MaterializedViewJson {
   metadata?: { [key: string]: any };
   /** Optional lifecycle management policy */
   lifeCycle?: string;
+  /** Refresh config for refreshable MVs. If undefined, this is an incremental MV. */
+  refreshConfig?: RefreshConfigJson;
 }
 
 /**
@@ -577,6 +619,16 @@ interface ViewJson {
   sourceTables: string[];
   /** Optional metadata for the view (e.g., description, source file) */
   metadata?: { [key: string]: any };
+}
+
+/**
+ * Convert a Duration to its JSON representation.
+ */
+function durationToJson(duration: {
+  value: number;
+  unit: string;
+}): DurationJson {
+  return { value: duration.value, unit: duration.unit };
 }
 
 /**
@@ -1256,6 +1308,28 @@ export const toInfraMap = (registry: typeof moose_internal) => {
 
   // Serialize materialized views with structured data
   registry.materializedViews.forEach((mv) => {
+    // Convert refresh config to JSON format (if refreshable MV)
+    let refreshConfigJson: RefreshConfigJson | undefined;
+    if (mv.refreshConfig) {
+      refreshConfigJson = {
+        interval: {
+          type: mv.refreshConfig.interval.type,
+          value: mv.refreshConfig.interval.value,
+          unit: mv.refreshConfig.interval.unit,
+        },
+        offset:
+          mv.refreshConfig.offset ?
+            durationToJson(mv.refreshConfig.offset)
+          : undefined,
+        randomize:
+          mv.refreshConfig.randomize ?
+            durationToJson(mv.refreshConfig.randomize)
+          : undefined,
+        dependsOn: mv.refreshConfig.dependsOn,
+        append: mv.refreshConfig.append,
+      };
+    }
+
     materializedViews[mv.name] = {
       name: mv.name,
       selectSql: mv.selectSql,
@@ -1264,6 +1338,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       targetDatabase: mv.targetTable.config.database,
       metadata: mv.metadata,
       lifeCycle: mv.lifeCycle,
+      refreshConfig: refreshConfigJson,
     };
   });
 
