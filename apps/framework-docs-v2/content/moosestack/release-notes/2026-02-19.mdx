@@ -7,14 +7,14 @@ import { Callout } from "@/components/mdx";
 
 # February 19, 2026
 
-This week brings a major overhaul to Fiveonefour's project creation experience with a new multi-step wizard, a dedicated Fiveonefour CLI for project onboarding, and Vercel integration for automated deployments. On the Moose side, materialized views gain lifecycle management controls, external table mirroring simplifies local development against production data sources, and new documentation covers CDC workflows and externally managed tables.
+This week Fiveonefour ships a dedicated CLI for project onboarding, Vercel integration for automated deployments, and a 6x reduction in deployment startup times. On the Moose side, materialized views gain lifecycle management controls, external table mirroring simplifies local development against production data sources, and new documentation covers CDC workflows and externally managed tables.
 
 <Callout type="info" title="Highlights">
-* **New:** Fiveonefour project creation flow revamp with multi-step wizard
 * **New:** Fiveonefour CLI with `setup` and `link` commands for project onboarding
 * **New:** Vercel integration for automated deployments and environment sync
 * **New:** Materialized view lifecycle management with deletion protection
 * **New:** External table mirroring in dev mode for local development
+* **Improved:** Deployment startup times reduced from 20 to 3.5 minutes
 </Callout>
 
 ## Moose
@@ -135,11 +135,6 @@ This week brings a major overhaul to Fiveonefour's project creation experience w
 ## Fiveonefour
 
 ### New Features
-
-**Project creation flow revamp with multi-step wizard** ([@groy-514](https://github.com/groy-514))
-  The project creation experience has been completely redesigned with a new multi-step wizard. The flow now starts with an origin picker featuring template browsing with search and featured templates alongside GitHub repo import. The project configuration step auto-discovers `moose.config.toml` locations in your repository, and a new infrastructure step provides a services summary with a "Customize" panel for storage, streaming, and workflow configuration.
-
-  Infrastructure selection uses expandable radio groups with "Managed" and "External" badges, and external ClickHouse/Kafka connections must be tested and validated before proceeding. Environment variables can be edited and validated inline during infrastructure configuration. Step transitions use `framer-motion` animations, and the deployment step only renders UI on failure — showing an error card with a Back action — instead of displaying a spinner. GitHub account linking is no longer required to begin the template configuration flow.
 
 **Fiveonefour CLI with setup and link commands for project onboarding** ([@LucioFranco](https://github.com/LucioFranco))
   Introduced the new Fiveonefour CLI with comprehensive project setup capabilities. The `514 setup <org>/<project>` command clones projects locally with optional branch creation and deployment setup. The `514 link` command connects existing local repositories to Fiveonefour projects for streamlined deployment workflows. Both commands support authentication, interactive and non-interactive modes, and provide clear guidance for next steps.
