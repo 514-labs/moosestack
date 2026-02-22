@@ -18,5 +18,11 @@
   "engines": {
     "node": ">=20 <25",
     "pnpm": ">=8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@514labs/kafka-javascript",
+      "@confluentinc/kafka-javascript"
+    ]
   }
 }
