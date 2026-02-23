@@ -121,6 +121,11 @@ protocol = "http"
 
   Docs: [CDC Managed Tables](/moosestack/dev/cdc-managed-tables)
 
+**Merge table engine** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  `OlapTable` now supports ClickHouse's `Merge` engine, a read-only table engine that queries across multiple tables matching a regex pattern.
+
+  Docs: [Merge Engine](/moosestack/engines/merge)
+
 ### Improvements
 
 - Interactive tutorial customization wizard for guides: Tutorials now include an interactive wizard that lets users customize guide content based on their specific setup — database type, operating system, and language preferences. Selections persist across page navigation and dynamically tailor code examples. ([@oatsandsugar](https://github.com/oatsandsugar)) Docs: [Performant Dashboards](/guides/performant-dashboards)
