@@ -4,10 +4,6 @@
 //! crate. It includes components for displaying styled text and managing
 //! terminal state during CLI operations.
 
-use super::{
-    context::{tui_channel, DisplayMessage, InfrastructureChangeType},
-    message::MessageType,
-};
 use crossterm::{
     execute,
     style::{
@@ -192,6 +188,8 @@ impl StyledText {
 /// * `styled_text` - The styled text configuration for the action portion
 /// * `message` - The main message content to display
 /// * `no_ansi` - If true, disable ANSI color codes and formatting
+/// * `show_timestamps` - If true, prepends a timestamp to each output line
+/// * `quiet_stdout` - If true, writes to stderr instead of stdout
 ///
 /// # Returns
 ///
@@ -207,7 +205,13 @@ impl StyledText {
 /// ```rust
 /// # use crate::cli::display::terminal::{StyledText, write_styled_line};
 /// let styled = StyledText::new("Success".to_string()).green().bold();
-/// write_styled_line(&styled, "Operation completed successfully", false)?;
+/// write_styled_line(
+///     &styled,
+///     "Operation completed successfully",
+///     false,
+///     false,
+///     false,
+/// )?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
 /// Internal helper that writes a styled action line to any writer.
@@ -280,47 +284,6 @@ pub fn write_styled_line(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> IoResult<()> {
-    // Check for TUI context - route messages to TUI if available
-    if let Some(sender) = tui_channel() {
-        // Detect infrastructure changes by prefix and color
-        let change_type = match (styled_text.text.as_str(), styled_text.foreground) {
-            (text, Some(Color::Green)) if text.starts_with("+ ") => {
-                Some(InfrastructureChangeType::Added)
-            }
-            (text, Some(Color::Red)) if text.starts_with("- ") => {
-                Some(InfrastructureChangeType::Removed)
-            }
-            (text, Some(Color::Yellow)) if text.starts_with("~ ") => {
-                Some(InfrastructureChangeType::Updated)
-            }
-            _ => None,
-        };
-
-        // Route infrastructure changes with semantic type, others as generic messages
-        if let Some(change_type) = change_type {
-            sender.send(DisplayMessage::InfrastructureChange {
-                change_type,
-                action: styled_text.text.clone(),
-                details: message.to_string(),
-            });
-        } else {
-            // Infer message type from color for non-infrastructure messages
-            let message_type = match styled_text.foreground {
-                Some(Color::Green) => MessageType::Success,
-                Some(Color::Red) => MessageType::Error,
-                Some(Color::Yellow) => MessageType::Warning,
-                Some(Color::Cyan) | None => MessageType::Info,
-                _ => MessageType::Info,
-            };
-            sender.send(DisplayMessage::Message {
-                message_type,
-                action: styled_text.text.clone(),
-                details: message.to_string(),
-            });
-        }
-        return Ok(());
-    }
-
     // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
     // for structured/JSON output
     if quiet_stdout {
