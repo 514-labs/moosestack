@@ -341,9 +341,6 @@ pub fn infra_added(message: &str) {
 pub fn infra_added_detailed(title: &str, details: &[String]) {
     infra_added(title);
     write_detail_lines(details);
-
-    // Log the full message
-    info!("+ {} {}", title.trim(), details.join(" "));
 }
 
 /// Displays a message about infrastructure being removed.
@@ -378,9 +375,6 @@ pub fn infra_removed(message: &str) {
 pub fn infra_removed_detailed(title: &str, details: &[String]) {
     infra_removed(title);
     write_detail_lines(details);
-
-    // Log the full message
-    info!("- {} {}", title.trim(), details.join(" "));
 }
 
 /// Displays a message about infrastructure being updated.
@@ -426,9 +420,6 @@ pub fn infra_updated(message: &str) {
 pub fn infra_updated_detailed(title: &str, details: &[String]) {
     infra_updated(title);
     write_detail_lines(details);
-
-    // Log the full message
-    info!("~ {} {}", title.trim(), details.join(" "));
 }
 
 /// Displays OLAP (Online Analytical Processing) infrastructure changes.
