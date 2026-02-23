@@ -52,35 +52,7 @@ This week Fiveonefour ships a dedicated CLI for project onboarding, Vercel integ
     `,
     selectTables: [userActivityTable],
     // lifeCycle defaults to FULLY_MANAGED
-  });
-
-  // DELETION_PROTECTED - Prevents accidental deletion or updates
-  export const criticalReportMV = new MaterializedView<UserActivitySummary>({
-    materializedViewName: "CriticalUserReport",
-    targetTable: {
-      name: "CriticalUserReportTable",
-      orderByFields: ["userId"],
-    },
-    selectStatement: `
-      SELECT userId, count() as totalEvents, max(timestamp) as lastActivity
-      FROM \`${userActivityTable.name}\`
-      WHERE userId IN (SELECT userId FROM premium_users)
-      GROUP BY userId
-    `,
-    selectTables: [userActivityTable],
-    lifeCycle: LifeCycle.DELETION_PROTECTED,
-  });
-
-  // EXTERNALLY_MANAGED - User manages the view outside of Moose
-  export const externalReportMV = new MaterializedView<UserActivitySummary>({
-    materializedViewName: "ExternalUserReport",
-    targetTable: {
-      name: "ExternalUserReportTable",
-      orderByFields: ["userId"],
-    },
-    selectStatement: `SELECT userId, 0 as totalEvents, now() as lastActivity FROM users`,
-    selectTables: [userActivityTable],
-    lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+    // lifeCycle: LifeCycle.FULLY_MANAGED | LifeCycle.DELETION_PROTECTED | LifeCycle.EXTERNALLY_MANAGED
   });
   ```
 
