@@ -102,7 +102,7 @@ Moose validates JWT tokens using RS256 algorithm with your identity provider's p
 
 ### Step 1: Configure JWT Settings
 
-#### Option A: Configure in `moose.config.toml`
+### Option A: Configure in `moose.config.toml`
 
 ```toml filename=moose.config.toml
 [jwt]
@@ -122,7 +122,7 @@ audience = "my-moose-app"
   The `secret` field should contain your JWT **public key** used to verify signatures using RS256 algorithm.
 </Callout>
 
-#### Option B: Configure with Environment Variables
+### Option B: Configure with Environment Variables
 
 You can also set these values as environment variables:
 
@@ -155,7 +155,7 @@ You can configure both JWT and API Key authentication simultaneously. When both 
 
 ### Understanding Authentication Priority
 
-#### Default Behavior (No Enforcement)
+### Default Behavior (No Enforcement)
 
 By default, when both JWT and API Keys are configured, Moose tries JWT validation first, then falls back to API Key validation:
 
@@ -185,7 +185,7 @@ MOOSE_CONSUMPTION_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
 
 This allows you to use either authentication method for your clients.
 
-#### Enforcing JWT Only
+### Enforcing JWT Only
 
 If you want to **only** accept JWT tokens (no API key fallback), set the enforcement flags:
 
@@ -203,7 +203,7 @@ enforce_on_all_consumptions_apis = true
 
 ### Common Use Cases
 
-#### Use Case 1: Different Auth for Different Endpoints
+### Use Case 1: Different Auth for Different Endpoints
 
 Configure JWT for user-facing analytics endpoints, API keys for internal ingestion:
 
@@ -220,7 +220,7 @@ enforce_on_all_ingest_apis = false        # Allow fallback for /ingest/*
 MOOSE_INGEST_API_KEY='hashed_key_for_internal_services'
 ```
 
-#### Use Case 2: Migration from API Keys to JWT
+### Use Case 2: Migration from API Keys to JWT
 
 Start with both configured, no enforcement. Gradually migrate clients to JWT. Once complete, enable enforcement:
 

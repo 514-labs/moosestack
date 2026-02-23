@@ -564,7 +564,7 @@ def run(client: MooseClient, params: QueryParams):
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Basic Query Parameter Interpolation
+### Basic Query Parameter Interpolation
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -653,7 +653,7 @@ UserTable = OlapTable[UserSchema]("users")
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Table and Column References
+### Table and Column References
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -694,14 +694,14 @@ Static type checking ensures you only reference columns that actually exist.
 
 ### Advanced Query Patterns
 
-#### SQL Template Helpers
+### SQL Template Helpers
 
 The `sql` template tag provides helper methods for building dynamic queries safely:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 
-##### Combine SQL Fragments
+### Combine SQL Fragments
 
 Join an array of `Sql` fragments with a separator. Spaces are automatically added around separators that don't include them:
 
@@ -727,7 +727,7 @@ const whereClause = sql.join(conditions, "AND");
 // Result: `age` >= 18 AND `status` = 'active'
 ```
 
-##### Insert Raw SQL
+### Insert Raw SQL
 
 Insert raw SQL strings without parameterization. Use for SQL keywords, functions, or static values that can't be parameterized:
 
@@ -747,7 +747,7 @@ const sortedQuery = sql`SELECT * FROM ${UserTable} ORDER BY created_at ${directi
 Only use `sql.raw()` with trusted, static values. Never pass user input directly to `sql.raw()` as it bypasses SQL injection protection.
 </Callout>
 
-##### Build Queries Incrementally
+### Build Queries Incrementally
 
 Chain SQL fragments together to build queries step by step:
 
@@ -794,7 +794,7 @@ Python APIs use parameter binding with the `execute` method. See the examples be
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Dynamic Column & Table Selection
+### Dynamic Column & Table Selection
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -886,7 +886,7 @@ UserTable = OlapTable[UserSchema]("users")
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Conditional `WHERE` Clauses
+### Conditional `WHERE` Clauses
 
 Build `WHERE` clauses based on provided parameters using `sql.join()` and `Sql.append()`:
 
