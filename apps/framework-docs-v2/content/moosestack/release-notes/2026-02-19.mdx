@@ -105,12 +105,16 @@ This week Fiveonefour ships a dedicated CLI for project onboarding, Vercel integ
   refresh_on_startup = true
 
   # Optional: Remote ClickHouse connection for mirroring
-  [clickhouse.remote]
-  url = "https://production-clickhouse.company.com:8443"
+[dev.remote_clickhouse]
+host = "your-clickhouse-host.example.com"
+port = 8443
+database = "production_db"
+use_ssl = true
+protocol = "http"
   # Username and password stored securely via keyring
   ```
 
-  Docs: [Data Modeling](/moosestack/data-modeling)
+  Docs: [CDC Managed Tables](/moosestack/dev/cdc-managed-tables)
 
 **Comprehensive documentation for externally managed tables and CDC** ([@callicles](https://github.com/callicles))
   Added extensive documentation for working with CDC-enabled ClickHouse databases and externally managed tables, including configuration options for local development mirrors, remote connections, and a complete guide for building on existing CDC pipelines like ClickPipes, PeerDB, and Debezium.
