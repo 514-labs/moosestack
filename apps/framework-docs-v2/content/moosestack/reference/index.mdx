@@ -542,7 +542,7 @@ rows = client.query.execute(query, {"min_age": min_age, "country": country, "lim
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
-#### ClickHouseEngines Enum
+### ClickHouseEngines Enum
 Available table engines:
 
 ```ts
@@ -559,7 +559,7 @@ enum ClickHouseEngines {
 }
 ```
 
-#### ReplacingMergeTreeConfig&lt;T&gt;
+### ReplacingMergeTreeConfig&lt;T&gt;
 Configuration for ReplacingMergeTree tables:
 
 ```ts
@@ -572,7 +572,7 @@ type ReplacingMergeTreeConfig<T> = {
 }
 ```
 
-#### Replicated Engine Configurations
+### Replicated Engine Configurations
 Configuration for replicated table engines:
 
 ```ts
@@ -619,7 +619,7 @@ type ReplicatedSummingMergeTreeConfig<T> = {
 **Note**: The `keeperPath` and `replicaName` parameters are optional. When omitted, Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments (default path: `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}`). You can still provide both parameters explicitly if you need custom replication paths.
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
-#### Engine Configuration Classes
+### Engine Configuration Classes
 Type-safe configuration classes for table engines:
 
 ```python
