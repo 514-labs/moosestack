@@ -1824,13 +1824,21 @@ pub fn create_client(clickhouse_config: ClickHouseConfig) -> ConfiguredDBClient 
 /// let query = "SELECT 1";
 /// run_query(query, &client).await?;
 /// ```
+/// Builds a [`clickhouse::query::Query`] from a raw SQL string, escaping
+/// literal `?` characters so they are not interpreted as bind-parameter
+/// placeholders by the clickhouse crate (`?` → `??`).
+fn build_query(client: &Client, sql: &str) -> clickhouse::query::Query {
+    client.query(&sql.replace('?', "??"))
+}
+
 pub async fn run_query(
     query: &str,
     configured_client: &ConfiguredDBClient,
 ) -> Result<(), clickhouse::error::Error> {
     debug!("Running query: {:?}", query);
-    let client = &configured_client.client;
-    client.query(query).execute().await
+    build_query(&configured_client.client, query)
+        .execute()
+        .await
 }
 
 /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
@@ -4462,5 +4470,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         // Test the specific case from the MaterializedView test
         assert_eq!(strip_backticks("`target`"), "target");
+    }
+
+    #[test]
+    fn test_build_query_displays_literal_question_marks() {
+        let client = clickhouse::Client::default();
+
+        let sql = "SELECT * FROM t WHERE name = 'what?'";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "`??` in the template should display as a literal `?`"
+        );
+
+        let sql = "SELECT a, b FROM t WHERE a LIKE '%?%' AND b = '??'";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "multiple `??` should each display as literal `?`"
+        );
+
+        let sql = "SELECT 1 FROM t";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "query without `?` should be unchanged"
+        );
     }
 }
