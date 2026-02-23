@@ -598,9 +598,20 @@ impl PartialInfrastructureMap {
         // needs from_utf8_lossy_owned
         let raw_string_stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-        if !raw_string_stderr.is_empty() {
-            let error_message = if raw_string_stderr.contains("MODULE_NOT_FOUND")
-                || raw_string_stderr.contains("ModuleNotFoundError")
+        // Filter out structured log lines and Python warnings from stderr,
+        // as these are informational and not actual errors
+        let real_errors: String = raw_string_stderr
+            .lines()
+            .filter(|line| {
+                !line.contains("__moose_structured_log__") && !line.contains("DeprecationWarning")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let real_errors = real_errors.trim();
+
+        if !real_errors.is_empty() {
+            let error_message = if real_errors.contains("MODULE_NOT_FOUND")
+                || real_errors.contains("ModuleNotFoundError")
             {
                 let install_command = if user_code_file_name
                     .ends_with(constants::TYPESCRIPT_FILE_EXTENSION)
@@ -614,10 +625,10 @@ impl PartialInfrastructureMap {
                     });
                 };
 
-                format!("Missing dependencies detected. Please run '{install_command}' and try again.\nOriginal error: {raw_string_stderr}"
+                format!("Missing dependencies detected. Please run '{install_command}' and try again.\nOriginal error: {real_errors}"
                 )
             } else {
-                raw_string_stderr
+                real_errors.to_string()
             };
 
             Err(DmV2LoadingError::StdErr {

@@ -15,4 +15,5 @@ export * from "./apis/barKoa";
 export * from "./apis/barRaw";
 export * from "./apis/sqlHelpersTest";
 export * from "./views/barAggregated";
+export * from "./views/refreshableMv";
 export * from "./workflows/generator";

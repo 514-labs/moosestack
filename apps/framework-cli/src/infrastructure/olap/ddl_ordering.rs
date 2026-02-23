@@ -192,6 +192,13 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Alter the refresh config of a refreshable materialized view
+    AlterMaterializedViewRefresh {
+        /// The materialized view to alter
+        mv: crate::framework::core::infrastructure::materialized_view::MaterializedView,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
 }
 
 impl AtomicOlapOperation {
@@ -387,6 +394,7 @@ impl AtomicOlapOperation {
                     target_table: mv.target_table.clone(),
                     target_database: mv.target_database.clone(),
                     select_sql: mv.select_sql.clone(),
+                    refresh_clause: mv.refresh_clause(),
                 }
             }
             AtomicOlapOperation::DropMaterializedView { mv, .. } => {
@@ -404,6 +412,15 @@ impl AtomicOlapOperation {
                 name: view.name.clone(),
                 database: view.database.clone(),
             },
+            AtomicOlapOperation::AlterMaterializedViewRefresh { mv, .. } => {
+                SerializableOlapOperation::AlterMaterializedViewRefresh {
+                    name: mv.name.clone(),
+                    database: mv.database.clone(),
+                    refresh_sql: mv
+                        .to_alter_refresh_sql()
+                        .expect("AlterMaterializedViewRefresh requires refresh_config"),
+                }
+            }
         }
     }
 
@@ -484,6 +501,11 @@ impl AtomicOlapOperation {
                     id: mv.id(default_database),
                 }
             }
+            AtomicOlapOperation::AlterMaterializedViewRefresh { mv, .. } => {
+                InfrastructureSignature::MaterializedView {
+                    id: mv.id(default_database),
+                }
+            }
         }
     }
 
@@ -548,6 +570,9 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AlterMaterializedViewRefresh {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -1128,30 +1153,48 @@ fn handle_materialized_view_remove(mv: &MaterializedView, default_database: &str
     OperationPlan::teardown(vec![teardown_op])
 }
 
-/// Handles updating a materialized view operation
+/// Handles updating a materialized view operation.
+/// Uses the diff to determine whether to ALTER or DROP/CREATE.
 fn handle_materialized_view_update(
     before: &MaterializedView,
     after: &MaterializedView,
     default_database: &str,
 ) -> OperationPlan {
-    let before_pulls = before.pulls_data_from(default_database);
-    let before_pushes = before.pushes_data_to(default_database);
-    let teardown_op = AtomicOlapOperation::DropMaterializedView {
-        mv: before.clone(),
-        dependency_info: create_dependency_info(before_pulls, before_pushes),
-    };
+    use crate::framework::core::infra_reality_checker::materialized_view_diff;
 
-    let after_pulls = after.pulls_data_from(default_database);
-    let after_pushes = after.pushes_data_to(default_database);
-    let setup_op = AtomicOlapOperation::CreateMaterializedView {
-        mv: after.clone(),
-        dependency_info: create_dependency_info(after_pulls, after_pushes),
-    };
+    let diff = materialized_view_diff(before, after, default_database);
 
-    let mut plan = OperationPlan::new();
-    plan.teardown_ops.push(teardown_op);
-    plan.setup_ops.push(setup_op);
-    plan
+    // If only refresh config changed and it's a refreshable MV, use ALTER
+    if diff.can_alter() && after.is_refreshable() {
+        let after_pulls = after.pulls_data_from(default_database);
+        let after_pushes = after.pushes_data_to(default_database);
+        let alter_op = AtomicOlapOperation::AlterMaterializedViewRefresh {
+            mv: after.clone(),
+            dependency_info: create_dependency_info(after_pulls, after_pushes),
+        };
+
+        OperationPlan::setup(vec![alter_op])
+    } else {
+        // Otherwise, DROP and CREATE
+        let before_pulls = before.pulls_data_from(default_database);
+        let before_pushes = before.pushes_data_to(default_database);
+        let teardown_op = AtomicOlapOperation::DropMaterializedView {
+            mv: before.clone(),
+            dependency_info: create_dependency_info(before_pulls, before_pushes),
+        };
+
+        let after_pulls = after.pulls_data_from(default_database);
+        let after_pushes = after.pushes_data_to(default_database);
+        let setup_op = AtomicOlapOperation::CreateMaterializedView {
+            mv: after.clone(),
+            dependency_info: create_dependency_info(after_pulls, after_pushes),
+        };
+
+        let mut plan = OperationPlan::new();
+        plan.teardown_ops.push(teardown_op);
+        plan.setup_ops.push(setup_op);
+        plan
+    }
 }
 
 /// Handles adding a custom view operation
