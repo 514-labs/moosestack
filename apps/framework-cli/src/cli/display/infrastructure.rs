@@ -28,7 +28,7 @@
 //! consistent display formatting while reducing code duplication and maintenance overhead.
 
 use super::{
-    context::{tui_channel, DisplayMessage},
+    context::{tui_channel, DisplayMessage, InfrastructureChangeType},
     terminal::{write_styled_line, StyledText, ACTION_WIDTH},
 };
 use crate::framework::core::{
@@ -84,6 +84,39 @@ fn write_detail_lines(details: &[String]) {
                 .expect("failed to write detail to terminal");
         }
     }
+}
+
+/// Emits an infrastructure change with explicit semantic type.
+///
+/// In TUI mode this sends a typed `DisplayMessage::InfrastructureChange`.
+/// In terminal mode this renders the corresponding styled line directly.
+fn emit_infrastructure_change(change_type: InfrastructureChangeType, message: &str) {
+    let (action, styled_text) = match change_type {
+        InfrastructureChangeType::Added => ("+ ", StyledText::from_str("+ ").green()),
+        InfrastructureChangeType::Removed => ("- ", StyledText::from_str("- ").red()),
+        InfrastructureChangeType::Updated => ("~ ", StyledText::from_str("~ ").yellow()),
+    };
+
+    if let Some(sender) = tui_channel() {
+        sender.send(DisplayMessage::InfrastructureChange {
+            change_type,
+            action: action.to_string(),
+            details: message.to_string(),
+        });
+        return;
+    }
+
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
+    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
+    write_styled_line(
+        &styled_text,
+        message,
+        no_ansi,
+        show_timestamps,
+        quiet_stdout,
+    )
+    .expect("failed to write message to terminal");
 }
 
 /// Macro to handle common change patterns for infrastructure components.
@@ -292,18 +325,7 @@ fn format_table_display(
 /// infra_added("Database table 'users' created");
 /// ```
 pub fn infra_added(message: &str) {
-    let styled_text = StyledText::from_str("+ ").green();
-    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
-    write_styled_line(
-        &styled_text,
-        message,
-        no_ansi,
-        show_timestamps,
-        quiet_stdout,
-    )
-    .expect("failed to write message to terminal");
+    emit_infrastructure_change(InfrastructureChangeType::Added, message);
     info!("+ {}", message.trim());
 }
 
@@ -340,18 +362,7 @@ pub fn infra_added_detailed(title: &str, details: &[String]) {
 /// infra_removed("Database table 'temp_data' dropped");
 /// ```
 pub fn infra_removed(message: &str) {
-    let styled_text = StyledText::from_str("- ").red();
-    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
-    write_styled_line(
-        &styled_text,
-        message,
-        no_ansi,
-        show_timestamps,
-        quiet_stdout,
-    )
-    .expect("failed to write message to terminal");
+    emit_infrastructure_change(InfrastructureChangeType::Removed, message);
     info!("- {}", message.trim());
 }
 
@@ -388,18 +399,7 @@ pub fn infra_removed_detailed(title: &str, details: &[String]) {
 /// infra_updated("Database table 'users' schema modified");
 /// ```
 pub fn infra_updated(message: &str) {
-    let styled_text = StyledText::from_str("~ ").yellow();
-    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
-    write_styled_line(
-        &styled_text,
-        message,
-        no_ansi,
-        show_timestamps,
-        quiet_stdout,
-    )
-    .expect("failed to write message to terminal");
+    emit_infrastructure_change(InfrastructureChangeType::Updated, message);
     info!("~ {}", message.trim());
 }
 
@@ -971,7 +971,9 @@ pub fn show_changes(infra_plan: &InfraPlan) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::display::context::{DisplayContext, DisplaySender, DISPLAY_CONTEXT};
     use crate::framework::core::infrastructure::table::{DataEnum, EnumMember};
+    use tokio::sync::mpsc;
 
     // Note: These tests primarily verify that the functions don't panic
     // and have correct signatures. Testing actual terminal output would
@@ -1015,6 +1017,72 @@ mod tests {
         show_streaming_changes(empty_streaming);
         show_process_changes(empty_process);
         show_api_changes(empty_api);
+    }
+
+    #[tokio::test]
+    async fn test_infra_added_routes_semantic_change_to_tui() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let context = DisplayContext::Tui(DisplaySender::new(tx));
+
+        DISPLAY_CONTEXT
+            .scope(context, async {
+                infra_added("Table users");
+            })
+            .await;
+
+        let msg = rx.try_recv().expect("expected an infrastructure change");
+        assert!(matches!(
+            msg,
+            DisplayMessage::InfrastructureChange {
+                change_type: InfrastructureChangeType::Added,
+                action,
+                details
+            } if action == "+ " && details == "Table users"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_infra_removed_routes_semantic_change_to_tui() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let context = DisplayContext::Tui(DisplaySender::new(tx));
+
+        DISPLAY_CONTEXT
+            .scope(context, async {
+                infra_removed("Table users");
+            })
+            .await;
+
+        let msg = rx.try_recv().expect("expected an infrastructure change");
+        assert!(matches!(
+            msg,
+            DisplayMessage::InfrastructureChange {
+                change_type: InfrastructureChangeType::Removed,
+                action,
+                details
+            } if action == "- " && details == "Table users"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_infra_updated_routes_semantic_change_to_tui() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let context = DisplayContext::Tui(DisplaySender::new(tx));
+
+        DISPLAY_CONTEXT
+            .scope(context, async {
+                infra_updated("Table users");
+            })
+            .await;
+
+        let msg = rx.try_recv().expect("expected an infrastructure change");
+        assert!(matches!(
+            msg,
+            DisplayMessage::InfrastructureChange {
+                change_type: InfrastructureChangeType::Updated,
+                action,
+                details
+            } if action == "~ " && details == "Table users"
+        ));
     }
 
     #[test]
