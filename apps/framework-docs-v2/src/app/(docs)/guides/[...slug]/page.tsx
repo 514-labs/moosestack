@@ -140,7 +140,17 @@ export default async function GuidePage({ params }: PageProps) {
         </div>
         <TOCNav
           headings={content.headings}
-          helpfulLinks={content.frontMatter.helpfulLinks}
+          helpfulLinks={[
+            ...(content.contentPath ?
+              [
+                {
+                  title: "Edit this page",
+                  url: `https://github.com/514-labs/moose/edit/main/apps/framework-docs-v2/content/${content.contentPath}`,
+                },
+              ]
+            : []),
+            ...(content.frontMatter.helpfulLinks ?? []),
+          ]}
           showLinearIntegration={showLinear}
         />
       </>
@@ -228,7 +238,17 @@ export default async function GuidePage({ params }: PageProps) {
       </div>
       <TOCNav
         headings={allHeadings}
-        helpfulLinks={content.frontMatter.helpfulLinks}
+        helpfulLinks={[
+          ...(content.contentPath ?
+            [
+              {
+                title: "Edit this page",
+                url: `https://github.com/514-labs/moose/edit/main/apps/framework-docs-v2/content/${content.contentPath}`,
+              },
+            ]
+          : []),
+          ...(content.frontMatter.helpfulLinks ?? []),
+        ]}
         showLinearIntegration={showLinear}
       />
     </>

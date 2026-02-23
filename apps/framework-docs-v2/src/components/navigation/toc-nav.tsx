@@ -237,7 +237,6 @@ export function TOCNav({
 
         {helpfulLinks && helpfulLinks.length > 0 && (
           <div>
-            <h4 className="mb-3 text-sm font-semibold">Helpful links</h4>
             <nav className="space-y-2">
               {helpfulLinks.map((link) => (
                 <a
@@ -245,7 +244,7 @@ export function TOCNav({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex items-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {link.title}
                   <IconExternalLink className="ml-1 h-3 w-3" />
