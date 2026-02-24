@@ -275,6 +275,41 @@ pub enum Commands {
     /// Fetch and display LLM-optimized documentation for AI agents
     #[command(visible_alias = "do")]
     Docs(DocsArgs),
+    /// Add a component to your project
+    #[command(
+        visible_alias = "a",
+        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app"
+    )]
+    Add {
+        #[command(subcommand)]
+        component: AddComponent,
+    },
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum AddComponent {
+    /// MCP server with ClickHouse query tools at /tools
+    #[command(
+        name = "mcp-server",
+        after_help = "Example:\n  moose add mcp-server --dir packages/moosestack-service"
+    )]
+    McpServer(AddArgs),
+    /// AI chat panel for Next.js. Requires mcp-server (moose add mcp-server)
+    #[command(after_help = "Example:\n  moose add chat --dir packages/web-app")]
+    Chat(AddArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AddArgs {
+    /// Target directory
+    #[arg(long, short = 'd')]
+    pub dir: Option<String>,
+    /// Overwrite existing files
+    #[arg(long)]
+    pub overwrite: bool,
+    /// Skip confirmation prompts
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Debug, Args)]
