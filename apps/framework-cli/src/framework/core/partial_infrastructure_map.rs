@@ -595,10 +595,32 @@ impl PartialInfrastructureMap {
     ) -> Result<PartialInfrastructureMap, DmV2LoadingError> {
         let output = process.wait_with_output().await?;
 
-        // needs from_utf8_lossy_owned
+        let raw_string_stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let raw_string_stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-        if !raw_string_stderr.is_empty() {
+        // Try to parse stdout first. Subprocess stderr may contain non-fatal
+        // warnings (e.g. Python deprecation notices) that should not block
+        // resource collection when stdout carries a valid payload.
+        let output_format = || DmV2LoadingError::Other {
+            message: "invalid output format".to_string(),
+        };
+
+        if let Some(json) = raw_string_stdout
+            .split("___MOOSE_STUFF___start")
+            .nth(1)
+            .and_then(|s| s.split("end___MOOSE_STUFF___").next())
+        {
+            if !raw_string_stderr.is_empty() {
+                tracing::warn!(
+                    "Subprocess for {} produced warnings on stderr:\n{}",
+                    user_code_file_name,
+                    raw_string_stderr,
+                );
+            }
+            tracing::info!("load_from_user_code inframap json: {}", json);
+            Ok(serde_json::from_str(json)
+                .inspect_err(|_| debug!("Invalid JSON from exports: {}", raw_string_stdout))?)
+        } else if !raw_string_stderr.is_empty() {
             let error_message = if raw_string_stderr.contains("MODULE_NOT_FOUND")
                 || raw_string_stderr.contains("ModuleNotFoundError")
             {
@@ -614,8 +636,7 @@ impl PartialInfrastructureMap {
                     });
                 };
 
-                format!("Missing dependencies detected. Please run '{install_command}' and try again.\nOriginal error: {raw_string_stderr}"
-                )
+                format!("Missing dependencies detected. Please run '{install_command}' and try again.\nOriginal error: {raw_string_stderr}")
             } else {
                 raw_string_stderr
             };
@@ -625,23 +646,7 @@ impl PartialInfrastructureMap {
                 message: error_message,
             })
         } else {
-            let raw_string_stdout: String = String::from_utf8_lossy(&output.stdout).to_string();
-
-            let output_format = || DmV2LoadingError::Other {
-                message: "invalid output format".to_string(),
-            };
-
-            let json = raw_string_stdout
-                .split("___MOOSE_STUFF___start")
-                .nth(1)
-                .ok_or_else(output_format)?
-                .split("end___MOOSE_STUFF___")
-                .next()
-                .ok_or_else(output_format)?;
-            tracing::info!("load_from_user_code inframap json: {}", json);
-
-            Ok(serde_json::from_str(json)
-                .inspect_err(|_| debug!("Invalid JSON from exports: {}", raw_string_stdout))?)
+            Err(output_format())
         }
     }
 

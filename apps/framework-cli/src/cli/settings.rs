@@ -290,10 +290,28 @@ is_moose_developer=false
                     }
                 };
 
-                table.entry("enabled").or_insert(value(true));
-                table.entry("is_moose_developer").or_insert(value(false));
+                let mut changed = false;
+                if let Entry::Vacant(e) = table.entry("enabled") {
+                    e.insert(value(true));
+                    changed = true;
+                }
+                if let Entry::Vacant(e) = table.entry("is_moose_developer") {
+                    e.insert(value(false));
+                    changed = true;
+                }
 
-                std::fs::write(path, toml.to_string())?;
+                if changed {
+                    if let Err(e) = std::fs::write(&path, toml.to_string()) {
+                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                            warn!(
+                                "Config file {} is read-only (externally managed); skipping write",
+                                path.display()
+                            );
+                            return Ok(());
+                        }
+                        return Err(e);
+                    }
+                }
             }
             Err(e) => {
                 show_message!(
@@ -426,7 +444,17 @@ pub fn set_suppress_dev_setup_prompt(value_to_set: bool) -> Result<(), std::io::
         }
     }
 
-    std::fs::write(path, doc.to_string())
+    if let Err(e) = std::fs::write(&path, doc.to_string()) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            warn!(
+                "Config file {} is read-only (externally managed); skipping write",
+                path.display()
+            );
+            return Ok(());
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Updates the global CLI config (~/.moose/config.toml) to set the
@@ -457,7 +485,17 @@ pub fn set_docs_default_language(language: &str) -> Result<(), std::io::Error> {
         }
     }
 
-    std::fs::write(path, doc.to_string())
+    if let Err(e) = std::fs::write(&path, doc.to_string()) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            warn!(
+                "Config file {} is read-only (externally managed); skipping write",
+                path.display()
+            );
+            return Ok(());
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

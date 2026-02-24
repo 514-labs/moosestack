@@ -193,7 +193,7 @@ class OlapConfig(BaseModel):
 
 ## Infrastructure Components
 
-### OlapTable&lt;T&gt;
+### OlapTable
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -258,7 +258,7 @@ my_table_unsorted = OlapTable[UserProfile]("user_profiles_unsorted", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-### Stream&lt;T&gt;
+### Stream
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -303,7 +303,7 @@ my_stream.add_transform(profile_stream, transform_user_event)
   </LanguageTabContent>
 </LanguageTabs>
 
-### IngestApi&lt;T&gt;
+### IngestApi
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -328,7 +328,7 @@ my_ingest_api = IngestApi[UserEvent]("user_events", IngestConfigWithDestination(
   </LanguageTabContent>
 </LanguageTabs>
 
-### Api&lt;T, R&gt;
+### Api
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -364,7 +364,7 @@ my_api = Api[UserQuery, list[UserProfile]](
   </LanguageTabContent>
 </LanguageTabs>
 
-### IngestPipeline&lt;T&gt;
+### IngestPipeline
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -415,7 +415,7 @@ pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-### MaterializedView&lt;T&gt;
+### MaterializedView
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -538,11 +538,10 @@ rows = client.query.execute(query, {"min_age": min_age, "country": country, "lim
 
 ## ClickHouse Utilities
 
-### Table Engine Configurations
+### ClickHouseEngines Enum
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
-#### ClickHouseEngines Enum
 Available table engines:
 
 ```ts
@@ -558,10 +557,32 @@ enum ClickHouseEngines {
   S3Queue = "S3Queue"
 }
 ```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Available engine configuration classes:
 
-#### ReplacingMergeTreeConfig&lt;T&gt;
+```python
+from moose_lib.blocks import (
+    MergeTreeEngine,
+    ReplacingMergeTreeEngine,
+    AggregatingMergeTreeEngine,
+    SummingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
+    S3QueueEngine
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### ReplacingMergeTreeConfig
+
 Configuration for ReplacingMergeTree tables:
 
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
 ```ts
 type ReplacingMergeTreeConfig<T> = {
   engine: ClickHouseEngines.ReplacingMergeTree;
@@ -571,10 +592,24 @@ type ReplacingMergeTreeConfig<T> = {
   settings?: { [key: string]: string };
 }
 ```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+```python
+# ReplacingMergeTree with version control and soft deletes
+dedup_engine = ReplacingMergeTreeEngine(
+    ver="updated_at",  # Optional: version column for keeping latest
+    is_deleted="deleted"  # Optional: soft delete marker (requires ver)
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
 
-#### Replicated Engine Configurations
+### Replicated Engine Configurations
+
 Configuration for replicated table engines:
 
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
 ```ts
 // ReplicatedMergeTree
 type ReplicatedMergeTreeConfig<T> = {
@@ -619,28 +654,7 @@ type ReplicatedSummingMergeTreeConfig<T> = {
 **Note**: The `keeperPath` and `replicaName` parameters are optional. When omitted, Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments (default path: `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}`). You can still provide both parameters explicitly if you need custom replication paths.
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
-#### Engine Configuration Classes
-Type-safe configuration classes for table engines:
-
 ```python
-from moose_lib.blocks import (
-    MergeTreeEngine,
-    ReplacingMergeTreeEngine,
-    AggregatingMergeTreeEngine,
-    SummingMergeTreeEngine,
-    ReplicatedMergeTreeEngine,
-    ReplicatedReplacingMergeTreeEngine,
-    ReplicatedAggregatingMergeTreeEngine,
-    ReplicatedSummingMergeTreeEngine,
-    S3QueueEngine
-)
-
-# ReplacingMergeTree with version control and soft deletes
-dedup_engine = ReplacingMergeTreeEngine(
-    ver="updated_at",  # Optional: version column for keeping latest
-    is_deleted="deleted"  # Optional: soft delete marker (requires ver)
-)
-
 # ReplicatedMergeTree with explicit keeper paths (self-managed ClickHouse)
 replicated_engine = ReplicatedMergeTreeEngine(
     keeper_path="/clickhouse/tables/{database}/{shard}/my_table",
@@ -665,7 +679,7 @@ cloud_replicated = ReplicatedMergeTreeEngine()  # No parameters needed
 
 ## Task Management
 
-### Task&lt;T, R&gt;
+### Task
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -722,7 +736,7 @@ user_task = Task[InputData, OutputData](
   </LanguageTabContent>
 </LanguageTabs>
 
-### TaskConfig&lt;T, R&gt;
+### TaskConfig
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">

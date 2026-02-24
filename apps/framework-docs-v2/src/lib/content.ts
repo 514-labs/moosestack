@@ -95,6 +95,7 @@ export async function parseMarkdownContent(
     throw new Error(`Content file not found for slug: ${normalizedSlug}`);
   }
 
+  const contentPath = path.relative(CONTENT_ROOT, fullPath);
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
@@ -117,6 +118,7 @@ export async function parseMarkdownContent(
       headings,
       slug,
       isMDX: true,
+      contentPath,
     };
   } else {
     // Parse regular markdown to HTML
@@ -136,6 +138,7 @@ export async function parseMarkdownContent(
       headings,
       slug,
       isMDX: false,
+      contentPath,
     };
   }
 }
