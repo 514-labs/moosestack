@@ -6,6 +6,10 @@ on:
     # Monday and Thursday at 6am PST
     - cron: '0 14 * * 1,4'
 
+env:
+  MOOSE_TELEMETRY__ENABLED: false
+  MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
+
 jobs:
   test-llm-docs:
     name: LLM Docs (${{ matrix.language }})
@@ -47,7 +51,6 @@ jobs:
       - name: Run LLM Docs Automation Test (${{ matrix.language }})
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test:llm-docs -- --grep "LLM Documentation Automation"
         env:
-          MOOSE_TELEMETRY_ENABLED: false
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
