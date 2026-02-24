@@ -7,6 +7,10 @@ on:
   merge_group:
     types: [checks_requested]
 
+env:
+  MOOSE_TELEMETRY__ENABLED: false
+  MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
+
 defaults:
   run:
     working-directory: ./apps/framework-cli
@@ -183,9 +187,6 @@ jobs:
 
       - name: Run CLI Tests
         run: cargo test
-        env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
 
       - name: Inspect Logs
         if: always()
@@ -296,9 +297,6 @@ jobs:
 
       - name: Run Module Compilation E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Module Compilation"
-        env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
 
       - name: Inspect Logs
         if: always()
@@ -384,8 +382,6 @@ jobs:
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
@@ -454,8 +450,6 @@ jobs:
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
@@ -527,8 +521,6 @@ jobs:
       - name: Run Python E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template default"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
@@ -600,8 +592,6 @@ jobs:
       - name: Run Python E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template tests"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
@@ -660,8 +650,6 @@ jobs:
       - name: Run TypeScript Backward Compatibility Test
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Tests Template - Upgrade"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           # Add test credentials for S3Queue tests
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
@@ -730,8 +718,6 @@ jobs:
       - name: Run Python Backward Compatibility Test
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Python Tests Template - Upgrade"
         env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
           # Add test credentials for S3Queue tests
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
@@ -791,9 +777,6 @@ jobs:
 
       - name: Run TypeScript Cluster E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Cluster Template"
-        env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
 
       - name: Inspect Logs
         if: always()
@@ -858,9 +841,6 @@ jobs:
 
       - name: Run Python Cluster E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Python Cluster Template"
-        env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
 
       - name: Inspect Logs
         if: always()
@@ -915,9 +895,6 @@ jobs:
 
       - name: Run OTLP Export E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "OTLP"
-        env:
-          MOOSE_TELEMETRY__ENABLED: false
-          MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER: true
 
       - name: Inspect Logs
         if: always()
