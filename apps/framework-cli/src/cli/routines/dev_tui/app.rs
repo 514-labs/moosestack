@@ -3,9 +3,6 @@
 //! This module contains the main application state struct and related types
 //! for managing the TUI's data and behavior.
 
-// TODO(PR5): Remove this allow once mod.rs entry point uses DevTuiApp fully
-#![allow(dead_code)]
-
 use crate::project::Project;
 use chrono::{DateTime, Utc};
 use ratatui::layout::Rect;
