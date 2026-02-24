@@ -20,6 +20,7 @@ use std::sync::LazyLock;
 ///
 /// Each range spans from the opening `'` to (and including) the closing `'`.
 /// Escaped quotes (`\'`) inside a string are not treated as terminators.
+
 pub(crate) fn quoted_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
     let mut ranges = Vec::new();
     let bytes = text.as_bytes();
@@ -34,12 +35,15 @@ pub(crate) fn quoted_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
                 }
                 i += 1;
             }
-            ranges.push(start..i + 1);
+            // If we found a closing quote, include it; otherwise go to end of string
+            let end = if i < bytes.len() { i + 1 } else { bytes.len() };
+            ranges.push(start..end);
         }
         i += 1;
     }
     ranges
 }
+
 
 /// Returns the first regex match whose start position does not fall inside a
 /// single-quoted string literal.
