@@ -162,9 +162,9 @@ Next.js automatically loads environment variables from `.env.local` (and other `
 
 ## Model table
 
-In this step you'll define your first ClickHouse model as an `OlapTable` object.
+In this step you'll define your first ClickHouse model as an [`OlapTable`](/moosestack/olap/model-table) object.
 
-The `moose` project created by `moose init` already includes an example model at `moose/app/models.ts`:
+Create a new file at `moose/app/models.ts` and add your first table definition:
 
 ```ts title="moose/app/models.ts"
 import { OlapTable } from "@514labs/moose-lib";
@@ -180,6 +180,8 @@ export const Events = new OlapTable<EventModel>("events", {
   orderByFields: ["event_time"],
 });
 ```
+
+This defines a TypeScript interface for your table schema and creates an `OlapTable` that maps to a ClickHouse table named `events`. When you run `moose dev` in the next step, Moose will automatically create this table in your local ClickHouse instance.
 
 <Callout type="info" title="Adding more tables">
 Add more tables by exporting additional `OlapTable` objects from `moose/app/models.ts` (or create separate model files and re-export them). See [OlapTable Reference](/moosestack/olap/model-table).

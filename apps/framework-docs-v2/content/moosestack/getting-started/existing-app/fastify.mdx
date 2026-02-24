@@ -144,7 +144,7 @@ MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
 
 In this step you’ll define your first ClickHouse model as an [`OlapTable`](/moosestack/olap/model-table) object.
 
-The `moose` project created by `moose init` already includes an example model at `moose/app/index.ts`:
+Open `moose/app/index.ts` and replace its contents with your first table definition:
 
 ```ts title="moose/app/index.ts"
 import { OlapTable } from "@514labs/moose-lib";
@@ -153,13 +153,15 @@ export interface EventModel {
   id: string;
   amount: number;
   event_time: Date;
-  status: 'completed' | 'active' | 'inactive';
+  status: ‘completed’ | ‘active’ | ‘inactive’;
 }
 
 export const Events = new OlapTable<EventModel>("events", {
   orderByFields: ["event_time"],
 });
 ```
+
+This defines a TypeScript interface for your table schema and creates an `OlapTable` that maps to a ClickHouse table named `events`. When you run `moose dev` in the next step, Moose will automatically create this table in your local ClickHouse instance.
 
 <Callout type="info" title="Adding more tables">
 Add more tables by exporting additional `OlapTable` objects from `moose/app/index.ts`. See [OlapTable Reference](/moosestack/olap/model-table).
