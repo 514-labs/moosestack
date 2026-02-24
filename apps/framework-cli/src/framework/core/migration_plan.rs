@@ -85,3 +85,41 @@ pub struct MigrationPlanWithBeforeAfter {
     pub local_infra_map: InfrastructureMap,
     pub db_migration: MigrationPlan,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::TableIndex;
+
+    #[test]
+    fn test_to_yaml_does_not_leak_serde_json_private_number() {
+        let plan = MigrationPlan {
+            created_at: DateTime::parse_from_rfc3339("2025-01-15T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            operations: vec![SerializableOlapOperation::AddTableIndex {
+                table: "events".to_string(),
+                index: TableIndex {
+                    name: "idx_timestamp".to_string(),
+                    expression: "timestamp".to_string(),
+                    index_type: "minmax".to_string(),
+                    arguments: vec![],
+                    granularity: 3,
+                },
+                database: None,
+                cluster_name: None,
+            }],
+        };
+
+        let yaml = plan.to_yaml().unwrap();
+
+        assert!(
+            !yaml.contains("serde_json::private"),
+            "YAML output leaked serde_json internal representation:\n{yaml}"
+        );
+        assert!(
+            yaml.contains("granularity: 3"),
+            "Expected `granularity: 3` in YAML output:\n{yaml}"
+        );
+    }
+}
