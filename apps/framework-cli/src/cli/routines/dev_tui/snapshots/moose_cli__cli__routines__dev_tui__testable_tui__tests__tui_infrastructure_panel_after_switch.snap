@@ -1,0 +1,28 @@
+---
+source: apps/framework-cli/src/cli/routines/dev_tui/testable_tui.rs
+expression: last_frame
+---
+" MOOSE DEV  test-project  Typescript  localhost:4000                            "
+"                                                                                "
+"┌ [1] LOGS (0) ────────────────────────────────┐┌ [2] INFRASTRUCTURE ──────────┐"
+"│                                              ││  BOOT STATUS                 │"
+"│                                              ││  ○ Initializing...           │"
+"│                                              ││                              │"
+"│                                              ││  SERVICES                    │"
+"│                                              ││  ○ Docker      Pending       │"
+"│                                              ││  ○ ClickHouse  Pending       │"
+"│                                              │└──────────────────────────────┘"
+"│                                              │┌ [3] RESOURCES (0) ───────────┐"
+"│                                              ││                              │"
+"│                                              ││  No resources yet.           │"
+"│                                              ││  Waiting for infrastructure..│"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"└──────────────────────────────────────────────┘└──────────────────────────────┘"
+" Filter: [a]All [w]Watch [i]Infra [s]API [e]Error                               "
+" Nav: [1-3]Panel [j/k]Scroll [Enter]Select [Space]Expand [W]Wrap [q]Quit        "
