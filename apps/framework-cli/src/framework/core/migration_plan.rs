@@ -45,7 +45,9 @@ impl MigrationPlan {
         // going through JSON before YAML because tooling does not support `!tag`
         // Sorted keys are handled by the custom Serialize implementation
         let plan_json = serde_json::to_value(self)?;
-        let plan_yaml = serde_yaml::to_string(&plan_json)?;
+        // We must explicitly convert rather than using serde_yaml::to_string(&json_value)
+        // because arbitrary precision numbers in serde_json becomes `$serde_json::private::Number: '42'`
+        let plan_yaml = serde_yaml::to_string(&json::json_value_to_yaml(&plan_json))?;
         Ok(plan_yaml)
     }
 }
