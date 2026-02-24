@@ -505,6 +505,7 @@ Examples:
   moose docs --expand                     Show full index with all pages and guide sections
   moose docs moosestack/olap              View the OLAP documentation page
   moose docs search \"materialized\"        Search for pages matching a query
+  moose docs search --expand \"setup\"      Also search within page headings (slower)
   moose docs --lang py moosestack/olap    View page in Python (default: auto-detected)
   moose docs browse                       Interactively browse and select a page
   moose docs browse --web                 Browse and open selection in your browser
@@ -554,6 +555,9 @@ pub enum DocsCommands {
     Search {
         /// Search query to filter documentation entries
         query: String,
+        /// Also search within page headings (H1/H2/H3) — slower, fetches all pages
+        #[arg(long)]
+        expand: bool,
     },
 }
 
