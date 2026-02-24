@@ -30,7 +30,7 @@ setup(
         "kafka-python-ng>=2.2.2",
         "redis>=6.2.0",
         "humanfriendly>=10.0",
-        "clickhouse_connect>=0.7.16",
+        "clickhouse_connect>=0.11.0",
         "requests>=2.32.3",
         "sqlglot[c]>=29.0.1",
         "confluent-kafka[json,schemaregistry]>=2.11.1",

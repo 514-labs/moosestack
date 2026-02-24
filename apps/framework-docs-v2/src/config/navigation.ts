@@ -959,6 +959,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     children: [
       {
         type: "page",
+        slug: "moosestack/release-notes/2026-02-19",
+        title: "February 19, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/release-notes/2026-02-12",
         title: "February 12, 2026",
         languages: ["typescript", "python"],

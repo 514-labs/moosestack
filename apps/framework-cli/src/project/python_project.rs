@@ -83,7 +83,7 @@ impl Default for PythonProject {
             version: Version::from_string("0.0".to_string()),
             python_requires,
             dependencies: vec![
-                format!("clickhouse_connect==0.7.16; {python_version}").to_string(),
+                format!("clickhouse_connect==0.11.0; {python_version}").to_string(),
                 format!("requests==2.32.4; {python_version}").to_string(),
                 moose_cli_requirement,
                 moose_lib_requirement,
@@ -241,7 +241,7 @@ mod tests {
         // assert_eq!(
         //     project.dependencies,
         //     vec![
-        //         "clickhouse_connect==0.7.16; python_version >= \"3.12\"".to_string(),
+        //         "clickhouse_connect==0.11.0; python_version >= \"3.12\"".to_string(),
         //         "requests==2.32.4; python_version >= \"3.12\"".to_string(),
         //         "moose-cli; python_version >= \"3.12\"".to_string(),
         //         "moose-lib; python_version >= \"3.12\"".to_string(),
