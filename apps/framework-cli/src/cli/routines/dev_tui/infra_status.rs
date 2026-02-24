@@ -3,9 +3,6 @@
 //! This module defines the status types used to communicate infrastructure boot
 //! progress from the background infrastructure task to the TUI for real-time display.
 
-// TODO(PR4): Remove this allow once dev.rs uses these types
-#![allow(dead_code)]
-
 use tokio::sync::mpsc;
 
 /// Boot phase during infrastructure startup
@@ -206,9 +203,11 @@ pub enum InfraStatusUpdate {
 pub type InfraStatusSender = mpsc::UnboundedSender<InfraStatusUpdate>;
 
 /// Receiver for infrastructure status updates
+#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub type InfraStatusReceiver = mpsc::UnboundedReceiver<InfraStatusUpdate>;
 
 /// Creates a new channel for infrastructure status updates
+#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub fn infra_status_channel() -> (InfraStatusSender, InfraStatusReceiver) {
     mpsc::unbounded_channel()
 }
