@@ -7,6 +7,7 @@ from moose_lib import (
     Key,
     Int8,
     ClickHouseTTL,
+    ClickHouseCodec,
     clickhouse_default,
     FixedString,
 )
@@ -27,7 +28,7 @@ from moose_lib.blocks import (
     MergeEngine,
     # S3QueueEngine - requires S3 configuration, tested separately
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Annotated, List
 
@@ -296,6 +297,29 @@ sample_by_table = OlapTable[EngineTestDataSample](
     ),
 )
 
+
+# Table for testing MODIFY COLUMN with comment + codec combinations
+class CommentCodecTestData(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    data: Annotated[str, ClickHouseCodec("ZSTD(3)")] = Field(
+        description="Raw data payload"
+    )
+    metric: Annotated[float, ClickHouseCodec("ZSTD(1)")] = Field(
+        description="Measurement value"
+    )
+    label: str = Field(description="Classification label")
+    compressed: Annotated[str, ClickHouseCodec("LZ4")]
+
+
+comment_codec_table = OlapTable[CommentCodecTestData](
+    "CommentCodecTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+    ),
+)
+
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
@@ -377,4 +401,5 @@ all_engine_test_tables = [
     buffer_table,
     default_table,
     fixedstring_table,
+    comment_codec_table,
 ]
