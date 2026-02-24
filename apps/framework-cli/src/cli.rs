@@ -1683,6 +1683,7 @@ pub async fn top_command_handler(
 
             result
         }
+        Commands::Add { component } => routines::add::run_add(component),
         Commands::Docs(docs_args) => {
             info!("Running docs command");
 
