@@ -1206,6 +1206,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             'compressed: string & ClickHouseCodec<"LZ4">;',
             '/** Compressed data */\n  compressed: string & ClickHouseCodec<"LZ4">;',
           );
+          // Add a new column with both comment and codec (tests ADD COLUMN path)
+          contents = contents.replace(
+            "}\n\nexport const CommentCodecTable",
+            '  /** Added via column addition */\n  extra: string & ClickHouseCodec<"LZ4">;\n}\n\nexport const CommentCodecTable',
+          );
         } else {
           // Change comment on column with codec
           contents = contents.replace(
@@ -1226,6 +1231,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           contents = contents.replace(
             'compressed: Annotated[str, ClickHouseCodec("LZ4")]',
             'compressed: Annotated[str, ClickHouseCodec("LZ4")] = Field(description="Compressed data")',
+          );
+          // Add a new column with both comment and codec (tests ADD COLUMN path)
+          contents = contents.replace(
+            "compressed: Annotated[str, ClickHouseCodec",
+            'extra: Annotated[str, ClickHouseCodec("LZ4")] = Field(\n        description="Added via column addition"\n    )\n    compressed: Annotated[str, ClickHouseCodec',
           );
         }
 
@@ -1296,6 +1306,18 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ) {
               throw new Error(
                 `compressed column should now have both codec and comment. Match: ${compCol?.[0]}. DDL: ${ddl}`,
+              );
+            }
+
+            // extra: newly added column with both comment and codec (tests ADD COLUMN)
+            const extraCol = ddl.match(/`extra`[^,\n]+/);
+            if (
+              !extraCol ||
+              !extraCol[0].includes("CODEC(LZ4)") ||
+              !extraCol[0].includes("COMMENT 'Added via column addition'")
+            ) {
+              throw new Error(
+                `extra column should have both codec and comment from ADD COLUMN. Match: ${extraCol?.[0]}. DDL: ${ddl}`,
               );
             }
           },

@@ -1001,40 +1001,7 @@ async fn execute_add_table_column(
         .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
-    // Include DEFAULT clause if column has a default value
-    let default_clause = clickhouse_column
-        .default
-        .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
-        .unwrap_or_default();
-
-    // Include MATERIALIZED clause if column has a materialized expression
-    let materialized_clause = clickhouse_column
-        .materialized
-        .as_ref()
-        .map(|m| format!(" MATERIALIZED {}", m))
-        .unwrap_or_default();
-
-    let comment_clause = clickhouse_column
-        .comment
-        .as_ref()
-        .map(|c| {
-            let escaped = c.replace('\\', "\\\\").replace('\'', "''");
-            format!(" COMMENT '{}'", escaped)
-        })
-        .unwrap_or_default();
-
-    let codec_clause = clickhouse_column
-        .codec
-        .as_ref()
-        .map(|c| format!(" CODEC({})", c))
-        .unwrap_or_default();
-
-    let ttl_clause = clickhouse_column
-        .ttl
-        .as_ref()
-        .map(|t| format!(" TTL {}", t))
-        .unwrap_or_default();
+    let property_clauses = build_column_property_clauses(&clickhouse_column);
 
     let position_clause = match after_column {
         None => "FIRST".to_string(),
@@ -1042,17 +1009,13 @@ async fn execute_add_table_column(
     };
 
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}{}  {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
-        default_clause,
-        materialized_clause,
-        comment_clause,
-        codec_clause,
-        ttl_clause,
+        property_clauses,
         position_clause
     );
     tracing::debug!("Adding column: {}", add_column_query);
@@ -1254,6 +1217,50 @@ async fn execute_modify_column_comment(
     Ok(())
 }
 
+/// Builds column property clauses in ClickHouse grammar order:
+/// DEFAULT/MATERIALIZED → COMMENT → CODEC → TTL
+///
+/// Used by ADD COLUMN and MODIFY COLUMN to ensure consistent clause ordering.
+fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
+    let default_clause = col
+        .default
+        .as_ref()
+        .map(|d| format!(" DEFAULT {}", d))
+        .unwrap_or_default();
+
+    let materialized_clause = col
+        .materialized
+        .as_ref()
+        .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
+    let comment_clause = col
+        .comment
+        .as_ref()
+        .map(|c| {
+            let escaped = c.replace('\\', "\\\\").replace('\'', "''");
+            format!(" COMMENT '{}'", escaped)
+        })
+        .unwrap_or_default();
+
+    let codec_clause = col
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
+        .unwrap_or_default();
+
+    let ttl_clause = col
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
+    format!(
+        "{}{}{}{}{}",
+        default_clause, materialized_clause, comment_clause, codec_clause, ttl_clause
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_modify_column_sql(
     db_name: &str,
@@ -1306,63 +1313,12 @@ fn build_modify_column_sql(
         ));
     }
 
-    // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
-    // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
-    // Default values from ClickHouse/Python are already properly formatted
-    // - String literals come with quotes: 'active'
-    // - SQL expressions come without quotes: xxHash64(_id), now(), today()
-    // - Numbers come without quotes: 42
-    // So we use them as-is without additional formatting
-    let default_clause = ch_col
-        .default
-        .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
-        .unwrap_or_default();
-
-    // MATERIALIZED clause: If omitted, ClickHouse KEEPS any existing MATERIALIZED
-    let materialized_clause = ch_col
-        .materialized
-        .as_ref()
-        .map(|m| format!(" MATERIALIZED {}", m))
-        .unwrap_or_default();
-
-    // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
-    // Therefore, TTL removal requires a separate REMOVE TTL statement
-    let ttl_clause = ch_col
-        .ttl
-        .as_ref()
-        .map(|t| format!(" TTL {}", t))
-        .unwrap_or_default();
-
-    // CODEC clause: If omitted, ClickHouse KEEPS any existing CODEC
-    // Therefore, CODEC removal requires a separate REMOVE CODEC statement
-    let codec_clause = ch_col
-        .codec
-        .as_ref()
-        .map(|c| format!(" CODEC({})", c))
-        .unwrap_or_default();
-
-    // Build the COMMENT clause (must come before CODEC in ClickHouse column grammar)
-    let comment_clause = if let Some(ref comment) = ch_col.comment {
-        let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
-        format!(" COMMENT '{}'", escaped_comment)
-    } else {
-        String::new()
-    };
+    let property_clauses = build_column_property_clauses(ch_col);
 
     // Build the main MODIFY COLUMN statement
     let main_sql = format!(
-        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{}{}",
-        db_name,
-        table_name,
-        cluster_clause,
-        ch_col.name,
-        column_type_string,
-        default_clause,
-        materialized_clause,
-        comment_clause,
-        codec_clause,
-        ttl_clause
+        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}",
+        db_name, table_name, cluster_clause, ch_col.name, column_type_string, property_clauses
     );
     statements.push(main_sql);
 
