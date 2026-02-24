@@ -161,13 +161,6 @@ function enforceLatestPythonRequirements(projectDir: string): void {
       return "moose-lib";
     }
 
-    // TODO(sqlglotc): Remove once published templates ship with sqlglot[c].
-    // Published templates still list sqlglot[rs] which is deprecated and emits
-    // a UserWarning on import, causing the CLI to treat stderr as an error.
-    if (lower.startsWith("sqlglot[rs]")) {
-      return trimmed.replace(/sqlglot\[rs\]/i, "sqlglot[c]");
-    }
-
     return line;
   });
 
