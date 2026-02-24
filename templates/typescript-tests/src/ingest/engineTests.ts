@@ -6,6 +6,7 @@ import {
   Int8,
   ClickHouseTTL,
   ClickHouseDefault,
+  ClickHouseCodec,
   UInt32,
 } from "@514labs/moose-lib";
 
@@ -254,6 +255,27 @@ export const SampleByTable = new OlapTable<EngineTestDataSample>(
   },
 );
 
+// Table for testing MODIFY COLUMN with comment + codec combinations
+export interface CommentCodecTestData {
+  id: Key<string>;
+  timestamp: DateTime;
+  /** Raw data payload */
+  data: string & ClickHouseCodec<"ZSTD(3)">;
+  /** Measurement value */
+  metric: number & ClickHouseCodec<"ZSTD(1)">;
+  /** Classification label */
+  label: string;
+  compressed: string & ClickHouseCodec<"LZ4">;
+}
+
+export const CommentCodecTable = new OlapTable<CommentCodecTestData>(
+  "CommentCodecTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
 // Note: S3Queue engine testing is more complex as it requires S3 configuration
 // and external dependencies, so it's not included in this basic engine test suite.
 // For S3Queue testing, see the dedicated S3 integration tests.
@@ -331,4 +353,5 @@ export const allEngineTestTables = [
   BufferDestinationTable,
   BufferTable,
   DefaultTable,
+  CommentCodecTable,
 ];

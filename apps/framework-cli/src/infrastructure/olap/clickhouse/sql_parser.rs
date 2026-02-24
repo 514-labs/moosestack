@@ -16,6 +16,59 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
 
+/// Returns byte ranges covering single-quoted string literals in `text`.
+///
+/// Each range spans from the opening `'` to (and including) the closing `'`.
+/// Escaped quotes (`\'`) inside a string are not treated as terminators.
+/// Correctly handles escaped backslashes (`\\'` ends the string).
+pub(crate) fn quoted_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\'' && !is_escaped(bytes, i) {
+            let start = i;
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\'' && !is_escaped(bytes, i) {
+                    break;
+                }
+                i += 1;
+            }
+            let end = if i < bytes.len() { i + 1 } else { bytes.len() };
+            ranges.push(start..end);
+        }
+        i += 1;
+    }
+    ranges
+}
+
+fn is_escaped(bytes: &[u8], pos: usize) -> bool {
+    let mut backslashes = 0usize;
+    let mut j = pos;
+    while j > 0 {
+        j -= 1;
+        if bytes[j] == b'\\' {
+            backslashes += 1;
+        } else {
+            break;
+        }
+    }
+    backslashes % 2 == 1
+}
+
+/// Returns the first regex match whose start position does not fall inside a
+/// single-quoted string literal.
+pub(crate) fn find_regex_outside_quotes<'a>(
+    text: &'a str,
+    pattern: &regex::Regex,
+) -> Option<regex::Match<'a>> {
+    let ranges = quoted_ranges(text);
+    pattern
+        .find_iter(text)
+        .find(|m| !ranges.iter().any(|r| r.contains(&m.start())))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedViewStatement {
     pub view_name: String,
@@ -100,7 +153,7 @@ pub fn extract_table_settings_from_create_table(
 ) -> Option<std::collections::HashMap<String, String>> {
     // Find the ENGINE keyword first to avoid matching "settings" in column names
     let sql_upper = sql.to_uppercase();
-    let engine_pos = sql_upper.find("ENGINE")?;
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start())?;
 
     // Search for SETTINGS only after the ENGINE clause
     let after_engine = &sql_upper[engine_pos..];
@@ -450,6 +503,9 @@ pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
     }
 }
 
+pub(crate) static RE_ENGINE_KEYWORD: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)\sENGINE\s*=").unwrap());
+
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
 // so we're stuck with this
@@ -458,7 +514,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     let upper = sql.to_uppercase();
     // Find opening '(' after CREATE TABLE ...
     let open_paren_pos = upper.find('(');
-    let engine_pos = upper.find("\nENGINE").or_else(|| upper.find(" ENGINE"));
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start());
     if open_paren_pos.is_none() || engine_pos.is_none() {
         return Ok(result);
     }
@@ -2066,6 +2122,28 @@ pub mod tests {
                     "123".to_string()
                 ],
                 granularity: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn test_extract_indexes_from_create_table_column_named_engine_with_comment() {
+        let sql = "CREATE TABLE default._moose_test_engine_col \
+            (`id` UInt64, `engine_type` String COMMENT 'the ENGINE = for this row', \
+            `engine_version` UInt32, \
+            INDEX idx1 engine_type TYPE bloom_filter GRANULARITY 3) \
+            ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192";
+
+        let indexes = extract_indexes_from_create_table(sql).unwrap();
+        assert_eq!(indexes.len(), 1);
+        assert_eq!(
+            indexes[0],
+            ClickHouseIndex {
+                name: "idx1".to_string(),
+                expression: "engine_type".to_string(),
+                index_type: "bloom_filter".to_string(),
+                arguments: vec![],
+                granularity: 3,
             }
         );
     }

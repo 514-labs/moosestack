@@ -481,6 +481,28 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       },
     ],
   },
+  // Comment + Codec combination test table
+  {
+    tableName: "CommentCodecTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      {
+        name: "data",
+        type: "String",
+        codec: "ZSTD(3)",
+        comment: "Raw data payload",
+      },
+      {
+        name: "metric",
+        type: "Float64",
+        codec: "ZSTD(1)",
+        comment: "Measurement value",
+      },
+      { name: "label", type: "String", comment: "Classification label" },
+      { name: "compressed", type: "String", codec: "LZ4" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -913,6 +935,28 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
           "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))",
         codec: "ZSTD(1)",
       },
+    ],
+  },
+  // Comment + Codec combination test table
+  {
+    tableName: "CommentCodecTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      {
+        name: "data",
+        type: "String",
+        codec: "ZSTD(3)",
+        comment: "Raw data payload",
+      },
+      {
+        name: "metric",
+        type: "Float64",
+        codec: "ZSTD(1)",
+        comment: "Measurement value",
+      },
+      { name: "label", type: "String", comment: "Classification label" },
+      { name: "compressed", type: "String", codec: "LZ4" },
     ],
   },
   // Extra fields test table (ENG-1617)

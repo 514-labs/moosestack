@@ -1001,31 +1001,7 @@ async fn execute_add_table_column(
         .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
-    // Include DEFAULT clause if column has a default value
-    let default_clause = clickhouse_column
-        .default
-        .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
-        .unwrap_or_default();
-
-    // Include MATERIALIZED clause if column has a materialized expression
-    let materialized_clause = clickhouse_column
-        .materialized
-        .as_ref()
-        .map(|m| format!(" MATERIALIZED {}", m))
-        .unwrap_or_default();
-
-    let codec_clause = clickhouse_column
-        .codec
-        .as_ref()
-        .map(|c| format!(" CODEC({})", c))
-        .unwrap_or_default();
-
-    let ttl_clause = clickhouse_column
-        .ttl
-        .as_ref()
-        .map(|t| format!(" TTL {}", t))
-        .unwrap_or_default();
+    let property_clauses = build_column_property_clauses(&clickhouse_column);
 
     let position_clause = match after_column {
         None => "FIRST".to_string(),
@@ -1033,16 +1009,13 @@ async fn execute_add_table_column(
     };
 
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}  {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
-        default_clause,
-        materialized_clause,
-        codec_clause,
-        ttl_clause,
+        property_clauses,
         position_clause
     );
     tracing::debug!("Adding column: {}", add_column_query);
@@ -1244,6 +1217,50 @@ async fn execute_modify_column_comment(
     Ok(())
 }
 
+/// Builds column property clauses in ClickHouse grammar order:
+/// DEFAULT/MATERIALIZED → COMMENT → CODEC → TTL
+///
+/// Used by ADD COLUMN and MODIFY COLUMN to ensure consistent clause ordering.
+fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
+    let default_clause = col
+        .default
+        .as_ref()
+        .map(|d| format!(" DEFAULT {}", d))
+        .unwrap_or_default();
+
+    let materialized_clause = col
+        .materialized
+        .as_ref()
+        .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
+    let comment_clause = col
+        .comment
+        .as_ref()
+        .map(|c| {
+            let escaped = c.replace('\\', "\\\\").replace('\'', "''");
+            format!(" COMMENT '{}'", escaped)
+        })
+        .unwrap_or_default();
+
+    let codec_clause = col
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
+        .unwrap_or_default();
+
+    let ttl_clause = col
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
+    format!(
+        "{}{}{}{}{}",
+        default_clause, materialized_clause, comment_clause, codec_clause, ttl_clause
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_modify_column_sql(
     db_name: &str,
@@ -1296,73 +1313,13 @@ fn build_modify_column_sql(
         ));
     }
 
-    // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
-    // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
-    // Default values from ClickHouse/Python are already properly formatted
-    // - String literals come with quotes: 'active'
-    // - SQL expressions come without quotes: xxHash64(_id), now(), today()
-    // - Numbers come without quotes: 42
-    // So we use them as-is without additional formatting
-    let default_clause = ch_col
-        .default
-        .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
-        .unwrap_or_default();
-
-    // MATERIALIZED clause: If omitted, ClickHouse KEEPS any existing MATERIALIZED
-    let materialized_clause = ch_col
-        .materialized
-        .as_ref()
-        .map(|m| format!(" MATERIALIZED {}", m))
-        .unwrap_or_default();
-
-    // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
-    // Therefore, TTL removal requires a separate REMOVE TTL statement
-    let ttl_clause = ch_col
-        .ttl
-        .as_ref()
-        .map(|t| format!(" TTL {}", t))
-        .unwrap_or_default();
-
-    // CODEC clause: If omitted, ClickHouse KEEPS any existing CODEC
-    // Therefore, CODEC removal requires a separate REMOVE CODEC statement
-    let codec_clause = ch_col
-        .codec
-        .as_ref()
-        .map(|c| format!(" CODEC({})", c))
-        .unwrap_or_default();
+    let property_clauses = build_column_property_clauses(ch_col);
 
     // Build the main MODIFY COLUMN statement
-    let main_sql = if let Some(ref comment) = ch_col.comment {
-        // Escape for ClickHouse SQL: backslashes first, then single quotes
-        let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
-        format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{} COMMENT '{}'",
-            db_name,
-            table_name,
-            cluster_clause,
-            ch_col.name,
-            column_type_string,
-            default_clause,
-            materialized_clause,
-            codec_clause,
-            ttl_clause,
-            escaped_comment
-        )
-    } else {
-        format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{}",
-            db_name,
-            table_name,
-            cluster_clause,
-            ch_col.name,
-            column_type_string,
-            default_clause,
-            materialized_clause,
-            codec_clause,
-            ttl_clause
-        )
-    };
+    let main_sql = format!(
+        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}",
+        db_name, table_name, cluster_clause, ch_col.name, column_type_string, property_clauses
+    );
     statements.push(main_sql);
 
     Ok(statements)
@@ -1824,13 +1781,21 @@ pub fn create_client(clickhouse_config: ClickHouseConfig) -> ConfiguredDBClient 
 /// let query = "SELECT 1";
 /// run_query(query, &client).await?;
 /// ```
+/// Builds a [`clickhouse::query::Query`] from a raw SQL string, escaping
+/// literal `?` characters so they are not interpreted as bind-parameter
+/// placeholders by the clickhouse crate (`?` → `??`).
+fn build_query(client: &Client, sql: &str) -> clickhouse::query::Query {
+    client.query(&sql.replace('?', "??"))
+}
+
 pub async fn run_query(
     query: &str,
     configured_client: &ConfiguredDBClient,
 ) -> Result<(), clickhouse::error::Error> {
     debug!("Running query: {:?}", query);
-    let client = &configured_client.client;
-    client.query(query).execute().await
+    build_query(&configured_client.client, query)
+        .execute()
+        .await
 }
 
 /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
@@ -2850,10 +2815,12 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     // Find the main ORDER BY clause (not ones inside projections)
     // We need to search for ORDER BY that comes after the ENGINE clause
     let upper = create_query.to_uppercase();
-    let engine_pos = upper.find("ENGINE").unwrap_or_else(|| {
-        debug!("No ENGINE clause found");
-        0
-    });
+    let engine_pos = find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD)
+        .map(|m| m.start())
+        .unwrap_or_else(|| {
+            debug!("No ENGINE clause found");
+            0
+        });
 
     // Search for ORDER BY only in the part after ENGINE
     let after_engine = &create_query[engine_pos..];
@@ -2924,7 +2891,8 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
 pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String> {
     let upper = create_query.to_uppercase();
     // Start scanning after ENGINE clause (table-level TTL appears after ORDER BY)
-    let engine_pos = upper.find("ENGINE")?;
+    let engine_pos =
+        find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD).map(|m| m.start())?;
     let tail = &create_query[engine_pos..];
     let tail_upper = &upper[engine_pos..];
     // Find " TTL " in the tail
@@ -3017,6 +2985,8 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
     delete_pattern.replace(&normalized, "").to_string()
 }
 
+use sql_parser::{find_regex_outside_quotes, RE_ENGINE_KEYWORD};
+
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
 /// Returns a map of column name to TTL expression (without leading 'TTL').
 pub fn extract_column_ttls_from_create_query(
@@ -3025,10 +2995,8 @@ pub fn extract_column_ttls_from_create_query(
     let upper = create_query.to_uppercase();
     // Columns section is between the first '(' after CREATE TABLE and the closing ')' before ENGINE
     let open_paren = upper.find('(')?;
-    let engine_pos = upper
-        .find("\nENGINE")
-        .or_else(|| upper.find("\r\nENGINE"))
-        .or_else(|| upper.rfind("ENGINE"))?;
+    let engine_pos =
+        find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD).map(|m| m.start())?;
     if engine_pos <= open_paren {
         return None;
     }
@@ -3084,18 +3052,19 @@ pub fn extract_column_ttls_from_create_query(
         };
         let col_name = &line_trim[first_bt + 1..second_bt];
 
-        // Find TTL clause within this column definition
-        let upper_line = line_trim.to_uppercase();
-        if let Some(idx) = upper_line.find(" TTL ") {
-            let after = &line_trim[idx + 5..];
-            let after_upper = after.to_uppercase();
+        // Find TTL clause within this column definition, ignoring
+        // occurrences of " TTL " inside single-quoted COMMENT strings.
+        static RE_TTL: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"(?i) TTL ").unwrap());
+        static RE_DEFAULT_OR_COMMENT: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"(?i) (?:DEFAULT\s|COMMENT\s*')").unwrap());
+
+        if let Some(m) = find_regex_outside_quotes(line_trim, &RE_TTL) {
+            let after = &line_trim[m.end()..];
             let mut cut = after.len();
 
-            // Check for keywords that end the TTL expression
-            for kw in [" DEFAULT", " COMMENT"] {
-                if let Some(pos) = after_upper.find(kw) {
-                    cut = cut.min(pos);
-                }
+            if let Some(m2) = find_regex_outside_quotes(after, &RE_DEFAULT_OR_COMMENT) {
+                cut = cut.min(m2.start());
             }
 
             // Find the closing parenthesis at depth 0 (the one that ends the column list)
@@ -3918,6 +3887,57 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_extract_column_ttls_ignores_ttl_inside_comment() {
+        let query = concat!(
+            "CREATE TABLE local.dns (`timestamp` DateTime, ",
+            "`answer_values` Array(String) COMMENT 'Query answer values. ",
+            "The encoding of the nth element in the array can be determined by referring ",
+            "to the nth element in the answer_encodings field. The associated DNS record ",
+            "type and TTL can be determined by referring to the nth element in the answer_types ",
+            "and answer_ttls fields, respectively') ",
+            "ENGINE = MergeTree ORDER BY tuple()"
+        );
+        let map = extract_column_ttls_from_create_query(query);
+        assert!(map.is_none(), "TTL inside a COMMENT string must be ignored");
+    }
+
+    #[test]
+    fn test_extract_column_ttls_real_ttl_with_comment_mentioning_ttl() {
+        let query = concat!(
+            "CREATE TABLE local.dns (`timestamp` DateTime, ",
+            "`x` UInt32 COMMENT 'TTL is not here' TTL timestamp + toIntervalDay(1)) ",
+            "ENGINE = MergeTree ORDER BY tuple()"
+        );
+        let map = extract_column_ttls_from_create_query(query).expect("expected TTL for x");
+        assert_eq!(
+            map.get("x"),
+            Some(&"timestamp + toIntervalDay(1)".to_string())
+        );
+        assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_find_regex_outside_quotes() {
+        let re = regex::Regex::new(r"(?i) TTL ").unwrap();
+        assert_eq!(
+            find_regex_outside_quotes("foo TTL bar", &re).map(|m| m.start()),
+            Some(3)
+        );
+        assert_eq!(
+            find_regex_outside_quotes("foo 'has TTL inside' TTL bar", &re).map(|m| m.start()),
+            Some(20)
+        );
+        assert_eq!(
+            find_regex_outside_quotes("foo 'TTL everywhere TTL' end", &re).map(|m| m.start()),
+            None
+        );
+        assert_eq!(
+            find_regex_outside_quotes("no match here", &re).map(|m| m.start()),
+            None
+        );
+    }
+
+    #[test]
     fn test_extract_column_ttls_from_create_query_nested_objects() {
         // Test with deeply nested structure - should not find TTLs since none are present
         let map = extract_column_ttls_from_create_query(NESTED_OBJECTS_SQL);
@@ -4462,5 +4482,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         // Test the specific case from the MaterializedView test
         assert_eq!(strip_backticks("`target`"), "target");
+    }
+
+    #[test]
+    fn test_build_query_displays_literal_question_marks() {
+        let client = clickhouse::Client::default();
+
+        let sql = "SELECT * FROM t WHERE name = 'what?'";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "`??` in the template should display as a literal `?`"
+        );
+
+        let sql = "SELECT a, b FROM t WHERE a LIKE '%?%' AND b = '??'";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "multiple `??` should each display as literal `?`"
+        );
+
+        let sql = "SELECT 1 FROM t";
+        let q = build_query(&client, sql);
+        assert_eq!(
+            q.sql_display().to_string(),
+            sql,
+            "query without `?` should be unchanged"
+        );
     }
 }
