@@ -558,6 +558,8 @@ fn extract_section(content: &str, anchor: &str) -> Option<String> {
             (3u8, t)
         } else if let Some(t) = trimmed.strip_prefix("## ") {
             (2u8, t)
+        } else if let Some(t) = trimmed.strip_prefix("# ") {
+            (1u8, t)
         } else {
             continue;
         };
