@@ -1656,8 +1656,9 @@ async fn browse_guide_page(
 
     let content = fetch_page_content(slug, lang).await?;
     let headings = parse_page_headings(&content);
+    let section_headings: Vec<&PageHeading> = headings.iter().filter(|h| h.level >= 2).collect();
 
-    if headings.is_empty() || !std::io::stdout().is_terminal() {
+    if section_headings.is_empty() || !std::io::stdout().is_terminal() {
         return if web {
             open_in_browser(slug)
         } else {
@@ -1677,7 +1678,6 @@ async fn browse_guide_page(
         };
     }
 
-    let section_headings: Vec<&PageHeading> = headings.iter().filter(|h| h.level >= 2).collect();
     let items = guide_section_items(&headings);
     match run_picker(&items, slug_display)? {
         PickerResult::Selected(0) => {
