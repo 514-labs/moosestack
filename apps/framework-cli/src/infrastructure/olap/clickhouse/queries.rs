@@ -7,6 +7,7 @@ use tracing::info;
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;
 use crate::framework::core::infrastructure::table::{EnumValue, OrderBy};
+use crate::infrastructure::olap::clickhouse::build_column_property_clauses;
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, AggregationFunction, ClickHouseColumnType, ClickHouseFloat,
     ClickHouseInt, ClickHouseTable,
@@ -124,7 +125,7 @@ static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
 ON CLUSTER `{{cluster_name}}`{{/if}}
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_materialized}} MATERIALIZED {{{field_materialized}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_codec}} CODEC({{{field_codec}}}){{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
@@ -3769,33 +3770,11 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
         .iter()
         .map(|column| {
             let field_type = basic_field_type_to_string(&column.column_type)?;
-
-            // Escape for ClickHouse SQL string literals:
-            // 1. First escape backslashes (\ → \\) to preserve them
-            // 2. Then escape single quotes (' → '') for SQL safety
-            let escaped_comment = column
-                .comment
-                .as_ref()
-                .map(|c| c.replace('\\', "\\\\").replace('\'', "''"));
-
-            let field_ttl = column.ttl.as_ref();
-            let field_codec = column.codec.as_ref();
-            let field_materialized = column.materialized.as_ref();
-
-            // Default values from ClickHouse/Python are already properly formatted
-            // - String literals come with quotes: 'active'
-            // - SQL expressions come without quotes: xxHash64(_id), now(), today()
-            // - Numbers come without quotes: 42
-            // So we use them as-is without additional formatting
-            let formatted_default = column.default.as_ref();
+            let field_properties = build_column_property_clauses(column);
 
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
-                "field_ttl": field_ttl,
-                "field_codec": field_codec,
-                "field_materialized": field_materialized,
-                "field_default": formatted_default,
                 "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
                     // if type is Nullable, do not add extra specifier
                     "".to_string()
@@ -3805,7 +3784,7 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
                 } else {
                     "NULL".to_string()
                 },
-                "field_comment": escaped_comment,
+                "field_properties": field_properties,
             }))
         })
         .collect::<Result<Vec<Value>, ClickhouseError>>()
