@@ -397,6 +397,10 @@ struct PartialIngestApi {
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
     #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
+    #[serde(default)]
     pub dead_letter_queue: Option<String>,
     /// Optional custom path for the ingestion endpoint.
     /// If not specified, defaults to "ingest/{name}/{version}"
@@ -1175,8 +1179,8 @@ impl PartialInfrastructureMap {
                     primitive_type: PrimitiveTypes::DataModel,
                 },
                 metadata: partial_api.metadata.clone(),
-                pulls_data_from: vec![],
-                pushes_data_to: vec![],
+                pulls_data_from: partial_api.pulls_data_from.clone(),
+                pushes_data_to: partial_api.pushes_data_to.clone(),
             };
 
             api_endpoints.insert(api_endpoint.id(), api_endpoint);
@@ -1519,11 +1523,14 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::topic::Topic;
     use crate::framework::core::infrastructure::{DataLineage, InfrastructureSignature};
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::languages::SupportedLanguages;
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::Path;
+    use std::time::Duration;
 
     #[test]
     fn deserializes_workflow_lineage_from_camel_case_fields() {
@@ -1588,9 +1595,79 @@ mod tests {
         );
         assert_eq!(
             api.pushes_data_to("default"),
-            [InfrastructureSignature::Topic {
-                id: "OrdersEvents".to_string(),
+            [
+                InfrastructureSignature::Topic {
+                    id: "OrdersStream".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "OrdersEvents".to_string(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn deserializes_ingest_api_lineage_from_camel_case_fields() {
+        let payload = json!({
+            "ingestApis": {
+                "lineageIngestApi": {
+                    "name": "lineageIngestApi",
+                    "columns": [],
+                    "writeTo": {
+                        "kind": "stream",
+                        "name": "OrdersStream"
+                    },
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders" }],
+                    "pushesDataTo": [{ "kind": "Topic", "id": "OrdersEvents" }]
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+
+        let mut topics = HashMap::new();
+        topics.insert(
+            "OrdersStream".to_string(),
+            Topic {
+                version: None,
+                name: "OrdersStream".to_string(),
+                retention_period: Duration::from_secs(60),
+                partition_count: 1,
+                max_message_bytes: 1024 * 1024,
+                columns: vec![],
+                source_primitive: PrimitiveSignature {
+                    name: "OrdersStream".to_string(),
+                    primitive_type: PrimitiveTypes::DataModel,
+                },
+                metadata: None,
+                life_cycle: LifeCycle::FullyManaged,
+                schema_config: None,
+            },
+        );
+
+        let apis = partial.convert_api_endpoints(Path::new("app/index.ts"), &topics);
+        let api = apis
+            .values()
+            .find(|api| api.name == "lineageIngestApi")
+            .expect("ingest api should be converted");
+
+        assert_eq!(
+            api.pulls_data_from("default"),
+            [InfrastructureSignature::Table {
+                id: "Orders".to_string(),
             }]
+        );
+        assert_eq!(
+            api.pushes_data_to("default"),
+            [
+                InfrastructureSignature::Topic {
+                    id: "OrdersStream".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "OrdersEvents".to_string(),
+                }
+            ]
         );
     }
 
