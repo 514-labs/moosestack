@@ -1,0 +1,19 @@
+### Initialize Moose in your monorepo
+
+From your monorepo, `cd` to the directory where you want the Moose project folder to be created (commonly your repo root so this becomes `./moose`), then run:
+
+```bash title="Terminal" copy
+cd <path-in-your-monorepo>
+moose init moose typescript-empty
+```
+
+Then install dependencies from your monorepo root:
+
+```bash title="Terminal" copy
+cd <your-monorepo-root>
+pnpm install
+```
+
+<Callout type="info" title="Use generated config as-is">
+`moose init` creates `moose/package.json` and `moose/tsconfig.json` with the required compiler output settings. You do not need extra manual compilation wiring.
+</Callout>

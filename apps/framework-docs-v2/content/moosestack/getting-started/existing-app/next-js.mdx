@@ -24,7 +24,7 @@ Only your Next.js app runs in production. MooseStack is used as a library + CLI 
 
 - **[Get started](#get-started):** add `moose/` as a sibling workspace and configure dependencies + env vars.
 - **[Model table](#model-table):** define a table model (for example, `Events`) in `moose/app/models.ts`.
-- **[Start local ClickHouse](#start-local-clickhouse):** run `pnpm -C moose run dev`.
+- **[Start local ClickHouse](#start-local-clickhouse):** run `moose dev`.
 - **[Use in Next.js](#use-in-nextjs):** define a client + query helper in `moose/`, then call it from a Server Component or Server Action.
 - **[Deploy to production](#deploy-to-production):** generate/apply migrations and set production env vars.
 
@@ -108,25 +108,7 @@ If you're applying this to an existing repo with a different layout, keep the **
 
 This section creates a **`moose/` workspace package** next to your Next.js app using `moose init`.
 
-### Initialize Moose in your monorepo
-
-From your monorepo, `cd` to the directory where you want the Moose project folder to be created (commonly your repo root so this becomes `./moose`), then run:
-
-```bash title="Terminal" copy
-cd <path-in-your-monorepo>
-moose init moose typescript-empty
-```
-
-Then install dependencies from your monorepo root:
-
-```bash title="Terminal" copy
-cd <your-monorepo-root>
-pnpm install
-```
-
-<Callout type="info" title="Use generated config as-is">
-`moose init` creates `moose/package.json` and `moose/tsconfig.json` with the required compiler output settings. You do not need extra manual compilation wiring.
-</Callout>
+:::include /shared/existing-app/moose-init-workspace.mdx
 
 #### Add your moose workspace as a dependency
 
@@ -371,7 +353,7 @@ If you see import errors for `import ... from "moose"`, confirm:
 
 - Your root `pnpm-workspace.yaml` includes both your Next.js app and the `moose` workspace
 - You ran `pnpm install` so `workspace:*` links are created
-- `pnpm -C moose run dev` is running and TypeScript compilation completed successfully
+- `moose dev` is running and TypeScript compilation completed successfully
 - If your `moose` package uses a custom `outDir`, verify `moose/package.json` (`main`, `types`, `exports`) points to that output
 
 **Native module errors (NODE_MODULE_VERSION)**
