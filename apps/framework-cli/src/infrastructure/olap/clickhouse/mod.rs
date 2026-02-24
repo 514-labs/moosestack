@@ -1015,6 +1015,15 @@ async fn execute_add_table_column(
         .map(|m| format!(" MATERIALIZED {}", m))
         .unwrap_or_default();
 
+    let comment_clause = clickhouse_column
+        .comment
+        .as_ref()
+        .map(|c| {
+            let escaped = c.replace('\\', "\\\\").replace('\'', "''");
+            format!(" COMMENT '{}'", escaped)
+        })
+        .unwrap_or_default();
+
     let codec_clause = clickhouse_column
         .codec
         .as_ref()
@@ -1033,7 +1042,7 @@ async fn execute_add_table_column(
     };
 
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}  {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}{}  {}",
         db_name,
         table_name,
         cluster_clause,
@@ -1041,6 +1050,7 @@ async fn execute_add_table_column(
         column_type_string,
         default_clause,
         materialized_clause,
+        comment_clause,
         codec_clause,
         ttl_clause,
         position_clause
