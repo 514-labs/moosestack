@@ -1,6 +1,6 @@
 use super::InfrastructureSignature;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WebApp {
@@ -118,8 +118,8 @@ pub fn diff_web_apps(
 struct WebAppComparableForDiff<'a> {
     name: &'a str,
     mount_path: &'a str,
-    pulls_data_from: &'a [InfrastructureSignature],
-    pushes_data_to: &'a [InfrastructureSignature],
+    pulls_data_from: HashSet<&'a InfrastructureSignature>,
+    pushes_data_to: HashSet<&'a InfrastructureSignature>,
 }
 
 impl<'a> From<&'a WebApp> for WebAppComparableForDiff<'a> {
@@ -127,8 +127,8 @@ impl<'a> From<&'a WebApp> for WebAppComparableForDiff<'a> {
         Self {
             name: web_app.name.as_str(),
             mount_path: web_app.mount_path.as_str(),
-            pulls_data_from: web_app.pulls_data_from.as_slice(),
-            pushes_data_to: web_app.pushes_data_to.as_slice(),
+            pulls_data_from: web_app.pulls_data_from.iter().collect(),
+            pushes_data_to: web_app.pushes_data_to.iter().collect(),
         }
     }
 }
@@ -204,6 +204,47 @@ mod tests {
             updated.len(),
             1,
             "Lineage changes should produce a WebApp update"
+        );
+    }
+
+    #[test]
+    fn diff_ignores_lineage_order() {
+        let base = WebApp {
+            name: "lineageWebApp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: None,
+            pulls_data_from: vec![
+                InfrastructureSignature::Table {
+                    id: "Orders".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "OrdersTopic".to_string(),
+                },
+            ],
+            pushes_data_to: vec![
+                InfrastructureSignature::Topic {
+                    id: "OrdersEvents".to_string(),
+                },
+                InfrastructureSignature::ApiEndpoint {
+                    id: "WebhookSink".to_string(),
+                },
+            ],
+        };
+
+        let mut current = HashMap::new();
+        current.insert(base.name.clone(), base.clone());
+
+        let mut reordered = base.clone();
+        reordered.pulls_data_from.reverse();
+        reordered.pushes_data_to.reverse();
+
+        let mut target = HashMap::new();
+        target.insert(reordered.name.clone(), reordered);
+
+        let (_, _, updated) = diff_web_apps(&current, &target);
+        assert!(
+            updated.is_empty(),
+            "Reordered lineage should not produce a WebApp update"
         );
     }
 }

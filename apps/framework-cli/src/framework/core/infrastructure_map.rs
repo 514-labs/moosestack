@@ -68,7 +68,7 @@ use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
 use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs, mem};
 
@@ -3573,8 +3573,8 @@ struct ApiEndpointComparableForDiff<'a> {
     method: &'a Method,
     version: Option<&'a Version>,
     source_primitive: &'a PrimitiveSignature,
-    pulls_data_from: &'a [InfrastructureSignature],
-    pushes_data_to: &'a [InfrastructureSignature],
+    pulls_data_from: HashSet<&'a InfrastructureSignature>,
+    pushes_data_to: HashSet<&'a InfrastructureSignature>,
 }
 
 impl<'a> From<&'a ApiEndpoint> for ApiEndpointComparableForDiff<'a> {
@@ -3586,8 +3586,8 @@ impl<'a> From<&'a ApiEndpoint> for ApiEndpointComparableForDiff<'a> {
             method: &api_endpoint.method,
             version: api_endpoint.version.as_ref(),
             source_primitive: &api_endpoint.source_primitive,
-            pulls_data_from: api_endpoint.pulls_data_from.as_slice(),
-            pushes_data_to: api_endpoint.pushes_data_to.as_slice(),
+            pulls_data_from: api_endpoint.pulls_data_from.iter().collect(),
+            pushes_data_to: api_endpoint.pushes_data_to.iter().collect(),
         }
     }
 }
@@ -8334,6 +8334,36 @@ mod lineage_diff_equality_tests {
     }
 
     #[test]
+    fn api_endpoint_equality_ignores_lineage_order() {
+        let mut base = test_api_endpoint();
+        base.pulls_data_from = vec![
+            InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            },
+            InfrastructureSignature::Topic {
+                id: "OrdersTopic".to_string(),
+            },
+        ];
+        base.pushes_data_to = vec![
+            InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            },
+            InfrastructureSignature::ApiEndpoint {
+                id: "AnalyticsSink".to_string(),
+            },
+        ];
+
+        let mut reordered = base.clone();
+        reordered.pulls_data_from.reverse();
+        reordered.pushes_data_to.reverse();
+
+        assert!(
+            api_endpoints_equal_ignore_metadata(&base, &reordered),
+            "Lineage ordering should not affect API endpoint diff equality"
+        );
+    }
+
+    #[test]
     fn web_app_equality_ignores_metadata_but_tracks_lineage() {
         let base = test_web_app();
 
@@ -8355,6 +8385,36 @@ mod lineage_diff_equality_tests {
         assert!(
             !web_apps_equal_ignore_metadata(&base, &lineage_changed),
             "Lineage changes should be treated as WebApp updates"
+        );
+    }
+
+    #[test]
+    fn web_app_equality_ignores_lineage_order() {
+        let mut base = test_web_app();
+        base.pulls_data_from = vec![
+            InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            },
+            InfrastructureSignature::Topic {
+                id: "OrdersTopic".to_string(),
+            },
+        ];
+        base.pushes_data_to = vec![
+            InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            },
+            InfrastructureSignature::ApiEndpoint {
+                id: "WebhookSink".to_string(),
+            },
+        ];
+
+        let mut reordered = base.clone();
+        reordered.pulls_data_from.reverse();
+        reordered.pushes_data_to.reverse();
+
+        assert!(
+            web_apps_equal_ignore_metadata(&base, &reordered),
+            "Lineage ordering should not affect WebApp diff equality"
         );
     }
 }
