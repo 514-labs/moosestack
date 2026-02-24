@@ -2815,10 +2815,12 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     // Find the main ORDER BY clause (not ones inside projections)
     // We need to search for ORDER BY that comes after the ENGINE clause
     let upper = create_query.to_uppercase();
-    let engine_pos = upper.find("ENGINE").unwrap_or_else(|| {
-        debug!("No ENGINE clause found");
-        0
-    });
+    let engine_pos = find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD)
+        .map(|m| m.start())
+        .unwrap_or_else(|| {
+            debug!("No ENGINE clause found");
+            0
+        });
 
     // Search for ORDER BY only in the part after ENGINE
     let after_engine = &create_query[engine_pos..];
@@ -2889,7 +2891,8 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
 pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String> {
     let upper = create_query.to_uppercase();
     // Start scanning after ENGINE clause (table-level TTL appears after ORDER BY)
-    let engine_pos = upper.find("ENGINE")?;
+    let engine_pos =
+        find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD).map(|m| m.start())?;
     let tail = &create_query[engine_pos..];
     let tail_upper = &upper[engine_pos..];
     // Find " TTL " in the tail
@@ -2982,32 +2985,7 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
     delete_pattern.replace(&normalized, "").to_string()
 }
 
-/// Find the first byte offset of `keyword_upper` (an ASCII, UPPER-CASE needle)
-/// in `text` using case-insensitive matching, skipping any region enclosed in
-/// single quotes so that keywords inside COMMENT strings are ignored.
-fn find_keyword_outside_quotes(text: &str, keyword_upper: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let kw = keyword_upper.as_bytes();
-    let kw_len = kw.len();
-
-    let mut in_string = false;
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\'' && (i == 0 || bytes[i - 1] != b'\\') {
-            in_string = !in_string;
-        } else if !in_string
-            && i + kw_len <= bytes.len()
-            && bytes[i..i + kw_len]
-                .iter()
-                .zip(kw.iter())
-                .all(|(a, b)| a.to_ascii_uppercase() == *b)
-        {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
-}
+use sql_parser::{find_regex_outside_quotes, RE_ENGINE_KEYWORD};
 
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
 /// Returns a map of column name to TTL expression (without leading 'TTL').
@@ -3017,10 +2995,8 @@ pub fn extract_column_ttls_from_create_query(
     let upper = create_query.to_uppercase();
     // Columns section is between the first '(' after CREATE TABLE and the closing ')' before ENGINE
     let open_paren = upper.find('(')?;
-    let engine_pos = upper
-        .find("\nENGINE")
-        .or_else(|| upper.find("\r\nENGINE"))
-        .or_else(|| upper.rfind("ENGINE"))?;
+    let engine_pos =
+        find_regex_outside_quotes(create_query, &RE_ENGINE_KEYWORD).map(|m| m.start())?;
     if engine_pos <= open_paren {
         return None;
     }
@@ -3078,14 +3054,17 @@ pub fn extract_column_ttls_from_create_query(
 
         // Find TTL clause within this column definition, ignoring
         // occurrences of " TTL " inside single-quoted COMMENT strings.
-        if let Some(idx) = find_keyword_outside_quotes(line_trim, " TTL ") {
-            let after = &line_trim[idx + 5..];
+        static RE_TTL: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"(?i) TTL ").unwrap());
+        static RE_DEFAULT_OR_COMMENT: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"(?i) (?:DEFAULT\s|COMMENT\s*')").unwrap());
+
+        if let Some(m) = find_regex_outside_quotes(line_trim, &RE_TTL) {
+            let after = &line_trim[m.end()..];
             let mut cut = after.len();
 
-            for kw in [" DEFAULT", " COMMENT"] {
-                if let Some(pos) = find_keyword_outside_quotes(after, kw) {
-                    cut = cut.min(pos);
-                }
+            if let Some(m2) = find_regex_outside_quotes(after, &RE_DEFAULT_OR_COMMENT) {
+                cut = cut.min(m2.start());
             }
 
             // Find the closing parenthesis at depth 0 (the one that ends the column list)
@@ -3938,17 +3917,24 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
-    fn test_find_keyword_outside_quotes() {
-        assert_eq!(find_keyword_outside_quotes("foo TTL bar", " TTL "), Some(3));
+    fn test_find_regex_outside_quotes() {
+        let re = regex::Regex::new(r"(?i) TTL ").unwrap();
         assert_eq!(
-            find_keyword_outside_quotes("foo 'has TTL inside' TTL bar", " TTL "),
+            find_regex_outside_quotes("foo TTL bar", &re).map(|m| m.start()),
+            Some(3)
+        );
+        assert_eq!(
+            find_regex_outside_quotes("foo 'has TTL inside' TTL bar", &re).map(|m| m.start()),
             Some(20)
         );
         assert_eq!(
-            find_keyword_outside_quotes("foo 'TTL everywhere TTL' end", " TTL "),
+            find_regex_outside_quotes("foo 'TTL everywhere TTL' end", &re).map(|m| m.start()),
             None
         );
-        assert_eq!(find_keyword_outside_quotes("no match here", " TTL "), None);
+        assert_eq!(
+            find_regex_outside_quotes("no match here", &re).map(|m| m.start()),
+            None
+        );
     }
 
     #[test]
