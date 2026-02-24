@@ -2982,6 +2982,33 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
     delete_pattern.replace(&normalized, "").to_string()
 }
 
+/// Find the first byte offset of `keyword_upper` (an ASCII, UPPER-CASE needle)
+/// in `text` using case-insensitive matching, skipping any region enclosed in
+/// single quotes so that keywords inside COMMENT strings are ignored.
+fn find_keyword_outside_quotes(text: &str, keyword_upper: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let kw = keyword_upper.as_bytes();
+    let kw_len = kw.len();
+
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\'' && (i == 0 || bytes[i - 1] != b'\\') {
+            in_string = !in_string;
+        } else if !in_string
+            && i + kw_len <= bytes.len()
+            && bytes[i..i + kw_len]
+                .iter()
+                .zip(kw.iter())
+                .all(|(a, b)| a.to_ascii_uppercase() == *b)
+        {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
 /// Returns a map of column name to TTL expression (without leading 'TTL').
 pub fn extract_column_ttls_from_create_query(
@@ -3049,16 +3076,14 @@ pub fn extract_column_ttls_from_create_query(
         };
         let col_name = &line_trim[first_bt + 1..second_bt];
 
-        // Find TTL clause within this column definition
-        let upper_line = line_trim.to_uppercase();
-        if let Some(idx) = upper_line.find(" TTL ") {
+        // Find TTL clause within this column definition, ignoring
+        // occurrences of " TTL " inside single-quoted COMMENT strings.
+        if let Some(idx) = find_keyword_outside_quotes(line_trim, " TTL ") {
             let after = &line_trim[idx + 5..];
-            let after_upper = after.to_uppercase();
             let mut cut = after.len();
 
-            // Check for keywords that end the TTL expression
             for kw in [" DEFAULT", " COMMENT"] {
-                if let Some(pos) = after_upper.find(kw) {
+                if let Some(pos) = find_keyword_outside_quotes(after, kw) {
                     cut = cut.min(pos);
                 }
             }
@@ -3880,6 +3905,50 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         );
         assert!(!map.contains_key("z"));
         assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_extract_column_ttls_ignores_ttl_inside_comment() {
+        let query = concat!(
+            "CREATE TABLE local.dns (`timestamp` DateTime, ",
+            "`answer_values` Array(String) COMMENT 'Query answer values. ",
+            "The encoding of the nth element in the array can be determined by referring ",
+            "to the nth element in the answer_encodings field. The associated DNS record ",
+            "type and TTL can be determined by referring to the nth element in the answer_types ",
+            "and answer_ttls fields, respectively') ",
+            "ENGINE = MergeTree ORDER BY tuple()"
+        );
+        let map = extract_column_ttls_from_create_query(query);
+        assert!(map.is_none(), "TTL inside a COMMENT string must be ignored");
+    }
+
+    #[test]
+    fn test_extract_column_ttls_real_ttl_with_comment_mentioning_ttl() {
+        let query = concat!(
+            "CREATE TABLE local.dns (`timestamp` DateTime, ",
+            "`x` UInt32 COMMENT 'TTL is not here' TTL timestamp + toIntervalDay(1)) ",
+            "ENGINE = MergeTree ORDER BY tuple()"
+        );
+        let map = extract_column_ttls_from_create_query(query).expect("expected TTL for x");
+        assert_eq!(
+            map.get("x"),
+            Some(&"timestamp + toIntervalDay(1)".to_string())
+        );
+        assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_find_keyword_outside_quotes() {
+        assert_eq!(find_keyword_outside_quotes("foo TTL bar", " TTL "), Some(3));
+        assert_eq!(
+            find_keyword_outside_quotes("foo 'has TTL inside' TTL bar", " TTL "),
+            Some(20)
+        );
+        assert_eq!(
+            find_keyword_outside_quotes("foo 'TTL everywhere TTL' end", " TTL "),
+            None
+        );
+        assert_eq!(find_keyword_outside_quotes("no match here", " TTL "), None);
     }
 
     #[test]
