@@ -291,7 +291,27 @@ async function setupPythonProjectWithLatestPypi(
           );
           return;
         }
-        resolve();
+
+        // TODO(sqlglotc): Remove once published moose-lib no longer depends on sqlglot[rs].
+        // The published moose-lib transitively installs sqlglotrs, which emits a
+        // deprecation warning to stderr on import. The old (published) CLI treats
+        // any stderr as a fatal error, so we remove the package after install.
+        const pipPath =
+          process.platform === "win32" ?
+            ".venv\\Scripts\\pip"
+          : ".venv/bin/pip";
+        const uninstallCmd = spawn(pipPath, ["uninstall", "-y", "sqlglotrs"], {
+          stdio: "inherit",
+          cwd: projectDir,
+        });
+        uninstallCmd.on("close", (uninstallCode) => {
+          if (uninstallCode !== 0) {
+            testLogger.warn(
+              `sqlglotrs uninstall exited with code ${uninstallCode} (may not have been installed)`,
+            );
+          }
+          resolve();
+        });
       });
     });
   });
