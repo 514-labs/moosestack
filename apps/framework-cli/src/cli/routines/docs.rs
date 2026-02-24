@@ -817,6 +817,7 @@ pub async fn fetch_page(
                 let headings = parse_page_headings(&content);
                 let available: Vec<String> = headings
                     .iter()
+                    .filter(|h| h.level >= 2)
                     .map(|h| {
                         let indent = if h.level == 3 { "    " } else { "  " };
                         format!("{}{} ({})", indent, h.title, h.anchor)
@@ -1436,7 +1437,7 @@ fn guide_section_items(headings: &[PageHeading]) -> Vec<PickerItem> {
         title: "Full page".to_string(),
         detail: "view entire guide".to_string(),
     }];
-    for h in headings {
+    for h in headings.iter().filter(|h| h.level >= 2) {
         let indent = if h.level == 3 { "  " } else { "" };
         items.push(PickerItem {
             title: format!("{}{}", indent, h.title),
