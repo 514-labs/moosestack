@@ -1701,7 +1701,7 @@ pub async fn top_command_handler(
                     routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
                 }
                 Some(DocsCommands::Search { query }) => {
-                    routines::docs::search_toc(query, docs_args.raw).await
+                    routines::docs::search_toc(query, docs_args.raw, lang).await
                 }
                 None if docs_args.slug.is_none() => {
                     routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await
