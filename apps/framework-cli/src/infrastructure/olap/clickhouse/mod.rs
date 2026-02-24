@@ -1332,37 +1332,28 @@ fn build_modify_column_sql(
         .map(|c| format!(" CODEC({})", c))
         .unwrap_or_default();
 
-    // Build the main MODIFY COLUMN statement
-    let main_sql = if let Some(ref comment) = ch_col.comment {
-        // Escape for ClickHouse SQL: backslashes first, then single quotes
+    // Build the COMMENT clause (must come before CODEC in ClickHouse column grammar)
+    let comment_clause = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
-        format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{} COMMENT '{}'",
-            db_name,
-            table_name,
-            cluster_clause,
-            ch_col.name,
-            column_type_string,
-            default_clause,
-            materialized_clause,
-            codec_clause,
-            ttl_clause,
-            escaped_comment
-        )
+        format!(" COMMENT '{}'", escaped_comment)
     } else {
-        format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{}",
-            db_name,
-            table_name,
-            cluster_clause,
-            ch_col.name,
-            column_type_string,
-            default_clause,
-            materialized_clause,
-            codec_clause,
-            ttl_clause
-        )
+        String::new()
     };
+
+    // Build the main MODIFY COLUMN statement
+    let main_sql = format!(
+        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{}{}",
+        db_name,
+        table_name,
+        cluster_clause,
+        ch_col.name,
+        column_type_string,
+        default_clause,
+        materialized_clause,
+        comment_clause,
+        codec_clause,
+        ttl_clause
+    );
     statements.push(main_sql);
 
     Ok(statements)
