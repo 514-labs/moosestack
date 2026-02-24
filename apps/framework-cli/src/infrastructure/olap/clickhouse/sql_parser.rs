@@ -20,22 +20,21 @@ use std::sync::LazyLock;
 ///
 /// Each range spans from the opening `'` to (and including) the closing `'`.
 /// Escaped quotes (`\'`) inside a string are not treated as terminators.
-
+/// Correctly handles escaped backslashes (`\\'` ends the string).
 pub(crate) fn quoted_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
     let mut ranges = Vec::new();
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'\'' && (i == 0 || bytes[i - 1] != b'\\') {
+        if bytes[i] == b'\'' && !is_escaped(bytes, i) {
             let start = i;
             i += 1;
             while i < bytes.len() {
-                if bytes[i] == b'\'' && bytes[i - 1] != b'\\' {
+                if bytes[i] == b'\'' && !is_escaped(bytes, i) {
                     break;
                 }
                 i += 1;
             }
-            // If we found a closing quote, include it; otherwise go to end of string
             let end = if i < bytes.len() { i + 1 } else { bytes.len() };
             ranges.push(start..end);
         }
@@ -44,6 +43,19 @@ pub(crate) fn quoted_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
     ranges
 }
 
+fn is_escaped(bytes: &[u8], pos: usize) -> bool {
+    let mut backslashes = 0usize;
+    let mut j = pos;
+    while j > 0 {
+        j -= 1;
+        if bytes[j] == b'\\' {
+            backslashes += 1;
+        } else {
+            break;
+        }
+    }
+    backslashes % 2 == 1
+}
 
 /// Returns the first regex match whose start position does not fall inside a
 /// single-quoted string literal.
@@ -492,7 +504,7 @@ pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
 }
 
 pub(crate) static RE_ENGINE_KEYWORD: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(?i)\sENGINE\s").unwrap());
+    LazyLock::new(|| regex::Regex::new(r"(?i)\sENGINE\s*=").unwrap());
 
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
