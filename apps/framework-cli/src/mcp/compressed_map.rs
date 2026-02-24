@@ -20,7 +20,7 @@ pub struct CompressedInfraMap {
     /// All components in the infrastructure
     pub components: Vec<ComponentNode>,
     /// Connections between components showing data flow
-    pub connections: Vec<Connection>,
+    connections: Vec<Connection>,
     #[serde(skip, default)]
     connection_set: HashSet<Connection>,
     /// Summary statistics about the infrastructure
@@ -137,16 +137,8 @@ impl CompressedInfraMap {
         self.components.push(component);
     }
 
-    /// Lazily rebuilds `connection_set` from `connections` after deserialization.
-    ///
-    /// This assumes `connections` is append-only while the map is in use.
-    /// If `connections` can be cleared or mutated in the future, this method
-    /// must rebuild `connection_set` unconditionally.
+    /// Lazily rebuilds `connection_set` from serialized `connections`.
     fn ensure_connection_set(&mut self) {
-        debug_assert!(
-            !self.connections.is_empty() || self.connection_set.is_empty(),
-            "connections were cleared after connection_set was initialized"
-        );
         if self.connection_set.is_empty() && !self.connections.is_empty() {
             self.connection_set = self.connections.iter().cloned().collect();
         }
@@ -160,6 +152,21 @@ impl CompressedInfraMap {
         }
         self.stats.total_connections += 1;
         self.connections.push(connection);
+    }
+
+    /// Get all connections in the map.
+    pub fn connections(&self) -> &[Connection] {
+        &self.connections
+    }
+
+    /// Retain only connections matching the predicate while keeping dedup state consistent.
+    pub fn retain_connections<F>(&mut self, mut predicate: F)
+    where
+        F: FnMut(&Connection) -> bool,
+    {
+        self.connections.retain(|connection| predicate(connection));
+        self.connection_set = self.connections.iter().cloned().collect();
+        self.stats.total_connections = self.connections.len() as u32;
     }
 
     /// Get component by ID
@@ -571,8 +578,38 @@ mod tests {
         let mut deserialized: CompressedInfraMap = serde_json::from_str(&serialized).unwrap();
         deserialized.add_connection(connection);
 
-        assert_eq!(deserialized.connections.len(), 1);
+        assert_eq!(deserialized.connections().len(), 1);
         assert_eq!(deserialized.stats.total_connections, 1);
+    }
+
+    #[test]
+    fn test_retain_connections_keeps_dedup_cache_in_sync() {
+        let mut map = CompressedInfraMap::new();
+        let retained = Connection {
+            from: "api1".to_string(),
+            to: "topic1".to_string(),
+            connection_type: ConnectionType::Produces,
+        };
+        let filtered_out = Connection {
+            from: "api1".to_string(),
+            to: "topic2".to_string(),
+            connection_type: ConnectionType::Produces,
+        };
+
+        map.add_connection(retained.clone());
+        map.add_connection(filtered_out.clone());
+        map.retain_connections(|connection| connection.to == "topic1");
+
+        assert_eq!(map.connections().len(), 1);
+        assert_eq!(map.stats.total_connections, 1);
+
+        map.add_connection(retained.clone());
+        assert_eq!(map.connections().len(), 1);
+        assert_eq!(map.stats.total_connections, 1);
+
+        map.add_connection(filtered_out);
+        assert_eq!(map.connections().len(), 2);
+        assert_eq!(map.stats.total_connections, 2);
     }
 
     #[test]
@@ -675,12 +712,12 @@ mod tests {
         infra_map.api_endpoints.insert(api_id.clone(), api);
 
         let compressed = build_compressed_map(&infra_map);
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == "MyTable"
                 && connection.to == api_id
                 && connection.connection_type == ConnectionType::PullsFrom
         }));
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == api_id
                 && connection.to == "MyTopic"
                 && connection.connection_type == ConnectionType::PushesTo
@@ -708,12 +745,12 @@ mod tests {
             .insert("lineage_workflow".to_string(), workflow);
 
         let compressed = build_compressed_map(&infra_map);
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == "WorkflowSource"
                 && connection.to == "lineage_workflow"
                 && connection.connection_type == ConnectionType::PullsFrom
         }));
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == "lineage_workflow"
                 && connection.to == "WorkflowTarget"
                 && connection.connection_type == ConnectionType::PushesTo
@@ -739,12 +776,12 @@ mod tests {
             .insert("lineage_webapp".to_string(), web_app);
 
         let compressed = build_compressed_map(&infra_map);
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == "WebAppSource"
                 && connection.to == "lineage_webapp"
                 && connection.connection_type == ConnectionType::PullsFrom
         }));
-        assert!(compressed.connections.iter().any(|connection| {
+        assert!(compressed.connections().iter().any(|connection| {
             connection.from == "lineage_webapp"
                 && connection.to == "WebAppTarget"
                 && connection.connection_type == ConnectionType::PushesTo
