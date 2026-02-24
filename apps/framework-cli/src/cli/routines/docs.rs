@@ -1677,6 +1677,7 @@ async fn browse_guide_page(
         };
     }
 
+    let section_headings: Vec<&PageHeading> = headings.iter().filter(|h| h.level >= 2).collect();
     let items = guide_section_items(&headings);
     match run_picker(&items, slug_display)? {
         PickerResult::Selected(0) => {
@@ -1701,7 +1702,7 @@ async fn browse_guide_page(
         }
         PickerResult::Selected(idx) => {
             // Section selected (idx-1 because idx 0 is "Full page")
-            let heading = &headings[idx - 1];
+            let heading = section_headings[idx - 1];
             if web {
                 let with_anchor = format!("{}#{}", slug_display, heading.anchor);
                 open_in_browser(&with_anchor)
