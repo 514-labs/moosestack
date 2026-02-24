@@ -1595,14 +1595,9 @@ mod tests {
         );
         assert_eq!(
             api.pushes_data_to("default"),
-            [
-                InfrastructureSignature::Topic {
-                    id: "OrdersStream".to_string(),
-                },
-                InfrastructureSignature::Topic {
-                    id: "OrdersEvents".to_string(),
-                }
-            ]
+            [InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }]
         );
     }
 
