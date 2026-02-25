@@ -25,6 +25,11 @@ export interface TableIndex {
   granularity?: number;
 }
 
+export interface TableProjection {
+  name: string;
+  body: string;
+}
+
 /**
  * Represents a failed record during insertion with error details
  */
@@ -235,6 +240,8 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /** Optional projections for alternative data ordering within parts */
+  projections?: TableProjection[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.

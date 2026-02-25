@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
     AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseTable,
+    ClickHouseInt, ClickHouseProjection, ClickHouseTable,
 };
 
 use super::errors::ClickhouseError;
@@ -370,6 +370,14 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
                 index_type: i.index_type.clone(),
                 arguments: i.arguments.clone(),
                 granularity: i.granularity,
+            })
+            .collect(),
+        projections: table
+            .projections
+            .iter()
+            .map(|p| ClickHouseProjection {
+                name: p.name.clone(),
+                body: p.body.clone(),
             })
             .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
