@@ -1469,6 +1469,20 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
         if let Some(metadata) = &mut func.metadata {
             metadata.normalize_source_path(project_root);
         }
+        let normalized = normalize_path_string(&func.executable.to_string_lossy(), project_root);
+        func.executable = PathBuf::from(normalized);
+    }
+
+    for mv in infra_map.materialized_views.values_mut() {
+        if let Some(metadata) = &mut mv.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
+
+    for view in infra_map.views.values_mut() {
+        if let Some(metadata) = &mut view.metadata {
+            metadata.normalize_source_path(project_root);
+        }
     }
 
     // SqlResource has source_file directly, not in metadata struct

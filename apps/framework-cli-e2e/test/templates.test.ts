@@ -292,6 +292,27 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info(`✅ Schema validation passed for ${config.displayName}`);
     });
 
+    it("should not store absolute paths in infrastructure map", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+      const response = await fetch(`${SERVER_CONFIG.url}/admin/inframap`, {
+        headers: {
+          Authorization: `Bearer ${TEST_ADMIN_BEARER_TOKEN}`,
+        },
+      });
+      expect(response.ok, `inframap endpoint returned ${response.status}`).to.be
+        .true;
+
+      const data = await response.json();
+      const serialized = JSON.stringify(data);
+
+      expect(
+        serialized,
+        `Infrastructure map should not contain the project directory path (${TEST_PROJECT_DIR}). ` +
+          `Found absolute path that should have been normalized to a relative path.`,
+      ).to.not.include(TEST_PROJECT_DIR);
+    });
+
     it("should include TTL in DDL when configured", async function () {
       if (config.isTestsVariant) {
         const ddl = await getTableDDL("TTLTable", "local");
