@@ -117,9 +117,9 @@ fn fail(
 }
 
 fn print_plan(manifest: &ComponentManifest) {
-    display::show_message_wrapper(
+    show_message!(
         MessageType::Info,
-        Message::new("Adding".to_string(), manifest.name.clone()),
+        Message::new("Adding".to_string(), manifest.name.clone())
     );
 
     let file_dests: Vec<String> = manifest.files.iter().map(|f| f.dest.clone()).collect();
@@ -222,12 +222,12 @@ fn confirm_plan(
         let file_list: Vec<String> = conflicts.iter().map(|f| f.to_string()).collect();
 
         if !overwrite {
-            display::show_message_wrapper(
+            show_message!(
                 MessageType::Error,
                 Message::new(
                     "Conflict".to_string(),
                     "These files already exist (use --overwrite to replace):".to_string(),
-                ),
+                )
             );
             display::write_detail_lines(&file_list);
             return Err(RoutineFailure::error(Message::new(
@@ -236,12 +236,12 @@ fn confirm_plan(
             )));
         }
 
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Warning,
             Message::new(
                 "Overwrite".to_string(),
                 "These files will be replaced:".to_string(),
-            ),
+            )
         );
         display::write_detail_lines(&file_list);
     }
@@ -269,12 +269,12 @@ async fn fetch_component_files(
     let archive_name = manifest.template.as_deref().unwrap_or(&manifest.name);
     let base_path = manifest.base_path.as_deref().unwrap_or("");
 
-    display::show_message_wrapper(
+    show_message!(
         MessageType::Info,
         Message::new(
             "Fetching".to_string(),
-            format!("{archive_name} template..."),
-        ),
+            format!("{archive_name} template...")
+        )
     );
 
     let tmp = tempfile::tempdir().map_err(|e| {
@@ -324,9 +324,9 @@ fn write_files(
                 .map_err(|e| fail("Write failed", parent.display(), e))?;
         }
         std::fs::write(&dest, content).map_err(|e| fail("Write failed", dest.display(), e))?;
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Info,
-            Message::new("Wrote".to_string(), f.dest.clone()),
+            Message::new("Wrote".to_string(), f.dest.clone())
         );
     }
     Ok(())
@@ -365,9 +365,9 @@ fn update_moose_entry(
     append_if_absent(&entry_file, line)
         .map_err(|e| fail("Update failed", entry_file.display(), e))?;
 
-    display::show_message_wrapper(
+    show_message!(
         MessageType::Info,
-        Message::new("Updated".to_string(), "moose main".to_string()),
+        Message::new("Updated".to_string(), "moose main".to_string())
     );
     Ok(())
 }
@@ -377,12 +377,12 @@ fn update_env_files(manifest: &ComponentManifest, target_dir: &Path) -> Result<(
         let env_file = target_dir.join(&entry.file);
         append_env_var(&env_file, &entry.key, &entry.placeholder)
             .map_err(|e| fail("Update failed", &entry.file, e))?;
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Info,
             Message::new(
                 "Updated".to_string(),
                 format!("{} ({})", entry.file, entry.key),
-            ),
+            )
         );
     }
     Ok(())
@@ -436,9 +436,9 @@ fn install_dependencies(
     pkg_manager: &PackageManager,
 ) -> Result<(), RoutineFailure> {
     if !manifest.shadcn_components.is_empty() {
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Info,
-            Message::new("Installing".to_string(), "shadcn components...".to_string()),
+            Message::new("Installing".to_string(), "shadcn components...".to_string())
         );
         let shadcn: Vec<&str> = manifest
             .shadcn_components
@@ -460,19 +460,19 @@ fn install_dependencies(
                 e,
             )
         })?;
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Success,
-            Message::new("Installed".to_string(), "shadcn components".to_string()),
+            Message::new("Installed".to_string(), "shadcn components".to_string())
         );
     }
 
     if !manifest.npm_deps.is_empty() {
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Info,
             Message::new(
                 "Installing".to_string(),
                 format!("{} dependencies...", pkg_manager),
-            ),
+            )
         );
         let deps: Vec<&str> = manifest.npm_deps.iter().map(String::as_str).collect();
         run_pkg_add(target_dir, &deps, pkg_manager).map_err(|e| {
@@ -486,9 +486,9 @@ fn install_dependencies(
                 e,
             )
         })?;
-        display::show_message_wrapper(
+        show_message!(
             MessageType::Success,
-            Message::new("Installed".to_string(), "npm dependencies".to_string()),
+            Message::new("Installed".to_string(), "npm dependencies".to_string())
         );
     }
     Ok(())
@@ -537,9 +537,9 @@ fn run_pkg_add(dir: &Path, packages: &[&str], pkg_manager: &PackageManager) -> s
 }
 
 fn print_next_steps(manifest: &ComponentManifest) {
-    display::show_message_wrapper(
+    show_message!(
         MessageType::Success,
-        Message::new("Next steps".to_string(), manifest.name.clone()),
+        Message::new("Next steps".to_string(), manifest.name.clone())
     );
     println!("\n{}", manifest.docs);
 }

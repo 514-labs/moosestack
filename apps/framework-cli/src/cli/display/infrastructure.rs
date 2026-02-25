@@ -58,7 +58,7 @@ const DETAIL_INDENT: &str = {
 
 /// Helper function to write detail lines with proper indentation
 /// Respects QUIET_STDOUT flag to redirect to stderr when set
-pub fn write_detail_lines(details: &[String]) {
+pub(crate) fn write_detail_lines(details: &[String]) {
     let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
     if quiet_stdout {
         let mut stderr = std::io::stderr();

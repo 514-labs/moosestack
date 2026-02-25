@@ -30,6 +30,45 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+### Add
+Adds a pre-built component to an existing project. Downloads the component files from the template registry and installs dependencies.
+
+```bash
+moose add <component> [--dir <path>] [--overwrite] [--yes]
+```
+
+**Components:**
+
+```bash
+# Add an MCP server to a Moose project
+moose add mcp-server [--dir <moose-project-dir>]
+
+# Add a chat UI to a Next.js app
+moose add chat [--dir <nextjs-app-dir>]
+```
+
+**Flags:**
+- `--dir, -d`: Target directory (defaults to current directory)
+- `--overwrite`: Replace files that already exist
+- `--yes, -y`: Skip confirmation prompt (useful for scripting or LLM-driven workflows)
+
+**`mcp-server` prerequisites:**
+- Must be run from (or point `--dir` at) a Moose project directory
+- TypeScript projects only
+
+**`chat` prerequisites:**
+- Must be run from (or point `--dir` at) a Next.js app directory
+- Run `pnpm dlx shadcn@latest init` (or `npx shadcn@latest init`) first if you haven't initialized shadcn/ui
+
+**Example:**
+```bash
+# From a monorepo root with moose/ and web/ packages
+moose add mcp-server --dir moose
+moose add chat --dir web
+```
+
+After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
 ### Build
 Builds your Moose project.
 ```bash
