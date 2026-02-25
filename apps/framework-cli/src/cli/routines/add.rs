@@ -1,3 +1,14 @@
+/// # Add Command
+///
+/// Installs a pre-built component into an existing project. Each component is described
+/// by a `component.json` manifest that declares which files to copy, which env vars to
+/// append, and which npm/shadcn dependencies to install.
+///
+/// Currently manifests are embedded in the binary via `include_str!` and component files
+/// are extracted from a shared template archive (e.g. `typescript-mcp.tgz`) using the
+/// `template` and `base_path` fields. In the future each component will ship its own
+/// archive containing both the manifest and source files — at that point nothing needs
+/// to be baked into the binary and `template`/`base_path` can be dropped.
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -53,6 +64,8 @@ struct ComponentManifest {
     docs: String,
 }
 
+/// Entry point for `moose add`. Loads the component manifest, runs preflight checks,
+/// prompts the user, then installs files and dependencies into the target directory.
 pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
     let (args, manifest) = match component {
         AddComponent::McpServer(args) => (
