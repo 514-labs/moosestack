@@ -79,11 +79,11 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
     let (args, manifest) = match component {
         AddComponent::McpServer(args) => (
             args,
-            load_manifest(include_str!("add/mcp-server/component.json"), "mcp-server")?,
+            load_manifest(include_str!("add/mcp-server/component.toml"), "mcp-server")?,
         ),
         AddComponent::Chat(args) => (
             args,
-            load_manifest(include_str!("add/chat/component.json"), "chat")?,
+            load_manifest(include_str!("add/chat/component.toml"), "chat")?,
         ),
     };
 
@@ -137,11 +137,11 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
     )))
 }
 
-fn load_manifest(json: &str, component: &str) -> Result<ComponentManifest, RoutineFailure> {
-    serde_json::from_str(json).map_err(|e| {
+fn load_manifest(toml: &str, component: &str) -> Result<ComponentManifest, RoutineFailure> {
+    toml::from_str(toml).map_err(|e| {
         RoutineFailure::error(Message::new(
             "Internal error".to_string(),
-            format!("{component}/component.json is invalid: {e}"),
+            format!("{component}/component.toml is invalid: {e}"),
         ))
     })
 }
