@@ -10,7 +10,16 @@ A runbook for demonstrating the three authentication tiers side by side. Open `/
 2. Enable Organizations in your Clerk dashboard
 3. Create two test organizations: **org_acme** and **org_globex**
 4. Create two test users, each assigned to a different org
-5. Note the org IDs from Clerk — you may need to configure a JWT template that includes `org_id` in claims
+5. Create a Clerk JWT template named `moose-mcp` (Configure → JWT Templates → Blank) with claims:
+   ```json
+   {
+     "org_id": "{{org.id}}",
+     "org_slug": "{{org.slug}}",
+     "email": "{{user.primary_email_address}}",
+     "name": "{{user.first_name}} {{user.last_name}}"
+   }
+   ```
+6. Note the org IDs from Clerk dashboard (Organizations → each org) and update `seed-data.sql` with the actual IDs
 
 ### Environment Variables
 
@@ -29,6 +38,7 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 ```
 MCP_API_KEY=<pbkdf2-hashed-key>
 JWKS_URL=https://<your-clerk-domain>/.well-known/jwks.json
+JWT_ISSUER=https://<your-clerk-domain>
 ```
 
 ### Seed Data
@@ -84,13 +94,13 @@ This starts the MooseStack backend (port 4000) and Next.js frontend (port 3000).
 3. Ask: **"Show me all records"**
    - Only org_acme data returned (8 rows)
 4. Ask: **"What tables are available?"**
-   - Only `DataEvent_scoped` view is listed — base tables are hidden
+   - All tables listed (catalog is not filtered), but queries are scoped by org
 5. Use the **Organization Switcher** to switch to org_globex
 6. Ask the same question: **"Show me all records"**
    - Only org_globex data returned (different 8 rows)
 7. Switch back to org_acme, try: **"Show records where org_id = 'org_globex'"**
    - Empty results — isolation enforced at the database layer
-8. **Talking point:** The LLM can't even see the other org's data. This isn't prompt engineering — it's the database enforcing boundaries. The scoped view resolves `{org_id}` from the JWT claim automatically.
+8. **Talking point:** The LLM can't even see the other org's data. This isn't prompt engineering — every SELECT query is wrapped in a subquery filtered by `org_id`, which comes from a cryptographically signed JWT claim. The user can't forge it.
 
 ---
 
@@ -117,19 +127,16 @@ This starts the MooseStack backend (port 4000) and Next.js frontend (port 3000).
 - Check that the Clerk JWT includes the expected claims (sub, email, org_id)
 
 **Tier 3 returns all data (no isolation):**
-- Verify the `DataEvent_scoped` view exists in ClickHouse
-- Check that the JWT includes `org_id` in claims (may need a Clerk JWT template)
-- Confirm the user has an active organization selected in Clerk
+- Verify the Clerk JWT template `moose-mcp` is configured with `org_id: "{{org.id}}"` claim
+- Verify `tier3/chat/route.ts` calls `getToken({ template: "moose-mcp" })` (not default `getToken()`)
+- Confirm the user has an active organization selected via the Organization Switcher
+- Check backend logs for `orgId` in the userContext — if missing, the JWT template isn't working
 
 **Chat fails silently:**
 - Open browser Network tab and look for 401s on `/api/tierN/chat`
 - Check MooseStack terminal for error logs
 - For Tier 1: verify `MCP_API_TOKEN` in web-app `.env.local`
 - For Tier 2/3: verify Clerk session is active
-
-**Scoped views not created:**
-- Check MooseStack logs for "[MCP] Scoped views initialized" or errors
-- Manually run: `CREATE VIEW IF NOT EXISTS DataEvent_scoped AS SELECT * FROM DataEvent WHERE org_id = {org_id:String}`
 
 ---
 

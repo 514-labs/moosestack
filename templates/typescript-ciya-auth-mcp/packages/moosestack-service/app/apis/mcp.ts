@@ -63,12 +63,14 @@ async function getTableColumns(
       type LIKE '%Nullable%' as nullable,
       comment
     FROM system.columns
-    WHERE database = currentDatabase() AND table = '${tableName}'
+    WHERE database = currentDatabase() AND table = {tableName:String}
     ORDER BY position
   `;
 
   // High limit for catalog queries - metadata tables are typically small
-  const result = await clickhouseReadonlyQuery(client, query, 10000);
+  const result = await clickhouseReadonlyQuery(client, query, 10000, {
+    tableName,
+  });
   const rawData = await result.json();
   const data = z.array(ColumnQueryResultSchema).parse(rawData);
 
@@ -279,6 +281,7 @@ app.use(express.json());
 
 const mcpApiKey = process.env.MCP_API_KEY;
 const jwksUrl = process.env.JWKS_URL;
+const jwtIssuer = process.env.JWT_ISSUER;
 
 // Lazy-init JWKS keyset on first JWT request
 let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
@@ -320,15 +323,15 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
         res.status(500).json({ error: "JWKS not configured" });
         return;
       }
-      const { payload } = await jwtVerify(token, keyset);
-      // org_id may be in JWT claims (custom template) or in x-org-id header (Clerk default)
-      const orgIdFromJwt = (payload.org_id as string) ?? undefined;
-      const orgIdFromHeader = req.headers["x-org-id"] as string | undefined;
+      const { payload } = await jwtVerify(token, keyset, {
+        ...(jwtIssuer && { issuer: jwtIssuer }),
+      });
+      // org_id comes from JWT claims (Clerk JWT template "moose-mcp")
       const userContext: UserContext = {
         userId: payload.sub ?? "unknown",
         email: (payload.email as string) ?? undefined,
         name: (payload.name as string) ?? undefined,
-        orgId: orgIdFromJwt ?? orgIdFromHeader,
+        orgId: (payload.org_id as string) || undefined,
       };
       (req as any).userContext = userContext;
       next();
@@ -390,38 +393,22 @@ export const serverFactory = (
 
         let finalQuery = query.trim();
 
-        // Tier 3: inject org_id filter into SELECT queries for data isolation
+        // Tier 3: wrap query in subquery with org_id filter for data isolation
+        let scopeParams: Record<string, string> | undefined;
         if (userContext?.orgId) {
           const upperQuery = finalQuery.toUpperCase();
           if (upperQuery.startsWith("SELECT")) {
-            const orgIdEscaped = userContext.orgId.replace(/'/g, "\\'");
-            if (finalQuery.toUpperCase().includes("WHERE")) {
-              finalQuery = finalQuery.replace(
-                /WHERE/i,
-                `WHERE org_id = '${orgIdEscaped}' AND`,
-              );
-            } else if (finalQuery.toUpperCase().includes("GROUP BY")) {
-              finalQuery = finalQuery.replace(
-                /GROUP BY/i,
-                `WHERE org_id = '${orgIdEscaped}' GROUP BY`,
-              );
-            } else if (finalQuery.toUpperCase().includes("ORDER BY")) {
-              finalQuery = finalQuery.replace(
-                /ORDER BY/i,
-                `WHERE org_id = '${orgIdEscaped}' ORDER BY`,
-              );
-            } else if (finalQuery.toUpperCase().includes("LIMIT")) {
-              finalQuery = finalQuery.replace(
-                /LIMIT/i,
-                `WHERE org_id = '${orgIdEscaped}' LIMIT`,
-              );
-            } else {
-              finalQuery += ` WHERE org_id = '${orgIdEscaped}'`;
-            }
+            finalQuery = `SELECT * FROM (${finalQuery}) AS _scoped WHERE org_id = {_scope_org_id:String}`;
+            scopeParams = { _scope_org_id: userContext.orgId };
           }
         }
 
-        const result = await clickhouseReadonlyQuery(client, finalQuery, limit);
+        const result = await clickhouseReadonlyQuery(
+          client,
+          finalQuery,
+          limit,
+          scopeParams,
+        );
 
         // Parse the JSON response from ClickHouse
         const data = await result.json();

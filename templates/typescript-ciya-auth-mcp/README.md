@@ -89,7 +89,7 @@ Chat UI ← streamed response         MCP Server /tools (dual auth)
 3. The API route calls `getAgentResponse()` — Tier 2/3 include the JWT and user context
 4. Claude decides whether to call MCP tools (`query_clickhouse`, `get_data_catalog`)
 5. The backend validates the token (PBKDF2 or JWT) and executes the query
-6. Tier 3: parameterized scoped views filter results by `org_id` from JWT claims
+6. Tier 3: SELECT queries are wrapped in a subquery filtered by `org_id` from JWT claims
 7. Results stream back to the chat UI with query visualization
 
 ## MCP Tools
@@ -100,13 +100,13 @@ Both tools are registered in `packages/moosestack-service/app/apis/mcp.ts` and s
 
 Executes read-only SQL against ClickHouse. Only SELECT, SHOW, DESCRIBE, and EXPLAIN queries are allowed. Row limit defaults to 100, max 1000. ClickHouse `readonly: 2` is enforced at the database level.
 
-In Tier 3, the tool passes `org_id` as a query parameter so that parameterized scoped views automatically filter to the user's organization.
+In Tier 3, the tool wraps SELECT queries in a subquery with an `org_id` filter: `SELECT * FROM (<original query>) AS _scoped WHERE org_id = '<orgId>'`. The `org_id` comes from a cryptographically signed JWT claim (Clerk JWT template `moose-mcp`).
 
 ### `get_data_catalog`
 
 Discovers tables and views with their schemas. Supports `summary` (names + column counts) and `detailed` (full JSON schemas) formats.
 
-In Tier 3, the catalog only exposes `*_scoped` views — the LLM never sees base table names.
+In Tier 3, the catalog returns all tables (the LLM sees the same schema), but all query results are scoped to the user's organization.
 
 ## Project Structure
 
@@ -163,6 +163,7 @@ auth-chat-app/
 |----------|----------|---------|
 | `MCP_API_KEY` | Tier 1 | PBKDF2-hashed API key |
 | `JWKS_URL` | Tier 2/3 | Clerk JWKS endpoint (`https://<clerk-domain>/.well-known/jwks.json`) |
+| `JWT_ISSUER` | Tier 2/3 (optional) | Clerk issuer URL for JWT `iss` claim validation — the base URL of your `JWKS_URL` (found in Clerk dashboard → Configure → API Keys → Frontend API URL) |
 
 ## Setting Up Tier 2/3 (Clerk)
 
@@ -176,9 +177,19 @@ Tier 1 works out of the box. For Tier 2 and 3, you need a [Clerk](https://clerk.
 **For Tier 3 (data isolation):**
 
 5. Enable Organizations in your Clerk dashboard
-6. Create test organizations (e.g., `org_acme` and `org_globex`)
+6. Create test organizations (e.g., org_acme and org_globex)
 7. Assign test users to different organizations
-8. Load seed data after services are running (uses the ClickHouse client inside the Docker container):
+8. Create a JWT template named `moose-mcp` in Clerk (Configure → JWT Templates → Blank):
+   ```json
+   {
+     "org_id": "{{org.id}}",
+     "org_slug": "{{org.slug}}",
+     "email": "{{user.primary_email_address}}",
+     "name": "{{user.first_name}} {{user.last_name}}"
+   }
+   ```
+9. Update `seed-data.sql` with your actual Clerk org IDs (found in Clerk dashboard → Organizations)
+10. Load seed data after services are running:
    ```bash
    docker exec -i moosestack-service-clickhousedb-1 clickhouse-client --database=local --multiquery < packages/moosestack-service/seed-data.sql
    ```
@@ -210,7 +221,7 @@ pnpm test:watch        # Run in watch mode during development
 |-----------|---------------|
 | `tests/backend/auth-detection.test.ts` | `isJwt()` token format detection — the function that routes requests to JWT vs PBKDF2 auth |
 | `tests/backend/auth-middleware.test.ts` | Dual auth middleware routing logic, Bearer token extraction, JWT claim parsing |
-| `tests/backend/scoped-views.test.ts` | Tier 3 data isolation — query param injection for scoped views, catalog filtering to `*_scoped` only |
+| `tests/backend/scoped-views.test.ts` | Tier 3 data isolation — subquery wrapping with org_id filter, SQL injection escaping |
 | `tests/backend/audit-logging.test.ts` | Structured audit log output for tool invocations (Tier 2/3 only) |
 | `tests/frontend/system-prompt.test.ts` | User context personalization in AI system prompts |
 | `tests/frontend/env-vars.test.ts` | Required/optional environment variable validation |
@@ -223,7 +234,7 @@ The current tests validate auth logic in isolation and do not require running se
    ```bash
    pnpm dev:moose
    ```
-2. Wait for ClickHouse and infrastructure to be ready (watch for `[MCP] Scoped views initialized` in the logs).
+2. Wait for ClickHouse and infrastructure to be ready.
 3. Then run tests:
    ```bash
    pnpm test
@@ -266,7 +277,8 @@ Then ask questions like "What tables exist?" or "Show me the latest 10 events."
 
 | Doc | What it covers |
 |-----|---------------|
-| [docs/auth-guide.md](docs/auth-guide.md) | Full auth architecture — how each tier works, code references, security checklist |
+| [docs/how-it-works.md](docs/how-it-works.md) | Implementation details — code paths, query scoping, dual auth detection |
+| [docs/auth-guide.md](docs/auth-guide.md) | Auth architecture — tier selection guide, security checklist, decision reference |
 | [docs/demo-guide.md](docs/demo-guide.md) | Step-by-step demo runbook with setup, three-act script, and troubleshooting |
 
 ## Troubleshooting
@@ -279,7 +291,7 @@ Then ask questions like "What tables exist?" or "Show me the latest 10 events."
 
 **JWT validation fails:** Verify `JWKS_URL` matches your Clerk domain.
 
-**Tier 3 shows all data:** Verify scoped views exist in ClickHouse, verify `org_id` is in JWT claims, and confirm the user has an active organization selected.
+**Tier 3 shows all data:** Verify the Clerk JWT template `moose-mcp` is configured with `org_id` claim, verify `tier3/chat/route.ts` uses `getToken({ template: "moose-mcp" })`, and confirm the user has an active organization selected.
 
 See [docs/demo-guide.md](docs/demo-guide.md) for more troubleshooting details.
 

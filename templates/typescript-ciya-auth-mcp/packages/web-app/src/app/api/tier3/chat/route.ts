@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     }
 
     const [token, user, body] = await Promise.all([
-      getToken(),
+      getToken({ template: "moose-mcp" }),
       currentUser(),
       request.json() as Promise<ChatBody>,
     ]);

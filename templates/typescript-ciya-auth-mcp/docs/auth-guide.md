@@ -24,7 +24,7 @@ Each tier builds on the previous one. Start with the tier that matches your curr
 |------|-----------|----------|----------------|----------|
 | **1. API Key** | Shared secret (PBKDF2) | None — all users share one key | None — everyone sees everything | Internal demos, prototyping |
 | **2. JWT Passthrough** | User JWT validated at API layer | Per-user identity in every request | None — same views, but auditable | Internal tools, audit-required deployments |
-| **3. Row-Level Security** | JWT + scoped ClickHouse views | Per-user and per-tenant identity | Per-tenant or per-role data filtering | Customer-facing products, multi-tenant SaaS |
+| **3. Org-Scoped Data Isolation** | JWT with org_id claim + subquery wrapping | Per-user and per-tenant identity | Per-tenant data filtering | Customer-facing products, multi-tenant SaaS |
 
 ### How to decide
 
@@ -51,7 +51,7 @@ The decisions below define the shape of the chat system. The app defaults to an 
 
 | Decision | Options | Current implementation |
 |----------|---------|----------------------|
-| **Data access scope** | Narrow (specific tables) vs Broad (full schema) | Readonly mode with row limits in `mcp.ts`; Tier 3 restricts to `*_scoped` views |
+| **Data access scope** | Narrow (specific tables) vs Broad (full schema) | Readonly mode with row limits in `mcp.ts`; Tier 3 wraps queries with org_id filter |
 | **Data sources** | Batch (S3/Parquet), Operational (streams, OLTP replicas) | Tutorial covers S3/Parquet bulk load; see [Ingest docs](https://docs.fiveonefour.com/moosestack/ingest) for streaming |
 | **Latency optimization** | Raw tables, Materialized views, Denormalized models | Define MVs in moosestack-service/app/ for time buckets, top-N, common group-bys |
 | **Schema context** | None, Table comments, Column comments with semantics | `get_data_catalog` tool exposes column comments; add JSDoc comments to data models |
@@ -60,7 +60,7 @@ The decisions below define the shape of the chat system. The app defaults to an 
 | **Deployment scope** | Internal only, Customer-facing | Ship internal with audit trail (Tier 2); add governance before customer-facing (Tier 3) |
 | **Frontend auth** | None, Clerk, Auth0, NextAuth | Clerk for Tier 2/3 routes; Tier 1 has no frontend auth |
 | **Backend auth** | No auth, API key, User JWT passthrough | Dual-mode: PBKDF2 API key (Tier 1) + JWT via JWKS (Tier 2/3), auto-detected per request |
-| **Access controls** | Tool allowlists, Scoped views, Row-level security | ClickHouse readonly mode (all tiers); scoped parameterized views (Tier 3) |
+| **Access controls** | Tool allowlists, Scoped views, Row-level security | ClickHouse readonly mode (all tiers); subquery wrapping with org_id from JWT claims (Tier 3) |
 
 ---
 
@@ -259,80 +259,94 @@ Move to Tier 3 when any of these apply:
 
 ---
 
-## Tier 3: Row-Level Security
+## Tier 3: Org-Scoped Data Isolation
 
 ### What it is
 
-Different users see different data. The JWT carries an `org_id` claim, and ClickHouse enforces data isolation at the query layer via parameterized scoped views. The LLM cannot surface rows that belong to another tenant — not because of prompt engineering, but because the database itself filters them out.
+Different users see different data. A custom Clerk JWT template includes `org_id` in the signed claims, and the backend wraps every SELECT query in a subquery filtered by `org_id`. The LLM cannot surface rows that belong to another tenant — the scoping is enforced at the application layer before queries reach ClickHouse, and the `org_id` is cryptographically signed so it cannot be forged.
 
 ### Architecture
 
 ```
-Browser → Clerk (sign-in, org selected) → Next.js → MooseStack API (validate JWT, extract org_id) → MCP tools (inject org_id as query param) → ClickHouse (scoped views filter by org_id)
+Browser → Clerk (sign-in, org selected) → Next.js → getToken({ template: "moose-mcp" }) → MooseStack API (validate JWT, extract org_id from claims) → MCP tools (wrap query with org_id filter) → ClickHouse (readonly)
 ```
 
 ### What you get
 
-- **Data isolation enforced at the database layer.** Even if the LLM generates a `SELECT *`, the results are scoped to the user's org.
-- **Catalog hiding.** `get_data_catalog` only exposes `*_scoped` views — the LLM never sees base table names.
+- **Data isolation via subquery wrapping.** Every SELECT query is wrapped: `SELECT * FROM (<original query>) AS _scoped WHERE org_id = '<orgId>'`. This is robust against any inner query structure.
+- **Cryptographically signed org_id.** The `org_id` comes from a Clerk JWT template, not a forgeable header — only Clerk can issue tokens with valid org claims.
 - **Multi-tenant SaaS ready.** Each customer sees only their data through the same chat interface.
-- **Defense in depth.** Security does not depend on the LLM behaving correctly — the database is the enforcement point.
+- **Defense in depth.** Security does not depend on the LLM behaving correctly — the backend enforces scoping before query execution.
 
 ### Risks and limitations
 
-- **Increased complexity.** You need scoped views for every table the chat can query. Schema changes require updating views.
-- **Performance considerations.** For large tables, ensure the `org_id` column is part of the primary key or has an index.
+- **Application-layer scoping.** The current approach wraps queries at the application layer in `mcp.ts`. For maximum security, ClickHouse row policies (`CREATE ROW POLICY`) would enforce isolation at the database engine level — this is planned for a future release.
+- **Performance considerations.** For large tables, ensure the `org_id` column is part of the primary key or has an index. The subquery wrapper relies on ClickHouse's optimizer to push the filter down.
 - **Requires Tier 2 as a prerequisite.** User identity must flow through the system before you can scope data by identity.
-- **Requires Clerk Organizations.** The user must have an active organization selected for `orgId` to be present in session claims.
+- **Requires Clerk Organizations.** The user must have an active organization selected for `org_id` to be present in JWT claims.
+- **Requires Clerk JWT template.** A custom JWT template named `moose-mcp` must be configured in Clerk — see Setup below.
 
-### How scoped views work
+### How query scoping works
 
-The implementation uses Approach A: parameterized ClickHouse views.
+When `userContext.orgId` is present, every SELECT query is wrapped in a subquery:
 
-1. The `DataEvent` table has an `org_id` column (defined in `app/ingest/models.ts`)
-2. On first request, `mcp.ts` creates a parameterized view:
-   ```sql
-   CREATE VIEW IF NOT EXISTS DataEvent_scoped AS
-   SELECT * FROM DataEvent WHERE org_id = {org_id:String}
-   ```
-3. When `userContext.orgId` is present, `query_clickhouse` passes `query_params: { org_id: userContext.orgId }` to the ClickHouse client
-4. `get_data_catalog` filters results to only show tables/views ending in `_scoped`
+```sql
+-- Original query (from the LLM):
+SELECT * FROM DataEvent WHERE eventType = 'purchase'
+
+-- After scoping:
+SELECT * FROM (SELECT * FROM DataEvent WHERE eventType = 'purchase') AS _scoped WHERE org_id = 'org_abc123'
+```
+
+This works for any query shape — JOINs, CTEs, GROUP BY, HAVING, subqueries, UNION — since the original query runs unmodified inside the subquery, and the org filter is applied to the outer result.
+
+Non-SELECT queries (SHOW, DESCRIBE, EXPLAIN) pass through without wrapping.
 
 ### Key files
 
 | File | Role |
 |------|------|
-| `packages/web-app/src/app/api/tier3/chat/route.ts` | Extracts `orgId` from Clerk session in addition to userId/email |
-| `packages/moosestack-service/app/apis/mcp.ts` | `ensureScopedViews()` creates views on startup; `query_clickhouse` passes `query_params`; `get_data_catalog` filters to `*_scoped` |
+| `packages/web-app/src/app/api/tier3/chat/route.ts` | Extracts `orgId` from Clerk session; calls `getToken({ template: "moose-mcp" })` for JWT with org_id claim |
+| `packages/moosestack-service/app/apis/mcp.ts` | Validates JWT via JWKS, reads `org_id` from verified claims, wraps SELECT queries in subquery |
 | `packages/moosestack-service/app/ingest/models.ts` | `DataEvent` model includes `org_id: string` |
-| `packages/moosestack-service/seed-data.sql` | Test data for `org_acme` and `org_globex` |
+| `packages/moosestack-service/seed-data.sql` | Multi-tenant test data (uses actual Clerk org IDs) |
 
 ### Setup
 
 1. Enable Organizations in your Clerk dashboard
-2. Create test organizations: **org_acme** and **org_globex**
-3. Create test users, each assigned to a different org
-4. Configure a Clerk JWT template that includes `org_id` in claims (if not automatic)
-5. After services are running, load seed data:
+2. Create test organizations (e.g., org_acme and org_globex)
+3. Create test users and assign them to different organizations
+4. Create a Clerk JWT template named `moose-mcp`:
+   - Go to Clerk dashboard → Configure → JWT Templates → New template → Blank
+   - Set name to `moose-mcp`
+   - Add these claims:
+     ```json
+     {
+       "org_id": "{{org.id}}",
+       "org_slug": "{{org.slug}}",
+       "email": "{{user.primary_email_address}}",
+       "name": "{{user.first_name}} {{user.last_name}}"
+     }
+     ```
+   - Save the template
+5. Update `seed-data.sql` with your actual Clerk org IDs (found in Clerk dashboard → Organizations)
+6. After services are running, load seed data:
    ```bash
-   clickhouse-client --port 9000 --multiquery < packages/moosestack-service/seed-data.sql
+   docker exec -i moosestack-service-clickhousedb-1 clickhouse-client --database=local --multiquery < packages/moosestack-service/seed-data.sql
    ```
 
 ### Verification
 
 1. Sign in as User A (org: org_acme), navigate to `/tier3`
-2. Ask "Show me all records" — only org_acme data returned
-3. Ask "What tables are available?" — only `DataEvent_scoped` listed
-4. Sign in as User B (org: org_globex), ask same question — only org_globex data
-5. As User A, ask "Show records where org_id = 'org_globex'" — empty results
+2. Use the Organization Switcher to select org_acme
+3. Ask "Show me all records" — only org_acme data returned
+4. Use the Organization Switcher to switch to org_globex
+5. Ask the same question — only org_globex data returned
+6. Try "Show records where org_id = 'org_globex'" while in org_acme — empty results
 
-### Alternative approaches (not implemented)
+### Future: ClickHouse row policies
 
-Two alternative approaches to row-level security are worth considering for more complex deployments:
-
-**Approach B: ClickHouse row policies** — Use `CREATE ROW POLICY` to enforce filtering at the database engine level. More secure but requires ClickHouse administration (per-table policies, per-tenant users or settings profiles). Row policies apply to `SELECT` only, not `system.*` tables.
-
-**Approach C: Query interceptor** — Parse and rewrite LLM-generated SQL to inject `WHERE org_id = ...` clauses. Gives programmatic control without ClickHouse config changes, but SQL rewriting is fragile — complex queries (subqueries, CTEs, UNIONs) can break or bypass naive rewriting. Scoped views (Approach A) are more robust for most use cases.
+The current scoping is at the application layer (subquery wrapping in `mcp.ts`). For maximum security, ClickHouse row policies (`CREATE ROW POLICY`) would enforce isolation at the database engine level. This would prevent any bypass, even if the application layer were compromised. This is planned for a future release.
 
 ---
 
@@ -356,6 +370,7 @@ Two alternative approaches to row-level security are worth considering for more 
 |----------|-------------|---------|
 | `MCP_API_KEY` | Tier 1 | PBKDF2-hashed API key |
 | `JWKS_URL` | Tier 2/3 | Clerk JWKS endpoint for JWT validation |
+| `JWT_ISSUER` | Tier 2/3 (optional) | Clerk issuer URL for JWT `iss` claim validation — the base URL of your `JWKS_URL` (found in Clerk dashboard → Configure → API Keys → Frontend API URL) |
 
 ---
 
@@ -385,7 +400,9 @@ Before deploying at any tier, verify these baseline protections:
 
 **Tier 3 (data isolation):**
 
-- [ ] Data isolation is enforced at the database layer via scoped views
+- [ ] Clerk JWT template `moose-mcp` is configured with `org_id` claim
+- [ ] Tier 3 API route uses `getToken({ template: "moose-mcp" })` (not default `getToken()`)
+- [ ] Backend reads `org_id` exclusively from verified JWT claims (no header fallback)
+- [ ] Subquery wrapping scopes every SELECT to the user's org
 - [ ] Cross-tenant queries return no results (tested explicitly)
-- [ ] `get_data_catalog` only exposes `*_scoped` views, not base tables
-- [ ] Schema migrations create/update scoped views alongside base tables
+- [ ] Seed data uses actual Clerk org IDs (not friendly names)

@@ -3,111 +3,165 @@ import { describe, it, expect } from "vitest";
 /**
  * Tests for Tier 3 data isolation logic.
  *
- * In mcp.ts, two scoping mechanisms enforce data isolation:
+ * In mcp.ts, when userContext.orgId is present, SELECT queries are wrapped
+ * in a subquery with a parameterized org_id filter:
+ *   SELECT * FROM (<original query>) AS _scoped WHERE org_id = {_scope_org_id:String}
  *
- * 1. query_clickhouse: When userContext.orgId is present, passes
- *    { org_id: userContext.orgId } as query_params to ClickHouse.
- *    Parameterized views like DataEvent_scoped resolve {org_id:String}
- *    from these params.
- *
- * 2. get_data_catalog: When userContext.orgId is present, filters the
- *    table/view list to only expose names ending in "_scoped".
+ * The org_id value is passed as a ClickHouse query parameter, eliminating
+ * SQL injection risk entirely. This approach is also robust against any
+ * inner query structure (JOINs, CTEs, GROUP BY, subqueries, etc.) since
+ * it wraps rather than rewrites.
  */
 
-describe("query parameter injection for scoped views", () => {
-  // Mirrors logic from query_clickhouse tool handler (mcp.ts lines 410-412)
-  function buildQueryParams(
-    orgId: string | undefined,
-  ): Record<string, string> | undefined {
-    return orgId ? { org_id: orgId } : undefined;
-  }
-
-  it("returns org_id param when orgId is present (Tier 3)", () => {
-    expect(buildQueryParams("org_acme")).toEqual({ org_id: "org_acme" });
-  });
-
-  it("returns undefined when orgId is absent (Tier 1/2)", () => {
-    expect(buildQueryParams(undefined)).toBeUndefined();
-  });
-
-  it("returns org_id param for different org values", () => {
-    expect(buildQueryParams("org_globex")).toEqual({ org_id: "org_globex" });
-  });
-});
-
-describe("catalog filtering for scoped views", () => {
-  // Mirrors logic from get_data_catalog tool handler (mcp.ts lines 509-517)
-  const allTables = [
-    { name: "DataEvent", engine: "MergeTree" },
-    { name: "DataEvent_scoped", engine: "View" },
-    { name: "UserActivity", engine: "MergeTree" },
-    { name: "UserActivity_scoped", engine: "View" },
-    { name: "InternalMetrics", engine: "MergeTree" },
-  ];
-
-  const allViews = [
-    { name: "DataEvent_mv", engine: "MaterializedView" },
-    { name: "Summary_scoped", engine: "MaterializedView" },
-  ];
-
-  function filterCatalog(
-    tables: typeof allTables,
-    views: typeof allViews,
-    orgId: string | undefined,
-  ) {
-    if (orgId) {
-      return {
-        tables: tables.filter((t) => t.name.endsWith("_scoped")),
-        views: views.filter((v) => v.name.endsWith("_scoped")),
-      };
+// Mirrors the scoping logic from query_clickhouse tool handler in mcp.ts
+// Returns both the rewritten query and any scope params
+function applyScopedQuery(
+  query: string,
+  orgId: string | undefined,
+): { query: string; scopeParams?: Record<string, string> } {
+  let finalQuery = query.trim();
+  let scopeParams: Record<string, string> | undefined;
+  if (orgId) {
+    const upperQuery = finalQuery.toUpperCase();
+    if (upperQuery.startsWith("SELECT")) {
+      finalQuery = `SELECT * FROM (${finalQuery}) AS _scoped WHERE org_id = {_scope_org_id:String}`;
+      scopeParams = { _scope_org_id: orgId };
     }
-    return { tables, views };
   }
+  return { query: finalQuery, scopeParams };
+}
 
-  it("returns only _scoped tables when orgId is present (Tier 3)", () => {
-    const result = filterCatalog(allTables, allViews, "org_acme");
-    expect(result.tables).toEqual([
-      { name: "DataEvent_scoped", engine: "View" },
-      { name: "UserActivity_scoped", engine: "View" },
-    ]);
+describe("Tier 3 subquery wrapping for org scoping", () => {
+  const SCOPED_SUFFIX = " WHERE org_id = {_scope_org_id:String}";
+
+  it("wraps a simple SELECT with parameterized org_id filter", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "SELECT * FROM DataEvent",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT * FROM DataEvent) AS _scoped" + SCOPED_SUFFIX,
+    );
+    expect(scopeParams).toEqual({ _scope_org_id: "org_acme" });
   });
 
-  it("returns only _scoped materialized views when orgId is present", () => {
-    const result = filterCatalog(allTables, allViews, "org_acme");
-    expect(result.views).toEqual([
-      { name: "Summary_scoped", engine: "MaterializedView" },
-    ]);
+  it("wraps a SELECT with existing WHERE clause", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "SELECT * FROM DataEvent WHERE eventType = 'purchase'",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT * FROM DataEvent WHERE eventType = 'purchase') AS _scoped" +
+        SCOPED_SUFFIX,
+    );
+    expect(scopeParams).toEqual({ _scope_org_id: "org_acme" });
   });
 
-  it("returns all tables when orgId is absent (Tier 1/2)", () => {
-    const result = filterCatalog(allTables, allViews, undefined);
-    expect(result.tables).toHaveLength(5);
-    expect(result.views).toHaveLength(2);
+  it("wraps a SELECT with GROUP BY", () => {
+    const { query } = applyScopedQuery(
+      "SELECT eventType, count() FROM DataEvent GROUP BY eventType",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT eventType, count() FROM DataEvent GROUP BY eventType) AS _scoped" +
+        SCOPED_SUFFIX,
+    );
   });
 
-  it("hides base tables from Tier 3 users", () => {
-    const result = filterCatalog(allTables, allViews, "org_globex");
-    const names = result.tables.map((t) => t.name);
-    expect(names).not.toContain("DataEvent");
-    expect(names).not.toContain("UserActivity");
-    expect(names).not.toContain("InternalMetrics");
+  it("wraps a SELECT with ORDER BY and LIMIT", () => {
+    const { query } = applyScopedQuery(
+      "SELECT * FROM DataEvent ORDER BY timestamp DESC LIMIT 10",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT * FROM DataEvent ORDER BY timestamp DESC LIMIT 10) AS _scoped" +
+        SCOPED_SUFFIX,
+    );
   });
 
-  it("returns empty arrays when no scoped items exist", () => {
-    const unscoped = [{ name: "RawData", engine: "MergeTree" }];
-    const result = filterCatalog(unscoped, [], "org_acme");
-    expect(result.tables).toEqual([]);
-    expect(result.views).toEqual([]);
+  it("wraps a SELECT with JOINs", () => {
+    const { query } = applyScopedQuery(
+      "SELECT a.*, b.name FROM DataEvent a JOIN Users b ON a.userId = b.id",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT a.*, b.name FROM DataEvent a JOIN Users b ON a.userId = b.id) AS _scoped" +
+        SCOPED_SUFFIX,
+    );
+  });
+
+  it("wraps a SELECT with subqueries", () => {
+    const { query } = applyScopedQuery(
+      "SELECT * FROM DataEvent WHERE eventType IN (SELECT type FROM EventTypes)",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT * FROM DataEvent WHERE eventType IN (SELECT type FROM EventTypes)) AS _scoped" +
+        SCOPED_SUFFIX,
+    );
+  });
+
+  it("does not wrap non-SELECT queries (SHOW)", () => {
+    const { query, scopeParams } = applyScopedQuery("SHOW TABLES", "org_acme");
+    expect(query).toBe("SHOW TABLES");
+    expect(scopeParams).toBeUndefined();
+  });
+
+  it("does not wrap DESCRIBE queries", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "DESCRIBE DataEvent",
+      "org_acme",
+    );
+    expect(query).toBe("DESCRIBE DataEvent");
+    expect(scopeParams).toBeUndefined();
+  });
+
+  it("does not wrap when orgId is undefined (Tier 1/2)", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "SELECT * FROM DataEvent",
+      undefined,
+    );
+    expect(query).toBe("SELECT * FROM DataEvent");
+    expect(scopeParams).toBeUndefined();
+  });
+
+  it("passes orgId as a query parameter — no string escaping needed", () => {
+    const malicious = "org'; DROP TABLE DataEvent; --";
+    const { query, scopeParams } = applyScopedQuery(
+      "SELECT * FROM DataEvent",
+      malicious,
+    );
+    // The query uses a placeholder, not the raw value
+    expect(query).not.toContain(malicious);
+    expect(query).toContain("{_scope_org_id:String}");
+    // The raw value is safely in scopeParams, sent out-of-band
+    expect(scopeParams).toEqual({ _scope_org_id: malicious });
+  });
+
+  it("handles different org values with same query", () => {
+    const q = "SELECT * FROM DataEvent";
+    const acme = applyScopedQuery(q, "org_acme");
+    const globex = applyScopedQuery(q, "org_globex");
+    expect(acme.scopeParams).toEqual({ _scope_org_id: "org_acme" });
+    expect(globex.scopeParams).toEqual({ _scope_org_id: "org_globex" });
+    // Queries are identical — only params differ
+    expect(acme.query).toBe(globex.query);
+  });
+
+  it("trims whitespace from query before wrapping", () => {
+    const { query } = applyScopedQuery(
+      "  SELECT * FROM DataEvent  ",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (SELECT * FROM DataEvent) AS _scoped" + SCOPED_SUFFIX,
+    );
   });
 });
 
-describe("clickhouseReadonlyQuery parameter spreading", () => {
-  // Mirrors logic from clickhouseReadonlyQuery (mcp.ts lines 40-48)
-  function buildQueryOptions(
-    sql: string,
-    limit: number,
-    queryParams?: Record<string, string>,
-  ) {
+describe("clickhouseReadonlyQuery options", () => {
+  // Mirrors logic from clickhouseReadonlyQuery (mcp.ts)
+  function buildQueryOptions(sql: string, limit: number) {
     return {
       query: sql,
       format: "JSONEachRow",
@@ -115,21 +169,8 @@ describe("clickhouseReadonlyQuery parameter spreading", () => {
         readonly: "2",
         limit: limit.toString(),
       },
-      ...(queryParams && { query_params: queryParams }),
     };
   }
-
-  it("includes query_params when provided", () => {
-    const opts = buildQueryOptions("SELECT * FROM DataEvent_scoped", 100, {
-      org_id: "org_acme",
-    });
-    expect(opts.query_params).toEqual({ org_id: "org_acme" });
-  });
-
-  it("omits query_params when undefined", () => {
-    const opts = buildQueryOptions("SELECT * FROM DataEvent", 100);
-    expect(opts).not.toHaveProperty("query_params");
-  });
 
   it("enforces readonly mode", () => {
     const opts = buildQueryOptions("SELECT 1", 100);

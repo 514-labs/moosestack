@@ -34,9 +34,6 @@ export async function getAnthropicAgentStreamTextOptions(
       ...(mcpToken && {
         headers: {
           Authorization: `Bearer ${mcpToken}`,
-          ...(options?.userContext?.orgId && {
-            "x-org-id": options.userContext.orgId,
-          }),
         },
       }),
     },

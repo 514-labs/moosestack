@@ -134,66 +134,63 @@ Every tool invocation with `userContext` present produces:
 
 ## Tier 3: Org-Scoped Data Isolation
 
-**Different organizations see different data. The backend injects org-scoped WHERE clauses into every SELECT query.**
+**Different organizations see different data. The backend wraps every SELECT query in a subquery with an org_id filter, using the `org_id` claim from a custom Clerk JWT template.**
 
 ### How it works
 
 1. User opens `/tier3` — Clerk middleware redirects to `/sign-in`
 2. User signs in and selects an organization via the Organization Switcher
 3. User sends a message — frontend POSTs to `/api/tier3/chat`
-4. The API route calls `auth()` from Clerk to get `userId`, `orgId`, and `getToken()`
-5. Calls `getAgentResponse(messages, { token: jwt, userContext: { userId, email, name, orgId } })`
-6. `agent-config.ts` sends the JWT as Bearer token **and** the `orgId` as an `x-org-id` header
-7. The MooseStack middleware validates the JWT, then reads `orgId` from JWT claims or the `x-org-id` header as fallback
-8. `userContext.orgId` is set — this triggers query scoping
-9. When the LLM calls `query_clickhouse`, the tool handler **injects a `WHERE org_id = '...'` clause** into every SELECT query before execution
-10. Results only contain rows matching the user's organization
+4. The API route calls `auth()` from Clerk to get `userId`, `orgId`, and `getToken({ template: "moose-mcp" })`
+5. The custom JWT template includes `org_id`, `email`, and `name` as claims — signed by Clerk
+6. Calls `getAgentResponse(messages, { token: jwt, userContext: { userId, email, name, orgId } })`
+7. `agent-config.ts` sends the JWT as Bearer token to the MCP backend
+8. The MooseStack middleware validates the JWT signature via JWKS and reads `org_id` from the verified claims
+9. `userContext.orgId` is set — this triggers query scoping
+10. When the LLM calls `query_clickhouse`, the tool handler **wraps every SELECT in a subquery** with an `org_id` filter
+11. Results only contain rows matching the user's organization
 
 ### Key code paths
 
 | Step | File | What happens |
 |------|------|-------------|
-| API route | `web-app/src/app/api/tier3/chat/route.ts` | Same as Tier 2, plus extracts `orgId` from `auth()` |
-| Org ID header | `web-app/src/features/chat/agent-config.ts` | Sends `x-org-id` header alongside Bearer JWT |
-| Auth middleware | `moosestack-service/app/apis/mcp.ts` | Reads `orgId` from JWT `org_id` claim or `x-org-id` header |
-| Query scoping | `moosestack-service/app/apis/mcp.ts` | Injects `WHERE org_id = '...'` into SELECT queries |
+| API route | `web-app/src/app/api/tier3/chat/route.ts` | Same as Tier 2, plus extracts `orgId` from `auth()` and uses `getToken({ template: "moose-mcp" })` |
+| JWT claims | Clerk JWT template `moose-mcp` | Includes `org_id`, `org_slug`, `email`, `name` — cryptographically signed |
+| Auth middleware | `moosestack-service/app/apis/mcp.ts` | Validates JWT via JWKS, reads `org_id` from verified `payload.org_id` claim |
+| Query scoping | `moosestack-service/app/apis/mcp.ts` | Wraps SELECT queries in subquery with `WHERE org_id = '...'` |
 | Org switcher UI | `web-app/src/app/tier3/page.tsx` | Clerk `<OrganizationSwitcher>` lets user change active org |
 
 ### How query scoping works
 
-When `userContext.orgId` is present, the `query_clickhouse` tool rewrites SELECT queries before execution:
+When `userContext.orgId` is present, the `query_clickhouse` tool wraps SELECT queries in a subquery before execution:
 
 ```
 Original:  SELECT * FROM DataEvent
-Rewritten: SELECT * FROM DataEvent WHERE org_id = 'org_abc123'
+Scoped:    SELECT * FROM (SELECT * FROM DataEvent) AS _scoped WHERE org_id = 'org_abc123'
 
 Original:  SELECT * FROM DataEvent WHERE eventType = 'purchase'
-Rewritten: SELECT * FROM DataEvent WHERE org_id = 'org_abc123' AND eventType = 'purchase'
+Scoped:    SELECT * FROM (SELECT * FROM DataEvent WHERE eventType = 'purchase') AS _scoped WHERE org_id = 'org_abc123'
 
 Original:  SELECT eventType, count() FROM DataEvent GROUP BY eventType
-Rewritten: SELECT eventType, count() FROM DataEvent WHERE org_id = 'org_abc123' GROUP BY eventType
+Scoped:    SELECT * FROM (SELECT eventType, count() FROM DataEvent GROUP BY eventType) AS _scoped WHERE org_id = 'org_abc123'
 ```
 
-The rewriting handles these SQL patterns:
-- Queries with no WHERE clause → appends `WHERE org_id = '...'`
-- Queries with existing WHERE → prepends `org_id = '...' AND` to existing conditions
-- Queries with GROUP BY, ORDER BY, or LIMIT (no WHERE) → inserts WHERE before those clauses
+The subquery wrapping approach is robust against any inner query structure — JOINs, CTEs, subqueries, GROUP BY, HAVING, UNION — since it wraps rather than rewrites.
 
-### Why x-org-id header instead of JWT claims
+### Clerk JWT template setup
 
-Clerk's default JWT doesn't include `org_id` in claims. While you can configure a custom JWT template in Clerk to include it, the `x-org-id` header approach works out of the box:
+Create a JWT template named `moose-mcp` in Clerk dashboard (Configure → JWT Templates → New template → Blank):
 
-1. The Next.js API route gets `orgId` from Clerk's `auth()` (server-side session)
-2. It passes `orgId` in the `userContext` to `agent-config.ts`
-3. `agent-config.ts` sends it as an `x-org-id` header to the MCP backend
-4. The backend reads `orgId` from JWT claims first, falls back to `x-org-id` header
-
-```typescript
-const orgIdFromJwt = (payload.org_id as string) ?? undefined;
-const orgIdFromHeader = req.headers["x-org-id"] as string | undefined;
-// ...
-orgId: orgIdFromJwt ?? orgIdFromHeader,
+```json
+{
+  "org_id": "{{org.id}}",
+  "org_slug": "{{org.slug}}",
+  "email": "{{user.primary_email_address}}",
+  "name": "{{user.first_name}} {{user.last_name}}"
+}
 ```
+
+Standard claims (`sub`, `iat`, `exp`) are included automatically.
 
 ### What's enforced (beyond Tier 2)
 
@@ -201,10 +198,10 @@ orgId: orgIdFromJwt ?? orgIdFromHeader,
 - Users in org_acme cannot see org_globex data, even if they craft a specific query
 - The Organization Switcher UI lets users change orgs — each org sees only its own data
 
-### What's not yet enforced
+### Known limitations
 
-- **Database-level row policies** — the current scoping is at the application layer (query rewriting in `mcp.ts`). ClickHouse row policies (`CREATE ROW POLICY`) would enforce isolation at the database engine level. This is planned for a future release.
-- **Catalog filtering** — the LLM can see all table names. A future improvement could restrict the catalog to only show tables relevant to the user's org.
+- **Application-layer scoping** — query scoping is enforced in `mcp.ts`, not at the database engine level. ClickHouse row policies (`CREATE ROW POLICY`) would add database-level enforcement as an additional layer.
+- **Catalog is not filtered** — the LLM can see all table names regardless of org. Query results are scoped, but table discovery is not.
 
 ---
 
@@ -213,13 +210,13 @@ orgId: orgIdFromJwt ?? orgIdFromHeader,
 | | Tier 1 | Tier 2 | Tier 3 |
 |---|---|---|---|
 | **Frontend auth** | None | Clerk sign-in | Clerk sign-in + org selection |
-| **Backend auth** | PBKDF2 API key | JWT (JWKS validation) | JWT + x-org-id header |
+| **Backend auth** | PBKDF2 API key | JWT (JWKS validation) | JWT with org_id claim (custom template) |
 | **User identity** | None | userId, email, name | userId, email, name, orgId |
 | **Data access** | All data | All data | Org-scoped only |
 | **Audit logging** | No | Yes | Yes (includes orgId) |
 | **System prompt** | Base only | Personalized (name, email) | Personalized (name, email, org) |
-| **Query modification** | None | None | WHERE org_id injected |
-| **Enforcement layer** | ClickHouse readonly | ClickHouse readonly + JWT | ClickHouse readonly + JWT + app-layer scoping |
+| **Query modification** | None | None | Subquery wrapping with org_id filter |
+| **Enforcement layer** | ClickHouse readonly | ClickHouse readonly + JWT | ClickHouse readonly + JWT (signed org_id) + app-layer scoping |
 
 ---
 
