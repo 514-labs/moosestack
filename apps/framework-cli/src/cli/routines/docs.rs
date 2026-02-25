@@ -495,7 +495,7 @@ fn heading_to_anchor(text: &str) -> String {
         .join("-")
 }
 
-/// Extract H2 and H3 headings from markdown content.
+/// Extract H1, H2, and H3 headings from markdown content.
 ///
 /// Skips headings inside fenced code blocks (``` ``` ```) to avoid false positives
 /// from code examples containing markdown.
@@ -522,6 +522,12 @@ fn parse_page_headings(content: &str) -> Vec<PageHeading> {
                 title: title.to_string(),
                 anchor: heading_to_anchor(title),
                 level: 2,
+            });
+        } else if let Some(title) = trimmed.strip_prefix("# ") {
+            headings.push(PageHeading {
+                title: title.to_string(),
+                anchor: heading_to_anchor(title),
+                level: 1,
             });
         }
     }
@@ -552,6 +558,8 @@ fn extract_section(content: &str, anchor: &str) -> Option<String> {
             (3u8, t)
         } else if let Some(t) = trimmed.strip_prefix("## ") {
             (2u8, t)
+        } else if let Some(t) = trimmed.strip_prefix("# ") {
+            (1u8, t)
         } else {
             continue;
         };
@@ -809,6 +817,7 @@ pub async fn fetch_page(
                 let headings = parse_page_headings(&content);
                 let available: Vec<String> = headings
                     .iter()
+                    .filter(|h| h.level >= 2)
                     .map(|h| {
                         let indent = if h.level == 3 { "    " } else { "  " };
                         format!("{}{} ({})", indent, h.title, h.anchor)
@@ -842,11 +851,23 @@ pub async fn fetch_page(
     }
 }
 
+/// Normalize text for search: lowercase and replace hyphens/underscores with spaces.
+///
+/// This lets queries like "column-comments" match "Column Comments" and vice versa.
+fn normalize_for_search(text: &str) -> String {
+    text.to_lowercase().replace(['-', '_'], " ")
+}
+
 /// Search the TOC for entries matching a query string.
 ///
-/// Performs case-insensitive substring matching on titles, descriptions, and slugs.
+/// Performs case-insensitive substring matching on titles, descriptions, slugs, and page headings.
 /// Called when the user runs `moose docs search <query>`.
-pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, RoutineFailure> {
+pub async fn search_toc(
+    query: &str,
+    raw: bool,
+    lang: DocsLanguage,
+    expand: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
     if !raw {
         show_message!(
             MessageType::Info,
@@ -856,38 +877,80 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
 
     let content = fetch_toc_content().await?;
     let sections = parse_toc(&content);
-    let query_lower = query.to_lowercase();
+    let query_norm = normalize_for_search(query);
+
+    // When --expand is set, fetch all pages in parallel to search their headings
+    let page_headings: std::collections::HashMap<String, Vec<PageHeading>> = if expand {
+        let all_slugs: Vec<String> = sections
+            .iter()
+            .flat_map(|s| s.entries.iter())
+            .map(|e| e.slug.clone())
+            .collect();
+
+        if !raw {
+            show_message!(
+                MessageType::Info,
+                Message::new("Docs".to_string(), "Fetching page headings...".to_string())
+            );
+        }
+
+        stream::iter(all_slugs.iter().map(|slug| {
+            let slug = slug.clone();
+            async move {
+                let result = fetch_page_content(&slug, lang).await;
+                (slug, result)
+            }
+        }))
+        .buffer_unordered(10)
+        .filter_map(|(slug, result)| async move {
+            result
+                .ok()
+                .map(|content| (slug, parse_page_headings(&content)))
+        })
+        .collect()
+        .await
+    } else {
+        std::collections::HashMap::new()
+    };
 
     let mut match_count = 0;
     let mut first_section = true;
 
     for section in &sections {
-        let matches: Vec<&TocEntry> = section
-            .entries
-            .iter()
-            .filter(|e| {
-                e.title.to_lowercase().contains(&query_lower)
-                    || e.description.to_lowercase().contains(&query_lower)
-                    || e.slug.to_lowercase().contains(&query_lower)
-            })
-            .collect();
+        let mut section_has_output = false;
 
-        if matches.is_empty() {
-            continue;
-        }
+        for entry in &section.entries {
+            let toc_match = normalize_for_search(&entry.title).contains(&query_norm)
+                || normalize_for_search(&entry.description).contains(&query_norm)
+                || normalize_for_search(&entry.slug).contains(&query_norm);
 
-        if !first_section {
-            println!();
-        }
-        first_section = false;
+            let heading_matches: Vec<&PageHeading> = page_headings
+                .get(&entry.slug)
+                .map(|headings| {
+                    headings
+                        .iter()
+                        .filter(|h| normalize_for_search(&h.title).contains(&query_norm))
+                        .collect()
+                })
+                .unwrap_or_default();
 
-        if raw {
-            println!("{}", section.name);
-        } else {
-            print_section_header(&section.name);
-        }
+            if !toc_match && heading_matches.is_empty() {
+                continue;
+            }
 
-        for entry in &matches {
+            if !section_has_output {
+                if !first_section {
+                    println!();
+                }
+                first_section = false;
+                if raw {
+                    println!("{}", section.name);
+                } else {
+                    print_section_header(&section.name);
+                }
+                section_has_output = true;
+            }
+
             let slug_display = entry.slug.trim_end_matches(".md");
             if raw {
                 println!(
@@ -899,6 +962,27 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
                 print_dim(&format!("({})", slug_display));
             }
             match_count += 1;
+
+            // Show matching headings underneath
+            for heading in &heading_matches {
+                let prefix = match heading.level {
+                    1 => "H1",
+                    2 => "H2",
+                    _ => "H3",
+                };
+                if raw {
+                    println!(
+                        "    [{}] {} ({}#{})",
+                        prefix, heading.title, slug_display, heading.anchor
+                    );
+                } else {
+                    print!("    ");
+                    print_dim(&format!(
+                        "[{}] {} ({}#{})",
+                        prefix, heading.title, slug_display, heading.anchor
+                    ));
+                }
+            }
         }
     }
 
@@ -918,7 +1002,11 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
                 format!("Found {} matching page(s)", match_count)
             )
         );
-        print_dim("  Tip: moose docs <slug> to view a page");
+        if expand {
+            print_dim("  Tip: moose docs <slug>#<section> to jump to a heading");
+        } else {
+            print_dim("  Tip: moose docs search --expand <query> to also search page headings");
+        }
     }
 
     if raw {
@@ -1364,7 +1452,7 @@ fn guide_section_items(headings: &[PageHeading]) -> Vec<PickerItem> {
         title: "Full page".to_string(),
         detail: "view entire guide".to_string(),
     }];
-    for h in headings {
+    for h in headings.iter().filter(|h| h.level >= 2) {
         let indent = if h.level == 3 { "  " } else { "" };
         items.push(PickerItem {
             title: format!("{}{}", indent, h.title),
@@ -1583,8 +1671,9 @@ async fn browse_guide_page(
 
     let content = fetch_page_content(slug, lang).await?;
     let headings = parse_page_headings(&content);
+    let section_headings: Vec<&PageHeading> = headings.iter().filter(|h| h.level >= 2).collect();
 
-    if headings.is_empty() || !std::io::stdout().is_terminal() {
+    if section_headings.is_empty() || !std::io::stdout().is_terminal() {
         return if web {
             open_in_browser(slug)
         } else {
@@ -1628,7 +1717,7 @@ async fn browse_guide_page(
         }
         PickerResult::Selected(idx) => {
             // Section selected (idx-1 because idx 0 is "Full page")
-            let heading = &headings[idx - 1];
+            let heading = section_headings[idx - 1];
             if web {
                 let with_anchor = format!("{}#{}", slug_display, heading.anchor);
                 open_in_browser(&with_anchor)
@@ -1863,13 +1952,15 @@ Some intro text here.
     fn test_parse_page_headings() {
         let content = "# Title\n\nSome intro.\n\n## Overview\n\nText here.\n\n### Setup\n\nMore text.\n\n## Tutorial\n\nContent.\n";
         let headings = parse_page_headings(content);
-        assert_eq!(headings.len(), 3);
-        assert_eq!(headings[0].title, "Overview");
-        assert_eq!(headings[0].level, 2);
-        assert_eq!(headings[1].title, "Setup");
-        assert_eq!(headings[1].level, 3);
-        assert_eq!(headings[2].title, "Tutorial");
-        assert_eq!(headings[2].level, 2);
+        assert_eq!(headings.len(), 4);
+        assert_eq!(headings[0].title, "Title");
+        assert_eq!(headings[0].level, 1);
+        assert_eq!(headings[1].title, "Overview");
+        assert_eq!(headings[1].level, 2);
+        assert_eq!(headings[2].title, "Setup");
+        assert_eq!(headings[2].level, 3);
+        assert_eq!(headings[3].title, "Tutorial");
+        assert_eq!(headings[3].level, 2);
     }
 
     #[test]

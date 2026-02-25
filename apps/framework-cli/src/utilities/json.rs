@@ -80,6 +80,41 @@ pub fn to_string_pretty_sorted<T: Serialize>(value: &T) -> serde_json::Result<St
     serde_json::to_string_pretty(&sorted_value)
 }
 
+/// Converts a `serde_json::Value` into a `serde_yaml::Value` by pattern matching.
+///
+/// Necessary because `serde_json` with `arbitrary_precision` (enabled transitively)
+/// serializes `Number` as `{"$serde_json::private::Number": "42"}` via `Serialize`,
+/// which leaks into YAML output when using `serde_yaml::to_string(&json_value)`.
+pub fn json_value_to_yaml(value: &Value) -> serde_yaml::Value {
+    match value {
+        Value::Null => serde_yaml::Value::Null,
+        Value::Bool(b) => serde_yaml::Value::Bool(*b),
+        Value::Number(n) => {
+            let yaml_number = if let Some(i) = n.as_i64() {
+                serde_yaml::Number::from(i)
+            } else if let Some(u) = n.as_u64() {
+                serde_yaml::Number::from(u)
+            } else if let Some(f) = n.as_f64() {
+                serde_yaml::Number::from(f)
+            } else {
+                return serde_yaml::Value::String(n.to_string());
+            };
+            serde_yaml::Value::Number(yaml_number)
+        }
+        Value::String(s) => serde_yaml::Value::String(s.clone()),
+        Value::Array(arr) => {
+            serde_yaml::Value::Sequence(arr.iter().map(json_value_to_yaml).collect())
+        }
+        Value::Object(map) => {
+            let mut yaml_map = serde_yaml::Mapping::new();
+            for (k, v) in map {
+                yaml_map.insert(serde_yaml::Value::String(k.clone()), json_value_to_yaml(v));
+            }
+            serde_yaml::Value::Mapping(yaml_map)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

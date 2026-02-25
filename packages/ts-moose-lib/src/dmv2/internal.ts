@@ -12,7 +12,6 @@
  *           Its API might change without notice.
  */
 import process from "process";
-import * as fs from "fs";
 import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import type { IJsonSchemaCollection } from "typia";
@@ -48,51 +47,12 @@ import {
   hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
-
-/**
- * Recursively finds all TypeScript/JavaScript files in a directory
- */
-function findSourceFiles(
-  dir: string,
-  extensions: string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
-): string[] {
-  const files: string[] = [];
-
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-
-      if (entry.isDirectory()) {
-        // Skip node_modules and hidden directories
-        if (entry.name !== "node_modules" && !entry.name.startsWith(".")) {
-          files.push(...findSourceFiles(fullPath, extensions));
-        }
-      } else if (entry.isFile()) {
-        // Skip TypeScript declaration files (.d.ts, .d.mts, .d.cts)
-        // These are never loaded at runtime, only used for type-checking
-        if (
-          entry.name.endsWith(".d.ts") ||
-          entry.name.endsWith(".d.mts") ||
-          entry.name.endsWith(".d.cts")
-        ) {
-          continue;
-        }
-
-        const ext = path.extname(entry.name);
-        if (extensions.includes(ext)) {
-          files.push(fullPath);
-        }
-      }
-    }
-  } catch (error) {
-    // Directory doesn't exist or can't be read
-    compilerLog(`Warning: Could not read directory ${dir}: ${error}`);
-  }
-
-  return files;
-}
+import {
+  analyzeRegistryLineage,
+  type DependencyAnalysisResult,
+  type InfrastructureSignatureJson,
+} from "./dependencyAnalysis";
+import { findSourceFiles } from "./utils";
 
 /**
  * Strips the file extension from a path, returning the "stem".
@@ -122,7 +82,9 @@ function findUnloadedFiles(): string[] {
   const compiledAppDir = path.resolve(cwd, getOutDir(), sourceDir);
 
   // Find all source files in the source directory
-  const allSourceFiles = findSourceFiles(appDir);
+  const allSourceFiles = findSourceFiles(appDir, (directory, error) => {
+    compilerLog(`Warning: Could not read directory ${directory}: ${error}`);
+  });
 
   // Build a set of stems from require.cache entries under the compiled directory.
   // e.g. ".moose/compiled/app/models.js" -> stem "models"
@@ -157,22 +119,156 @@ function findUnloadedFiles(): string[] {
 export const isClientOnlyMode = (): boolean =>
   process.env.MOOSE_CLIENT_ONLY === "true";
 
+class MutationTrackingMap<K, V> extends Map<K, V> {
+  private onMutate: (() => void) | undefined;
+
+  constructor(entries?: Iterable<readonly [K, V]>, onMutate?: () => void) {
+    super(entries);
+    this.onMutate = onMutate;
+  }
+
+  setMutationListener(onMutate: () => void): void {
+    this.onMutate = onMutate;
+  }
+
+  override set(key: K, value: V): this {
+    super.set(key, value);
+    this.onMutate?.();
+    return this;
+  }
+
+  override delete(key: K): boolean {
+    const deleted = super.delete(key);
+    if (deleted) {
+      this.onMutate?.();
+    }
+    return deleted;
+  }
+
+  override clear(): void {
+    if (this.size === 0) {
+      return;
+    }
+    super.clear();
+    this.onMutate?.();
+  }
+}
+
+type MooseInternalRegistry = {
+  tables: Map<string, OlapTable<any>>;
+  streams: Map<string, Stream<any>>;
+  ingestApis: Map<string, IngestApi<any>>;
+  apis: Map<string, Api<any>>;
+  sqlResources: Map<string, SqlResource>;
+  workflows: Map<string, Workflow>;
+  webApps: Map<string, WebApp>;
+  materializedViews: Map<string, MaterializedView<any>>;
+  views: Map<string, View>;
+};
+
+let registryMutationVersion = 0;
+let lineageCache:
+  | {
+      registry: MooseInternalRegistry;
+      version: number;
+      result: DependencyAnalysisResult;
+    }
+  | undefined;
+
+const markRegistryMutated = () => {
+  registryMutationVersion += 1;
+  lineageCache = undefined;
+};
+
+function toTrackingMap<V>(
+  map: Map<string, V> | undefined,
+): MutationTrackingMap<string, V> {
+  if (map instanceof MutationTrackingMap) {
+    map.setMutationListener(markRegistryMutated);
+    return map;
+  }
+  return new MutationTrackingMap<string, V>(
+    map?.entries(),
+    markRegistryMutated,
+  );
+}
+
+function createRegistryFrom(
+  existing?: Partial<MooseInternalRegistry>,
+): MooseInternalRegistry {
+  return {
+    tables: toTrackingMap(existing?.tables),
+    streams: toTrackingMap(existing?.streams),
+    ingestApis: toTrackingMap(existing?.ingestApis),
+    apis: toTrackingMap(existing?.apis),
+    sqlResources: toTrackingMap(existing?.sqlResources),
+    workflows: toTrackingMap(existing?.workflows),
+    webApps: toTrackingMap(existing?.webApps),
+    materializedViews: toTrackingMap(existing?.materializedViews),
+    views: toTrackingMap(existing?.views),
+  };
+}
+
 /**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
  */
-const moose_internal = {
-  tables: new Map<string, OlapTable<any>>(),
-  streams: new Map<string, Stream<any>>(),
-  ingestApis: new Map<string, IngestApi<any>>(),
-  apis: new Map<string, Api<any>>(),
-  sqlResources: new Map<string, SqlResource>(),
-  workflows: new Map<string, Workflow>(),
-  webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
-  views: new Map<string, View>(),
+const moose_internal: MooseInternalRegistry = {
+  tables: new MutationTrackingMap<string, OlapTable<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  streams: new MutationTrackingMap<string, Stream<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  ingestApis: new MutationTrackingMap<string, IngestApi<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  apis: new MutationTrackingMap<string, Api<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  sqlResources: new MutationTrackingMap<string, SqlResource>(
+    undefined,
+    markRegistryMutated,
+  ),
+  workflows: new MutationTrackingMap<string, Workflow>(
+    undefined,
+    markRegistryMutated,
+  ),
+  webApps: new MutationTrackingMap<string, WebApp>(
+    undefined,
+    markRegistryMutated,
+  ),
+  materializedViews: new MutationTrackingMap<string, MaterializedView<any>>(
+    undefined,
+    markRegistryMutated,
+  ),
+  views: new MutationTrackingMap<string, View>(undefined, markRegistryMutated),
 };
+
+function getCachedLineage(
+  registry: MooseInternalRegistry,
+): DependencyAnalysisResult {
+  if (
+    lineageCache &&
+    lineageCache.registry === registry &&
+    lineageCache.version === registryMutationVersion
+  ) {
+    return lineageCache.result;
+  }
+
+  const result = analyzeRegistryLineage(registry);
+  lineageCache = {
+    registry,
+    version: registryMutationVersion,
+    result,
+  };
+  return result;
+}
 /**
  * Default retention period for streams if not specified (7 days in seconds).
  */
@@ -488,24 +584,10 @@ interface ApiJson {
   path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
-}
-
-/**
- * Represents the unique signature of an infrastructure component (Table, Topic, etc.).
- * Used for defining dependencies between SQL resources.
- */
-interface InfrastructureSignatureJson {
-  /** A unique identifier for the resource instance (often name + version). */
-  id: string;
-  /** The kind/type of the infrastructure component. */
-  kind:
-    | "Table"
-    | "Topic"
-    | "ApiEndpoint"
-    | "TopicToTableSyncProcess"
-    | "View"
-    | "MaterializedView"
-    | "SqlResource";
+  /** Components that this API reads from. */
+  pullsDataFrom: InfrastructureSignatureJson[];
+  /** Components that this API writes to. */
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 interface WorkflowJson {
@@ -513,12 +595,16 @@ interface WorkflowJson {
   retries?: number;
   timeout?: string;
   schedule?: string;
+  pullsDataFrom: InfrastructureSignatureJson[];
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 interface WebAppJson {
   name: string;
   mountPath: string;
   metadata?: { description?: string };
+  pullsDataFrom: InfrastructureSignatureJson[];
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 interface SqlResourceJson {
@@ -971,7 +1057,7 @@ function convertTableConfigToEngineConfig(
   return undefined;
 }
 
-export const toInfraMap = (registry: typeof moose_internal) => {
+export const toInfraMap = (registry: MooseInternalRegistry) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
   const ingestApis: { [key: string]: IngestApiJson } = {};
@@ -981,6 +1067,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
+  const lineage = getCachedLineage(registry);
 
   registry.tables.forEach((table) => {
     const id =
@@ -1149,6 +1236,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   registry.apis.forEach((api, key) => {
     const rustKey =
       api.config.version ? `${api.name}:${api.config.version}` : api.name;
+    const apiLineage = lineage.apiByKey.get(rustKey);
     apis[rustKey] = {
       name: api.name,
       queryParams: api.columnArray,
@@ -1156,6 +1244,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       version: api.config.version,
       path: api.config.path,
       metadata: api.metadata,
+      pullsDataFrom: apiLineage?.pullsDataFrom ?? [],
+      pushesDataTo: apiLineage?.pushesDataTo ?? [],
     };
   });
 
@@ -1238,19 +1328,25 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   });
 
   registry.workflows.forEach((workflow) => {
+    const workflowLineage = lineage.workflowByName.get(workflow.name);
     workflows[workflow.name] = {
       name: workflow.name,
       retries: workflow.config.retries,
       timeout: workflow.config.timeout,
       schedule: workflow.config.schedule,
+      pullsDataFrom: workflowLineage?.pullsDataFrom ?? [],
+      pushesDataTo: workflowLineage?.pushesDataTo ?? [],
     };
   });
 
   registry.webApps.forEach((webApp) => {
+    const webAppLineage = lineage.webAppByName.get(webApp.name);
     webApps[webApp.name] = {
       name: webApp.name,
       mountPath: webApp.config.mountPath || "/",
       metadata: webApp.config.metadata,
+      pullsDataFrom: webAppLineage?.pullsDataFrom ?? [],
+      pushesDataTo: webAppLineage?.pushesDataTo ?? [],
     };
   });
 
@@ -1297,13 +1393,23 @@ export const toInfraMap = (registry: typeof moose_internal) => {
  *
  * @returns The internal Moose resource registry.
  */
-export const getMooseInternal = (): typeof moose_internal =>
-  (globalThis as any).moose_internal;
+const initializeMooseInternalRegistry = () => {
+  const existing = (globalThis as any).moose_internal as
+    | Partial<MooseInternalRegistry>
+    | undefined;
 
-// work around for variable visibility in compiler output
-if (getMooseInternal() === undefined) {
-  (globalThis as any).moose_internal = moose_internal;
-}
+  if (existing === undefined) {
+    (globalThis as any).moose_internal = moose_internal;
+    return;
+  }
+
+  (globalThis as any).moose_internal = createRegistryFrom(existing);
+};
+
+initializeMooseInternalRegistry();
+
+export const getMooseInternal = (): MooseInternalRegistry =>
+  (globalThis as any).moose_internal;
 
 /**
  * Loads the user's application entry point (`app/index.ts`) to register resources,

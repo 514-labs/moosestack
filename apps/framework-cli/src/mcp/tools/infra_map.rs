@@ -123,17 +123,16 @@ fn format_infrastructure_map(
         });
 
         // Build set of matching component IDs for connection filtering
-        let component_ids: std::collections::HashSet<_> =
-            filtered.components.iter().map(|c| c.id.as_str()).collect();
+        let component_ids: std::collections::HashSet<String> =
+            filtered.components.iter().map(|c| c.id.clone()).collect();
 
         // Filter connections: keep if source OR destination is in filtered components
-        filtered.connections.retain(|conn| {
+        filtered.retain_connections(|conn| {
             component_ids.contains(conn.from.as_str()) || component_ids.contains(conn.to.as_str())
         });
 
         // Recalculate stats
         filtered.stats.total_components = filtered.components.len() as u32;
-        filtered.stats.total_connections = filtered.connections.len() as u32;
         filtered.stats.by_type.clear();
         for component in &filtered.components {
             *filtered
