@@ -1,7 +1,7 @@
 /// # Add Command
 ///
 /// Installs a pre-built component into an existing project. Each component is described
-/// by a `component.json` manifest that declares which files to copy, which env vars to
+/// by a `component.toml` manifest that declares which files to copy, which env vars to
 /// append, and which npm/shadcn dependencies to install.
 ///
 /// Currently manifests are embedded in the binary via `include_str!` and component files

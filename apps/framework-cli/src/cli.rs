@@ -70,7 +70,7 @@ use crate::utilities::constants::{
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
-use crate::cli::commands::DbArgs;
+use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{
     db_pull, db_pull_from_remote, db_to_dmv2, prompt_user_for_remote_ch_http,
 };
@@ -1683,7 +1683,28 @@ pub async fn top_command_handler(
 
             result
         }
-        Commands::Add { component } => routines::add::run_add(component).await,
+        Commands::Add { component } => {
+            info!("Running add command");
+
+            let component_name = match component {
+                AddComponent::McpServer(_) => "mcp-server",
+                AddComponent::Chat(_) => "chat",
+            };
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::AddCommand,
+                None,
+                &settings,
+                machine_id.clone(),
+                HashMap::from([("component".to_string(), component_name.to_string())]),
+            );
+
+            let result = routines::add::run_add(component).await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
         Commands::Docs(docs_args) => {
             info!("Running docs command");
 
