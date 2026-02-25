@@ -105,7 +105,7 @@ type ResolvedQuerySpec<
   TDimensions extends string,
   TFilters extends Record<string, FilterDefBase>,
   TSortable extends string,
-  TTable = any,
+  TTable = unknown,
   TColumns extends string = string,
 > = {
   filters?: FilterParams<TFilters, TTable>;
@@ -232,11 +232,11 @@ export interface QueryModelConfig<
 export interface QueryModel<
   TTable,
   TMetrics extends Record<string, MetricDef>,
-  TDimensions extends Record<string, DimensionDef<any, any>>,
+  TDimensions extends Record<string, DimensionDef>,
   TFilters extends Record<string, FilterDefBase>,
   TSortable extends string,
   TResult,
-  TColumns extends Record<string, ColumnDef<any>> = Record<string, never>,
+  TColumns extends Record<string, ColumnDef> = Record<string, never>,
 > {
   readonly name?: string;
   readonly description?: string;

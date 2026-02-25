@@ -6,7 +6,7 @@
  */
 
 import { sql } from "../sqlHelpers";
-import type { Column } from "../dataModels/dataModelTypes";
+import type { Column, DataType } from "../dataModels/dataModelTypes";
 import type { OlapTable } from "../dmv2";
 import type {
   DimensionDef,
@@ -33,7 +33,7 @@ function toCamelCase(s: string): string {
  * - String, FixedString → "text"
  */
 export function deriveInputTypeFromDataType(
-  dataType: string | { nullable: unknown } | unknown,
+  dataType: DataType,
 ): FilterInputTypeHint {
   if (typeof dataType === "string") {
     const lower = dataType.toLowerCase();
@@ -58,27 +58,21 @@ export function deriveInputTypeFromDataType(
     return "text";
   }
 
-  if (dataType && typeof dataType === "object") {
-    if ("nullable" in dataType) {
-      return deriveInputTypeFromDataType(
-        (dataType as { nullable: unknown }).nullable,
-      );
-    }
-    if ("name" in dataType && "values" in dataType) {
-      return "select";
-    }
-    if ("elementType" in dataType) {
-      return "text";
-    }
+  if ("nullable" in dataType) {
+    return deriveInputTypeFromDataType(dataType.nullable);
+  }
+  if ("name" in dataType && "values" in dataType) {
+    return "select";
+  }
+  if ("elementType" in dataType) {
     return "text";
   }
-
   return "text";
 }
 
 // --- timeDimensions ---
 
-type TimeDimensionDef = DimensionDef<any, any>;
+type TimeDimensionDef = DimensionDef;
 type DefaultTimePeriods = {
   day: TimeDimensionDef;
   month: TimeDimensionDef;

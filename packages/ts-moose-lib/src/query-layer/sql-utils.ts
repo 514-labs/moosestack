@@ -264,7 +264,7 @@ export interface Expr extends Sql {
 function expr(fragment: Sql): Expr {
   return Object.assign(fragment, {
     as: (alias: string) => sql`${fragment} AS ${raw(alias)}`,
-  }) as unknown as Expr;
+  }) as Expr;
 }
 
 // --- Aggregation Functions ---

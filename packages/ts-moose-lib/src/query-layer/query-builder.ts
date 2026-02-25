@@ -190,11 +190,11 @@ export interface QueryBuilder<
 export function buildQuery<
   TTable,
   TMetrics extends Record<string, MetricDef>,
-  TDimensions extends Record<string, DimensionDef<any, any>>,
+  TDimensions extends Record<string, DimensionDef>,
   TFilters extends Record<string, FilterDefBase>,
   TSortable extends string,
   TResult,
-  TColumns extends Record<string, ColumnDef<any>> = Record<string, never>,
+  TColumns extends Record<string, ColumnDef> = Record<string, never>,
 >(
   model: QueryModel<
     TTable,
