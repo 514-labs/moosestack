@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "outDir": "dist",
+    "esModuleInterop": true,
+    "plugins": [
+      {
+        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
+        "transformProgram": true
+      },
+      {
+        "transform": "typia/lib/transform"
+      }
+    ],
+    "strictNullChecks": true
+  }
+}

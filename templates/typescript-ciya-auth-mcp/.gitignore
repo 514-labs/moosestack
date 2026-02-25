@@ -1,0 +1,10 @@
+.moose
+node_modules
+dist
+coverage
+.ts-node
+.agents
+.claude
+CLAUDE.md
+docs/older
+
