@@ -2063,6 +2063,9 @@ impl InfrastructureMap {
                         // Detect index changes (secondary/data-skipping indexes)
                         let indexes_changed = table.indexes != target_table.indexes;
 
+                        // Detect projection changes
+                        let projections_changed = table.projections != target_table.projections;
+
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
                         if !ttl_expressions_are_equivalent(
@@ -2097,6 +2100,7 @@ impl InfrastructureMap {
                             || partition_by_changed
                             || engine_changed
                             || indexes_changed
+                            || projections_changed
                             || table_settings_changed
                         {
                             // Use the strategy to determine the appropriate changes
@@ -3905,6 +3909,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3969,6 +3974,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4479,6 +4485,7 @@ mod diff_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -7433,6 +7440,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "s3queue_test".to_string(),
@@ -7467,6 +7475,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "kafka_test".to_string(),
@@ -7558,6 +7567,7 @@ mod diff_orchestration_worker_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
         };
@@ -7609,6 +7619,7 @@ mod diff_orchestration_worker_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
         };
@@ -8449,6 +8460,7 @@ mod mirrorable_external_tables_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -8491,6 +8503,7 @@ mod mirrorable_external_tables_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
