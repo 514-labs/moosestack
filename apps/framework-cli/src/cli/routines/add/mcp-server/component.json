@@ -1,7 +1,9 @@
 {
   "name": "mcp-server",
   "language": "typescript",
-  "files": [{ "src": "mcp.ts", "dest": "app/apis/mcp.ts" }],
+  "template": "typescript-mcp",
+  "base_path": "packages/moosestack-service",
+  "files": [{ "src": "app/apis/mcp.ts", "dest": "app/apis/mcp.ts" }],
   "moose_main_exports": "export * from \"./apis/mcp\";",
   "env": [
     {

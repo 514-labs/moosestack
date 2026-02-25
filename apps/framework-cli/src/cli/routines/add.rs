@@ -5,13 +5,13 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-use super::{display, Message, MessageType};
+use super::{display, templates, Message, MessageType};
 use crate::cli::commands::AddComponent;
 use crate::cli::prompt_user;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
-use crate::utilities::constants::{PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
+use crate::utilities::constants::{CLI_VERSION, PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
 use crate::utilities::dotenv::MooseEnvironment;
 use crate::utilities::package_managers::{detect_package_manager, PackageManager};
 use config::ConfigError;
@@ -31,20 +31,38 @@ struct EnvEntry {
 
 #[derive(Deserialize)]
 struct ComponentManifest {
+    /// Component identifier, e.g. `"mcp-server"`.
     name: String,
+    /// Must match the target project's language.
     language: SupportedLanguages,
+    /// Template archive to download. Defaults to `name` (v1: each component has its own archive).
+    template: Option<String>,
+    /// Directory inside the unpacked archive where component files live, e.g. `"packages/web-app"`.
+    base_path: Option<String>,
+    /// Files to copy from the archive into the target project.
     files: Vec<FileEntry>,
+    /// Export line appended to the moose entry file. `None` for non-moose components.
     moose_main_exports: Option<String>,
+    /// Env vars to append to the target project's env files.
     env: Vec<EnvEntry>,
+    /// npm packages to install.
     npm_deps: Vec<String>,
+    /// shadcn/ui components to add. Requires `components.json` in the target directory.
     shadcn_components: Vec<String>,
+    /// "Next steps" text printed after a successful install.
     docs: String,
 }
 
-pub fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
-    let (args, (manifest, file_contents)) = match component {
-        AddComponent::McpServer(args) => (args, mcp_server_registry()?),
-        AddComponent::Chat(args) => (args, chat_registry()?),
+pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
+    let (args, manifest) = match component {
+        AddComponent::McpServer(args) => (
+            args,
+            load_manifest(include_str!("add/mcp-server/component.json"), "mcp-server")?,
+        ),
+        AddComponent::Chat(args) => (
+            args,
+            load_manifest(include_str!("add/chat/component.json"), "chat")?,
+        ),
     };
 
     let target_dir = match args.dir.as_deref() {
@@ -67,6 +85,7 @@ pub fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailur
     preflight_checks(&manifest, &target_dir, &pkg_manager)?;
     confirm_plan(&manifest, &target_dir, args.overwrite, args.yes)?;
     println!();
+    let file_contents = fetch_component_files(&manifest).await?;
     write_files(&manifest, &file_contents, &target_dir)?;
     update_moose_entry(&manifest, &target_dir)?;
     update_env_files(&manifest, &target_dir)?;
@@ -78,6 +97,15 @@ pub fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailur
         "Done".to_string(),
         format!("{} installed successfully", manifest.name),
     )))
+}
+
+fn load_manifest(json: &str, component: &str) -> Result<ComponentManifest, RoutineFailure> {
+    serde_json::from_str(json).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Internal error".to_string(),
+            format!("{component}/component.json is invalid: {e}"),
+        ))
+    })
 }
 
 fn fail(
@@ -233,19 +261,60 @@ fn confirm_plan(
     Ok(())
 }
 
+/// Downloads the template archive, unpacks it into a temp dir, then reads the
+/// files listed in the manifest into a `src → content` map.
+async fn fetch_component_files(
+    manifest: &ComponentManifest,
+) -> Result<HashMap<String, String>, RoutineFailure> {
+    let archive_name = manifest.template.as_deref().unwrap_or(&manifest.name);
+    let base_path = manifest.base_path.as_deref().unwrap_or("");
+
+    display::show_message_wrapper(
+        MessageType::Info,
+        Message::new(
+            "Fetching".to_string(),
+            format!("{archive_name} template..."),
+        ),
+    );
+
+    let tmp = tempfile::tempdir().map_err(|e| {
+        RoutineFailure::error(Message::new("Fetch failed".to_string(), e.to_string()))
+    })?;
+
+    templates::download_and_unpack(archive_name, CLI_VERSION, tmp.path())
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Fetch failed".to_string(),
+                format!("Could not download {archive_name}: {e}"),
+            ))
+        })?;
+
+    let mut result = HashMap::new();
+    for f in &manifest.files {
+        let path = tmp.path().join(base_path).join(&f.src);
+        let content = std::fs::read_to_string(&path).map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Fetch failed".to_string(),
+                format!("'{}' not found in {archive_name} template: {e}", f.src),
+            ))
+        })?;
+        result.insert(f.src.clone(), content);
+    }
+
+    Ok(result)
+}
+
 fn write_files(
     manifest: &ComponentManifest,
-    file_contents: &HashMap<&str, &str>,
+    file_contents: &HashMap<String, String>,
     target_dir: &Path,
 ) -> Result<(), RoutineFailure> {
     for f in &manifest.files {
-        let content = file_contents.get(f.src.as_str()).ok_or_else(|| {
+        let content = file_contents.get(&f.src).ok_or_else(|| {
             RoutineFailure::error(Message::new(
                 "Internal error".to_string(),
-                format!(
-                    "'{}' is in component.json but not embedded in the component",
-                    f.src
-                ),
+                format!("'{}' missing from fetched files", f.src),
             ))
         })?;
 
@@ -348,7 +417,7 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
         String::new()
     };
 
-    let prefix = format!("{}=", key);
+    let prefix = format!("{key}=");
     if existing.lines().any(|l| l.starts_with(&prefix)) {
         return Ok(());
     }
@@ -357,7 +426,7 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
     if !content.ends_with('\n') && !content.is_empty() {
         content.push('\n');
     }
-    content.push_str(&format!("{}={}\n", key, placeholder));
+    content.push_str(&format!("{key}={placeholder}\n"));
     std::fs::write(path, content)
 }
 
@@ -473,149 +542,4 @@ fn print_next_steps(manifest: &ComponentManifest) {
         Message::new("Next steps".to_string(), manifest.name.clone()),
     );
     println!("\n{}", manifest.docs);
-}
-
-// ── Embedded component registries (v0 — temporary) ───────────────────────────
-//
-// Each component directory contains:
-//   component.json  – the manifest (declares files, deps, env vars, docs)
-//   <source files>  – the actual component source code to be copied
-//
-// Both the manifest and all source files are embedded into the binary at
-// compile time via include_str!. The manifest's `src` field is used as a key
-// to look up the right embedded content at runtime.
-//
-// This is a v0 approach. Because include_str! requires string literals, every
-// file must be listed here manually — component.json and this are kept
-// in sync by hand.
-//
-// v1 goal: reuse the template packaging infrastructure (the same GCS-hosted
-// .tgz files that `moose init` downloads). The CLI will fetch a component
-// archive at runtime instead of embedding files at compile time, so
-// component.json becomes the single source of truth and this goes away.
-
-const MCP_SERVER_FILES: &[(&str, &str)] = &[("mcp.ts", include_str!("add/mcp-server/mcp.ts"))];
-
-const CHAT_FILES: &[(&str, &str)] = &[
-    ("env-vars.ts", include_str!("add/chat/env-vars.ts")),
-    (
-        "hooks/use-mobile.ts",
-        include_str!("add/chat/hooks/use-mobile.ts"),
-    ),
-    (
-        "app/api/chat/route.ts",
-        include_str!("add/chat/app/api/chat/route.ts"),
-    ),
-    (
-        "app/api/chat/status/route.ts",
-        include_str!("add/chat/app/api/chat/status/route.ts"),
-    ),
-    (
-        "components/layout/chat-layout-wrapper.tsx",
-        include_str!("add/chat/components/layout/chat-layout-wrapper.tsx"),
-    ),
-    (
-        "components/layout/content-header.tsx",
-        include_str!("add/chat/components/layout/content-header.tsx"),
-    ),
-    (
-        "components/layout/resizable-chat-layout.tsx",
-        include_str!("add/chat/components/layout/resizable-chat-layout.tsx"),
-    ),
-    (
-        "features/chat/agent-config.ts",
-        include_str!("add/chat/features/chat/agent-config.ts"),
-    ),
-    (
-        "features/chat/chat-button.tsx",
-        include_str!("add/chat/features/chat/chat-button.tsx"),
-    ),
-    (
-        "features/chat/chat-input.tsx",
-        include_str!("add/chat/features/chat/chat-input.tsx"),
-    ),
-    (
-        "features/chat/chat-output-area.tsx",
-        include_str!("add/chat/features/chat/chat-output-area.tsx"),
-    ),
-    (
-        "features/chat/chat-ui.tsx",
-        include_str!("add/chat/features/chat/chat-ui.tsx"),
-    ),
-    (
-        "features/chat/clickhouse-tool-invocation.tsx",
-        include_str!("add/chat/features/chat/clickhouse-tool-invocation.tsx"),
-    ),
-    (
-        "features/chat/code-block.tsx",
-        include_str!("add/chat/features/chat/code-block.tsx"),
-    ),
-    (
-        "features/chat/get-agent-response.ts",
-        include_str!("add/chat/features/chat/get-agent-response.ts"),
-    ),
-    (
-        "features/chat/reasoning-section.tsx",
-        include_str!("add/chat/features/chat/reasoning-section.tsx"),
-    ),
-    (
-        "features/chat/source-section.tsx",
-        include_str!("add/chat/features/chat/source-section.tsx"),
-    ),
-    (
-        "features/chat/suggested-prompt.tsx",
-        include_str!("add/chat/features/chat/suggested-prompt.tsx"),
-    ),
-    (
-        "features/chat/system-prompt.ts",
-        include_str!("add/chat/features/chat/system-prompt.ts"),
-    ),
-    (
-        "features/chat/text-formatter.tsx",
-        include_str!("add/chat/features/chat/text-formatter.tsx"),
-    ),
-    (
-        "features/chat/tool-data-catalog.tsx",
-        include_str!("add/chat/features/chat/tool-data-catalog.tsx"),
-    ),
-    (
-        "features/chat/tool-invocation.tsx",
-        include_str!("add/chat/features/chat/tool-invocation.tsx"),
-    ),
-    (
-        "features/chat/use-anthropic-status.ts",
-        include_str!("add/chat/features/chat/use-anthropic-status.ts"),
-    ),
-    (
-        "components/theme-toggle.tsx",
-        include_str!("add/chat/components/theme-toggle.tsx"),
-    ),
-    (
-        "components/ui/resizable.tsx",
-        include_str!("add/chat/components/ui/resizable.tsx"),
-    ),
-];
-
-fn mcp_server_registry(
-) -> Result<(ComponentManifest, HashMap<&'static str, &'static str>), RoutineFailure> {
-    let manifest: ComponentManifest =
-        serde_json::from_str(include_str!("add/mcp-server/component.json")).map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "Internal error".to_string(),
-                format!("mcp-server component.json is invalid: {}", e),
-            ))
-        })?;
-    Ok((manifest, MCP_SERVER_FILES.iter().cloned().collect()))
-}
-
-fn chat_registry(
-) -> Result<(ComponentManifest, HashMap<&'static str, &'static str>), RoutineFailure> {
-    let manifest: ComponentManifest = serde_json::from_str(include_str!("add/chat/component.json"))
-        .map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "Internal error".to_string(),
-                format!("chat component.json is invalid: {}", e),
-            ))
-        })?;
-    Ok((manifest, CHAT_FILES.iter().cloned().collect()))
 }
