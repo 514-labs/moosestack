@@ -644,6 +644,19 @@ pub struct ClickHouseIndex {
     pub granularity: u64,
 }
 
+/// A ClickHouse projection parsed from a CREATE TABLE statement.
+///
+/// Projections define alternative data orderings (or pre-aggregations) stored
+/// within each data part, enabling efficient queries on non-primary-key columns.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClickHouseProjection {
+    /// The projection identifier as it appears after `PROJECTION` in the DDL.
+    pub name: String,
+    /// The parenthesised body (without the outer parentheses), e.g.
+    /// `SELECT * ORDER BY some_col`.
+    pub body: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
@@ -657,6 +670,8 @@ pub struct ClickHouseTable {
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     /// Secondary data-skipping or specialized indexes
     pub indexes: Vec<ClickHouseIndex>,
+    /// Projections for alternative data ordering within parts
+    pub projections: Vec<ClickHouseProjection>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support
