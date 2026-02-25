@@ -63,6 +63,8 @@ export { buildQuery, type QueryBuilder } from "./query-builder";
 export {
   createModelTool,
   registerModelTools,
+  type QueryModelBase,
+  type QueryModelFilter,
   type ModelToolOptions,
   type ModelToolResult,
 } from "./mcp-utils";

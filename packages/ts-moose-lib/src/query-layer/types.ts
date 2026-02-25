@@ -6,13 +6,13 @@
  * @module query-layer/types
  */
 
+import type { Column } from "../dataModels/dataModelTypes";
 import type { Sql } from "../sqlHelpers";
 import type { OlapTable } from "../dmv2";
 
 // --- Basic Types ---
 
-/** Column type derived from OlapTable metadata */
-export type Column = OlapTable<any>["columnArray"][number];
+export type { Column };
 
 /** Valid SQL values that can be parameterized */
 export type SqlValue = string | number | boolean | Date;

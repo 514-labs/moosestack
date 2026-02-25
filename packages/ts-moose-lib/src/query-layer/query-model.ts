@@ -4,6 +4,7 @@
  * @module query-layer/query-model
  */
 
+import type { Column } from "../dataModels/dataModelTypes";
 import { sql, Sql } from "../sqlHelpers";
 import { OlapTable } from "../dmv2";
 import { QueryClient } from "../consumption-apis/helpers";
@@ -380,12 +381,10 @@ export function defineQueryModel<
 
   const resolvedFilters: Record<
     string,
-    FilterDef<any> & { inputType?: FilterInputTypeHint }
+    FilterDef & { inputType?: FilterInputTypeHint }
   > = {};
   for (const [name, def] of Object.entries(filters)) {
-    const columnRef = table.columns[def.column] as ColRef & {
-      data_type?: unknown;
-    };
+    const columnRef: Column = table.columns[def.column];
 
     const inputType =
       def.inputType ??
@@ -393,15 +392,13 @@ export function defineQueryModel<
         deriveInputTypeFromDataType(columnRef.data_type)
       : undefined);
 
-    const resolvedColumn =
-      hasJoins ?
-        (raw(`${primaryTableName}.${String(def.column)}`) as ColRef)
-      : columnRef;
+    const resolvedColumn: ColRef =
+      hasJoins ? raw(`${primaryTableName}.${String(def.column)}`) : columnRef;
 
     resolvedFilters[name] = {
       column: resolvedColumn,
       operators: def.operators,
-      transform: def.transform as ((value: any) => SqlValue) | undefined,
+      transform: def.transform as ((value: SqlValue) => SqlValue) | undefined,
       inputType,
     };
   }
@@ -411,11 +408,10 @@ export function defineQueryModel<
   const normalizedDimensions: Record<string, FieldDef> = {};
   if (dimensions) {
     for (const [name, def] of Object.entries(dimensions)) {
-      const d = def as DimensionDef<TTable, keyof TTable>;
       normalizedDimensions[name] = {
-        column: d.column ? (table.columns[d.column] as ColRef) : undefined,
-        expression: d.expression,
-        as: d.as,
+        column: def.column ? table.columns[def.column] : undefined,
+        expression: def.expression,
+        as: def.as,
       };
     }
   }
@@ -424,10 +420,7 @@ export function defineQueryModel<
 
   const normalizedMetrics: Record<string, FieldDef> = {};
   if (metrics) {
-    for (const [name, def] of Object.entries(metrics) as [
-      string,
-      MetricDef,
-    ][]) {
+    for (const [name, def] of Object.entries(metrics)) {
       normalizedMetrics[name] = { agg: def.agg, as: def.as };
     }
   }
@@ -436,10 +429,7 @@ export function defineQueryModel<
 
   const normalizedColumns: Record<string, FieldDef> = {};
   if (columnDefs) {
-    for (const [name, def] of Object.entries(columnDefs) as [
-      string,
-      ColumnDef<TTable>,
-    ][]) {
+    for (const [name, def] of Object.entries(columnDefs)) {
       if (def.join && joinDefs) {
         const joinDef = joinDefs[def.join];
         if (joinDef) {
@@ -456,7 +446,7 @@ export function defineQueryModel<
         };
       } else {
         normalizedColumns[name] = {
-          column: table.columns[def.column as keyof TTable] as ColRef,
+          column: table.columns[def.column as keyof TTable],
           as: def.as,
         };
       }
@@ -477,9 +467,9 @@ export function defineQueryModel<
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
   const columnNamesSet = new Set(Object.keys(normalizedColumns));
 
-  const dimensionNames = Object.keys(normalizedDimensions) as readonly string[];
-  const metricNames = Object.keys(normalizedMetrics) as readonly string[];
-  const columnNames = Object.keys(normalizedColumns) as readonly string[];
+  const dimensionNames: readonly string[] = Object.keys(normalizedDimensions);
+  const metricNames: readonly string[] = Object.keys(normalizedMetrics);
+  const columnNames: readonly string[] = Object.keys(normalizedColumns);
 
   // --- SQL building helpers ---
 
@@ -661,7 +651,7 @@ export function defineQueryModel<
   > {
     if (request.columns && request.columns.length > 0) {
       return {
-        select: request.columns as Array<Names<TColumns>>,
+        select: request.columns,
         groupBy: undefined,
         filters: request.filters,
         orderBy: request.orderBy,
@@ -822,9 +812,9 @@ export function defineQueryModel<
     filters: filtersWithInputType as TFilters &
       Record<string, { inputType?: FilterInputTypeHint }>,
     sortable,
-    dimensions: dimensions as TDimensions | undefined,
-    metrics: metrics as TMetrics | undefined,
-    columns: columnDefs as TColumns | undefined,
+    dimensions,
+    metrics,
+    columns: columnDefs,
     dimensionNames,
     metricNames,
     columnNames,

@@ -6,6 +6,7 @@
  */
 
 import { sql } from "../sqlHelpers";
+import type { Column } from "../dataModels/dataModelTypes";
 import type { OlapTable } from "../dmv2";
 import type {
   DimensionDef,
@@ -13,9 +14,6 @@ import type {
   ModelFilterDef,
   FilterInputTypeHint,
 } from "./types";
-
-/** Extract the Column type from OlapTable's columnArray */
-type Column = OlapTable<any>["columnArray"][number];
 
 // --- Utility: snake_case → camelCase ---
 
@@ -124,7 +122,7 @@ export function timeDimensions(
     }
   }
 
-  return result as DefaultTimePeriods;
+  return result;
 }
 
 // --- columnsFromTable ---

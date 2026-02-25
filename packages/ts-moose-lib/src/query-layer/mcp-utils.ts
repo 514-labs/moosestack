@@ -9,8 +9,46 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { QueryModel } from "./query-model";
-import type { FilterInputTypeHint } from "./types";
+import type { Sql } from "../sqlHelpers";
+import type { FilterInputTypeHint, SortDir } from "./types";
+
+// =============================================================================
+// QueryModelBase — Minimal structural interface for MCP utilities
+// =============================================================================
+
+/** Filter definition shape expected by MCP utilities. */
+export interface QueryModelFilter {
+  operators: readonly string[];
+  inputType?: FilterInputTypeHint;
+  required?: true;
+}
+
+/**
+ * Minimal model interface consumed by createModelTool / registerModelTools.
+ *
+ * Any QueryModel from defineQueryModel() satisfies this structurally —
+ * no explicit `implements` needed. This avoids propagating generic
+ * type parameters into the MCP layer.
+ */
+export interface QueryModelBase {
+  readonly name?: string;
+  readonly description?: string;
+  readonly defaults: {
+    orderBy?: Array<[string, SortDir]>;
+    groupBy?: string[];
+    limit?: number;
+    maxLimit?: number;
+    dimensions?: string[];
+    metrics?: string[];
+    columns?: string[];
+  };
+  readonly filters: Record<string, QueryModelFilter>;
+  readonly sortable: readonly string[];
+  readonly dimensionNames: readonly string[];
+  readonly metricNames: readonly string[];
+  readonly columnNames: readonly string[];
+  toSql(request: Record<string, unknown>): Sql;
+}
 
 // =============================================================================
 // Helpers
@@ -90,27 +128,19 @@ export interface ModelToolResult {
  * @returns `{ schema, buildRequest }` ready for `server.tool()`
  */
 export function createModelTool(
-  model: QueryModel<any, any, any, any, any, any, any>,
+  model: QueryModelBase,
   options: ModelToolOptions = {},
 ): ModelToolResult {
   // Derive required filters from model filter defs (where required === true)
   const modelRequiredFilters: string[] = [];
-  const filters = model.filters as Record<
-    string,
-    {
-      operators: readonly string[];
-      inputType?: FilterInputTypeHint;
-      required?: true;
-    }
-  >;
-  for (const [filterName, filterDef] of Object.entries(filters)) {
+  for (const [filterName, filterDef] of Object.entries(model.filters)) {
     if (filterDef.required) {
       modelRequiredFilters.push(filterName);
     }
   }
 
   // Merge model defaults with option overrides (options win)
-  const modelDefaults = model.defaults ?? {};
+  const modelDefaults = model.defaults;
   const mergedDefaults = {
     dimensions: options.defaults?.dimensions ?? modelDefaults.dimensions,
     metrics: options.defaults?.metrics ?? modelDefaults.metrics,
@@ -147,7 +177,7 @@ export function createModelTool(
   }
 
   // --- Filters ---
-  for (const [filterName, filterDef] of Object.entries(filters)) {
+  for (const [filterName, filterDef] of Object.entries(model.filters)) {
     const baseType = zodBaseType(filterDef.inputType);
 
     for (const op of filterDef.operators) {
@@ -252,10 +282,10 @@ export function createModelTool(
  */
 export function registerModelTools(
   server: McpServer,
-  models: QueryModel<any, any, any, any, any, any, any>[],
+  models: QueryModelBase[],
   executeQueryModel: (
-    model: { toSql: (req: any) => any },
-    request: Record<string, any>,
+    model: Pick<QueryModelBase, "toSql">,
+    request: Record<string, unknown>,
     limit: number,
   ) => Promise<{ content: { type: "text"; text: string }[] }>,
 ): void {
@@ -270,7 +300,9 @@ export function registerModelTools(
     server.tool(
       toolName,
       toolDescription,
-      tool.schema as any,
+      // MCP SDK's server.tool() triggers TS2589 (infinite type instantiation)
+      // when given Record<string, z.ZodType>. Cast to any at the SDK boundary.
+      tool.schema as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       { title: titleFromName(toolName) },
       async (params: Record<string, unknown>) => {
         try {
@@ -278,7 +310,7 @@ export function registerModelTools(
           return await executeQueryModel(
             model,
             request,
-            (params.limit as number) || defaultLimit,
+            (params.limit as number | undefined) ?? defaultLimit,
           );
         } catch (error) {
           return {
