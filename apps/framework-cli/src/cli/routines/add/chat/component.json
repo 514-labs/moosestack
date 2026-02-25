@@ -1,5 +1,6 @@
 {
   "name": "chat",
+  "kind": "nextjs",
   "language": "typescript",
   "template": "typescript-mcp",
   "base_path": "packages/web-app",

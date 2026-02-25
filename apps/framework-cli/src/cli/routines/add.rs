@@ -22,7 +22,7 @@ use crate::cli::prompt_user;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
-use crate::utilities::constants::{CLI_VERSION, PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
+use crate::utilities::constants::CLI_VERSION;
 use crate::utilities::dotenv::MooseEnvironment;
 use crate::utilities::package_managers::{detect_package_manager, PackageManager};
 use config::ConfigError;
@@ -40,11 +40,22 @@ struct EnvEntry {
     placeholder: String,
 }
 
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum ComponentKind {
+    /// Installed into a Moose project. Validates language and resolves `{{source_dir}}` in paths.
+    Moose,
+    /// Installed into a Next.js app. Requires shadcn to be initialized.
+    Nextjs,
+}
+
 #[derive(Deserialize)]
 struct ComponentManifest {
     /// Component identifier, e.g. `"mcp-server"`.
     name: String,
-    /// Must match the target project's language.
+    /// Whether this targets a Moose project or a Next.js app.
+    kind: ComponentKind,
+    /// Language this component targets.
     language: SupportedLanguages,
     /// Template archive to download. Defaults to `name` (v1: each component has its own archive).
     template: Option<String>,
@@ -52,8 +63,6 @@ struct ComponentManifest {
     base_path: Option<String>,
     /// Files to copy from the archive into the target project.
     files: Vec<FileEntry>,
-    /// Export line appended to the moose entry file. `None` for non-moose components.
-    moose_main_exports: Option<String>,
     /// Env vars to append to the target project's env files.
     env: Vec<EnvEntry>,
     /// npm packages to install.
@@ -92,15 +101,31 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
     }
 
     let pkg_manager = detect_package_manager(&target_dir);
+    let source_dir: Option<String> = match manifest.kind {
+        ComponentKind::Moose => resolve_moose_source_dir(&manifest, &target_dir)?,
+        ComponentKind::Nextjs => {
+            check_shadcn_initialized(&target_dir, &pkg_manager)?;
+            None
+        }
+    };
 
-    print_plan(&manifest);
+    print_plan(&manifest, source_dir.as_deref());
     println!();
-    preflight_checks(&manifest, &target_dir, &pkg_manager)?;
-    confirm_plan(&manifest, &target_dir, args.overwrite, args.yes)?;
+    confirm_plan(
+        &manifest,
+        &target_dir,
+        source_dir.as_deref(),
+        args.overwrite,
+        args.yes,
+    )?;
     println!();
     let file_contents = fetch_component_files(&manifest).await?;
-    write_files(&manifest, &file_contents, &target_dir)?;
-    update_moose_entry(&manifest, &target_dir)?;
+    write_files(
+        &manifest,
+        &file_contents,
+        &target_dir,
+        source_dir.as_deref(),
+    )?;
     update_env_files(&manifest, &target_dir)?;
     install_dependencies(&manifest, &target_dir, &pkg_manager)?;
     println!();
@@ -129,13 +154,68 @@ fn fail(
     RoutineFailure::new(Message::new(msg.into(), detail.to_string()), e)
 }
 
-fn print_plan(manifest: &ComponentManifest) {
+/// For moose components, loads the project to validate language and extract `source_dir`.
+/// Returns `None` for non-moose components (no project needed).
+fn resolve_moose_source_dir(
+    manifest: &ComponentManifest,
+    target_dir: &Path,
+) -> Result<Option<String>, RoutineFailure> {
+    if manifest.kind != ComponentKind::Moose {
+        return Ok(None);
+    }
+
+    let project = Project::load(&target_dir.to_path_buf(), MooseEnvironment::Development).map_err(
+        |e| match e {
+            ConfigError::Foreign(_) => RoutineFailure::error(Message::new(
+                "Wrong directory".to_string(),
+                format!(
+                    "No moose.config.toml found in {}.\nUse --dir to point to your moose project.",
+                    target_dir.display()
+                ),
+            )),
+            _ => RoutineFailure::error(Message::new(
+                "Loading".to_string(),
+                format!(
+                    "Could not load moose project from {}: {:?}",
+                    target_dir.display(),
+                    e
+                ),
+            )),
+        },
+    )?;
+
+    if project.language != manifest.language {
+        return Err(RoutineFailure::error(Message::new(
+            "Lang mismatch".to_string(),
+            format!(
+                "This component requires {} but your project uses {}.",
+                manifest.language, project.language
+            ),
+        )));
+    }
+
+    Ok(Some(project.source_dir.clone()))
+}
+
+/// Resolves `{{source_dir}}` placeholders in a dest path.
+fn resolve_dest(dest: &str, source_dir: Option<&str>) -> String {
+    match source_dir {
+        Some(sd) => dest.replace("{{source_dir}}", sd),
+        None => dest.to_string(),
+    }
+}
+
+fn print_plan(manifest: &ComponentManifest, source_dir: Option<&str>) {
     show_message!(
         MessageType::Info,
         Message::new("Adding".to_string(), manifest.name.clone())
     );
 
-    let file_dests: Vec<String> = manifest.files.iter().map(|f| f.dest.clone()).collect();
+    let file_dests: Vec<String> = manifest
+        .files
+        .iter()
+        .map(|f| resolve_dest(&f.dest, source_dir))
+        .collect();
     display::infrastructure::infra_added_detailed("Files", &file_dests);
 
     if !manifest.env.is_empty() {
@@ -159,59 +239,26 @@ fn print_plan(manifest: &ComponentManifest) {
     }
 }
 
-fn preflight_checks(
-    manifest: &ComponentManifest,
+/// Checks that shadcn has been initialized in the target directory.
+fn check_shadcn_initialized(
     target_dir: &Path,
     pkg_manager: &PackageManager,
 ) -> Result<(), RoutineFailure> {
-    if manifest.moose_main_exports.is_some() {
-        let target_dir_buf = target_dir.to_path_buf();
-        let project =
-            Project::load(&target_dir_buf, MooseEnvironment::Development).map_err(|e| match e {
-                ConfigError::Foreign(_) => RoutineFailure::error(Message::new(
-                    "Wrong directory".to_string(),
-                    format!(
-                        "No moose.config.toml found in {}.\nThis component modifies the moose entry file, use --dir to specify a moose project.",
-                        target_dir.display()
-                    ),
-                )),
-                _ => RoutineFailure::error(Message::new(
-                    "Loading".to_string(),
-                    format!(
-                        "Could not load moose project from {}: {:?}",
-                        target_dir.display(),
-                        e
-                    ),
-                )),
-            })?;
-
-        if project.language != manifest.language {
-            return Err(RoutineFailure::error(Message::new(
-                "Lang mismatch".to_string(),
-                format!(
-                    "This component requires {} but your project uses {}.",
-                    manifest.language, project.language
-                ),
-            )));
-        }
+    if target_dir.join("components.json").exists() {
+        return Ok(());
     }
-
-    if !manifest.shadcn_components.is_empty() && !target_dir.join("components.json").exists() {
-        let init_cmd = match pkg_manager {
-            PackageManager::Pnpm => "pnpm dlx shadcn@latest init",
-            PackageManager::Npm => "npx shadcn@latest init",
-        };
-        return Err(RoutineFailure::error(Message::new(
-            "Shadcn required".to_string(),
-            format!(
-                "No components.json found in {}.\nRun: {}",
-                target_dir.display(),
-                init_cmd
-            ),
-        )));
-    }
-
-    Ok(())
+    let init_cmd = match pkg_manager {
+        PackageManager::Pnpm => "pnpm dlx shadcn@latest init",
+        PackageManager::Npm => "npx shadcn@latest init",
+    };
+    Err(RoutineFailure::error(Message::new(
+        "Shadcn required".to_string(),
+        format!(
+            "No components.json found in {}.\nRun: {}",
+            target_dir.display(),
+            init_cmd
+        ),
+    )))
 }
 
 /// Prompts the user to confirm the plan before executing.
@@ -221,18 +268,19 @@ fn preflight_checks(
 fn confirm_plan(
     manifest: &ComponentManifest,
     target_dir: &Path,
+    source_dir: Option<&str>,
     overwrite: bool,
     yes: bool,
 ) -> Result<(), RoutineFailure> {
-    let conflicts: Vec<&str> = manifest
+    let conflicts: Vec<String> = manifest
         .files
         .iter()
-        .filter(|f| target_dir.join(&f.dest).exists())
-        .map(|f| f.dest.as_str())
+        .map(|f| resolve_dest(&f.dest, source_dir))
+        .filter(|dest| target_dir.join(dest).exists())
         .collect();
 
     if !conflicts.is_empty() {
-        let file_list: Vec<String> = conflicts.iter().map(|f| f.to_string()).collect();
+        let file_list = conflicts.clone();
 
         if !overwrite {
             show_message!(
@@ -322,6 +370,7 @@ fn write_files(
     manifest: &ComponentManifest,
     file_contents: &HashMap<String, String>,
     target_dir: &Path,
+    source_dir: Option<&str>,
 ) -> Result<(), RoutineFailure> {
     for f in &manifest.files {
         let content = file_contents.get(&f.src).ok_or_else(|| {
@@ -331,7 +380,8 @@ fn write_files(
             ))
         })?;
 
-        let dest = target_dir.join(&f.dest);
+        let dest_str = resolve_dest(&f.dest, source_dir);
+        let dest = target_dir.join(&dest_str);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| fail("Write failed", parent.display(), e))?;
@@ -339,49 +389,9 @@ fn write_files(
         std::fs::write(&dest, content).map_err(|e| fail("Write failed", dest.display(), e))?;
         show_message!(
             MessageType::Info,
-            Message::new("Wrote".to_string(), f.dest.clone())
+            Message::new("Wrote".to_string(), dest_str)
         );
     }
-    Ok(())
-}
-
-/// No-op when `moose_main_exports` is absent. Validation already done in preflight.
-fn update_moose_entry(
-    manifest: &ComponentManifest,
-    target_dir: &Path,
-) -> Result<(), RoutineFailure> {
-    let Some(ref line) = manifest.moose_main_exports else {
-        return Ok(());
-    };
-
-    let project =
-        Project::load(&target_dir.to_path_buf(), MooseEnvironment::Development).map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "Loading".to_string(),
-                format!(
-                    "Could not load moose project from {}: {:?}",
-                    target_dir.display(),
-                    e
-                ),
-            ))
-        })?;
-
-    let entry_file =
-        project
-            .project_location
-            .join(&project.source_dir)
-            .join(match manifest.language {
-                SupportedLanguages::Typescript => TYPESCRIPT_MAIN_FILE,
-                SupportedLanguages::Python => PYTHON_MAIN_FILE,
-            });
-
-    append_if_absent(&entry_file, line)
-        .map_err(|e| fail("Update failed", entry_file.display(), e))?;
-
-    show_message!(
-        MessageType::Info,
-        Message::new("Updated".to_string(), "moose main".to_string())
-    );
     Ok(())
 }
 
@@ -399,27 +409,6 @@ fn update_env_files(manifest: &ComponentManifest, target_dir: &Path) -> Result<(
         );
     }
     Ok(())
-}
-
-/// Appends `line` to `path` if not already present. Creates the file if needed.
-fn append_if_absent(path: &Path, line: &str) -> std::io::Result<()> {
-    let existing = if path.exists() {
-        std::fs::read_to_string(path)?
-    } else {
-        String::new()
-    };
-
-    if existing.lines().any(|l| l.trim() == line.trim()) {
-        return Ok(());
-    }
-
-    let mut content = existing;
-    if !content.ends_with('\n') && !content.is_empty() {
-        content.push('\n');
-    }
-    content.push_str(line);
-    content.push('\n');
-    std::fs::write(path, content)
 }
 
 /// Appends `KEY=placeholder` to `path` if no `KEY=` line exists. Creates the file if needed.

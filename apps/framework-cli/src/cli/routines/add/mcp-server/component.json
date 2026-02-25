@@ -1,10 +1,10 @@
 {
   "name": "mcp-server",
+  "kind": "moose",
   "language": "typescript",
   "template": "typescript-mcp",
   "base_path": "packages/moosestack-service",
-  "files": [{ "src": "app/apis/mcp.ts", "dest": "app/apis/mcp.ts" }],
-  "moose_main_exports": "export * from \"./apis/mcp\";",
+  "files": [{ "src": "app/apis/mcp.ts", "dest": "{{source_dir}}/apis/mcp.ts" }],
   "env": [
     {
       "file": ".env.local",
@@ -20,5 +20,5 @@
     "zod@3.25.76"
   ],
   "shadcn_components": [],
-  "docs": "  1. Generate auth tokens:  moose generate hash-token\n     Copy the ENV API Key into .env.local as MCP_API_KEY.\n  2. Start moose dev — your MCP server will be at http://localhost:4000/tools\n  3. Add the chat UI:  moose add chat --dir <web-app-dir>\n"
+  "docs": "  1. Add the export to your moose entry file (app/index.ts):\n       export * from \"./apis/mcp\";\n  2. Generate auth tokens:  moose generate hash-token\n     Copy the ENV API Key into .env.local as MCP_API_KEY.\n  3. Start moose dev — your MCP server will be at http://localhost:4000/tools\n  4. Add the chat UI:  moose add chat --dir <web-app-dir>\n"
 }
