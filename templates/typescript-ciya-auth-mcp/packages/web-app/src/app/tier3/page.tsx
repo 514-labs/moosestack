@@ -24,7 +24,9 @@ export default function Tier3Page() {
             </button>
           </SignOutButton>
         </div>
-        <h1 className="text-2xl font-bold">Tier 3: Row-Level Security</h1>
+        <h1 className="text-2xl font-bold">
+          Tier 3: Org-Scoped Data Isolation
+        </h1>
         {user && (
           <p className="text-sm text-muted-foreground">
             Signed in as{" "}
@@ -45,11 +47,14 @@ export default function Tier3Page() {
           org&apos;s data.
         </p>
         <ul className="text-sm text-muted-foreground text-left space-y-1">
-          <li>- Data isolation at the database layer</li>
-          <li>- Scoped views hide base tables</li>
+          <li>- Org-scoped query filtering at the application layer</li>
           <li>- Cross-tenant queries return empty results</li>
           <li>- Multi-tenant SaaS ready</li>
         </ul>
+        <p className="text-xs text-muted-foreground italic">
+          Database-level row-level security (ClickHouse row policies) coming
+          soon.
+        </p>
       </div>
     </div>
   );

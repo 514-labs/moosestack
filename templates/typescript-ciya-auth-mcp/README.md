@@ -1,6 +1,6 @@
 # Auth Chat App
 
-A data-connected AI chat application that demonstrates three authentication tiers — from shared API key to per-user identity to row-level data isolation — all running simultaneously. Users chat with Claude Haiku 4.5, which queries a ClickHouse database in real time via MCP tools, while the auth layer controls who can access what.
+A data-connected AI chat application that demonstrates three authentication tiers — from shared API key to per-user identity to org-scoped data isolation — all running simultaneously. Users chat with Claude Haiku 4.5, which queries a ClickHouse database in real time via MCP tools, while the auth layer controls who can access what.
 
 Open `/tier1`, `/tier2`, and `/tier3` in three browser tabs to compare side by side.
 

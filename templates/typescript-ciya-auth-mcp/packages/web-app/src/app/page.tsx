@@ -17,7 +17,7 @@ const tiers = [
   },
   {
     href: "/tier3",
-    title: "Tier 3: Row-Level Security",
+    title: "Tier 3: Org-Scoped Data Isolation",
     description:
       "JWT + org_id scopes ClickHouse queries per tenant. Different orgs see different data.",
     badge: "Requires Clerk + Orgs",

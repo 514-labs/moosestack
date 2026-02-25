@@ -32,7 +32,12 @@ export async function getAnthropicAgentStreamTextOptions(
       type: "http",
       url: `${mcpServerUrl}/tools`,
       ...(mcpToken && {
-        headers: { Authorization: `Bearer ${mcpToken}` },
+        headers: {
+          Authorization: `Bearer ${mcpToken}`,
+          ...(options?.userContext?.orgId && {
+            "x-org-id": options.userContext.orgId,
+          }),
+        },
       }),
     },
   });

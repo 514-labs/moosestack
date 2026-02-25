@@ -18,7 +18,7 @@ const tierConfigs: Record<1 | 2 | 3, TierConfig> = {
   3: {
     tier: 3,
     apiPath: "/api/tier3/chat",
-    tierLabel: "Tier 3: Row-Level Security",
+    tierLabel: "Tier 3: Org-Scoped Data Isolation",
   },
 };
 

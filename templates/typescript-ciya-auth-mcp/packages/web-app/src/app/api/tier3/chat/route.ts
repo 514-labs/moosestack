@@ -10,7 +10,6 @@ interface ChatBody {
 export async function POST(request: NextRequest) {
   try {
     const { userId, orgId, getToken } = await auth();
-    console.log("[Tier 3] auth result — userId:", userId, "orgId:", orgId);
 
     if (!userId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

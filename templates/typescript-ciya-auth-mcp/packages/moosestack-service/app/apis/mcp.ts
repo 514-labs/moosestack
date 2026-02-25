@@ -49,28 +49,6 @@ export function clickhouseReadonlyQuery(
 }
 
 /**
- * Ensure scoped views exist for Tier 3 data isolation.
- * Uses ClickHouse parameterized views — the {org_id:String} placeholder
- * is resolved at query time via query_params.
- */
-let scopedViewsInitialized = false;
-async function ensureScopedViews(client: MooseUtils["client"]) {
-  if (scopedViewsInitialized) return;
-  try {
-    await client.query.client.command({
-      query: `
-        CREATE VIEW IF NOT EXISTS DataEvent_scoped AS
-        SELECT * FROM DataEvent WHERE org_id = {org_id:String}
-      `,
-    });
-    console.log("[MCP] Scoped views initialized");
-    scopedViewsInitialized = true;
-  } catch (error) {
-    console.error("[MCP] Failed to create scoped views:", error);
-  }
-}
-
-/**
  * Query ClickHouse to get column information for a specific table.
  * Uses currentDatabase() to automatically query the active database context.
  */
@@ -343,11 +321,14 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
         return;
       }
       const { payload } = await jwtVerify(token, keyset);
+      // org_id may be in JWT claims (custom template) or in x-org-id header (Clerk default)
+      const orgIdFromJwt = (payload.org_id as string) ?? undefined;
+      const orgIdFromHeader = req.headers["x-org-id"] as string | undefined;
       const userContext: UserContext = {
         userId: payload.sub ?? "unknown",
         email: (payload.email as string) ?? undefined,
         name: (payload.name as string) ?? undefined,
-        orgId: (payload.org_id as string) ?? undefined,
+        orgId: orgIdFromJwt ?? orgIdFromHeader,
       };
       (req as any).userContext = userContext;
       next();
@@ -407,16 +388,40 @@ export const serverFactory = (
       try {
         const { client } = mooseUtils;
 
-        // Tier 3: pass org_id as query parameter for scoped views
-        const queryParams =
-          userContext?.orgId ? { org_id: userContext.orgId } : undefined;
+        let finalQuery = query.trim();
 
-        const result = await clickhouseReadonlyQuery(
-          client,
-          query.trim(),
-          limit,
-          queryParams,
-        );
+        // Tier 3: inject org_id filter into SELECT queries for data isolation
+        if (userContext?.orgId) {
+          const upperQuery = finalQuery.toUpperCase();
+          if (upperQuery.startsWith("SELECT")) {
+            const orgIdEscaped = userContext.orgId.replace(/'/g, "\\'");
+            if (finalQuery.toUpperCase().includes("WHERE")) {
+              finalQuery = finalQuery.replace(
+                /WHERE/i,
+                `WHERE org_id = '${orgIdEscaped}' AND`,
+              );
+            } else if (finalQuery.toUpperCase().includes("GROUP BY")) {
+              finalQuery = finalQuery.replace(
+                /GROUP BY/i,
+                `WHERE org_id = '${orgIdEscaped}' GROUP BY`,
+              );
+            } else if (finalQuery.toUpperCase().includes("ORDER BY")) {
+              finalQuery = finalQuery.replace(
+                /ORDER BY/i,
+                `WHERE org_id = '${orgIdEscaped}' ORDER BY`,
+              );
+            } else if (finalQuery.toUpperCase().includes("LIMIT")) {
+              finalQuery = finalQuery.replace(
+                /LIMIT/i,
+                `WHERE org_id = '${orgIdEscaped}' LIMIT`,
+              );
+            } else {
+              finalQuery += ` WHERE org_id = '${orgIdEscaped}'`;
+            }
+          }
+        }
+
+        const result = await clickhouseReadonlyQuery(client, finalQuery, limit);
 
         // Parse the JSON response from ClickHouse
         const data = await result.json();
@@ -506,29 +511,19 @@ export const serverFactory = (
         const { tables, materializedViews } =
           await getTablesAndMaterializedViews(client, component_type, search);
 
-        // Tier 3: when orgId is present, only expose scoped views
-        let filteredTables = tables;
-        let filteredViews = materializedViews;
-        if (userContext?.orgId) {
-          filteredTables = tables.filter((t) => t.name.endsWith("_scoped"));
-          filteredViews = materializedViews.filter((v) =>
-            v.name.endsWith("_scoped"),
-          );
-        }
-
         // Format output based on requested format
         let output: string;
         if (format === "detailed") {
           output = await formatCatalogDetailed(
             client,
-            filteredTables,
-            filteredViews,
+            tables,
+            materializedViews,
           );
         } else {
           output = await formatCatalogSummary(
             client,
-            filteredTables,
-            filteredViews,
+            tables,
+            materializedViews,
           );
         }
 
@@ -593,9 +588,6 @@ app.all("/", async (req, res) => {
 
     // Get MooseStack utilities (ClickHouse client and SQL helpers)
     const mooseUtils = await getMooseUtils();
-
-    // Ensure scoped views exist for Tier 3
-    await ensureScopedViews(mooseUtils.client);
 
     // Create a fresh transport and server for EVERY request (stateless)
     const transport = new StreamableHTTPServerTransport({
