@@ -171,6 +171,9 @@ interface BaseOlapConfig<T> {
   // Optional lifecycle mode (defaults to MOOSE_MANAGED)
   lifeCycle?: LifeCycle;
 
+  // Per-table filter applied during `moose seed clickhouse`
+  seedFilter?: { limit?: number; where?: string };
+
   // Additional engine-specific fields (ver, isDeleted, keeperPath, etc.)
   // depend on the engine type
 }
@@ -187,6 +190,11 @@ class OlapConfig(BaseModel):
     database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
     order_by_fields: list[str] = []  # Fields to order by
     engine: Optional[EngineConfig] = None  # Table engine configuration
+    seed_filter: Optional[SeedFilter] = None  # Per-table filter for `moose seed clickhouse`
+
+    class SeedFilter(BaseModel):
+        limit: Optional[int] = None
+        where: Optional[str] = None
 ```
   </LanguageTabContent>
 </LanguageTabs>

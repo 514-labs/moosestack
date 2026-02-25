@@ -21,6 +21,22 @@ use std::cmp::min;
 use std::collections::HashSet;
 use tracing::{debug, info, warn};
 
+const DEFAULT_SEED_LIMIT: usize = 1000;
+
+/// How many rows to copy per table.
+///
+/// Constructed from CLI flags (`--all` / `--limit N` / neither) and then
+/// combined with the per-table `SeedFilter::limit` in `seed_clickhouse_tables`.
+#[derive(Debug, Clone, Copy)]
+pub enum SeedLimit {
+    /// `--all`: copy every row, ignoring all limits.
+    All,
+    /// `--limit N`: explicit CLI cap — overrides per-table config.
+    Count(usize),
+    /// Neither flag given: fall back to `SeedFilter::limit`, then `DEFAULT_SEED_LIMIT`.
+    Unspecified,
+}
+
 /// Validates that a database name is not empty
 fn validate_database_name(db_name: &str) -> Result<(), RoutineFailure> {
     if db_name.is_empty() {
@@ -102,6 +118,7 @@ struct SeedingQueryParams<'a> {
     remote_user: &'a str,
     remote_password: &'a str,
     order_by_clause: &'a str,
+    where_clause: &'a str,
     limit: usize,
     offset: usize,
 }
@@ -109,13 +126,14 @@ struct SeedingQueryParams<'a> {
 /// Builds the seeding SQL query for a specific table
 fn build_seeding_query(params: &SeedingQueryParams) -> String {
     format!(
-        "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {order_by_clause} LIMIT {limit} OFFSET {offset}",
+        "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause} {order_by_clause} LIMIT {limit} OFFSET {offset}",
         local_db = params.local_db,
         table_name = params.table_name,
         remote_host_and_port = params.remote_host_and_port,
         remote_db = params.remote_db,
         remote_user = params.remote_user,
         remote_password = params.remote_password,
+        where_clause = params.where_clause,
         order_by_clause = params.order_by_clause,
         limit = params.limit,
         offset = params.offset
@@ -129,9 +147,10 @@ fn build_count_query(
     table_name: &str,
     remote_user: &str,
     remote_password: &str,
+    where_clause: &str,
 ) -> String {
     format!(
-        "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}')"
+        "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause}"
     )
 }
 
@@ -190,6 +209,7 @@ async fn get_remote_table_count(
     table_name: &str,
     remote_user: &str,
     remote_password: &str,
+    where_clause: &str,
 ) -> Result<usize, RoutineFailure> {
     let count_sql = build_count_query(
         remote_host_and_port,
@@ -197,6 +217,7 @@ async fn get_remote_table_count(
         table_name,
         remote_user,
         remote_password,
+        where_clause,
     );
 
     let body = match local_clickhouse.execute_sql(&count_sql).await {
@@ -241,7 +262,14 @@ async fn seed_single_table(
     let local_db = db.unwrap_or(&local_clickhouse.config().db_name);
     let batch_size: usize = 50_000;
 
-    // Get total row count
+    let where_clause = table
+        .seed_filter
+        .where_clause
+        .as_deref()
+        .map(|w| format!("WHERE {w}"))
+        .unwrap_or_default();
+
+    // Get total row count (with seed filter WHERE applied)
     let remote_total = get_remote_table_count(
         local_clickhouse,
         &remote_host_and_port,
@@ -249,6 +277,7 @@ async fn seed_single_table(
         &table.name,
         &remote_config.user,
         &remote_config.password,
+        &where_clause,
     )
     .await
     .map_err(|e| {
@@ -288,6 +317,7 @@ async fn seed_single_table(
             remote_user: &remote_config.user,
             remote_password: &remote_config.password,
             order_by_clause: &order_by_clause,
+            where_clause: &where_clause,
             limit: batch_limit,
             offset: copied_total,
         });
@@ -338,7 +368,7 @@ async fn seed_clickhouse_operation(
     project: &Project,
     clickhouse_url: &str,
     table: Option<String>,
-    limit: Option<usize>,
+    limit: SeedLimit,
     order_by: Option<&str>,
 ) -> Result<(String, String, Vec<String>), RoutineFailure> {
     // Load infrastructure map
@@ -511,7 +541,11 @@ pub async fn handle_seed_command(
                     project,
                     &resolved_clickhouse_url,
                     table.clone(),
-                    if *all { None } else { Some(*limit) },
+                    match (all, limit) {
+                        (true, _) => SeedLimit::All,
+                        (false, Some(n)) => SeedLimit::Count(*n),
+                        (false, None) => SeedLimit::Unspecified,
+                    },
                     order_by.as_deref(),
                 ),
                 !project.is_production,
@@ -554,7 +588,7 @@ pub async fn seed_clickhouse_tables(
     local_clickhouse: &ClickHouseClient,
     remote_config: &ClickHouseConfig,
     table_name: Option<String>,
-    limit: Option<usize>,
+    limit: SeedLimit,
     order_by: Option<&str>,
 ) -> Result<Vec<String>, RoutineFailure> {
     let mut summary = Vec::new();
@@ -610,8 +644,21 @@ pub async fn seed_clickhouse_tables(
             continue;
         }
 
-        // Attempt to seed the single table
-        match seed_single_table(local_clickhouse, remote_config, table, limit, order_by).await {
+        let effective_limit = match limit {
+            SeedLimit::All => None,
+            SeedLimit::Count(n) => Some(n),
+            SeedLimit::Unspecified => Some(table.seed_filter.limit.unwrap_or(DEFAULT_SEED_LIMIT)),
+        };
+
+        match seed_single_table(
+            local_clickhouse,
+            remote_config,
+            table,
+            effective_limit,
+            order_by,
+        )
+        .await
+        {
             Ok(success_msg) => {
                 summary.push(success_msg);
             }
@@ -937,6 +984,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -1088,18 +1136,19 @@ mod tests {
             remote_user: "user",
             remote_password: "pass",
             order_by_clause: "ORDER BY id DESC",
+            where_clause: "",
             limit: 1000,
             offset: 500,
         };
         let query = build_seeding_query(&params);
-        let expected = "INSERT INTO `local_db`.`my_table` SELECT * FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass') ORDER BY id DESC LIMIT 1000 OFFSET 500";
+        let expected = "INSERT INTO `local_db`.`my_table` SELECT * FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass')  ORDER BY id DESC LIMIT 1000 OFFSET 500";
         assert_eq!(query, expected);
     }
 
     #[test]
     fn test_build_count_query() {
-        let query = build_count_query("host:9440", "remote_db", "my_table", "user", "pass");
-        let expected = "SELECT count() FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass')";
+        let query = build_count_query("host:9440", "remote_db", "my_table", "user", "pass", "");
+        let expected = "SELECT count() FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass') ";
         assert_eq!(query, expected);
     }
 
@@ -1171,5 +1220,119 @@ mod tests {
 
         // Verify we copied exactly the expected amount
         assert_eq!(copied_total, total_rows);
+    }
+
+    #[test]
+    fn test_build_seeding_query_with_where_clause() {
+        let params = SeedingQueryParams {
+            local_db: "local_db",
+            table_name: "my_table",
+            remote_host_and_port: "host:9440",
+            remote_db: "remote_db",
+            remote_user: "user",
+            remote_password: "pass",
+            order_by_clause: "ORDER BY id DESC",
+            where_clause: "WHERE user_id = 10",
+            limit: 100,
+            offset: 0,
+        };
+        let query = build_seeding_query(&params);
+        assert!(query.contains("WHERE user_id = 10"));
+        assert!(query.contains("LIMIT 100"));
+        assert!(query.starts_with("INSERT INTO `local_db`.`my_table` SELECT * FROM remoteSecure("));
+    }
+
+    #[test]
+    fn test_build_count_query_with_where_clause() {
+        let query = build_count_query(
+            "host:9440",
+            "remote_db",
+            "my_table",
+            "user",
+            "pass",
+            "WHERE user_id = 10",
+        );
+        assert!(query.contains("WHERE user_id = 10"));
+        assert!(query.starts_with("SELECT count() FROM remoteSecure("));
+    }
+
+    /// Mirrors the limit resolution logic in `seed_clickhouse_tables`.
+    fn resolve_limit(limit: SeedLimit, seed_filter_limit: Option<usize>) -> Option<usize> {
+        match limit {
+            SeedLimit::All => None,
+            SeedLimit::Count(n) => Some(n),
+            SeedLimit::Unspecified => Some(seed_filter_limit.unwrap_or(DEFAULT_SEED_LIMIT)),
+        }
+    }
+
+    #[test]
+    fn test_seed_filter_limit_fallback_chain() {
+        // --all: no limit regardless of seedFilter
+        assert_eq!(resolve_limit(SeedLimit::All, Some(50)), None);
+
+        // --limit 200: CLI wins over seedFilter.limit=50
+        assert_eq!(resolve_limit(SeedLimit::Count(200), Some(50)), Some(200));
+
+        // No CLI flags, seedFilter.limit = 50: use 50
+        assert_eq!(resolve_limit(SeedLimit::Unspecified, Some(50)), Some(50));
+
+        // No CLI flags, no seedFilter.limit: default 1000
+        assert_eq!(resolve_limit(SeedLimit::Unspecified, None), Some(1000));
+    }
+
+    #[test]
+    fn test_seed_filter_where_clause_formatting() {
+        use crate::framework::core::infrastructure::table::SeedFilter;
+
+        let sf = SeedFilter {
+            limit: None,
+            where_clause: Some("user_id = 10 AND status = 'active'".to_string()),
+        };
+        let clause = sf
+            .where_clause
+            .as_deref()
+            .map(|w| format!("WHERE {w}"))
+            .unwrap_or_default();
+        assert_eq!(clause, "WHERE user_id = 10 AND status = 'active'");
+
+        let sf_empty = SeedFilter::default();
+        let clause = sf_empty
+            .where_clause
+            .as_deref()
+            .map(|w| format!("WHERE {w}"))
+            .unwrap_or_default();
+        assert_eq!(clause, "");
+    }
+
+    #[test]
+    fn test_seed_filter_serde_roundtrip() {
+        use crate::framework::core::infrastructure::table::SeedFilter;
+
+        let sf = SeedFilter {
+            limit: Some(100),
+            where_clause: Some("user_id = 10".to_string()),
+        };
+        let json = serde_json::to_string(&sf).unwrap();
+        assert!(json.contains("\"limit\":100"));
+        assert!(json.contains("\"where\":\"user_id = 10\""));
+
+        let deserialized: SeedFilter = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, sf);
+    }
+
+    #[test]
+    fn test_seed_filter_serde_empty_skips_fields() {
+        use crate::framework::core::infrastructure::table::SeedFilter;
+
+        let sf = SeedFilter::default();
+        let json = serde_json::to_string(&sf).unwrap();
+        assert_eq!(json, "{}");
+
+        // Deserializing {} gives default
+        let deserialized: SeedFilter = serde_json::from_str("{}").unwrap();
+        assert_eq!(deserialized, SeedFilter::default());
+
+        // Deserializing null gives error for SeedFilter directly (not Option)
+        assert!(serde_json::from_str::<SeedFilter>("null").is_err());
     }
 }

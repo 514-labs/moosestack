@@ -273,6 +273,37 @@ impl std::fmt::Display for OrderBy {
     }
 }
 
+/// Deserializes a field that may be present as `null` in JSON, falling back to `T::default()`.
+///
+/// A plain `#[serde(default)]` only applies when the key is *absent*; when it's present
+/// as `null`, serde would attempt to deserialize `null` as the target type and fail.
+/// This deserializer treats `null` the same as a missing field.
+pub(crate) fn deserialize_nullable_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(|opt| opt.unwrap_or_default())
+}
+
+/// Per-table filter applied during `moose seed clickhouse` to control which rows
+/// are copied from a remote ClickHouse instance into the local database.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeedFilter {
+    /// Maximum number of rows to seed for this table.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub limit: Option<usize>,
+    /// ClickHouse SQL WHERE expression to filter seeded rows.
+    #[serde(skip_serializing_if = "Option::is_none", default, rename = "where")]
+    pub where_clause: Option<String>,
+}
+
+/// Returns `true` when no seed filtering is configured.
+fn seed_filter_is_default(sf: &SeedFilter) -> bool {
+    sf.limit.is_none() && sf.where_clause.is_none()
+}
+
 /// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
 /// The inclusion of ClickHouse-specific engine types makes this leaky.
 /// This needs to be fixed in a subsequent PR to properly separate database-specific
@@ -323,6 +354,13 @@ pub struct Table {
     /// Allows for complex primary keys using functions or different column ordering
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub primary_key_expression: Option<String>,
+    /// Per-table filter for `moose seed clickhouse`
+    #[serde(
+        skip_serializing_if = "seed_filter_is_default",
+        default,
+        deserialize_with = "deserialize_nullable_as_default"
+    )]
+    pub seed_filter: SeedFilter,
 }
 
 impl Table {
@@ -797,6 +835,7 @@ impl Table {
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
             primary_key_expression: proto.primary_key_expression,
+            seed_filter: Default::default(),
         }
     }
 }
@@ -1880,6 +1919,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
@@ -1983,6 +2023,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Target table from code: explicit order_by that matches primary key
@@ -2008,6 +2049,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // These should be equal because:
@@ -2126,6 +2168,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2196,6 +2239,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2265,6 +2309,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2340,6 +2385,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let first_canonicalize = table.clone().canonicalize();
@@ -2400,6 +2446,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Serialize to proto
@@ -2468,6 +2515,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Serialize to proto

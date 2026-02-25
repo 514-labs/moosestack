@@ -247,6 +247,21 @@ export type BaseOlapConfig<T> = (
    * Example: cluster: "prod_cluster"
    */
   cluster?: string;
+  /**
+   * Optional seed filter applied when `moose seed clickhouse` populates a
+   * local/testing database from a remote source.
+   *
+   * Example:
+   * ```typescript
+   * seedFilter: { limit: 100, where: "user_id = 10" }
+   * ```
+   */
+  seedFilter?: {
+    /** Maximum number of rows to seed for this table. */
+    limit?: number;
+    /** ClickHouse SQL WHERE expression to filter seeded rows. */
+    where?: string;
+  };
 };
 
 /**

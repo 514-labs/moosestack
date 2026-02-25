@@ -1586,6 +1586,68 @@ external_table = OlapTable[UserData]("external_users", OlapConfig(
 Learn more about the different lifecycle options and how to use them in the [LifeCycle Management](/moosestack/olap/lifecycle) documentation.
 </Callout>
 
+### Seed Filter
+
+Configure per-table filtering for `moose seed clickhouse` to control which rows are
+copied from a remote ClickHouse instance into your local development database.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="SeedFilter.ts" copy
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: Key<string>;
+  user_id: number;
+  timestamp: Date;
+  event_type: string;
+}
+
+// Seed only recent rows for a specific user
+const events = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "timestamp"],
+  seedFilter: {
+    limit: 100,
+    where: "user_id = 10",
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="SeedFilter.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str]
+    user_id: int
+    timestamp: datetime
+    event_type: str
+
+# Seed only recent rows for a specific user
+events = OlapTable[UserEvent]("user_events", OlapConfig(
+    order_by_fields=["id", "timestamp"],
+    seed_filter=OlapConfig.SeedFilter(
+        limit=100,
+        where="user_id = 10",
+    ),
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `limit` | `number` / `int` | Default maximum rows to seed for this table. Overridden by the CLI `--limit` flag when provided; otherwise falls back to the global default of 1000. |
+| `where` | `string` / `str` | ClickHouse SQL `WHERE` expression appended to the seed query. |
+
+<Callout type="info" title="CLI flags still apply">
+The CLI `--limit` and `--order-by` flags work alongside `seedFilter`. When `--limit` is
+provided it overrides the per-table `seedFilter.limit`; otherwise the code-defined limit is
+used as the default. The `--all` flag bypasses limits entirely.
+</Callout>
+
 ## Invalid Configurations
 
 <LanguageTabs>

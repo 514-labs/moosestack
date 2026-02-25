@@ -320,6 +320,7 @@ class TableConfig(BaseModel):
     ttl: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
+    seed_filter: Optional[OlapConfig.SeedFilter] = None
 
 
 class TopicConfig(BaseModel):
@@ -1039,6 +1040,7 @@ def to_infra_map() -> dict:
             ttl=table.config.ttl,
             database=table.config.database,
             cluster=table.config.cluster,
+            seed_filter=table.config.seed_filter,
         )
 
     for name, stream in get_streams().items():

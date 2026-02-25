@@ -2495,6 +2495,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
                 primary_key_expression: final_primary_key_expression,
+                seed_filter: Default::default(),
             };
             debug!("Created table object: {:?}", table);
 
@@ -4131,6 +4132,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![
@@ -4201,6 +4203,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![];
@@ -4292,6 +4295,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![IgnorableOperation::IgnoreStringLowCardinalityDifferences];

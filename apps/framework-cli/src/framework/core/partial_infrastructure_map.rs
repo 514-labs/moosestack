@@ -58,7 +58,7 @@ use super::{
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
-use crate::framework::core::infrastructure::table::OrderBy;
+use crate::framework::core::infrastructure::table::{OrderBy, SeedFilter};
 use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 use crate::{
     framework::{
@@ -349,6 +349,13 @@ struct PartialTable {
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     #[serde(default, alias = "primary_key_expression")]
     pub primary_key_expression: Option<String>,
+    /// Per-table filter for `moose seed clickhouse`
+    #[serde(
+        default,
+        alias = "seed_filter",
+        deserialize_with = "crate::framework::core::infrastructure::table::deserialize_nullable_as_default"
+    )]
+    pub seed_filter: SeedFilter,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -832,6 +839,7 @@ impl PartialInfrastructureMap {
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
+                    seed_filter: partial_table.seed_filter.clone(),
                 };
 
                 // Compute table_settings_hash for change detection, then canonicalize

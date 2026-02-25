@@ -175,6 +175,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -356,6 +357,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 

@@ -3909,6 +3909,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let after = Table {
@@ -3973,6 +3974,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -4483,6 +4485,7 @@ mod diff_tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -7440,6 +7443,7 @@ mod diff_orchestration_worker_tests {
             },
             life_cycle: LifeCycle::FullyManaged,
             database: None,
+            seed_filter: Default::default(),
         };
 
         let mut kafka_settings = std::collections::HashMap::new();
@@ -7474,6 +7478,7 @@ mod diff_orchestration_worker_tests {
             },
             life_cycle: LifeCycle::FullyManaged,
             database: None,
+            seed_filter: Default::default(),
         };
 
         map.tables.insert("s3queue_test".to_string(), s3queue_table);
@@ -7560,6 +7565,7 @@ mod diff_orchestration_worker_tests {
             indexes: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_without_low_cardinality = Table {
@@ -7611,6 +7617,7 @@ mod diff_orchestration_worker_tests {
             indexes: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Test 1: Without ignore flag, should detect difference
@@ -8453,6 +8460,7 @@ mod mirrorable_external_tables_tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // 2. ExternallyManaged table with Kafka engine (write-only) - should NOT be returned
@@ -8495,6 +8503,7 @@ mod mirrorable_external_tables_tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // 3. FullyManaged table with MergeTree (supports SELECT but wrong lifecycle) - should NOT be returned

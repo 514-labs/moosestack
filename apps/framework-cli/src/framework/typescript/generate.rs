@@ -1133,6 +1133,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1221,6 +1222,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1276,6 +1278,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1354,6 +1357,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1403,6 +1407,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1488,6 +1493,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1555,6 +1561,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1632,6 +1639,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1718,6 +1726,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1791,6 +1800,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1843,6 +1853,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1913,6 +1924,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1977,6 +1989,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, Some(LifeCycle::ExternallyManaged));

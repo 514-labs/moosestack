@@ -174,6 +174,14 @@ class OlapConfig(BaseModel):
     indexes: list[TableIndex] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 
+    class SeedFilter(BaseModel):
+        """Filter applied when ``moose seed clickhouse`` populates a local/testing database."""
+
+        limit: Optional[int] = None
+        where: Optional[str] = None
+
+    seed_filter: Optional[SeedFilter] = None
+
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)
         has_expr = (
