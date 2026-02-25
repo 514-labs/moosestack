@@ -795,7 +795,11 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
+        if !column_changes.is_empty()
+            || before.indexes != after.indexes
+            || before.projections != after.projections
+            || sample_by_changed
+        {
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
                 column_changes,
@@ -872,6 +876,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1146,6 +1151,45 @@ mod tests {
             changes[1],
             OlapChange::Table(TableChange::Added(_))
         ));
+    }
+
+    #[test]
+    fn test_projection_only_change_uses_updated() {
+        use crate::framework::core::infrastructure::table::TableProjection;
+
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+        after.projections = vec![TableProjection {
+            name: "proj_by_ts".to_string(),
+            body: "SELECT _part_offset ORDER BY timestamp".to_string(),
+        }];
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        assert_eq!(changes.len(), 1);
+        assert!(
+            matches!(changes[0], OlapChange::Table(TableChange::Updated { .. })),
+            "Projection-only change should produce Updated, not drop+create"
+        );
     }
 
     #[test]
@@ -1824,6 +1868,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: Some(table_settings),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
