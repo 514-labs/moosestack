@@ -70,7 +70,11 @@ import {
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
-import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
+import {
+  verifyTableIndexes,
+  verifyTableProjections,
+  getTableDDL,
+} from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
 
 const testLogger = logger.scope("templates-test");
@@ -777,6 +781,58 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             const ddl = await getTableDDL("IndexTest", "local");
             if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
               throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
+
+      it("should create projections defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // TypeScript and Python tests both define a ProjectionTest table
+        // Verify that both test projections are present in the DDL
+        await verifyTableProjections(
+          "ProjectionTest",
+          ["proj_by_user", "proj_by_ts"],
+          "local",
+        );
+      });
+
+      it("should plan/apply projection modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Modify a template file in place to change a projection definition
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+
+        // Change the body of proj_by_user to use a different ORDER BY
+        contents = contents.replace(
+          "SELECT _part_offset ORDER BY userId",
+          "SELECT _part_offset ORDER BY userId, value",
+        );
+        contents = contents.replace(
+          "SELECT _part_offset ORDER BY user_id",
+          "SELECT _part_offset ORDER BY user_id, value",
+        );
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        // Verify DDL reflects updated projection
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("ProjectionTest", "local");
+            if (
+              !ddl.includes("PROJECTION proj_by_user") ||
+              !ddl.includes("value")
+            ) {
+              throw new Error(
+                `proj_by_user not updated with value column. DDL: ${ddl}`,
+              );
             }
           },
           { attempts: 10, delayMs: 1000 },

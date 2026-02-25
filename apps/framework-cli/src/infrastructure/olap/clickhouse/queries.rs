@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
 ON CLUSTER `{{cluster_name}}`{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
-{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
@@ -3442,6 +3442,19 @@ pub fn create_table_query(
         (true, items)
     };
 
+    // Prepare projection strings like: PROJECTION name (body)
+    let (has_projections, projection_strings): (bool, Vec<String>) = if table.projections.is_empty()
+    {
+        (false, vec![])
+    } else {
+        let items: Vec<String> = table
+            .projections
+            .iter()
+            .map(|p| format!("PROJECTION {} ({})", p.name, p.body))
+            .collect();
+        (true, items)
+    };
+
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
     // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
@@ -3475,6 +3488,8 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
+        "has_projections": has_projections,
+        "projections": projection_strings,
         "primary_key_string": if supports_primary_key {
             primary_key_str
         } else {
@@ -4003,6 +4018,7 @@ mod tests {
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4044,6 +4060,7 @@ PRIMARY KEY (`id`)
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4084,6 +4101,7 @@ ENGINE = MergeTree
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4151,6 +4169,7 @@ ENGINE = MergeTree
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4195,6 +4214,7 @@ ENGINE = MergeTree
             },
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4238,6 +4258,7 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4290,6 +4311,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4360,6 +4382,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4406,6 +4429,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             table_ttl_setting: None,
             indexes: vec![],
+            projections: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -4572,6 +4596,7 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4640,6 +4665,7 @@ ORDER BY (`id`) "#;
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
@@ -4683,6 +4709,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("product_id".to_string()),
@@ -4746,6 +4773,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             },
             table_settings: Some(settings),
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5222,6 +5250,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             },
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5808,6 +5837,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             },
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
             primary_key_expression: None,
@@ -5855,6 +5885,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -6876,6 +6907,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             sample_by: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -6937,6 +6969,7 @@ ORDER BY (`id`)
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7002,6 +7035,7 @@ ORDER BY (`event_time`)
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,

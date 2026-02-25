@@ -644,6 +644,12 @@ pub struct ClickHouseIndex {
     pub granularity: u64,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClickHouseProjection {
+    pub name: String,
+    pub body: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
@@ -657,6 +663,8 @@ pub struct ClickHouseTable {
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     /// Secondary data-skipping or specialized indexes
     pub indexes: Vec<ClickHouseIndex>,
+    /// Projections for alternative data ordering within parts
+    pub projections: Vec<ClickHouseProjection>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support
