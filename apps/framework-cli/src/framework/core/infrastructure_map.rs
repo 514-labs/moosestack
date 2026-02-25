@@ -3601,8 +3601,8 @@ struct WorkflowConfigComparableForDiff<'a> {
     schedule: &'a str,
     retries: u32,
     timeout: &'a str,
-    pulls_data_from: &'a [InfrastructureSignature],
-    pushes_data_to: &'a [InfrastructureSignature],
+    pulls_data_from: HashSet<&'a InfrastructureSignature>,
+    pushes_data_to: HashSet<&'a InfrastructureSignature>,
 }
 
 impl<'a> From<&'a Workflow> for WorkflowConfigComparableForDiff<'a> {
@@ -3611,8 +3611,8 @@ impl<'a> From<&'a Workflow> for WorkflowConfigComparableForDiff<'a> {
             schedule: workflow.config().schedule.as_str(),
             retries: workflow.config().retries,
             timeout: workflow.config().timeout.as_str(),
-            pulls_data_from: workflow.pulls_data_from(),
-            pushes_data_to: workflow.pushes_data_to(),
+            pulls_data_from: workflow.pulls_data_from().iter().collect(),
+            pushes_data_to: workflow.pushes_data_to().iter().collect(),
         }
     }
 }
@@ -7908,6 +7908,68 @@ mod diff_workflow_tests {
         assert!(
             changes.is_empty(),
             "No changes expected for identical workflows"
+        );
+    }
+
+    #[test]
+    fn test_workflow_lineage_order_change_does_not_trigger_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow_with_lineage(
+            "my_workflow",
+            "1h",
+            3,
+            "30s",
+            vec![
+                InfrastructureSignature::Table {
+                    id: "Orders".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "OrdersTopic".to_string(),
+                },
+            ],
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "OrdersEvents".to_string(),
+                },
+                InfrastructureSignature::ApiEndpoint {
+                    id: "OrdersSink".to_string(),
+                },
+            ],
+        );
+        let workflow_v2 = create_test_workflow_with_lineage(
+            "my_workflow",
+            "1h",
+            3,
+            "30s",
+            vec![
+                InfrastructureSignature::Topic {
+                    id: "OrdersTopic".to_string(),
+                },
+                InfrastructureSignature::Table {
+                    id: "Orders".to_string(),
+                },
+            ],
+            vec![
+                InfrastructureSignature::ApiEndpoint {
+                    id: "OrdersSink".to_string(),
+                },
+                InfrastructureSignature::Topic {
+                    id: "OrdersEvents".to_string(),
+                },
+            ],
+        );
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert!(
+            changes.is_empty(),
+            "No changes expected when only workflow lineage ordering changes"
         );
     }
 
