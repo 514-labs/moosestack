@@ -1,96 +1,98 @@
 {
   "name": "chat",
   "language": "typescript",
+  "template": "typescript-mcp",
+  "base_path": "packages/web-app",
   "files": [
-    { "src": "env-vars.ts", "dest": "src/env-vars.ts" },
-    { "src": "hooks/use-mobile.ts", "dest": "src/hooks/use-mobile.ts" },
-    { "src": "app/api/chat/route.ts", "dest": "src/app/api/chat/route.ts" },
+    { "src": "src/env-vars.ts", "dest": "src/env-vars.ts" },
+    { "src": "src/hooks/use-mobile.ts", "dest": "src/hooks/use-mobile.ts" },
+    { "src": "src/app/api/chat/route.ts", "dest": "src/app/api/chat/route.ts" },
     {
-      "src": "app/api/chat/status/route.ts",
+      "src": "src/app/api/chat/status/route.ts",
       "dest": "src/app/api/chat/status/route.ts"
     },
     {
-      "src": "components/layout/chat-layout-wrapper.tsx",
+      "src": "src/components/layout/chat-layout-wrapper.tsx",
       "dest": "src/components/layout/chat-layout-wrapper.tsx"
     },
     {
-      "src": "components/layout/content-header.tsx",
+      "src": "src/components/layout/content-header.tsx",
       "dest": "src/components/layout/content-header.tsx"
     },
     {
-      "src": "components/layout/resizable-chat-layout.tsx",
+      "src": "src/components/layout/resizable-chat-layout.tsx",
       "dest": "src/components/layout/resizable-chat-layout.tsx"
     },
     {
-      "src": "features/chat/agent-config.ts",
+      "src": "src/features/chat/agent-config.ts",
       "dest": "src/features/chat/agent-config.ts"
     },
     {
-      "src": "features/chat/chat-button.tsx",
+      "src": "src/features/chat/chat-button.tsx",
       "dest": "src/features/chat/chat-button.tsx"
     },
     {
-      "src": "features/chat/chat-input.tsx",
+      "src": "src/features/chat/chat-input.tsx",
       "dest": "src/features/chat/chat-input.tsx"
     },
     {
-      "src": "features/chat/chat-output-area.tsx",
+      "src": "src/features/chat/chat-output-area.tsx",
       "dest": "src/features/chat/chat-output-area.tsx"
     },
     {
-      "src": "features/chat/chat-ui.tsx",
+      "src": "src/features/chat/chat-ui.tsx",
       "dest": "src/features/chat/chat-ui.tsx"
     },
     {
-      "src": "features/chat/clickhouse-tool-invocation.tsx",
+      "src": "src/features/chat/clickhouse-tool-invocation.tsx",
       "dest": "src/features/chat/clickhouse-tool-invocation.tsx"
     },
     {
-      "src": "features/chat/code-block.tsx",
+      "src": "src/features/chat/code-block.tsx",
       "dest": "src/features/chat/code-block.tsx"
     },
     {
-      "src": "features/chat/get-agent-response.ts",
+      "src": "src/features/chat/get-agent-response.ts",
       "dest": "src/features/chat/get-agent-response.ts"
     },
     {
-      "src": "features/chat/reasoning-section.tsx",
+      "src": "src/features/chat/reasoning-section.tsx",
       "dest": "src/features/chat/reasoning-section.tsx"
     },
     {
-      "src": "features/chat/source-section.tsx",
+      "src": "src/features/chat/source-section.tsx",
       "dest": "src/features/chat/source-section.tsx"
     },
     {
-      "src": "features/chat/suggested-prompt.tsx",
+      "src": "src/features/chat/suggested-prompt.tsx",
       "dest": "src/features/chat/suggested-prompt.tsx"
     },
     {
-      "src": "features/chat/system-prompt.ts",
+      "src": "src/features/chat/system-prompt.ts",
       "dest": "src/features/chat/system-prompt.ts"
     },
     {
-      "src": "features/chat/text-formatter.tsx",
+      "src": "src/features/chat/text-formatter.tsx",
       "dest": "src/features/chat/text-formatter.tsx"
     },
     {
-      "src": "features/chat/tool-data-catalog.tsx",
+      "src": "src/features/chat/tool-data-catalog.tsx",
       "dest": "src/features/chat/tool-data-catalog.tsx"
     },
     {
-      "src": "features/chat/tool-invocation.tsx",
+      "src": "src/features/chat/tool-invocation.tsx",
       "dest": "src/features/chat/tool-invocation.tsx"
     },
     {
-      "src": "features/chat/use-anthropic-status.ts",
+      "src": "src/features/chat/use-anthropic-status.ts",
       "dest": "src/features/chat/use-anthropic-status.ts"
     },
     {
-      "src": "components/theme-toggle.tsx",
+      "src": "src/components/theme-toggle.tsx",
       "dest": "src/components/theme-toggle.tsx"
     },
     {
-      "src": "components/ui/resizable.tsx",
+      "src": "src/components/ui/resizable.tsx",
       "dest": "src/components/ui/resizable.tsx"
     }
   ],
