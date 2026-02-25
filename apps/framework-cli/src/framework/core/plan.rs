@@ -87,7 +87,8 @@ pub enum PlanningError {
     Other(#[from] anyhow::Error),
 }
 
-/// Creates a copy of an infrastructure map with normalized SQL in all materialized views and views.
+/// Creates a copy of an infrastructure map with normalized SQL in all materialized views, views,
+/// and table projection bodies.
 /// Uses ClickHouse's native `formatQuerySingleLine()` for accurate normalization.
 ///
 /// This returns a NEW map for comparison purposes only - the original map should be
@@ -95,7 +96,7 @@ pub enum PlanningError {
 /// changes its `formatQuerySingleLine` behavior in future versions.
 ///
 /// IMPORTANT: This function must be called on both maps before using `diff_with_table_strategy`
-/// to ensure correct comparison of MV/View SQL.
+/// to ensure correct comparison of MV/View SQL and projection bodies.
 pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
     infra_map: &InfrastructureMap,
     olap_client: &T,
@@ -138,6 +139,22 @@ pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
                     name, e
                 );
             }
+        }
+    }
+
+    // Normalize projection bodies by collapsing whitespace for comparison.
+    // We cannot use formatQuerySingleLine here because:
+    // - Bare body: ClickHouse adds explicit ASC/DESC which projection syntax rejects
+    // - Wrapped in CREATE TABLE: sqlparser mangles the body on re-serialization
+    // Simple whitespace collapsing handles the main case (ClickHouse multi-line DDL
+    // vs user-defined single-line bodies) without producing invalid output.
+    for (_table_name, table) in normalized_map.tables.iter_mut() {
+        for projection in table.projections.iter_mut() {
+            projection.body = projection
+                .body
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
         }
     }
 
@@ -839,6 +856,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
