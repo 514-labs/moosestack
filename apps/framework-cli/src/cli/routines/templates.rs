@@ -150,7 +150,7 @@ fn unpack(template_name: &str, template_version: &str, target_dir: &PathBuf) -> 
     Ok(())
 }
 
-pub async fn download_and_unpack(
+pub(crate) async fn download_and_unpack(
     template_name: &str,
     template_version: &str,
     target_dir: &Path,
