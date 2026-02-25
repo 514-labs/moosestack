@@ -1,0 +1,78 @@
+---
+title: Projections
+description: Define projections for alternative data ordering within parts
+order: 6
+category: olap
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Projections
+
+## Projections for ClickHouse tables
+
+Moose lets you declare projections directly in your table definitions.
+Projections store data in an alternative order (or pre-aggregated) within each
+data part, so queries that filter or order by non-primary-key columns can avoid
+full scans.
+
+### When to use projections
+
+- Use projections when a table is regularly queried by a column that isn't in the primary ORDER BY.
+- Trade-off: projections increase storage and insert cost proportional to the number of projections.
+- Projections only apply to MergeTree-family engines.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Projections.ts" copy
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface Events {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  value: number;
+}
+
+export const EventsTable = new OlapTable<Events>("Events", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id"],
+  projections: [
+    { name: "proj_by_user", body: "SELECT _part_offset ORDER BY userId" },
+    { name: "proj_by_ts", body: "SELECT _part_offset ORDER BY timestamp" },
+  ],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="projections.py" copy
+from datetime import datetime
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine
+from pydantic import BaseModel
+
+class Events(BaseModel):
+  id: str
+  user_id: str
+  timestamp: datetime
+  value: float
+
+events_table = OlapTable[Events](
+  "Events",
+  OlapConfig(
+    engine=MergeTreeEngine(),
+    order_by_fields=["id"],
+    projections=[
+      OlapConfig.TableProjection(name="proj_by_user", body="SELECT _part_offset ORDER BY user_id"),
+      OlapConfig.TableProjection(name="proj_by_ts", body="SELECT _part_offset ORDER BY timestamp"),
+    ],
+  ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### How Moose applies changes
+
+- On create, Moose emits `PROJECTION ...` entries inside `CREATE TABLE`.
+- On change, Moose plans `ALTER TABLE DROP PROJECTION <name>` then `ADD PROJECTION ...` if the definition changed; pure adds/drops are applied as single operations.

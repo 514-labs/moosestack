@@ -292,6 +292,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/olap/projections",
+        title: "Projections",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/olap/ttl",
         title: "TTL (Time-to-Live)",
         languages: ["typescript", "python"],

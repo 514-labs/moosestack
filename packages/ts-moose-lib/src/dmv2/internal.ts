@@ -30,6 +30,7 @@ import {
   ReplicatedVersionedCollapsingMergeTreeConfig,
   S3QueueConfig,
 } from "./sdk/olapTable";
+import type { TableProjection } from "./sdk/olapTable";
 import {
   ConsumerConfig,
   KafkaSchemaConfig,
@@ -476,6 +477,8 @@ interface TableJson {
     arguments: string[];
     granularity: number;
   }[];
+  /** Optional table projections */
+  projections?: TableProjection[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
   /** Optional database name for multi-database support. */
@@ -1160,6 +1163,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
           granularity: i.granularity === undefined ? 1 : i.granularity,
           arguments: i.arguments === undefined ? [] : i.arguments,
         })) || [],
+      projections:
+        ("projections" in table.config && table.config.projections) || [],
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,

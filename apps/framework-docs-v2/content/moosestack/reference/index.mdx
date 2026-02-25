@@ -168,6 +168,12 @@ interface BaseOlapConfig<T> {
   // Optional settings for table configuration
   settings?: { [key: string]: string };
 
+  // Optional secondary/data-skipping indexes
+  indexes?: TableIndex[];
+
+  // Optional projections for alternative data ordering within parts
+  projections?: TableProjection[];
+
   // Optional lifecycle mode (defaults to MOOSE_MANAGED)
   lifeCycle?: LifeCycle;
 
@@ -187,6 +193,8 @@ class OlapConfig(BaseModel):
     database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
     order_by_fields: list[str] = []  # Fields to order by
     engine: Optional[EngineConfig] = None  # Table engine configuration
+    indexes: list[OlapConfig.TableIndex] = []  # Secondary indexes
+    projections: list[OlapConfig.TableProjection] = []  # Projections for alternative ordering
 ```
   </LanguageTabContent>
 </LanguageTabs>
