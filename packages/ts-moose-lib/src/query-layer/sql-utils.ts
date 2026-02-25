@@ -15,25 +15,19 @@ import type { SqlValue, ColRef, FilterOperator } from "./types";
 
 /**
  * Create raw SQL (literal string, no parameterization).
+ * Delegates to sql.raw from sqlHelpers.
  * WARNING: Only use with trusted input — SQL injection risk.
  */
-export function raw(text: string): Sql {
-  return new Sql([text], []);
-}
+export const raw: (text: string) => Sql = sql.raw;
 
 /** Empty SQL fragment — useful as a no-op. */
 export const empty = sql``;
 
-/** Join SQL fragments with a separator. */
-export function join(fragments: Sql[], separator: string = ","): Sql {
-  if (fragments.length === 0) return empty;
-  if (fragments.length === 1) return fragments[0];
-
-  const sep = raw(separator.includes(" ") ? separator : ` ${separator} `);
-  return fragments
-    .slice(1)
-    .reduce((acc, frag) => sql`${acc}${sep}${frag}`, fragments[0]);
-}
+/**
+ * Join SQL fragments with a separator.
+ * Delegates to sql.join from sqlHelpers.
+ */
+export const join: (fragments: Sql[], separator?: string) => Sql = sql.join;
 
 /** Check if a Sql fragment is empty */
 export function isEmpty(fragment: Sql): boolean {

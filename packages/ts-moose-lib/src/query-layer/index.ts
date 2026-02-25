@@ -123,7 +123,7 @@ export {
   type Expr,
 } from "./sql-utils";
 
-// --- Validation Utilities ---
+// --- Validation Utilities (re-exported from consumption-apis) ---
 
 export {
   BadRequestError,
@@ -131,4 +131,4 @@ export {
   createQueryHandler,
   type ValidationError,
   type QueryHandler,
-} from "./validation";
+} from "../consumption-apis/validation";

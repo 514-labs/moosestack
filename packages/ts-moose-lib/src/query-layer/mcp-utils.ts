@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Sql } from "../sqlHelpers";
 import type { FilterInputTypeHint, SortDir } from "./types";
+import type { QueryModel } from "./query-model";
 
 // =============================================================================
 // QueryModelBase — Minimal structural interface for MCP utilities
@@ -49,6 +50,14 @@ export interface QueryModelBase {
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
+
+// Compile-time check: any QueryModel must satisfy QueryModelBase.
+// This prevents silent breakage if QueryModel's shape drifts.
+type _AssertCompatible =
+  QueryModel<any, any, any, any, any, any, any> extends QueryModelBase ? true
+  : never;
+const _assertCompatible: _AssertCompatible = true as _AssertCompatible;
+void _assertCompatible;
 
 // =============================================================================
 // Helpers

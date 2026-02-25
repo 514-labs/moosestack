@@ -383,6 +383,10 @@ export function defineQueryModel<
     string,
     FilterDef & { inputType?: FilterInputTypeHint }
   > = {};
+  const filtersWithInputType: Record<
+    string,
+    ModelFilterDef<TTable, keyof TTable> & { inputType?: FilterInputTypeHint }
+  > = {};
   for (const [name, def] of Object.entries(filters)) {
     const columnRef: Column = table.columns[def.column];
 
@@ -401,6 +405,8 @@ export function defineQueryModel<
       transform: def.transform as ((value: SqlValue) => SqlValue) | undefined,
       inputType,
     };
+
+    filtersWithInputType[name] = { ...def, inputType };
   }
 
   // --- Normalize dimensions ---
@@ -494,7 +500,7 @@ export function defineQueryModel<
         if (!field) return empty;
         return buildFieldExpr(field, name);
       })
-      .filter((s) => s !== empty);
+      .filter((s) => !isEmpty(s));
   }
 
   function buildSelectClause(selectFields?: string[]): Sql {
@@ -505,7 +511,7 @@ export function defineQueryModel<
         if (!field) return empty;
         return buildFieldExpr(field, name);
       })
-      .filter((s) => s !== empty);
+      .filter((s) => !isEmpty(s));
     return sql`SELECT ${join(parts)}`;
   }
 
@@ -766,8 +772,6 @@ export function defineQueryModel<
       groupBy: groupByPart,
       orderBy: orderByPart,
       pagination,
-      limit: sql`LIMIT ${limitVal}`,
-      offset: offsetVal > 0 ? sql`OFFSET ${offsetVal}` : empty,
     };
   }
 
@@ -790,19 +794,6 @@ export function defineQueryModel<
       ${parts.orderBy}
       ${parts.pagination}
     `;
-  }
-
-  // Build filters with auto-derived inputType for the public API
-  const filtersWithInputType: Record<
-    string,
-    ModelFilterDef<TTable, keyof TTable> & { inputType?: FilterInputTypeHint }
-  > = {};
-  for (const [name, def] of Object.entries(filters)) {
-    const resolved = resolvedFilters[name];
-    filtersWithInputType[name] = {
-      ...def,
-      inputType: resolved?.inputType ?? def.inputType,
-    };
   }
 
   const model = {

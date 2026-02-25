@@ -259,7 +259,6 @@ export interface QueryParts {
   where: Sql;
   groupBy: Sql;
   orderBy: Sql;
+  /** Composed LIMIT + OFFSET clause */
   pagination: Sql;
-  limit: Sql;
-  offset: Sql;
 }
