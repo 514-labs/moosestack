@@ -25,6 +25,11 @@ export interface TableIndex {
   granularity?: number;
 }
 
+export interface TableProjection {
+  name: string;
+  body: string;
+}
+
 /**
  * Represents a failed record during insertion with error details
  */
@@ -235,6 +240,8 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /** Optional projections for alternative data ordering within parts */
+  projections?: TableProjection[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.
@@ -409,7 +416,11 @@ export type ReplicatedVersionedCollapsingMergeTreeConfig<T> = Omit<
  */
 export type S3QueueConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "settings" | "orderByFields" | "partitionBy" | "sampleByExpression"
+  | "settings"
+  | "orderByFields"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.S3Queue;
   /** S3 bucket path with wildcards (e.g., 's3://bucket/data/*.json') */
@@ -436,7 +447,10 @@ export type S3QueueConfig<T> = Omit<
  * Note: S3 engine supports ORDER BY clause, unlike S3Queue, Buffer, and Distributed engines
  * @template T The data type of the records stored in the table.
  */
-export type S3Config<T> = Omit<BaseOlapConfig<T>, "sampleByExpression"> & {
+export type S3Config<T> = Omit<
+  BaseOlapConfig<T>,
+  "sampleByExpression" | "projections"
+> & {
   engine: ClickHouseEngines.S3;
   /** S3 path (e.g., 's3://bucket/path/file.json') */
   path: string;
@@ -460,7 +474,11 @@ export type S3Config<T> = Omit<BaseOlapConfig<T>, "sampleByExpression"> & {
  */
 export type BufferConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Buffer;
   /** Target database name for the destination table */
@@ -495,7 +513,11 @@ export type BufferConfig<T> = Omit<
  */
 export type DistributedConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Distributed;
   /** Cluster name from the ClickHouse configuration */
@@ -542,7 +564,11 @@ export interface KafkaTableSettings {
 /** Kafka engine for streaming data from Kafka topics. Additional settings go in `settings`. */
 export type KafkaConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Kafka;
   brokerList: string;
@@ -578,7 +604,11 @@ export type KafkaConfig<T> = Omit<
  */
 export type IcebergS3Config<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.IcebergS3;
   /** S3 path to Iceberg table root (e.g., 's3://bucket/warehouse/events/') */
@@ -614,7 +644,11 @@ export type IcebergS3Config<T> = Omit<
  */
 export type MergeConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Merge;
   /** Database to scan for source tables (literal name, currentDatabase(), or REGEXP(...)) */
