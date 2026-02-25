@@ -39,8 +39,10 @@
     "test": "tsup && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
   },
   "dependencies": {
+    "@514labs/kafka-javascript": "1.7.1-patch",
     "@clickhouse/client": "1.8.1",
     "@clickhouse/client-web": "1.5.0",
+    "@kafkajs/confluent-schema-registry": "3.9.0",
     "@temporalio/activity": "^1.11.7",
     "@temporalio/client": "^1.11.7",
     "@temporalio/common": "^1.11.7",
@@ -50,13 +52,12 @@
     "csv-parse": "^5.5.5",
     "fastq": "1.17.1",
     "jose": "5.9.2",
-    "@514labs/kafka-javascript": "1.7.1-patch",
-    "@kafkajs/confluent-schema-registry": "3.9.0",
     "redis": "^4.6.13",
     "toml": "3.0.0",
     "typescript": "~5.9.2"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@repo/ts-config": "workspace:*",
     "@types/chai": "^4.3.5",
     "@types/mocha": "^10.0.1",
@@ -67,12 +68,15 @@
     "eslint": "^8.46.0",
     "mocha": "^10.2.0",
     "ts-node": "^10.9.1",
-    "tsup": "^8.4.0"
+    "tsup": "^8.4.0",
+    "zod": "3"
   },
   "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
-    "typia": "^9.6.1"
+    "typia": "^9.6.1",
+    "zod": "^3.0.0"
   },
   "peerDependenciesMeta": {
     "ts-patch": {
@@ -83,6 +87,12 @@
     },
     "typia": {
       "optional": false
+    },
+    "zod": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
     }
   }
 }
