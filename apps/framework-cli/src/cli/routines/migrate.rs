@@ -319,6 +319,22 @@ fn validate_table_databases_and_clusters(
             } => {
                 validate(database, cluster_name, table);
             }
+            SerializableOlapOperation::AddTableProjection {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
+            SerializableOlapOperation::DropTableProjection {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
             SerializableOlapOperation::ModifySampleBy {
                 table,
                 database,
@@ -740,7 +756,9 @@ pub async fn execute_migration_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, OrderBy, TableProjection,
+    };
     use crate::framework::core::infrastructure_map::PrimitiveSignature;
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -767,6 +785,7 @@ mod tests {
             partition_by: None,
             sample_by: None,
             indexes: vec![],
+            projections: vec![],
             version: None,
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),
@@ -1181,14 +1200,31 @@ mod tests {
                 database: Some("another_bad_db".to_string()),
                 cluster_name: None,
             },
+            SerializableOlapOperation::AddTableProjection {
+                table: "test".to_string(),
+                projection: TableProjection {
+                    name: "proj_by_user".to_string(),
+                    body: "SELECT * ORDER BY user_id".to_string(),
+                },
+                database: Some("proj_bad_db".to_string()),
+                cluster_name: None,
+            },
+            SerializableOlapOperation::DropTableProjection {
+                table: "test".to_string(),
+                projection_name: "proj_by_user".to_string(),
+                database: Some("proj_drop_bad_db".to_string()),
+                cluster_name: None,
+            },
         ];
 
         let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        // Should report both bad databases
+        // Should report all bad databases
         assert!(err.contains("bad_db"));
         assert!(err.contains("another_bad_db"));
+        assert!(err.contains("proj_bad_db"));
+        assert!(err.contains("proj_drop_bad_db"));
     }
 
     #[test]

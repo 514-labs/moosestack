@@ -651,6 +651,152 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     Ok(result)
 }
 
+/// Parsed projection from a CREATE TABLE statement.
+///
+/// ClickHouse projections are defined inline in the column list:
+/// ```sql
+/// PROJECTION proj_name (SELECT ... ORDER BY ...)
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedProjection {
+    /// The projection name (e.g., `proj_by_user`)
+    pub name: String,
+    /// The projection body including the parentheses content (e.g., `SELECT _part_offset ORDER BY user_id`)
+    pub body: String,
+}
+
+/// Extract projections from a CREATE TABLE statement.
+///
+/// Parses the column definition body between `(` and `ENGINE` to find
+/// `PROJECTION <name> (<body>)` items. Uses the same top-level comma
+/// splitting logic as [`extract_indexes_from_create_table`] to handle
+/// nested parentheses correctly.
+///
+/// # Returns
+/// A `Vec<ParsedProjection>` with name and body for each projection found.
+/// Returns an empty vector when the table has no projections or the SQL
+/// cannot be structurally parsed (no opening paren or ENGINE keyword).
+pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection> {
+    let mut result: Vec<ParsedProjection> = Vec::new();
+    let upper = sql.to_uppercase();
+
+    // Find opening '(' after CREATE TABLE ...
+    let open_paren_pos = upper.find('(');
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start());
+    if open_paren_pos.is_none() || engine_pos.is_none() {
+        return result;
+    }
+    let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
+    let body = &sql[start..end];
+
+    // Split top-level comma-separated items, respecting nested parentheses
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in body.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => {
+                current.push(ch);
+                escape = true;
+            }
+            '\'' => {
+                in_string = !in_string;
+                current.push(ch);
+            }
+            '(' if !in_string => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_string => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_string && depth == 0 => {
+                items.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        items.push(current.trim().to_string());
+    }
+
+    for item in items
+        .into_iter()
+        .filter(|s| s.to_uppercase().starts_with("PROJECTION "))
+    {
+        let trimmed = item.trim();
+        // Strip leading "PROJECTION "
+        let after_keyword = match trimmed
+            .get(..11)
+            .filter(|prefix| prefix.to_uppercase() == "PROJECTION ")
+        {
+            Some(_) => trimmed[11..].trim_start(),
+            None => continue,
+        };
+
+        // Name is the next token until whitespace or '('
+        let name_end = after_keyword
+            .find(|c: char| c.is_whitespace() || c == '(')
+            .unwrap_or(after_keyword.len());
+        let name = after_keyword[..name_end].trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        let after_name = after_keyword[name_end..].trim_start();
+
+        // Extract the body inside the outer parentheses after the name
+        if !after_name.starts_with('(') {
+            continue;
+        }
+        // Find matching closing parenthesis
+        let mut paren_depth = 0i32;
+        let mut body_end = None;
+        for (i, ch) in after_name.chars().enumerate() {
+            match ch {
+                '(' => paren_depth += 1,
+                ')' => {
+                    paren_depth -= 1;
+                    if paren_depth == 0 {
+                        body_end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let projection_body = match body_end {
+            // Normalize internal whitespace (ClickHouse reformats projection
+            // bodies with newlines/indentation) so that the parsed body matches
+            // the single-line body supplied by users in their model definitions.
+            Some(end) => after_name[1..end]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" "),
+            None => continue,
+        };
+        if projection_body.is_empty() {
+            continue;
+        }
+
+        result.push(ParsedProjection {
+            name,
+            body: projection_body,
+        });
+    }
+
+    result
+}
+
 /// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
 /// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
 /// but the SQL parser doesn't support this syntax, so we remove it
@@ -2577,5 +2723,166 @@ pub mod tests {
         let normalized_ch = normalize_sql_for_comparison(ch_sql, "local");
 
         assert_eq!(normalized_user, normalized_ch);
+    }
+
+    // Tests for extract_projections_from_create_table
+    #[test]
+    fn test_extract_projections_from_create_table_empty() {
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `user_id` String,
+    `timestamp` DateTime
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert!(
+            projections.is_empty(),
+            "Table without projections should return empty vec"
+        );
+    }
+
+    #[test]
+    fn test_extract_projections_from_create_table_single() {
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `user_id` String,
+    `timestamp` DateTime,
+    PROJECTION proj_by_user (SELECT _part_offset ORDER BY user_id)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].name, "proj_by_user");
+        assert_eq!(projections[0].body, "SELECT _part_offset ORDER BY user_id");
+    }
+
+    #[test]
+    fn test_extract_projections_from_create_table_multiple() {
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `user_id` String,
+    `timestamp` DateTime,
+    PROJECTION proj_by_user (SELECT _part_offset ORDER BY user_id),
+    PROJECTION proj_by_ts (SELECT _part_offset ORDER BY timestamp)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert_eq!(projections.len(), 2);
+
+        assert_eq!(projections[0].name, "proj_by_user");
+        assert_eq!(projections[0].body, "SELECT _part_offset ORDER BY user_id");
+
+        assert_eq!(projections[1].name, "proj_by_ts");
+        assert_eq!(
+            projections[1].body,
+            "SELECT _part_offset ORDER BY timestamp"
+        );
+    }
+
+    #[test]
+    fn test_extract_projections_from_create_table_with_indexes() {
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `user_id` String,
+    `timestamp` DateTime,
+    INDEX idx1 user_id TYPE bloom_filter GRANULARITY 3,
+    PROJECTION proj_by_user (SELECT _part_offset ORDER BY user_id),
+    INDEX idx2 timestamp TYPE minmax GRANULARITY 1,
+    PROJECTION proj_by_ts (SELECT _part_offset ORDER BY timestamp)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert_eq!(projections.len(), 2);
+
+        assert_eq!(projections[0].name, "proj_by_user");
+        assert_eq!(projections[0].body, "SELECT _part_offset ORDER BY user_id");
+
+        assert_eq!(projections[1].name, "proj_by_ts");
+        assert_eq!(
+            projections[1].body,
+            "SELECT _part_offset ORDER BY timestamp"
+        );
+
+        // Also verify that indexes are still extracted correctly alongside projections
+        let indexes = extract_indexes_from_create_table(sql).unwrap();
+        assert_eq!(indexes.len(), 2);
+        assert_eq!(indexes[0].name, "idx1");
+        assert_eq!(indexes[1].name, "idx2");
+    }
+
+    #[test]
+    fn test_extract_projections_from_create_table_nested_objects() {
+        // Test with deeply nested structure - should not find projections since none are present
+        let projections = extract_projections_from_create_table(NESTED_OBJECTS_SQL);
+        assert!(projections.is_empty());
+    }
+
+    #[test]
+    fn test_extract_projections_from_create_table_complex_body() {
+        // Test with a more complex projection body containing nested parentheses
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `user_id` String,
+    `amount` Float64,
+    PROJECTION proj_agg (SELECT user_id, sum(amount), count() GROUP BY user_id ORDER BY user_id)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].name, "proj_agg");
+        assert_eq!(
+            projections[0].body,
+            "SELECT user_id, sum(amount), count() GROUP BY user_id ORDER BY user_id"
+        );
+    }
+
+    #[test]
+    fn test_extract_projections_normalizes_clickhouse_multiline_body() {
+        // ClickHouse reformats projection bodies with newlines/indentation.
+        // The parser must normalise whitespace so the extracted body matches
+        // the single-line form supplied by users.
+        let sql = r#"CREATE TABLE local.ProjectionTest
+(
+    `id` String,
+    `user_id` String,
+    `timestamp` DateTime('UTC'),
+    `value` Float64,
+    PROJECTION proj_by_user
+    (
+        SELECT _part_offset
+        ORDER BY user_id
+    ),
+    PROJECTION proj_by_ts
+    (
+        SELECT _part_offset
+        ORDER BY timestamp
+    )
+)
+ENGINE = MergeTree
+PRIMARY KEY id
+ORDER BY id
+SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192"#;
+        let projections = extract_projections_from_create_table(sql);
+        assert_eq!(projections.len(), 2);
+        assert_eq!(projections[0].name, "proj_by_user");
+        assert_eq!(
+            projections[0].body, "SELECT _part_offset ORDER BY user_id",
+            "Multiline body should be normalised to single-line"
+        );
+        assert_eq!(projections[1].name, "proj_by_ts");
+        assert_eq!(
+            projections[1].body, "SELECT _part_offset ORDER BY timestamp",
+            "Multiline body should be normalised to single-line"
+        );
     }
 }
