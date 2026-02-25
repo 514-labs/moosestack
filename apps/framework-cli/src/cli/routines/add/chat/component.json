@@ -119,7 +119,10 @@
     "@ai-sdk/react@2.0.106",
     "react-markdown@^10.1.0",
     "remark-gfm@^4.0.1",
-    "react-resizable-panels@^3.0.6"
+    "react-resizable-panels@^3.0.6",
+    "lucide-react@^0.552.0",
+    "class-variance-authority@^0.7.1",
+    "next-themes@^0.2.1"
   ],
   "shadcn_components": [
     "badge",
