@@ -93,10 +93,10 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
             .map_err(|e| fail("Failed to get current directory", e.to_string(), e))?,
     };
 
-    if !target_dir.exists() {
+    if !target_dir.is_dir() {
         return Err(RoutineFailure::error(Message::new(
             "Not found".to_string(),
-            target_dir.display().to_string(),
+            format!("{} is not a directory", target_dir.display()),
         )));
     }
 
@@ -191,6 +191,13 @@ fn resolve_moose_source_dir(
                 "This component requires {} but your project uses {}.",
                 manifest.language, project.language
             ),
+        )));
+    }
+
+    if project.source_dir.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "Config error".to_string(),
+            "source_dir in moose.config.toml must not be empty".to_string(),
         )));
     }
 
