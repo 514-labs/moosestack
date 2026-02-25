@@ -12,19 +12,7 @@ import {
   empty,
   join,
   isEmpty,
-  eq,
-  ne,
-  gt,
-  gte,
-  lt,
-  lte,
-  like,
-  ilike,
-  inList,
-  notIn,
-  between,
-  isNull,
-  isNotNull,
+  filter as filterSql,
   where,
   orderBy as orderByClause,
   groupBy as groupByClause,
@@ -48,6 +36,41 @@ import {
   type FilterParams,
 } from "./types";
 import { deriveInputTypeFromDataType } from "./helpers";
+
+// Type-widen filter for dynamic operator dispatch within buildFilterConditions.
+// The overloaded signatures on filterSql require a specific op literal, but here
+// the operator is determined at runtime via iteration.
+const applyFilter = filterSql as (
+  col: ColRef,
+  op: FilterOperator,
+  value: unknown,
+) => Sql;
+
+/**
+ * Apply a transform function to a filter value, respecting operator-specific
+ * value shapes (scalar, list, tuple, boolean).
+ * @internal
+ */
+function transformFilterValue(
+  op: FilterOperator,
+  value: unknown,
+  transform: (v: SqlValue) => SqlValue,
+): unknown {
+  switch (op) {
+    case "in":
+    case "notIn":
+      return (value as SqlValue[]).map(transform);
+    case "between": {
+      const [low, high] = value as [SqlValue, SqlValue];
+      return [transform(low), transform(high)];
+    }
+    case "isNull":
+    case "isNotNull":
+      return value;
+    default:
+      return transform(value as SqlValue);
+  }
+}
 
 // --- Internal Types ---
 
@@ -378,7 +401,7 @@ export function defineQueryModel<
     resolvedFilters[name] = {
       column: resolvedColumn,
       operators: def.operators,
-      transform: def.transform as any,
+      transform: def.transform as ((value: any) => SqlValue) | undefined,
       inputType,
     };
   }
@@ -496,46 +519,6 @@ export function defineQueryModel<
     return sql`SELECT ${join(parts)}`;
   }
 
-  function applyOperator(
-    col: ColRef,
-    op: FilterOperator,
-    value: unknown,
-    transform: (v: SqlValue) => SqlValue,
-  ): Sql | null {
-    switch (op) {
-      case "eq":
-        return eq(col, transform(value as SqlValue));
-      case "ne":
-        return ne(col, transform(value as SqlValue));
-      case "gt":
-        return gt(col, transform(value as SqlValue));
-      case "gte":
-        return gte(col, transform(value as SqlValue));
-      case "lt":
-        return lt(col, transform(value as SqlValue));
-      case "lte":
-        return lte(col, transform(value as SqlValue));
-      case "like":
-        return like(col, transform(value as SqlValue) as string);
-      case "ilike":
-        return ilike(col, transform(value as SqlValue) as string);
-      case "in":
-        return inList(col, (value as SqlValue[]).map(transform));
-      case "notIn":
-        return notIn(col, (value as SqlValue[]).map(transform));
-      case "between": {
-        const [low, high] = value as [SqlValue, SqlValue];
-        return between(col, transform(low), transform(high));
-      }
-      case "isNull":
-        return value ? isNull(col) : null;
-      case "isNotNull":
-        return value ? isNotNull(col) : null;
-      default:
-        return null;
-    }
-  }
-
   function buildFilterConditions(
     filterParams?: FilterParams<TFilters, TTable>,
   ): Sql[] {
@@ -560,10 +543,17 @@ export function defineQueryModel<
         }
 
         const t = filterDef.transform ?? ((v: SqlValue) => v);
-        const col = filterDef.column;
-
-        const condition = applyOperator(col, op as FilterOperator, value, t);
-        if (condition && !isEmpty(condition)) conditions.push(condition);
+        const transformed = transformFilterValue(
+          op as FilterOperator,
+          value,
+          t,
+        );
+        const condition = applyFilter(
+          filterDef.column,
+          op as FilterOperator,
+          transformed,
+        );
+        if (!isEmpty(condition)) conditions.push(condition);
       }
     }
     return conditions;
