@@ -43,9 +43,10 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_primary_key_from_create_table, extract_sample_by_from_create_table,
-    extract_source_tables_from_query, extract_source_tables_from_query_regex,
-    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
+    extract_primary_key_from_create_table, extract_projections_from_create_table,
+    extract_sample_by_from_create_table, extract_source_tables_from_query,
+    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
+    normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
@@ -58,7 +59,7 @@ use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
-    OrderBy, Table, TableIndex, METADATA_PREFIX,
+    OrderBy, Table, TableIndex, TableProjection, METADATA_PREFIX,
 };
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
@@ -216,6 +217,22 @@ pub enum SerializableOlapOperation {
         /// Optional cluster name for ON CLUSTER support
         cluster_name: Option<String>,
     },
+    AddTableProjection {
+        table: String,
+        projection: TableProjection,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
+    DropTableProjection {
+        table: String,
+        projection_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
     ModifySampleBy {
         table: String,
         expression: String,
@@ -344,6 +361,8 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::ModifyTableTtl { table, .. }
         | AtomicOlapOperation::AddTableIndex { table, .. }
         | AtomicOlapOperation::DropTableIndex { table, .. }
+        | AtomicOlapOperation::AddTableProjection { table, .. }
+        | AtomicOlapOperation::DropTableProjection { table, .. }
         | AtomicOlapOperation::ModifySampleBy { table, .. }
         | AtomicOlapOperation::RemoveSampleBy { table, .. } => table.cluster_name.as_deref(),
         AtomicOlapOperation::PopulateMaterializedView { .. }
@@ -536,6 +555,24 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             table, index_name, ..
         } => {
             format!("Dropping index '{}' from table '{}'", index_name, table)
+        }
+        SerializableOlapOperation::AddTableProjection {
+            table, projection, ..
+        } => {
+            format!(
+                "Adding projection '{}' to table '{}'",
+                projection.name, table
+            )
+        }
+        SerializableOlapOperation::DropTableProjection {
+            table,
+            projection_name,
+            ..
+        } => {
+            format!(
+                "Dropping projection '{}' from table '{}'",
+                projection_name, table
+            )
         }
         SerializableOlapOperation::ModifySampleBy {
             table, expression, ..
@@ -746,6 +783,38 @@ pub async fn execute_atomic_operation(
             )
             .await?;
         }
+        SerializableOlapOperation::AddTableProjection {
+            table,
+            projection,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_add_table_projection(
+                target_db,
+                table,
+                projection,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
+        SerializableOlapOperation::DropTableProjection {
+            table,
+            projection_name,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_drop_table_projection(
+                target_db,
+                table,
+                projection_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
         SerializableOlapOperation::ModifySampleBy {
             table,
             expression,
@@ -884,6 +953,50 @@ async fn execute_drop_table_index(
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
         db_name, table_name, cluster_clause, index_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_add_table_projection(
+    db_name: &str,
+    table_name: &str,
+    projection: &TableProjection,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .unwrap_or_default();
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} ADD PROJECTION IF NOT EXISTS `{}` ({})",
+        db_name, table_name, cluster_clause, projection.name, projection.body
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_drop_table_projection(
+    db_name: &str,
+    table_name: &str,
+    projection_name: &str,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .unwrap_or_default();
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} DROP PROJECTION IF EXISTS `{}`",
+        db_name, table_name, cluster_clause, projection_name
     );
     run_query(&sql, client)
         .await
@@ -2511,6 +2624,13 @@ impl OlapOperations for ConfiguredDBClient {
                 table_settings_hash: None,
                 table_settings,
                 indexes,
+                projections: extract_projections_from_create_table(&create_query)
+                    .into_iter()
+                    .map(|p| TableProjection {
+                        name: p.name,
+                        body: p.body,
+                    })
+                    .collect(),
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store
@@ -4095,6 +4215,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
@@ -4165,6 +4286,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),

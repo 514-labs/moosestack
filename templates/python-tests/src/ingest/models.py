@@ -541,6 +541,33 @@ index_test_table = OlapTable[IndexTest](
 )
 
 
+# =======Projection Extraction Test Table=======
+class ProjectionTest(BaseModel):
+    id: Key[str]
+    user_id: str
+    timestamp: datetime
+    value: float
+
+
+projection_test_table = OlapTable[ProjectionTest](
+    "ProjectionTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id"],
+        projections=[
+            OlapConfig.TableProjection(
+                name="proj_by_user",
+                body="SELECT _part_offset ORDER BY user_id",
+            ),
+            OlapConfig.TableProjection(
+                name="proj_by_ts",
+                body="SELECT _part_offset ORDER BY timestamp",
+            ),
+        ],
+    ),
+)
+
+
 # =======Numeric Type Aliases Test=========
 # Demonstrates usage of Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64
 

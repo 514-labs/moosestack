@@ -232,6 +232,33 @@ impl TableIndex {
     }
 }
 
+/// Represents a table projection for alternative data ordering within parts.
+///
+/// Projections store data in an alternative order (or pre-aggregated) within each
+/// data part, allowing queries on non-primary-key columns to avoid full scans.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableProjection {
+    pub name: String,
+    pub body: String,
+}
+
+impl TableProjection {
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableProjection {
+        crate::proto::infrastructure_map::TableProjection {
+            name: self.name.clone(),
+            body: self.body.clone(),
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableProjection) -> Self {
+        TableProjection {
+            name: proto.name,
+            body: proto.body,
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -309,6 +336,9 @@ pub struct Table {
     /// Secondary indexes.
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    /// Projections for alternative data ordering within parts.
+    #[serde(default)]
+    pub projections: Vec<TableProjection>,
     /// Optional database name for multi-database support
     /// When not specified, uses the global ClickHouse config database
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -677,6 +707,7 @@ impl Table {
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
+            projections: self.projections.iter().map(|p| p.to_proto()).collect(),
             database: self.database.clone(),
             special_fields: Default::default(),
         }
@@ -792,6 +823,11 @@ impl Table {
                 .indexes
                 .into_iter()
                 .map(TableIndex::from_proto)
+                .collect(),
+            projections: proto
+                .projections
+                .into_iter()
+                .map(TableProjection::from_proto)
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
@@ -1876,6 +1912,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1979,6 +2016,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2004,6 +2042,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2122,6 +2161,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2192,6 +2232,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2261,6 +2302,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2336,6 +2378,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2396,6 +2439,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2464,6 +2508,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
