@@ -1003,6 +1003,18 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             writeln!(output, "    ],").unwrap();
         }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections: [").unwrap();
+            for proj in &table.projections {
+                writeln!(
+                    output,
+                    "        {{ name: {:?}, body: {:?} }},",
+                    proj.name, proj.body
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -1129,6 +1141,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1217,6 +1230,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1272,6 +1286,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1350,6 +1365,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1399,6 +1415,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1484,6 +1501,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1551,6 +1569,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1628,6 +1647,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1714,6 +1734,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1788,6 +1809,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1839,6 +1861,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -1909,6 +1932,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1973,6 +1997,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

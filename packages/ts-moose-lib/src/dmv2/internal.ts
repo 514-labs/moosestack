@@ -476,6 +476,8 @@ interface TableJson {
     arguments: string[];
     granularity: number;
   }[];
+  /** Optional table projections */
+  projections?: { name: string; body: string }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
   /** Optional database name for multi-database support. */
@@ -1160,6 +1162,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
           granularity: i.granularity === undefined ? 1 : i.granularity,
           arguments: i.arguments === undefined ? [] : i.arguments,
         })) || [],
+      projections: table.config.projections || [],
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,

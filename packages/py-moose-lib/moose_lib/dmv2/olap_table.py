@@ -172,6 +172,12 @@ class OlapConfig(BaseModel):
         granularity: int = 1
 
     indexes: list[TableIndex] = []
+
+    class TableProjection(BaseModel):
+        name: str
+        body: str
+
+    projections: list[TableProjection] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 
     def model_post_init(self, __context):
