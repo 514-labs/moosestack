@@ -67,7 +67,7 @@ export {
   type QueryModelFilter,
   type ModelToolOptions,
   type ModelToolResult,
-} from "./mcp-utils";
+} from "./model-tools";
 
 // --- SQL Utilities ---
 

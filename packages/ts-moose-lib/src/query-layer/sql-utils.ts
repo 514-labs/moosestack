@@ -16,7 +16,9 @@ import type { SqlValue, ColRef, FilterOperator } from "./types";
 /**
  * Create raw SQL (literal string, no parameterization).
  * Delegates to sql.raw from sqlHelpers.
- * WARNING: Only use with trusted input — SQL injection risk.
+ *
+ * Only for developer-defined constants (column names, expressions, sort
+ * directions) that originate from model config — never for HTTP/user input.
  */
 export const raw: (text: string) => Sql = sql.raw;
 

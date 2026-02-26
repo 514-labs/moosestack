@@ -81,6 +81,8 @@ export function createQueryHandler<P, R>(config: {
     fromObject: (input) =>
       config.queryFn(assertValid(config.fromObject(input))),
     fromUrl: (url) => {
+      // Dummy base required by URL constructor to parse relative paths
+      // like "/api?foo=bar". Only .searchParams is used; the host is discarded.
       const searchParams =
         typeof url === "string" ?
           new URL(url, "http://localhost").searchParams

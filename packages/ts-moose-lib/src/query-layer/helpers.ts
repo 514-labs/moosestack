@@ -24,38 +24,34 @@ function toCamelCase(s: string): string {
 // --- deriveInputTypeFromDataType ---
 
 /**
- * Derive FilterInputTypeHint from a ClickHouse column data_type.
+ * Prefix → FilterInputTypeHint map for ClickHouse string type names.
  *
- * Maps ClickHouse types to appropriate UI input types:
- * - DateTime64, DateTime, Date → "date"
- * - Int*, UInt*, Float*, Decimal → "number"
- * - Enum* → "select"
- * - String, FixedString → "text"
+ * Prefix matching is required because ClickHouse types carry parameters
+ * (e.g. `DateTime64(3)`, `Decimal(18,4)`, `FixedString(32)`).
+ * Entries are ordered longest-prefix-first so "datetime" matches before "date".
+ */
+const TYPE_PREFIX_MAP: readonly [string, FilterInputTypeHint][] = [
+  ["datetime", "date"],
+  ["date", "date"],
+  ["uint", "number"],
+  ["int", "number"],
+  ["float", "number"],
+  ["decimal", "number"],
+  ["enum", "select"],
+  ["boolean", "select"],
+  ["bool", "select"],
+];
+
+/**
+ * Derive FilterInputTypeHint from a ClickHouse column data_type.
  */
 export function deriveInputTypeFromDataType(
   dataType: DataType,
 ): FilterInputTypeHint {
   if (typeof dataType === "string") {
     const lower = dataType.toLowerCase();
-
-    if (lower.startsWith("datetime") || lower.startsWith("date")) {
-      return "date";
-    }
-    if (
-      lower.startsWith("int") ||
-      lower.startsWith("uint") ||
-      lower.startsWith("float") ||
-      lower.startsWith("decimal")
-    ) {
-      return "number";
-    }
-    if (lower.startsWith("enum")) {
-      return "select";
-    }
-    if (lower === "bool" || lower === "boolean") {
-      return "select";
-    }
-    return "text";
+    const match = TYPE_PREFIX_MAP.find(([prefix]) => lower.startsWith(prefix));
+    return match ? match[1] : "text";
   }
 
   if ("nullable" in dataType) {

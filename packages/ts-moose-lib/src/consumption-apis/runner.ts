@@ -291,8 +291,11 @@ const apiHandler = async (
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
         httpLogger(req, res, start, matchedApiName);
-      }
-      if (error instanceof Error) {
+      } else if (error?.name === "BadRequestError") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(error.toJSON?.() ?? { error: error.message }));
+        httpLogger(req, res, start, matchedApiName);
+      } else if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
         httpLogger(req, res, start, matchedApiName);

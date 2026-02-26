@@ -4,15 +4,14 @@
  * Auto-generates Zod schemas and request builders for MCP tools
  * directly from QueryModel metadata (filters, dimensions, metrics, columns).
  *
- * @module query-layer/mcp-utils
+ * @module query-layer/model-tools
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Sql } from "../sqlHelpers";
+import { toQuery, type Sql } from "../sqlHelpers";
+import { QueryClient } from "../consumption-apis/helpers";
 import type { FilterInputTypeHint, SortDir } from "./types";
-import type { QueryModel } from "./query-model";
-
 // =============================================================================
 // QueryModelBase — Minimal structural interface for MCP utilities
 // =============================================================================
@@ -50,15 +49,6 @@ export interface QueryModelBase {
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
-
-// Compile-time check: QueryModel must satisfy QueryModelBase.
-// If QueryModel drifts, _AssertCompatible resolves to `never` and the
-// conditional assignment on _Check produces a type error.
-type _AssertCompatible =
-  QueryModel<any, any, any, any, any, any, any> extends QueryModelBase ? true
-  : never;
-const _assertCompatible: _AssertCompatible = true as _AssertCompatible;
-void _assertCompatible;
 
 // =============================================================================
 // Helpers
@@ -288,18 +278,37 @@ export function createModelTool(
 /**
  * Register MCP tools for all models that have a `name` defined.
  *
+ * Each model with a `name` property becomes an MCP tool. The library handles
+ * everything: schema generation from model metadata, request building from
+ * flat MCP params, SQL generation via `model.toSql()`, parameterized
+ * execution with readonly enforcement, and MCP response formatting.
+ *
+ * Models without a `name` are silently skipped.
+ *
  * @param server - McpServer instance
- * @param models - Array of QueryModel instances (only those with `name` are registered)
- * @param executeQueryModel - Callback to execute a model query and return MCP result
+ * @param models - Array of QueryModel instances (from `defineQueryModel`)
+ * @param queryClient - The QueryClient from `mooseUtils.client.query`.
+ *   Queries are executed in readonly mode with parameterized SQL.
+ *
+ * @example
+ * import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ * import { getMooseUtils, MooseUtils } from "@514labs/moose-lib";
+ * import { registerModelTools } from "@514labs/moose-lib";
+ * import { visitsModel, usersModel } from "./models";
+ *
+ * const serverFactory = (mooseUtils: MooseUtils) => {
+ *   const server = new McpServer({ name: "my-tools", version: "1.0.0" });
+ *
+ *   // One line registers all named models as MCP tools
+ *   registerModelTools(server, [visitsModel, usersModel], mooseUtils.client.query);
+ *
+ *   return server;
+ * };
  */
 export function registerModelTools(
   server: McpServer,
   models: QueryModelBase[],
-  executeQueryModel: (
-    model: Pick<QueryModelBase, "toSql">,
-    request: Record<string, unknown>,
-    limit: number,
-  ) => Promise<{ content: { type: "text"; text: string }[] }>,
+  queryClient: QueryClient,
 ): void {
   for (const model of models) {
     if (!model.name) continue;
@@ -313,17 +322,36 @@ export function registerModelTools(
       toolName,
       toolDescription,
       // MCP SDK's server.tool() triggers TS2589 (infinite type instantiation)
-      // when given Record<string, z.ZodType>. Cast to any at the SDK boundary.
-      tool.schema as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      // when given Record<string, z.ZodType>. Tracked upstream:
+      // https://github.com/modelcontextprotocol/typescript-sdk/issues/205
+      tool.schema as Record<string, z.ZodTypeAny>,
       { title: titleFromName(toolName) },
       async (params: Record<string, unknown>) => {
         try {
           const request = tool.buildRequest(params);
-          return await executeQueryModel(
-            model,
-            request,
-            (params.limit as number | undefined) ?? defaultLimit,
-          );
+          const limit =
+            typeof params.limit === "number" ? params.limit : defaultLimit;
+          const sqlObj = model.toSql(request);
+          const [query, queryParams] = toQuery(sqlObj);
+          const result = await queryClient.client.query({
+            query,
+            query_params: queryParams,
+            format: "JSONEachRow",
+            clickhouse_settings: {
+              readonly: "2",
+              max_result_rows: limit.toString(),
+            },
+          });
+          const data = await result.json();
+          const rows = Array.isArray(data) ? data : [];
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ rows, rowCount: rows.length }, null, 2),
+              },
+            ],
+          };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           const safeMsg = msg.length > 200 ? msg.slice(0, 200) + "..." : msg;
