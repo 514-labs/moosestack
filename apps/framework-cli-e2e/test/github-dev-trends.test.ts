@@ -17,7 +17,7 @@
  * - Bug 5: Missing .js extension for NodeNext resolution (compilation test)
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { spawn, exec, ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -41,7 +41,7 @@ import { triggerWorkflow } from "./utils/workflow-utils";
 
 const testLogger = logger.scope("github-dev-trends-test");
 
-const execAsync = promisify(require("child_process").exec);
+const execAsync = promisify(exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_LIB_PATH = path.resolve(
@@ -85,6 +85,10 @@ async function setupGithubDevTrendsProject(
       stdio: "inherit",
       cwd: projectDir,
     });
+    installCmd.on("error", (err) => {
+      testLogger.error("pnpm install spawn failed", { error: err.message });
+      reject(err);
+    });
     installCmd.on("close", (code) => {
       testLogger.debug("pnpm install completed", { exitCode: code });
       if (code === 0) {
@@ -127,7 +131,7 @@ describe("github-dev-trends template", () => {
 
   // Bug 1 & 5: Compilation test - verifies no circular import crash and .js extension works
   it("should compile moose-objects package successfully", async function () {
-    this.timeout(120_000);
+    this.timeout(TIMEOUTS.BUILD_MS);
     testLogger.info("Building moose-objects package...");
 
     const { stdout, stderr } = await execAsync(
@@ -193,7 +197,7 @@ describe("github-dev-trends template", () => {
 
   // Bug 2: Dashboard build test - verifies no server-only module errors
   it("should build dashboard without server-only import errors", async function () {
-    this.timeout(120_000);
+    this.timeout(TIMEOUTS.BUILD_MS);
     testLogger.info("Building dashboard...");
 
     const { stdout, stderr } = await execAsync("pnpm dashboard:build", {

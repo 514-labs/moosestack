@@ -43,6 +43,9 @@ export const TIMEOUTS = {
   // Structured logging test timeout (45 seconds)
   STRUCTURED_LOGGING_TEST_MS: 45_000,
 
+  // Build operations timeout (2 minutes)
+  BUILD_MS: 120_000,
+
   // Migration operations timeout (2 minutes)
   MIGRATION_MS: 120_000,
 
