@@ -30,6 +30,6 @@ export * from "./apis/myApi";
 
 - `moose docs` — browse all available documentation
 - `moose docs search "query"` — find specific topics
-- `moose docs --raw <slug> | claude "..."` — pipe docs directly to your AI assistant
+- `moose docs --raw <slug>` — output raw markdown (for AI consumption)
 - [MooseStack Documentation](https://docs.fiveonefour.com/moose)
 - [LLM-friendly docs](https://docs.fiveonefour.com/llms.txt)

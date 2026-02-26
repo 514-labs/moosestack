@@ -32,7 +32,7 @@ from app.db.models import *
 
 - `moose docs` — browse all available documentation
 - `moose docs search "query"` — find specific topics
-- `moose docs --raw <slug> | claude "..."` — pipe docs directly to your AI assistant
+- `moose docs --raw <slug>` — output raw markdown (for AI consumption)
 - [MooseStack Documentation](https://docs.fiveonefour.com/moose)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [LLM-friendly docs](https://docs.fiveonefour.com/llms.txt)
