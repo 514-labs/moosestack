@@ -1708,7 +1708,7 @@ pub async fn top_command_handler(
         Commands::Add { component } => {
             info!("Running add command");
 
-            let component_name = match component {
+            let component_name = match &component {
                 AddComponent::McpServer(_) => "mcp-server",
                 AddComponent::Chat(_) => "chat",
             };
@@ -1721,7 +1721,7 @@ pub async fn top_command_handler(
                 HashMap::from([("component".to_string(), component_name.to_string())]),
             );
 
-            let result = routines::components::add_component(component).await;
+            let result = routines::components::add_component(&component).await;
 
             wait_for_usage_capture(capture_handle).await;
 
