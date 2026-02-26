@@ -3,9 +3,10 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{error, info, warn};
 
@@ -665,32 +666,43 @@ impl DockerClient {
         binarylabel: &str,
         channel: &str,
     ) -> std::io::Result<()> {
-        let mut child = self
-            .buildx_command(directory, version, architecture, binarylabel, channel)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut cmd = self.buildx_command(directory, version, architecture, binarylabel, channel);
+        Self::spawn_and_stream(&mut cmd, Arc::new(Mutex::new(std::io::stdout())))
+    }
+
+    /// Spawns a command, captures both stdout and stderr line-by-line,
+    /// and writes all output to the given writer. This merges both streams
+    /// into a single output destination, ensuring all child process output
+    /// is captured regardless of which stream it was written to.
+    ///
+    /// In production, the writer is `std::io::stdout()`, which feeds the
+    /// GitHub Actions streaming pipeline. In tests, a `Vec<u8>` buffer is
+    /// used to verify capture behavior without needing Docker.
+    fn spawn_and_stream<W: Write + Send + 'static>(
+        cmd: &mut Command,
+        output: Arc<Mutex<W>>,
+    ) -> std::io::Result<()> {
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
-        // Read stdout line-by-line and re-emit to this process's stdout
+        let out1 = Arc::clone(&output);
         let stdout_thread = std::thread::spawn(move || {
             if let Some(stdout) = stdout {
                 let reader = std::io::BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
-                    println!("{}", line);
+                    let _ = writeln!(out1.lock().unwrap(), "{}", line);
                 }
             }
         });
 
-        // Read stderr line-by-line and re-emit to this process's stdout
-        // (not stderr) so it flows through the GH Actions pipe
+        let out2 = Arc::clone(&output);
         let stderr_thread = std::thread::spawn(move || {
             if let Some(stderr) = stderr {
                 let reader = std::io::BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
-                    println!("{}", line);
+                    let _ = writeln!(out2.lock().unwrap(), "{}", line);
                 }
             }
         });
@@ -704,7 +716,7 @@ impl DockerClient {
 
         if !status.success() {
             return Err(std::io::Error::other(format!(
-                "Docker buildx command failed with exit code: {}",
+                "Command failed with exit code: {}",
                 status.code().unwrap_or(-1)
             )));
         }
@@ -1071,5 +1083,112 @@ mod tests {
         assert!(args_str.contains(&"build"));
         assert!(args_str.contains(&"--load"));
         assert!(args_str.contains(&"--no-cache"));
+    }
+
+    // ---- spawn_and_stream tests ----
+    // These validate the piped capture strategy that makes Docker build
+    // output visible in the GH Actions log streaming pipeline.
+
+    #[test]
+    fn test_inherit_provides_no_programmatic_capture() {
+        // Demonstrates the problem with the old Stdio::inherit() approach:
+        // the child writes directly to our file descriptors and we have
+        // NO programmatic access to inspect, transform, or relay the output.
+        let mut child = Command::new("sh")
+            .args(["-c", "echo STDOUT_LINE; echo STDERR_LINE >&2"])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+
+        // With inherit, the pipe handles are None — nothing to read.
+        assert!(child.stdout.is_none(), "inherit provides no stdout pipe");
+        assert!(child.stderr.is_none(), "inherit provides no stderr pipe");
+
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn test_spawn_and_stream_captures_both_stdout_and_stderr() {
+        // Core behavioral test: a child process writes to both stdout and
+        // stderr, and our piped strategy captures BOTH into a single buffer.
+        // This is what makes Docker build logs flow through the GH Actions
+        // streaming pipeline (which reads our process's stdout line-by-line).
+        let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut cmd = Command::new("sh");
+        cmd.args([
+            "-c",
+            "echo MOCK_BUILD_STEP_1; echo MOCK_BUILD_ERROR >&2; echo MOCK_BUILD_STEP_2",
+        ]);
+
+        DockerClient::spawn_and_stream(&mut cmd, buffer.clone()).unwrap();
+
+        let output = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+
+        assert!(
+            lines.contains(&"MOCK_BUILD_STEP_1"),
+            "should capture stdout line 1, got: {:?}",
+            lines
+        );
+        assert!(
+            lines.contains(&"MOCK_BUILD_ERROR"),
+            "should capture stderr (merged to same output), got: {:?}",
+            lines
+        );
+        assert!(
+            lines.contains(&"MOCK_BUILD_STEP_2"),
+            "should capture stdout line 2, got: {:?}",
+            lines
+        );
+        assert_eq!(lines.len(), 3, "all 3 lines captured in single stream");
+    }
+
+    #[test]
+    fn test_spawn_and_stream_returns_error_on_nonzero_exit() {
+        let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo FAILING_BUILD; exit 1"]);
+
+        let result = DockerClient::spawn_and_stream(&mut cmd, buffer.clone());
+
+        assert!(result.is_err(), "should return error on non-zero exit");
+
+        // Output should still be captured before the failure
+        let output = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+        assert!(
+            output.contains("FAILING_BUILD"),
+            "should capture output even on failure"
+        );
+    }
+
+    #[test]
+    fn test_spawn_and_stream_captures_interleaved_multiline_output() {
+        // Simulates realistic Docker buildx --progress=plain output where
+        // build steps go to stdout and warnings/errors go to stderr.
+        let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut cmd = Command::new("sh");
+        cmd.args([
+            "-c",
+            r##"echo "#1 [internal] load build definition from Dockerfile"
+echo "WARNING: BuildKit is experimental" >&2
+echo "#2 [1/3] FROM docker.io/library/node:18-alpine"
+echo "#3 [2/3] COPY package.json ."
+echo "npm ERR! code ERESOLVE" >&2
+echo "#4 [3/3] RUN npm install""##,
+        ]);
+
+        DockerClient::spawn_and_stream(&mut cmd, buffer.clone()).unwrap();
+
+        let output = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+
+        assert_eq!(lines.len(), 6, "all 6 lines captured in single stream");
+        assert!(
+            output.contains("load build definition"),
+            "build step captured"
+        );
+        assert!(output.contains("WARNING"), "stderr warning captured");
+        assert!(output.contains("npm ERR!"), "stderr error captured");
     }
 }
