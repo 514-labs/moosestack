@@ -286,11 +286,11 @@ fn resolve_moose_source_dir(
     Ok(project.source_dir.clone())
 }
 
-/// Returns true if `export_line` appears as a non-commented line in `content`.
-/// Uses a line-by-line exact match (after trimming) to avoid false positives from
-/// commented-out exports or string literals that contain the export text.
+/// Returns true if `export_line` appears as an active (non-commented) line in `content`.
+/// Uses `starts_with` after trimming so trailing comments (`// ...`) are ignored and
+/// lines commented out with `//` are correctly treated as absent.
 fn export_line_present(content: &str, export_line: &str) -> bool {
-    content.lines().any(|l| l.trim() == export_line)
+    content.lines().any(|l| l.trim().starts_with(export_line))
 }
 
 /// Returns the conventional entry filename for a language (`index.ts` / `main.py`).
@@ -544,7 +544,10 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
     };
 
     let prefix = format!("{key}=");
-    if existing.lines().any(|l| l.starts_with(&prefix)) {
+    if existing
+        .lines()
+        .any(|l| l.trim_start().starts_with(&prefix))
+    {
         return Ok(());
     }
 

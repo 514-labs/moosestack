@@ -31,7 +31,7 @@ moose template list
 ```
 
 ### Add
-Adds a pre-built component to an existing project. Downloads the component files from the template registry and installs dependencies.
+Adds a pre-built component to an existing project. Downloads the component files from a registry and installs dependencies.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -54,14 +54,6 @@ moose add chat [--dir <nextjs-app-dir>]
 - `--overwrite`: Replace files that already exist
 - `--yes, -y`: Skip confirmation prompt (useful for scripting or LLM-driven workflows)
 
-**`mcp-server` prerequisites:**
-- Must be run from (or point `--dir` at) a Moose project directory
-- TypeScript projects only
-
-**`chat` prerequisites:**
-- Must be run from (or point `--dir` at) a Next.js app directory
-- Run `pnpm dlx shadcn@latest init` (or `npx shadcn@latest init`) first if you haven't initialized shadcn/ui
-
 **Example:**
 ```bash
 # From a monorepo root with moose/ and web/ packages
@@ -70,6 +62,15 @@ moose add chat --dir web
 ```
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
+#### List Components
+Lists available components to use with your Moose project
+
+> **Note:** This command is experimental. Available components may change in future releases.
+
+```bash
+moose component list
+```
 
 ### Build
 Builds your Moose project.
