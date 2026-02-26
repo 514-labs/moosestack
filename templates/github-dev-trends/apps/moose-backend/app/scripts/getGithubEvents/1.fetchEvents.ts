@@ -30,10 +30,17 @@ const fetchEvents = new Task<null, void>("fetchEvents", {
           createdAt: event.created_at ? new Date(event.created_at) : new Date(),
         };
 
-        await fetch(`${mooseUrl}/ingest/GhEvent`, {
+        const response = await fetch(`${mooseUrl}/ingest/GhEvent`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ghEvent),
         });
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(
+            `Ingest failed (${response.status}): ${body}`,
+          );
+        }
       }
     }
   },
