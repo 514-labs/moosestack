@@ -30,6 +30,15 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+### Component
+Lists available components you can add to your project.
+
+> **Note:** This command is experimental. Component APIs and available components may change in future releases.
+
+```bash
+moose component list
+```
+
 ### Add
 Adds a pre-built component to an existing project. Downloads the component files from a registry and installs dependencies.
 
@@ -62,15 +71,6 @@ moose add chat --dir web
 ```
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
-
-#### List Components
-Lists available components to use with your Moose project
-
-> **Note:** This command is experimental. Component APIs and available components may change in future releases.
-
-```bash
-moose component list
-```
 
 ### Build
 Builds your Moose project.
