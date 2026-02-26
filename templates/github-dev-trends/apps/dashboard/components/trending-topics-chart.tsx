@@ -58,7 +58,7 @@ export function TrendingTopicsChart() {
 
   // Updated animation logic
   useEffect(() => {
-    if (!data || !isPlaying) return;
+    if (!data || data.length === 0 || !isPlaying) return;
 
     const intervalId = window.setInterval(() => {
       setCurrentTimeIndex((prev) => (prev + 1) % data.length);
