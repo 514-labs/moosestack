@@ -5,7 +5,7 @@
  */
 
 import type { Column } from "../dataModels/dataModelTypes";
-import { sql, Sql } from "../sqlHelpers";
+import { sql, Sql, quoteIdentifier } from "../sqlHelpers";
 import { OlapTable } from "../dmv2";
 import { QueryClient } from "../consumption-apis/helpers";
 import {
@@ -394,11 +394,19 @@ export function defineQueryModel<
   const normalizedDimensions: Record<string, FieldDef> = {};
   if (dimensions) {
     for (const [name, def] of Object.entries(dimensions)) {
-      normalizedDimensions[name] = {
-        column: def.column ? table.columns[def.column] : undefined,
-        expression: def.expression,
-        as: def.as,
-      };
+      const column =
+        def.column ?
+          hasJoins ? undefined
+          : table.columns[def.column]
+        : undefined;
+      const expression =
+        def.expression ??
+        (def.column && hasJoins ?
+          raw(
+            `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(String(def.column))}`,
+          )
+        : undefined);
+      normalizedDimensions[name] = { column, expression, as: def.as };
     }
   }
 
@@ -418,16 +426,23 @@ export function defineQueryModel<
     for (const [name, def] of Object.entries(columnDefs)) {
       if (def.join && joinDefs) {
         const joinDef = joinDefs[def.join];
-        if (joinDef) {
-          const joinTableName = joinDef.table.name;
-          normalizedColumns[name] = {
-            expression: raw(`${joinTableName}.${String(def.column)}`),
-            as: def.as,
-          };
+        if (!joinDef) {
+          throw new Error(
+            `Column '${name}' references unknown join '${def.join}'`,
+          );
         }
+        const joinTableName = joinDef.table.name;
+        normalizedColumns[name] = {
+          expression: raw(
+            `${quoteIdentifier(joinTableName)}.${quoteIdentifier(String(def.column))}`,
+          ),
+          as: def.as,
+        };
       } else if (hasJoins) {
         normalizedColumns[name] = {
-          expression: raw(`${primaryTableName}.${String(def.column)}`),
+          expression: raw(
+            `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(String(def.column))}`,
+          ),
           as: def.as,
         };
       } else {
@@ -486,7 +501,11 @@ export function defineQueryModel<
         : undefined);
 
       const resolvedColumn: ColRef =
-        hasJoins ? raw(`${primaryTableName}.${String(def.column)}`) : columnRef;
+        hasJoins ?
+          raw(
+            `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(String(def.column))}`,
+          )
+        : columnRef;
 
       resolvedFilters[name] = {
         column: resolvedColumn,
@@ -667,7 +686,7 @@ export function defineQueryModel<
       if (joinDef.leftKey && joinDef.rightKey) {
         const joinTableName = joinDef.table.name;
         onClause = raw(
-          `${primaryTableName}.${joinDef.leftKey} = ${joinTableName}.${joinDef.rightKey}`,
+          `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(joinDef.leftKey)} = ${quoteIdentifier(joinTableName)}.${quoteIdentifier(joinDef.rightKey)}`,
         );
       } else if (joinDef.on) {
         onClause = joinDef.on;
@@ -742,8 +761,8 @@ export function defineQueryModel<
       if (!field) {
         throw new Error(`Field '${fieldName}' is not a valid dimension`);
       }
-      if (field.column) return sql`${field.column}`;
       if (field.expression) return field.expression;
+      if (field.column) return sql`${field.column}`;
       return raw(fieldName);
     });
 
@@ -766,7 +785,11 @@ export function defineQueryModel<
         sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
       : paginate(limitVal, spec.page ?? 0);
 
-    const selectedFields = spec.select ?? Object.keys(normalizedFields);
+    const selectedFields =
+      spec.select ??
+      (spec.detailMode ?
+        Object.keys(normalizedFields)
+      : [...dimensionNames, ...metricNames]);
     const selectedColumns = selectedFields.filter((f) => columnNamesSet.has(f));
     const selectedDimensions = selectedFields.filter((f) =>
       dimensionNamesSet.has(f),

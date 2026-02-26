@@ -158,7 +158,9 @@ export function createModelTool(
     limit: options.defaults?.limit ?? modelDefaults.limit,
   };
 
-  const requiredFilters = options.requiredFilters ?? modelRequiredFilters;
+  const requiredFilters = [
+    ...new Set([...modelRequiredFilters, ...(options.requiredFilters ?? [])]),
+  ];
   const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? 1000;
   const defaultLimit = options.defaultLimit ?? mergedDefaults.limit ?? 100;
 
