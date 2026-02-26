@@ -107,12 +107,16 @@ export function timeDimensions(
     week: (col) => ({ expression: sql`toStartOfWeek(${col})`, as: "week" }),
   };
 
+  const supported = Object.keys(fnMap);
   const result: Record<string, DimensionDef> = {};
   for (const period of periods) {
     const factory = fnMap[period];
-    if (factory) {
-      result[period] = factory(dateColumn);
+    if (!factory) {
+      throw new Error(
+        `Unknown time period '${period}'. Supported: ${supported.join(", ")}`,
+      );
     }
+    result[period] = factory(dateColumn);
   }
 
   return result;

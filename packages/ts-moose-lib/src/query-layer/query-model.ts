@@ -753,6 +753,12 @@ export function defineQueryModel<
   function toParts(request: Req): QueryParts {
     const spec = resolveQuerySpec(request);
 
+    if (spec.offset != null && spec.page != null) {
+      throw new Error(
+        "Cannot specify both 'offset' and 'page' — they are mutually exclusive",
+      );
+    }
+
     const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
     const offsetVal = spec.offset ?? (spec.page ?? 0) * limitVal;
     const pagination =

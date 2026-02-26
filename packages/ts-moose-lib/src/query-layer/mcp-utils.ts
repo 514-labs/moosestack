@@ -323,11 +323,13 @@ export function registerModelTools(
             (params.limit as number | undefined) ?? defaultLimit,
           );
         } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          const safeMsg = msg.length > 200 ? msg.slice(0, 200) + "..." : msg;
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Error in ${toolName}: ${error instanceof Error ? error.message : String(error)}`,
+                text: `Error in ${toolName}: ${safeMsg}`,
               },
             ],
             isError: true,

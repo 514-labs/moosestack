@@ -24,6 +24,7 @@ export class BadRequestError extends Error {
 
   constructor(typiaErrors: IValidation.IError[]) {
     super("Validation failed");
+    this.name = "BadRequestError";
     this.errors = typiaErrors.map((e) => ({
       path: e.path,
       message: `Expected ${e.expected}`,
@@ -80,11 +81,11 @@ export function createQueryHandler<P, R>(config: {
     fromObject: (input) =>
       config.queryFn(assertValid(config.fromObject(input))),
     fromUrl: (url) => {
-      const search =
+      const searchParams =
         typeof url === "string" ?
-          new URL(url, "http://localhost").search
-        : url.search;
-      return config.queryFn(assertValid(config.fromUrl(search)));
+          new URL(url, "http://localhost").searchParams
+        : url.searchParams;
+      return config.queryFn(assertValid(config.fromUrl(searchParams)));
     },
   };
 }
