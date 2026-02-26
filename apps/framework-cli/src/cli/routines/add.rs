@@ -17,7 +17,7 @@ use std::process::Command;
 use serde::Deserialize;
 
 use super::{display, templates, Message, MessageType};
-use crate::cli::commands::AddComponent;
+use crate::cli::commands::{AddArgs, AddComponent};
 use crate::cli::prompt_user;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::framework::languages::SupportedLanguages;
@@ -51,15 +51,15 @@ enum ComponentKind {
 
 #[derive(Deserialize)]
 struct ComponentManifest {
-    /// Component identifier, e.g. `"mcp-server"`.
+    /// Component identifier.
     name: String,
-    /// Whether this targets a Moose project or a Next.js app.
+    /// Whether this targets a Moose project, Next.js app, etc.
     kind: ComponentKind,
     /// Language this component targets.
     language: SupportedLanguages,
     /// Template archive to download. Defaults to `name` (v1: each component has its own archive).
     template: Option<String>,
-    /// Directory inside the unpacked archive where component files live, e.g. `"packages/web-app"`.
+    /// Directory inside the unpacked archive where component files live.
     base_path: Option<String>,
     /// Files to copy from the archive into the target project.
     files: Vec<FileEntry>,
@@ -69,12 +69,14 @@ struct ComponentManifest {
     npm_deps: Vec<String>,
     /// shadcn/ui components to add. Requires `components.json` in the target directory.
     shadcn_components: Vec<String>,
+    /// Export lines to append to the Moose entry file
+    moose_exports: Vec<String>,
     /// "Next steps" text printed after a successful install.
     docs: String,
 }
 
-/// Entry point for `moose add`. Loads the component manifest, runs preflight checks,
-/// prompts the user, then installs files and dependencies into the target directory.
+/// Entry point for `moose add`. Loads the manifest and dispatches to the appropriate
+/// kind-specific flow.
 pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
     let (args, manifest) = match component {
         AddComponent::McpServer(args) => (
@@ -87,45 +89,66 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
         ),
     };
 
-    let target_dir = match args.dir.as_deref() {
-        Some(d) => PathBuf::from(d),
-        None => std::env::current_dir()
-            .map_err(|e| fail("Failed to get current directory", e.to_string(), e))?,
-    };
-
-    if !target_dir.is_dir() {
-        return Err(RoutineFailure::error(Message::new(
-            "Not found".to_string(),
-            format!("{} is not a directory", target_dir.display()),
-        )));
-    }
-
+    let target_dir = resolve_target_dir(args.dir.as_deref())?;
     let pkg_manager = detect_package_manager(&target_dir);
-    let source_dir: Option<String> = match manifest.kind {
-        ComponentKind::Moose => resolve_moose_source_dir(&manifest, &target_dir)?,
-        ComponentKind::Nextjs => {
-            check_shadcn_initialized(&target_dir, &pkg_manager)?;
-            None
-        }
-    };
 
-    print_plan(&manifest, source_dir.as_deref());
+    match manifest.kind {
+        ComponentKind::Moose => run_add_moose(manifest, args, target_dir, pkg_manager).await,
+        ComponentKind::Nextjs => run_add_nextjs(manifest, args, target_dir, pkg_manager).await,
+    }
+}
+
+async fn run_add_moose(
+    manifest: ComponentManifest,
+    args: &AddArgs,
+    target_dir: PathBuf,
+    pkg_manager: PackageManager,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let source_dir = resolve_moose_source_dir(&manifest, &target_dir)?;
+
+    print_plan(&manifest, &target_dir, Some(&source_dir));
     println!();
     confirm_plan(
         &manifest,
         &target_dir,
-        source_dir.as_deref(),
+        Some(&source_dir),
         args.overwrite,
         args.yes,
     )?;
     println!();
     let file_contents = fetch_component_files(&manifest).await?;
-    write_files(
-        &manifest,
-        &file_contents,
+    write_files(&manifest, &file_contents, &target_dir, Some(&source_dir))?;
+    update_env_files(&manifest, &target_dir)?;
+    append_moose_exports(
         &target_dir,
-        source_dir.as_deref(),
+        &source_dir,
+        &manifest.language,
+        &manifest.moose_exports,
     )?;
+    install_dependencies(&manifest, &target_dir, &pkg_manager)?;
+    println!();
+    print_next_steps(&manifest);
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Done".to_string(),
+        format!("{} installed successfully", manifest.name),
+    )))
+}
+
+async fn run_add_nextjs(
+    manifest: ComponentManifest,
+    args: &AddArgs,
+    target_dir: PathBuf,
+    pkg_manager: PackageManager,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    check_shadcn_initialized(&target_dir, &pkg_manager)?;
+
+    print_plan(&manifest, &target_dir, None);
+    println!();
+    confirm_plan(&manifest, &target_dir, None, args.overwrite, args.yes)?;
+    println!();
+    let file_contents = fetch_component_files(&manifest).await?;
+    write_files(&manifest, &file_contents, &target_dir, None)?;
     update_env_files(&manifest, &target_dir)?;
     install_dependencies(&manifest, &target_dir, &pkg_manager)?;
     println!();
@@ -135,6 +158,21 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
         "Done".to_string(),
         format!("{} installed successfully", manifest.name),
     )))
+}
+
+fn resolve_target_dir(dir: Option<&str>) -> Result<PathBuf, RoutineFailure> {
+    let target_dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => std::env::current_dir()
+            .map_err(|e| fail("Failed to get current directory", e.to_string(), e))?,
+    };
+    if !target_dir.is_dir() {
+        return Err(RoutineFailure::error(Message::new(
+            "Not found".to_string(),
+            format!("{} is not a directory", target_dir.display()),
+        )));
+    }
+    Ok(target_dir)
 }
 
 fn load_manifest(toml: &str, component: &str) -> Result<ComponentManifest, RoutineFailure> {
@@ -154,16 +192,12 @@ fn fail(
     RoutineFailure::new(Message::new(msg.into(), detail.to_string()), e)
 }
 
-/// For moose components, loads the project to validate language and extract `source_dir`.
-/// Returns `None` for non-moose components (no project needed).
+/// Loads the Moose project from `target_dir`, validates language compatibility,
+/// and returns the configured `source_dir`.
 fn resolve_moose_source_dir(
     manifest: &ComponentManifest,
     target_dir: &Path,
-) -> Result<Option<String>, RoutineFailure> {
-    if manifest.kind != ComponentKind::Moose {
-        return Ok(None);
-    }
-
+) -> Result<String, RoutineFailure> {
     let project = Project::load(&target_dir.to_path_buf(), MooseEnvironment::Development).map_err(
         |e| match e {
             ConfigError::Foreign(_) => RoutineFailure::error(Message::new(
@@ -201,7 +235,15 @@ fn resolve_moose_source_dir(
         )));
     }
 
-    Ok(Some(project.source_dir.clone()))
+    Ok(project.source_dir.clone())
+}
+
+/// Returns the conventional entry filename for a language (`index.ts` / `main.py`).
+fn entry_filename(language: &SupportedLanguages) -> &'static str {
+    match language {
+        SupportedLanguages::Typescript => "index.ts",
+        SupportedLanguages::Python => "main.py",
+    }
 }
 
 /// Resolves `{{source_dir}}` placeholders in a dest path.
@@ -212,7 +254,7 @@ fn resolve_dest(dest: &str, source_dir: Option<&str>) -> String {
     }
 }
 
-fn print_plan(manifest: &ComponentManifest, source_dir: Option<&str>) {
+fn print_plan(manifest: &ComponentManifest, target_dir: &Path, source_dir: Option<&str>) {
     show_message!(
         MessageType::Info,
         Message::new("Adding".to_string(), manifest.name.clone())
@@ -243,6 +285,25 @@ fn print_plan(manifest: &ComponentManifest, source_dir: Option<&str>) {
             "Shadcn components",
             &manifest.shadcn_components,
         );
+    }
+
+    if !manifest.moose_exports.is_empty() {
+        if let Some(sd) = source_dir {
+            let entry_path = target_dir.join(sd).join(entry_filename(&manifest.language));
+            let existing = std::fs::read_to_string(&entry_path).unwrap_or_default();
+            let export_lines: Vec<String> = manifest
+                .moose_exports
+                .iter()
+                .map(|line| {
+                    if existing.contains(line.as_str()) {
+                        format!("{line}  (already present)")
+                    } else {
+                        line.clone()
+                    }
+                })
+                .collect();
+            display::infrastructure::infra_added_detailed("Exports", &export_lines);
+        }
     }
 }
 
@@ -287,8 +348,6 @@ fn confirm_plan(
         .collect();
 
     if !conflicts.is_empty() {
-        let file_list = conflicts.clone();
-
         if !overwrite {
             show_message!(
                 MessageType::Error,
@@ -297,7 +356,7 @@ fn confirm_plan(
                     "These files already exist (use --overwrite to replace):".to_string(),
                 )
             );
-            display::write_detail_lines(&file_list);
+            display::write_detail_lines(&conflicts);
             return Err(RoutineFailure::error(Message::new(
                 "Aborted".to_string(),
                 "No files were written.".to_string(),
@@ -311,14 +370,14 @@ fn confirm_plan(
                 "These files will be replaced:".to_string(),
             )
         );
-        display::write_detail_lines(&file_list);
+        display::write_detail_lines(&conflicts);
     }
 
     if yes || !std::io::stdin().is_terminal() {
         return Ok(());
     }
 
-    let input = prompt_user("Proceed? [y/N]", Some("N"), None)?;
+    let input = prompt_user("\nProceed? [y/N]", Some("N"), None)?;
     if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
         return Err(RoutineFailure::error(Message::new(
             "Cancelled".to_string(),
@@ -439,67 +498,153 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
     std::fs::write(path, content)
 }
 
+/// Appends any missing export lines to the language entry file (e.g. `index.ts` / `main.py`).
+/// Idempotent — already-present lines are skipped with a message.
+fn append_moose_exports(
+    target_dir: &Path,
+    source_dir: &str,
+    language: &SupportedLanguages,
+    exports: &[String],
+) -> Result<(), RoutineFailure> {
+    if exports.is_empty() {
+        return Ok(());
+    }
+
+    let entry_path = target_dir.join(source_dir).join(entry_filename(language));
+    let rel = entry_path
+        .strip_prefix(target_dir)
+        .unwrap_or(&entry_path)
+        .display()
+        .to_string();
+
+    if !entry_path.exists() {
+        show_message!(
+            MessageType::Warning,
+            Message::new(
+                "Skipped".to_string(),
+                format!("{rel} not found — add exports manually"),
+            )
+        );
+        return Ok(());
+    }
+
+    let existing = std::fs::read_to_string(&entry_path).map_err(|e| {
+        fail(
+            "Update failed",
+            format!("Could not read {}", entry_path.display()),
+            e,
+        )
+    })?;
+
+    let missing: Vec<&str> = exports
+        .iter()
+        .filter(|line| !existing.contains(line.as_str()))
+        .map(String::as_str)
+        .collect();
+
+    if missing.is_empty() {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Skipped".to_string(),
+                format!("{rel} (exports already present)")
+            )
+        );
+        return Ok(());
+    }
+
+    let mut content = existing;
+    if !content.ends_with('\n') && !content.is_empty() {
+        content.push('\n');
+    }
+    for line in &missing {
+        content.push_str(line);
+        content.push('\n');
+    }
+
+    std::fs::write(&entry_path, content).map_err(|e| {
+        fail(
+            "Update failed",
+            format!("Could not write {}", entry_path.display()),
+            e,
+        )
+    })?;
+
+    show_message!(
+        MessageType::Info,
+        Message::new("Updated".to_string(), format!("{rel} (exports)"))
+    );
+
+    Ok(())
+}
+
 fn install_dependencies(
     manifest: &ComponentManifest,
     target_dir: &Path,
     pkg_manager: &PackageManager,
 ) -> Result<(), RoutineFailure> {
-    if !manifest.shadcn_components.is_empty() {
-        show_message!(
-            MessageType::Info,
-            Message::new("Installing".to_string(), "shadcn components...".to_string())
-        );
-        let shadcn: Vec<&str> = manifest
-            .shadcn_components
-            .iter()
-            .map(String::as_str)
-            .collect();
-        run_shadcn_add(target_dir, &shadcn, pkg_manager).map_err(|e| {
-            let add_cmd = match pkg_manager {
-                PackageManager::Pnpm => "pnpm dlx shadcn add",
-                PackageManager::Npm => "npx shadcn add",
-            };
-            fail(
-                "Install failed",
-                format!(
-                    "Run manually: {} {}",
-                    add_cmd,
-                    manifest.shadcn_components.join(" ")
-                ),
-                e,
-            )
-        })?;
-        show_message!(
-            MessageType::Success,
-            Message::new("Installed".to_string(), "shadcn components".to_string())
-        );
-    }
+    install_shadcn_components(&manifest.shadcn_components, target_dir, pkg_manager)?;
+    install_npm_deps(&manifest.npm_deps, target_dir, pkg_manager)
+}
 
-    if !manifest.npm_deps.is_empty() {
-        show_message!(
-            MessageType::Info,
-            Message::new(
-                "Installing".to_string(),
-                format!("{} dependencies...", pkg_manager),
-            )
-        );
-        let deps: Vec<&str> = manifest.npm_deps.iter().map(String::as_str).collect();
-        run_pkg_add(target_dir, &deps, pkg_manager).map_err(|e| {
-            fail(
-                "Install failed",
-                format!(
-                    "Run manually: {} add {}",
-                    pkg_manager,
-                    manifest.npm_deps.join(" ")
-                ),
-                e,
-            )
-        })?;
-        show_message!(
-            MessageType::Success,
-            Message::new("Installed".to_string(), "npm dependencies".to_string())
-        );
+fn install_shadcn_components(
+    components: &[String],
+    target_dir: &Path,
+    pkg_manager: &PackageManager,
+) -> Result<(), RoutineFailure> {
+    if components.is_empty() {
+        return Ok(());
     }
+    show_message!(
+        MessageType::Info,
+        Message::new("Installing".to_string(), "shadcn components...".to_string())
+    );
+    let refs: Vec<&str> = components.iter().map(String::as_str).collect();
+    run_shadcn_add(target_dir, &refs, pkg_manager).map_err(|e| {
+        let add_cmd = match pkg_manager {
+            PackageManager::Pnpm => "pnpm dlx shadcn add",
+            PackageManager::Npm => "npx shadcn add",
+        };
+        fail(
+            "Install failed",
+            format!("Run manually: {} {}", add_cmd, components.join(" ")),
+            e,
+        )
+    })?;
+    show_message!(
+        MessageType::Success,
+        Message::new("Installed".to_string(), "shadcn components".to_string())
+    );
+    Ok(())
+}
+
+fn install_npm_deps(
+    deps: &[String],
+    target_dir: &Path,
+    pkg_manager: &PackageManager,
+) -> Result<(), RoutineFailure> {
+    if deps.is_empty() {
+        return Ok(());
+    }
+    show_message!(
+        MessageType::Info,
+        Message::new(
+            "Installing".to_string(),
+            format!("{pkg_manager} dependencies..."),
+        )
+    );
+    let refs: Vec<&str> = deps.iter().map(String::as_str).collect();
+    run_pkg_add(target_dir, &refs, pkg_manager).map_err(|e| {
+        fail(
+            "Install failed",
+            format!("Run manually: {} add {}", pkg_manager, deps.join(" ")),
+            e,
+        )
+    })?;
+    show_message!(
+        MessageType::Success,
+        Message::new("Installed".to_string(), "npm dependencies".to_string())
+    );
     Ok(())
 }
 

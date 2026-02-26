@@ -29,6 +29,7 @@ npm_deps = [
 ]
 
 shadcn_components = ["badge", "button", "collapsible", "dropdown-menu", "scroll-area", "textarea"]
+moose_exports = []
 
 [[files]]
 src = "src/env-vars.ts"
