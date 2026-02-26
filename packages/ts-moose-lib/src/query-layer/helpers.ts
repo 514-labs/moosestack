@@ -119,9 +119,9 @@ export function timeDimensions(
   return result;
 }
 
-// --- columnsFromTable ---
+// --- Table field helpers ---
 
-interface ColumnsFromTableOptions {
+interface TableFieldOptions {
   /** Only include these column names (snake_case as in the table) */
   include?: string[];
   /** Exclude these column names */
@@ -141,7 +141,7 @@ interface ColumnsFromTableOptions {
  */
 export function columnsFromTable<T>(
   table: OlapTable<T>,
-  options?: ColumnsFromTableOptions,
+  options?: TableFieldOptions,
 ): Record<string, ColumnDef<T>> {
   const { include, exclude, camelCase = true } = options ?? {};
   const result: Record<string, ColumnDef<T>> = {};
@@ -159,17 +159,6 @@ export function columnsFromTable<T>(
   return result;
 }
 
-// --- filtersFromTable ---
-
-interface FiltersFromTableOptions {
-  /** Only include these column names (snake_case as in the table) */
-  include?: string[];
-  /** Exclude these column names */
-  exclude?: string[];
-  /** Convert snake_case keys to camelCase (default: true) */
-  camelCase?: boolean;
-}
-
 /**
  * Generate ModelFilterDef records from a table's columnArray metadata.
  *
@@ -184,7 +173,7 @@ interface FiltersFromTableOptions {
  */
 export function filtersFromTable<T>(
   table: OlapTable<T>,
-  options?: FiltersFromTableOptions,
+  options?: TableFieldOptions,
 ): Record<string, ModelFilterDef<T, keyof T>> {
   const { include, exclude, camelCase = true } = options ?? {};
   const result: Record<string, ModelFilterDef<T, keyof T>> = {};

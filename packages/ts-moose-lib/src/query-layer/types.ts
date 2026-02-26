@@ -159,7 +159,9 @@ export interface ModelFilterDef<
   TModel,
   TKey extends keyof TModel = keyof TModel,
 > {
-  column: TKey;
+  column?: TKey;
+  /** Metric name — filters referencing a metric are auto-routed to HAVING */
+  metric?: string;
   operators: readonly FilterOperator[];
   transform?: (value: TModel[TKey]) => SqlValue;
   inputType?: FilterInputTypeHint;
@@ -258,6 +260,7 @@ export interface QueryParts {
   conditions: Sql[];
   where: Sql;
   groupBy: Sql;
+  having: Sql;
   orderBy: Sql;
   /** Composed LIMIT + OFFSET clause */
   pagination: Sql;

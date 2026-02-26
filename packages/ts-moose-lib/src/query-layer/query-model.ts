@@ -18,6 +18,8 @@ import {
   orderBy as orderByClause,
   groupBy as groupByClause,
   paginate,
+  having as havingClause,
+  identifier,
 } from "./sql-utils";
 import {
   type FilterOperator,
@@ -94,6 +96,7 @@ interface FilterDef<TValue = SqlValue> {
   column: ColRef;
   operators: readonly FilterOperator[];
   transform?: (value: TValue) => SqlValue;
+  isHaving?: boolean;
 }
 
 /**
@@ -377,38 +380,6 @@ export function defineQueryModel<
   const primaryTableName = table.name;
   const hasJoins = joinDefs != null && Object.keys(joinDefs).length > 0;
 
-  // --- Resolve filters ---
-
-  const resolvedFilters: Record<
-    string,
-    FilterDef & { inputType?: FilterInputTypeHint }
-  > = {};
-  const filtersWithInputType: Record<
-    string,
-    ModelFilterDef<TTable, keyof TTable> & { inputType?: FilterInputTypeHint }
-  > = {};
-  for (const [name, def] of Object.entries(filters)) {
-    const columnRef: Column = table.columns[def.column];
-
-    const inputType =
-      def.inputType ??
-      (columnRef.data_type ?
-        deriveInputTypeFromDataType(columnRef.data_type)
-      : undefined);
-
-    const resolvedColumn: ColRef =
-      hasJoins ? raw(`${primaryTableName}.${String(def.column)}`) : columnRef;
-
-    resolvedFilters[name] = {
-      column: resolvedColumn,
-      operators: def.operators,
-      transform: def.transform as ((value: SqlValue) => SqlValue) | undefined,
-      inputType,
-    };
-
-    filtersWithInputType[name] = { ...def, inputType };
-  }
-
   // --- Normalize dimensions ---
 
   const normalizedDimensions: Record<string, FieldDef> = {};
@@ -459,6 +430,70 @@ export function defineQueryModel<
     }
   }
 
+  // --- Resolve filters ---
+
+  const resolvedFilters: Record<
+    string,
+    FilterDef & { inputType?: FilterInputTypeHint }
+  > = {};
+  const filtersWithInputType: Record<
+    string,
+    ModelFilterDef<TTable, keyof TTable> & { inputType?: FilterInputTypeHint }
+  > = {};
+  for (const [name, def] of Object.entries(filters)) {
+    if (def.metric) {
+      // HAVING filter — references a metric by name
+      const metricDef = normalizedMetrics[def.metric];
+      if (!metricDef) {
+        throw new Error(
+          `Filter '${name}' references unknown metric '${def.metric}'`,
+        );
+      }
+      const alias = metricDef.as ?? def.metric;
+      const inputType = def.inputType ?? "number";
+
+      resolvedFilters[name] = {
+        column: identifier(alias),
+        operators: def.operators,
+        transform: def.transform as ((value: SqlValue) => SqlValue) | undefined,
+        inputType,
+        isHaving: true,
+      };
+
+      filtersWithInputType[name] = { ...def, inputType };
+    } else if (def.column != null) {
+      // WHERE filter — references a table column
+      const columnRef: Column = table.columns[def.column];
+      if (!columnRef) {
+        throw new Error(
+          `Filter '${name}' references unknown column '${String(def.column)}' on table '${primaryTableName}'`,
+        );
+      }
+
+      const inputType =
+        def.inputType ??
+        (columnRef.data_type ?
+          deriveInputTypeFromDataType(columnRef.data_type)
+        : undefined);
+
+      const resolvedColumn: ColRef =
+        hasJoins ? raw(`${primaryTableName}.${String(def.column)}`) : columnRef;
+
+      resolvedFilters[name] = {
+        column: resolvedColumn,
+        operators: def.operators,
+        transform: def.transform as ((value: SqlValue) => SqlValue) | undefined,
+        inputType,
+      };
+
+      filtersWithInputType[name] = { ...def, inputType };
+    } else {
+      throw new Error(
+        `Filter '${name}' must specify either 'column' or 'metric'`,
+      );
+    }
+  }
+
   // --- Combined field map ---
 
   const normalizedFields: Record<string, FieldDef> = {};
@@ -486,7 +521,7 @@ export function defineQueryModel<
       (field.column ? sql`${field.column}` : empty);
     if (!expr || isEmpty(expr)) return empty;
     const alias = field.as ?? defaultAlias;
-    return sql`${expr} AS ${raw(String(alias))}`;
+    return sql`${expr} AS ${identifier(String(alias))}`;
   }
 
   function buildFieldList(
@@ -504,23 +539,17 @@ export function defineQueryModel<
   }
 
   function buildSelectClause(selectFields?: string[]): Sql {
-    const fieldNames = selectFields ?? Object.keys(normalizedFields);
-    const parts = fieldNames
-      .map((name) => {
-        const field = normalizedFields[name];
-        if (!field) return empty;
-        return buildFieldExpr(field, name);
-      })
-      .filter((s) => !isEmpty(s));
+    const parts = buildFieldList(normalizedFields, selectFields);
     return sql`SELECT ${join(parts)}`;
   }
 
   function buildFilterConditions(
     filterParams?: FilterParams<TFilters, TTable>,
-  ): Sql[] {
-    if (!filterParams) return [];
+  ): { where: Sql[]; having: Sql[] } {
+    if (!filterParams) return { where: [], having: [] };
 
-    const conditions: Sql[] = [];
+    const whereConds: Sql[] = [];
+    const havingConds: Sql[] = [];
     for (const [filterName, ops] of Object.entries(filterParams)) {
       const filterDef = resolvedFilters[filterName];
       if (!filterDef) {
@@ -549,10 +578,16 @@ export function defineQueryModel<
           op as FilterOperator,
           transformed,
         );
-        if (!isEmpty(condition)) conditions.push(condition);
+        if (!isEmpty(condition)) {
+          if (filterDef.isHaving) {
+            havingConds.push(condition);
+          } else {
+            whereConds.push(condition);
+          }
+        }
       }
     }
-    return conditions;
+    return { where: whereConds, having: havingConds };
   }
 
   function buildOrderByClause(
@@ -602,7 +637,7 @@ export function defineQueryModel<
           (fieldDef.column ? sql`${fieldDef.column}` : empty);
 
         // For aggregate metrics, ORDER BY the SELECT alias.
-        const orderExpr = fieldDef.agg ? raw(alias) : col;
+        const orderExpr = fieldDef.agg ? identifier(alias) : col;
         if (isEmpty(orderExpr)) return empty;
 
         return sql`${orderExpr} ${raw(dir)}`;
@@ -613,12 +648,12 @@ export function defineQueryModel<
   }
 
   function buildFromClause(): Sql {
-    if (!joinDefs || Object.keys(joinDefs).length === 0) {
+    if (!hasJoins) {
       return sql`FROM ${table}`;
     }
 
     let fromClause = sql`FROM ${table}`;
-    for (const [, joinDef] of Object.entries(joinDefs)) {
+    for (const [, joinDef] of Object.entries(joinDefs!)) {
       const joinType = joinDef.type ?? "LEFT";
 
       let onClause: Sql;
@@ -756,8 +791,13 @@ export function defineQueryModel<
 
     const selectedFieldSet = new Set(selectedFields);
     const selectClause = buildSelectClause(spec.select);
-    const conditions = buildFilterConditions(spec.filters);
-    const whereClause = conditions.length > 0 ? where(...conditions) : empty;
+    const filterResult = buildFilterConditions(spec.filters);
+    const whereClause =
+      filterResult.where.length > 0 ? where(...filterResult.where) : empty;
+    const havingPart =
+      filterResult.having.length > 0 ?
+        havingClause(...filterResult.having)
+      : empty;
     const groupByPart = spec.detailMode ? empty : buildGroupByClause(spec);
     const orderByPart = buildOrderByClause(spec, selectedFieldSet);
 
@@ -767,9 +807,10 @@ export function defineQueryModel<
       metrics: metricParts.length > 0 ? join(metricParts) : empty,
       columns: columnParts.length > 0 ? join(columnParts) : empty,
       from: buildFromClause(),
-      conditions,
+      conditions: filterResult.where,
       where: whereClause,
       groupBy: groupByPart,
+      having: havingPart,
       orderBy: orderByPart,
       pagination,
     };
@@ -791,6 +832,7 @@ export function defineQueryModel<
       ${parts.from}
       ${parts.where}
       ${parts.groupBy}
+      ${parts.having}
       ${parts.orderBy}
       ${parts.pagination}
     `;

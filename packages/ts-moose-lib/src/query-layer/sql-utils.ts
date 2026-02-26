@@ -8,7 +8,7 @@
  * @module query-layer/sql-utils
  */
 
-import { sql, Sql } from "../sqlHelpers";
+import { sql, Sql, quoteIdentifier } from "../sqlHelpers";
 import type { SqlValue, ColRef, FilterOperator } from "./types";
 
 // --- Core SQL Utilities ---
@@ -62,9 +62,19 @@ export function filter(
 ): Sql;
 export function filter(
   col: ColRef,
+  op: "isNull" | "isNotNull",
+  value: boolean | undefined,
+): Sql;
+export function filter(
+  col: ColRef,
+  op: "like" | "ilike",
+  value: string | undefined,
+): Sql;
+export function filter(
+  col: ColRef,
   op: Exclude<
     FilterOperator,
-    "between" | "in" | "notIn" | "isNull" | "isNotNull"
+    "between" | "in" | "notIn" | "isNull" | "isNotNull" | "like" | "ilike"
   >,
   value: SqlValue | undefined,
 ): Sql;
@@ -219,16 +229,28 @@ export function orderBy(
 
 /** Build LIMIT clause */
 export function limit(n: number): Sql {
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error("LIMIT must be a non-negative integer");
+  }
   return sql`LIMIT ${n}`;
 }
 
 /** Build OFFSET clause */
 export function offset(n: number): Sql {
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error("OFFSET must be a non-negative integer");
+  }
   return sql`OFFSET ${n}`;
 }
 
 /** Build LIMIT + OFFSET for pagination */
 export function paginate(pageSize: number, page: number = 0): Sql {
+  if (!Number.isInteger(pageSize) || pageSize <= 0) {
+    throw new Error("pageSize must be a positive integer");
+  }
+  if (!Number.isInteger(page) || page < 0) {
+    throw new Error("page must be a non-negative integer");
+  }
   const offsetVal = page * pageSize;
   return offsetVal > 0 ?
       sql`LIMIT ${pageSize} OFFSET ${offsetVal}`
@@ -247,6 +269,13 @@ export function having(...conditions: Sql[]): Sql {
   return isEmpty(combined) ? empty : sql`HAVING ${combined}`;
 }
 
+// --- Identifier Safety ---
+
+/** Emit a safely-quoted SQL identifier using backticks (ClickHouse convention). */
+export function identifier(name: string): Sql {
+  return raw(quoteIdentifier(name));
+}
+
 // --- Expression with Fluent Alias ---
 
 /** SQL expression with fluent `.as()` method */
@@ -257,7 +286,7 @@ export interface Expr extends Sql {
 /** Augment a Sql fragment with a fluent .as() method */
 function expr(fragment: Sql): Expr {
   return Object.assign(fragment, {
-    as: (alias: string) => sql`${fragment} AS ${raw(alias)}`,
+    as: (alias: string) => sql`${fragment} AS ${identifier(alias)}`,
   }) as Expr;
 }
 
@@ -301,7 +330,7 @@ export function select(...cols: Array<ColRef | [ColRef, string]>): Sql {
   const parts = cols.map((c) => {
     if (Array.isArray(c)) {
       const [col, alias] = c;
-      return sql`${col} AS ${raw(alias)}`;
+      return sql`${col} AS ${identifier(alias)}`;
     }
     return sql`${c}`;
   });
@@ -310,5 +339,5 @@ export function select(...cols: Array<ColRef | [ColRef, string]>): Sql {
 
 /** Alias a column or expression */
 export function as(expression: Sql, alias: string): Sql {
-  return sql`${expression} AS ${raw(alias)}`;
+  return sql`${expression} AS ${identifier(alias)}`;
 }
