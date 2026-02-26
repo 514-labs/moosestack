@@ -322,9 +322,10 @@ export function registerModelTools(
       toolName,
       toolDescription,
       // MCP SDK's server.tool() triggers TS2589 (infinite type instantiation)
-      // when given Record<string, z.ZodType>. Tracked upstream:
-      // https://github.com/modelcontextprotocol/typescript-sdk/issues/205
-      tool.schema as Record<string, z.ZodTypeAny>,
+      // when given Record<string, z.ZodType>. Cast to `any` to prevent the DTS
+      // generator from expanding the SDK's deeply recursive overload signatures.
+      // Tracked upstream: https://github.com/modelcontextprotocol/typescript-sdk/issues/205
+      tool.schema as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       { title: titleFromName(toolName) },
       async (params: Record<string, unknown>) => {
         try {
