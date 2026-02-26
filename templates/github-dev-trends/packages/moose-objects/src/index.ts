@@ -100,7 +100,11 @@ async function getTopicTimeseries(
                     uniqExact(${cols.actorId}) AS uniqueUsersCount
                 FROM ${RepoStarEvent.table!}
                 WHERE length(${cols.repoTopics!}) > 0
-                ${exclude ? sql`AND arrayAll(x -> x NOT IN (${exclude}), ${cols.repoTopics!})` : sql``}
+                ${(() => {
+                  const tokens = exclude.split(",").map((s) => s.trim()).filter(Boolean);
+                  if (tokens.length === 0) return sql``;
+                  return sql`AND arrayAll(x -> x NOT IN (${sql.join(tokens.map((t) => sql`${t}`))}), ${cols.repoTopics!})`;
+                })()}
                 ${intervalMap[interval].groupBy}
                 ${intervalMap[interval].orderBy}
                 ${intervalMap[interval].limit}
