@@ -1130,6 +1130,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
             writeln!(output, "    ],").unwrap();
         }
+        let sf = &table.seed_filter;
+        if sf.limit.is_some() || sf.where_clause.is_some() {
+            write!(output, "    seed_filter=OlapConfig.SeedFilter(").unwrap();
+            let mut args = Vec::new();
+            if let Some(limit) = sf.limit {
+                args.push(format!("limit={}", limit));
+            }
+            if let Some(ref wc) = sf.where_clause {
+                args.push(format!("where={:?}", wc));
+            }
+            writeln!(output, "{}),", args.join(", ")).unwrap();
+        }
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }

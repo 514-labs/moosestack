@@ -1643,7 +1643,7 @@ events = OlapTable[UserEvent]("user_events", OlapConfig(
 | `where` | `string` / `str` | ClickHouse SQL `WHERE` expression appended to the seed query. |
 
 <Callout type="info" title="CLI flags still apply">
-The CLI `--limit` and `--order-by` flags work alongside `seedFilter`. When `--limit` is
+The CLI `--limit` and `--all` flags work alongside `seedFilter`. When `--limit` is
 provided it overrides the per-table `seedFilter.limit`; otherwise the code-defined limit is
 used as the default. The `--all` flag bypasses limits entirely.
 </Callout>

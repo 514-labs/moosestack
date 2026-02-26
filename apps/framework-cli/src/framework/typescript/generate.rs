@@ -1003,6 +1003,17 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             writeln!(output, "    ],").unwrap();
         }
+        let sf = &table.seed_filter;
+        if sf.limit.is_some() || sf.where_clause.is_some() {
+            write!(output, "    seedFilter: {{").unwrap();
+            if let Some(limit) = sf.limit {
+                write!(output, " limit: {},", limit).unwrap();
+            }
+            if let Some(ref wc) = sf.where_clause {
+                write!(output, " where: {:?},", wc).unwrap();
+            }
+            writeln!(output, " }},").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }

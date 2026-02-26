@@ -12,7 +12,7 @@
  *   4. --all bypasses both seedFilter.limit and CLI --limit
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { exec, spawn, ChildProcess } from "child_process";
 import { expect } from "chai";
 import { createClient } from "@clickhouse/client";
 import * as fs from "fs";
@@ -27,7 +27,7 @@ import {
   logger,
 } from "./utils";
 
-const execAsync = promisify(require("child_process").exec);
+const execAsync = promisify(exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_TS_LIB_PATH = path.resolve(
@@ -69,7 +69,7 @@ async function truncateTable(tableName: string): Promise<void> {
 }
 
 describe("moose seed clickhouse with seedFilter", function () {
-  let devProcess: ChildProcess;
+  let devProcess: ChildProcess | null = null;
   let testProjectDir: string;
 
   before(async function () {
@@ -216,6 +216,6 @@ describe("moose seed clickhouse with seedFilter", function () {
     const count = await localRowCount("commits");
     testLogger.info(`Seeded ${count} rows (expected > ${SEED_LIMIT})`);
     // WHERE author='Alexey Milovidov' AND files_added > 10 → ~41 rows
-    expect(count).to.be.greaterThan(SEED_LIMIT);
+    expect(count).to.be.within(SEED_LIMIT + 1, 200);
   });
 });

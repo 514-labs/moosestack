@@ -3582,6 +3582,8 @@ fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
     let mut b = b.clone();
     a.metadata = None;
     b.metadata = None;
+    a.seed_filter = Default::default();
+    b.seed_filter = Default::default();
     a == b
 }
 

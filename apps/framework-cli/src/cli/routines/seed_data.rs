@@ -262,6 +262,8 @@ async fn seed_single_table(
     let local_db = db.unwrap_or(&local_clickhouse.config().db_name);
     let batch_size: usize = 50_000;
 
+    // User-provided config inserted verbatim
+    // safe here because the CLI runs against the user's own databases.
     let where_clause = table
         .seed_filter
         .where_clause

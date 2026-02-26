@@ -313,6 +313,9 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
 
     let mut normalized = table.clone();
 
+    // seed_filter is a dev-time seeding directive, never part of ClickHouse schema
+    normalized.seed_filter = Default::default();
+
     // Strip table-level TTL if ignored
     if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
         normalized.table_ttl_setting = None;
