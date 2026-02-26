@@ -3,7 +3,7 @@ language = "Typescript"
 [typescript_config]
 # Package manager to use for installing dependencies
 # Options: "npm" (default), "pnpm", "yarn"
-package_manager = "npm"
+package_manager = "pnpm"
 
 [redpanda_config]
 broker = "localhost:19092"

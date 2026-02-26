@@ -7,4 +7,7 @@ coverage
 .claude
 CLAUDE.md
 docs/older
+.env
+.env.local
+.env*.local
 

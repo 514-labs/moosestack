@@ -18,6 +18,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (!orgId) {
+      return new Response(
+        JSON.stringify({
+          error: "No organization selected",
+          details:
+            "Tier 3 requires an active organization. Use the Organization Switcher to select one.",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     const [token, user, body] = await Promise.all([
       getToken({ template: "moose-mcp" }),
       currentUser(),

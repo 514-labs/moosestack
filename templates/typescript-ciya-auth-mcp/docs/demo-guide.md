@@ -27,7 +27,7 @@ A runbook for demonstrating the three authentication tiers side by side. Open `/
 ```
 ANTHROPIC_API_KEY=<your-anthropic-key>
 MCP_API_TOKEN=<generated-pbkdf2-token>
-NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:4000
+MCP_SERVER_URL=http://localhost:4000
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in

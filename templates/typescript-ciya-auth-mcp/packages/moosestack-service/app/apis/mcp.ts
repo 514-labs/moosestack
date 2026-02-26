@@ -19,6 +19,7 @@ import { z } from "zod/v3";
 import { WebApp, getMooseUtils, MooseUtils } from "@514labs/moose-lib";
 import { createAuthMiddleware } from "@514labs/express-pbkdf2-api-key-auth";
 import { jwtVerify, createRemoteJWKSet } from "jose";
+import rateLimit from "express-rate-limit";
 
 /**
  * User context extracted from JWT claims (Tier 2/3).
@@ -141,17 +142,12 @@ async function getTablesAndMaterializedViews(
     });
   }
 
-  // Apply search pattern filter
+  // Apply search pattern filter (case-insensitive substring match)
   if (searchPattern) {
-    try {
-      const regex = new RegExp(searchPattern, "i");
-      filteredData = filteredData.filter((row) => regex.test(row.name));
-    } catch {
-      // If regex is invalid, fall back to simple substring match
-      filteredData = filteredData.filter((row) =>
-        row.name.toLowerCase().includes(searchPattern.toLowerCase()),
-      );
-    }
+    const pattern = searchPattern.toLowerCase();
+    filteredData = filteredData.filter((row) =>
+      row.name.toLowerCase().includes(pattern),
+    );
   }
 
   const tables = filteredData
@@ -299,14 +295,26 @@ export function isJwt(token: string): boolean {
 const pbkdf2Middleware =
   mcpApiKey ? createAuthMiddleware(() => mcpApiKey) : undefined;
 
+// Rate limit: 300 requests per minute per IP.
+// Chat conversations trigger multiple MCP tool calls per message (up to 25 steps),
+// so the limit is generous enough for normal use but stops abuse.
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
+
 app.use(async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   const token =
     authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
   if (!token) {
-    // No token: if PBKDF2 key is configured, reject; otherwise dev mode
-    if (mcpApiKey) {
+    // No token: if any auth is configured, reject; otherwise dev mode
+    if (mcpApiKey || jwksUrl) {
       res.status(401).json({ error: "Missing authorization token" });
       return;
     }
@@ -343,6 +351,9 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
     // PBKDF2 path (Tier 1)
     (req as any).userContext = undefined;
     pbkdf2Middleware(req, res, next);
+  } else if (mcpApiKey || jwksUrl) {
+    // Auth is configured but token didn't match any path — reject
+    res.status(401).json({ error: "Invalid authorization token" });
   } else {
     // Dev mode: no auth configured
     (req as any).userContext = undefined;
@@ -394,10 +405,14 @@ export const serverFactory = (
         let finalQuery = query.trim();
 
         // Tier 3: wrap query in subquery with org_id filter for data isolation
+        // Matches SELECT and WITH...SELECT (CTEs) — any read query that returns rows
         let scopeParams: Record<string, string> | undefined;
         if (userContext?.orgId) {
           const upperQuery = finalQuery.toUpperCase();
-          if (upperQuery.startsWith("SELECT")) {
+          if (
+            upperQuery.startsWith("SELECT") ||
+            upperQuery.startsWith("WITH")
+          ) {
             finalQuery = `SELECT * FROM (${finalQuery}) AS _scoped WHERE org_id = {_scope_org_id:String}`;
             scopeParams = { _scope_org_id: userContext.orgId };
           }
@@ -478,7 +493,9 @@ export const serverFactory = (
       search: z
         .string()
         .optional()
-        .describe("Regex pattern to search for in component names"),
+        .describe(
+          "Substring to search for in component names (case-insensitive)",
+        ),
       format: z
         .enum(["summary", "detailed"])
         .default("summary")

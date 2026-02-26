@@ -2,8 +2,11 @@
 -- Run against ClickHouse after the DataEvent table is created:
 --   clickhouse-client --port 9000 --multiquery < seed-data.sql
 --
+-- Idempotent: safe to run multiple times (truncates before inserting).
 -- Two organizations: org_3AAaPqJ6m4thtqYUbePud3EtQNE and org_3AAaS98jZ1sujxREsKs3hR4C97c
 -- Each has different event types and data to make isolation visually obvious.
+
+TRUNCATE TABLE IF EXISTS DataEvent;
 
 INSERT INTO DataEvent (eventId, timestamp, eventType, data, org_id) VALUES
   ('acme-001', now() - INTERVAL 7 DAY, 'page_view',   '{"page": "/dashboard", "user": "alice@acme.com"}',           'org_3AAaPqJ6m4thtqYUbePud3EtQNE'),

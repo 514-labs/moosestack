@@ -32,13 +32,13 @@ describe("isJwt - token format detection", () => {
     expect(isJwt("a.b.c.d")).toBe(false);
   });
 
-  it("returns false for a string with leading dot", () => {
-    // ".b.c" splits into ["", "b", "c"] = 3 segments, so this is true
-    // This is the actual behavior — the function checks segment count only
+  it("returns true for a string with leading dot (3 segments by count)", () => {
+    // ".b.c" splits into ["", "b", "c"] = 3 segments
+    // isJwt is a routing heuristic — jwtVerify is the actual security gate
     expect(isJwt(".b.c")).toBe(true);
   });
 
-  it("returns false for a string with only dots", () => {
+  it("returns true for a string with only dots (3 segments by count)", () => {
     // ".." splits into ["", "", ""] = 3 segments
     expect(isJwt("..")).toBe(true);
   });

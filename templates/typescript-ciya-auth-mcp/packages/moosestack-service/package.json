@@ -12,6 +12,7 @@
     "@cfworker/json-schema": "4.1.1",
     "@modelcontextprotocol/sdk": "1.24.2",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
     "jose": "^5.9.2",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",

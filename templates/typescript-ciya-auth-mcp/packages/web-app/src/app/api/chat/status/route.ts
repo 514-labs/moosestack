@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
 
   return new Response(

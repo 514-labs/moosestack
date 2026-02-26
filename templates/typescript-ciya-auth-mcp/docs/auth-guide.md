@@ -200,12 +200,15 @@ The JWT carries user identity claims. The MooseStack API validates the token sig
 
 The backend auth middleware in `mcp.ts` auto-detects the token format:
 
-1. Extract Bearer token from `Authorization` header
-2. If token has 3 dot-separated segments → **JWT path**: validate with `jwtVerify()` against JWKS, extract claims, attach `userContext` to request
-3. Otherwise → **PBKDF2 path**: delegate to existing PBKDF2 middleware, no `userContext`
-4. No token + no auth configured → dev mode (allow)
+1. Rate limiter applies (300 requests/min/IP)
+2. Extract Bearer token from `Authorization` header
+3. No token + any auth configured (`MCP_API_KEY` or `JWKS_URL`) → **401 reject**
+4. No token + no auth configured → **dev mode** (allow, no `userContext`)
+5. Token has 3 dot-separated segments + `JWKS_URL` set → **JWT path**: validate with `jwtVerify()` against JWKS, extract claims, attach `userContext` to request
+6. Token is not JWT format + `MCP_API_KEY` set → **PBKDF2 path**: delegate to PBKDF2 middleware, no `userContext`
+7. Token present + auth configured but no matching path → **401 reject**
 
-This means Tier 1 and Tier 2/3 requests can hit the same backend endpoint simultaneously.
+This means Tier 1 and Tier 2/3 requests can hit the same backend endpoint simultaneously. Dev mode (no auth) is only available when neither `MCP_API_KEY` nor `JWKS_URL` is set.
 
 ### Audit logging
 
@@ -382,6 +385,7 @@ Before deploying at any tier, verify these baseline protections:
 - [ ] Row limits are enforced in `query_clickhouse` to prevent exfiltration
 - [ ] API keys / JWTs are stored as server-side environment variables, never exposed to the browser
 - [ ] The MCP server is not publicly accessible without authentication
+- [ ] Rate limiting is enabled on the MCP backend (default: 300 req/min/IP)
 - [ ] Sensitive environment variables (`.env.local`) are in `.gitignore`
 - [ ] HTTPS is enforced in production
 
@@ -395,6 +399,7 @@ Before deploying at any tier, verify these baseline protections:
 **Tier 2+ (backend auth):**
 
 - [ ] JWT signature validation uses JWKS (not a hardcoded secret)
+- [ ] `JWT_ISSUER` is set to validate the `iss` claim (prevents cross-app token reuse)
 - [ ] Token expiry is enforced — expired tokens are rejected
 - [ ] User identity is logged with every MCP tool invocation
 

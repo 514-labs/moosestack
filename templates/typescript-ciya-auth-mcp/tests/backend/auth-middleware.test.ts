@@ -5,11 +5,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *
  * The middleware in mcp.ts:
  * 1. Extracts Bearer token from Authorization header
- * 2. No token + MCP_API_KEY set → 401
- * 3. No token + no MCP_API_KEY → dev mode (allow, no userContext)
+ * 2. No token + any auth configured (MCP_API_KEY or JWKS_URL) → 401
+ * 3. No token + no auth configured → dev mode (allow, no userContext)
  * 4. JWT token (3 dots) + JWKS_URL → validate via jose, extract claims
  * 5. JWT token + invalid → 401
  * 6. Non-JWT token → PBKDF2 middleware
+ * 7. Token present + auth configured but no matching path → 401
  *
  * Since the middleware is defined inline in mcp.ts at module scope and depends
  * on env vars read at import time, we test the logic patterns rather than
@@ -21,9 +22,15 @@ function resolveAuthPath(
   token: string | undefined,
   mcpApiKey: string | undefined,
   jwksUrl: string | undefined,
-): "dev_mode" | "reject_no_token" | "jwt" | "pbkdf2" | "dev_with_token" {
+):
+  | "dev_mode"
+  | "reject_no_token"
+  | "jwt"
+  | "pbkdf2"
+  | "reject_invalid_token"
+  | "dev_with_token" {
   if (!token) {
-    return mcpApiKey ? "reject_no_token" : "dev_mode";
+    return mcpApiKey || jwksUrl ? "reject_no_token" : "dev_mode";
   }
 
   const isJwtToken = token.split(".").length === 3;
@@ -32,6 +39,9 @@ function resolveAuthPath(
     return "jwt";
   } else if (mcpApiKey) {
     return "pbkdf2";
+  } else if (jwksUrl) {
+    // Token present but not JWT format, and only JWKS auth configured — reject
+    return "reject_invalid_token";
   } else {
     return "dev_with_token";
   }
@@ -78,6 +88,36 @@ describe("auth middleware - routing logic", () => {
     expect(resolveAuthPath("some_token", undefined, undefined)).toBe(
       "dev_with_token",
     );
+  });
+
+  it("rejects with 401 when no token but only JWKS_URL is configured", () => {
+    expect(
+      resolveAuthPath(
+        undefined,
+        undefined,
+        "https://clerk.dev/.well-known/jwks.json",
+      ),
+    ).toBe("reject_no_token");
+  });
+
+  it("rejects with 401 when no token and both auth methods configured", () => {
+    expect(
+      resolveAuthPath(
+        undefined,
+        "hashed_key",
+        "https://clerk.dev/.well-known/jwks.json",
+      ),
+    ).toBe("reject_no_token");
+  });
+
+  it("rejects non-JWT token when only JWKS_URL is configured (no PBKDF2 fallback)", () => {
+    expect(
+      resolveAuthPath(
+        "sk_test_abc123",
+        undefined,
+        "https://clerk.dev/.well-known/jwks.json",
+      ),
+    ).toBe("reject_invalid_token");
   });
 });
 

@@ -98,8 +98,12 @@ function isJwt(token: string): boolean {
 }
 ```
 
-- 3 dot-separated segments → JWT path (validate with JWKS)
-- Anything else → PBKDF2 path (validate with hashed key)
+- 3 dot-separated segments + `JWKS_URL` set → JWT path (validate with JWKS)
+- Anything else + `MCP_API_KEY` set → PBKDF2 path (validate with hashed key)
+- No token + any auth configured → 401 (reject)
+- Token present but no matching auth path → 401 (reject)
+
+Dev mode (no auth required) is only active when neither `MCP_API_KEY` nor `JWKS_URL` is set. All requests are rate-limited to 300/min/IP.
 
 This means Tier 1 and Tier 2 requests can hit the same backend simultaneously.
 
@@ -170,12 +174,9 @@ Scoped:    SELECT * FROM (SELECT * FROM DataEvent) AS _scoped WHERE org_id = 'or
 
 Original:  SELECT * FROM DataEvent WHERE eventType = 'purchase'
 Scoped:    SELECT * FROM (SELECT * FROM DataEvent WHERE eventType = 'purchase') AS _scoped WHERE org_id = 'org_abc123'
-
-Original:  SELECT eventType, count() FROM DataEvent GROUP BY eventType
-Scoped:    SELECT * FROM (SELECT eventType, count() FROM DataEvent GROUP BY eventType) AS _scoped WHERE org_id = 'org_abc123'
 ```
 
-The subquery wrapping approach is robust against any inner query structure — JOINs, CTEs, subqueries, GROUP BY, HAVING, UNION — since it wraps rather than rewrites.
+The subquery wrapping approach works for any query that projects `org_id` in its result set — including JOINs, CTEs, subqueries, and UNION. Queries that aggregate or project only specific columns without `org_id` (e.g., `SELECT eventType, count() ... GROUP BY eventType`) will fail at the ClickHouse level with a column-not-found error. This is a safe failure — the user sees an error, not cross-tenant data.
 
 ### Clerk JWT template setup
 

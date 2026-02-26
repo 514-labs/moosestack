@@ -23,7 +23,7 @@ function applyScopedQuery(
   let scopeParams: Record<string, string> | undefined;
   if (orgId) {
     const upperQuery = finalQuery.toUpperCase();
-    if (upperQuery.startsWith("SELECT")) {
+    if (upperQuery.startsWith("SELECT") || upperQuery.startsWith("WITH")) {
       finalQuery = `SELECT * FROM (${finalQuery}) AS _scoped WHERE org_id = {_scope_org_id:String}`;
       scopeParams = { _scope_org_id: orgId };
     }
@@ -156,6 +156,29 @@ describe("Tier 3 subquery wrapping for org scoping", () => {
     expect(query).toBe(
       "SELECT * FROM (SELECT * FROM DataEvent) AS _scoped" + SCOPED_SUFFIX,
     );
+  });
+
+  it("wraps lowercase select queries (case-insensitive detection)", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "select * from DataEvent",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (select * from DataEvent) AS _scoped" + SCOPED_SUFFIX,
+    );
+    expect(scopeParams).toEqual({ _scope_org_id: "org_acme" });
+  });
+
+  it("wraps CTE/WITH queries", () => {
+    const { query, scopeParams } = applyScopedQuery(
+      "WITH recent AS (SELECT * FROM DataEvent WHERE timestamp > now() - INTERVAL 1 DAY) SELECT * FROM recent",
+      "org_acme",
+    );
+    expect(query).toBe(
+      "SELECT * FROM (WITH recent AS (SELECT * FROM DataEvent WHERE timestamp > now() - INTERVAL 1 DAY) SELECT * FROM recent) AS _scoped" +
+        SCOPED_SUFFIX,
+    );
+    expect(scopeParams).toEqual({ _scope_org_id: "org_acme" });
   });
 });
 
