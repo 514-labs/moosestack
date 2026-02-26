@@ -810,7 +810,7 @@ export function defineQueryModel<
     );
 
     const selectedFieldSet = new Set(selectedFields);
-    const selectClause = buildSelectClause(spec.select);
+    const selectClause = buildSelectClause(selectedFields);
     const filterResult = buildFilterConditions(spec.filters);
     const whereClause =
       filterResult.where.length > 0 ? where(...filterResult.where) : empty;
