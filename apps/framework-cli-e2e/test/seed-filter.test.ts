@@ -225,6 +225,8 @@ describe("moose seed clickhouse with seedFilter", function () {
     const count = await localRowCount("commits");
     testLogger.info(`Seeded ${count} rows (expected 5)`);
     expect(count).to.equal(5);
+    const violations = await localWhereViolationCount("commits", SEED_WHERE);
+    expect(violations).to.equal(0);
   });
 
   it("should bypass seedFilter.limit when --all is set", async function () {
