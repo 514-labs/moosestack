@@ -189,6 +189,7 @@ async fn run_add_nextjs(
     target_dir: PathBuf,
     pkg_manager: PackageManager,
 ) -> Result<RoutineSuccess, RoutineFailure> {
+    check_nextjs_project(&target_dir)?;
     check_shadcn_initialized(&target_dir, &pkg_manager)?;
 
     print_plan(&manifest, &target_dir, None);
@@ -287,10 +288,14 @@ fn resolve_moose_source_dir(
 }
 
 /// Returns true if `export_line` appears as an active (non-commented) line in `content`.
-/// Uses `starts_with` after trimming so trailing comments (`// ...`) are ignored and
-/// lines commented out with `//` are correctly treated as absent.
+/// Normalises trailing semicolons before comparing so `starts_with` catches both
+/// `export * from "./apis/mcp";` and `export * from "./apis/mcp"` as equivalent.
+/// Lines starting with `//` are treated as absent.
 fn export_line_present(content: &str, export_line: &str) -> bool {
-    content.lines().any(|l| l.trim().starts_with(export_line))
+    let normalized = export_line.trim_end_matches(';');
+    content
+        .lines()
+        .any(|l| l.trim().trim_end_matches(';').starts_with(normalized))
 }
 
 /// Returns the conventional entry filename for a language (`index.ts` / `main.py`).
@@ -362,7 +367,24 @@ fn print_plan(manifest: &ComponentManifest, target_dir: &Path, source_dir: Optio
     }
 }
 
-/// Checks that shadcn has been initialized in the target directory.
+fn check_nextjs_project(target_dir: &Path) -> Result<(), RoutineFailure> {
+    let has_next_config = ["next.config.js", "next.config.ts", "next.config.mjs"]
+        .iter()
+        .any(|f| target_dir.join(f).exists());
+
+    if has_next_config {
+        return Ok(());
+    }
+
+    Err(RoutineFailure::error(Message::new(
+        "Next.js required".to_string(),
+        format!(
+            "No next.config.* found in {}.\nThis component targets Next.js App Router projects.",
+            target_dir.display()
+        ),
+    )))
+}
+
 fn check_shadcn_initialized(
     target_dir: &Path,
     pkg_manager: &PackageManager,
@@ -563,8 +585,7 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
     std::fs::write(path, content)
 }
 
-/// Appends any missing export lines to the language entry file (e.g. `index.ts` / `main.py`).
-/// Idempotent — already-present lines are skipped with a message.
+/// Appends any missing export lines to the language entry file.
 fn append_moose_exports(
     target_dir: &Path,
     source_dir: &str,
