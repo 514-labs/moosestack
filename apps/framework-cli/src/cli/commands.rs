@@ -194,6 +194,11 @@ pub enum Commands {
     /// Manage templates
     #[command(visible_alias = "t")]
     Template(TemplateCommands),
+    #[command(
+        about = "[EXPERIMENTAL] Manage components",
+        long_about = "Manage components\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases."
+    )]
+    Component(ComponentCommands),
     /// Manage database schema import
     Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
@@ -292,11 +297,13 @@ pub enum AddComponent {
     /// MCP server with ClickHouse query tools at /tools
     #[command(
         name = "mcp-server",
-        after_help = "Example:\n  moose add mcp-server --dir packages/moosestack-service"
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Moose project\n\nExample:\n  moose add mcp-server --dir packages/moosestack-service"
     )]
     McpServer(AddArgs),
-    /// AI chat panel for Next.js. Requires mcp-server (moose add mcp-server)
-    #[command(after_help = "Example:\n  moose add chat --dir packages/web-app")]
+    /// AI chat panel for Next.js. Requires an MCP server (moose add mcp-server)
+    #[command(
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
+    )]
     Chat(AddArgs),
 }
 
@@ -463,6 +470,20 @@ pub struct TemplateCommands {
 #[derive(Debug, Subcommand)]
 pub enum TemplateSubCommands {
     /// List available templates
+    #[command(visible_alias = "l")]
+    List {},
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct ComponentCommands {
+    #[command(subcommand)]
+    pub command: Option<ComponentSubCommands>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ComponentSubCommands {
+    /// List available components
     #[command(visible_alias = "l")]
     List {},
 }

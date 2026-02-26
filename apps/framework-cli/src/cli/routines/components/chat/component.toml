@@ -1,4 +1,5 @@
 name = "chat"
+description = "AI chat panel for Next.js. Requires an MCP server (moose add mcp-server)"
 kind = "nextjs"
 language = "typescript"
 template = "typescript-mcp"

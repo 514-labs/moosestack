@@ -1,4 +1,5 @@
 name = "mcp-server"
+description = "MCP server with ClickHouse query tools at /tools"
 kind = "moose"
 language = "typescript"
 template = "typescript-mcp"

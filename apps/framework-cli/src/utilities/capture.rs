@@ -98,6 +98,8 @@ pub enum ActivityType {
     FeedbackCommand,
     #[serde(rename = "addCommand")]
     AddCommand,
+    #[serde(rename = "componentListCommand")]
+    ComponentListCommand,
 }
 
 pub fn capture_usage(

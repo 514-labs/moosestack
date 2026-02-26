@@ -1,14 +1,21 @@
-/// # Add Command
+/// # Component Commands (`moose add`, `moose component list`)
 ///
-/// Installs a pre-built component into an existing project. Each component is described
-/// by a `component.toml` manifest that declares which files to copy, which env vars to
+/// Installs a pre-built component into an existing project (`moose add`) and lists
+/// available components (`moose component list`). Each component is described by a
+/// `component.toml` manifest that declares which files to copy, which env vars to
 /// append, and which npm/shadcn dependencies to install.
 ///
-/// Currently manifests are embedded in the binary via `include_str!` and component files
-/// are extracted from a shared template archive (e.g. `typescript-mcp.tgz`) using the
-/// `template` and `base_path` fields. In the future each component will ship its own
-/// archive containing both the manifest and source files — at that point nothing needs
-/// to be baked into the binary and `template`/`base_path` can be dropped.
+/// ## Architecture note — why manifests are embedded
+///
+/// Components are not yet standalone archives in the registry. Until they are, manifests
+/// are baked into the binary via `include_str!` and component files are extracted from a
+/// shared template archive (e.g. `typescript-mcp.tgz`) using the `template` and
+/// `base_path` fields.
+///
+/// When each component ships its own archive (zip containing `component.toml` + source
+/// files), the flow will mirror `moose init`: fetch a registry manifest → download the
+/// component zip → read `component.toml` from inside it. At that point `include_str!`,
+/// `template`, and `base_path` can all be dropped.
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -53,6 +60,8 @@ enum ComponentKind {
 struct ComponentManifest {
     /// Component identifier.
     name: String,
+    /// One-line description shown in `moose component list`.
+    description: String,
     /// Whether this targets a Moose project, Next.js app, etc.
     kind: ComponentKind,
     /// Language this component targets.
@@ -77,15 +86,18 @@ struct ComponentManifest {
 
 /// Entry point for `moose add`. Loads the manifest and dispatches to the appropriate
 /// kind-specific flow.
-pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
+pub async fn add_component(component: &AddComponent) -> Result<RoutineSuccess, RoutineFailure> {
     let (args, manifest) = match component {
         AddComponent::McpServer(args) => (
             args,
-            load_manifest(include_str!("add/mcp-server/component.toml"), "mcp-server")?,
+            load_manifest(
+                include_str!("components/mcp-server/component.toml"),
+                "mcp-server",
+            )?,
         ),
         AddComponent::Chat(args) => (
             args,
-            load_manifest(include_str!("add/chat/component.toml"), "chat")?,
+            load_manifest(include_str!("components/chat/component.toml"), "chat")?,
         ),
     };
 
@@ -96,6 +108,42 @@ pub async fn run_add(component: &AddComponent) -> Result<RoutineSuccess, Routine
         ComponentKind::Moose => run_add_moose(manifest, args, target_dir, pkg_manager).await,
         ComponentKind::Nextjs => run_add_nextjs(manifest, args, target_dir, pkg_manager).await,
     }
+}
+
+/// Prints all available components to stdout. Used by `moose component list`.
+pub fn list_components(cli_version: &str) -> Result<RoutineSuccess, RoutineFailure> {
+    // Components don't have standalone registry archives yet, so manifests are embedded
+    // in the binary. Once each component ships its own zip, this will fetch a registry
+    // manifest instead (same pattern as `moose template list`).
+    let components = [
+        load_manifest(
+            include_str!("components/mcp-server/component.toml"),
+            "mcp-server",
+        )?,
+        load_manifest(include_str!("components/chat/component.toml"), "chat")?,
+    ];
+
+    let lines: Vec<String> = components
+        .iter()
+        .map(|m| {
+            let lang = match m.language {
+                SupportedLanguages::Typescript => "typescript",
+                SupportedLanguages::Python => "python",
+            };
+            format!("  - {} ({}) - {}", m.name, lang, m.description)
+        })
+        .collect();
+
+    let output = format!(
+        "Available components for version {}:\n{}",
+        cli_version,
+        lines.join("\n")
+    );
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Components".to_string(),
+        output,
+    )))
 }
 
 async fn run_add_moose(
@@ -238,6 +286,13 @@ fn resolve_moose_source_dir(
     Ok(project.source_dir.clone())
 }
 
+/// Returns true if `export_line` appears as a non-commented line in `content`.
+/// Uses a line-by-line exact match (after trimming) to avoid false positives from
+/// commented-out exports or string literals that contain the export text.
+fn export_line_present(content: &str, export_line: &str) -> bool {
+    content.lines().any(|l| l.trim() == export_line)
+}
+
 /// Returns the conventional entry filename for a language (`index.ts` / `main.py`).
 fn entry_filename(language: &SupportedLanguages) -> &'static str {
     match language {
@@ -295,7 +350,7 @@ fn print_plan(manifest: &ComponentManifest, target_dir: &Path, source_dir: Optio
                 .moose_exports
                 .iter()
                 .map(|line| {
-                    if existing.contains(line.as_str()) {
+                    if export_line_present(&existing, line) {
                         format!("{line}  (already present)")
                     } else {
                         line.clone()
@@ -545,7 +600,7 @@ fn append_moose_exports(
 
     let missing: Vec<&str> = exports
         .iter()
-        .filter(|line| !existing.contains(line.as_str()))
+        .filter(|line| !export_line_present(&existing, line))
         .map(String::as_str)
         .collect();
 

@@ -161,11 +161,11 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
     }
 }
 
-pub mod add;
 pub mod auth;
 pub mod build;
 pub mod clean;
 pub mod code_generation;
+pub mod components;
 pub mod dev;
 pub mod docker_packager;
 pub(crate) mod docs;

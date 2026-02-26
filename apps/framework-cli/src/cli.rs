@@ -18,8 +18,8 @@ use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
-    Commands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs, KafkaCommands,
-    TemplateSubCommands, WorkflowCommands,
+    Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs,
+    KafkaCommands, TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
@@ -1492,6 +1492,28 @@ pub async fn top_command_handler(
                 }
             }
         }
+        Commands::Component(component_args) => {
+            info!("Running component command");
+
+            let component_cmd = component_args.command.as_ref().unwrap();
+            match component_cmd {
+                ComponentSubCommands::List {} => {
+                    let capture_handle = crate::utilities::capture::capture_usage(
+                        ActivityType::ComponentListCommand,
+                        None,
+                        &settings,
+                        machine_id.clone(),
+                        HashMap::new(),
+                    );
+
+                    let result = routines::components::list_components(CLI_VERSION);
+
+                    wait_for_usage_capture(capture_handle).await;
+
+                    result
+                }
+            }
+        }
         Commands::Db(DbArgs {
             command:
                 DbCommands::Pull {
@@ -1699,7 +1721,7 @@ pub async fn top_command_handler(
                 HashMap::from([("component".to_string(), component_name.to_string())]),
             );
 
-            let result = routines::add::run_add(component).await;
+            let result = routines::components::add_component(component).await;
 
             wait_for_usage_capture(capture_handle).await;
 
