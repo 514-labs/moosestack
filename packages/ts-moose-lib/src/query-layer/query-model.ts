@@ -385,8 +385,13 @@ export function defineQueryModel<
   const normalizedDimensions: Record<string, FieldDef> = {};
   if (dimensions) {
     for (const [name, def] of Object.entries(dimensions)) {
+      const columnRef =
+        def.column && hasJoins ?
+          raw(`${primaryTableName}.${String(def.column)}`)
+        : def.column ? table.columns[def.column]
+        : undefined;
       normalizedDimensions[name] = {
-        column: def.column ? table.columns[def.column] : undefined,
+        column: columnRef,
         expression: def.expression,
         as: def.as,
       };
@@ -409,13 +414,16 @@ export function defineQueryModel<
     for (const [name, def] of Object.entries(columnDefs)) {
       if (def.join && joinDefs) {
         const joinDef = joinDefs[def.join];
-        if (joinDef) {
-          const joinTableName = joinDef.table.name;
-          normalizedColumns[name] = {
-            expression: raw(`${joinTableName}.${String(def.column)}`),
-            as: def.as,
-          };
+        if (!joinDef) {
+          throw new Error(
+            `Column '${name}' references unknown join '${def.join}'`,
+          );
         }
+        const joinTableName = joinDef.table.name;
+        normalizedColumns[name] = {
+          expression: raw(`${joinTableName}.${String(def.column)}`),
+          as: def.as,
+        };
       } else if (hasJoins) {
         normalizedColumns[name] = {
           expression: raw(`${primaryTableName}.${String(def.column)}`),
@@ -742,8 +750,8 @@ export function defineQueryModel<
       if (!field) {
         throw new Error(`Field '${fieldName}' is not a valid dimension`);
       }
-      if (field.column) return sql`${field.column}`;
       if (field.expression) return field.expression;
+      if (field.column) return sql`${field.column}`;
       return raw(fieldName);
     });
 
