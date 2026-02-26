@@ -59,6 +59,23 @@ async function localRowCount(tableName: string): Promise<number> {
   }
 }
 
+async function localWhereViolationCount(
+  tableName: string,
+  predicate: string,
+): Promise<number> {
+  const client = createClient(CLICKHOUSE_CONFIG);
+  try {
+    const result = await client.query({
+      query: `SELECT count() as cnt FROM ${tableName} WHERE NOT (${predicate})`,
+      format: "JSONEachRow",
+    });
+    const rows: any[] = await result.json();
+    return parseInt(rows[0].cnt, 10);
+  } finally {
+    await client.close();
+  }
+}
+
 async function truncateTable(tableName: string): Promise<void> {
   const client = createClient(CLICKHOUSE_CONFIG);
   try {
@@ -135,6 +152,7 @@ describe("moose seed clickhouse with seedFilter", function () {
         stdio: "inherit",
         cwd: testProjectDir,
       });
+      installCmd.on("error", reject);
       installCmd.on("close", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`npm install failed with code ${code}`));
@@ -150,6 +168,9 @@ describe("moose seed clickhouse with seedFilter", function () {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       },
+    });
+    devProcess.on("error", (err) => {
+      testLogger.error("moose dev spawn error:", err);
     });
 
     await waitForServerStart(
@@ -184,6 +205,10 @@ describe("moose seed clickhouse with seedFilter", function () {
     const count = await localRowCount("commits");
     testLogger.info(`Seeded ${count} rows (expected ${SEED_LIMIT})`);
     expect(count).to.equal(SEED_LIMIT);
+
+    const violations = await localWhereViolationCount("commits", SEED_WHERE);
+    testLogger.info(`WHERE violations: ${violations} (expected 0)`);
+    expect(violations).to.equal(0);
   });
 
   it("should respect --limit CLI flag over seedFilter.limit", async function () {

@@ -1639,7 +1639,7 @@ events = OlapTable[UserEvent]("user_events", OlapConfig(
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `limit` | `number` / `int` | Default maximum rows to seed for this table. Overridden by the CLI `--limit` flag when provided; otherwise falls back to the global default of 1000. |
+| `limit` | `number` / `int` | Default maximum rows to seed for this table. The CLI `--limit` flag overrides it. If neither is set, Moose falls back to the global default of 1000. |
 | `where` | `string` / `str` | ClickHouse SQL `WHERE` expression appended to the seed query. |
 
 <Callout type="info" title="CLI flags still apply">

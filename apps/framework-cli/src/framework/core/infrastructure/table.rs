@@ -2753,4 +2753,20 @@ mod tests {
         let roundtrip = Table::from_proto(proto);
         assert_eq!(roundtrip.seed_filter, SeedFilter::default());
     }
+
+    #[test]
+    fn test_seed_filter_json_null_deserializes_to_default() {
+        let json = serde_json::json!({
+            "name": "t1",
+            "columns": [],
+            "order_by": ["id"],
+            "engine": "MergeTree",
+            "seed_filter": null,
+            "source_primitive": { "name": "t1", "primitive_type": "DataModel" },
+            "life_cycle": "FULLY_MANAGED"
+        });
+        let table: Table =
+            serde_json::from_value(json).expect("should deserialize with null seed_filter");
+        assert_eq!(table.seed_filter, SeedFilter::default());
+    }
 }

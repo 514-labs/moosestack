@@ -14,14 +14,12 @@ use crate::infrastructure::olap::clickhouse::mapper::std_table_to_clickhouse_tab
 use crate::infrastructure::olap::clickhouse::queries::create_table_query;
 use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::project::Project;
-use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
+use crate::utilities::constants::{DEFAULT_SEED_LIMIT, KEY_REMOTE_CLICKHOUSE_URL};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use std::cmp::min;
 use std::collections::HashSet;
 use tracing::{debug, info, warn};
-
-const DEFAULT_SEED_LIMIT: usize = 1000;
 
 /// How many rows to copy per table.
 ///
@@ -35,6 +33,18 @@ pub enum SeedLimit {
     Count(usize),
     /// Neither flag given: fall back to `SeedFilter::limit`, then `DEFAULT_SEED_LIMIT`.
     Unspecified,
+}
+
+/// Resolves the effective row limit for a single table.
+///
+/// Precedence: `--all` > `--limit N` > `seedFilter.limit` > [`DEFAULT_SEED_LIMIT`].
+/// Returns `None` when no limit should be applied (i.e. `--all`).
+fn resolve_effective_limit(cli_limit: SeedLimit, table_seed_limit: Option<usize>) -> Option<usize> {
+    match cli_limit {
+        SeedLimit::All => None,
+        SeedLimit::Count(n) => Some(n),
+        SeedLimit::Unspecified => Some(table_seed_limit.unwrap_or(DEFAULT_SEED_LIMIT)),
+    }
 }
 
 /// Validates that a database name is not empty
@@ -646,11 +656,7 @@ pub async fn seed_clickhouse_tables(
             continue;
         }
 
-        let effective_limit = match limit {
-            SeedLimit::All => None,
-            SeedLimit::Count(n) => Some(n),
-            SeedLimit::Unspecified => Some(table.seed_filter.limit.unwrap_or(DEFAULT_SEED_LIMIT)),
-        };
+        let effective_limit = resolve_effective_limit(limit, table.seed_filter.limit);
 
         match seed_single_table(
             local_clickhouse,
@@ -1258,28 +1264,28 @@ mod tests {
         assert!(query.starts_with("SELECT count() FROM remoteSecure("));
     }
 
-    /// Mirrors the limit resolution logic in `seed_clickhouse_tables`.
-    fn resolve_limit(limit: SeedLimit, seed_filter_limit: Option<usize>) -> Option<usize> {
-        match limit {
-            SeedLimit::All => None,
-            SeedLimit::Count(n) => Some(n),
-            SeedLimit::Unspecified => Some(seed_filter_limit.unwrap_or(DEFAULT_SEED_LIMIT)),
-        }
-    }
-
     #[test]
     fn test_seed_filter_limit_fallback_chain() {
         // --all: no limit regardless of seedFilter
-        assert_eq!(resolve_limit(SeedLimit::All, Some(50)), None);
+        assert_eq!(resolve_effective_limit(SeedLimit::All, Some(50)), None);
 
         // --limit 200: CLI wins over seedFilter.limit=50
-        assert_eq!(resolve_limit(SeedLimit::Count(200), Some(50)), Some(200));
+        assert_eq!(
+            resolve_effective_limit(SeedLimit::Count(200), Some(50)),
+            Some(200)
+        );
 
         // No CLI flags, seedFilter.limit = 50: use 50
-        assert_eq!(resolve_limit(SeedLimit::Unspecified, Some(50)), Some(50));
+        assert_eq!(
+            resolve_effective_limit(SeedLimit::Unspecified, Some(50)),
+            Some(50)
+        );
 
         // No CLI flags, no seedFilter.limit: default 1000
-        assert_eq!(resolve_limit(SeedLimit::Unspecified, None), Some(1000));
+        assert_eq!(
+            resolve_effective_limit(SeedLimit::Unspecified, None),
+            Some(DEFAULT_SEED_LIMIT)
+        );
     }
 
     #[test]

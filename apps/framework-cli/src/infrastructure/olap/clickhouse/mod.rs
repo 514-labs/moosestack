@@ -307,14 +307,14 @@ impl IgnorableOperation {
 /// # Returns
 /// A new table with ignored fields stripped/normalized to match the "before" state
 pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
-    if ignore_ops.is_empty() {
-        return table.clone();
-    }
-
     let mut normalized = table.clone();
 
     // seed_filter is a dev-time seeding directive, never part of ClickHouse schema
     normalized.seed_filter = Default::default();
+
+    if ignore_ops.is_empty() {
+        return normalized;
+    }
 
     // Strip table-level TTL if ignored
     if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {

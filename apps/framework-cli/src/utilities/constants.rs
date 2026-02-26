@@ -131,6 +131,10 @@ pub(crate) const KEY_REMOTE_CLICKHOUSE_PASSWORD: &str = "remote_clickhouse_passw
 pub const ENV_CLICKHOUSE_URL: &str = "MOOSE_CLICKHOUSE_CONFIG__URL";
 pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
 
+/// Default row limit when `moose seed clickhouse` is invoked without `--limit` or `--all`
+/// and no per-table `seedFilter.limit` is configured.
+pub const DEFAULT_SEED_LIMIT: usize = 1000;
+
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
