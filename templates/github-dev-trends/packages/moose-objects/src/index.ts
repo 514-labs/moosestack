@@ -5,11 +5,7 @@ import {
   ApiUtil,
 } from "@514labs/moose-lib/browserCompatible";
 
-import {
-  IGhEvent,
-  IRepoStarEvent,
-  GitHubEventType,
-} from "./ingest/models.js";
+import { IGhEvent, IRepoStarEvent, GitHubEventType } from "./ingest/models.js";
 
 export { GitHubEventType };
 export type { IGhEvent, IRepoStarEvent };
@@ -101,7 +97,10 @@ async function getTopicTimeseries(
                 FROM ${RepoStarEvent.table!}
                 WHERE length(${cols.repoTopics!}) > 0
                 ${(() => {
-                  const tokens = exclude.split(",").map((s) => s.trim()).filter(Boolean);
+                  const tokens = exclude
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
                   if (tokens.length === 0) return sql``;
                   return sql`AND arrayAll(x -> x NOT IN (${sql.join(tokens.map((t) => sql`${t}`))}), ${cols.repoTopics!})`;
                 })()}

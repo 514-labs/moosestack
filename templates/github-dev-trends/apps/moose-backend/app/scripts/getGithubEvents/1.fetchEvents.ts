@@ -37,9 +37,7 @@ const fetchEvents = new Task<null, void>("fetchEvents", {
         });
         if (!response.ok) {
           const body = await response.text();
-          throw new Error(
-            `Ingest failed (${response.status}): ${body}`,
-          );
+          throw new Error(`Ingest failed (${response.status}): ${body}`);
         }
       }
     }
