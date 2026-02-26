@@ -1,15 +1,15 @@
-import {
-  IGhEvent,
-  IRepoStarEvent,
-  GitHubEventType,
-} from "./ingest/models.js";
 import { tags } from "typia";
-
 import {
   IngestPipeline,
   Api,
   ApiUtil,
 } from "@514labs/moose-lib/browserCompatible";
+
+import {
+  IGhEvent,
+  IRepoStarEvent,
+  GitHubEventType,
+} from "./ingest/models.js";
 
 export { GitHubEventType };
 export type { IGhEvent, IRepoStarEvent };
