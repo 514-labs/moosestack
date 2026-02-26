@@ -375,9 +375,14 @@ fn print_plan(manifest: &ComponentManifest, target_dir: &Path, source_dir: Optio
 }
 
 fn check_nextjs_project(target_dir: &Path) -> Result<(), RoutineFailure> {
-    let has_next_config = ["next.config.ts", "next.config.mts"]
-        .iter()
-        .any(|f| target_dir.join(f).exists());
+    let has_next_config = [
+        "next.config.js",
+        "next.config.ts",
+        "next.config.mjs",
+        "next.config.mts",
+    ]
+    .iter()
+    .any(|f| target_dir.join(f).exists());
 
     if has_next_config {
         return Ok(());
@@ -386,7 +391,7 @@ fn check_nextjs_project(target_dir: &Path) -> Result<(), RoutineFailure> {
     Err(RoutineFailure::error(Message::new(
         "Next.js required".to_string(),
         format!(
-            "No next.config.ts found in {}.\nThis component targets TypeScript Next.js App Router projects.",
+            "No next.config.* found in {}.\nThis component targets Next.js App Router projects.",
             target_dir.display()
         ),
     )))
