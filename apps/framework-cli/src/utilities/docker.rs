@@ -666,22 +666,7 @@ impl DockerClient {
         channel: &str,
     ) -> std::io::Result<()> {
         let mut child = self
-            .create_command()
-            .current_dir(directory)
-            .arg("buildx")
-            .arg("build")
-            .arg("--progress=plain")
-            .arg("--build-arg")
-            .arg(format!(
-                "DOWNLOAD_URL=https://downloads.fiveonefour.com/{channel}/{version}/{binarylabel}/moose-cli"
-            ))
-            .arg("--platform")
-            .arg(architecture)
-            .arg("--load")
-            .arg("--no-cache")
-            .arg("-t")
-            .arg(format!("moose-df-deployment-{binarylabel}:latest"))
-            .arg(".")
+            .buildx_command(directory, version, architecture, binarylabel, channel)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -728,8 +713,9 @@ impl DockerClient {
     }
 
     /// Builds the docker buildx command without spawning it.
-    /// Useful for testing command construction.
-    #[cfg(test)]
+    ///
+    /// Used by `buildx()` for the actual build, and directly in tests
+    /// to verify command construction.
     fn buildx_command(
         &self,
         directory: &PathBuf,
