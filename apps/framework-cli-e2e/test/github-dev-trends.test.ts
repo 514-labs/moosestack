@@ -163,6 +163,12 @@ describe("github-dev-trends template", () => {
       },
     });
 
+    devProcess.on("error", (err) => {
+      testLogger.error("moose dev server spawn failed", {
+        error: err.message,
+      });
+    });
+
     await waitForServerStart(
       devProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
