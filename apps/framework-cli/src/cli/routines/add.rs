@@ -477,7 +477,10 @@ fn update_env_files(manifest: &ComponentManifest, target_dir: &Path) -> Result<(
     Ok(())
 }
 
-/// Appends `KEY=placeholder` to `path` if no `KEY=` line exists. Creates the file if needed.
+/// Appends a `KEY=value` entry to `path` if no `KEY=` line already exists. Creates the file if needed.
+///
+/// If `placeholder` starts with `#` it is treated as an instruction comment and written on the line
+/// above an empty `KEY=`, so that `.env` parsers don't interpret the comment as the value.
 fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<()> {
     let existing = if path.exists() {
         std::fs::read_to_string(path)?
@@ -494,7 +497,11 @@ fn append_env_var(path: &Path, key: &str, placeholder: &str) -> std::io::Result<
     if !content.ends_with('\n') && !content.is_empty() {
         content.push('\n');
     }
-    content.push_str(&format!("{key}={placeholder}\n"));
+    if placeholder.starts_with('#') {
+        content.push_str(&format!("{placeholder}\n{key}=\n"));
+    } else {
+        content.push_str(&format!("{key}={placeholder}\n"));
+    }
     std::fs::write(path, content)
 }
 
