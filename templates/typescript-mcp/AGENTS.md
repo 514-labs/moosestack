@@ -28,5 +28,9 @@ export * from "./apis/myApi";
 
 ## Docs
 
+- `moose docs` — browse all available documentation
+- `moose docs search "query"` — find specific topics
+- `moose docs --raw <slug> | claude "..."` — pipe docs directly to your AI assistant
 - [MooseStack Documentation](https://docs.fiveonefour.com/moose)
 - [MCP Documentation](https://modelcontextprotocol.io/)
+- [LLM-friendly docs](https://docs.fiveonefour.com/llms.txt)

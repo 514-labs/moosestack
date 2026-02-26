@@ -18,4 +18,8 @@ Moose has built-in hot reload. When you modify files referenced in `app/index.ts
 
 ## Docs
 
+- `moose docs` — browse all available documentation
+- `moose docs search "query"` — find specific topics
+- `moose docs --raw <slug> | claude "..."` — pipe docs directly to your AI assistant
 - [MooseStack Documentation](https://docs.fiveonefour.com/moose)
+- [LLM-friendly docs](https://docs.fiveonefour.com/llms.txt)
