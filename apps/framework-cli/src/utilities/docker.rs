@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -634,7 +635,14 @@ impl DockerClient {
         Ok(info.server_errors)
     }
 
-    /// Runs buildx command
+    /// Runs buildx command with piped output for log streaming.
+    ///
+    /// Docker build output (both stdout and stderr) is captured line-by-line and
+    /// re-emitted to this process's stdout. This ensures the output flows through
+    /// the GitHub Actions workflow's log streaming pipeline when run in CI.
+    ///
+    /// Uses `--progress=plain` to force clean, line-delimited output without ANSI
+    /// escape codes or progress bar artifacts.
     ///
     /// # Arguments
     /// * `directory` - The build context directory
@@ -655,6 +663,7 @@ impl DockerClient {
             .current_dir(directory)
             .arg("buildx")
             .arg("build")
+            .arg("--progress=plain")
             .arg("--build-arg")
             .arg(format!(
                 "DOWNLOAD_URL=https://downloads.fiveonefour.com/{channel}/{version}/{binarylabel}/moose-cli"
@@ -666,11 +675,40 @@ impl DockerClient {
             .arg("-t")
             .arg(format!("moose-df-deployment-{binarylabel}:latest"))
             .arg(".")
-            .stdout(Stdio::inherit())  // ✅ Stream stdout directly to console
-            .stderr(Stdio::inherit())  // ✅ Stream stderr directly to console
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()?;
 
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read stdout line-by-line and re-emit to this process's stdout
+        let stdout_thread = std::thread::spawn(move || {
+            if let Some(stdout) = stdout {
+                let reader = std::io::BufReader::new(stdout);
+                for line in reader.lines().map_while(Result::ok) {
+                    println!("{}", line);
+                }
+            }
+        });
+
+        // Read stderr line-by-line and re-emit to this process's stdout
+        // (not stderr) so it flows through the GH Actions pipe
+        let stderr_thread = std::thread::spawn(move || {
+            if let Some(stderr) = stderr {
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    println!("{}", line);
+                }
+            }
+        });
+
         let status = child.wait()?;
+
+        // Wait for reader threads to finish (they'll exit when the child's
+        // stdout/stderr pipes close)
+        stdout_thread.join().ok();
+        stderr_thread.join().ok();
 
         if !status.success() {
             return Err(std::io::Error::other(format!(
@@ -680,6 +718,36 @@ impl DockerClient {
         }
 
         Ok(())
+    }
+
+    /// Builds the docker buildx command without spawning it.
+    /// Useful for testing command construction.
+    #[cfg(test)]
+    fn buildx_command(
+        &self,
+        directory: &PathBuf,
+        version: &str,
+        architecture: &str,
+        binarylabel: &str,
+        channel: &str,
+    ) -> Command {
+        let mut cmd = self.create_command();
+        cmd.current_dir(directory)
+            .arg("buildx")
+            .arg("build")
+            .arg("--progress=plain")
+            .arg("--build-arg")
+            .arg(format!(
+                "DOWNLOAD_URL=https://downloads.fiveonefour.com/{channel}/{version}/{binarylabel}/moose-cli"
+            ))
+            .arg("--platform")
+            .arg(architecture)
+            .arg("--load")
+            .arg("--no-cache")
+            .arg("-t")
+            .arg(format!("moose-df-deployment-{binarylabel}:latest"))
+            .arg(".");
+        cmd
     }
 }
 
@@ -982,5 +1050,33 @@ mod tests {
         assert!(xml.contains("<clickhouse>"));
         assert!(xml.contains("<remote_servers>"));
         assert!(!xml.contains("<shard>"));
+    }
+
+    #[test]
+    fn test_buildx_command_includes_progress_plain() {
+        let docker_client = create_test_docker_client();
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path().to_path_buf();
+
+        let command = docker_client.buildx_command(
+            &dir,
+            "0.6.34",
+            "linux/amd64",
+            "x86_64-unknown-linux-gnu",
+            "stable",
+        );
+
+        let args: Vec<&std::ffi::OsStr> = command.get_args().collect();
+        let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
+
+        assert!(
+            args_str.contains(&"--progress=plain"),
+            "buildx command must include --progress=plain, got: {:?}",
+            args_str
+        );
+        assert!(args_str.contains(&"buildx"));
+        assert!(args_str.contains(&"build"));
+        assert!(args_str.contains(&"--load"));
+        assert!(args_str.contains(&"--no-cache"));
     }
 }
