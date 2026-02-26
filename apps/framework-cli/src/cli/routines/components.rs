@@ -288,14 +288,21 @@ fn resolve_moose_source_dir(
 }
 
 /// Returns true if `export_line` appears as an active (non-commented) line in `content`.
-/// Normalises trailing semicolons before comparing so `starts_with` catches both
-/// `export * from "./apis/mcp";` and `export * from "./apis/mcp"` as equivalent.
-/// Lines starting with `//` are treated as absent.
+/// Both sides are normalised — trailing `// comments` are stripped and trailing semicolons
+/// are removed — before an exact (`==`) comparison. This avoids false positives from
+/// longer paths (e.g. `"./apis/mcp/extra"`) and false negatives from semicolon/comment style.
 fn export_line_present(content: &str, export_line: &str) -> bool {
-    let normalized = export_line.trim_end_matches(';');
-    content
-        .lines()
-        .any(|l| l.trim().trim_end_matches(';').starts_with(normalized))
+    let normalized = export_line.trim().trim_end_matches(';');
+    content.lines().any(|l| {
+        let code = l
+            .trim()
+            .split("//")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_end_matches(';');
+        code == normalized
+    })
 }
 
 /// Returns the conventional entry filename for a language (`index.ts` / `main.py`).
