@@ -285,9 +285,9 @@ export interface Expr extends Sql {
 
 /** Augment a Sql fragment with a fluent .as() method */
 function expr(fragment: Sql): Expr {
-  return Object.assign(fragment, {
-    as: (alias: string) => sql`${fragment} AS ${identifier(alias)}`,
-  }) as Expr;
+  const e = Object.create(fragment) as Expr;
+  e.as = (alias: string) => sql`${fragment} AS ${identifier(alias)}`;
+  return e;
 }
 
 // --- Aggregation Functions ---

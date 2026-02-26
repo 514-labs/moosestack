@@ -72,11 +72,10 @@ export function deriveInputTypeFromDataType(
 
 // --- timeDimensions ---
 
-type TimeDimensionDef = DimensionDef;
 type DefaultTimePeriods = {
-  day: TimeDimensionDef;
-  month: TimeDimensionDef;
-  week: TimeDimensionDef;
+  day: DimensionDef;
+  month: DimensionDef;
+  week: DimensionDef;
 };
 
 /**
@@ -95,20 +94,20 @@ export function timeDimensions(dateColumn: Column): DefaultTimePeriods;
 export function timeDimensions(
   dateColumn: Column,
   options: { periods: string[] },
-): Record<string, TimeDimensionDef>;
+): Record<string, DimensionDef>;
 export function timeDimensions(
   dateColumn: Column,
   options?: { periods?: string[] },
-): DefaultTimePeriods | Record<string, TimeDimensionDef> {
+): DefaultTimePeriods | Record<string, DimensionDef> {
   const periods = options?.periods ?? ["day", "month", "week"];
 
-  const fnMap: Record<string, (col: Column) => TimeDimensionDef> = {
+  const fnMap: Record<string, (col: Column) => DimensionDef> = {
     day: (col) => ({ expression: sql`toDate(${col})`, as: "day" }),
     month: (col) => ({ expression: sql`toStartOfMonth(${col})`, as: "month" }),
     week: (col) => ({ expression: sql`toStartOfWeek(${col})`, as: "week" }),
   };
 
-  const result: Record<string, TimeDimensionDef> = {};
+  const result: Record<string, DimensionDef> = {};
   for (const period of periods) {
     const factory = fnMap[period];
     if (factory) {

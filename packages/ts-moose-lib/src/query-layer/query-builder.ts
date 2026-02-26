@@ -48,106 +48,28 @@ export interface QueryBuilder<
     filterName: K,
     op: Op,
     value: OperatorValueType<Op, SqlValue> | undefined,
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  ): this;
 
   /** Set dimensions to include in query (aggregate mode) */
-  dimensions(
-    fields: TDimensions[],
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  dimensions(fields: TDimensions[]): this;
 
   /** Set metrics to include in query (aggregate mode) */
-  metrics(
-    fields: TMetrics[],
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  metrics(fields: TMetrics[]): this;
 
   /** Set columns for detail mode (no aggregation, no GROUP BY) */
-  columns(
-    fields: TColumns[],
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  columns(fields: TColumns[]): this;
 
   /** Set multi-column sort */
-  orderBy(
-    ...orders: Array<[TSortable, SortDir]>
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  orderBy(...orders: Array<[TSortable, SortDir]>): this;
 
   /** Set maximum number of rows to return */
-  limit(
-    n: number,
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  limit(n: number): this;
 
   /** Set page number (0-indexed) for pagination */
-  page(
-    n: number,
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  page(n: number): this;
 
   /** Set row offset for pagination */
-  offset(
-    n: number,
-  ): QueryBuilder<
-    TMetrics,
-    TDimensions,
-    TFilters,
-    TSortable,
-    TResult,
-    TTable,
-    TColumns
-  >;
+  offset(n: number): this;
 
   /** Build the QueryRequest object */
   build(): QueryRequest<
@@ -223,7 +145,9 @@ export function buildQuery<
     limit?: number;
     page?: number;
     offset?: number;
-  } = { filters: {} };
+  } = {
+    filters: Object.create(null) as Record<string, Record<string, unknown>>,
+  };
 
   const buildRequest = (): QueryRequest<
     Names<TMetrics>,
@@ -264,7 +188,7 @@ export function buildQuery<
     filter(filterName, op, value) {
       if (value === undefined || value === null) return builder;
       const key = String(filterName);
-      if (!state.filters[key]) state.filters[key] = {};
+      if (!Object.hasOwn(state.filters, key)) state.filters[key] = {};
       state.filters[key][op] = value;
       return builder;
     },

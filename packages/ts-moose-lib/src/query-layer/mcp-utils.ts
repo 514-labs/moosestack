@@ -51,8 +51,9 @@ export interface QueryModelBase {
   toSql(request: Record<string, unknown>): Sql;
 }
 
-// Compile-time check: any QueryModel must satisfy QueryModelBase.
-// This prevents silent breakage if QueryModel's shape drifts.
+// Compile-time check: QueryModel must satisfy QueryModelBase.
+// If QueryModel drifts, _AssertCompatible resolves to `never` and the
+// conditional assignment on _Check produces a type error.
 type _AssertCompatible =
   QueryModel<any, any, any, any, any, any, any> extends QueryModelBase ? true
   : never;

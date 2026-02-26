@@ -40,14 +40,14 @@ import {
 } from "./types";
 import { deriveInputTypeFromDataType } from "./helpers";
 
-// Type-widen filter for dynamic operator dispatch within buildFilterConditions.
-// The overloaded signatures on filterSql require a specific op literal, but here
-// the operator is determined at runtime via iteration.
+// Widen filterSql for dynamic operator dispatch (runtime iteration over ops).
 const applyFilter = filterSql as (
   col: ColRef,
   op: FilterOperator,
   value: unknown,
 ) => Sql;
+
+const identity = (v: SqlValue): SqlValue => v;
 
 /**
  * Apply a transform function to a filter value, respecting operator-specific
@@ -365,6 +365,15 @@ export function defineQueryModel<
   TResult,
   TColumns
 > {
+  type Req = QueryRequest<
+    Names<TMetrics>,
+    Names<TDimensions>,
+    TFilters,
+    TSortable,
+    Names<TColumns>,
+    TTable
+  >;
+
   const {
     table,
     dimensions,
@@ -496,13 +505,11 @@ export function defineQueryModel<
 
   // --- Combined field map ---
 
-  const normalizedFields: Record<string, FieldDef> = {};
-  Object.assign(
-    normalizedFields,
-    normalizedDimensions,
-    normalizedMetrics,
-    normalizedColumns,
-  );
+  const normalizedFields: Record<string, FieldDef> = {
+    ...normalizedDimensions,
+    ...normalizedMetrics,
+    ...normalizedColumns,
+  };
 
   const dimensionNamesSet = new Set(Object.keys(normalizedDimensions));
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
@@ -567,7 +574,7 @@ export function defineQueryModel<
           );
         }
 
-        const t = filterDef.transform ?? ((v: SqlValue) => v);
+        const t = filterDef.transform ?? identity;
         const transformed = transformFilterValue(
           op as FilterOperator,
           value,
@@ -674,14 +681,7 @@ export function defineQueryModel<
   }
 
   function resolveQuerySpec(
-    request: QueryRequest<
-      Names<TMetrics>,
-      Names<TDimensions>,
-      TFilters,
-      TSortable,
-      Names<TColumns>,
-      TTable
-    >,
+    request: Req,
   ): ResolvedQuerySpec<
     Names<TMetrics>,
     Names<TDimensions>,
@@ -750,16 +750,7 @@ export function defineQueryModel<
     return groupByClause(...groupExprs);
   }
 
-  function toParts(
-    request: QueryRequest<
-      Names<TMetrics>,
-      Names<TDimensions>,
-      TFilters,
-      TSortable,
-      Names<TColumns>,
-      TTable
-    >,
-  ): QueryParts {
+  function toParts(request: Req): QueryParts {
     const spec = resolveQuerySpec(request);
 
     const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
@@ -816,16 +807,7 @@ export function defineQueryModel<
     };
   }
 
-  function toSql(
-    request: QueryRequest<
-      Names<TMetrics>,
-      Names<TDimensions>,
-      TFilters,
-      TSortable,
-      Names<TColumns>,
-      TTable
-    >,
-  ): Sql {
+  function toSql(request: Req): Sql {
     const parts = toParts(request);
     return sql`
       ${parts.select}
