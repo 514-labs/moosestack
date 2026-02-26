@@ -716,6 +716,15 @@ impl Table {
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
             database: self.database.clone(),
+            seed_filter: MessageField::from_option(if seed_filter_is_default(&self.seed_filter) {
+                None
+            } else {
+                Some(crate::proto::infrastructure_map::SeedFilter {
+                    limit: self.seed_filter.limit.map(|l| l as u64),
+                    where_clause: self.seed_filter.where_clause.clone(),
+                    special_fields: Default::default(),
+                })
+            }),
             special_fields: Default::default(),
         }
     }
@@ -835,7 +844,14 @@ impl Table {
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
             primary_key_expression: proto.primary_key_expression,
-            seed_filter: Default::default(),
+            seed_filter: proto
+                .seed_filter
+                .into_option()
+                .map(|sf| SeedFilter {
+                    limit: sf.limit.map(|l| l as usize),
+                    where_clause: sf.where_clause,
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -2639,5 +2655,102 @@ mod tests {
 
         metadata_no_source.normalize_source_path(&project_root);
         assert!(metadata_no_source.source.is_none());
+    }
+
+    #[test]
+    fn test_seed_filter_proto_roundtrip() {
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: SeedFilter {
+                limit: Some(100),
+                where_clause: Some("user_id = 10".to_string()),
+            },
+        };
+
+        let proto = table.to_proto();
+        let sf = proto.seed_filter.as_ref().unwrap();
+        assert_eq!(sf.limit, Some(100));
+        assert_eq!(sf.where_clause.as_deref(), Some("user_id = 10"));
+
+        let roundtrip = Table::from_proto(proto);
+        assert_eq!(roundtrip.seed_filter, table.seed_filter);
+    }
+
+    #[test]
+    fn test_seed_filter_proto_roundtrip_empty() {
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let proto = table.to_proto();
+        assert!(proto.seed_filter.is_none());
+
+        let roundtrip = Table::from_proto(proto);
+        assert_eq!(roundtrip.seed_filter, SeedFilter::default());
     }
 }
