@@ -275,7 +275,7 @@ pub enum Commands {
     /// Fetch and display LLM-optimized documentation for AI agents
     #[command(visible_alias = "do")]
     Docs(DocsArgs),
-    /// Add a component to your project
+    /// [EXPERIMENTAL] Add a component to your project
     #[command(
         visible_alias = "a",
         after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app"
