@@ -152,7 +152,7 @@ Deploying this project involves deploying the Moose backend service and the fron
     *   Vercel should automatically detect it's a Next.js project.
 *   **Configure Environment Variables:**
     *   Add `NEXT_PUBLIC_MOOSE_URL` pointing to your Boreal API URL:
-        ```
+        ```bash
         NEXT_PUBLIC_MOOSE_URL=https://your-boreal-project-url.boreal.cloud
         ```
 *   **Deploy:** Vercel will build and deploy your Next.js frontend.
