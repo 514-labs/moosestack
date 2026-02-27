@@ -8,9 +8,9 @@ order: 0
 
 Use `514 --help` to view the complete top-level command surface and global flags.
 
-This reference is based on the local CLI output:
-- `514 0.17.0`
-- Command shape: `514 <resource> <action> [args] [flags]`
+Argument convention:
+- Primary command object: positional argument.
+- Filter/context for another object: optional flag.
 
 ## Usage
 
@@ -80,9 +80,11 @@ Resources following this pattern:
 ```bash
 514 project list
 514 project setup my-org/my-project
-514 deployment list my-org/my-project
+514 project link my-org/my-project
+514 deployment list --project my-org/my-project
 514 stream list dep_abc123 --project my-org/my-project
 514 api-endpoints list dep_abc123 --project my-org/my-project
+514 agent deployment list --project my-org/my-project
 514 doc search "deployment"
 514 cli update moose
 ```
