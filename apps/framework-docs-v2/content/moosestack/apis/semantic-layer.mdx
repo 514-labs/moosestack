@@ -235,7 +235,7 @@ export default new Api<VisitQueryParams, any>("visits",
       .filter("startDate", "gte", start_date_gte)
       .filter("startDate", "lte", start_date_lte)
       .limit(limit || 100)
-      .execute(client);
+      .execute(client.query);
 
     return results;
   }
@@ -266,7 +266,7 @@ def run(client: MooseClient, params: VisitQueryParams) -> list[dict]:
         .filter("startDate", "gte", params.start_date_gte)
         .filter("startDate", "lte", params.start_date_lte)
         .limit(params.limit or 100)
-        .execute(client)
+        .execute(client.query)
     )
     return results
 
