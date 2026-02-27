@@ -1,0 +1,475 @@
+---
+title: February 27, 2026
+description: Release notes for February 27, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 27, 2026
+
+
+
+## 🐻 Boreal
+
+### New Features
+**Schema initialization for preview branches with automatic parent branch detection** ([@jmsuzuki](https://github.com/jmsuzuki))
+  When creating new preview branches, the system now automatically detects the closest parent branch with a successful deployment and initializes the new branch's database schema from that parent. This ensures preview branches have proper data structure and sample data to work with, improving development workflow efficiency. The system supports branch stacking (feature-b from feature-a) and uses GitHub's Compare API to find the optimal parent branch. Schema initialization runs in two phases: first copying the parent's database schema and sample data, then deploying the new branch's changes on top.
+
+  📸 *[Screenshot needed: When creating new preview branches, the system now automatically detects the closest parent branch with a successful deployment and initializes the new branch's database schema from that parent. This ensures preview branches have proper data structure and sample data to work with, improving development workflow efficiency. The system supports branch stacking (feature-b from feature-a) and uses GitHub's Compare API to find the optimal parent branch. Schema initialization runs in two phases: first copying the parent's database schema and sample data, then deploying the new branch's changes on top.]*
+
+**Add infrastructure map retrieval for deployments** ([@callicles](https://github.com/callicles))
+  Added ability to retrieve and view infrastructure maps for deployments through the CLI, showing resource relationships, lineage, and detailed information about API endpoints, topics, tables, workflows, and other components in your MooseStack application. This provides better visibility into your deployment's infrastructure and data flow.
+
+  **Viewing deployment infrastructure maps via CLI**
+
+  ```bash
+  # View all infrastructure components in a deployment
+  moose-cli deploys infra-map my-deployment-id
+  
+  # View specific infrastructure types only
+  moose-cli deploys infra-map my-deployment-id --types apiEndpoints,topics,tables
+  
+  # View API endpoints and their relationships
+  moose-cli deploys infra-map prod-deploy-abc123 --types apiEndpoints
+  
+  # View data flow from topics to tables
+  moose-cli deploys infra-map prod-deploy-abc123 --types topics,tables,topicToTableSyncProcesses
+  
+  # Get complete infrastructure overview including workflows and functions
+  moose-cli deploys infra-map staging-deploy-xyz789 --types topics,tables,functionProcesses,workflows,apiEndpoints
+  ```
+
+  This example shows how to use the new infra-map command to retrieve and view infrastructure maps for MooseStack deployments. Users can view all components or filter by specific types to understand resource relationships, data lineage, and API endpoints in their deployment.
+
+**Add deploys command to hosting CLI** ([@callicles](https://github.com/callicles))
+  Added a new `deploys list` command to the hosting CLI that allows users to view and manage project deployments. Users can now list deployments for any project with filtering options by branch ID and deployment status, pagination support, and both table and JSON output formats. The command provides detailed deployment information including commit SHA, Moose version, URL, status, production flag, branch, and creation time.
+
+  **Using the deploys list command to manage project deployments**
+
+  ```bash
+  # List all deployments for a project
+  514 deploys list my-org/my-project
+  
+  # Filter deployments by branch and status
+  514 deploys list my-org/my-project --branch-id main --status running --status completed
+  
+  # Paginate through deployment results
+  514 deploys list my-org/my-project --limit 10 --page-token "abc123"
+  
+  # Get deployment information as JSON for programmatic use
+  514 deploys list my-org/my-project --json
+  
+  # Example output (table format):
+  # DEPLOY_ID  COMMIT   MOOSE_VERSION  URL                           STATUS     PRODUCTION  BRANCH  CREATED_AT
+  # deploy-1   a1b2c3d  0.12.5         https://app1.boreal.dev      running    true        main    2024-01-15T10:30:00Z
+  # deploy-2   e4f5g6h  0.12.4         https://staging.boreal.dev   completed  false       dev     2024-01-14T15:20:00Z
+  ```
+
+  This example shows how to use the new 514 deploys list command to view and manage project deployments. Users can list all deployments, filter by branch and status, paginate through results, and output in both table and JSON formats for different use cases.
+
+**Add column sorting and filtering to queries analysis table** ([@groy-514](https://github.com/groy-514))
+  The queries analysis table in Boreal now supports column-based sorting and filtering capabilities. Users can sort by multiple columns including query duration, read/result rows and bytes, memory usage, query kind, and exception codes. Advanced filtering options allow users to filter queries by type, set minimum/maximum ranges for performance metrics like duration and memory usage, and combine multiple filters to analyze specific query patterns. This enhancement makes it significantly easier to identify performance bottlenecks, analyze query patterns, and troubleshoot database issues in the observability dashboard.
+
+  📸 *[Screenshot needed: The queries analysis table in Boreal now supports column-based sorting and filtering capabilities. Users can sort by multiple columns including query duration, read/result rows and bytes, memory usage, query kind, and exception codes. Advanced filtering options allow users to filter queries by type, set minimum/maximum ranges for performance metrics like duration and memory usage, and combine multiple filters to analyze specific query patterns. This enhancement makes it significantly easier to identify performance bottlenecks, analyze query patterns, and troubleshoot database issues in the observability dashboard.]*
+
+**Automatic MCP authentication token generation for new projects** ([@onelesd](https://github.com/onelesd))
+  New projects created from templates now automatically generate MCP (Moose Control Protocol) authentication tokens during project creation. This eliminates the need for users to manually run setup commands to generate authentication tokens, streamlining the project setup process and ensuring secure communication between project components from the start.
+
+**Query analysis dashboard with performance insights and filtering** ([@groy-514](https://github.com/groy-514))
+  Added a comprehensive query analysis dashboard that provides detailed insights into database query performance. Users can now view all queries, failed queries, slow queries, query patterns, and query distribution across different types. The dashboard includes filtering by time range, search functionality, sorting capabilities, and detailed query metrics like duration, memory usage, and rows processed. This enables users to identify performance bottlenecks and optimize their database operations directly from the Boreal interface.
+
+  📸 *[Screenshot needed: Added a comprehensive query analysis dashboard that provides detailed insights into database query performance. Users can now view all queries, failed queries, slow queries, query patterns, and query distribution across different types. The dashboard includes filtering by time range, search functionality, sorting capabilities, and detailed query metrics like duration, memory usage, and rows processed. This enables users to identify performance bottlenecks and optimize their database operations directly from the Boreal interface.]*
+
+**Add support for environment variables in project deployments** ([@onelesd](https://github.com/onelesd))
+  Users can now define and manage environment variables for their projects through the Boreal dashboard. Environment variables are securely handled during the build process with proper validation and masking of sensitive values. Reserved system variables are automatically prevented to avoid conflicts with the build infrastructure.
+
+  📸 *[Screenshot needed: Users can now define and manage environment variables for their projects through the Boreal dashboard. Environment variables are securely handled during the build process with proper validation and masking of sensitive values. Reserved system variables are automatically prevented to avoid conflicts with the build infrastructure.]*
+
+**Support environment variables in workflow deployments** ([@onelesd](https://github.com/onelesd))
+  Users can now pass custom environment variables when triggering workflow deployments through the Boreal dashboard. This enables more flexible application configuration during the deployment process by allowing users to specify environment-specific settings that will be available during workflow execution.
+
+  📸 *[Screenshot needed: Users can now pass custom environment variables when triggering workflow deployments through the Boreal dashboard. This enables more flexible application configuration during the deployment process by allowing users to specify environment-specific settings that will be available during workflow execution.]*
+
+**Environment variables resolved at build time** ([@onelesd](https://github.com/onelesd))
+  Build workflows now automatically resolve and inject user-defined environment variables with proper precedence (organization > project > branch), making environment configuration seamlessly available during deployment builds.
+
+**Add environment variable support for deployment builds** ([@onelesd](https://github.com/onelesd))
+  Added the ability to configure environment variables for application builds during deployment. This enables users to pass custom environment variables to their build processes, providing more flexibility in configuring deployments and build-time settings.
+
+**Add comprehensive query analysis tools to monitor database performance** ([@groy-514](https://github.com/groy-514))
+  Introduces a new query analysis dashboard that provides insights into database performance with four key analysis types: query kind distribution showing which types of queries are most common, query patterns analysis that groups similar queries to identify frequently executed patterns, slow queries monitoring to identify performance bottlenecks, and failed queries tracking to help debug database issues. This feature helps users optimize their database performance and troubleshoot query problems more effectively.
+
+  📸 *[Screenshot needed: Introduces a new query analysis dashboard that provides insights into database performance with four key analysis types: query kind distribution showing which types of queries are most common, query patterns analysis that groups similar queries to identify frequently executed patterns, slow queries monitoring to identify performance bottlenecks, and failed queries tracking to help debug database issues. This feature helps users optimize their database performance and troubleshoot query problems more effectively.]*
+
+**Block Vercel deployments until Moose deploys complete** ([@georgevanderson](https://github.com/georgevanderson))
+  Added deployment orchestration to ensure Vercel deployments wait for Moose deployments to complete successfully. This prevents deployment conflicts and ensures your frontend applications deploy with the latest backend changes, improving deployment reliability for integrated projects.
+
+**Add privacy-compliant cookie consent management** ([@georgevanderson](https://github.com/georgevanderson))
+  Added comprehensive cookie consent management across the platform with consent banners, privacy controls, and user choice for analytics and marketing tracking. This ensures GDPR/privacy law compliance while giving users control over their data tracking preferences.
+
+  📸 *[Screenshot needed: Added comprehensive cookie consent management across the platform with consent banners, privacy controls, and user choice for analytics and marketing tracking. This ensures GDPR/privacy law compliance while giving users control over their data tracking preferences.]*
+
+### Improvements
+- Improve CLI argument consistency for deployments and project linking: CLI commands now use more consistent argument patterns - project references are positional arguments when they identify the primary object (like `514 project link <project-ref>`) and filter flags when they scope other objects (like `514 deployment list --project <project-ref>`). ([@callicles](https://github.com/callicles))
+- Improve CLI authentication validation and error handling: The CLI now validates authentication sessions before operations, provides clearer error messages for expired tokens, handles environment variable API keys more gracefully, and improves the login flow with better session state detection. ([@callicles](https://github.com/callicles))
+- Update CLI branding from 'Boreal' to '514': CLI help text and error messages now reference "514" instead of "Boreal" for consistent branding. ([@LucioFranco](https://github.com/LucioFranco))
+- Improve repository import empty state with setup commands: The project creation flow now shows helpful setup commands with copy functionality when importing a repository that doesn't contain a Moose project, making it easier to initialize new projects. ([@okane16](https://github.com/okane16))
+
+### Bug Fixes
+- Fix query metrics display in dashboard analytics: Fixed query count, duration, and byte formatting in the queries analysis dashboard when data comes from the database as strings instead of numbers. ([@groy-514](https://github.com/groy-514))
+
+## 🦌 Moose
+
+### New Features
+**Add seedFilter configuration to OlapTable for selective data seeding** ([@phiSgr](https://github.com/phiSgr))
+  Added seedFilter configuration to OlapTable that allows developers to specify limit and where clauses when seeding data from remote ClickHouse sources. This enables more precise control over which data gets seeded during development and testing, with CLI flags (--limit, --all) taking precedence over table-level configurations.
+
+  **OlapTable with seedFilter for selective data seeding**
+
+  ```typescript
+  import { OlapTable } from "@514labs/moose-lib";
+  
+  // Define your data model
+  interface UserEvents {
+    user_id: string;
+    event_type: string;
+    timestamp: Date;
+    revenue: number;
+    country: string;
+  }
+  
+  // Create an OLAP table with seedFilter configuration
+  export const userEventsTable = new OlapTable<UserEvents>("user_events", {
+    // Standard table configuration
+    columns: {
+      user_id: "String",
+      event_type: "String", 
+      timestamp: "DateTime",
+      revenue: "Float64",
+      country: "String"
+    },
+    orderBy: "timestamp",
+    
+    // New seedFilter configuration for selective data seeding
+    seedFilter: {
+      // Only seed recent high-value events from key markets
+      where: "revenue > 10.0 AND country IN ('US', 'CA', 'GB') AND timestamp >= '2024-01-01'",
+      // Limit to 5000 rows for faster development iterations
+      limit: 5000
+    }
+  });
+  ```
+
+  This example shows how to configure seedFilter on an OlapTable to selectively seed data from remote ClickHouse sources. The seedFilter allows you to specify WHERE clauses and row limits for more precise control over development data, making it faster to iterate with relevant subsets of production data.
+
+  PR: [#3650](https://github.com/514-labs/moose/pull/3650) | Docs: [/moosestack/olap/model-table](https://docs.moosejs.com/moosestack/olap/model-table)
+
+**Add projection support with `_part_offset` for optimized query performance** ([@LucioFranco](https://github.com/LucioFranco))
+  Users can now define projections in their data models to optimize query performance on non-primary-key columns. Projections store data in alternative orderings within ClickHouse data parts, avoiding full table scans. This feature includes support for the special `_part_offset` column and automatic DDL generation for projection management. Templates now include projection examples showing how to define optimized data access patterns.
+
+  **Data model with projections for optimized queries**
+
+  ```typescript
+  // models.ts - Define a data model with projections for optimized queries
+  import { ClickHouseTypes, Table } from "@514labs/moose-lib";
+  
+  export interface UserEvent {
+    userId: ClickHouseTypes.String;
+    eventType: ClickHouseTypes.String;
+    timestamp: ClickHouseTypes.DateTime;
+    value: ClickHouseTypes.Float64;
+    sessionId: ClickHouseTypes.String;
+  }
+  
+  export default {
+    table: "user_events",
+    // Primary ordering by timestamp for time-series queries  
+    orderBy: ["timestamp"],
+    
+    // Projections optimize queries on non-primary-key columns
+    projections: [
+      {
+        // Fast queries by userId without full table scans
+        name: "proj_by_user", 
+        body: "SELECT _part_offset ORDER BY userId"
+      },
+      {
+        // Optimized for time-range queries per user
+        name: "proj_by_user_time",
+        body: "SELECT _part_offset ORDER BY userId, timestamp" 
+      },
+      {
+        // Pre-aggregated projection for analytics
+        name: "proj_user_stats",
+        body: "SELECT userId, sum(value) as total_value ORDER BY userId"
+      }
+    ]
+  } as Table;
+  ```
+
+  This example shows how to define projections in a MooseStack data model to optimize query performance. Projections store data in alternative orderings within ClickHouse data parts, allowing fast queries on non-primary-key columns like userId without full table scans.
+
+  PR: [#3647](https://github.com/514-labs/moose/pull/3647) | Docs: [/moosestack/olap/projections](https://docs.moosejs.com/moosestack/olap/projections)
+
+**Add Query Layer for type-safe SQL query building** ([@georgevanderson](https://github.com/georgevanderson))
+  Introduces a new Query Layer API that provides type-safe SQL query building for ClickHouse with composable helpers, validation utilities, and MCP (Model Context Protocol) integration for IDE support. Users can now define query models with dimensions, metrics, and filters, then build queries programmatically with full type safety and automatic validation.
+
+  **Type-safe analytics query model with validation**
+
+  ```typescript
+  import { defineQueryModel, timeDimensions, filtersFromTable, columnsFromTable } from "@514labs/moose-lib";
+  import { sql } from "@514labs/moose-lib";
+  
+  // Assume we have a data model for user events
+  interface UserEvent {
+    id: string;
+    user_id: string;
+    event_type: string;
+    timestamp: Date;
+    session_id: string;
+    revenue: number;
+  }
+  
+  // Define a type-safe query model for analytics
+  export const eventAnalytics = defineQueryModel({
+    table: UserEventsTable,
+    
+    // Define dimensions - groupable fields
+    dimensions: {
+      eventType: { column: "event_type" },
+      userId: { column: "user_id" },
+      sessionId: { column: "session_id" },
+      // Generate time-based dimensions automatically
+      ...timeDimensions(UserEventsTable.columns.timestamp),
+    },
+    
+    // Define metrics - aggregated calculations
+    metrics: {
+      totalEvents: { 
+        agg: sql`count(*)`, 
+        as: "total_events" 
+      },
+      uniqueUsers: { 
+        agg: sql`countDistinct(user_id)`, 
+        as: "unique_users" 
+      },
+      totalRevenue: { 
+        agg: sql`sum(revenue)`, 
+        as: "total_revenue" 
+      },
+    },
+    
+    // Define filterable fields with type-safe operators
+    filters: {
+      ...filtersFromTable(UserEventsTable, { 
+        include: ["event_type", "user_id", "timestamp"] 
+      }),
+      eventType: { 
+        column: "event_type", 
+        operators: ["eq", "in", "ne"] as const,
+        inputType: "select" 
+      },
+    },
+    
+    // Columns available for selection
+    columns: {
+      ...columnsFromTable(UserEventsTable),
+    },
+    
+    // Define sortable fields
+    sortable: ["total_events", "unique_users", "timestamp"] as const,
+  });
+  
+  // Use the query model in an API endpoint
+  export async function getEventStats(request: unknown) {
+    // Type-safe query execution with validation
+    return await eventAnalytics.fromObject(request);
+  }
+  ```
+
+  This example shows how to use the new Query Layer to define a type-safe analytics model for user events. The model includes dimensions for grouping data, metrics for aggregations, and filters with validation, all with full TypeScript type safety and automatic schema generation.
+
+  PR: [#3649](https://github.com/514-labs/moose/pull/3649)
+
+**Add component system with moose add command** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Introduces a new component system that allows users to quickly add pre-built components to their projects using the moose add command. Users can now install an MCP server (Model Context Protocol server with ClickHouse query tools) and an AI chat panel for Next.js applications. The system includes manifest-based component management with automatic dependency installation, environment variable setup, and file scaffolding. Also adds moose component list to view available components.
+
+  **Adding components with moose add command**
+
+  ```bash
+  # List available components
+  moose component list
+  
+  # Add MCP server component to your Moose project
+  # This adds ClickHouse query tools at /tools endpoint
+  moose add mcp-server --dir packages/moose-backend
+  
+  # Add AI chat panel to your Next.js app
+  # Requires MCP server to be set up first
+  moose add chat --dir packages/web-app
+  
+  # Use --yes to skip confirmation prompts
+  moose add mcp-server --dir ./my-moose-project --yes
+  
+  # Overwrite existing files if needed
+  moose add chat --dir ./my-nextjs-app --overwrite --yes
+  ```
+
+  Shows how to use the new moose add command to install pre-built components like MCP servers and chat panels into existing projects. The component system automatically handles dependency installation, environment setup, and file scaffolding.
+
+  PR: [#3643](https://github.com/514-labs/moose/pull/3643) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+**Add data lineage tracking for APIs and web apps** ([@callicles](https://github.com/callicles))
+  APIs and web apps now automatically track their data dependencies, showing what data sources they read from and what destinations they write to. This enables better understanding of data flow through your MooseStack application and improves debugging and monitoring capabilities.
+
+  PR: [#3585](https://github.com/514-labs/moose/pull/3585)
+
+**Add migration configuration to ignore LowCardinality(String) vs String differences** ([@hh2110](https://github.com/hh2110))
+  Added a new migration configuration option that allows users to ignore differences between LowCardinality(String) and String column types in ClickHouse tables. This prevents unnecessary migrations when the semantic meaning of the data is the same, reducing migration noise and improving developer experience when working with ClickHouse optimizations.
+
+  **Configure migration to ignore LowCardinality differences**
+
+  ```typescript
+  // moose.config.ts - Configure migration to ignore LowCardinality differences
+  import { MooseConfig } from '@moosestack/framework';
+  
+  export default {
+    // Migration configuration to reduce noise from ClickHouse optimizations
+    migrationConfig: {
+      ignoreOperations: [
+        // Ignore differences between LowCardinality(String) and String types
+        // This prevents unnecessary migrations when ClickHouse auto-optimizes columns
+        'IgnoreStringLowCardinalityDifferences'
+      ]
+    },
+    
+    // Other configuration options
+    clickhouse: {
+      host: process.env.CLICKHOUSE_HOST || 'localhost',
+      port: 8123
+    }
+  } satisfies MooseConfig;
+  
+  // Example data model that might trigger the optimization
+  // models/UserActivity.ts
+  export interface UserActivity {
+    userId: string;          // May become LowCardinality(String) in ClickHouse
+    eventType: string;       // May become LowCardinality(String) in ClickHouse  
+    timestamp: Date;
+    sessionId: string;
+    metadata?: Record<string, any>;
+  }
+  
+  // With the ignore configuration above, migrations won't be triggered
+  // when ClickHouse automatically converts String to LowCardinality(String)
+  // for columns with low cardinality values like eventType
+  ```
+
+  Shows how to configure Moose to ignore differences between LowCardinality(String) and String column types in ClickHouse migrations. This prevents unnecessary migration noise when ClickHouse automatically optimizes string columns with low cardinality values.
+
+  PR: [#3049](https://github.com/514-labs/moose/pull/3049) | Docs: [/moosestack/configuration/migrations](https://docs.moosejs.com/moosestack/configuration/migrations)
+
+**Extend `moose docs search` to match page headings with `--expand` flag** ([@oatsandsugar](https://github.com/oatsandsugar))
+  The `moose docs search` command now supports searching within page headings (H1/H2/H3) using the new `--expand` flag. This enables users to find relevant sections within documentation pages, not just page titles and descriptions. When a heading matches, the search results show the heading level and anchor link for direct navigation.
+
+  **Searching documentation with --expand flag for headings**
+
+  ```bash
+  # Basic search - finds pages by title, description, or slug
+  moose docs search "streaming"
+  
+  # Extended search with --expand flag - also searches within page headings
+  moose docs search --expand "aggregation"
+  
+  # Search for specific setup instructions within page content
+  moose docs search --expand "installation"
+  
+  # Find references to ClickHouse in both page titles and headings
+  moose docs search --expand "clickhouse"
+  
+  # Example output with --expand:
+  # ┌─ Data Models ─┐
+  #   📄 Streaming Aggregations (moosestack/streaming-aggregations)
+  #       [H2] Real-time Aggregation Setup (streaming-aggregations#real-time-aggregation-setup)
+  #       [H3] ClickHouse Configuration (streaming-aggregations#clickhouse-configuration)
+  # 
+  # ┌─ Infrastructure ─┐  
+  #   📄 Database Setup (moosestack/database-setup)
+  #       [H2] ClickHouse Installation (database-setup#clickhouse-installation)
+  
+  # Navigate directly to a specific heading section
+  moose docs moosestack/streaming-aggregations#real-time-aggregation-setup
+  ```
+
+  Shows how to use the new --expand flag with moose docs search to find content within page headings (H1/H2/H3), not just page titles. When headings match, results show the heading level and anchor link for direct navigation to specific sections.
+
+  PR: [#3635](https://github.com/514-labs/moose/pull/3635) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+**Add Merge table engine support** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Users can now define Merge engine tables in their data models to create unified views over multiple source tables with matching schemas. The Merge engine allows querying data from multiple tables as if they were a single table, useful for partitioned data scenarios and historical data archiving patterns.
+
+  **Merge Engine Table for Unified Data Views**
+
+  ```typescript
+  // app/datamodels/orders.ts
+  import { Key } from "@514labs/moose-lib";
+  
+  // Source tables with matching schemas for partitioned data
+  export interface DailyOrders {
+    id: Key<string>;
+    customerId: string;
+    amount: number;
+    orderDate: Date;
+    status: string;
+  }
+  
+  export interface WeeklyOrders {
+    id: Key<string>;
+    customerId: string;
+    amount: number;
+    orderDate: Date;
+    status: string;
+  }
+  
+  // Merge table that unifies all order tables for querying
+  export interface AllOrders {
+    id: Key<string>;
+    customerId: string;
+    amount: number;
+    orderDate: Date;
+    status: string;
+    
+    // Configure Merge engine to query across multiple tables
+    engine: {
+      Merge: {
+        sourceDatabase: "currentDatabase()", // Resolves to current database
+        tablesRegexp: "^(Daily|Weekly)Orders$" // Match DailyOrders and WeeklyOrders
+      }
+    };
+  }
+  ```
+
+  This example shows how to define a Merge engine table that creates a unified view over multiple source tables with matching schemas. The Merge engine allows querying partitioned data (DailyOrders, WeeklyOrders) as a single table (AllOrders), useful for time-based partitioning patterns.
+
+  PR: [#3596](https://github.com/514-labs/moose/pull/3596) | Docs: [/moosestack/engines/merge](https://docs.moosejs.com/moosestack/engines/merge)
+
+### Improvements
+- Upgrade moose-lib and moose-cli to version 0.6.418: Updated moose-lib and moose-cli packages to the latest version with bug fixes and improvements. PR: [#3641](https://github.com/514-labs/moose/pull/3641) | Docs: [/guides/chat-in-your-app/tutorial](https://docs.moosejs.com/guides/chat-in-your-app/tutorial) ([@oatsandsugar](https://github.com/oatsandsugar))
+- Update getting started guides for new project structure: Updated the Fastify and Next.js integration guides to reflect the new `moose/app/` directory structure instead of `moose/src/`, simplified setup with `moose init`, and removed manual workspace configuration steps. PR: [#3639](https://github.com/514-labs/moose/pull/3639) ([@okane16](https://github.com/okane16))
+- Improve Python dependency handling for better compatibility: Python projects now use sqlglot[c] instead of sqlglot[rs], which eliminates deprecation warnings and improves CLI error handling when processing user code. PR: [#3634](https://github.com/514-labs/moose/pull/3634) ([@phiSgr](https://github.com/phiSgr))
+- Add "Edit this page" link to documentation sidebar: Documentation pages now include an "Edit this page" link in the sidebar that takes users directly to the GitHub editor for contributing improvements. PR: [#3633](https://github.com/514-labs/moose/pull/3633) ([@oatsandsugar](https://github.com/oatsandsugar))
+- Fix API reference headings to appear in table of contents: API reference documentation headings now properly appear in the table of contents for easier navigation. PR: [#3632](https://github.com/514-labs/moose/pull/3632) | Docs: [/moosestack/reference](https://docs.moosejs.com/moosestack/reference) ([@oatsandsugar](https://github.com/oatsandsugar))
+- Add WSL filesystem performance warning: Added a warning to WSL setup documentation advising users to store MooseStack projects in the Linux filesystem rather than Windows-mounted paths to avoid severe performance degradation. PR: [#3625](https://github.com/514-labs/moose/pull/3625) | Docs: [/shared/prerequisites/wsl-setup](https://docs.moosejs.com/shared/prerequisites/wsl-setup) ([@LucioFranco](https://github.com/LucioFranco))
+- Add preemptive version mismatch detection for moose-lib: The CLI now detects version mismatches between the Moose CLI and @514labs/moose-lib package before running commands, providing clear error messages when versions don't match and instructions to install the correct version. PR: [#3620](https://github.com/514-labs/moose/pull/3620) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) ([@phiSgr](https://github.com/phiSgr))
+
+### Bug Fixes
+- Fix aggregation function merge suffix positioning: Fixed incorrect SQL generation for aggregation functions with parameters where the "Merge" suffix was being appended after the function name instead of before the parameter parentheses. PR: [#3662](https://github.com/514-labs/moose/pull/3662) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@phiSgr](https://github.com/phiSgr))
+- Fix ClickHouse column properties and DDL parsing: Fixed issues with ClickHouse SQL parameter handling, column property ordering, and DDL parsing that could cause schema migrations to fail or produce incorrect table definitions. PR: [#3636](https://github.com/514-labs/moose/pull/3636) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@phiSgr](https://github.com/phiSgr))
+- Fix config handling for read-only configuration files: Fixed an issue where the Moose CLI would fail when trying to write to read-only config files (such as those managed externally), now gracefully skips write operations with a warning instead of crashing. PR: [#3591](https://github.com/514-labs/moose/pull/3591) ([@LucioFranco](https://github.com/LucioFranco))
+- Fix ClickHouse native port configuration in Docker Compose: Fixed an issue where the ClickHouse native port configuration was not properly respected in Docker Compose setups, ensuring the configured port is correctly bound to the host. PR: [#3621](https://github.com/514-labs/moose/pull/3621) ([@514Ben](https://github.com/514Ben))
+- Fix TypeScript compilation to respect tsconfig outDir: Fixed Docker packaging to properly respect the outDir setting from user tsconfig files instead of overriding it with a hardcoded path. PR: [#3610](https://github.com/514-labs/moose/pull/3610) ([@phiSgr](https://github.com/phiSgr))
+- Fix Docker Compose Redis port binding with custom URLs: Fixed an issue where Docker Compose port mappings used the wrong port when Redis was configured with a custom URL instead of individual host/port fields. PR: [#3616](https://github.com/514-labs/moose/pull/3616) | Docs: [/moosestack/configuration/redis](https://docs.moosejs.com/moosestack/configuration/redis) ([@514Ben](https://github.com/514Ben))
+- Fix MCP server deadlock during concurrent operations: Fixed a deadlock in the MCP server that could cause IDE integrations to freeze when infrastructure changes were being processed concurrently. PR: [#3605](https://github.com/514-labs/moose/pull/3605) ([@callicles](https://github.com/callicles))
+- Fix MCP server reconnection issues: Fixed reconnection issues with the Moose MCP server that could prevent IDE integrations from working properly after development server restarts. PR: [#3606](https://github.com/514-labs/moose/pull/3606) ([@callicles](https://github.com/callicles))
+
+
