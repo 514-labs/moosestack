@@ -37,6 +37,7 @@ import {
   IconChartBarOff,
   IconBrain,
   IconTrendingUp,
+  IconSearch,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -658,6 +659,13 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "API Reference",
     icon: IconBook,
     languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/reference/query-layer",
+    title: "Query Layer",
+    icon: IconSearch,
+    languages: ["typescript"],
   },
   {
     type: "page",
