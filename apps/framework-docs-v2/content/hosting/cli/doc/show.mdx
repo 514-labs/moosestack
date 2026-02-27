@@ -1,0 +1,39 @@
+---
+title: doc show
+description: Show a documentation page by slug.
+order: 2
+---
+
+# 514 doc show
+
+Use `514 doc show` to display a documentation page by slug.
+
+## Usage
+
+```bash
+514 doc show [OPTIONS] <SLUG>
+```
+
+## Arguments
+
+- `<SLUG>`: Documentation page slug (for example, `moosestack/olap` or `guides/chat-in-your-app#overview`).
+
+## Options
+
+:::include /shared/hosting/cli/doc-common-options.mdx
+
+Additional command-specific options:
+- `--web`
+
+## Examples
+
+```bash
+514 doc show moosestack/olap
+514 docs show guides/chat-in-your-app#overview --web
+```
+
+## Related
+
+- [`514 doc`](/hosting/cli/doc)
+- [`514 doc list`](/hosting/cli/doc/list)
+- [`514 doc search`](/hosting/cli/doc/search)

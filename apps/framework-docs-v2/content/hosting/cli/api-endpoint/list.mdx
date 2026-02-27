@@ -1,0 +1,35 @@
+---
+title: api-endpoint list
+description: List api-endpoint resources for a deployment.
+order: 1
+---
+
+# 514 api-endpoint list
+
+Use `514 api-endpoint list` to list api-endpoint resources in a deployment.
+
+## Usage
+
+```bash
+514 api-endpoint list [OPTIONS] <DEPLOY_ID>
+```
+
+## Arguments
+
+- `<DEPLOY_ID>`: Deployment ID.
+
+## Options
+
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 api-endpoint list dep_abc123 --project my-org/my-project
+514 api-endpoints list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 api-endpoint`](/hosting/cli/api-endpoint)
+- [`514 deployment list`](/hosting/cli/deployment/list)

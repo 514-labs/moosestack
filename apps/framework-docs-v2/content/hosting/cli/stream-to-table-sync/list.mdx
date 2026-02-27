@@ -1,0 +1,35 @@
+---
+title: stream-to-table-sync list
+description: List stream-to-table-sync resources for a deployment.
+order: 1
+---
+
+# 514 stream-to-table-sync list
+
+Use `514 stream-to-table-sync list` to list stream-to-table-sync resources in a deployment.
+
+## Usage
+
+```bash
+514 stream-to-table-sync list [OPTIONS] <DEPLOY_ID>
+```
+
+## Arguments
+
+- `<DEPLOY_ID>`: Deployment ID.
+
+## Options
+
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 stream-to-table-sync list dep_abc123 --project my-org/my-project
+514 stream-to-table-syncs list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 stream-to-table-sync`](/hosting/cli/stream-to-table-sync)
+- [`514 deployment list`](/hosting/cli/deployment/list)

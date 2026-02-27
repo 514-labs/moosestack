@@ -1,0 +1,35 @@
+---
+title: workflow list
+description: List workflow resources for a deployment.
+order: 1
+---
+
+# 514 workflow list
+
+Use `514 workflow list` to list workflow resources in a deployment.
+
+## Usage
+
+```bash
+514 workflow list [OPTIONS] <DEPLOY_ID>
+```
+
+## Arguments
+
+- `<DEPLOY_ID>`: Deployment ID.
+
+## Options
+
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 workflow list dep_abc123 --project my-org/my-project
+514 workflows list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 workflow`](/hosting/cli/workflow)
+- [`514 deployment list`](/hosting/cli/deployment/list)

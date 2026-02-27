@@ -1096,54 +1096,132 @@ const hostingNavigationConfig: NavigationConfig = [
     slug: "hosting/cli/auth",
     title: "auth",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/auth/login",
+        title: "login",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/auth/whoami",
+        title: "whoami",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/auth/logout",
+        title: "logout",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/orgs",
     title: "org",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/orgs/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/orgs/switch",
+        title: "switch",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/projects",
     title: "project",
     languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "hosting/cli/setup",
-    title: "project setup",
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "hosting/cli/link",
-    title: "project link",
-    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/projects/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/projects/link",
+        title: "link",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/projects/setup",
+        title: "setup",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/deployment",
     title: "deployment",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/deployment/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/doc",
     title: "doc",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/doc/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/doc/show",
+        title: "show",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/doc/search",
+        title: "search",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/doc/browse",
+        title: "browse",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/cli",
     title: "cli",
     languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "hosting/cli/update",
-    title: "cli update",
-    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/cli/update",
+        title: "update",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
@@ -1158,66 +1236,154 @@ const hostingNavigationConfig: NavigationConfig = [
     slug: "hosting/cli/api-endpoint",
     title: "api-endpoint",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/api-endpoint/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/stream",
     title: "stream",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/stream/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/function",
     title: "function",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/function/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/stream-to-table-sync",
     title: "stream-to-table-sync",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/stream-to-table-sync/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/stream-to-stream-sync",
     title: "stream-to-stream-sync",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/stream-to-stream-sync/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/table",
     title: "table",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/table/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/view",
     title: "view",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/view/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/web-app",
     title: "web-app",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/web-app/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/workflow",
     title: "workflow",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/workflow/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/sql-resource",
     title: "sql-resource",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/sql-resource/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
     slug: "hosting/cli/materialized-view",
     title: "materialized-view",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/materialized-view/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   { type: "separator" },
   { type: "label", title: "Workflow" },
