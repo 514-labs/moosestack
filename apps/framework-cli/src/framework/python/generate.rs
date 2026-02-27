@@ -1130,6 +1130,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
             writeln!(output, "    ],").unwrap();
         }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections=[").unwrap();
+            for proj in &table.projections {
+                writeln!(
+                    output,
+                    "        OlapConfig.TableProjection(name={:?}, body={:?}),",
+                    proj.name, proj.body
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }
@@ -1184,6 +1196,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1305,6 +1318,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1438,6 +1452,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1770,6 +1785,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1839,6 +1855,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     granularity: 1,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1911,6 +1928,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1968,6 +1986,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -2038,6 +2057,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2100,6 +2120,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2118,6 +2139,39 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(
             result.contains("description=\"A private field that needs aliasing\""),
             "Expected description for _private_field. Result: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_projection_emission() {
+        use crate::framework::core::infrastructure::table::TableProjection;
+
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                test_column("user_id", ColumnType::String),
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            projections: vec![TableProjection {
+                name: "proj_by_user".to_string(),
+                body: "SELECT _part_offset ORDER BY user_id".to_string(),
+            }],
+            ..test_table("WithProjection", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+        assert!(
+            result.contains("projections=["),
+            "Expected projections list. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("OlapConfig.TableProjection(name=\"proj_by_user\", body=\"SELECT _part_offset ORDER BY user_id\")"),
+            "Expected projection entry. Result: {}",
             result
         );
     }
