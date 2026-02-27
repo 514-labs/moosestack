@@ -650,14 +650,20 @@ pub async fn start_development_mode(
                     let tables: HashMap<_, _> =
                         tables.into_iter().map(|t| (t.name.clone(), t)).collect();
 
+                    let ignore_ops = &project.migration_config.ignore_operations;
                     let changed = externally_managed.iter().any(|t| {
                         if let Some(remote_table) = tables.get(&t.name) {
-                            !compute_table_columns_diff(
-                                t,
-                                remote_table,
-                                &project.migration_config.ignore_operations,
-                            )
-                            .is_empty()
+                            let norm_t =
+                                crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                                    t, ignore_ops,
+                                );
+                            let norm_remote =
+                                crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                                    remote_table,
+                                    ignore_ops,
+                                );
+                            !compute_table_columns_diff(t, remote_table, &norm_t, &norm_remote)
+                                .is_empty()
                                 || !remote_table.order_by_equals(t)
                                 || t.engine != remote_table.engine
                         } else {
