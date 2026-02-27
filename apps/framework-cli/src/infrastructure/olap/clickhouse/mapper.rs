@@ -810,6 +810,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ch_table = std_table_to_clickhouse_table(&table).unwrap();
@@ -863,6 +864,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ch_table = std_table_to_clickhouse_table(&table).unwrap();

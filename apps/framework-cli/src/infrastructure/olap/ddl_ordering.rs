@@ -3549,6 +3549,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let mut after = before.clone();
@@ -3596,6 +3597,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
         before.projections = vec![TableProjection {
             name: "proj_by_user".to_string(),
@@ -3637,6 +3639,7 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            seed_filter: Default::default(),
             engine_params_hash: None,
             table_settings_hash: None,
             table_settings: None,

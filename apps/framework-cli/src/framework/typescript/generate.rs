@@ -2097,6 +2097,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_typescript(&tables, None);
