@@ -159,8 +159,14 @@ export class Sql {
           ([k, _]) => k === "aggregationFunction",
         );
         if (aggregationFunction !== undefined) {
-          this.strings[pos] +=
-            `${(aggregationFunction[1] as AggregationFunction).functionName}Merge(\`${child.name}\`)`;
+          const funcName = (aggregationFunction[1] as AggregationFunction)
+            .functionName;
+          const parenIdx = funcName.indexOf("(");
+          const mergedName =
+            parenIdx !== -1 ?
+              `${funcName.slice(0, parenIdx)}Merge${funcName.slice(parenIdx)}`
+            : `${funcName}Merge`;
+          this.strings[pos] += `${mergedName}(\`${child.name}\`)`;
         } else {
           this.strings[pos] += `\`${child.name}\``;
         }
