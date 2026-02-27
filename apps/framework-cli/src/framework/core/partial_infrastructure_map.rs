@@ -58,7 +58,7 @@ use super::{
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
-use crate::framework::core::infrastructure::table::{OrderBy, TableProjection};
+use crate::framework::core::infrastructure::table::{OrderBy, SeedFilter, TableProjection};
 use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 use crate::{
     framework::{
@@ -351,6 +351,13 @@ struct PartialTable {
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     #[serde(default, alias = "primary_key_expression")]
     pub primary_key_expression: Option<String>,
+    /// Per-table filter for `moose seed clickhouse`
+    #[serde(
+        default,
+        alias = "seed_filter",
+        deserialize_with = "crate::framework::core::infrastructure::table::deserialize_nullable_as_default"
+    )]
+    pub seed_filter: SeedFilter,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -835,6 +842,7 @@ impl PartialInfrastructureMap {
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
+                    seed_filter: partial_table.seed_filter.clone(),
                 };
 
                 // Compute table_settings_hash for change detection, then canonicalize
@@ -1701,5 +1709,65 @@ mod tests {
                 id: "OrdersEvents".to_string(),
             }]
         );
+    }
+
+    fn base_table_json() -> serde_json::Value {
+        json!({
+            "name": "t1",
+            "columns": [],
+            "orderBy": ["id"]
+        })
+    }
+
+    fn get_seed_filter(payload: serde_json::Value) -> SeedFilter {
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        partial
+            .tables
+            .get("t1")
+            .expect("table t1 should exist")
+            .seed_filter
+            .clone()
+    }
+
+    #[test]
+    fn seed_filter_missing_key_defaults() {
+        let payload = json!({ "tables": { "t1": base_table_json() } });
+        assert_eq!(get_seed_filter(payload), SeedFilter::default());
+    }
+
+    #[test]
+    fn seed_filter_null_defaults() {
+        let mut t = base_table_json();
+        t.as_object_mut()
+            .unwrap()
+            .insert("seedFilter".into(), serde_json::Value::Null);
+        let payload = json!({ "tables": { "t1": t } });
+        assert_eq!(get_seed_filter(payload), SeedFilter::default());
+    }
+
+    #[test]
+    fn seed_filter_camel_case() {
+        let mut t = base_table_json();
+        t.as_object_mut().unwrap().insert(
+            "seedFilter".into(),
+            json!({ "limit": 10, "where": "id > 0" }),
+        );
+        let payload = json!({ "tables": { "t1": t } });
+        let sf = get_seed_filter(payload);
+        assert_eq!(sf.limit, Some(10));
+        assert_eq!(sf.where_clause.as_deref(), Some("id > 0"));
+    }
+
+    #[test]
+    fn seed_filter_snake_case() {
+        let mut t = base_table_json();
+        t.as_object_mut()
+            .unwrap()
+            .insert("seed_filter".into(), json!({ "limit": 20 }));
+        let payload = json!({ "tables": { "t1": t } });
+        let sf = get_seed_filter(payload);
+        assert_eq!(sf.limit, Some(20));
+        assert_eq!(sf.where_clause, None);
     }
 }

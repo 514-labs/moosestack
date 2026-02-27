@@ -503,14 +503,10 @@ pub enum SeedSubcommands {
         /// ClickHouse connection URL (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
-        /// Limit the number of rows to copy per table (default: 1000)
-        #[arg(
-            long,
-            value_name = "LIMIT",
-            default_value_t = 1000,
-            conflicts_with = "all"
-        )]
-        limit: usize,
+        /// Limit the number of rows to copy per table.
+        /// When omitted, falls back to per-table seedFilter.limit, then to 1000.
+        #[arg(long, value_name = "LIMIT", conflicts_with = "all")]
+        limit: Option<usize>,
         /// Copy all rows (ignore limit). If set for a table, copies entire table.
         #[arg(long, default_value = "false", conflicts_with = "limit")]
         all: bool,

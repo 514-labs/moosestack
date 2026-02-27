@@ -171,8 +171,8 @@ moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>]
 ```
 - `--connection-string`: Remote ClickHouse connection string. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
 - `--table`: Seed only the specified table (default: all Moose tables).
-- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
-- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Overrides per-table `seedFilter.limit`; when omitted falls back to `seedFilter.limit`, then 1000. Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches, ignoring all limits (mutually exclusive with `--limit`).
 - `--order-by`: ORDER BY clause for the query (e.g., `--order-by 'timestamp DESC'`).
 - `--report`: Report row counts after seeding (default: `true`). Counts shown for default database only; use `--report=false` to skip.
 
@@ -193,6 +193,8 @@ clickhouse://username:password@host:9440/database
 - Tables that don't exist on remote are automatically skipped with clear warnings
 - Final summary shows successful and skipped tables
 - Clean, streamlined output focused on results
+
+**Per-table seed filters:** Tables can declare a `seedFilter` in their `OlapTable` config to set a default limit and/or WHERE clause when seeding. See [Seed Filter](/moosestack/olap/model-table#seed-filter) for details.
 
 Notes:
 - Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.

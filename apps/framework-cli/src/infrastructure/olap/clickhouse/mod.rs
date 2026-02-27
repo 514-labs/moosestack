@@ -326,11 +326,14 @@ impl IgnorableOperation {
 /// # Returns
 /// A new table with ignored fields stripped/normalized to match the "before" state
 pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
-    if ignore_ops.is_empty() {
-        return table.clone();
-    }
-
     let mut normalized = table.clone();
+
+    // seed_filter is a dev-time seeding directive, never part of ClickHouse schema
+    normalized.seed_filter = Default::default();
+
+    if ignore_ops.is_empty() {
+        return normalized;
+    }
 
     // Strip table-level TTL if ignored
     if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
@@ -2629,6 +2632,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
                 primary_key_expression: final_primary_key_expression,
+                seed_filter: Default::default(),
             };
             debug!("Created table object: {:?}", table);
 
@@ -4266,6 +4270,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![
@@ -4337,6 +4342,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![];
@@ -4429,6 +4435,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let ignore_ops = vec![IgnorableOperation::IgnoreStringLowCardinalityDifferences];

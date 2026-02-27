@@ -485,6 +485,8 @@ interface TableJson {
   database?: string;
   /** Optional cluster name for ON CLUSTER support. */
   cluster?: string;
+  /** Optional seed filter for `moose seed clickhouse`. */
+  seedFilter?: { limit?: number; where?: string };
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -1168,6 +1170,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,
+      seedFilter:
+        "seedFilter" in table.config ? table.config.seedFilter : undefined,
     };
   });
 

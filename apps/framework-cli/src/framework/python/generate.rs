@@ -1130,6 +1130,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
             writeln!(output, "    ],").unwrap();
         }
+        let sf = &table.seed_filter;
+        if sf.limit.is_some() || sf.where_clause.is_some() {
+            write!(output, "    seed_filter=OlapConfig.SeedFilter(").unwrap();
+            let mut args = Vec::new();
+            if let Some(limit) = sf.limit {
+                args.push(format!("limit={}", limit));
+            }
+            if let Some(ref wc) = sf.where_clause {
+                args.push(format!("where={:?}", wc));
+            }
+            writeln!(output, "{}),", args.join(", ")).unwrap();
+        }
         if !table.projections.is_empty() {
             writeln!(output, "    projections=[").unwrap();
             for proj in &table.projections {
@@ -1201,6 +1213,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -1323,6 +1336,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1457,6 +1471,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1790,6 +1805,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1860,6 +1876,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1932,6 +1949,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1991,6 +2009,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -2062,6 +2081,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -2125,6 +2145,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);

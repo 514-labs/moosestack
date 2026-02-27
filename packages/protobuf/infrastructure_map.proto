@@ -180,6 +180,9 @@ message Table {
 
   // Optional table projections for alternative data ordering within parts
   repeated TableProjection projections = 21;
+
+  // Per-table filter for `moose seed clickhouse`
+  optional SeedFilter seed_filter = 22;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -206,12 +209,19 @@ message TableIndex {
   uint64 granularity = 5;
 }
 
+// Per-table filtering for `moose seed clickhouse`
+message SeedFilter {
+  // Maximum rows to seed (falls back to CLI --limit, then global default)
+  optional uint64 limit = 1;
+  // ClickHouse SQL WHERE expression appended to the seed query
+  optional string where_clause = 2;
+}
+
 // DB-neutral representation of a table projection
 message TableProjection {
   string name = 1;
   string body = 2;
 }
-
 message Dmv1View {
   string name = 1;
   string version = 2;
