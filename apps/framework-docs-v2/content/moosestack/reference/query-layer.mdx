@@ -75,8 +75,8 @@ const visitsModel = defineQueryModel({
 | `metrics` | `Record<string, MetricDef>` | No | Aggregate functions |
 | `columns` | `Record<string, ColumnDef>` | No | Detail mode fields (non-aggregated) |
 | `joins` | `Record<string, JoinDef>` | No | JOIN definitions |
-| `filters` | `Record<string, ModelFilterDef>` | No | Filterable fields with allowed operators |
-| `sortable` | `readonly string[]` | No | Fields that can be sorted |
+| `filters` | `Record<string, ModelFilterDef>` | Yes | Filterable fields with allowed operators |
+| `sortable` | `readonly string[]` | Yes | Fields that can be sorted |
 | `defaults` | `object` | No | Default `limit`, `maxLimit`, `orderBy`, `dimensions`, `metrics`, `columns` |
 
 ### DimensionDef
@@ -317,7 +317,6 @@ countDistinct(MyTable.columns.user_id).as("unique_users");
 | `empty` | Empty SQL fragment (no-op) |
 | `join(fragments, sep?)` | Join fragments with separator (default: `", "`) |
 | `isEmpty(fragment)` | Check if a fragment is empty |
-| `identifier(name)` | Quote identifier with backticks |
 
 ## Helper Functions
 

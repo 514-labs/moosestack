@@ -207,7 +207,7 @@ VisitsTable = OlapTable[Visit]("visits", OlapConfig(
 
 ---
 
-## `buildQuery`: REST APIs
+## REST APIs
 
 `buildQuery` takes a query model and returns a type-safe fluent builder. It validates dimensions, metrics, and filter operators at compile time and generates ClickHouse SQL at runtime. `.filter()` skips `undefined` values, so optional query params don't require branching.
 
@@ -393,7 +393,7 @@ The query model's `required: true` filters (e.g., `studioId`) carry through to t
 
 ---
 
-## `registerModelTools`: MCP server
+## MCP server
 
 `registerModelTools` calls `createModelTool` internally for each query model and registers the resulting tools on an MCP server. You provide the models and a callback that executes the query. Tool names, descriptions, and parameter schemas are derived from the model definitions.
 
