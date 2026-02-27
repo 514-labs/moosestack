@@ -353,6 +353,7 @@ Wire the tool into a chat route. The query model handles parameter validation an
   <LanguageTabContent value="typescript">
 ```ts filename="api/chat/route.ts" copy
 import { streamText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { queryVisitsTool } from "../ai/tools";
 
 export async function POST(req) {
