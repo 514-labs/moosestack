@@ -17,7 +17,7 @@ import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, ToggleBloc
 
 ## Overview
 
-A query model declares the metrics, dimensions, filters, and defaults for a ClickHouse table. Once defined, the same model can be projected into three interfaces:
+A query model declares the metrics, dimensions, filters, and defaults for a ClickHouse table, view, or materialized view. Once defined, the same model can be projected into three interfaces:
 
 - **`buildQuery`** — type-safe fluent builder for REST endpoints and server-side code
 - **`createModelTool`** — generates a Zod schema and request builder for Vercel AI SDK tool calls
@@ -27,7 +27,7 @@ Adding or changing a metric in the query model updates all three interfaces with
 
 ## Define a query model
 
-A query model wraps an [OlapTable](/moosestack/olap/model-table) and constrains how consumers can query it. Use `defineQueryModel` to declare dimensions, metrics, filters, sort fields, and defaults.
+A query model wraps an [OlapTable](/moosestack/olap/model-table), [view](/moosestack/olap/model-view), or [materialized view](/moosestack/olap/model-materialized-view) and constrains how consumers can query it. Use `defineQueryModel` to declare dimensions, metrics, filters, sort fields, and defaults.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -198,7 +198,7 @@ visits_table = OlapTable[Visit]("visits", OlapConfig(
 |---|---|---|
 | **`name`** | Identifier | Becomes the tool name in MCP and AI SDK registrations |
 | **`description`** | What this model queries | Used as the tool description for LLMs |
-| **`table`** | Source `OlapTable` | The ClickHouse table queries run against |
+| **`table`** | Source table or view | The ClickHouse table, view, or materialized view queries run against |
 | **`dimensions`** | Allowed `GROUP BY` columns | `timeDimensions()` generates `day`, `month`, `week` from a date column |
 | **`metrics`** | Aggregate computations | Appear in `SELECT` alongside requested dimensions |
 | **`filters`** | Allowed `WHERE` clauses with operators | `required: true` enforces mandatory filtering (e.g., tenant isolation) |
