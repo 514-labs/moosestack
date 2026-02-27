@@ -1,0 +1,44 @@
+---
+title: cli
+description: Manage installed CLI binaries.
+order: 9
+---
+
+# 514 cli
+
+Use `514 cli` for local CLI binary management operations.
+
+## Usage
+
+```bash
+514 cli [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### Update
+
+Update installed CLIs (`514` and/or `moose`).
+
+```bash
+514 cli update [OPTIONS] [TARGET]
+```
+
+See the dedicated page: [`514 cli update`](/hosting/cli/cli/update).
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 cli update
+514 cli update 514
+514 cli update moose
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 cli update`](/hosting/cli/cli/update)

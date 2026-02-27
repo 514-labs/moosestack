@@ -1,0 +1,69 @@
+---
+title: project
+description: Manage projects in the 514 hosting control plane.
+order: 5
+---
+
+# 514 project
+
+Use `514 project` to list projects and run project-scoped workflows like linking and local setup.
+
+## Usage
+
+```bash
+514 project [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List projects in an organization.
+
+```bash
+514 project list
+```
+
+See the full command reference: [`514 project list`](/hosting/cli/projects/list).
+
+### Link
+
+Link your local repository to an existing 514 project.
+
+```bash
+514 project link [PROJECT_REF] [OPTIONS]
+```
+
+See the full command reference: [`514 project link`](/hosting/cli/projects/link).
+
+### Setup
+
+Set up a hosting project locally (clone, branch, local dev environment setup).
+
+```bash
+514 project setup [OPTIONS] <PROJECT_REF>
+```
+
+See the full command reference: [`514 project setup`](/hosting/cli/projects/setup).
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 project list
+514 project link acme/analytics-api
+514 project setup acme/analytics-api
+514 --json project list
+```
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 project list`](/hosting/cli/projects/list)
+- [`514 org`](/hosting/cli/orgs)
+- [`514 project link`](/hosting/cli/projects/link)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 deployment list`](/hosting/cli/deployment/list)

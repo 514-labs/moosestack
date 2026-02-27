@@ -1,0 +1,43 @@
+---
+title: table
+description: List table resources for a deployment.
+order: 16
+---
+
+# 514 table
+
+Use `514 table` to list table resources in a deployment.
+
+Plural alias also works: `514 tables`.
+
+## Usage
+
+```bash
+514 table [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 table list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 table list dep_abc123 --project my-org/my-project
+514 tables list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

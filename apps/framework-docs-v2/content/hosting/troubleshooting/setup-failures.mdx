@@ -17,7 +17,7 @@ Use this page when the CLI harness cannot complete a handoff between local repo 
 ## 1. Auth expired or missing
 
 Symptom:
-- Setup or link commands fail with auth-required message.
+- Project setup or project link commands fail with an auth-required message.
 
 Likely cause:
 - No active CLI session.
@@ -42,7 +42,7 @@ Likely cause:
 Next command(s):
 
 ```bash
-514 setup <org>/<project>
+514 project setup <org>/<project>
 ```
 
 Recovery routes:
@@ -60,7 +60,7 @@ Likely cause:
 Next command(s):
 
 ```bash
-514 setup <org>/<project> --path <new-parent> --dir-name <new-folder>
+514 project setup <org>/<project> --path <new-parent> --dir-name <new-folder>
 ```
 
 Recovery route:
@@ -104,6 +104,6 @@ Recovery routes:
 ## Related
 
 - [CLI: auth](/hosting/cli/auth)
-- [CLI: setup](/hosting/cli/setup)
-- [CLI: link](/hosting/cli/link)
+- [CLI: project setup](/hosting/cli/projects/setup)
+- [CLI: project link](/hosting/cli/projects/link)
 - [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup)

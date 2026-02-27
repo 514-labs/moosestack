@@ -1,0 +1,32 @@
+---
+title: auth logout
+description: Clear local auth session for the current machine.
+order: 3
+---
+
+# 514 auth logout
+
+Use `514 auth logout` to clear local auth session for the current machine.
+
+## Usage
+
+```bash
+514 auth logout [OPTIONS]
+```
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Expected outcome
+
+- Local session is removed.
+
+## Recovery
+
+- To authenticate again, run: `514 auth login`
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 auth login`](/hosting/cli/auth/login)

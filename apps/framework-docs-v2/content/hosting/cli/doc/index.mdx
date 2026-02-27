@@ -1,0 +1,79 @@
+---
+title: doc
+description: Browse and search documentation from the 514 CLI.
+order: 8
+---
+
+# 514 doc
+
+Use `514 doc` to browse, search, and open documentation pages directly from the CLI.
+
+Plural alias also works: `514 docs`.
+
+## Usage
+
+```bash
+514 doc [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List documentation pages.
+
+```bash
+514 doc list [OPTIONS]
+```
+
+### Show
+
+Show a documentation page by slug.
+
+```bash
+514 doc show [OPTIONS] <SLUG>
+```
+
+Arguments:
+- `<SLUG>`: Documentation page slug (for example, `moosestack/olap` or `guides/chat-in-your-app#overview`).
+
+### Search
+
+Search documentation by title or description.
+
+```bash
+514 doc search [OPTIONS] <QUERY>
+```
+
+Arguments:
+- `<QUERY>`: Search query text.
+
+### Browse
+
+Interactively browse and select a documentation page.
+
+```bash
+514 doc browse [OPTIONS]
+```
+
+## Common options
+
+:::include /shared/hosting/cli/doc-common-options.mdx
+
+Additional command-specific options:
+:::include /shared/hosting/cli/doc-command-options.mdx
+
+## Examples
+
+```bash
+514 doc list
+514 doc show moosestack/olap
+514 doc search "deployment"
+514 doc browse
+514 docs search "workflow"
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 project setup`](/hosting/cli/projects/setup)

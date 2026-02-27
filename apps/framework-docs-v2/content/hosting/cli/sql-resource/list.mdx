@@ -1,0 +1,35 @@
+---
+title: sql-resource list
+description: List sql-resource resources for a deployment.
+order: 1
+---
+
+# 514 sql-resource list
+
+Use `514 sql-resource list` to list sql-resource resources in a deployment.
+
+## Usage
+
+```bash
+514 sql-resource list [OPTIONS] <DEPLOY_ID>
+```
+
+## Arguments
+
+- `<DEPLOY_ID>`: Deployment ID.
+
+## Options
+
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 sql-resource list dep_abc123 --project my-org/my-project
+514 sql-resources list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 sql-resource`](/hosting/cli/sql-resource)
+- [`514 deployment list`](/hosting/cli/deployment/list)

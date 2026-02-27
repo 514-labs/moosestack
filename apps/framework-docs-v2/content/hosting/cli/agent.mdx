@@ -1,0 +1,52 @@
+---
+title: agent
+description: Agent-focused read-only command surface.
+order: 10
+---
+
+# 514 agent
+
+Use `514 agent` for a read-only command surface optimized for agents and automation flows.
+
+## Usage
+
+```bash
+514 agent [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+- `auth`: Authentication state inspection
+- `org`: Organization resources
+- `project`: Project resources
+- `deployment`: Deployment resources
+- `doc`: Documentation resources
+- `api-endpoint`: API endpoint resources
+- `stream`: Stream resources
+- `function`: Function resources
+- `stream-to-table-sync`: Stream-to-table sync resources
+- `stream-to-stream-sync`: Stream-to-stream sync resources
+- `table`: Table resources
+- `view`: View resources
+- `web-app`: Web-app resources
+- `workflow`: Workflow resources
+- `sql-resource`: SQL resource entries
+- `materialized-view`: Materialized view resources
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 agent auth whoami
+514 agent project list --json
+514 agent deployment list --project my-org/my-project
+514 agent stream list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 auth`](/hosting/cli/auth)
