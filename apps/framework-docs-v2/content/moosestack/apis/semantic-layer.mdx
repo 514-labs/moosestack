@@ -182,7 +182,7 @@ class Visit(BaseModel):
     start_date: datetime = Field(description="Scheduled start time of the class.")
     created_at: datetime
 
-visits_table = OlapTable[Visit]("visits", OlapConfig(
+VisitsTable = OlapTable[Visit]("visits", OlapConfig(
     order_by_fields=["studio_id", "start_date", "id"],
 ))
 ```
@@ -311,6 +311,7 @@ This plugs directly into the Vercel AI SDK's `tool()`.
 import { createModelTool } from "@514labs/moose-lib";
 import { tool } from "ai";
 import { visitMetrics } from "../query-layer/visits-model";
+import { client } from "../db"; // your ClickHouse client instance
 
 const { schema, buildRequest } = createModelTool(visitMetrics);
 
@@ -330,6 +331,7 @@ export const queryVisitsTool = tool({
 ```python filename="ai/tools.py" copy
 from moose_lib import create_model_tool
 from app.query_layer.visits_model import visit_metrics
+from app.db import client  # your ClickHouse client instance
 
 model_tool = create_model_tool(visit_metrics)
 
@@ -403,6 +405,7 @@ import { registerModelTools } from "@514labs/moose-lib";
 import { visitMetrics } from "../query-layer/visits-model";
 import { revenueMetrics } from "../query-layer/revenue-model";
 import { clientMetrics } from "../query-layer/client-model";
+import { client } from "../db"; // your ClickHouse client instance
 
 export default async function handler(req, res) {
   const server = new McpServer({
@@ -437,6 +440,7 @@ from mcp.server import Server
 from app.query_layer.visits_model import visit_metrics
 from app.query_layer.revenue_model import revenue_metrics
 from app.query_layer.client_model import client_metrics
+from app.db import client  # your ClickHouse client instance
 
 server = Server("my-analytics")
 
