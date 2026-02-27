@@ -10,37 +10,24 @@ import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, ToggleBloc
 # Semantic Layer
 
 <div className="flex items-center gap-4 my-8 flex-wrap">
-<IconBadge Icon="ChartBar" label="Define once" variant="moose" />
+<IconBadge Icon="ChartBar" label="Query models" variant="moose" />
 <IconBadge Icon="Api" label="REST + AI + MCP" variant="moose" />
 <IconBadge Icon="Check" label="Type-safe" variant="moose" />
 </div>
 
 ## Overview
 
-Data is in ClickHouse. Now you need to expose it — and who's consuming it determines how.
+A query model declares the metrics, dimensions, filters, and defaults for a ClickHouse table. Once defined, the same model can be projected into three interfaces:
 
-Maybe your product team needs a dashboard showing attendance trends. Maybe you're building a chat feature where users ask questions in plain English. Maybe your engineering team wants to query production data from Claude Code without writing SQL.
+- **`buildQuery`** — type-safe fluent builder for REST endpoints and server-side code
+- **`createModelTool`** — generates a Zod schema and request builder for Vercel AI SDK tool calls
+- **`registerModelTools`** — registers query models as MCP tools on an MCP server
 
-These are different problems. But the metrics are the same. "No-shows" should mean the same thing whether it's rendered in a chart, returned by an AI, or discovered by an MCP client.
-
-Moose's semantic layer lets you define your metrics, dimensions, and filters once — then project them into whatever interface the consumer needs.
-
-<BulletPointsCard
-  divider={false}
-  bulletStyle="check"
-  compact={true}
-  title="What you get:"
-  bullets={[
-    "A single query model that defines all allowed metrics, dimensions, filters, and defaults",
-    "buildQuery: a type-safe fluent builder for REST endpoints and server-side code",
-    "createModelTool: generates a Zod schema and request builder for AI SDK tool calls",
-    "registerModelTools: registers query models as MCP tools for any MCP-compatible client",
-  ]}
-/>
+Adding or changing a metric in the query model updates all three interfaces without touching any other file.
 
 ## Define a query model
 
-The [data model](/moosestack/olap/model-table) describes what's *in* the table. The query model describes what you can *ask* it. It's a structured declaration of every way a consumer is allowed to slice this data — and it's the single object that every downstream interface reads from.
+A query model wraps an [OlapTable](/moosestack/olap/model-table) and constrains how consumers can query it. Use `defineQueryModel` to declare dimensions, metrics, filters, sort fields, and defaults.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -202,35 +189,27 @@ visits_table = OlapTable[Visit]("visits", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-Note how [column comments](/moosestack/olap/model-table#column-comments) (TSDoc in TypeScript, `Field(description=...)` in Python) become ClickHouse `COMMENT` clauses. These comments also surface in Moose's MCP tools — AI agents read them to understand what each column means before writing queries.
+[Column comments](/moosestack/olap/model-table#column-comments) (TSDoc in TypeScript, `Field(description=...)` in Python) become ClickHouse `COMMENT` clauses. These comments also surface in Moose's MCP tools — AI agents read them to understand what each column means before writing queries.
 </ToggleBlock>
 
-### Query model anatomy
+### Query model reference
 
-Each section of the query model controls a different aspect of what consumers can do:
-
-| Section | Purpose | Effect |
+| Field | Purpose | Effect |
 |---|---|---|
-| **`name`** | Tool name for MCP and AI SDK | Becomes the callable tool name |
-| **`description`** | What this model queries | LLMs read this to decide when to call the tool |
-| **`table`** | Source OlapTable | The ClickHouse table queries run against |
+| **`name`** | Identifier | Becomes the tool name in MCP and AI SDK registrations |
+| **`description`** | What this model queries | Used as the tool description for LLMs |
+| **`table`** | Source `OlapTable` | The ClickHouse table queries run against |
 | **`dimensions`** | Allowed `GROUP BY` columns | `timeDimensions()` generates `day`, `month`, `week` from a date column |
 | **`metrics`** | Aggregate computations | Appear in `SELECT` alongside requested dimensions |
 | **`filters`** | Allowed `WHERE` clauses with operators | `required: true` enforces mandatory filtering (e.g., tenant isolation) |
-| **`sortable`** | Allowed `ORDER BY` fields | Whitelist — consumers can't sort by arbitrary expressions |
+| **`sortable`** | Allowed `ORDER BY` fields | Consumers can only sort by fields in this list |
 | **`defaults`** | Fallback values | Applied when a consumer omits dimensions, metrics, limit, or ordering |
-
-Now: three different consumers, three different interfaces, same model.
 
 ---
 
-## REST API: power dashboards and integrations
+## `buildQuery`: REST APIs
 
-Your frontend team needs a stable endpoint they can poll. The ops team wants a weekly report they can automate. A partner wants to pull data into their own system.
-
-These consumers know exactly what they want. They'll construct the request themselves. They need a URL, query parameters, and a predictable response shape.
-
-The `buildQuery` builder takes the query model and gives you a type-safe fluent API. Wire it into a route handler — the builder validates dimensions, metrics, and filter operators at compile time and generates the ClickHouse SQL at runtime. `.filter()` skips `undefined` values, so optional query params work without branching.
+`buildQuery` takes a query model and returns a type-safe fluent builder. It validates dimensions, metrics, and filter operators at compile time and generates ClickHouse SQL at runtime. `.filter()` skips `undefined` values, so optional query params don't require branching.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -302,7 +281,7 @@ A request like:
 GET /api/visits?studio_id=5&dimensions=day&metrics=noShows&start_date_gte=2025-01-01
 ```
 
-Produces this ClickHouse query:
+Produces:
 
 ```sql
 SELECT
@@ -316,21 +295,15 @@ ORDER BY day DESC
 LIMIT 100
 ```
 
-<Callout type="info" title="When to use this">
-Use the REST API when the consumer is **code** — dashboards that refresh on a timer, cron jobs that generate PDFs, integrations that need to work the same way in six months. HTTP gives you caching, rate limiting, auth middleware, and all the infrastructure you already have.
-</Callout>
-
 ---
 
-## AI SDK tool calls: build a chat feature
+## `createModelTool`: AI SDK tool calls
 
-You're shipping a product — a "chat with your data" feature, a copilot, an embedded analyst. The AI needs to query ClickHouse, but you need to control the experience: the system prompt, how results are rendered, what guardrails are in place.
+`createModelTool` reads a query model and returns:
+- A flat **Zod schema** — filters are flattened to `start_date_gte`, `status_in`; dimensions and metrics become enum arrays
+- A **`buildRequest`** function that converts flat params back into a nested query request
 
-`createModelTool` reads the query model and generates two things:
-- A flat **Zod schema** — filters become `start_date_gte`, `status_in`; dimensions and metrics become enum arrays
-- A **`buildRequest`** function that reverses the flattening back into a nested query request
-
-The Vercel AI SDK's `tool()` takes a Zod schema and an execute function, so the two plug together directly.
+This plugs directly into the Vercel AI SDK's `tool()`.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -339,8 +312,6 @@ import { createModelTool } from "@514labs/moose-lib";
 import { tool } from "ai";
 import { visitMetrics } from "../query-layer/visits-model";
 
-// createModelTool derives the Zod schema from the query model's
-// dimensions, metrics, and filters
 const { schema, buildRequest } = createModelTool(visitMetrics);
 
 export const queryVisitsTool = tool({
@@ -360,12 +331,8 @@ export const queryVisitsTool = tool({
 from moose_lib import create_model_tool
 from app.query_layer.visits_model import visit_metrics
 
-# create_model_tool derives the schema from the query model's
-# dimensions, metrics, and filters
 model_tool = create_model_tool(visit_metrics)
 
-# Use with your AI framework of choice
-# The schema and build_request function plug into any tool-calling interface
 schema = model_tool.schema
 build_request = model_tool.build_request
 
@@ -378,7 +345,7 @@ async def execute_query(params: dict) -> list[dict]:
   </LanguageTabContent>
 </LanguageTabs>
 
-Then wire the tool into a chat route. This is where you add what `createModelTool` can't give you — the system prompt with domain context, the model choice, the streaming behavior:
+Wire the tool into a chat route. The query model handles parameter validation and SQL generation; the route handles system prompt, model selection, and streaming:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -408,9 +375,6 @@ export async function POST(req) {
 ```python filename="api/chat/route.py" copy
 from ai.tools import execute_query, schema
 
-# Wire the tool into your chat framework
-# The query model handles *what* can be queried;
-# you handle *how* it feels
 tools = {
     "query_visits": {
         "description": visit_metrics.description,
@@ -422,38 +386,13 @@ tools = {
   </LanguageTabContent>
 </LanguageTabs>
 
-User asks "how many no-shows did studio 5 have last week?" — the model calls:
-
-```json
-{
-  "studio_id": 5,
-  "dimensions": ["day"],
-  "metrics": ["noShows"],
-  "start_date_gte": "2025-02-17",
-  "start_date_lte": "2025-02-23"
-}
-```
-
-Same metric definition. Same generated SQL. But because the tool lives inside your app, you decide:
-
-- **The system prompt** — add domain context so the model maps "no-shows" to the right parameter
-- **The rendering** — table, chart, natural-language summary, or all three
-- **The guardrails** — `studio_id` is `required: true` in the model, so the model can't query across tenants
-- **The composition** — give the model multiple tools and let it chain them
-
-<Callout type="info" title="When to use this">
-Use AI SDK tool calls when you're building a **product** — you own the UX and need full control over the system prompt, rendering, and error handling. The tradeoff is that you build and maintain the integration, but you decide exactly what the experience feels like.
-</Callout>
+The query model's `required: true` filters (e.g., `studioId`) carry through to the generated Zod schema, so the LLM must provide them. The `description` from the query model becomes the tool description the LLM uses to decide when to call it.
 
 ---
 
-## MCP server: let everyone self-serve
+## `registerModelTools`: MCP server
 
-Your data engineer uses Claude Code. Your PM uses Claude Desktop. Your analyst uses Cursor. They all want to ask questions about visit data without writing SQL.
-
-You don't want to build a UI for each of them. You want to deploy one endpoint and let every client discover what's available.
-
-`registerModelTools` does the wiring for you. It calls `createModelTool` internally for each query model, registers the resulting tools on an MCP server, and handles the parameter flattening and request building. You provide the models and a callback that executes the query. Everything else — tool names, descriptions, parameter schemas — is derived from the model definitions.
+`registerModelTools` calls `createModelTool` internally for each query model and registers the resulting tools on an MCP server. You provide the models and a callback that executes the query. Tool names, descriptions, and parameter schemas are derived from the model definitions.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -471,7 +410,6 @@ export default async function handler(req, res) {
     version: "1.0.0",
   });
 
-  // One call registers all models as MCP tools
   registerModelTools(
     server,
     [visitMetrics, revenueMetrics, clientMetrics],
@@ -502,7 +440,6 @@ from app.query_layer.client_model import client_metrics
 
 server = Server("my-analytics")
 
-# One call registers all models as MCP tools
 register_model_tools(
     server,
     [visit_metrics, revenue_metrics, client_metrics],
@@ -516,61 +453,27 @@ register_model_tools(
   </LanguageTabContent>
 </LanguageTabs>
 
-Three models, three MCP tools, one function call. Any MCP client connects and discovers the tools:
+Any MCP client (Claude Desktop, Cursor, Claude Code) connects to the endpoint and discovers the registered tools:
 
 ```bash copy
 claude mcp add --transport http analytics https://my-app.com/mcp
 ```
 
-> "Show me no-shows by week for studio 5 in January"
+---
 
-Every MCP-compatible client — Claude Desktop, Cursor, Claude Code, custom agents — connects to the same endpoint and discovers the same tools with the same schemas.
+## Choosing an interface
 
-<Callout type="info" title="When to use this">
-Use MCP when you're building **infrastructure**, not a product. You don't control the UI, the system prompt, or which model the client uses. You just make the data available and let each consumer use it however they want. The tradeoff is that you give up control over the experience.
-</Callout>
+| Interface | Function | Use when |
+|---|---|---|
+| REST API | `buildQuery` | Consumer is code — dashboards, reports, cron jobs, integrations |
+| AI SDK | `createModelTool` | You need control over system prompt, rendering, and error handling |
+| MCP | `registerModelTools` | You want to expose tools to any MCP-compatible client without building a UI |
+
+All three can be used together. They read from the same query model.
 
 ---
 
-## Same model, every interface
-
-```
-                              +----------------+
-                              |  Query Model   |
-                              |                |
-                              |  dimensions    |
-                              |  metrics       |
-                              |  filters       |
-                              |  defaults      |
-                              +-------+--------+
-                                      |
-               +----------------------+----------------------+
-               |                      |                      |
-               v                      v                      v
-        +-----------+          +-----------+          +-----------+
-        | REST API  |          |  AI SDK   |          |    MCP    |
-        |           |          | tool calls|          |   server  |
-        | buildQuery|          | createModel          | register  |
-        |           |          | Tool      |          | ModelTools|
-        +-----+-----+         +-----+-----+          +-----+-----+
-              |                      |                      |
-              v                      v                      v
-        Dashboards             Your chat UI           Claude Desktop
-        Reports                Copilots               Cursor
-        Integrations           Embedded analysts      Claude Code
-```
-
-| Goal | Interface | You control the UX? | Best when... |
-|---|---|---|---|
-| Power a dashboard or report | REST API via `buildQuery` | N/A | The consumer is code that knows exactly what it wants |
-| Build a chat feature | AI SDK via `createModelTool` | Yes | You're shipping a product and need to own the experience |
-| Let everyone self-serve | MCP via `registerModelTools` | No | You want wide reach without building custom UIs |
-
-They compose. Use REST for the ops dashboard, embedded tools for the customer-facing chat, MCP for internal self-serve. All three read from the same query model.
-
----
-
-## Adding a new metric
+## Adding a metric
 
 Add `earlyCancels` to the query model:
 
@@ -599,34 +502,27 @@ metrics={
   </LanguageTabContent>
 </LanguageTabs>
 
-It immediately appears as:
-- A valid `metrics` parameter in the REST API
-- An enum option in the AI tool's Zod schema
-- A discoverable parameter in every MCP client
-
-No other files change. No schema to update. No tool definition to remember.
-
-One model. Every interface. Zero drift.
+The new metric is available as a `metrics` parameter in the REST API, an enum option in the AI tool's Zod schema, and a discoverable parameter in MCP. No other files change.
 
 ## Next steps
 
 <CTACards>
   <CTACard
-    title="Model your tables"
+    title="Tables"
     description="Define the ClickHouse schema that your query model reads from."
     ctaLink="/moosestack/olap/model-table"
     ctaLabel="Tables docs"
     badge={{ variant: "moose", text: "OLAP" }}
   />
   <CTACard
-    title="Build custom APIs"
+    title="Analytics API"
     description="Use the Api class for endpoints that need custom SQL beyond the query model."
     ctaLink="/moosestack/apis/analytics-api"
     ctaLabel="Analytics API docs"
     badge={{ variant: "moose", text: "APIs" }}
   />
   <CTACard
-    title="Use your web framework"
+    title="Web frameworks"
     description="Run Express, Fastify, or FastAPI inside the Moose runtime."
     ctaLink="/moosestack/app-api-frameworks"
     ctaLabel="Framework docs"
