@@ -1014,6 +1014,18 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             writeln!(output, " }},").unwrap();
         }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections: [").unwrap();
+            for proj in &table.projections {
+                writeln!(
+                    output,
+                    "        {{ name: {:?}, body: {:?} }},",
+                    proj.name, proj.body
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -1025,7 +1037,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::table::{
-        Column, ColumnType, EnumMember, Nested, OrderBy,
+        Column, ColumnType, EnumMember, Nested, OrderBy, TableProjection,
     };
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
@@ -1140,6 +1152,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1229,6 +1242,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1285,6 +1299,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1364,6 +1379,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1414,6 +1430,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1500,6 +1517,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1568,6 +1586,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1646,6 +1665,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1733,6 +1753,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1808,6 +1829,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1860,6 +1882,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -1931,6 +1954,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1996,6 +2020,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2013,6 +2038,81 @@ export const TaskTable = new OlapTable<Task>("Task", {
         assert!(
             result.contains("lifeCycle: LifeCycle.EXTERNALLY_MANAGED,"),
             "Expected ExternallyManaged lifecycle. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_projection_emission() {
+        let tables = vec![Table {
+            name: "Events".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "user_id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![TableProjection {
+                name: "proj_by_user".to_string(),
+                body: "SELECT * ORDER BY user_id".to_string(),
+            }],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        assert!(
+            result.contains("projections: ["),
+            "Output should contain projections array. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("proj_by_user"),
+            "Output should contain projection name. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("SELECT * ORDER BY user_id"),
+            "Output should contain projection body. Got: {}",
             result
         );
     }

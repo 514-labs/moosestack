@@ -54,7 +54,7 @@ fn templates_download_dir() -> PathBuf {
     path
 }
 
-fn template_file_archive(template_name: &str, template_version: &str) -> PathBuf {
+pub(crate) fn template_file_archive(template_name: &str, template_version: &str) -> PathBuf {
     let mut path = templates_download_dir();
     path.push(template_version);
     path.push(format!("{template_name}.tgz"));
@@ -91,7 +91,7 @@ async fn download_from_local(template_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn download(template_name: &str, template_version: &str) -> anyhow::Result<()> {
+pub(crate) async fn download(template_name: &str, template_version: &str) -> anyhow::Result<()> {
     // If we're in test mode (0.0.1), use local templates
     if template_version == "0.0.1" {
         return download_from_local(template_name).await;
@@ -150,7 +150,7 @@ fn unpack(template_name: &str, template_version: &str, target_dir: &PathBuf) -> 
     Ok(())
 }
 
-async fn download_and_unpack(
+pub(crate) async fn download_and_unpack(
     template_name: &str,
     template_version: &str,
     target_dir: &Path,

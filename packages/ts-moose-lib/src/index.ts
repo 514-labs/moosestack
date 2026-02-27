@@ -44,3 +44,5 @@ export {
   ClickHousePolygon,
   ClickHouseMultiPolygon,
 } from "./dataModels/types";
+
+export * from "./query-layer";

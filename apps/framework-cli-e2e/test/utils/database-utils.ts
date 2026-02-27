@@ -376,6 +376,33 @@ export const verifyTableIndexes = async (
 };
 
 /**
+ * Verifies that the given table has projections with the specified names present in its DDL
+ */
+export const verifyTableProjections = async (
+  tableName: string,
+  expectedProjectionNames: string[],
+  database?: string,
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const ddl = await getTableDDL(tableName, database);
+      const missing = expectedProjectionNames.filter(
+        (name) => !ddl.includes(`PROJECTION ${name}`),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing projections on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
+        );
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
+};
+
+/**
  * Lists all tables in the specified database (or current database if not specified)
  */
 export const getAllTables = async (database?: string): Promise<string[]> => {

@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
+use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
@@ -108,6 +108,18 @@ pub enum AtomicOlapOperation {
     DropTableIndex {
         table: Table,
         index_name: String,
+        dependency_info: DependencyInfo,
+    },
+    /// Add a projection to a table
+    AddTableProjection {
+        table: Table,
+        projection: TableProjection,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a projection from a table
+    DropTableProjection {
+        table: Table,
+        projection_name: String,
         dependency_info: DependencyInfo,
     },
     /// Set or change SAMPLE BY expression for a table
@@ -285,6 +297,24 @@ impl AtomicOlapOperation {
                 database: table.database.clone(),
                 cluster_name: table.cluster_name.clone(),
             },
+            AtomicOlapOperation::AddTableProjection {
+                table, projection, ..
+            } => SerializableOlapOperation::AddTableProjection {
+                table: table.name.clone(),
+                projection: projection.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::DropTableProjection {
+                table,
+                projection_name,
+                ..
+            } => SerializableOlapOperation::DropTableProjection {
+                table: table.name.clone(),
+                projection_name: projection_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
             } => SerializableOlapOperation::ModifySampleBy {
@@ -441,6 +471,16 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::DropTableIndex { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
+            AtomicOlapOperation::AddTableProjection { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropTableProjection { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
@@ -515,6 +555,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropTableIndex {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddTableProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableProjection {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifySampleBy {
@@ -863,6 +909,55 @@ fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
     plan
 }
 
+/// Process projection changes between two table definitions
+fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    let before_projections = &before.projections;
+    let after_projections = &after.projections;
+
+    for after_proj in after_projections {
+        if let Some(before_proj) = before_projections
+            .iter()
+            .find(|b| b.name == after_proj.name)
+        {
+            if before_proj != after_proj {
+                plan.teardown_ops
+                    .push(AtomicOlapOperation::DropTableProjection {
+                        table: before.clone(),
+                        projection_name: before_proj.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+                plan.setup_ops
+                    .push(AtomicOlapOperation::AddTableProjection {
+                        table: after.clone(),
+                        projection: after_proj.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+            }
+        } else {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableProjection {
+                    table: after.clone(),
+                    projection: after_proj.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+    for proj in before_projections {
+        if !after_projections.iter().any(|a| a.name == proj.name) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableProjection {
+                    table: before.clone(),
+                    projection_name: proj.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+
+    plan
+}
+
 /// Handle a table update by composing column and index changes
 fn handle_table_update(
     before: &Table,
@@ -871,6 +966,7 @@ fn handle_table_update(
 ) -> OperationPlan {
     let mut plan = handle_table_column_updates(before, after, column_changes);
     plan.combine(process_index_changes(before, after));
+    plan.combine(process_projection_changes(before, after));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {
@@ -1555,6 +1651,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1635,6 +1732,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1661,6 +1759,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1759,6 +1858,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1785,6 +1885,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1903,6 +2004,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2065,6 +2167,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2090,6 +2193,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2115,6 +2219,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2209,6 +2314,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2234,6 +2340,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2259,6 +2366,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2284,6 +2392,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2309,6 +2418,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2466,6 +2576,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2492,6 +2603,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2621,6 +2733,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2647,6 +2760,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2781,6 +2895,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2806,6 +2921,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3020,6 +3136,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3135,6 +3252,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3262,6 +3380,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3314,6 +3433,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3402,6 +3522,157 @@ mod tests {
             }
             _ => panic!("Expected AddTableColumn operation"),
         }
+    }
+
+    #[test]
+    fn test_process_projection_add() {
+        let before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let mut after = before.clone();
+        after.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert!(
+            plan.teardown_ops.is_empty(),
+            "Adding a projection should not produce teardown ops"
+        );
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableProjection { projection, .. }
+            if projection.name == "proj_by_user"
+        ));
+    }
+
+    #[test]
+    fn test_process_projection_remove() {
+        let mut before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+        before.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let after = Table {
+            projections: vec![],
+            ..before.clone()
+        };
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert!(
+            plan.setup_ops.is_empty(),
+            "Removing a projection should not produce setup ops"
+        );
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableProjection { projection_name, .. }
+            if projection_name == "proj_by_user"
+        ));
+    }
+
+    #[test]
+    fn test_process_projection_modify() {
+        let mut before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+        before.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id, timestamp".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        // Modified projection = drop old + add new
+        assert_eq!(plan.teardown_ops.len(), 1, "Should drop the old projection");
+        assert_eq!(plan.setup_ops.len(), 1, "Should add the new projection");
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableProjection { projection_name, .. }
+            if projection_name == "proj_by_user"
+        ));
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableProjection { projection, .. }
+            if projection.name == "proj_by_user" && projection.body.contains("timestamp")
+        ));
     }
 
     #[test]

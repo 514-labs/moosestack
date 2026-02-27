@@ -18,8 +18,8 @@ use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
-    Commands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs, KafkaCommands,
-    TemplateSubCommands, WorkflowCommands,
+    Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs,
+    KafkaCommands, TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
@@ -70,7 +70,7 @@ use crate::utilities::constants::{
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
-use crate::cli::commands::DbArgs;
+use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{
     db_pull, db_pull_from_remote, db_to_dmv2, prompt_user_for_remote_ch_http,
 };
@@ -1492,6 +1492,28 @@ pub async fn top_command_handler(
                 }
             }
         }
+        Commands::Component(component_args) => {
+            info!("Running component command");
+
+            let component_cmd = component_args.command.as_ref().unwrap();
+            match component_cmd {
+                ComponentSubCommands::List {} => {
+                    let capture_handle = crate::utilities::capture::capture_usage(
+                        ActivityType::ComponentListCommand,
+                        None,
+                        &settings,
+                        machine_id.clone(),
+                        HashMap::new(),
+                    );
+
+                    let result = routines::components::list_components(CLI_VERSION);
+
+                    wait_for_usage_capture(capture_handle).await;
+
+                    result
+                }
+            }
+        }
         Commands::Db(DbArgs {
             command:
                 DbCommands::Pull {
@@ -1678,6 +1700,28 @@ pub async fn top_command_handler(
                 *prettify,
             )
             .await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
+        Commands::Add { component } => {
+            info!("Running add command");
+
+            let component_name = match &component {
+                AddComponent::McpServer(_) => "mcp-server",
+                AddComponent::Chat(_) => "chat",
+            };
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::AddCommand,
+                None,
+                &settings,
+                machine_id.clone(),
+                HashMap::from([("component".to_string(), component_name.to_string())]),
+            );
+
+            let result = routines::components::add_component(component).await;
 
             wait_for_usage_capture(capture_handle).await;
 

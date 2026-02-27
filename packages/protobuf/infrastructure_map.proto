@@ -178,8 +178,11 @@ message Table {
   // Used to detect settings changes without storing plaintext sensitive values
   optional string table_settings_hash = 20;
 
+  // Optional table projections for alternative data ordering within parts
+  repeated TableProjection projections = 21;
+
   // Per-table filter for `moose seed clickhouse`
-  optional SeedFilter seed_filter = 21;
+  optional SeedFilter seed_filter = 22;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -214,6 +217,11 @@ message SeedFilter {
   optional string where_clause = 2;
 }
 
+// DB-neutral representation of a table projection
+message TableProjection {
+  string name = 1;
+  string body = 2;
+}
 message Dmv1View {
   string name = 1;
   string version = 2;

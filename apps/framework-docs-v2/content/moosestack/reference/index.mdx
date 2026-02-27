@@ -168,6 +168,12 @@ interface BaseOlapConfig<T> {
   // Optional settings for table configuration
   settings?: { [key: string]: string };
 
+  // Optional secondary/data-skipping indexes
+  indexes?: TableIndex[];
+
+  // Optional projections for alternative data ordering within parts
+  projections?: TableProjection[];
+
   // Optional lifecycle mode (defaults to MOOSE_MANAGED)
   lifeCycle?: LifeCycle;
 
@@ -195,6 +201,8 @@ class OlapConfig(BaseModel):
         where: Optional[str] = None
 
     seed_filter: Optional[SeedFilter] = None  # Per-table filter for `moose seed clickhouse`
+    indexes: list[OlapConfig.TableIndex] = []  # Secondary indexes
+    projections: list[OlapConfig.TableProjection] = []  # Projections for alternative ordering
 ```
   </LanguageTabContent>
 </LanguageTabs>

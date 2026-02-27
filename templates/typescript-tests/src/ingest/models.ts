@@ -469,6 +469,30 @@ export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
   ],
 });
 
+// =======Projection Extraction Test Table=======
+export interface ProjectionTest {
+  id: Key<string>;
+  userId: string;
+  timestamp: DateTime;
+  value: number;
+}
+
+export const ProjectionTestTable = new OlapTable<ProjectionTest>(
+  "ProjectionTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
+    projections: [
+      { name: "proj_by_user", body: "SELECT _part_offset ORDER BY userId" },
+      { name: "proj_by_ts", body: "SELECT _part_offset ORDER BY timestamp" },
+      {
+        name: "proj_fields",
+        body: "SELECT id, userId, timestamp ORDER BY userId",
+      },
+    ],
+  },
+);
+
 /** =======Real-World Production Patterns (District Cannabis Inspired)========= */
 
 /** Test 8: Complex discount structure with mixed nullability */
