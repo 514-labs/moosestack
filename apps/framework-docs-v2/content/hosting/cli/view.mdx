@@ -1,0 +1,48 @@
+---
+title: view
+description: List view resources for a deployment.
+order: 17
+---
+
+# 514 view
+
+Use `514 view` to list view resources in a deployment.
+
+Plural alias also works: `514 views`.
+
+## Usage
+
+```bash
+514 view [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 view list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--project <PROJECT>`: Project context if not running in a linked repository.
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+514 view list dep_abc123 --project my-org/my-project
+514 views list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

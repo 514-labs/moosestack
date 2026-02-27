@@ -1,0 +1,48 @@
+---
+title: function
+description: List function resources for a deployment.
+order: 13
+---
+
+# 514 function
+
+Use `514 function` to list function resources in a deployment.
+
+Plural alias also works: `514 functions`.
+
+## Usage
+
+```bash
+514 function [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 function list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--project <PROJECT>`: Project context if not running in a linked repository.
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+514 function list dep_abc123 --project my-org/my-project
+514 functions list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

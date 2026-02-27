@@ -1,0 +1,48 @@
+---
+title: stream-to-table-sync
+description: List stream-to-table sync resources for a deployment.
+order: 14
+---
+
+# 514 stream-to-table-sync
+
+Use `514 stream-to-table-sync` to list stream-to-table sync resources in a deployment.
+
+Plural alias also works: `514 stream-to-table-syncs`.
+
+## Usage
+
+```bash
+514 stream-to-table-sync [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 stream-to-table-sync list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--project <PROJECT>`: Project context if not running in a linked repository.
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Examples
+
+```bash
+514 stream-to-table-sync list dep_abc123 --project my-org/my-project
+514 stream-to-table-syncs list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

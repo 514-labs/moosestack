@@ -1,57 +1,49 @@
 ---
-title: setup
-description: Bootstrap a local agent workspace from an existing cloud OLAP project with 514 setup.
+title: project setup
+description: Bootstrap a local workspace from an existing cloud project.
 order: 2
 ---
 
-# 514 setup
+# 514 project setup
 
-Use `514 setup <PROJECT_REF>` to bootstrap a local workspace from an existing Fiveonefour project.
-
-This command is the main provisioning step in the CLI agent harness: it verifies cloud access, prepares local git state, and creates a runnable workspace that stays aligned with the hosted project lifecycle.
+Use `514 project setup <PROJECT_REF>` to bootstrap a local workspace from an existing Fiveonefour project.
 
 ## Syntax
 
 ```bash
-514 setup [OPTIONS] <PROJECT_REF>
+514 project setup [OPTIONS] <PROJECT_REF>
 ```
 
 ## Arguments
 
-- `<PROJECT_REF>`: Project reference as `<org>/<project>`, project name, project ID, or Boreal URL.
+- `<PROJECT_REF>`: Project reference as `<org>/<project>`, project name, project ID, or 514 URL.
 
 ## Options
 
-- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
-- `--path <dir>`: Parent directory for clone destination.
-- `--dir-name <name>`: Local directory name override.
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--path <PATH>`: Parent directory for clone.
+- `--dir-name <DIR_NAME>`: Local folder name override.
 - `-o, --org <ORG>`: Organization name or ID.
-- `--branch <name>`: Branch name to create.
-- `--no-branch`: Skip branch creation.
-- `--push`: Push created branch.
+- `--branch <BRANCH>`: Feature branch name to create.
 - `--json`: Output as JSON.
+- `--no-branch`: Skip branch creation.
 - `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
-- `--run <install|dev|both|skip>`: Choose local follow-up action.
-- `--yes`: Auto-confirm safe prompts.
-- `--no-input`: Disable prompts and fail fast if required input is missing.
+- `--push`: Push branch after creation.
+- `--run <RUN>`: Local setup action (`install`, `both`, or `skip`).
+- `--yes`: Skip confirmations when safe.
+- `--no-input`: Disable prompts; fail fast if input is needed (implies `--yes`).
+- `-h, --help`: Print help.
 
-## Interactive Example
+## Interactive example
 
 ```bash
-514 setup acme/analytics-api
+514 project setup acme/analytics-api
 ```
 
-Expected flow:
-- Checks auth, git, project access, and remote readiness.
-- Prompts for destination path and folder name.
-- Shows planned git commands before mutating actions.
-- Optionally creates and pushes branch.
-- Optionally runs local setup actions so you can execute workloads immediately.
-
-## Non-Interactive Example
+## Non-interactive example
 
 ```bash
-514 setup acme/analytics-api \
+514 project setup acme/analytics-api \
   --path ~/dev \
   --dir-name analytics-api \
   --branch feature/add-orders-rollup \
@@ -61,18 +53,11 @@ Expected flow:
   --no-input
 ```
 
-## Output Model
-
-- Check-only output: preflight validations with no mutation.
-- Planned commands: explicit command preview before running.
-- Mutating commands: clone, branch creation, and push actions.
-- Post-action verification: final paths, branch, and cloud preview route checks.
-
 ## Related
 
 - [`514 auth`](/hosting/cli/auth)
-- [`514 orgs`](/hosting/cli/orgs)
-- [`514 projects`](/hosting/cli/projects)
-- [`514 link`](/hosting/cli/link)
-- [`514 update`](/hosting/cli/update)
+- [`514 org`](/hosting/cli/orgs)
+- [`514 project`](/hosting/cli/projects)
+- [`514 project link`](/hosting/cli/link)
+- [`514 cli update`](/hosting/cli/update)
 - [Setup failures](/hosting/troubleshooting/setup-failures)

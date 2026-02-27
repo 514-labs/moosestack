@@ -1,24 +1,30 @@
 ---
-title: cli update
-description: Update installed CLI binaries.
-order: 6
+title: cli
+description: Manage installed CLI binaries.
+order: 9
 ---
 
-# 514 cli update
+# 514 cli
 
-Use `514 cli update` to update installed CLI binaries.
+Use `514 cli` for local CLI binary management operations.
 
 ## Usage
+
+```bash
+514 cli [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### Update
+
+Update installed CLIs (`514` and/or `moose`).
 
 ```bash
 514 cli update [OPTIONS] [TARGET]
 ```
 
-## Arguments
-
-- `[TARGET]`: CLI target to update. Omit to update both.
-  - `514`
-  - `moose`
+See the dedicated page: [`514 cli update`](/hosting/cli/update).
 
 ## Options
 
@@ -31,18 +37,12 @@ Use `514 cli update` to update installed CLI binaries.
 ## Examples
 
 ```bash
-# Update both CLIs
 514 cli update
-
-# Update only 514 CLI
 514 cli update 514
-
-# Update only moose CLI
 514 cli update moose
 ```
 
 ## Related
 
 - [`514 --help`](/hosting/cli)
-- [`514 auth`](/hosting/cli/auth)
-- [`514 project`](/hosting/cli/projects)
+- [`514 cli update`](/hosting/cli/update)
