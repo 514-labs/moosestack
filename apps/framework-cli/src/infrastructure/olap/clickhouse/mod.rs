@@ -302,22 +302,35 @@ pub enum IgnorableOperation {
     IgnoreStringLowCardinalityDifferences,
 }
 
-impl IgnorableOperation {
-    pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
-        matches!(
-            (self, op),
-            (
-                Self::ModifyTableTtl,
-                SerializableOlapOperation::ModifyTableTtl { .. }
-            )
-        )
+/// Recursively normalizes a column by stripping ignored fields.
+///
+/// Strips LowCardinality annotations (when `strip_low_cardinality` is true) and
+/// column TTL (when `strip_ttl` is true). Recurses into `Nested` column types
+/// so that nested columns are also normalized.
+fn normalize_column(column: &mut Column, strip_low_cardinality: bool, strip_ttl: bool) {
+    if strip_ttl {
+        column.ttl = None;
+    }
+
+    if strip_low_cardinality && column.data_type == ColumnType::String {
+        column
+            .annotations
+            .retain(|(key, _)| key != "LowCardinality");
+    }
+
+    if let ColumnType::Nested(ref mut nested) = column.data_type {
+        for nested_col in &mut nested.columns {
+            normalize_column(nested_col, strip_low_cardinality, strip_ttl);
+        }
     }
 }
 
 /// Normalizes a table by stripping fields that should be ignored during comparison.
 ///
 /// This prevents the diff strategy from detecting changes in ignored fields and
-/// generating unnecessary drop+create operations.
+/// generating unnecessary drop+create operations. Recursively normalizes nested
+/// columns so that a single call produces a fully normalized table suitable for
+/// plain equality comparison.
 ///
 /// # Arguments
 /// * `table` - The table to normalize
@@ -332,31 +345,21 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
 
     let mut normalized = table.clone();
 
-    // Strip table-level TTL if ignored
     if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
         normalized.table_ttl_setting = None;
     }
 
-    // Strip partition_by if ignored
     if ignore_ops.contains(&IgnorableOperation::ModifyPartitionBy) {
         normalized.partition_by = None;
     }
 
-    // Strip column-level TTL if ignored
-    if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
-        for column in &mut normalized.columns {
-            column.ttl = None;
-        }
-    }
+    let strip_ttl = ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl);
+    let strip_low_cardinality =
+        ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences);
 
-    // Strip LowCardinality annotations if ignored (only for String-typed columns)
-    if ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences) {
+    if strip_ttl || strip_low_cardinality {
         for column in &mut normalized.columns {
-            if column.data_type == ColumnType::String {
-                column
-                    .annotations
-                    .retain(|(key, _)| key != "LowCardinality");
-            }
+            normalize_column(column, strip_low_cardinality, strip_ttl);
         }
     }
 
