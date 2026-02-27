@@ -428,6 +428,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/apis/semantic-layer",
+        title: "Semantic Layer",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/apis/trigger-api",
         title: "Workflow Trigger",
         languages: ["typescript", "python"],

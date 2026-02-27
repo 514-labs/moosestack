@@ -428,6 +428,10 @@ ORDER BY (id, timestamp)
 Query column comments using `SELECT name, comment FROM system.columns WHERE table = 'user_events'` or `DESCRIBE TABLE user_events FORMAT Vertical`.
 </Callout>
 
+<Callout type="info" title="Column comments power AI tools">
+These comments also surface in Moose's MCP tools and [semantic layer](/moosestack/apis/semantic-layer). When an AI agent calls `get_data_catalog` in `detailed` mode, it sees each column's name, ClickHouse type, nullability, **and comment** — so when it encounters `status: Float64` it also reads "1 = attended, 2 = no-show, 3 = late cancel, 4 = early cancel" and knows how to filter correctly. The comments you write in your data model are the documentation AI reads at query time.
+</Callout>
+
 ### Database Selection
 
 By default, tables are created in the database specified in your `moose.config.toml` ClickHouse configuration. You can override this on a per-table basis using the `database` field:
