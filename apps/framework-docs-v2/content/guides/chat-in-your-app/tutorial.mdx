@@ -602,12 +602,13 @@ After `moose add chat` completes, follow the printed "Next steps":
 
 ```tsx
 import { ChatLayoutWrapper } from "@/components/layout/chat-layout-wrapper";
+import { ThemeProvider } from "@/components/theme-provider";
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="dark">
+        <ThemeProvider attribute="class">
           <ChatLayoutWrapper>{children}</ChatLayoutWrapper>
         </ThemeProvider>
       </body>
