@@ -165,6 +165,7 @@ pub mod auth;
 pub mod build;
 pub mod clean;
 pub mod code_generation;
+pub mod components;
 pub mod dev;
 pub mod docker_packager;
 pub(crate) mod docs;
