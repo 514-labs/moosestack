@@ -1,0 +1,257 @@
+---
+title: February 28, 2026
+description: Release notes for February 28, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 28, 2026
+
+Moose introduces the new `moose add` command for streamlined component installation and a Semantic Layer API that defines metrics and dimensions once while exposing them across REST APIs, AI tools, and MCP interfaces. Fiveonefour Hosting launches comprehensive query analysis dashboards with performance filtering and adds environment variable support for deployments with secure masking and organizational precedence.
+
+<Callout type="info" title="Highlights">
+* **New:** Component installation via moose add command
+* **New:** Semantic Layer API for metrics and dimensions
+* **New:** Build log copy functionality
+* **New:** CLI deployment and infrastructure commands
+</Callout>
+## Moose
+
+### New Features
+
+**Component installation via moose add command** ([@DatGuyJonathan](https://github.com/DatGuyJonathan), [@okane16](https://github.com/okane16))
+  New `moose add` command installs pre-built components (MCP server, chat panel) into existing projects with manifest-driven file copying and dependency management. Updated tutorials and integration guides use streamlined `moose add` workflow instead of manual setup.
+
+  ```bash
+  # Add MCP server to existing MooseStack service
+  moose add mcp-server --dir packages/moosestack-service
+  
+  # Add chat UI to Next.js frontend  
+  moose add chat --dir packages/web-app
+  
+  # Generate API key for authentication
+  moose generate hash-token
+  
+  # Output:
+  # ENV API Key: $2b$10$... (add to .env.local as MCP_API_KEY)
+  # Bearer Token: eyJ0eXAi... (add to .env.local as MCP_API_TOKEN)
+  
+  # Start development servers
+  pnpm run dev
+  ```
+
+  Docs: [Moose CLI](/moosestack/moose-cli)
+
+**Semantic Layer API for metrics and dimensions** ([@oatsandsugar](https://github.com/oatsandsugar), [@georgevanderson](https://github.com/georgevanderson))
+  New Semantic Layer API defines metrics, dimensions, and filters once and exposes them as REST APIs, AI SDK tool calls, and MCP tools. Includes type-safe query modeling with composable helpers, fluent SQL builders, and validation utilities.
+
+  ```typescript
+  import { defineQueryModel, buildQuery, count, sum, sql } from "@514labs/moose-lib";
+  import { OrdersTable } from "../datamodels/orders";
+  
+  // Define metrics and dimensions once
+  export const orderMetrics = defineQueryModel({
+    name: "query_orders",
+    description: "Order analytics: revenue, count, avg order value by time/region",
+    table: OrdersTable,
+    
+    dimensions: {
+      region: { column: "region" },
+      day: { column: "created_at", timeGrain: "day" },
+    },
+    
+    metrics: {
+      totalOrders: { agg: count(), as: "totalOrders" },
+      revenue: { agg: sum(OrdersTable.columns.amount), as: "revenue" },
+      avgOrderValue: { agg: sql`avg(amount)`, as: "avgOrderValue" },
+    },
+    
+    filters: {
+      region: { column: "region", operators: ["eq", "in"] as const },
+      createdAt: { column: "created_at", operators: ["gte", "lte"] as const },
+    },
+    
+    defaults: { dimensions: ["day"], metrics: ["totalOrders", "revenue"] },
+  });
+  
+  // Use in REST API
+  export const ordersApi = async (params: { region?: string, start?: string }) => {
+    return await buildQuery(orderMetrics)
+      .dimensions(["day", "region"])
+      .metrics(["totalOrders", "revenue"])
+      .filter("region", "eq", params.region)
+      .filter("createdAt", "gte", params.start)
+      .execute(client.query);
+  };
+  ```
+
+  Docs: [Semantic Layer](/moosestack/apis/semantic-layer)
+
+**Seed filtering configuration for OLAP tables** ([@phiSgr](https://github.com/phiSgr))
+  OLAP tables can specify `seedFilter` with `limit` and `where` clauses to control data seeding from remote sources. CLI flags `--limit` and `--all` override table-level settings.
+
+  ```typescript
+  import { OlapTable } from "@514labs/moose-lib";
+  
+  interface GitCommit {
+    hash: string;
+    author: string;
+    files_added: number;
+    message: string;
+    timestamp: Date;
+  }
+  
+  // Configure seed filtering for OLAP table
+  export const commitsTable = new OlapTable<GitCommit>("commits", {
+    columns: {
+      hash: "String",
+      author: "String", 
+      files_added: "UInt32",
+      message: "String",
+      timestamp: "DateTime"
+    },
+    // Seed only 100 rows matching the WHERE condition
+    seedFilter: {
+      limit: 100,
+      where: "author = 'torvalds' AND files_added > 5"
+    }
+  });
+  
+  // CLI usage:
+  // moose seed clickhouse --table commits                    # Uses seedFilter config
+  // moose seed clickhouse --table commits --limit 50        # Overrides limit to 50
+  // moose seed clickhouse --table commits --all             # Ignores all limits
+  ```
+
+  Docs: [Model Table](/moosestack/olap/model-table)
+
+**ClickHouse projection support with _part_offset** ([@LucioFranco](https://github.com/LucioFranco))
+  Adds projection support for alternative data ordering within table parts. Projects store data in different sort orders or pre-aggregated forms to speed up queries on non-primary-key columns.
+
+  ```typescript
+  // models.ts
+  import { Table } from '@514labs/moose-lib';
+  
+  @Table()
+  export interface UserEvents {
+    id: Key<string>;
+    userId: string;
+    timestamp: DateTime;
+    eventType: string;
+    value: number;
+  }
+  
+  // Define projections for alternative data ordering
+  export const UserEventsProjections = {
+    // Query by userId without full table scan
+    proj_by_user: "SELECT _part_offset ORDER BY userId",
+    
+    // Query by timestamp efficiently
+    proj_by_ts: "SELECT _part_offset ORDER BY timestamp",
+    
+    // Pre-aggregated view for analytics
+    proj_aggregated: "SELECT userId, sum(value) as total ORDER BY userId"
+  };
+  ```
+
+  Docs: [Projections](/moosestack/olap/projections)
+
+**Data lineage tracking for APIs and web apps** ([@callicles](https://github.com/callicles))
+  Automatically tracks which infrastructure components APIs and web apps read from and write to, enabling dependency analysis, impact assessment, and data flow visualization.
+
+  Docs: [Apis](/moosestack/apis)
+
+**ClickHouse Merge table engine support** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Added support for Merge engine tables that dynamically query across multiple tables matching a pattern, enabling data aggregation from source tables with matching names.
+
+  ```typescript
+  // models/MergeTest.ts
+  import { Table, ClickHouseTypes as CHT, TableOptions } from '@514labs/moose-lib';
+  
+  export interface MergeSourceA {
+    id: CHT.UInt32;
+    name: CHT.String;
+    created_at: CHT.DateTime;
+  }
+  
+  export interface MergeSourceB {
+    id: CHT.UInt32;
+    name: CHT.String;
+    created_at: CHT.DateTime;
+  }
+  
+  // Merge table that queries across all MergeSource* tables
+  export interface MergeTest {
+    id: CHT.UInt32;
+    name: CHT.String;
+    created_at: CHT.DateTime;
+  }
+  
+  export default {
+    engine: 'Merge',
+    sourceDatabase: 'currentDatabase()', // Resolves to actual DB name
+    tablesRegexp: '^MergeSource.*',
+  } as TableOptions;
+  ```
+
+  Docs: [Merge](/moosestack/engines/merge)
+
+**Cookie consent management system** ([@georgevanderson](https://github.com/georgevanderson))
+  GDPR-compliant cookie banner with customizable analytics and marketing consent preferences. Users can accept all, reject all, or granularly control tracking permissions with persistent storage.
+
+  *[Screenshot needed]*
+
+### Improvements
+
+- Migration ignore for LowCardinality String differences: New ignore operation suppresses migration warnings when column types differ only by LowCardinality wrapper, reducing noise when ClickHouse automatically optimizes String columns. ([@hh2110](https://github.com/hh2110)) Docs: [Migrations](/moosestack/configuration/migrations)
+- Documentation improvements and CLI updates: Updated CLI documentation with new command structure and agent commands. Enhanced search includes page headings with --expand flag. Added GitHub edit links in sidebar, fixed API reference headings in TOC, and included WSL performance warnings. ([@callicles](https://github.com/callicles) + 3 others) Docs: [Agent](/hosting/cli/agent)
+- TypeScript compilation and version compatibility: Docker packaging honors custom tsconfig outDir settings. CLI validates @514labs/moose-lib version matches CLI version before running commands to prevent runtime errors. ([@phiSgr](https://github.com/phiSgr)) Docs: [Typescript](/moosestack/configuration/typescript)
+
+### Bug Fixes
+
+- Fix page scroll for MCP chat component: Fixed layout overflow issue that prevented proper scrolling in the chat interface. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Ai](/ai)
+- Fix aggregation function Merge suffix placement: Fixes -Merge suffix placement for aggregation functions with parameters (e.g., quantile(0.5) becomes quantileMerge(0.5) instead of quantile(0.5)Merge). ([@phiSgr](https://github.com/phiSgr)) Docs: [Aggregates](/moosestack/data-types/aggregates)
+- Fix ClickHouse SQL parameter handling and DDL parsing: Fixes SQL parameter ordering and column property parsing in ClickHouse DDL operations, resolving issues with comment and codec combinations in table migrations. ([@phiSgr](https://github.com/phiSgr)) Docs: [Migrate](/moosestack/migrate)
+- Fix config file handling with read-only permissions: Gracefully handles externally-managed config files by skipping writes instead of failing. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
+- Fix configurable ClickHouse native port in Docker Compose: Fixed Docker Compose to respect the configured native_port instead of hardcoding 9000. ([@514Ben](https://github.com/514Ben)) Docs: [Clickhouse](/moosestack/configuration/clickhouse)
+- Fix Redis port extraction from URL for Docker compose: Docker compose now correctly uses port from Redis URL instead of separate port field for host binding. ([@514Ben](https://github.com/514Ben)) Docs: [Redis](/moosestack/configuration/redis)
+- Fix MCP server reconnection stability: Fixes connection drops between IDE and Moose dev server by upgrading RMCP version and disabling stateful mode. ([@callicles](https://github.com/callicles)) Docs: [Moosedev MCP](/moosestack/moosedev-mcp)
+
+## Fiveonefour Hosting
+
+### New Features
+
+**Build log copy functionality** ([@onelesd](https://github.com/onelesd))
+  Copy button for build logs table allows users to copy all formatted logs with timestamps, step names, and content to clipboard. Feature behind experimental flag.
+
+**CLI deployment and infrastructure commands** ([@callicles](https://github.com/callicles))
+  New CLI commands for fetching infrastructure maps and listing deployments. Infrastructure maps show resources and relationships with filtering. Deploy listing includes branch, status filtering, and pagination with deployment metadata.
+
+**Query analysis dashboard and filtering** ([@groy-514](https://github.com/groy-514))
+  Comprehensive query analysis dashboard with performance metrics, column sorting, and filtering by duration, row counts, bytes, memory, and query types. Includes tabs for failed queries, slow queries, query patterns, and distribution analytics. Fixed type safety for numeric field formatters.
+
+  *[Screenshot needed]*
+
+**Automatic MCP token generation for templates** ([@onelesd](https://github.com/onelesd))
+  Projects created from templates automatically generate MCP authentication tokens during setup using PBKDF2 hashing, eliminating external Moose CLI requirements.
+
+**Environment variables in deployments** ([@onelesd](https://github.com/onelesd))
+  Deploy projects with custom environment variables set through console. Variables are securely masked in build logs, validated against system-reserved keys, and support multiline values. Environment variables resolve with org → project → branch precedence and are passed to GitHub workflow dispatches during deployment.
+
+**Vercel deployment synchronization** ([@georgevanderson](https://github.com/georgevanderson))
+  Vercel deployments now wait for Moose application deployment completion, preventing race conditions where frontend deployments complete before backend data infrastructure is ready.
+
+**GDPR-compliant cookie consent system** ([@georgevanderson](https://github.com/georgevanderson))
+  Implements cookie consent management with automated consent for authenticated users and consent banners for visitors. Gates Google Tag Manager, marketing scripts, and telemetry tracking.
+
+### Improvements
+
+- CLI consistency and authentication improvements: Standardized project identifiers as positional args for single-object commands. Enhanced session validation with clearer error messages for invalid API keys. Updated branding from 'Boreal' to '514' throughout CLI. ([@callicles](https://github.com/callicles), [@LucioFranco](https://github.com/LucioFranco))
+- Enhanced repository import empty state: Improved empty state when no Moose project is found, now includes TypeScript/Python setup commands with copy buttons and getting started documentation link. ([@okane16](https://github.com/okane16))
+
+### Bug Fixes
+
+- Fix build log pagination limit: Added missing pagination limit to build logs fetch to prevent incomplete log display. ([@LucioFranco](https://github.com/LucioFranco))
+- Fix read-only config file handling: Install script prevents errors when config.toml is read-only by checking write permissions before modifying. ([@LucioFranco](https://github.com/LucioFranco))
+
+
