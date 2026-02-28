@@ -43,6 +43,18 @@ export interface ResponseBody {
   topicStats: TopicStats[];
 }
 
+interface RawTopicStats {
+  topic: string;
+  eventCount: string;
+  uniqueRepos: string;
+  uniqueUsers: string;
+}
+
+interface RawResponseBody {
+  time: string;
+  topicStats: RawTopicStats[];
+}
+
 // Consumption API to get a timeseries of the top `n` topics over a given interval
 async function getTopicTimeseries(
   { interval = "minute", limit = 10, exclude = "" }: QueryParams,
@@ -112,8 +124,18 @@ async function getTopicTimeseries(
             ORDER BY time;
         `;
 
-  const resultSet = await client.query.execute<ResponseBody>(query);
-  return await resultSet.json();
+  const resultSet = await client.query.execute<RawResponseBody>(query);
+  const rows = await resultSet.json();
+
+  return rows.map((row) => ({
+    time: row.time,
+    topicStats: row.topicStats.map((topicStat) => ({
+      topic: topicStat.topic,
+      eventCount: Number(topicStat.eventCount),
+      uniqueRepos: Number(topicStat.uniqueRepos),
+      uniqueUsers: Number(topicStat.uniqueUsers),
+    })),
+  }));
 }
 
 export const topicTimeseriesApi = new Api<QueryParams, ResponseBody[]>(
