@@ -53,7 +53,7 @@ This week Moose ships the new `moose add` command for streamlined component inst
     
     dimensions: {
       region: { column: "region" },
-      day: { column: "created_at", timeGrain: "day" },
+      day: { expression: sql`toDate(created_at)`, as: "day" },
     },
     
     metrics: {
