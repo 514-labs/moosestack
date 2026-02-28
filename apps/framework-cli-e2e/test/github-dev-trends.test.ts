@@ -97,7 +97,7 @@ async function setupGithubDevTrendsProject(projectDir: string): Promise<void> {
 
 describe("github-dev-trends template", () => {
   let devProcess: ChildProcess | null = null;
-  let TEST_PROJECT_DIR: string;
+  let TEST_PROJECT_DIR = "";
 
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -116,6 +116,11 @@ describe("github-dev-trends template", () => {
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
+
+    if (!TEST_PROJECT_DIR) {
+      return;
+    }
+
     await cleanupTestSuite(
       devProcess,
       TEST_PROJECT_DIR,
