@@ -53,6 +53,11 @@ import {
   type DependencyAnalysisResult,
   type InfrastructureSignatureJson,
 } from "./dependencyAnalysis";
+import {
+  buildCanonicalLineageTableId,
+  resolveDefaultLineageDatabase,
+  resolveLineageDatabase,
+} from "./lineageTableId";
 import { findSourceFiles } from "./utils";
 
 /**
@@ -1062,28 +1067,19 @@ function convertTableConfigToEngineConfig(
   return undefined;
 }
 
-const DEFAULT_DATABASE_ENV_VAR = "MOOSE_DEFAULT_DATABASE";
-
-function resolveDefaultDatabaseForLineage(): string {
-  const configured = process.env[DEFAULT_DATABASE_ENV_VAR]?.trim();
-  return configured && configured.length > 0 ? configured : "local";
-}
-
 function buildCanonicalTableLineageId(
   table: OlapTable<any>,
   defaultDatabase: string,
 ): string {
-  const database =
-    (
-      typeof table.config.database === "string" &&
-      table.config.database.trim().length > 0
-    ) ?
-      table.config.database.trim()
-    : defaultDatabase;
-  const versionSuffix = table.config.version?.replace(/\./g, "_");
-  return versionSuffix ?
-      `${database}_${table.name}_${versionSuffix}`
-    : `${database}_${table.name}`;
+  const database = resolveLineageDatabase(
+    table.config.database,
+    defaultDatabase,
+  );
+  return buildCanonicalLineageTableId(
+    table.name,
+    table.config.version,
+    database,
+  );
 }
 
 export const toInfraMap = (registry: MooseInternalRegistry) => {
@@ -1097,7 +1093,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
   const lineage = getCachedLineage(registry);
-  const defaultDatabaseForLineage = resolveDefaultDatabaseForLineage();
+  const defaultDatabaseForLineage = resolveDefaultLineageDatabase();
 
   registry.tables.forEach((table) => {
     const id =

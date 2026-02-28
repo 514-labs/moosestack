@@ -141,7 +141,7 @@ describe("Lineage Analysis", function () {
   });
 
   it("infers pulls_data_from for compiled-style sql(...) calls", () => {
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     interface ApiResponse {
       id: string;
@@ -171,7 +171,7 @@ describe("Lineage Analysis", function () {
   });
 
   it("infers pulls_data_from from sql table-name fragments", () => {
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     interface ApiResponse {
       id: string;
@@ -206,7 +206,7 @@ describe("Lineage Analysis", function () {
   });
 
   it("uses explicit table database in canonical lineage ids", () => {
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
     interface ApiResponse {
       id: string;
     }
@@ -283,7 +283,7 @@ describe("Lineage Analysis", function () {
       version: "0.0",
     });
 
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     const handler = async (_params: QueryParams, { client }: any) => {
       const tableName = sql`LineagePipelineSqlAlias_0_0`;

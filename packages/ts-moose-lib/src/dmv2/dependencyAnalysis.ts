@@ -1,10 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import ts from "typescript";
 
 import { getSourceDir } from "../compiler-config";
 import { compilerLog } from "../commons";
+import {
+  buildCanonicalLineageTableId,
+  inferVersionFromRegistryId,
+  normalizeLineageVersion,
+  resolveDefaultLineageDatabase,
+  resolveLineageDatabase,
+} from "./lineageTableId";
 import { findSourceFiles, isSourceFilePath } from "./utils";
 
 type SignatureKind =
@@ -69,39 +75,6 @@ interface AnalysisContext {
 }
 
 const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
-const DEFAULT_DATABASE_ENV_VAR = "MOOSE_DEFAULT_DATABASE";
-
-function resolveDefaultDatabase(): string {
-  const configured = process.env[DEFAULT_DATABASE_ENV_VAR]?.trim();
-  return configured && configured.length > 0 ? configured : "local";
-}
-
-function versionToSuffix(version: string | undefined): string | undefined {
-  return version ? version.replace(/\./g, "_") : undefined;
-}
-
-function inferVersionFromRegistryId(
-  tableName: string,
-  registryId: string,
-): string | undefined {
-  const prefix = `${tableName}_`;
-  if (!registryId.startsWith(prefix)) {
-    return undefined;
-  }
-  const suffix = registryId.slice(prefix.length);
-  return suffix.length > 0 ? suffix : undefined;
-}
-
-function buildCanonicalTableId(
-  tableName: string,
-  version: string | undefined,
-  database: string,
-): string {
-  const versionSuffix = versionToSuffix(version);
-  return versionSuffix ?
-      `${database}_${tableName}_${versionSuffix}`
-    : `${database}_${tableName}`;
-}
 
 function addAlias(
   aliasMap: Map<string, string[]>,
@@ -126,7 +99,7 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
   const topicIdsByName = new Map<string, string[]>();
   const tableIds = new Set<string>();
   const topicIds = new Set<string>();
-  const defaultDatabase = resolveDefaultDatabase();
+  const defaultDatabase = resolveDefaultLineageDatabase();
 
   registry.tables.forEach((table: any, id: string) => {
     const tableName = typeof table?.name === "string" ? table.name : id;
@@ -135,14 +108,15 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
         table.config.version
       : inferVersionFromRegistryId(tableName, id);
     const explicitDatabase =
-      (
-        typeof table?.config?.database === "string" &&
-        table.config.database.trim().length > 0
-      ) ?
-        table.config.database.trim()
+      typeof table?.config?.database === "string" ?
+        table.config.database
       : undefined;
-    const database = explicitDatabase ?? defaultDatabase;
-    const canonicalId = buildCanonicalTableId(tableName, version, database);
+    const database = resolveLineageDatabase(explicitDatabase, defaultDatabase);
+    const canonicalId = buildCanonicalLineageTableId(
+      tableName,
+      version,
+      database,
+    );
 
     tableIds.add(canonicalId);
 
@@ -154,7 +128,7 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
     aliases.add(baseId);
     if (version) {
       aliases.add(`${tableName}_${version}`);
-      const versionSuffix = versionToSuffix(version);
+      const versionSuffix = normalizeLineageVersion(version);
       if (versionSuffix) {
         aliases.add(`${tableName}_${versionSuffix}`);
       }
@@ -190,7 +164,7 @@ function resolveTableId(
   const candidates = new Set<string>();
   if (version) {
     candidates.add(`${tableName}_${version}`);
-    const suffix = versionToSuffix(version);
+    const suffix = normalizeLineageVersion(version);
     if (suffix) {
       candidates.add(`${tableName}_${suffix}`);
     }
@@ -208,17 +182,15 @@ function resolveTableId(
     }
 
     if (ids.length > 1) {
+      const resolvedId = ids.includes(candidate) ? candidate : ids[0];
       const warningKey = `${candidate}:${ids.join(",")}`;
       if (!index.warnedAmbiguousTableIds.has(warningKey)) {
         index.warnedAmbiguousTableIds.add(warningKey);
         compilerLog(
-          `Warning: ambiguous table lineage reference '${candidate}' resolved to '${ids[0]}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
+          `Warning: ambiguous table lineage reference '${candidate}' resolved to '${resolvedId}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
         );
       }
-      if (ids.includes(candidate)) {
-        return candidate;
-      }
-      return ids[0];
+      return resolvedId;
     }
   }
 
@@ -226,7 +198,7 @@ function resolveTableId(
     return tableName;
   }
 
-  const versionSuffix = versionToSuffix(version);
+  const versionSuffix = normalizeLineageVersion(version);
   return versionSuffix ?
       `${tableName}_${versionSuffix}`
     : `${tableName}_${version}`;
