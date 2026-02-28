@@ -124,8 +124,8 @@ async function getTopicTimeseries(
             ORDER BY time;
         `;
 
-  const resultSet = await client.query.execute<RawResponseBody>(query);
-  const rows = await resultSet.json();
+  const resultSet = await client.query.execute(query);
+  const rows = (await resultSet.json()) as RawResponseBody[];
 
   return rows.map((row) => ({
     time: row.time,
