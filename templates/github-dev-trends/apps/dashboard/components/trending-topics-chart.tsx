@@ -67,6 +67,15 @@ export function TrendingTopicsChart() {
     return () => window.clearInterval(intervalId);
   }, [data, isPlaying]);
 
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+
+    const safeIndex = Math.max(0, Math.min(currentTimeIndex, data.length - 1));
+    if (safeIndex !== currentTimeIndex) {
+      setCurrentTimeIndex(safeIndex);
+    }
+  }, [currentTimeIndex, data]);
+
   if (isLoading && !data) {
     return (
       <div className="flex justify-center items-center h-80">
@@ -108,7 +117,12 @@ export function TrendingTopicsChart() {
     {},
   );
 
-  const chartData = data[currentTimeIndex].topicStats.map((stat) => ({
+  const safeCurrentTimeIndex = Math.max(
+    0,
+    Math.min(currentTimeIndex, data.length - 1),
+  );
+
+  const chartData = data[safeCurrentTimeIndex].topicStats.map((stat) => ({
     eventCount: stat.eventCount,
     topic: stat.topic,
     fill: `var(--color-${stat.topic})`,
