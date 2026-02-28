@@ -35,7 +35,7 @@
 //! ```
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -743,6 +743,7 @@ impl PartialInfrastructureMap {
             moose_version: None,
         };
 
+        canonicalize_lineage_signatures(&mut infra_map);
         normalize_all_metadata_paths(&mut infra_map, project_root);
 
         Ok(infra_map)
@@ -1531,6 +1532,223 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
     }
 }
 
+#[derive(Debug, Default)]
+struct LineageSignatureIndex {
+    default_database_prefix: String,
+    table_ids_by_alias: HashMap<String, Vec<String>>,
+    topic_ids_by_alias: HashMap<String, Vec<String>>,
+    api_ids_by_alias: HashMap<String, Vec<String>>,
+    topic_table_sync_ids_by_alias: HashMap<String, Vec<String>>,
+    dmv1_view_ids_by_alias: HashMap<String, Vec<String>>,
+    sql_resource_ids_by_alias: HashMap<String, Vec<String>>,
+    materialized_view_ids_by_alias: HashMap<String, Vec<String>>,
+    view_ids_by_alias: HashMap<String, Vec<String>>,
+}
+
+fn reference_variants(reference: &str) -> Vec<String> {
+    let mut variants = vec![reference.to_string()];
+    let dot_normalized = reference.replace('.', "_");
+    if dot_normalized != reference {
+        variants.push(dot_normalized);
+    }
+    variants
+}
+
+fn add_alias(alias_map: &mut HashMap<String, Vec<String>>, alias: &str, id: &str) {
+    for variant in reference_variants(alias) {
+        alias_map.entry(variant).or_default().push(id.to_string());
+    }
+}
+
+fn choose_resolved_id(matches: Vec<String>, preferred_prefix: Option<&str>) -> Option<String> {
+    if matches.is_empty() {
+        return None;
+    }
+
+    let mut deduped = matches;
+    deduped.sort();
+    deduped.dedup();
+
+    if let Some(prefix) = preferred_prefix {
+        if let Some(preferred) = deduped.iter().find(|id| id.starts_with(prefix)) {
+            return Some(preferred.clone());
+        }
+    }
+
+    deduped.into_iter().next()
+}
+
+fn resolve_component_id(
+    alias_map: &HashMap<String, Vec<String>>,
+    reference: &str,
+    preferred_prefix: Option<&str>,
+) -> Option<String> {
+    let mut matches = Vec::new();
+    for variant in reference_variants(reference) {
+        if let Some(ids) = alias_map.get(&variant) {
+            matches.extend(ids.iter().cloned());
+        }
+    }
+    choose_resolved_id(matches, preferred_prefix)
+}
+
+fn build_lineage_signature_index(infra_map: &InfrastructureMap) -> LineageSignatureIndex {
+    let mut index = LineageSignatureIndex {
+        default_database_prefix: format!("{}_", infra_map.default_database),
+        ..Default::default()
+    };
+
+    for (id, table) in &infra_map.tables {
+        add_alias(&mut index.table_ids_by_alias, id, id);
+        add_alias(&mut index.table_ids_by_alias, &table.name, id);
+    }
+
+    for (id, topic) in &infra_map.topics {
+        add_alias(&mut index.topic_ids_by_alias, id, id);
+        add_alias(&mut index.topic_ids_by_alias, &topic.name, id);
+    }
+
+    for (id, api) in &infra_map.api_endpoints {
+        add_alias(&mut index.api_ids_by_alias, id, id);
+        add_alias(&mut index.api_ids_by_alias, &api.name, id);
+    }
+
+    for (id, sync) in &infra_map.topic_to_table_sync_processes {
+        add_alias(&mut index.topic_table_sync_ids_by_alias, id, id);
+        add_alias(
+            &mut index.topic_table_sync_ids_by_alias,
+            &format!("{} -> {}", sync.source_topic_id, sync.target_table_id),
+            id,
+        );
+    }
+
+    for (id, view) in &infra_map.dmv1_views {
+        add_alias(&mut index.dmv1_view_ids_by_alias, id, id);
+        add_alias(&mut index.dmv1_view_ids_by_alias, &view.name, id);
+    }
+
+    for (id, resource) in &infra_map.sql_resources {
+        add_alias(&mut index.sql_resource_ids_by_alias, id, id);
+        add_alias(&mut index.sql_resource_ids_by_alias, &resource.name, id);
+        add_alias(
+            &mut index.sql_resource_ids_by_alias,
+            &resource.id(&infra_map.default_database),
+            id,
+        );
+    }
+
+    for (id, mv) in &infra_map.materialized_views {
+        add_alias(&mut index.materialized_view_ids_by_alias, id, id);
+        add_alias(&mut index.materialized_view_ids_by_alias, &mv.name, id);
+    }
+
+    for (id, view) in &infra_map.views {
+        add_alias(&mut index.view_ids_by_alias, id, id);
+        add_alias(&mut index.view_ids_by_alias, &view.name, id);
+    }
+
+    index
+}
+
+fn canonicalize_signature(
+    signature: &InfrastructureSignature,
+    index: &LineageSignatureIndex,
+) -> InfrastructureSignature {
+    match signature {
+        InfrastructureSignature::Table { id } => InfrastructureSignature::Table {
+            id: resolve_component_id(
+                &index.table_ids_by_alias,
+                id,
+                Some(&index.default_database_prefix),
+            )
+            .unwrap_or_else(|| id.clone()),
+        },
+        InfrastructureSignature::Topic { id } => InfrastructureSignature::Topic {
+            id: resolve_component_id(&index.topic_ids_by_alias, id, None)
+                .unwrap_or_else(|| id.clone()),
+        },
+        InfrastructureSignature::ApiEndpoint { id } => InfrastructureSignature::ApiEndpoint {
+            id: resolve_component_id(&index.api_ids_by_alias, id, None)
+                .unwrap_or_else(|| id.clone()),
+        },
+        InfrastructureSignature::TopicToTableSyncProcess { id } => {
+            InfrastructureSignature::TopicToTableSyncProcess {
+                id: resolve_component_id(&index.topic_table_sync_ids_by_alias, id, None)
+                    .unwrap_or_else(|| id.clone()),
+            }
+        }
+        InfrastructureSignature::Dmv1View { id } => InfrastructureSignature::Dmv1View {
+            id: resolve_component_id(&index.dmv1_view_ids_by_alias, id, None)
+                .unwrap_or_else(|| id.clone()),
+        },
+        InfrastructureSignature::SqlResource { id } => InfrastructureSignature::SqlResource {
+            id: resolve_component_id(&index.sql_resource_ids_by_alias, id, None)
+                .unwrap_or_else(|| id.clone()),
+        },
+        InfrastructureSignature::MaterializedView { id } => {
+            InfrastructureSignature::MaterializedView {
+                id: resolve_component_id(&index.materialized_view_ids_by_alias, id, None)
+                    .unwrap_or_else(|| id.clone()),
+            }
+        }
+        InfrastructureSignature::View { id } => InfrastructureSignature::View {
+            id: resolve_component_id(&index.view_ids_by_alias, id, None)
+                .unwrap_or_else(|| id.clone()),
+        },
+    }
+}
+
+fn canonicalize_signature_vec(
+    signatures: &mut Vec<InfrastructureSignature>,
+    index: &LineageSignatureIndex,
+) {
+    let mut seen = HashSet::new();
+    let canonicalized = signatures
+        .iter()
+        .map(|signature| canonicalize_signature(signature, index))
+        .filter(|signature| seen.insert(signature.clone()))
+        .collect();
+    *signatures = canonicalized;
+}
+
+fn canonicalize_lineage_signatures(infra_map: &mut InfrastructureMap) {
+    let index = build_lineage_signature_index(infra_map);
+
+    for api in infra_map.api_endpoints.values_mut() {
+        canonicalize_signature_vec(&mut api.pulls_data_from, &index);
+        canonicalize_signature_vec(&mut api.pushes_data_to, &index);
+    }
+
+    for sql_resource in infra_map.sql_resources.values_mut() {
+        canonicalize_signature_vec(&mut sql_resource.pulls_data_from, &index);
+        canonicalize_signature_vec(&mut sql_resource.pushes_data_to, &index);
+    }
+
+    for workflow in infra_map.workflows.values_mut() {
+        let mut proto = workflow.to_proto();
+        let mut pulls = proto
+            .pulls_data_from
+            .into_iter()
+            .map(InfrastructureSignature::from_proto)
+            .collect::<Vec<_>>();
+        let mut pushes = proto
+            .pushes_data_to
+            .into_iter()
+            .map(InfrastructureSignature::from_proto)
+            .collect::<Vec<_>>();
+        canonicalize_signature_vec(&mut pulls, &index);
+        canonicalize_signature_vec(&mut pushes, &index);
+        proto.pulls_data_from = pulls.into_iter().map(|s| s.to_proto()).collect();
+        proto.pushes_data_to = pushes.into_iter().map(|s| s.to_proto()).collect();
+        *workflow = Workflow::from_proto(proto);
+    }
+
+    for web_app in infra_map.web_apps.values_mut() {
+        canonicalize_signature_vec(&mut web_app.pulls_data_from, &index);
+        canonicalize_signature_vec(&mut web_app.pushes_data_to, &index);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1709,6 +1927,98 @@ mod tests {
                 id: "OrdersEvents".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn canonicalizes_lineage_signatures_when_building_infra_map() {
+        let payload = json!({
+            "tables": {
+                "orders": {
+                    "name": "Orders",
+                    "columns": [],
+                    "orderBy": [],
+                    "version": "0.0"
+                }
+            },
+            "apis": {
+                "lineageApi": {
+                    "name": "lineageApi",
+                    "queryParams": [],
+                    "responseSchema": {},
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }]
+                }
+            },
+            "sqlResources": {
+                "lineageSql": {
+                    "name": "lineageSql",
+                    "setup": [],
+                    "teardown": [],
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            },
+            "workflows": {
+                "lineageWorkflow": {
+                    "name": "lineageWorkflow",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            },
+            "webApps": {
+                "lineageWebApp": {
+                    "name": "lineageWebApp",
+                    "mountPath": "/lineage",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        let infra_map = partial
+            .into_infra_map(
+                SupportedLanguages::Typescript,
+                Path::new("app/index.ts"),
+                "local",
+                Path::new("/tmp"),
+            )
+            .expect("partial map should convert");
+
+        let expected_table_id = infra_map
+            .tables
+            .keys()
+            .find(|id| id.contains("Orders"))
+            .expect("expected Orders table to exist")
+            .clone();
+        let expected_lineage = vec![InfrastructureSignature::Table {
+            id: expected_table_id,
+        }];
+
+        let api = infra_map
+            .api_endpoints
+            .values()
+            .find(|api| api.name == "lineageApi")
+            .expect("lineageApi should exist");
+        assert_eq!(api.pulls_data_from("local"), expected_lineage);
+
+        let sql_resource = infra_map
+            .sql_resources
+            .get("lineageSql")
+            .expect("lineageSql should exist");
+        assert_eq!(sql_resource.pulls_data_from("local"), expected_lineage);
+
+        let workflow = infra_map
+            .workflows
+            .get("lineageWorkflow")
+            .expect("lineageWorkflow should exist");
+        assert_eq!(workflow.pulls_data_from(), expected_lineage);
+
+        let web_app = infra_map
+            .web_apps
+            .get("lineageWebApp")
+            .expect("lineageWebApp should exist");
+        assert_eq!(web_app.pulls_data_from, expected_lineage);
     }
 
     fn base_table_json() -> serde_json::Value {
