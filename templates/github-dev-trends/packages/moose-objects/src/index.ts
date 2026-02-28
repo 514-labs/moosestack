@@ -48,8 +48,8 @@ async function getTopicTimeseries(
   { interval = "minute", limit = 10, exclude = "" }: QueryParams,
   { client, sql }: ApiUtil,
 ): Promise<ResponseBody[]> {
-  const RepoTable = RepoStarEvent.table!;
-  const cols = RepoTable.columns;
+  const repoTable = RepoStarEvent.table!;
+  const cols = repoTable.columns;
 
   const intervalMap = {
     hour: {
