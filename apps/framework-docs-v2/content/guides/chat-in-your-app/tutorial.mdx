@@ -517,7 +517,7 @@ flowchart LR
 | **Production deployment** | Backend on Fiveonefour, frontend on Vercel |
 
 **What this covers:**
-- Adding MooseStack service with MCP server to your monorepo
+- Adding an MCP server to your MooseStack service
 - Integrating chat UI components into your Next.js app
 - Configuring authentication between frontend and backend
 - Testing and deploying the integrated system
@@ -526,98 +526,18 @@ flowchart LR
 
 #### Backend Setup: MooseStack Service with MCP Server
 
-<Callout type="info" title="Already have a MooseStack project?">
-<ToggleBlock openText="Show instructions to add MCP to existing project" closeText="Hide instructions">
-Add the MCP server to your existing MooseStack service:
-
-1. **Install dependencies** (versions from [template package.json](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/moosestack-service/package.json)):
+<Callout type="info" title="Don't have a MooseStack service yet?">
+<ToggleBlock openText="Show instructions to create one" closeText="Hide instructions">
+Create one first and add it to your `pnpm-workspace.yaml`:
 ```shell
-cd packages/your-moosestack-service
-pnpm add @modelcontextprotocol/sdk@1.26.0 \
-  @514labs/express-pbkdf2-api-key-auth@^1.0.4 \
-  express@^5.1.0
-pnpm add -D @types/express@^5.0.3
+moose init moosestack-service typescript --location packages/moosestack-service
 ```
-
-2. **Add the MCP server to your MooseStack service** (exposes `query_clickhouse` and `get_data_catalog` tools at `/tools`):
-```shell
-mkdir -p app/apis
-curl -o app/apis/mcp.ts \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/moosestack-service/app/apis/mcp.ts
-```
-
-3. **Export it** from `app/index.ts`:
-```ts
-export * from "./apis/mcp";
-```
-
-4. **Generate an API key** and add `MCP_API_KEY` to `.env.local`:
-```shell
-moose generate hash-token
-```
-
-Then skip to [Frontend Setup](#frontend-setup).
-</ToggleBlock>
-</Callout>
-
-#### Backend Setup: Add the MooseStack service to your project
-
-Pull the `moosestack-service` from the `typescript-mcp` template. It includes the MCP server (with `query_clickhouse` and `get_data_catalog` tools), a sample `DataEvent` data model, and all necessary dependencies.
-
-```shell
-# From your monorepo root
-mkdir -p packages
-cd packages
-
-### Add the moosestack-service to your workspace
-pnpm dlx tiged 514-labs/moosestack/templates/typescript-mcp/packages/moosestack-service ./moosestack-service
-```
-
-<Callout type="info" title="Replace the sample data model">
-The template includes a sample `DataEvent` model. Replace it with your own data models using the [AI-assisted approach above](#use-ai-to-design-your-data-model).
-</Callout>
-
-#### Backend Setup: Add moosestack-service to your workspace
-
-If you don't have a `pnpm-workspace.yaml` at your monorepo root, create one:
-
-```text
+```yaml
+# pnpm-workspace.yaml
 packages:
   - 'packages/*'
 ```
-
-**Install dependencies**
-
-```shell
-cd packages/moosestack-service
-pnpm install
-```
-
-**Configure environment variables**
-
-```shell
-cp .env.example .env.local
-```
-
-**Generate an API key for authentication:**
-
-```shell
-moose generate hash-token
-```
-
-This outputs two values:
-
-- **ENV API KEY** → Put this in `packages/moosestack-service/.env.local` as `MCP_API_KEY`  
-- **Bearer Token** → Save this for your frontend config (see [Frontend Setup](#frontend-setup))
-
-Your `.env.local` should look like:
-
-```text
-MCP_API_KEY=<paste-the-ENV-API-KEY-here>
-```
-
-**Add dev scripts to your root package.json**
-
+Then add dev scripts to your root `package.json`:
 ```json
 {
   "scripts": {
@@ -633,6 +553,28 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
   }
 }
 ```
+</ToggleBlock>
+</Callout>
+
+From your monorepo root, run:
+
+```shell
+moose add mcp-server --dir packages/moosestack-service
+```
+
+This adds the MCP server (with `query_clickhouse` and `get_data_catalog` tools), adds the required npm dependencies, creates an `MCP_API_KEY` placeholder in `.env.local`, and exports the MCP server from your project's entry file.
+
+Add `--yes` to skip confirmation prompts, or `--overwrite` to replace existing files if re-running.
+
+**Generate an API key:**
+
+```shell
+moose generate hash-token
+```
+
+This outputs two values:
+- **ENV API Key** → Put this in packages/moosestack-service/.env.local as MCP_API_KEY
+- **Bearer Token** → Save this for your frontend config (see [Frontend Setup](#frontend-setup))
 
 #### Frontend Setup
 
@@ -640,178 +582,40 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
 If you don't have shadcn/ui set up, you'll also need the UI components. See [ui.shadcn.com/docs/installation](https://ui.shadcn.com/docs/installation).
 </Callout>
 
-Install required packages
+From your monorepo root, run:
 
 ```shell
-cd packages/web-app  # or your Next.js app directory
-pnpm add ai@5.0.106 @ai-sdk/anthropic@2.0.53 @ai-sdk/mcp@0.0.7 @ai-sdk/react@2.0.106
-pnpm add react-resizable-panels@^3.0.6 react-markdown@^10.1.0 remark-gfm@^4.0.1
-pnpm add lucide-react@^0.552.0
+moose add chat --dir packages/web-app
 ```
 
-Add these variables to your `.env.local`:
-
-```text
-# From https://console.anthropic.com/
-ANTHROPIC_API_KEY=<your-anthropic-api-key>
-
-# Output from `moose generate hash-token`
-MCP_API_TOKEN=<the-bearer-token>
-
-# http://localhost:4000 for local dev
-MCP_SERVER_URL=http://localhost:4000
-```
-
-Add environment variable helper
-
-Sample prompt:
-```text lineNumbers="false"
-Create a TypeScript module that exports helper functions for accessing 
-MCP_SERVER_URL and ANTHROPIC_API_KEY environment variables, throwing 
-descriptive errors if they're not set.
-```
-
-Alternatively, manually add if you prefer:
-
-
-```ts
-// src/env-vars.ts
-export function getMcpServerUrl(): string {
-  const value = process.env.MCP_SERVER_URL;
-  if (!value) {
-    throw new Error("MCP_SERVER_URL environment variable is not set");
-  }
-  return value;
-}
-
-export function getAnthropicApiKey(): string {
-  const value = process.env.ANTHROPIC_API_KEY;
-  if (!value) {
-    throw new Error("ANTHROPIC_API_KEY environment variable is not set");
-  }
-  return value;
-}
-```
-
-Create `.env.development` for defaults
-
-```text
-MCP_SERVER_URL=http://localhost:4000
-```
-
-API Routes
-
-The chat API route handles incoming messages, creates an MCP client to connect to your MooseStack server, and streams the AI response back to the frontend.
-
-#### Add the chat feature to your Next.js app.
-
-Implement the chat feature modules from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat):
-- `agent-config.ts` - Model configuration and MCP client setup
-- `get-agent-response.ts` - Core logic for streaming AI responses via MCP
-- `system-prompt.ts` - System prompt for the chat agent
-
-Sample prompt:
-```text lineNumbers="false"
-Implement a chat feature module for my Next.js app based on the files in 
-https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. 
-Create agent-config.ts, get-agent-response.ts, and system-prompt.ts in 
-src/features/chat/.
-```
-
-**Add the API route**
-
-Create a Next.js API route at `src/app/api/chat/route.ts` that handles POST requests, validates the messages array, and streams responses via `getAgentResponse`. See the [template's route.ts](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts) for reference.
-
-Sample prompt:
-```text lineNumbers="false"
-Create a Next.js API route at src/app/api/chat/route.ts that handles POST 
-requests with a messages array, validates input, calls getAgentResponse 
-from @/features/chat/get-agent-response, and returns proper error responses. 
-Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts
-```
-
-#### Frontend Setup (Optional): Add status endpoint**
-
-Create `src/app/api/chat/status/route.ts` to check if the Anthropic key is configured. See the [template's status route](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/status/route.ts) for reference.
-
-Sample prompt:
-```text lineNumbers="false"
-Create a Next.js API route at src/app/api/chat/status/route.ts that returns 
-JSON indicating whether ANTHROPIC_API_KEY is configured. 
-Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/status/route.ts
-```
+This installs all chat UI components, API routes, layout components, npm dependencies, shadcn/ui components, and adds the required env vars to `.env.local` and `.env.development`.
 
 <Callout type="info" title="System prompt">
 To customize your chat's system prompt, edit `src/features/chat/system-prompt.ts`.
 </Callout>
 
-#### Frontend Setup: UI Components
+After `moose add chat` completes, follow the printed "Next steps":
 
-The chat UI consists of several components. Rather than copying each individually, grab the entire chat feature folder and the required layout components.
+1. Paste the **Bearer Token** from `moose generate hash-token` into `.env.local` as `MCP_API_TOKEN`
+2. Add your Anthropic API key to `.env.local` as `ANTHROPIC_API_KEY` (from [console.anthropic.com](https://console.anthropic.com))
+3. Add `ChatLayoutWrapper` to your root layout:
 
-**Add chat UI components**
+```tsx
+import { ChatLayoutWrapper } from "@/components/layout/chat-layout-wrapper";
+import { ThemeProvider } from "@/components/theme-provider";
 
-Implement the chat UI components from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat). Key components include:
-- `chat-ui.tsx` - Main chat interface
-- `chat-input.tsx`, `chat-output-area.tsx` - Input and message display
-- `tool-invocation.tsx`, `clickhouse-tool-invocation.tsx`, `tool-data-catalog.tsx` - Tool result rendering
-- `code-block.tsx`, `text-formatter.tsx` - Content formatting
-
-Sample prompt:
-```text lineNumbers="false"
-Implement chat UI components for my Next.js app based on the files in 
-https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. 
-Create all .tsx components in src/features/chat/.
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider attribute="class">
+          <ChatLayoutWrapper>{children}</ChatLayoutWrapper>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
 ```
-
-**Add layout components**
-
-Implement the layout components from the [template's layout directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout):
-- `resizable-chat-layout.tsx` - Resizable panel layout
-- `chat-layout-wrapper.tsx` - Chat layout wrapper
-- `content-header.tsx` - Header component
-
-Sample prompt:
-```text lineNumbers="false"
-Implement layout components for my Next.js app based on the files in 
-https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout. 
-Create resizable-chat-layout.tsx, chat-layout-wrapper.tsx, and 
-content-header.tsx in src/components/layout/.
-```
-
-**Add required shadcn/ui components**
-
-The chat UI uses these shadcn/ui components:
-
-```shell
-npx shadcn@latest add button textarea scroll-area resizable collapsible badge
-```
-
-**Add the `cn` utility**
-
-If you don't have `src/lib/utils.ts`, add the standard Tailwind class merge utility:
-
-Sample prompt:
-```text lineNumbers="false"
-Create src/lib/utils.ts with a cn() function that combines clsx and 
-tailwind-merge for conditional class name handling.
-```
-
-**Update your root layout**
-
-Wrap your app with the `ChatLayoutWrapper` in `src/app/layout.tsx`. See the [template's layout.tsx](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/layout.tsx) for reference.
-
-Sample prompt:
-```text lineNumbers="false"
-Update my src/app/layout.tsx to wrap the app with ChatLayoutWrapper from 
-@/components/layout/chat-layout-wrapper. If using next-themes or another 
-theme provider, wrap ChatLayoutWrapper inside it. 
-Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/layout.tsx
-```
-
-<Callout type="info" title="Theme providers">
-If you're using `next-themes` or another theme provider, wrap `ChatLayoutWrapper` inside it, not the other way around.
-</Callout>
 
 ### Integration & Testing
 
