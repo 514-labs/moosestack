@@ -1062,6 +1062,30 @@ function convertTableConfigToEngineConfig(
   return undefined;
 }
 
+const DEFAULT_DATABASE_ENV_VAR = "MOOSE_DEFAULT_DATABASE";
+
+function resolveDefaultDatabaseForLineage(): string {
+  const configured = process.env[DEFAULT_DATABASE_ENV_VAR]?.trim();
+  return configured && configured.length > 0 ? configured : "local";
+}
+
+function buildCanonicalTableLineageId(
+  table: OlapTable<any>,
+  defaultDatabase: string,
+): string {
+  const database =
+    (
+      typeof table.config.database === "string" &&
+      table.config.database.trim().length > 0
+    ) ?
+      table.config.database.trim()
+    : defaultDatabase;
+  const versionSuffix = table.config.version?.replace(/\./g, "_");
+  return versionSuffix ?
+      `${database}_${table.name}_${versionSuffix}`
+    : `${database}_${table.name}`;
+}
+
 export const toInfraMap = (registry: MooseInternalRegistry) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
@@ -1073,6 +1097,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
   const lineage = getCachedLineage(registry);
+  const defaultDatabaseForLineage = resolveDefaultDatabaseForLineage();
 
   registry.tables.forEach((table) => {
     const id =
@@ -1270,12 +1295,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       pullsDataFrom: sqlResource.pullsDataFrom.map((r) => {
         if (r.kind === "OlapTable") {
           const table = r as OlapTable<any>;
-          const id =
-            table.config.version ?
-              `${table.name}_${table.config.version}`
-            : table.name;
           return {
-            id,
+            id: buildCanonicalTableLineageId(table, defaultDatabaseForLineage),
             kind: "Table",
           };
         } else if (r.kind === "SqlResource") {
@@ -1303,12 +1324,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       pushesDataTo: sqlResource.pushesDataTo.map((r) => {
         if (r.kind === "OlapTable") {
           const table = r as OlapTable<any>;
-          const id =
-            table.config.version ?
-              `${table.name}_${table.config.version}`
-            : table.name;
           return {
-            id,
+            id: buildCanonicalTableLineageId(table, defaultDatabaseForLineage),
             kind: "Table",
           };
         } else if (r.kind === "SqlResource") {

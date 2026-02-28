@@ -41,7 +41,7 @@ interface RegistryLike {
 }
 
 interface RegistryIndex {
-  tableIdsByName: Map<string, string[]>;
+  tableIdsByAlias: Map<string, string[]>;
   topicIdsByName: Map<string, string[]>;
   tableIds: Set<string>;
   topicIds: Set<string>;
@@ -69,6 +69,49 @@ interface AnalysisContext {
 }
 
 const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
+const DEFAULT_DATABASE_ENV_VAR = "MOOSE_DEFAULT_DATABASE";
+
+function resolveDefaultDatabase(): string {
+  const configured = process.env[DEFAULT_DATABASE_ENV_VAR]?.trim();
+  return configured && configured.length > 0 ? configured : "local";
+}
+
+function versionToSuffix(version: string | undefined): string | undefined {
+  return version ? version.replace(/\./g, "_") : undefined;
+}
+
+function inferVersionFromRegistryId(
+  tableName: string,
+  registryId: string,
+): string | undefined {
+  const prefix = `${tableName}_`;
+  if (!registryId.startsWith(prefix)) {
+    return undefined;
+  }
+  const suffix = registryId.slice(prefix.length);
+  return suffix.length > 0 ? suffix : undefined;
+}
+
+function buildCanonicalTableId(
+  tableName: string,
+  version: string | undefined,
+  database: string,
+): string {
+  const versionSuffix = versionToSuffix(version);
+  return versionSuffix ?
+      `${database}_${tableName}_${versionSuffix}`
+    : `${database}_${tableName}`;
+}
+
+function addAlias(
+  aliasMap: Map<string, string[]>,
+  alias: string,
+  id: string,
+): void {
+  const existing = aliasMap.get(alias) ?? [];
+  existing.push(id);
+  aliasMap.set(alias, existing);
+}
 
 function createEmptyResult(): DependencyAnalysisResult {
   return {
@@ -79,17 +122,47 @@ function createEmptyResult(): DependencyAnalysisResult {
 }
 
 function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
-  const tableIdsByName = new Map<string, string[]>();
+  const tableIdsByAlias = new Map<string, string[]>();
   const topicIdsByName = new Map<string, string[]>();
   const tableIds = new Set<string>();
   const topicIds = new Set<string>();
+  const defaultDatabase = resolveDefaultDatabase();
 
   registry.tables.forEach((table: any, id: string) => {
-    tableIds.add(id);
-    const baseName = typeof table?.name === "string" ? table.name : id;
-    const existing = tableIdsByName.get(baseName) ?? [];
-    existing.push(id);
-    tableIdsByName.set(baseName, existing);
+    const tableName = typeof table?.name === "string" ? table.name : id;
+    const version =
+      typeof table?.config?.version === "string" ?
+        table.config.version
+      : inferVersionFromRegistryId(tableName, id);
+    const explicitDatabase =
+      (
+        typeof table?.config?.database === "string" &&
+        table.config.database.trim().length > 0
+      ) ?
+        table.config.database.trim()
+      : undefined;
+    const database = explicitDatabase ?? defaultDatabase;
+    const canonicalId = buildCanonicalTableId(tableName, version, database);
+
+    tableIds.add(canonicalId);
+
+    const aliases = new Set<string>([canonicalId, id, tableName]);
+    const baseId =
+      canonicalId.startsWith(`${database}_`) ?
+        canonicalId.slice(database.length + 1)
+      : canonicalId;
+    aliases.add(baseId);
+    if (version) {
+      aliases.add(`${tableName}_${version}`);
+      const versionSuffix = versionToSuffix(version);
+      if (versionSuffix) {
+        aliases.add(`${tableName}_${versionSuffix}`);
+      }
+    }
+
+    for (const alias of aliases) {
+      addAlias(tableIdsByAlias, alias, canonicalId);
+    }
   });
 
   registry.streams.forEach((stream: any, id: string) => {
@@ -101,7 +174,7 @@ function buildRegistryIndex(registry: RegistryLike): RegistryIndex {
   });
 
   return {
-    tableIdsByName,
+    tableIdsByAlias,
     topicIdsByName,
     tableIds,
     topicIds,
@@ -114,49 +187,49 @@ function resolveTableId(
   version: string | undefined,
   index: RegistryIndex,
 ): string {
+  const candidates = new Set<string>();
   if (version) {
-    const candidates = new Set<string>([`${tableName}_${version}`]);
-    if (version.includes(".")) {
-      candidates.add(`${tableName}_${version.replace(/\./g, "_")}`);
+    candidates.add(`${tableName}_${version}`);
+    const suffix = versionToSuffix(version);
+    if (suffix) {
+      candidates.add(`${tableName}_${suffix}`);
+    }
+  }
+  candidates.add(tableName);
+
+  for (const candidate of candidates) {
+    if (index.tableIds.has(candidate)) {
+      return candidate;
     }
 
-    for (const candidate of candidates) {
-      if (index.tableIds.has(candidate)) {
+    const ids = [...new Set(index.tableIdsByAlias.get(candidate) ?? [])].sort();
+    if (ids.length === 1) {
+      return ids[0];
+    }
+
+    if (ids.length > 1) {
+      const warningKey = `${candidate}:${ids.join(",")}`;
+      if (!index.warnedAmbiguousTableIds.has(warningKey)) {
+        index.warnedAmbiguousTableIds.add(warningKey);
+        compilerLog(
+          `Warning: ambiguous table lineage reference '${candidate}' resolved to '${ids[0]}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
+        );
+      }
+      if (ids.includes(candidate)) {
         return candidate;
       }
-
-      const ids = index.tableIdsByName.get(candidate) ?? [];
-      if (ids.length === 1) {
-        return ids[0];
-      }
-      if (ids.length > 1) {
-        if (ids.includes(candidate)) {
-          return candidate;
-        }
-        return ids[0];
-      }
-    }
-
-    return `${tableName}_${version}`;
-  }
-
-  const ids = index.tableIdsByName.get(tableName) ?? [];
-  if (ids.length === 0) {
-    return tableName;
-  }
-  if (ids.includes(tableName)) {
-    return tableName;
-  }
-  if (ids.length > 1) {
-    const warningKey = `${tableName}:${ids.join(",")}`;
-    if (!index.warnedAmbiguousTableIds.has(warningKey)) {
-      index.warnedAmbiguousTableIds.add(warningKey);
-      compilerLog(
-        `Warning: ambiguous table lineage reference '${tableName}' resolved to '${ids[0]}' from candidates [${ids.join(", ")}]. Add an explicit version to disambiguate.`,
-      );
+      return ids[0];
     }
   }
-  return ids[0];
+
+  if (!version) {
+    return tableName;
+  }
+
+  const versionSuffix = versionToSuffix(version);
+  return versionSuffix ?
+      `${tableName}_${versionSuffix}`
+    : `${tableName}_${version}`;
 }
 
 function resolveTopicId(topicName: string, index: RegistryIndex): string {
@@ -193,10 +266,11 @@ function resolveResourceFromSqlIdentifier(
     if (suffix && suffix !== normalized) {
       candidates.add(suffix);
     }
+    candidates.add(normalized.replace(/\./g, "_"));
   }
 
   for (const candidate of [...candidates]) {
-    const versionedMatch = candidate.match(/^(.+)_\d+_\d+$/);
+    const versionedMatch = candidate.match(/^(.+)_\d+(?:_\d+)+$/);
     if (versionedMatch?.[1]) {
       candidates.add(versionedMatch[1]);
     }
@@ -206,7 +280,7 @@ function resolveResourceFromSqlIdentifier(
     if (index.tableIds.has(candidate)) {
       return { kind: "Table", id: candidate };
     }
-    if (index.tableIdsByName.has(candidate)) {
+    if (index.tableIdsByAlias.has(candidate)) {
       return { kind: "Table", id: resolveTableId(candidate, undefined, index) };
     }
     if (index.topicIds.has(candidate)) {
@@ -1683,7 +1757,7 @@ function createNameResolutionContext(checker: ts.TypeChecker): AnalysisContext {
   return {
     checker,
     registryIndex: {
-      tableIdsByName: new Map(),
+      tableIdsByAlias: new Map(),
       topicIdsByName: new Map(),
       tableIds: new Set(),
       topicIds: new Set(),
