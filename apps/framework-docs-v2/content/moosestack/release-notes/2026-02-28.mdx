@@ -162,11 +162,6 @@ This week Moose ships the new `moose add` command for streamlined component inst
 
 ### New Features
 
-**Query analysis dashboard and filtering** ([@groy-514](https://github.com/groy-514))
-  Comprehensive query analysis dashboard with performance metrics, column sorting, and filtering by duration, row counts, bytes, memory, and query types. Includes views for failed queries, slow queries, query patterns, and distribution analytics.
-
-  ![Query analysis dashboard with performance filtering](/query-analysis-dashboard.png)
-
 **Environment variables in deployments** ([@onelesd](https://github.com/onelesd))
   Deploy projects with custom environment variables set through the console. Variables are securely masked in build logs, validated against system-reserved keys, and support multiline values. Environment variables resolve with org → project → branch precedence and are passed to GitHub workflow dispatches during deployment.
 
@@ -176,14 +171,8 @@ This week Moose ships the new `moose add` command for streamlined component inst
 **Automatic MCP token generation for templates** ([@onelesd](https://github.com/onelesd))
   Projects created from templates automatically generate MCP authentication tokens during setup using PBKDF2 hashing, eliminating the need to run the Moose CLI separately.
 
-**Build log copy functionality** ([@onelesd](https://github.com/onelesd))
-  Copy button for build logs table allows users to copy all formatted logs with timestamps, step names, and content to clipboard.
-
 **Vercel deployment synchronization** ([@georgevanderson](https://github.com/georgevanderson))
   Vercel deployments now wait for Moose application deployment completion, preventing race conditions where frontend deployments complete before backend data infrastructure is ready.
-
-**GDPR-compliant cookie consent system** ([@georgevanderson](https://github.com/georgevanderson))
-  Implements cookie consent management with automated consent for authenticated users and consent banners for visitors. Gates Google Tag Manager, marketing scripts, and telemetry tracking.
 
 ### Improvements
 
