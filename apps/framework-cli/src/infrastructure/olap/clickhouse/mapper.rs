@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
     AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseProjection, ClickHouseTable,
+    ClickHouseInt, ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -54,40 +54,37 @@ fn generate_column_comment(column: &Column) -> Result<Option<String>, Clickhouse
 pub fn std_column_to_clickhouse_column(
     column: Column,
 ) -> Result<ClickHouseColumn, ClickhouseError> {
-    // Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
-    let modifier_count = [&column.default, &column.materialized, &column.alias]
-        .iter()
-        .filter(|v| v.is_some())
-        .count();
-    if modifier_count > 1 {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' can only have one of DEFAULT, MATERIALIZED, or ALIAS.",
-                column.name
-            ),
-        });
-    }
+    // Extract the default expression kind (validates mutual exclusivity)
+    let default_expr_kind = match (&column.default, &column.materialized, &column.alias) {
+        (Some(_), None, None) => Some(DefaultExpressionKind::Default),
+        (None, Some(_), None) => Some(DefaultExpressionKind::Materialized),
+        (None, None, Some(_)) => Some(DefaultExpressionKind::Alias),
+        (None, None, None) => None,
+        _ => {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' can only have one of DEFAULT, MATERIALIZED, or ALIAS.",
+                    column.name
+                ),
+            });
+        }
+    };
 
-    // Validate that MATERIALIZED columns are not primary keys
-    if column.materialized.is_some() && column.primary_key {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot be both MATERIALIZED and a primary key. \
-                 MATERIALIZED columns are computed and cannot be used as primary keys.",
-                column.name
-            ),
-        });
-    }
-
-    // Validate that ALIAS columns are not primary keys
-    if column.alias.is_some() && column.primary_key {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot be both ALIAS and a primary key. \
-                 ALIAS columns are virtual and cannot be used as primary keys.",
-                column.name
-            ),
-        });
+    if let Some(kind) = default_expr_kind {
+        if column.primary_key
+            && matches!(
+                kind,
+                DefaultExpressionKind::Materialized | DefaultExpressionKind::Alias
+            )
+        {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' cannot be both {kind} and a primary key. \
+                     {kind} columns cannot be used as primary keys.",
+                    column.name,
+                ),
+            });
+        }
     }
 
     let comment = generate_column_comment(&column)?;

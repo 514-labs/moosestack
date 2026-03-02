@@ -34,7 +34,7 @@ use clickhouse::Client;
 
 use errors::{validate_clickhouse_identifier, ClickhouseError};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
-use model::ClickHouseColumn;
+use model::{ClickHouseColumn, ColumnPropertyRemovals, DefaultExpressionKind};
 use queries::ClickhouseEngine;
 use queries::{
     alter_table_modify_settings_query, alter_table_reset_settings_query,
@@ -49,7 +49,6 @@ use sql_parser::{
     normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::sync::LazyLock;
 use tracing::{debug, info, instrument, warn};
 
@@ -1299,22 +1298,27 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, mate
     // Full column modification including type change
     let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
 
-    // Build all the SQL statements needed (main modify + optional removes)
-    let removing_default = before_column.default.is_some() && after_column.default.is_none();
-    let removing_materialized =
-        before_column.materialized.is_some() && after_column.materialized.is_none();
-    let removing_alias = before_column.alias.is_some() && after_column.alias.is_none();
-    let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
-    let removing_codec = before_column.codec.is_some() && after_column.codec.is_none();
+    let removing_default_expr = if before_column.default.is_some() && after_column.default.is_none()
+    {
+        Some(DefaultExpressionKind::Default)
+    } else if before_column.materialized.is_some() && after_column.materialized.is_none() {
+        Some(DefaultExpressionKind::Materialized)
+    } else if before_column.alias.is_some() && after_column.alias.is_none() {
+        Some(DefaultExpressionKind::Alias)
+    } else {
+        None
+    };
+
+    let removals = ColumnPropertyRemovals {
+        default_expression: removing_default_expr,
+        ttl: before_column.ttl.is_some() && after_column.ttl.is_none(),
+        codec: before_column.codec.is_some() && after_column.codec.is_none(),
+    };
     let queries = build_modify_column_sql(
         db_name,
         table_name,
         &clickhouse_column,
-        removing_default,
-        removing_materialized,
-        removing_alias,
-        removing_ttl,
-        removing_codec,
+        &removals,
         cluster_name,
     )?;
 
@@ -1368,22 +1372,9 @@ async fn execute_modify_column_comment(
 ///
 /// Used by ADD COLUMN and MODIFY COLUMN to ensure consistent clause ordering.
 fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
-    let default_clause = col
-        .default
-        .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
-        .unwrap_or_default();
-
-    let materialized_clause = col
-        .materialized
-        .as_ref()
-        .map(|m| format!(" MATERIALIZED {}", m))
-        .unwrap_or_default();
-
-    let alias_clause = col
-        .alias
-        .as_ref()
-        .map(|a| format!(" ALIAS {}", a))
+    let default_expr_clause = col
+        .default_expression()
+        .map(|(kind, expr)| format!(" {kind} {expr}"))
         .unwrap_or_default();
 
     let comment_clause = col
@@ -1408,21 +1399,16 @@ fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
         .unwrap_or_default();
 
     format!(
-        "{}{}{}{}{}{}",
-        default_clause, materialized_clause, alias_clause, comment_clause, codec_clause, ttl_clause
+        "{}{}{}{}",
+        default_expr_clause, comment_clause, codec_clause, ttl_clause
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_modify_column_sql(
     db_name: &str,
     table_name: &str,
     ch_col: &ClickHouseColumn,
-    removing_default: bool,
-    removing_materialized: bool,
-    removing_alias: bool,
-    removing_ttl: bool,
-    removing_codec: bool,
+    removals: &ColumnPropertyRemovals,
     cluster_name: Option<&str>,
 ) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
@@ -1433,41 +1419,23 @@ fn build_modify_column_sql(
 
     let mut statements = vec![];
 
-    // Add REMOVE DEFAULT statement if needed
-    // ClickHouse doesn't allow mixing column properties with REMOVE clauses
-    if removing_default {
+    // ClickHouse doesn't allow mixing column properties with REMOVE clauses,
+    // so REMOVE statements must be separate ALTER TABLE statements.
+    if let Some(kind) = removals.default_expression {
         statements.push(format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE DEFAULT",
-            db_name, table_name, cluster_clause, ch_col.name
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE {}",
+            db_name, table_name, cluster_clause, ch_col.name, kind
         ));
     }
 
-    // Add REMOVE MATERIALIZED statement if needed
-    if removing_materialized {
-        statements.push(format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE MATERIALIZED",
-            db_name, table_name, cluster_clause, ch_col.name
-        ));
-    }
-
-    // Add REMOVE ALIAS statement if needed
-    if removing_alias {
-        statements.push(format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE ALIAS",
-            db_name, table_name, cluster_clause, ch_col.name
-        ));
-    }
-
-    // Add REMOVE TTL statement if needed
-    if removing_ttl {
+    if removals.ttl {
         statements.push(format!(
             "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE TTL",
             db_name, table_name, cluster_clause, ch_col.name
         ));
     }
 
-    // Add REMOVE CODEC statement if needed
-    if removing_codec {
+    if removals.codec {
         statements.push(format!(
             "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE CODEC",
             db_name, table_name, cluster_clause, ch_col.name
@@ -1476,7 +1444,6 @@ fn build_modify_column_sql(
 
     let property_clauses = build_column_property_clauses(ch_col);
 
-    // Build the main MODIFY COLUMN statement
     let main_sql = format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}",
         db_name, table_name, cluster_clause, ch_col.name, column_type_string, property_clauses
@@ -2385,13 +2352,20 @@ impl OlapOperations for ConfiguredDBClient {
                     None
                 };
 
-                let (default, materialized, alias) = match default_kind.deref() {
-                    "" => (None, None, None),
-                    "DEFAULT" => (Some(default_expression.clone()), None, None),
-                    "MATERIALIZED" => (None, Some(default_expression.clone()), None),
-                    "ALIAS" => (None, None, Some(default_expression.clone())),
-                    _ => {
-                        warn!("Unknown default kind: {default_kind} for column {col_name}");
+                let (default, materialized, alias) = match default_kind.parse() {
+                    Ok(DefaultExpressionKind::Default) => {
+                        (Some(default_expression.clone()), None, None)
+                    }
+                    Ok(DefaultExpressionKind::Materialized) => {
+                        (None, Some(default_expression.clone()), None)
+                    }
+                    Ok(DefaultExpressionKind::Alias) => {
+                        (None, None, Some(default_expression.clone()))
+                    }
+                    Err(_) => {
+                        if !default_kind.is_empty() {
+                            warn!("Unknown default kind: {default_kind} for column {col_name}");
+                        }
                         (None, None, None)
                     }
                 };
@@ -3537,7 +3511,11 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
         let sqls = build_modify_column_sql(
-            "db", "table", &ch_after, false, false, false, false, false, None,
+            "db",
+            "table",
+            &ch_after,
+            &ColumnPropertyRemovals::default(),
+            None,
         )
         .unwrap();
 
@@ -3609,11 +3587,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "users",
             &clickhouse_column,
-            false,
-            false,
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals::default(),
             None,
         )
         .unwrap();
@@ -3649,11 +3623,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &sample_hash_col,
-            false,
-            false,
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals::default(),
             None,
         )
         .unwrap();
@@ -3684,11 +3654,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &created_at_col,
-            false,
-            false,
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals::default(),
             None,
         )
         .unwrap();
@@ -3719,11 +3685,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &status_col,
-            false,
-            false,
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals::default(),
             None,
         )
         .unwrap();
@@ -4678,11 +4640,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &ch_col,
-            false, // removing_default
-            false, // removing_materialized
-            false, // removing_alias
-            false, // removing_ttl
-            false, // removing_codec
+            &ColumnPropertyRemovals::default(),
             None,
         )
         .unwrap();
@@ -4718,11 +4676,10 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &ch_col,
-            true, // removing_default
-            false,
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals {
+                default_expression: Some(DefaultExpressionKind::Default),
+                ..Default::default()
+            },
             None,
         )
         .unwrap();
@@ -4757,11 +4714,10 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "test_table",
             &ch_col,
-            false,
-            true, // removing_materialized
-            false,
-            false,
-            false,
+            &ColumnPropertyRemovals {
+                default_expression: Some(DefaultExpressionKind::Materialized),
+                ..Default::default()
+            },
             None,
         )
         .unwrap();
