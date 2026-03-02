@@ -211,9 +211,13 @@ async fn run_add_nextjs(
 
 fn resolve_target_dir(dir: Option<&str>) -> Result<PathBuf, RoutineFailure> {
     let target_dir = match dir {
-        Some(d) => PathBuf::from(d)
-            .canonicalize()
-            .map_err(|e| fail("Not found", format!("{d} is not a directory"), e))?,
+        Some(d) => PathBuf::from(d).canonicalize().map_err(|e| {
+            fail(
+                "Not found",
+                format!("{d} does not exist or is not accessible"),
+                e,
+            )
+        })?,
         None => std::env::current_dir()
             .map_err(|e| fail("Failed to get current directory", e.to_string(), e))?,
     };
