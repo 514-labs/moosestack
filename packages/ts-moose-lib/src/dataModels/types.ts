@@ -229,6 +229,33 @@ export type ClickHouseMaterialized<SqlExpression extends string> = {
 };
 
 /**
+ * ClickHouse ALIAS column annotation.
+ * The column value is computed on-the-fly at SELECT time and NOT physically stored.
+ * Cannot be explicitly inserted by users.
+ *
+ * @example
+ * interface Events {
+ *   eventTime: DateTime;
+ *   // Computed at query time, not stored on disk
+ *   eventDate: Date & ClickHouseAlias<"toDate(event_time)">;
+ *
+ *   firstName: string;
+ *   lastName: string;
+ *   // Virtual computed column
+ *   fullName: string & ClickHouseAlias<"concat(first_name, ' ', last_name)">;
+ * }
+ *
+ * @remarks
+ * - ALIAS, MATERIALIZED, and DEFAULT are mutually exclusive
+ * - ALIAS columns are NOT stored on disk (saves storage, costs CPU at query time)
+ * - Cannot be used in ORDER BY, PRIMARY KEY, or PARTITION BY
+ * - Can be combined with ClickHouseCodec (though rarely useful since not stored)
+ */
+export type ClickHouseAlias<SqlExpression extends string> = {
+  _clickhouse_alias?: SqlExpression;
+};
+
+/**
  * See also {@link ClickHouseDefault}
  *
  * @example{ updated_at: WithDefault<Date, "now()"> }

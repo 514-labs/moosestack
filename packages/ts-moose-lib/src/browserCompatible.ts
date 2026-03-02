@@ -67,6 +67,7 @@ export {
   ClickHouseDefault,
   ClickHouseTTL,
   ClickHouseMaterialized,
+  ClickHouseAlias,
   WithDefault,
   ClickHouseCodec,
   // Added friendly aliases and numeric helpers

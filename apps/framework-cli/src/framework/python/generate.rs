@@ -584,7 +584,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL"
+        "from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, ClickHouseAlias, LifeCycle, ClickHouseTTL"
     )
     .unwrap();
     writeln!(
@@ -696,26 +696,27 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             if let Some(ref codec_expr) = column.codec {
                 type_str = format!("Annotated[{}, ClickHouseCodec({:?})]", type_str, codec_expr);
             }
-            // Handle DEFAULT and MATERIALIZED (mutually exclusive)
-            match (&column.default, &column.materialized) {
-                (Some(default_expr), None) => {
+            // Handle DEFAULT, MATERIALIZED, and ALIAS (mutually exclusive)
+            match (&column.default, &column.materialized, &column.alias) {
+                (Some(default_expr), None, None) => {
                     type_str = format!(
                         "Annotated[{}, clickhouse_default({:?})]",
                         type_str, default_expr
                     );
                 }
-                (None, Some(materialized_expr)) => {
+                (None, Some(materialized_expr), None) => {
                     type_str = format!(
                         "Annotated[{}, ClickHouseMaterialized({:?})]",
                         type_str, materialized_expr
                     );
                 }
-                (None, None) => {
-                    // No default or materialized, do nothing
+                (None, None, Some(alias_expr)) => {
+                    type_str =
+                        format!("Annotated[{}, ClickHouseAlias({:?})]", type_str, alias_expr);
                 }
-                (Some(_), Some(_)) => {
-                    // This should never happen due to validation
-                    panic!("Column '{}' has both DEFAULT and MATERIALIZED - this should be caught by validation", column.name)
+                (None, None, None) => {}
+                _ => {
+                    panic!("Column '{}' has multiple of DEFAULT/MATERIALIZED/ALIAS - this should be caught by validation", column.name)
                 }
             }
 
@@ -1185,6 +1186,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }
     }
 
@@ -1247,7 +1249,7 @@ from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
-from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL
+from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, ClickHouseAlias, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine, MergeEngine
 
 class Foo(BaseModel):
@@ -1279,6 +1281,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "numbers".to_string(),
@@ -1295,6 +1298,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "nested_numbers".to_string(),
@@ -1314,6 +1318,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1374,6 +1379,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -1387,6 +1393,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "zipCode".to_string(),
@@ -1400,6 +1407,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             jwt: false,
@@ -1420,6 +1428,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -1433,6 +1442,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -1449,6 +1459,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1757,6 +1768,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1770,6 +1782,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1783,6 +1796,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1835,6 +1849,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1906,6 +1921,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1928,6 +1944,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1988,6 +2005,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2033,6 +2051,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -2046,6 +2065,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -2059,6 +2079,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2124,6 +2145,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["_private_field".to_string()]),
             partition_by: None,

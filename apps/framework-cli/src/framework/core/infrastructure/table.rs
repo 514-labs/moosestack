@@ -915,6 +915,8 @@ pub struct Column {
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub materialized: Option<String>, // MATERIALIZED column expression
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub alias: Option<String>, // ALIAS column expression
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1431,6 +1433,7 @@ impl Column {
             ttl: self.ttl.clone(),
             codec: self.codec.clone(),
             materialized: self.materialized.clone(),
+            alias: self.alias.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1455,6 +1458,7 @@ impl Column {
             ttl: proto.ttl,
             codec: proto.codec,
             materialized: proto.materialized,
+            alias: proto.alias,
         }
     }
 }
@@ -1837,6 +1841,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1859,6 +1864,7 @@ mod tests {
             ttl: None,
             codec: None,
                 materialized: None,
+            alias: None,
         };
 
         // Convert to proto and back
@@ -1884,6 +1890,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -2041,6 +2048,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "name".to_string(),
@@ -2054,6 +2062,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -2193,6 +2202,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "ts".to_string(),
@@ -2206,6 +2216,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]), // Empty - should be filled by canonicalize
@@ -2262,6 +2273,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "tags".to_string(),
@@ -2278,6 +2290,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2343,6 +2356,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2410,6 +2424,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "tags".to_string(),
@@ -2426,6 +2441,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]), // Already set
@@ -2484,6 +2500,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2554,6 +2571,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2722,6 +2740,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2774,6 +2793,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

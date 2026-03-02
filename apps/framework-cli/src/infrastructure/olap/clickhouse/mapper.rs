@@ -54,11 +54,15 @@ fn generate_column_comment(column: &Column) -> Result<Option<String>, Clickhouse
 pub fn std_column_to_clickhouse_column(
     column: Column,
 ) -> Result<ClickHouseColumn, ClickhouseError> {
-    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
-    if column.default.is_some() && column.materialized.is_some() {
+    // Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
+    let modifier_count = [&column.default, &column.materialized, &column.alias]
+        .iter()
+        .filter(|v| v.is_some())
+        .count();
+    if modifier_count > 1 {
         return Err(ClickhouseError::InvalidParameters {
             message: format!(
-                "Column '{}' cannot have both DEFAULT and MATERIALIZED. Use one or the other.",
+                "Column '{}' can only have one of DEFAULT, MATERIALIZED, or ALIAS.",
                 column.name
             ),
         });
@@ -70,6 +74,17 @@ pub fn std_column_to_clickhouse_column(
             message: format!(
                 "Column '{}' cannot be both MATERIALIZED and a primary key. \
                  MATERIALIZED columns are computed and cannot be used as primary keys.",
+                column.name
+            ),
+        });
+    }
+
+    // Validate that ALIAS columns are not primary keys
+    if column.alias.is_some() && column.primary_key {
+        return Err(ClickhouseError::InvalidParameters {
+            message: format!(
+                "Column '{}' cannot be both ALIAS and a primary key. \
+                 ALIAS columns are virtual and cannot be used as primary keys.",
                 column.name
             ),
         });
@@ -106,6 +121,7 @@ pub fn std_column_to_clickhouse_column(
         ttl: column.ttl.clone(),
         codec: column.codec.clone(),
         materialized: column.materialized.clone(),
+        alias: column.alias.clone(),
     };
 
     Ok(clickhouse_column)
@@ -460,6 +476,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -486,6 +503,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -514,6 +532,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -558,6 +577,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -571,6 +591,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             jwt: false,
@@ -648,6 +669,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_comment).unwrap();
@@ -674,6 +696,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_without_comment).unwrap();
@@ -699,6 +722,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -725,6 +749,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -752,6 +777,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -786,6 +812,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -843,6 +870,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

@@ -1236,6 +1236,7 @@ async fn execute_modify_table_column(
     let data_type_changed = before_column.data_type != after_column.data_type;
     let default_changed = before_column.default != after_column.default;
     let materialized_changed = before_column.materialized != after_column.materialized;
+    let alias_changed = before_column.alias != after_column.alias;
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
     let ttl_changed = before_column.ttl != after_column.ttl;
@@ -1247,6 +1248,7 @@ async fn execute_modify_table_column(
         && !required_changed
         && !default_changed
         && !materialized_changed
+        && !alias_changed
         && !ttl_changed
         && !codec_changed
         && comment_changed
@@ -1287,7 +1289,7 @@ async fn execute_modify_table_column(
 
     tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
-data_type_changed: {data_type_changed}, default_changed: {default_changed}, materialized_changed: {materialized_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, materialized_changed: {materialized_changed}, alias_changed: {alias_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -1301,6 +1303,7 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, mate
     let removing_default = before_column.default.is_some() && after_column.default.is_none();
     let removing_materialized =
         before_column.materialized.is_some() && after_column.materialized.is_none();
+    let removing_alias = before_column.alias.is_some() && after_column.alias.is_none();
     let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
     let removing_codec = before_column.codec.is_some() && after_column.codec.is_none();
     let queries = build_modify_column_sql(
@@ -1309,6 +1312,7 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, mate
         &clickhouse_column,
         removing_default,
         removing_materialized,
+        removing_alias,
         removing_ttl,
         removing_codec,
         cluster_name,
@@ -1360,7 +1364,7 @@ async fn execute_modify_column_comment(
 }
 
 /// Builds column property clauses in ClickHouse grammar order:
-/// DEFAULT/MATERIALIZED → COMMENT → CODEC → TTL
+/// DEFAULT/MATERIALIZED/ALIAS → COMMENT → CODEC → TTL
 ///
 /// Used by ADD COLUMN and MODIFY COLUMN to ensure consistent clause ordering.
 fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
@@ -1374,6 +1378,12 @@ fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
         .materialized
         .as_ref()
         .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
+    let alias_clause = col
+        .alias
+        .as_ref()
+        .map(|a| format!(" ALIAS {}", a))
         .unwrap_or_default();
 
     let comment_clause = col
@@ -1398,8 +1408,8 @@ fn build_column_property_clauses(col: &ClickHouseColumn) -> String {
         .unwrap_or_default();
 
     format!(
-        "{}{}{}{}{}",
-        default_clause, materialized_clause, comment_clause, codec_clause, ttl_clause
+        "{}{}{}{}{}{}",
+        default_clause, materialized_clause, alias_clause, comment_clause, codec_clause, ttl_clause
     )
 }
 
@@ -1410,6 +1420,7 @@ fn build_modify_column_sql(
     ch_col: &ClickHouseColumn,
     removing_default: bool,
     removing_materialized: bool,
+    removing_alias: bool,
     removing_ttl: bool,
     removing_codec: bool,
     cluster_name: Option<&str>,
@@ -1435,6 +1446,14 @@ fn build_modify_column_sql(
     if removing_materialized {
         statements.push(format!(
             "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE MATERIALIZED",
+            db_name, table_name, cluster_clause, ch_col.name
+        ));
+    }
+
+    // Add REMOVE ALIAS statement if needed
+    if removing_alias {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE ALIAS",
             db_name, table_name, cluster_clause, ch_col.name
         ));
     }
@@ -2366,17 +2385,14 @@ impl OlapOperations for ConfiguredDBClient {
                     None
                 };
 
-                let (default, materialized) = match default_kind.deref() {
-                    "" => (None, None),
-                    "DEFAULT" => (Some(default_expression.clone()), None),
-                    "MATERIALIZED" => (None, Some(default_expression.clone())),
-                    "ALIAS" => {
-                        debug!("ALIAS columns not yet handled.");
-                        (None, None)
-                    }
+                let (default, materialized, alias) = match default_kind.deref() {
+                    "" => (None, None, None),
+                    "DEFAULT" => (Some(default_expression.clone()), None, None),
+                    "MATERIALIZED" => (None, Some(default_expression.clone()), None),
+                    "ALIAS" => (None, None, Some(default_expression.clone())),
                     _ => {
-                        debug!("Unknown default kind: {default_kind} for column {col_name}");
-                        (None, None)
+                        warn!("Unknown default kind: {default_kind} for column {col_name}");
+                        (None, None, None)
                     }
                 };
 
@@ -2434,6 +2450,7 @@ impl OlapOperations for ConfiguredDBClient {
                     ttl: normalized_ttl,
                     codec,
                     materialized,
+                    alias,
                 };
 
                 columns.push(column);
@@ -3462,6 +3479,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let after_column = Column {
@@ -3482,6 +3500,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -3509,6 +3528,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -3516,9 +3536,10 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sqls =
-            build_modify_column_sql("db", "table", &ch_after, false, false, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "db", "table", &ch_after, false, false, false, false, false, None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -3544,6 +3565,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let after_column = Column {
@@ -3578,6 +3600,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3586,6 +3609,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "users",
             &clickhouse_column,
+            false,
             false,
             false,
             false,
@@ -3618,12 +3642,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &sample_hash_col,
+            false,
             false,
             false,
             false,
@@ -3651,12 +3677,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &created_at_col,
+            false,
             false,
             false,
             false,
@@ -3684,12 +3712,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &status_col,
+            false,
             false,
             false,
             false,
@@ -4120,6 +4150,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -4183,6 +4214,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -4249,6 +4281,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -4321,6 +4354,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -4384,6 +4418,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -4400,6 +4435,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "regular_column".to_string(),
@@ -4413,6 +4449,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -4631,6 +4668,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             unique: false,
             default: None,
             materialized: Some("toStartOfMonth(event_time)".to_string()),
+            alias: None,
             comment: None,
             ttl: None,
             codec: None,
@@ -4642,6 +4680,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             &ch_col,
             false, // removing_default
             false, // removing_materialized
+            false, // removing_alias
             false, // removing_ttl
             false, // removing_codec
             None,
@@ -4669,6 +4708,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             unique: false,
             default: None, // No default after removal
             materialized: None,
+            alias: None,
             comment: None,
             ttl: None,
             codec: None,
@@ -4679,6 +4719,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_table",
             &ch_col,
             true, // removing_default
+            false,
             false,
             false,
             false,
@@ -4706,6 +4747,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             unique: false,
             default: None,
             materialized: None,
+            alias: None,
             comment: None,
             ttl: None,
             codec: None,
@@ -4717,6 +4759,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             &ch_col,
             false,
             true, // removing_materialized
+            false,
             false,
             false,
             None,

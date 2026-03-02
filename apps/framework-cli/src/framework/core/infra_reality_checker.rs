@@ -926,6 +926,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1029,6 +1030,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let mock_client = MockOlapClient {
@@ -1102,6 +1104,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);
