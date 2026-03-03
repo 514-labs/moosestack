@@ -19,7 +19,7 @@ MooseStack Service (Tools -> MCP Server -> ClickHouse)
 
 - Node.js v20+ and pnpm v8+
 - Docker Desktop (running)
-- [Moose CLI](https://docs.fiveonefour.com/moose/getting-started/new-project)
+- Moose CLI: `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose`
 - [Anthropic API key](https://console.anthropic.com/)
 
 ## Getting Started
