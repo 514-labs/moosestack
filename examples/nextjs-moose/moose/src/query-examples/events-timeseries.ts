@@ -19,5 +19,10 @@ export async function getEventsTimeseries(
     },
   });
 
-  return await executeQuery<{ time: string; totalEvents: number }>(query);
+  // Column name matches the dimension key (hour/day/month), normalize to "time"
+  const rows = await executeQuery<Record<string, unknown>>(query);
+  return rows.map((row) => ({
+    time: String(row[bucketSize] ?? ""),
+    totalEvents: Number(row.totalEvents ?? 0),
+  }));
 }

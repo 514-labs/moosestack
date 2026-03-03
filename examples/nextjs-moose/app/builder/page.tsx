@@ -50,7 +50,9 @@ export default function BuilderPage() {
         {/* Pass model and execute function to client component */}
         <ReportBuilderPage
           model={model}
-          executeQuery={executeEventsQuery}
+          executeQuery={
+            executeEventsQuery as (params: QueryRequest) => Promise<unknown[]>
+          }
           defaults={defaults}
         />
       </div>

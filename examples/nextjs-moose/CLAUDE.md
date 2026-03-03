@@ -44,11 +44,7 @@ examples/nextjs-moose/
     └── src/
         ├── models.ts             # OlapTable definitions (Events table)
         ├── client.ts             # ClickHouse client setup
-        ├── query-layer/          # Core query building system
-        │   ├── query-model.ts        # defineQueryModel() implementation
-        │   ├── sql-utils.ts          # SQL building helpers
-        │   └── types.ts              # Type definitions
-        └── query-examples/       # Example usage of query layer
+        └── query-examples/       # Example usage of query layer (uses @514labs/moose-lib)
             ├── model.ts              # eventsModel definition
             ├── events-metrics.ts     # getEventsMetrics()
             ├── events-timeseries.ts  # getEventsTimeseries()
@@ -221,7 +217,7 @@ dimensions: {
 
 ## Key Files to Understand
 
-1. **`moose/src/query-layer/query-model.ts`** - Core `defineQueryModel()` implementation
+1. **`@514labs/moose-lib` query layer** - Core `defineQueryModel()` implementation (first-class in moose-lib)
 2. **`moose/src/query-examples/model.ts`** - Example model showing the pattern
 3. **`app/actions.ts`** - Server actions wrapping queries
 4. **`components/report-builder/use-report.ts`** - Report state management
@@ -230,7 +226,7 @@ dimensions: {
 ## Type Safety Flow
 
 ```
-Model Definition (query-layer)
+Model Definition (@514labs/moose-lib query layer)
     ↓ $inferRequest, $inferDimensions, $inferMetrics
 Query Functions (query-examples)
     ↓ Return types
@@ -265,7 +261,6 @@ URLs:
 - **No Materialized Views**: Queries a raw `Events` table, not pre-aggregated MVs. In production, you'd create MVs for pre-joined/pre-aggregated data.
 - **No CDC**: Data seeded via SQL, not streamed from OLTP.
 - **No JIT join translation**: Doesn't show how to convert OLTP JOIN queries to write-time MVs.
-- Query layer (`defineQueryModel`) is prototype, not yet in core Moose library.
 - No auth/permission filtering demonstrated.
 
 **Roadmap:** Future iteration will extend this demo to show full MV pattern for translating OLTP just-in-time joins.

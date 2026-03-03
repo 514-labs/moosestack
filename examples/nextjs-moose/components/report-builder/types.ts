@@ -5,13 +5,13 @@
  * Single source of truth for all types used across the module.
  */
 
-// Import shared types from query-layer (single source of truth)
+// Import shared types from the moose package (re-exported from @514labs/moose-lib)
 import type {
   QueryRequest,
   FilterOperator,
   FilterInputTypeHint,
   FilterParams,
-} from "@/moose/src/query-layer";
+} from "moose";
 import type { FieldOption } from "@/components/inputs/types";
 
 // Re-export for convenience

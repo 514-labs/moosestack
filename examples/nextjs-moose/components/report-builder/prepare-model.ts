@@ -11,6 +11,7 @@ import type {
   FilterMeta,
   FilterInputType,
   FilterSelectOption,
+  FilterOperator,
 } from "./types";
 
 // =============================================================================
@@ -247,7 +248,7 @@ export function prepareModel<
   if (queryModel.filters) {
     for (const [name, def] of Object.entries(queryModel.filters)) {
       const override = filterOverrides[name];
-      const operators = [...def.operators]; // Convert readonly to mutable
+      const operators = [...def.operators] as FilterOperator[]; // Convert readonly to mutable
 
       // Determine input type: override > model definition > inferred
       const inputType =

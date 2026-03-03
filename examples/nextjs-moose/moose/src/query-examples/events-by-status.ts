@@ -1,8 +1,7 @@
 import { eventsModel } from "./model";
 import { executeQuery } from "../client";
-import { cliLog, sql } from "@514labs/moose-lib";
+import { cliLog, sql, where, filter } from "@514labs/moose-lib";
 import { Events } from "../models";
-import { where, filter } from "../query-layer/sql-utils";
 
 export async function getEventsByStatus(startDate?: Date, endDate?: Date) {
   const parts = await eventsModel.toParts({

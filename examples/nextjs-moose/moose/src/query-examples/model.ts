@@ -1,6 +1,5 @@
-import { defineQueryModel } from "../query-layer";
+import { defineQueryModel, sql } from "@514labs/moose-lib";
 import { Events } from "../models";
-import { sql } from "@514labs/moose-lib";
 
 export const eventsModel = defineQueryModel({
   table: Events,
@@ -11,12 +10,10 @@ export const eventsModel = defineQueryModel({
     status: { column: "status" },
     hour: {
       expression: sql`toStartOfHour(${Events.columns.event_time})`,
-      as: "time",
     },
-    day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
+    day: { expression: sql`toDate(${Events.columns.event_time})` },
     month: {
       expression: sql`toStartOfMonth(${Events.columns.event_time})`,
-      as: "time",
     },
   },
 
@@ -31,6 +28,7 @@ export const eventsModel = defineQueryModel({
     highValueRatio: {
       agg: sql`countIf(${Events.columns.amount} > 100) / count(*)`,
     },
+    medianAmount: { agg: sql`median(${Events.columns.amount})` },
   },
 
   filters: {
