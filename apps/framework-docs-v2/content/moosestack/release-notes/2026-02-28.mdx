@@ -163,7 +163,7 @@ This week Moose ships the new `moose add` command for streamlined component inst
 ### New Features
 
 **Environment variables in deployments** ([@onelesd](https://github.com/onelesd))
-  Deploy projects with custom environment variables set through the console. Variables are securely masked in build logs, validated against system-reserved keys, and support multiline values. Environment variables resolve with org → project → branch precedence and are passed to GitHub workflow dispatches during deployment.
+  User-defined environment variables configured in the console are now injected into builds, so code that reads env vars at the top level during build (e.g. at module initialization) no longer fails. Variables resolve with org → project → branch precedence and are securely masked in build logs.
 
 **CLI deployment and infrastructure commands** ([@callicles](https://github.com/callicles))
   New CLI commands for fetching infrastructure maps and listing deployments. Infrastructure maps show resources and relationships with filtering. Deploy listing includes branch, status filtering, and pagination with deployment metadata.
