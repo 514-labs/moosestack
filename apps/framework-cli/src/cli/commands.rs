@@ -302,7 +302,7 @@ pub enum AddComponent {
     McpServer(AddArgs),
     /// AI chat panel for Next.js. Requires an MCP server (moose add mcp-server)
     #[command(
-        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - Project must use App Router\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
     )]
     Chat(AddArgs),
 }

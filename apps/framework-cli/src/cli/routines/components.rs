@@ -211,7 +211,13 @@ async fn run_add_nextjs(
 
 fn resolve_target_dir(dir: Option<&str>) -> Result<PathBuf, RoutineFailure> {
     let target_dir = match dir {
-        Some(d) => PathBuf::from(d),
+        Some(d) => PathBuf::from(d).canonicalize().map_err(|e| {
+            fail(
+                "Not found",
+                format!("{d} does not exist or is not accessible"),
+                e,
+            )
+        })?,
         None => std::env::current_dir()
             .map_err(|e| fail("Failed to get current directory", e.to_string(), e))?,
     };
@@ -384,17 +390,29 @@ fn check_nextjs_project(target_dir: &Path) -> Result<(), RoutineFailure> {
     .iter()
     .any(|f| target_dir.join(f).exists());
 
-    if has_next_config {
-        return Ok(());
+    if !has_next_config {
+        return Err(RoutineFailure::error(Message::new(
+            "Next.js required".to_string(),
+            format!(
+                "No next.config.* found in {}.\nThis component targets Next.js App Router projects.",
+                target_dir.display()
+            ),
+        )));
     }
 
-    Err(RoutineFailure::error(Message::new(
-        "Next.js required".to_string(),
-        format!(
-            "No next.config.* found in {}.\nThis component targets Next.js App Router projects.",
-            target_dir.display()
-        ),
-    )))
+    let has_app_dir = target_dir.join("app").is_dir() || target_dir.join("src/app").is_dir();
+
+    if !has_app_dir {
+        return Err(RoutineFailure::error(Message::new(
+            "App Router required".to_string(),
+            format!(
+                "No app/ directory found in {}.\nThis component requires Next.js App Router.\nIf you're on Pages Router, see: https://nextjs.org/docs/app/building-your-application/upgrading/app-router-migration",
+                target_dir.display()
+            ),
+        )));
+    }
+
+    Ok(())
 }
 
 fn check_shadcn_initialized(
