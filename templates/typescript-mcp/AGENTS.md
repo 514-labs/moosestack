@@ -61,9 +61,7 @@ Two MCP servers run on the same host:
 ## Copilot Setup
 
 ### MooseDev MCP (built-in)
-```bash
-claude mcp add --transport http moose-dev http://localhost:4000/mcp
-```
+Pre-configured in `.mcp.json` at the project root. Most tools pick this up automatically when the dev server is running.
 
 ### ClickHouse Best Practices Skill
 ```bash
@@ -71,7 +69,7 @@ npx skills add https://github.com/514-labs/agent-skills --skill moosestack-click
 ```
 
 ### Context7 for MooseStack Documentation
-Install via [context7 installation instructions](https://github.com/upstash/context7#installation). Add "use context7" to prompts when referencing MooseStack docs.
+Pre-configured in `.mcp.json`. Add "use context7" to prompts when referencing MooseStack docs.
 
 ## Relevant Documentation
 

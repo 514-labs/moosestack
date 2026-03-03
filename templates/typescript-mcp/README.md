@@ -88,6 +88,15 @@ Make sure the following ports are free before running `pnpm dev`. If any are in 
 | ClickHouse HTTP      | 18123 |
 | ClickHouse native    | 9000  |
 
+### AI Copilot Integration
+
+This template ships with a `.mcp.json` that pre-configures:
+
+- **[MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp)** — MooseStack's built-in MCP server for querying your local database and inspecting your data pipeline
+- **[Context7](https://github.com/upstash/context7)** — serves up-to-date MooseStack documentation to your copilot
+
+Most AI copilots (Claude Code, Cursor, etc.) pick up `.mcp.json` automatically when you open the project.
+
 ## Next Steps
 
 For a full walkthrough of data modeling, loading data, customizing the frontend, and deploying to production, see the [Chat in Your App Tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
