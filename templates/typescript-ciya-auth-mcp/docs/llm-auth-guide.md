@@ -6,20 +6,24 @@
 
 Before writing any code, ask the user:
 
-1. **Which tier do you need?**
+1. **Do you have an existing project from the [Chat in Your App tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial?lang=typescript)?**
+   - If **yes**, ask for the project path and work within that existing project.
+   - If **no**, follow the [Chat in Your App tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial?lang=typescript) first to create the base project, then return to this guide to add auth.
+
+2. **Which tier do you need?**
    - **Tier 2** — JWT passthrough (user identity, audit trails, personalization)
    - **Tier 3** — Org-scoped data isolation (multi-tenant SaaS with row-level security). Includes everything in Tier 2.
    - Tier 1 (API key auth) is already part of the base tutorial — no changes needed.
 
-2. **Do you have a Clerk account?** (Required for Tier 2 and 3)
+3. **Do you have a Clerk account?** (Required for Tier 2 and 3)
    - If not, they need to create one at [clerk.com](https://clerk.com) and have these ready:
      - Publishable key (`pk_test_...`)
      - Secret key (`sk_test_...`)
      - Their Clerk domain (e.g., `your-app.clerk.accounts.dev`)
 
-3. **For Tier 3 only:** Have they enabled Clerk Organizations and created at least one organization?
+4. **For Tier 3 only:** Have they enabled Clerk Organizations and created at least one organization?
 
-4. **What is the MCP endpoint path?** The base tutorial uses `/mcp`. This guide uses `/tools` (to avoid collision with MooseStack's built-in `/mcp`). Confirm which path their backend uses so the frontend URL matches.
+5. **What is the MCP endpoint path?** The base tutorial uses `/mcp`. This guide uses `/tools` (to avoid collision with MooseStack's built-in `/mcp`). Confirm which path their backend uses so the frontend URL matches.
 
 Once you have these answers, proceed to the relevant tier section. **Implement Tier 2 first**, then continue to Tier 3 if needed — the tiers are cumulative.
 
@@ -1078,6 +1082,7 @@ const tierConfigs: Record<1 | 2 | 3, TierConfig> = {
 };
 
 const TierContext = createContext<TierConfig | null>(null);
+
 
 export function TierProvider({
   tier,
