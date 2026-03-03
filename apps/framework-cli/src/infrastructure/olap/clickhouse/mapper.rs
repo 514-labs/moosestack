@@ -895,4 +895,103 @@ mod tests {
         let ch_table = std_table_to_clickhouse_table(&table).unwrap();
         assert!(ch_table.projections.is_empty());
     }
+
+    fn make_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_validation_default_and_materialized_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            materialized: Some("cityHash64(name)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_default_and_alias_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_and_alias_mutually_exclusive() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_cannot_be_primary_key() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            primary_key: true,
+            ..make_column("pk_mat")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both MATERIALIZED"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_alias_cannot_be_primary_key() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            primary_key: true,
+            ..make_column("pk_alias")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both ALIAS"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_alias_column_converts_successfully() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("event_date")
+        };
+        let ch_col = std_column_to_clickhouse_column(col).unwrap();
+        assert_eq!(ch_col.alias, Some("toDate(ts)".to_string()));
+        assert_eq!(ch_col.default, None);
+        assert_eq!(ch_col.materialized, None);
+    }
 }

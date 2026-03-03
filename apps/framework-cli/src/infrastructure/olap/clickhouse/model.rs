@@ -460,7 +460,9 @@ impl std::str::FromStr for DefaultExpressionKind {
 pub struct ColumnPropertyRemovals {
     /// Which default expression kind to remove (DEFAULT/MATERIALIZED/ALIAS are mutually exclusive)
     pub default_expression: Option<DefaultExpressionKind>,
+    /// Whether to remove the TTL definition from the column
     pub ttl: bool,
+    /// Whether to remove the compression codec from the column
     pub codec: bool,
 }
 
@@ -493,12 +495,17 @@ impl ClickHouseColumn {
     ///
     /// DEFAULT, MATERIALIZED, and ALIAS are mutually exclusive; this accessor
     /// collapses the three `Option<String>` fields into a single typed pair.
+    /// Panics if multiple expression kinds are set (should be caught by upstream validation).
     pub fn default_expression(&self) -> Option<(DefaultExpressionKind, &str)> {
         match (&self.default, &self.materialized, &self.alias) {
             (Some(expr), None, None) => Some((DefaultExpressionKind::Default, expr)),
             (None, Some(expr), None) => Some((DefaultExpressionKind::Materialized, expr)),
             (None, None, Some(expr)) => Some((DefaultExpressionKind::Alias, expr)),
-            _ => None,
+            (None, None, None) => None,
+            _ => panic!(
+                "Column '{}' has multiple of DEFAULT/MATERIALIZED/ALIAS set",
+                self.name
+            ),
         }
     }
 }

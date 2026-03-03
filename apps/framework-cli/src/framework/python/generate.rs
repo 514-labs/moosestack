@@ -2218,4 +2218,35 @@ user_table = OlapTable[User]("User", OlapConfig(
             result
         );
     }
+
+    #[test]
+    fn test_alias_column_emission() {
+        let table = test_table(
+            "AliasTest",
+            vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                test_column("timestamp", ColumnType::DateTime { precision: None }),
+                Column {
+                    alias: Some("toDate(timestamp)".to_string()),
+                    ..test_column("event_date", ColumnType::Date)
+                },
+            ],
+            ClickhouseEngine::MergeTree,
+        );
+
+        let result = tables_to_python(&[table], None);
+        assert!(
+            result.contains("ClickHouseAlias(\"toDate(timestamp)\")"),
+            "Expected ClickHouseAlias annotation. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("Annotated[datetime.date, ClickHouseAlias(\"toDate(timestamp)\")]"),
+            "Expected Annotated wrapper with ClickHouseAlias. Result: {}",
+            result
+        );
+    }
 }

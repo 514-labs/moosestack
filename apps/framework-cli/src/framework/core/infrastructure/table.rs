@@ -914,9 +914,9 @@ pub struct Column {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub materialized: Option<String>, // MATERIALIZED column expression
+    pub materialized: Option<String>, // MATERIALIZED column expression (computed and stored at insert time)
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub alias: Option<String>, // ALIAS column expression
+    pub alias: Option<String>, // ALIAS column expression (computed on read, not stored)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

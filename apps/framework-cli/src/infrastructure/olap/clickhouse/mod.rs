@@ -1298,15 +1298,11 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, mate
     // Full column modification including type change
     let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
 
-    let removing_default_expr = if before_column.default.is_some() && after_column.default.is_none()
-    {
-        Some(DefaultExpressionKind::Default)
-    } else if before_column.materialized.is_some() && after_column.materialized.is_none() {
-        Some(DefaultExpressionKind::Materialized)
-    } else if before_column.alias.is_some() && after_column.alias.is_none() {
-        Some(DefaultExpressionKind::Alias)
-    } else {
-        None
+    let before_kind = column_default_expression_kind(before_column);
+    let after_kind = column_default_expression_kind(after_column);
+    let removing_default_expr = match (before_kind, after_kind) {
+        (Some(kind), other) if other != Some(kind) => Some(kind),
+        _ => None,
     };
 
     let removals = ColumnPropertyRemovals {
@@ -1365,6 +1361,19 @@ async fn execute_modify_column_comment(
             resource: Some(table_name.to_string()),
         })?;
     Ok(())
+}
+
+/// Extracts the default expression kind from a core `Column` struct.
+///
+/// Bridges the three `Option<String>` fields on `Column` to `DefaultExpressionKind`
+/// without making the core framework depend on ClickHouse types.
+fn column_default_expression_kind(col: &Column) -> Option<DefaultExpressionKind> {
+    match (&col.default, &col.materialized, &col.alias) {
+        (Some(_), None, None) => Some(DefaultExpressionKind::Default),
+        (None, Some(_), None) => Some(DefaultExpressionKind::Materialized),
+        (None, None, Some(_)) => Some(DefaultExpressionKind::Alias),
+        _ => None,
+    }
 }
 
 /// Builds column property clauses in ClickHouse grammar order:

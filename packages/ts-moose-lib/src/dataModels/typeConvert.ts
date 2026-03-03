@@ -1030,7 +1030,7 @@ export const toColumns = (
 
     // Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
     const setCount = [defaultValue, materializedValue, aliasValue].filter(
-      Boolean,
+      (v) => v != null,
     ).length;
     if (setCount > 1) {
       throw new UnsupportedFeature(

@@ -704,7 +704,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
 
         # Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
         modifier_count = sum(
-            1 for v in [default_expr, materialized_expr, alias_expr] if v
+            1 for v in [default_expr, materialized_expr, alias_expr] if v is not None
         )
         if modifier_count > 1:
             raise ValueError(
