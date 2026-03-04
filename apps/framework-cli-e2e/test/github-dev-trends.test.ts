@@ -1,0 +1,249 @@
+/// <reference types="node" />
+/// <reference types="mocha" />
+/// <reference types="chai" />
+/**
+ * E2E regression tests for the github-dev-trends template.
+ *
+ * This template is a pnpm monorepo with:
+ * - packages/moose-objects (shared types + API definitions)
+ * - apps/moose-backend (Moose app with workflows)
+ * - apps/dashboard (Next.js frontend)
+ *
+ * These tests verify fixes for:
+ * - Bug 1: Circular import causing typia crash (compilation test)
+ * - Bug 2: Dashboard importing server-only code (dashboard build test)
+ * - Bug 3: Empty API response crash (API empty response test)
+ * - Bug 4: Deprecated workflow API (backend startup + workflow test)
+ * - Bug 5: Missing .js extension for NodeNext resolution (compilation test)
+ */
+
+import { spawn, exec, ChildProcess } from "child_process";
+import { expect } from "chai";
+import * as fs from "fs";
+import * as path from "path";
+import { promisify } from "util";
+
+import { TIMEOUTS, SERVER_CONFIG, TEST_ADMIN_API_KEY_HASH } from "./constants";
+
+import {
+  waitForServerStart,
+  waitForInfrastructureReady,
+  verifyProxyHealth,
+  createTempTestDirectory,
+  cleanupTestSuite,
+  logger,
+} from "./utils";
+import { withRetries } from "./utils/retry-utils";
+import { triggerWorkflow } from "./utils/workflow-utils";
+
+const testLogger = logger.scope("github-dev-trends-test");
+
+const execAsync = promisify(exec);
+
+const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
+const MOOSE_LIB_PATH = path.resolve(
+  __dirname,
+  "../../../packages/ts-moose-lib",
+);
+
+/**
+ * Sets up the github-dev-trends monorepo template.
+ * Unlike standard templates, this is a pnpm workspace with moose-lib
+ * in apps/moose-backend/package.json rather than the root.
+ */
+async function setupGithubDevTrendsProject(projectDir: string): Promise<void> {
+  // Initialize project using CLI
+  testLogger.info("Initializing github-dev-trends template");
+  const result = await execAsync(
+    `"${CLI_PATH}" init github-dev-trends-e2e github-dev-trends --location "${projectDir}"`,
+  );
+  testLogger.debug("CLI init stdout", { stdout: result.stdout });
+  if (result.stderr) {
+    testLogger.debug("CLI init stderr", { stderr: result.stderr });
+  }
+
+  // Update moose-backend/package.json to use local moose-lib
+  const backendPkgPath = path.join(
+    projectDir,
+    "apps",
+    "moose-backend",
+    "package.json",
+  );
+  const backendPkg = JSON.parse(fs.readFileSync(backendPkgPath, "utf-8"));
+  backendPkg.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
+  fs.writeFileSync(backendPkgPath, JSON.stringify(backendPkg, null, 2));
+
+  // Install dependencies with pnpm
+  testLogger.info("Installing dependencies with pnpm");
+  await new Promise<void>((resolve, reject) => {
+    const installCmd = spawn("pnpm", ["install"], {
+      stdio: "inherit",
+      cwd: projectDir,
+    });
+    installCmd.on("error", (err) => {
+      testLogger.error("pnpm install spawn failed", { error: err.message });
+      reject(err);
+    });
+    installCmd.on("close", (code) => {
+      testLogger.debug("pnpm install completed", { exitCode: code });
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`pnpm install failed with code ${code}`));
+      }
+    });
+  });
+}
+
+describe("github-dev-trends template", () => {
+  let devProcess: ChildProcess | null = null;
+  let TEST_PROJECT_DIR = "";
+
+  before(async function () {
+    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+    try {
+      await fs.promises.access(CLI_PATH, fs.constants.F_OK);
+    } catch (err) {
+      testLogger.error(
+        `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
+      );
+      throw err;
+    }
+
+    TEST_PROJECT_DIR = createTempTestDirectory("github-dev-trends");
+    await setupGithubDevTrendsProject(TEST_PROJECT_DIR);
+  });
+
+  after(async function () {
+    this.timeout(TIMEOUTS.CLEANUP_MS);
+
+    if (!TEST_PROJECT_DIR) {
+      return;
+    }
+
+    await cleanupTestSuite(
+      devProcess,
+      TEST_PROJECT_DIR,
+      "github-dev-trends-e2e",
+      { logPrefix: "github-dev-trends" },
+    );
+  });
+
+  // Bug 1 & 5: Compilation test - verifies no circular import crash and .js extension works
+  it("should compile moose-objects package successfully", async function () {
+    this.timeout(TIMEOUTS.BUILD_MS);
+    testLogger.info("Building moose-objects package...");
+
+    const { stdout, stderr } = await execAsync(
+      'pnpm --recursive --filter "./packages/*" build',
+      { cwd: TEST_PROJECT_DIR },
+    );
+
+    testLogger.debug("Build stdout", { stdout });
+    if (stderr) {
+      testLogger.debug("Build stderr", { stderr });
+    }
+
+    // If we get here without throwing, compilation succeeded
+    testLogger.info("moose-objects compilation succeeded");
+  });
+
+  // Bug 4: Backend startup test - verifies workflow registration with new API
+  it("should start backend and register workflows", async function () {
+    this.timeout(TIMEOUTS.SERVER_STARTUP_MS);
+    testLogger.info("Starting moose dev server...");
+
+    devProcess = spawn(CLI_PATH, ["dev"], {
+      stdio: "pipe",
+      cwd: path.join(TEST_PROJECT_DIR, "apps", "moose-backend"),
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+      },
+    });
+
+    devProcess.on("error", (err) => {
+      testLogger.error("moose dev server spawn failed", {
+        error: err.message,
+      });
+    });
+
+    await waitForServerStart(
+      devProcess,
+      TIMEOUTS.SERVER_STARTUP_MS,
+      SERVER_CONFIG.startupMessage,
+      SERVER_CONFIG.url,
+    );
+
+    testLogger.info("Server started, waiting for infrastructure...");
+    await waitForInfrastructureReady();
+    testLogger.info("Infrastructure ready");
+  });
+
+  // Bug 4: Verify health endpoint returns healthy
+  it("should report healthy status", async function () {
+    this.timeout(90_000);
+    await verifyProxyHealth(["ClickHouse", "Redpanda"]);
+  });
+
+  // Bug 3: API response test - verifies the API does not crash
+  // The original bug was a crash when data was empty; we verify the API
+  // returns a valid response (the scheduled workflow may have already
+  // ingested data by the time infrastructure is ready)
+  it("should return valid response from topicTimeseries API", async function () {
+    this.timeout(30_000);
+
+    const data = await withRetries(
+      async () => {
+        const response = await fetch(
+          `${SERVER_CONFIG.url}/api/topicTimeseries`,
+        );
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        return response.json();
+      },
+      { attempts: 5, delayMs: 1000, operationName: "topicTimeseries API" },
+    );
+
+    expect(data).to.be.an("array");
+  });
+
+  // Bug 2: Dashboard build test - verifies no server-only module errors
+  it("should build dashboard without server-only import errors", async function () {
+    this.timeout(TIMEOUTS.BUILD_MS);
+    testLogger.info("Building dashboard...");
+
+    const { stdout, stderr } = await execAsync("pnpm dashboard:build", {
+      cwd: TEST_PROJECT_DIR,
+    });
+
+    testLogger.debug("Dashboard build stdout", { stdout });
+    if (stderr) {
+      testLogger.debug("Dashboard build stderr", { stderr });
+    }
+
+    testLogger.info("Dashboard build succeeded");
+  });
+
+  // Bug 4: Workflow trigger test - the scheduled workflow (schedule: "* * * * *")
+  // auto-starts on backend boot, so AlreadyExists confirms it registered correctly
+  it("should have workflow registered and running", async function () {
+    this.timeout(30_000);
+
+    try {
+      await triggerWorkflow("getGithubEvents");
+      testLogger.info("Workflow triggered successfully");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("AlreadyExists")) {
+        testLogger.info(
+          "Workflow already running from schedule - confirmed registered",
+        );
+      } else {
+        throw err;
+      }
+    }
+  });
+});

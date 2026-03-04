@@ -20,7 +20,17 @@ import {
 import { TrendingTopicsControls } from "./trending-topics-controls";
 import { Button } from "@/components/ui/button";
 
-import { topicTimeseriesApi } from "moose-objects";
+interface TopicStats {
+  topic: string;
+  eventCount: number;
+  uniqueRepos: number;
+  uniqueUsers: number;
+}
+
+interface ResponseBody {
+  time: string;
+  topicStats: TopicStats[];
+}
 
 export function TrendingTopicsChart() {
   const [currentTimeIndex, setCurrentTimeIndex] = useState(0);
@@ -31,21 +41,24 @@ export function TrendingTopicsChart() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["topicTimeseries", interval, limit, exclude],
-    queryFn: async () => {
-      return await topicTimeseriesApi.call(
-        process.env.NEXT_PUBLIC_MOOSE_URL || "http://localhost:4000",
-        {
-          interval: interval as "minute" | "hour" | "day",
-          limit,
-          exclude: exclude || undefined,
-        },
+    queryFn: async (): Promise<ResponseBody[]> => {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_MOOSE_URL || "http://localhost:4000";
+      const params = new URLSearchParams();
+      params.set("interval", interval);
+      params.set("limit", String(limit));
+      if (exclude) params.set("exclude", exclude);
+      const res = await fetch(
+        `${baseUrl}/api/topicTimeseries?${params.toString()}`,
       );
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
     },
   });
 
   // Updated animation logic
   useEffect(() => {
-    if (!data || !isPlaying) return;
+    if (!data || data.length === 0 || !isPlaying) return;
 
     const intervalId = window.setInterval(() => {
       setCurrentTimeIndex((prev) => (prev + 1) % data.length);
@@ -53,6 +66,15 @@ export function TrendingTopicsChart() {
 
     return () => window.clearInterval(intervalId);
   }, [data, isPlaying]);
+
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+
+    const safeIndex = Math.max(0, Math.min(currentTimeIndex, data.length - 1));
+    if (safeIndex !== currentTimeIndex) {
+      setCurrentTimeIndex(safeIndex);
+    }
+  }, [currentTimeIndex, data]);
 
   if (isLoading && !data) {
     return (
@@ -74,7 +96,13 @@ export function TrendingTopicsChart() {
     );
   }
 
-  if (!data) return null;
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-80 text-muted-foreground">
+        <p>Waiting for data... Events will appear once ingested.</p>
+      </div>
+    );
+  }
 
   const chartConfig = Array.from(
     new Set(data.flatMap((d) => d.topicStats.map((t) => t.topic))),
@@ -89,7 +117,12 @@ export function TrendingTopicsChart() {
     {},
   );
 
-  const chartData = data[currentTimeIndex].topicStats.map((stat) => ({
+  const safeCurrentTimeIndex = Math.max(
+    0,
+    Math.min(currentTimeIndex, data.length - 1),
+  );
+
+  const chartData = data[safeCurrentTimeIndex].topicStats.map((stat) => ({
     eventCount: stat.eventCount,
     topic: stat.topic,
     fill: `var(--color-${stat.topic})`,

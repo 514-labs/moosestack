@@ -1,16 +1,14 @@
-import { IGhEvent, IRepoStarEvent } from "./ingest/models";
-import {
-  getTopicTimeseries,
-  QueryParams,
-  ResponseBody,
-} from "./apis/topicTimeseries";
-
+import { tags } from "typia";
 import {
   IngestPipeline,
   Api,
-  Key,
   ApiUtil,
 } from "@514labs/moose-lib/browserCompatible";
+
+import { IGhEvent, IRepoStarEvent, GitHubEventType } from "./ingest/models.js";
+
+export { GitHubEventType };
+export type { IGhEvent, IRepoStarEvent };
 
 // Pipeline to receive raw events from the Github API
 export const GhEvent = new IngestPipeline<IGhEvent>("GhEvent", {
@@ -26,7 +24,120 @@ export const RepoStarEvent = new IngestPipeline<IRepoStarEvent>("RepoStar", {
   table: true,
 });
 
+// API types
+export interface QueryParams {
+  interval?: "minute" | "hour" | "day";
+  limit?: number & tags.Minimum<1> & tags.Type<"int32">;
+  exclude?: string & tags.Pattern<"^([^,]+)(,[^,]+)*$">;
+}
+
+export interface TopicStats {
+  topic: string;
+  eventCount: number;
+  uniqueRepos: number;
+  uniqueUsers: number;
+}
+
+export interface ResponseBody {
+  time: string;
+  topicStats: TopicStats[];
+}
+
+interface RawTopicStats {
+  topic: string;
+  eventCount: string;
+  uniqueRepos: string;
+  uniqueUsers: string;
+}
+
+interface RawResponseBody {
+  time: string;
+  topicStats: RawTopicStats[];
+}
+
 // Consumption API to get a timeseries of the top `n` topics over a given interval
+async function getTopicTimeseries(
+  { interval = "minute", limit = 10, exclude = "" }: QueryParams,
+  { client, sql }: ApiUtil,
+): Promise<ResponseBody[]> {
+  const repoTable = RepoStarEvent.table!;
+  const cols = repoTable.columns;
+
+  const intervalMap = {
+    hour: {
+      select: sql`toStartOfHour(${cols.createdAt}) AS time`,
+      groupBy: sql`GROUP BY time, topic`,
+      orderBy: sql`ORDER BY time, totalEvents DESC`,
+      limit: sql`LIMIT ${limit} BY time`,
+    },
+    day: {
+      select: sql`toStartOfDay(${cols.createdAt}) AS time`,
+      groupBy: sql`GROUP BY time, topic`,
+      orderBy: sql`ORDER BY time, totalEvents DESC`,
+      limit: sql`LIMIT ${limit} BY time`,
+    },
+    minute: {
+      select: sql`toStartOfFifteenMinutes(${cols.createdAt}) AS time`,
+      groupBy: sql`GROUP BY time, topic`,
+      orderBy: sql`ORDER BY time, totalEvents DESC`,
+      limit: sql`LIMIT ${limit} BY time`,
+    },
+  };
+
+  const query = sql`
+            SELECT
+                time,
+                arrayMap(
+                    (topic, events, repos, users) -> map(
+                        'topic', topic,
+                        'eventCount', toString(events),
+                        'uniqueRepos', toString(repos),
+                        'uniqueUsers', toString(users)
+                    ),
+                    groupArray(topic),
+                    groupArray(totalEvents),
+                    groupArray(uniqueReposCount),
+                    groupArray(uniqueUsersCount)
+                ) AS topicStats
+            FROM (
+                SELECT
+                    ${intervalMap[interval].select},
+                    arrayJoin(${cols.repoTopics!}) AS topic,
+                    count() AS totalEvents,
+                    uniqExact(${cols.repoId}) AS uniqueReposCount,
+                    uniqExact(${cols.actorId}) AS uniqueUsersCount
+                FROM ${RepoStarEvent.table!}
+                WHERE length(${cols.repoTopics!}) > 0
+                ${(() => {
+                  const tokens = exclude
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  if (tokens.length === 0) return sql``;
+                  return sql`AND arrayAll(x -> x NOT IN (${sql.join(tokens.map((t) => sql`${t}`))}), ${cols.repoTopics!})`;
+                })()}
+                ${intervalMap[interval].groupBy}
+                ${intervalMap[interval].orderBy}
+                ${intervalMap[interval].limit}
+            )
+            GROUP BY time
+            ORDER BY time;
+        `;
+
+  const resultSet = await client.query.execute(query);
+  const rows = (await resultSet.json()) as RawResponseBody[];
+
+  return rows.map((row) => ({
+    time: row.time,
+    topicStats: row.topicStats.map((topicStat) => ({
+      topic: topicStat.topic,
+      eventCount: Number(topicStat.eventCount),
+      uniqueRepos: Number(topicStat.uniqueRepos),
+      uniqueUsers: Number(topicStat.uniqueUsers),
+    })),
+  }));
+}
+
 export const topicTimeseriesApi = new Api<QueryParams, ResponseBody[]>(
   "topicTimeseries",
   getTopicTimeseries,

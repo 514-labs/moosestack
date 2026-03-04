@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev": "pnpm --recursive --filter './packages/*' build && pnpm --parallel --filter './apps/*' dev",
     "build": "pnpm --recursive --filter './packages/*' build && pnpm --recursive --filter './apps/*' build",
     "lint": "pnpm --recursive --filter './apps/*' lint",
     "clean": "pnpm --recursive --filter './apps/*' clean",
@@ -18,5 +18,11 @@
   "engines": {
     "node": ">=20 <25",
     "pnpm": ">=8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@514labs/kafka-javascript",
+      "@confluentinc/kafka-javascript"
+    ]
   }
 }
