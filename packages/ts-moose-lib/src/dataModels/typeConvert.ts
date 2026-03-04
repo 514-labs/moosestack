@@ -1037,6 +1037,11 @@ export const toColumns = (
         `Column '${prop.name}' can only have one of ClickHouseDefault, ClickHouseMaterialized, or ClickHouseAlias.`,
       );
     }
+    if (aliasValue != null && isKey) {
+      throw new UnsupportedFeature(
+        `Column '${prop.name}' cannot be a primary key when using ClickHouseAlias.`,
+      );
+    }
 
     // Extract TSDoc comment from the property
     const docComment = prop.getDocumentationComment(checker);

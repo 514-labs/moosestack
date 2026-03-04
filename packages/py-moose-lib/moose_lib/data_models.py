@@ -711,6 +711,11 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 f"Column '{column_name}' can only have one of DEFAULT, MATERIALIZED, or ALIAS."
             )
 
+        if alias_expr is not None and primary_key:
+            raise ValueError(
+                f"Column '{column_name}' with ALIAS cannot be a primary key."
+            )
+
         # Extract TTL expression from metadata, if provided
         ttl_expr = next(
             (md.expression for md in mds if isinstance(md, ClickHouseTTL)),
