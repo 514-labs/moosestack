@@ -69,9 +69,30 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     Ok(())
 }
 
-/// Validates that row policies reference existing tables and columns.
+/// Validates that row policies reference existing tables and columns,
+/// and that no two policies map the same column to different JWT claims.
 fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> {
+    // Track column → (claim, policy_name) to detect conflicting claim mappings.
+    // Two policies on the same column produce the same ClickHouse setting name,
+    // so they must agree on which JWT claim provides the value.
+    let mut column_claims: std::collections::HashMap<&str, (&str, &str)> =
+        std::collections::HashMap::new();
+
     for policy in plan.target_infra_map.select_row_policies.values() {
+        if let Some(&(existing_claim, existing_policy)) = column_claims.get(policy.column.as_str())
+        {
+            if existing_claim != policy.claim {
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policies '{}' and '{}' both filter on column '{}' but map to \
+                     different JWT claims ('{}' vs '{}'). Policies on the same column \
+                     must use the same claim.",
+                    existing_policy, policy.name, policy.column, existing_claim, policy.claim
+                )));
+            }
+        } else {
+            column_claims.insert(&policy.column, (&policy.claim, &policy.name));
+        }
+
         for table_name in &policy.tables {
             let table = plan
                 .target_infra_map

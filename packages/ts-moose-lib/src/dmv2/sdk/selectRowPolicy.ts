@@ -24,7 +24,7 @@ export interface SelectRowPolicyConfig {
  * Represents a ClickHouse Row Policy as a first-class Moose primitive.
  *
  * When defined, Moose generates `CREATE ROW POLICY` DDL that uses
- * `getSetting('custom_moose_rls_{column}')` for dynamic per-query tenant scoping.
+ * `getSetting('SQL_moose_rls_{column}')` for dynamic per-query tenant scoping.
  *
  * @example
  * ```typescript
@@ -56,8 +56,10 @@ export class SelectRowPolicy {
     selectRowPolicies.set(this.name, this);
   }
 
-  /** Resolved table names for serialization */
+  /** Resolved table names for serialization (versioned ClickHouse names) */
   get tableNames(): string[] {
-    return this.config.tables.map((t) => t.name);
+    return this.config.tables.map((t) =>
+      t instanceof OlapTable ? t.generateTableName() : t.name,
+    );
   }
 }

@@ -122,9 +122,8 @@ impl InfrastructureSignature {
                 proto
             }
             InfrastructureSignature::SelectRowPolicy { id } => {
-                // Proto support for row policies is deferred — serialize as sql_resource for now
                 let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_sql_resource_id(format!("row_policy:{}", id));
+                proto.set_select_row_policy_id(id.clone());
                 proto
             }
         }
@@ -155,6 +154,9 @@ impl InfrastructureSignature {
             }
             Some(infrastructure_signature::Signature::ViewId(id)) => {
                 InfrastructureSignature::View { id }
+            }
+            Some(infrastructure_signature::Signature::SelectRowPolicyId(id)) => {
+                InfrastructureSignature::SelectRowPolicy { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");

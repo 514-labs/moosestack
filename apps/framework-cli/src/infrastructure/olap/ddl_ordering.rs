@@ -1538,8 +1538,12 @@ pub fn order_olap_changes(
                     policy
                         .tables
                         .iter()
-                        .map(|t| InfrastructureSignature::Table {
-                            id: format!("{}_{}", default_database, t),
+                        .filter_map(|t| {
+                            tables.values().find(|table| table.name == *t).map(|table| {
+                                InfrastructureSignature::Table {
+                                    id: table.id(default_database),
+                                }
+                            })
                         })
                         .collect(),
                     vec![],
@@ -1551,25 +1555,57 @@ pub fn order_olap_changes(
                 }])
             }
             OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+                let dependency_info = create_dependency_info(
+                    policy
+                        .tables
+                        .iter()
+                        .filter_map(|t| {
+                            tables.values().find(|table| table.name == *t).map(|table| {
+                                InfrastructureSignature::Table {
+                                    id: table.id(default_database),
+                                }
+                            })
+                        })
+                        .collect(),
+                    vec![],
+                );
                 OperationPlan::teardown(vec![AtomicOlapOperation::DropRowPolicy {
                     policy: (**policy).clone(),
                     default_database: default_database.to_string(),
-                    dependency_info: create_empty_dependency_info(),
+                    dependency_info,
                 }])
             }
             OlapChange::SelectRowPolicy(Change::Updated { before, after }) => {
                 let mut plan = OperationPlan::new();
+                let before_dependency_info = create_dependency_info(
+                    before
+                        .tables
+                        .iter()
+                        .filter_map(|t| {
+                            tables.values().find(|table| table.name == *t).map(|table| {
+                                InfrastructureSignature::Table {
+                                    id: table.id(default_database),
+                                }
+                            })
+                        })
+                        .collect(),
+                    vec![],
+                );
                 plan.teardown_ops.push(AtomicOlapOperation::DropRowPolicy {
                     policy: (**before).clone(),
                     default_database: default_database.to_string(),
-                    dependency_info: create_empty_dependency_info(),
+                    dependency_info: before_dependency_info,
                 });
                 let dependency_info = create_dependency_info(
                     after
                         .tables
                         .iter()
-                        .map(|t| InfrastructureSignature::Table {
-                            id: format!("{}_{}", default_database, t),
+                        .filter_map(|t| {
+                            tables.values().find(|table| table.name == *t).map(|table| {
+                                InfrastructureSignature::Table {
+                                    id: table.id(default_database),
+                                }
+                            })
                         })
                         .collect(),
                     vec![],
