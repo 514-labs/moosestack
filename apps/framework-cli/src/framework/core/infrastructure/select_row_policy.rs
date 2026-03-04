@@ -21,9 +21,9 @@ pub struct SelectRowPolicy {
 }
 
 impl SelectRowPolicy {
-    /// ClickHouse setting name derived from the column: `custom_moose_rls_{column}`
+    /// ClickHouse setting name derived from the column: `SQL_moose_rls_{column}`
     pub fn setting_name(&self) -> String {
-        format!("custom_moose_rls_{}", self.column)
+        format!("SQL_moose_rls_{}", self.column)
     }
 
     /// USING expression for the row policy DDL

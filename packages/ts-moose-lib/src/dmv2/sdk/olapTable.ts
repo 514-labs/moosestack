@@ -808,7 +808,8 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    * Generates the versioned table name following Moose's naming convention
    * Format: {tableName}_{version_with_dots_replaced_by_underscores}
    */
-  private generateTableName(): string {
+  /** Returns the versioned ClickHouse table name (e.g., "events_1_0_0") */
+  generateTableName(): string {
     // Cache the table name since version rarely changes
     if (this._cachedTableName) {
       return this._cachedTableName;

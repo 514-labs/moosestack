@@ -1,5 +1,6 @@
 import {
   MooseClient,
+  MOOSE_RLS_ROLE,
   QueryClient,
   RowPolicyOptions,
   MooseUtils,
@@ -8,8 +9,6 @@ import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
 import type { RowPoliciesConfig } from "./runner";
-
-const MOOSE_RLS_ROLE = "moose_rls_role";
 
 export interface GetMooseUtilsOptions {
   /** Map of JWT claim names to their values for row policy scoping */
@@ -27,9 +26,12 @@ function buildRowPolicyOptionsFromContext(
   const clickhouse_settings: Record<string, string> = {};
   for (const [settingName, claimName] of Object.entries(config)) {
     const value = rlsContext[claimName];
-    if (value !== undefined) {
-      clickhouse_settings[settingName] = value;
+    if (value === undefined) {
+      throw new Error(
+        `Missing required row policy claim "${claimName}" in rlsContext`,
+      );
     }
+    clickhouse_settings[settingName] = value;
   }
   return { role: MOOSE_RLS_ROLE, clickhouse_settings };
 }
