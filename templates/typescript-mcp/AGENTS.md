@@ -4,7 +4,7 @@ pnpm monorepo: MooseStack backend (`packages/moosestack-service`) + Next.js chat
 
 ## Architecture
 
-```
+```text
 Next.js App (Chat UI -> /api/chat -> MCP Client)
     | HTTP + Bearer Token |
 MooseStack Service (Custom MCP Server at /tools -> ClickHouse)
@@ -47,6 +47,7 @@ Two MCP servers run on the same host:
 ## Custom MCP Tools (at `/tools`)
 
 ### `query_clickhouse`
+
 - Executes read-only SQL (SELECT, SHOW, DESCRIBE, EXPLAIN)
 - Blocks writes (INSERT, UPDATE, DELETE) and DDL (DROP, CREATE, ALTER, TRUNCATE)
 - Parameters: `query` (required), `limit` (optional, default 100, max 1000)
@@ -54,6 +55,7 @@ Two MCP servers run on the same host:
 - Uses `currentDatabase()` automatically
 
 ### `get_data_catalog`
+
 - Discovers tables and materialized views with schema info
 - Parameters: `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed)
 - Uses `currentDatabase()` automatically
@@ -61,14 +63,19 @@ Two MCP servers run on the same host:
 ## Copilot Setup
 
 ### MooseDev MCP (built-in)
+
 Pre-configured in `.mcp.json` at the project root. Most tools pick this up automatically when the dev server is running.
 
 ### ClickHouse Best Practices Skill
+
+For optimized ClickHouse query and schema guidance, ask the user to install the skill:
+
 ```bash
 npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
 ```
 
 ### Context7 for MooseStack Documentation
+
 Pre-configured in `.mcp.json`. Add "use context7" to prompts when referencing MooseStack docs.
 
 ## Relevant Documentation

@@ -8,7 +8,7 @@ This README covers the **quickstart** — getting the template running locally. 
 
 This is a pnpm monorepo containing two independent applications that work together:
 
-```
+```text
 Next.js App (Chat UI -> API Route -> MCP Client)
     | HTTP + Bearer Token |
 MooseStack Service (Tools -> MCP Server -> ClickHouse)
@@ -99,6 +99,12 @@ This template ships with a `.mcp.json` that pre-configures:
 
 Most AI copilots (Claude Code, Cursor, etc.) pick up `.mcp.json` automatically when you open the project.
 
+You can also install the **ClickHouse Best Practices Skill** for optimized query and schema guidance:
+
+```bash
+npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
+```
+
 ## Next Steps
 
 For a full walkthrough of data modeling, loading data, customizing the frontend, and deploying to production, see the [Chat in Your App Tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
@@ -148,7 +154,7 @@ port = 4001
 
 This is pre-configured in `packages/web-app/.env.development` for local dev. If you've deleted that file, recreate it:
 
-```
+```dotenv
 MCP_SERVER_URL=http://localhost:4000
 ```
 
