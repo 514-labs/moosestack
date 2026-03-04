@@ -142,7 +142,7 @@ example_table = OlapTable[ExampleSchema]("example_table", OlapConfig(
 
 ### Creating Tables in Ingestion Pipelines
 
-For end-to-end data flows, create tables as part of an ingestion pipeline. When you set `table: true`, the pipeline creates the table automatically — don't declare a separate `OlapTable` with the same name or you'll get a conflict error at startup.
+For end-to-end data flows, create tables as part of an ingestion pipeline. Setting `table` creates it automatically — a separate `OlapTable` with the same name will cause a conflict.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
