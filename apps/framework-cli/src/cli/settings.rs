@@ -200,7 +200,8 @@ fn config_path() -> PathBuf {
 
 /// Returns the path to the Moose user directory
 pub fn user_directory() -> PathBuf {
-    let mut path: PathBuf = home_dir().unwrap();
+    let mut path: PathBuf =
+        home_dir().expect("Could not determine home directory. Ensure HOME is set.");
     path.push(CLI_USER_DIRECTORY);
     path
 }
@@ -273,7 +274,16 @@ pub fn init_config_file() -> Result<(), std::io::Error> {
 enabled=true
 is_moose_developer=false
 "#;
-        std::fs::write(path, contents_toml)?;
+        if let Err(e) = std::fs::write(&path, contents_toml) {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                warn!(
+                    "Config file {} could not be created (read-only or externally managed); using defaults",
+                    path.display()
+                );
+                return Ok(());
+            }
+            return Err(e);
+        }
     } else {
         let data = std::fs::read_to_string(&path)?;
         match data.parse::<DocumentMut>() {
