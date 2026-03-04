@@ -142,7 +142,7 @@ example_table = OlapTable[ExampleSchema]("example_table", OlapConfig(
 
 ### Creating Tables in Ingestion Pipelines
 
-For end-to-end data flows, create tables as part of an ingestion pipeline:
+For end-to-end data flows, create tables as part of an ingestion pipeline. When you set `table: true`, the pipeline creates the table automatically — don't declare a separate `OlapTable` with the same name or you'll get a conflict error at startup.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -159,7 +159,7 @@ interface UserEvent {
 
 // Create a complete ingestion pipeline with a table
 const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
-  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingestApi: true, // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
     orderByFields: ["id", "timestamp"]
