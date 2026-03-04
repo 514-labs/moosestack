@@ -389,7 +389,9 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::CreateMaterializedView { .. }
         | AtomicOlapOperation::DropMaterializedView { .. }
         | AtomicOlapOperation::CreateView { .. }
-        | AtomicOlapOperation::DropView { .. } => None,
+        | AtomicOlapOperation::DropView { .. }
+        | AtomicOlapOperation::CreateRowPolicy { .. }
+        | AtomicOlapOperation::DropRowPolicy { .. } => None,
     }
 }
 

@@ -78,6 +78,10 @@ program
     "Number of worker processes for the consumption API cluster",
     parseInt,
   )
+  .option(
+    "--row-policies <json>",
+    "JSON map of ClickHouse setting names to JWT claim names for row policy enforcement",
+  )
   .action(
     (
       clickhouseDb,
@@ -114,6 +118,8 @@ program
         enforceAuth: options.enforceAuth,
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
+        rowPoliciesConfig:
+          options.rowPolicies ? JSON.parse(options.rowPolicies) : undefined,
       });
     },
   );

@@ -1,7 +1,38 @@
-import { MooseClient, QueryClient, MooseUtils } from "./helpers";
+import {
+  MooseClient,
+  QueryClient,
+  RowPolicyOptions,
+  MooseUtils,
+} from "./helpers";
 import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
+import type { RowPoliciesConfig } from "./runner";
+
+const MOOSE_RLS_ROLE = "moose_rls_role";
+
+export interface GetMooseUtilsOptions {
+  /** Map of JWT claim names to their values for row policy scoping */
+  rlsContext?: Record<string, string>;
+}
+
+/**
+ * Build RowPolicyOptions from the runtime row policies config and an rlsContext.
+ * The rlsContext provides claim values; the config maps claims to ClickHouse settings.
+ */
+function buildRowPolicyOptionsFromContext(
+  config: RowPoliciesConfig,
+  rlsContext: Record<string, string>,
+): RowPolicyOptions {
+  const clickhouse_settings: Record<string, string> = {};
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = rlsContext[claimName];
+    if (value !== undefined) {
+      clickhouse_settings[settingName] = value;
+    }
+  }
+  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+}
 
 // Cached utilities and initialization promise for standalone mode
 let standaloneUtils: MooseUtils | null = null;
@@ -30,34 +61,44 @@ const toClientConfig = (config: {
  * const moose = getMooseUtils(); // WRONG - returns Promise, not MooseUtils!
  * ```
  *
- * **Breaking Change from v1.x**: This function signature changed from sync to async.
- * If you were using the old sync API that extracted utils from a request object,
- * use `getMooseUtilsFromRequest(req)` for backward compatibility (deprecated).
- *
- * @param req - DEPRECATED: Request parameter is no longer needed and will be ignored.
- *              If you need to extract moose from a request, use getMooseUtilsFromRequest().
- * @returns Promise resolving to MooseUtils with client and sql utilities.
- *
- * @example
+ * Pass `{ rlsContext }` to get a scoped client that enforces ClickHouse row policies:
  * ```typescript
- * const { client, sql } = await getMooseUtils();
- * const result = await client.query.execute(sql`SELECT * FROM table`);
+ * const { client, sql } = await getMooseUtils({ rlsContext: { org_id: orgId } });
+ * // All queries through this client are filtered by org_id
  * ```
+ *
+ * @param options - Optional. Pass `{ rlsContext }` to scope queries via row policies.
+ * @returns Promise resolving to MooseUtils with client and sql utilities.
  */
-export async function getMooseUtils(req?: any): Promise<MooseUtils> {
-  // Deprecation warning if req passed
-  if (req !== undefined) {
-    console.warn(
-      "[DEPRECATED] getMooseUtils(req) no longer requires a request parameter. " +
-        "Use getMooseUtils() instead.",
-    );
-  }
-
+export async function getMooseUtils(
+  options?: GetMooseUtilsOptions,
+): Promise<MooseUtils> {
   // Check if running in Moose runtime
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
   if (runtimeContext) {
-    // In Moose runtime - use existing connections
+    if (options?.rlsContext && runtimeContext.rowPoliciesConfig) {
+      // Create a new scoped QueryClient with row policy options.
+      // Uses the same shared ClickHouseClient connection — no new connections.
+      const rowPolicyOpts = buildRowPolicyOptionsFromContext(
+        runtimeContext.rowPoliciesConfig,
+        options.rlsContext,
+      );
+      const scopedQueryClient = new QueryClient(
+        runtimeContext.clickhouseClient,
+        "rls-scoped",
+        rowPolicyOpts,
+      );
+      return {
+        client: new MooseClient(
+          scopedQueryClient,
+          runtimeContext.temporalClient,
+        ),
+        sql: sql,
+        jwt: runtimeContext.jwt,
+      };
+    }
+    // No rlsContext — return the shared singleton (today's behavior)
     return {
       client: runtimeContext.client,
       sql: sql,
