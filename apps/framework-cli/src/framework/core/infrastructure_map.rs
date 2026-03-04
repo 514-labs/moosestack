@@ -3738,6 +3738,386 @@ pub fn compute_table_columns_diff(
     diff
 }
 
+/// A column rename detected by heuristic analysis of add/remove pairs.
+#[derive(Debug, Clone)]
+pub struct DetectedColumnRename {
+    /// The column as it existed before (removed side)
+    pub before: Column,
+    /// The column as it exists after (added side)
+    pub after: Column,
+    /// Confidence score in range [0.0, 1.0] that this is a genuine rename
+    pub confidence: f64,
+}
+
+/// Minimum confidence threshold for a rename to be considered plausible.
+const RENAME_CONFIDENCE_THRESHOLD: f64 = 0.5;
+
+/// Analyzes a set of column changes to detect likely renames among the
+/// added/removed pairs.
+///
+/// When a user renames a column, the name-based diff produces a `Removed` +
+/// `Added` pair. This function inspects those pairs and scores them using
+/// several heuristics (type equality, positional proximity, property
+/// similarity, name similarity, and set cardinality) to decide whether a
+/// remove/add pair is actually a rename.
+///
+/// Only pairs that exceed [`RENAME_CONFIDENCE_THRESHOLD`] are returned, and
+/// each removed/added column appears in at most one rename (greedy best-match).
+pub fn detect_column_renames(
+    column_changes: &[ColumnChange],
+    before: &Table,
+    after: &Table,
+) -> Vec<DetectedColumnRename> {
+    let removed: Vec<&Column> = column_changes
+        .iter()
+        .filter_map(|c| match c {
+            ColumnChange::Removed(col) => Some(col),
+            _ => None,
+        })
+        .collect();
+
+    let added: Vec<&Column> = column_changes
+        .iter()
+        .filter_map(|c| match c {
+            ColumnChange::Added { column, .. } => Some(column),
+            _ => None,
+        })
+        .collect();
+
+    if removed.is_empty() || added.is_empty() {
+        return Vec::new();
+    }
+
+    let before_positions: HashMap<&str, usize> = before
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.name.as_str(), i))
+        .collect();
+
+    let after_positions: HashMap<&str, usize> = after
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.name.as_str(), i))
+        .collect();
+
+    let max_columns = before.columns.len().max(after.columns.len()).max(1) as f64;
+
+    // Score every (removed, added) candidate pair.
+    let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+    for (ri, rem) in removed.iter().enumerate() {
+        for (ai, add) in added.iter().enumerate() {
+            let score =
+                rename_confidence(rem, add, &before_positions, &after_positions, max_columns);
+            if score >= RENAME_CONFIDENCE_THRESHOLD {
+                candidates.push((ri, ai, score));
+            }
+        }
+    }
+
+    // Greedy best-match: highest confidence first, each column used at most once.
+    candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut used_removed = vec![false; removed.len()];
+    let mut used_added = vec![false; added.len()];
+    let mut result = Vec::new();
+
+    for (ri, ai, score) in candidates {
+        if used_removed[ri] || used_added[ai] {
+            continue;
+        }
+        used_removed[ri] = true;
+        used_added[ai] = true;
+        result.push(DetectedColumnRename {
+            before: removed[ri].clone(),
+            after: added[ai].clone(),
+            confidence: score,
+        });
+    }
+
+    result
+}
+
+/// Computes a confidence score in [0.0, 1.0] that `removed` was renamed to `added`.
+fn rename_confidence(
+    removed: &Column,
+    added: &Column,
+    before_positions: &HashMap<&str, usize>,
+    after_positions: &HashMap<&str, usize>,
+    max_columns: f64,
+) -> f64 {
+    let mut score = 0.0;
+
+    // --- 1. Type equality (strongest signal, 0.4) ---
+    if removed.data_type == added.data_type {
+        score += 0.4;
+    }
+
+    // --- 2. Positional proximity (0.2) ---
+    if let (Some(&before_pos), Some(&after_pos)) = (
+        before_positions.get(removed.name.as_str()),
+        after_positions.get(added.name.as_str()),
+    ) {
+        let distance = (before_pos as f64 - after_pos as f64).abs();
+        // Full credit when same position, linearly declining to 0 at opposite ends.
+        score += 0.2 * (1.0 - distance / max_columns);
+    }
+
+    // --- 3. Property similarity (0.15 total) ---
+    if removed.required == added.required {
+        score += 0.03;
+    }
+    if removed.unique == added.unique {
+        score += 0.03;
+    }
+    if removed.primary_key == added.primary_key {
+        score += 0.03;
+    }
+    if removed.default == added.default {
+        score += 0.03;
+    }
+    if removed.codec == added.codec {
+        score += 0.03;
+    }
+
+    // --- 4. Name similarity via normalized edit distance (0.25) ---
+    let max_len = removed.name.len().max(added.name.len());
+    if max_len > 0 {
+        let dist = levenshtein_distance(&removed.name, &added.name);
+        let normalized = 1.0 - (dist as f64 / max_len as f64);
+        score += 0.25 * normalized;
+    }
+
+    score
+}
+
+/// Classic Levenshtein distance between two strings.
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let (m, n) = (a_chars.len(), b_chars.len());
+
+    // Single-row DP to keep memory O(min(m,n)).
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0; n + 1];
+
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = (prev[j] + 1) // deletion
+                .min(curr[j - 1] + 1) // insertion
+                .min(prev[j - 1] + cost); // substitution
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[n]
+}
+
+#[cfg(test)]
+mod rename_detection_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+    fn make_column(name: &str, data_type: ColumnType) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }
+    }
+
+    fn make_table(columns: Vec<Column>) -> Table {
+        Table {
+            name: "test_table".to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    #[test]
+    fn detects_simple_rename_same_type() {
+        let old_col = make_column("user_name", ColumnType::String);
+        let new_col = make_column("username", ColumnType::String);
+
+        let before = make_table(vec![old_col.clone()]);
+        let after = make_table(vec![new_col.clone()]);
+
+        let changes = vec![
+            ColumnChange::Removed(old_col),
+            ColumnChange::Added {
+                column: new_col,
+                position_after: None,
+            },
+        ];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert_eq!(renames.len(), 1);
+        assert_eq!(renames[0].before.name, "user_name");
+        assert_eq!(renames[0].after.name, "username");
+        assert!(renames[0].confidence > 0.7);
+    }
+
+    #[test]
+    fn no_rename_when_types_differ_and_names_unrelated() {
+        let old_col = make_column(
+            "age",
+            ColumnType::Int(crate::framework::core::infrastructure::table::IntType::Int32),
+        );
+        let new_col = make_column("email", ColumnType::String);
+
+        let before = make_table(vec![old_col.clone()]);
+        let after = make_table(vec![new_col.clone()]);
+
+        let changes = vec![
+            ColumnChange::Removed(old_col),
+            ColumnChange::Added {
+                column: new_col,
+                position_after: None,
+            },
+        ];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert!(renames.is_empty());
+    }
+
+    #[test]
+    fn picks_best_match_among_multiple_candidates() {
+        let removed_a = make_column("first_name", ColumnType::String);
+        let removed_b = make_column(
+            "status_code",
+            ColumnType::Int(crate::framework::core::infrastructure::table::IntType::Int32),
+        );
+
+        let added_a = make_column("firstName", ColumnType::String);
+        let added_b = make_column(
+            "statusCode",
+            ColumnType::Int(crate::framework::core::infrastructure::table::IntType::Int32),
+        );
+
+        let before = make_table(vec![removed_a.clone(), removed_b.clone()]);
+        let after = make_table(vec![added_a.clone(), added_b.clone()]);
+
+        let changes = vec![
+            ColumnChange::Removed(removed_a),
+            ColumnChange::Removed(removed_b),
+            ColumnChange::Added {
+                column: added_a,
+                position_after: None,
+            },
+            ColumnChange::Added {
+                column: added_b,
+                position_after: Some("firstName".to_string()),
+            },
+        ];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert_eq!(renames.len(), 2);
+
+        let rename_names: Vec<(&str, &str)> = renames
+            .iter()
+            .map(|r| (r.before.name.as_str(), r.after.name.as_str()))
+            .collect();
+        assert!(rename_names.contains(&("first_name", "firstName")));
+        assert!(rename_names.contains(&("status_code", "statusCode")));
+    }
+
+    #[test]
+    fn no_renames_when_only_additions() {
+        let new_col = make_column("email", ColumnType::String);
+        let after = make_table(vec![new_col.clone()]);
+        let before = make_table(vec![]);
+
+        let changes = vec![ColumnChange::Added {
+            column: new_col,
+            position_after: None,
+        }];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert!(renames.is_empty());
+    }
+
+    #[test]
+    fn no_renames_when_only_removals() {
+        let old_col = make_column("email", ColumnType::String);
+        let before = make_table(vec![old_col.clone()]);
+        let after = make_table(vec![]);
+
+        let changes = vec![ColumnChange::Removed(old_col)];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert!(renames.is_empty());
+    }
+
+    #[test]
+    fn position_proximity_boosts_confidence() {
+        let col_a = make_column("keep_1", ColumnType::String);
+        let col_b = make_column("keep_2", ColumnType::String);
+        let removed = make_column("old_name", ColumnType::String);
+        let added = make_column("new_name", ColumnType::String);
+
+        // removed was at index 1, added is at index 1 — same position
+        let before = make_table(vec![col_a.clone(), removed.clone(), col_b.clone()]);
+        let after = make_table(vec![col_a.clone(), added.clone(), col_b.clone()]);
+
+        let changes = vec![
+            ColumnChange::Removed(removed),
+            ColumnChange::Added {
+                column: added,
+                position_after: Some("keep_1".to_string()),
+            },
+        ];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert_eq!(renames.len(), 1);
+        assert!(renames[0].confidence > 0.6);
+    }
+
+    #[test]
+    fn levenshtein_basic() {
+        assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
+        assert_eq!(levenshtein_distance("", "abc"), 3);
+        assert_eq!(levenshtein_distance("abc", "abc"), 0);
+        assert_eq!(levenshtein_distance("abc", ""), 3);
+    }
+}
+
 #[cfg(test)]
 impl Default for InfrastructureMap {
     /// Creates a default empty infrastructure map
