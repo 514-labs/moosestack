@@ -90,16 +90,15 @@ Make sure the following ports are free before running `pnpm dev`. If any are in 
 | ClickHouse HTTP      | 18123 |
 | ClickHouse native    | 9000  |
 
-### AI Copilot Integration
+### Agent Harness
 
-This template ships with a `.mcp.json` that pre-configures:
+This template ships with an agent harness — a set of tools that give your AI copilot full context over the project:
 
-- **[MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp)** — MooseStack's built-in MCP server for querying your local database and inspecting your data pipeline
+- **[MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp)** — MooseStack's built-in MCP server for querying your local database and inspecting your data pipeline (requires `pnpm dev:moose` running)
 - **[Context7](https://github.com/upstash/context7)** — serves up-to-date MooseStack documentation to your copilot
+- **[ClickHouse Best Practices Skill](https://github.com/514-labs/agent-skills)** — optimized query and schema guidance for ClickHouse
 
-Most AI copilots (Claude Code, Cursor, etc.) pick up `.mcp.json` automatically when you open the project.
-
-You can also install the **ClickHouse Best Practices Skill** for optimized query and schema guidance:
+The MCP servers are pre-configured in `.mcp.json` and most AI copilots (Claude Code, Cursor, etc.) pick them up automatically. To install the skill:
 
 ```bash
 npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices

@@ -60,23 +60,65 @@ Two MCP servers run on the same host:
 - Parameters: `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed)
 - Uses `currentDatabase()` automatically
 
-## Copilot Setup
+## Agent Harness
 
-### MooseDev MCP (built-in)
+This template includes an agent harness — tools you MUST ensure are active before working on this project.
 
-Pre-configured in `.mcp.json` at the project root. Most tools pick this up automatically when the dev server is running.
+### 1. MooseDev MCP (built-in)
 
-### ClickHouse Best Practices Skill
+Pre-configured in `.mcp.json` at the project root. Verify it is connected. The project must be initialized (`moose init`) and the dev server (`pnpm dev:moose`) must be running for it to work.
 
-For optimized ClickHouse query and schema guidance, ask the user to install the skill:
+### 2. Context7 for MooseStack Documentation
+
+Pre-configured in `.mcp.json`. Use Context7 when referencing MooseStack docs by adding "use context7" to your prompts.
+
+### 3. ClickHouse Best Practices Skill
+
+Install the skill at the start of every session if it is not already installed:
 
 ```bash
 npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
 ```
 
-### Context7 for MooseStack Documentation
+Use this skill when working with ClickHouse schemas, queries, or data models.
 
-Pre-configured in `.mcp.json`. Add "use context7" to prompts when referencing MooseStack docs.
+## When to Use What
+
+### MooseDev MCP tools (via `.mcp.json`)
+
+Use these for live inspection of the running project:
+
+| Tool | When to use |
+| --- | --- |
+| `get_infra_map` | First step — understand project topology (tables, streams, APIs, workflows) and data flow |
+| `query_olap` | Explore data, verify ingestion, check schemas (read-only SQL) |
+| `get_logs` | Debug errors, connection issues, or unexpected behavior in the dev server |
+| `get_issues` | Diagnose infrastructure health (stuck mutations, replication errors, S3Queue failures) |
+| `get_stream_sample` | Inspect recent messages from streaming topics to verify data flow |
+
+### ClickHouse Best Practices Skill
+
+Use when creating or refining data models, writing ClickHouse queries, designing schemas, or configuring materialized views. The skill contains rules covering schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+
+### Context7
+
+Use when you need to reference MooseStack documentation — add "use context7" to your prompt.
+
+### Moose CLI commands
+
+Use `moose --help` to discover all commands. These are the most useful for getting context:
+
+| Command | Purpose |
+| --- | --- |
+| `moose docs <slug>` | Fetch MooseStack documentation (e.g., `moose docs moosestack/olap`) |
+| `moose docs search "query"` | Search documentation by keyword |
+| `moose query "SQL"` | Execute SQL directly against ClickHouse |
+| `moose ls` | List all project primitives (tables, streams, APIs, workflows) |
+| `moose peek <name>` | View sample data from a table or stream |
+| `moose logs` | View dev server logs (use `-f "error"` to filter) |
+| `moose --help` | Discover all available commands |
+
+Prefer MooseDev MCP tools over CLI commands when both can accomplish the task — MCP tools return structured, token-optimized output.
 
 ## Relevant Documentation
 
