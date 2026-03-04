@@ -119,7 +119,18 @@ program
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
         rowPoliciesConfig:
-          options.rowPolicies ? JSON.parse(options.rowPolicies) : undefined,
+          options.rowPolicies ?
+            (() => {
+              try {
+                return JSON.parse(options.rowPolicies);
+              } catch (e) {
+                console.error(
+                  `Failed to parse --row-policies JSON: ${(e as Error).message}`,
+                );
+                process.exit(1);
+              }
+            })()
+          : undefined,
       });
     },
   );

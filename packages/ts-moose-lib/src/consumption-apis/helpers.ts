@@ -70,6 +70,9 @@ export interface RowPolicyOptions {
   clickhouse_settings: Record<string, string>;
 }
 
+/** Shared ClickHouse role name used by all row policies */
+export const MOOSE_RLS_ROLE = "moose_rls_role";
+
 export class QueryClient {
   client: ClickHouseClient;
   query_id_prefix: string;
