@@ -2,6 +2,8 @@
 
 This template provides a complete example of building AI-powered chat-over-data applications with MooseStack and the Model Context Protocol (MCP).
 
+This README covers the **quickstart** — getting the template running locally. For a full guided walkthrough including data modeling, loading data from S3, customizing the frontend, and deploying to production, see the [Chat in Your App Tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
+
 ## Overview
 
 This is a pnpm monorepo containing two independent applications that work together:
