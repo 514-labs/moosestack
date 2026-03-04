@@ -26,8 +26,78 @@ impl SelectRowPolicy {
         format!("SQL_moose_rls_{}", self.column)
     }
 
-    /// USING expression for the row policy DDL
+    /// USING expression for the row policy DDL.
+    /// Backtick-quotes the column identifier to handle reserved words and special characters.
     pub fn using_expr(&self) -> String {
-        format!("{} = getSetting('{}')", self.column, self.setting_name())
+        let escaped_column = self.column.replace('`', "``");
+        let escaped_setting = self.setting_name().replace('\'', "''");
+        format!("`{}` = getSetting('{}')", escaped_column, escaped_setting)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_policy(column: &str) -> SelectRowPolicy {
+        SelectRowPolicy {
+            name: "test_policy".to_string(),
+            tables: vec!["events".to_string()],
+            column: column.to_string(),
+            claim: "org_id".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_setting_name_basic() {
+        let policy = make_policy("org_id");
+        assert_eq!(policy.setting_name(), "SQL_moose_rls_org_id");
+    }
+
+    #[test]
+    fn test_setting_name_with_underscores() {
+        let policy = make_policy("tenant_org_id");
+        assert_eq!(policy.setting_name(), "SQL_moose_rls_tenant_org_id");
+    }
+
+    #[test]
+    fn test_using_expr_basic() {
+        let policy = make_policy("org_id");
+        assert_eq!(
+            policy.using_expr(),
+            "`org_id` = getSetting('SQL_moose_rls_org_id')"
+        );
+    }
+
+    #[test]
+    fn test_using_expr_different_column() {
+        let policy = make_policy("region");
+        assert_eq!(
+            policy.using_expr(),
+            "`region` = getSetting('SQL_moose_rls_region')"
+        );
+    }
+
+    #[test]
+    fn test_using_expr_escapes_backticks() {
+        let policy = make_policy("col`name");
+        assert_eq!(
+            policy.using_expr(),
+            "`col``name` = getSetting('SQL_moose_rls_col`name')"
+        );
+    }
+
+    #[test]
+    fn test_same_column_produces_same_setting() {
+        let policy_a = make_policy("org_id");
+        let policy_b = make_policy("org_id");
+        assert_eq!(policy_a.setting_name(), policy_b.setting_name());
+    }
+
+    #[test]
+    fn test_different_columns_produce_different_settings() {
+        let policy_a = make_policy("org_id");
+        let policy_b = make_policy("region");
+        assert_ne!(policy_a.setting_name(), policy_b.setting_name());
     }
 }
