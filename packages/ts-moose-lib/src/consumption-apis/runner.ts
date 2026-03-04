@@ -42,7 +42,7 @@ interface TemporalConfig {
 
 /**
  * Map of ClickHouse setting name → JWT claim name for row policy enforcement.
- * e.g., { "SQL_moose_rls_org_id": "org_id" }
+ * e.g., { "custom_moose_rls_org_id": "org_id" }
  */
 export type RowPoliciesConfig = Record<string, string>;
 
@@ -63,6 +63,30 @@ const toClientConfig = (config: ClickhouseConfig) => ({
 });
 
 /**
+ * Extract and validate claim values from a JWT payload based on row policies config.
+ * Returns a map of keys to claim string values.
+ * Throws if a required claim is missing from the JWT.
+ */
+function extractClaimsFromJwt<K extends string>(
+  config: RowPoliciesConfig,
+  jwt: Record<string, unknown>,
+  keyMapper: (settingName: string, claimName: string) => K,
+): Record<K, string> {
+  const result: Record<string, string> = {};
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = jwt[claimName];
+    if (value === undefined || value === null) {
+      throw new Error(
+        `Missing required row policy claim "${claimName}" in JWT payload`,
+      );
+    }
+    const key = keyMapper(settingName, claimName);
+    result[key] = String(value);
+  }
+  return result as Record<K, string>;
+}
+
+/**
  * Build RowPolicyOptions from a row policies config and JWT payload.
  * Maps JWT claims to ClickHouse settings for per-query row policy enforcement.
  * Returns undefined if no row policies config is provided.
@@ -74,16 +98,11 @@ function buildRowPolicyOptions(
 ): RowPolicyOptions | undefined {
   if (!config || !jwt) return undefined;
 
-  const clickhouse_settings: Record<string, string> = {};
-  for (const [settingName, claimName] of Object.entries(config)) {
-    const value = jwt[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in JWT payload`,
-      );
-    }
-    clickhouse_settings[settingName] = String(value);
-  }
+  const clickhouse_settings = extractClaimsFromJwt(
+    config,
+    jwt,
+    (settingName, _claimName) => settingName,
+  );
   return { role: MOOSE_RLS_ROLE, clickhouse_settings };
 }
 
@@ -95,17 +114,11 @@ function buildRlsContextFromJwt(
   config: RowPoliciesConfig,
   jwt: Record<string, unknown>,
 ): Record<string, string> {
-  const context: Record<string, string> = {};
-  for (const [_settingName, claimName] of Object.entries(config)) {
-    const value = jwt[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in JWT payload`,
-      );
-    }
-    context[claimName] = String(value);
-  }
-  return context;
+  return extractClaimsFromJwt(
+    config,
+    jwt,
+    (_settingName, claimName) => claimName,
+  );
 }
 
 const createPath = (apisDir: string, path: string) => {
@@ -200,8 +213,12 @@ const apiHandler = async (
           return;
         }
       } else if (requireAuth) {
+        const errorMessage =
+          rowPoliciesConfig ?
+            "JWT configuration is required when row policies are defined"
+          : "Unauthorized";
         res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
+        res.end(JSON.stringify({ error: errorMessage }));
         httpLogger(req, res, start);
         return;
       }
@@ -458,8 +475,12 @@ const createMainRouter = async (
         return;
       }
     } else if (requireAuth) {
+      const errorMessage =
+        rowPoliciesConfig ?
+          "JWT configuration is required when row policies are defined"
+        : "Unauthorized";
       res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
+      res.end(JSON.stringify({ error: errorMessage }));
       return;
     }
 

@@ -460,11 +460,14 @@ impl AtomicOlapOperation {
             } => {
                 let mut sqls = vec!["CREATE ROLE IF NOT EXISTS moose_rls_role".to_string()];
                 for table in &policy.tables {
+                    let escaped_name = policy.name.replace('`', "``");
+                    let escaped_table = table.replace('`', "``");
+                    let escaped_db = default_database.replace('`', "``");
                     sqls.push(format!(
                         "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} TO moose_rls_role",
-                        name = policy.name,
-                        table = table,
-                        db = default_database,
+                        name = escaped_name,
+                        table = escaped_table,
+                        db = escaped_db,
                         using = policy.using_expr(),
                     ));
                 }
@@ -478,15 +481,18 @@ impl AtomicOlapOperation {
                 default_database,
                 ..
             } => {
+                let escaped_name = policy.name.replace('`', "``");
+                let escaped_db = default_database.replace('`', "``");
                 let sqls: Vec<String> = policy
                     .tables
                     .iter()
                     .map(|table| {
+                        let escaped_table = table.replace('`', "``");
                         format!(
                             "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
-                            name = policy.name,
-                            table = table,
-                            db = default_database,
+                            name = escaped_name,
+                            table = escaped_table,
+                            db = escaped_db,
                         )
                     })
                     .collect();

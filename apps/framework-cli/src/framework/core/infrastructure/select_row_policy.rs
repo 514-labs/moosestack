@@ -21,9 +21,9 @@ pub struct SelectRowPolicy {
 }
 
 impl SelectRowPolicy {
-    /// ClickHouse setting name derived from the column: `SQL_moose_rls_{column}`
+    /// ClickHouse setting name derived from the column: `custom_moose_rls_{column}`
     pub fn setting_name(&self) -> String {
-        format!("SQL_moose_rls_{}", self.column)
+        format!("custom_moose_rls_{}", self.column)
     }
 
     /// USING expression for the row policy DDL.
@@ -51,13 +51,13 @@ mod tests {
     #[test]
     fn test_setting_name_basic() {
         let policy = make_policy("org_id");
-        assert_eq!(policy.setting_name(), "SQL_moose_rls_org_id");
+        assert_eq!(policy.setting_name(), "custom_moose_rls_org_id");
     }
 
     #[test]
     fn test_setting_name_with_underscores() {
         let policy = make_policy("tenant_org_id");
-        assert_eq!(policy.setting_name(), "SQL_moose_rls_tenant_org_id");
+        assert_eq!(policy.setting_name(), "custom_moose_rls_tenant_org_id");
     }
 
     #[test]
@@ -65,7 +65,7 @@ mod tests {
         let policy = make_policy("org_id");
         assert_eq!(
             policy.using_expr(),
-            "`org_id` = getSetting('SQL_moose_rls_org_id')"
+            "`org_id` = getSetting('custom_moose_rls_org_id')"
         );
     }
 
@@ -74,7 +74,7 @@ mod tests {
         let policy = make_policy("region");
         assert_eq!(
             policy.using_expr(),
-            "`region` = getSetting('SQL_moose_rls_region')"
+            "`region` = getSetting('custom_moose_rls_region')"
         );
     }
 
@@ -83,7 +83,7 @@ mod tests {
         let policy = make_policy("col`name");
         assert_eq!(
             policy.using_expr(),
-            "`col``name` = getSetting('SQL_moose_rls_col`name')"
+            "`col``name` = getSetting('custom_moose_rls_col`name')"
         );
     }
 

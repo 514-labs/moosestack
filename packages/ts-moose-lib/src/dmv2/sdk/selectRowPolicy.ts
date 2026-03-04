@@ -24,7 +24,7 @@ export interface SelectRowPolicyConfig {
  * Represents a ClickHouse Row Policy as a first-class Moose primitive.
  *
  * When defined, Moose generates `CREATE ROW POLICY` DDL that uses
- * `getSetting('SQL_moose_rls_{column}')` for dynamic per-query tenant scoping.
+ * `getSetting('custom_moose_rls_{column}')` for dynamic per-query tenant scoping.
  *
  * @example
  * ```typescript
