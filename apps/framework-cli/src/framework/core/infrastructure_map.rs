@@ -398,6 +398,8 @@ pub enum OlapChange {
     MaterializedView(Change<MaterializedView>),
     /// Change to a structured view (user-defined SELECT views)
     View(Change<View>),
+    /// Change to a row policy
+    SelectRowPolicy(Change<super::infrastructure::select_row_policy::SelectRowPolicy>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -590,6 +592,11 @@ pub struct InfrastructureMap {
     #[serde(default)]
     pub views: HashMap<String, View>,
 
+    /// Collection of row policies indexed by policy name
+    #[serde(default)]
+    pub select_row_policies:
+        HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
+
     /// Version of Moose CLI that created or last updated this infrastructure map.
     /// Populated automatically during storage operations.
     /// None for maps created by older CLI versions (pre-version-tracking).
@@ -632,6 +639,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            select_row_policies: Default::default(),
             moose_version: None,
         }
     }
@@ -733,6 +741,11 @@ impl InfrastructureMap {
                 self.views
                     .values()
                     .map(|cv| OlapChange::View(Change::Added(Box::new(cv.clone())))),
+            )
+            .chain(
+                self.select_row_policies.values().map(|policy| {
+                    OlapChange::SelectRowPolicy(Change::Added(Box::new(policy.clone())))
+                }),
             )
             .collect()
     }
@@ -905,6 +918,17 @@ impl InfrastructureMap {
         );
         let view_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("View changes detected: {}", view_changes);
+
+        // Row Policies
+        tracing::info!("Analyzing changes in Row Policies...");
+        let olap_changes_len_before = changes.olap_changes.len();
+        Self::diff_select_row_policies(
+            &self.select_row_policies,
+            &target_map.select_row_policies,
+            &mut changes.olap_changes,
+        );
+        let row_policy_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("Row policy changes detected: {}", row_policy_changes);
 
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
@@ -1901,6 +1925,42 @@ impl InfrastructureMap {
         );
     }
 
+    /// Compare row policies between two infrastructure maps and compute differences.
+    pub fn diff_select_row_policies(
+        self_policies: &HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
+        target_policies: &HashMap<
+            String,
+            super::infrastructure::select_row_policy::SelectRowPolicy,
+        >,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        for (id, policy) in self_policies {
+            if let Some(target_policy) = target_policies.get(id) {
+                if policy != target_policy {
+                    tracing::debug!("Row policy '{}' has differences", id);
+                    olap_changes.push(OlapChange::SelectRowPolicy(Change::Updated {
+                        before: Box::new(policy.clone()),
+                        after: Box::new(target_policy.clone()),
+                    }));
+                }
+            } else {
+                tracing::debug!("Row policy '{}' removed", id);
+                olap_changes.push(OlapChange::SelectRowPolicy(Change::Removed(Box::new(
+                    policy.clone(),
+                ))));
+            }
+        }
+
+        for (id, policy) in target_policies {
+            if !self_policies.contains_key(id) {
+                tracing::debug!("Row policy '{}' added", id);
+                olap_changes.push(OlapChange::SelectRowPolicy(Change::Added(Box::new(
+                    policy.clone(),
+                ))));
+            }
+        }
+    }
+
     /// Compare tables between two infrastructure maps and compute the differences
     ///
     /// This method identifies added, removed, and updated tables by comparing
@@ -2878,6 +2938,7 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            select_row_policies: Default::default(),
             moose_version: if proto.moose_version.is_empty() {
                 None // Backward compat: empty string = not set
             } else {
@@ -3764,6 +3825,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None, // Not set until storage
         }
     }
@@ -3799,6 +3861,8 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
+            select_row_policies:
+                &'a HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
             #[serde(skip_serializing_if = "Option::is_none")]
             moose_version: &'a Option<String>,
         }
@@ -3823,6 +3887,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
+            select_row_policies: &masked_inframap.select_row_policies,
             moose_version: &masked_inframap.moose_version,
         };
 

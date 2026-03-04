@@ -61,7 +61,12 @@ impl ProcessRegistries {
     ///
     /// # Returns
     /// * `Self` - A new ProcessRegistries instance
-    pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {
+    pub fn new(
+        project: &Project,
+        settings: &Settings,
+        syncing: SyncingProcessesRegistry,
+        row_policies_config: std::collections::HashMap<String, String>,
+    ) -> Self {
         let functions = FunctionProcessRegistry::new(project.clone());
 
         let consumption = ConsumptionProcessRegistry::new(
@@ -71,6 +76,7 @@ impl ProcessRegistries {
             project.project_location.clone(),
             project.clone(),
             None, // proxy_port: will use project.http_server_config.proxy_port
+            row_policies_config,
         );
 
         let orchestration_workers = OrchestrationWorkersRegistry::new(project, settings);

@@ -60,12 +60,29 @@ export class MooseClient {
   }
 }
 
+/**
+ * Options for per-query ClickHouse row policy enforcement.
+ * When provided, each query activates the specified role and injects
+ * custom settings (e.g., tenant ID) that row policies evaluate via getSetting().
+ */
+export interface RowPolicyOptions {
+  role: string;
+  clickhouse_settings: Record<string, string>;
+}
+
 export class QueryClient {
   client: ClickHouseClient;
   query_id_prefix: string;
-  constructor(client: ClickHouseClient, query_id_prefix: string) {
+  private rowPolicyOptions?: RowPolicyOptions;
+
+  constructor(
+    client: ClickHouseClient,
+    query_id_prefix: string,
+    rowPolicyOptions?: RowPolicyOptions,
+  ) {
     this.client = client;
     this.query_id_prefix = query_id_prefix;
+    this.rowPolicyOptions = rowPolicyOptions;
   }
 
   async execute<T = any>(
@@ -82,6 +99,10 @@ export class QueryClient {
       query_id: this.query_id_prefix + randomUUID(),
       // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
       // where response buffering would harm streaming performance and concurrency
+      ...(this.rowPolicyOptions && {
+        role: this.rowPolicyOptions.role,
+        clickhouse_settings: this.rowPolicyOptions.clickhouse_settings,
+      }),
     });
     const elapsedMs = performance.now() - start;
     console.log(
@@ -99,6 +120,10 @@ export class QueryClient {
       query,
       query_params,
       query_id: this.query_id_prefix + randomUUID(),
+      ...(this.rowPolicyOptions && {
+        role: this.rowPolicyOptions.role,
+        clickhouse_settings: this.rowPolicyOptions.clickhouse_settings,
+      }),
     });
     const elapsedMs = performance.now() - start;
     console.log(
