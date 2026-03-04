@@ -1295,6 +1295,12 @@ pub async fn top_command_handler(
                 .to_string();
 
             let log_file_path = user_directory()
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("Failed".to_string(), "to resolve log directory".to_string()),
+                        e,
+                    )
+                })?
                 .join(log_file_path)
                 .to_str()
                 .unwrap()

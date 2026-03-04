@@ -18,7 +18,9 @@ fn build_issue_url(description: Option<&str>) -> String {
         None => "<!-- Describe the issue -->".to_string(),
     };
 
-    let log_path = user_directory().to_string_lossy().to_string();
+    let log_path = user_directory()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "~/.moose".to_string());
 
     let body = format!(
         "## Description\n\n{}\n\n## Environment\n- CLI Version: {}\n- OS: {}\n- Architecture: {}\n\n## Logs\nLog files are located at: `{}`\n\nPlease attach relevant log files if applicable.",
@@ -220,7 +222,9 @@ pub async fn report_bug(
     );
     wait_for_usage_capture(handle).await;
 
-    let path = user_directory().to_string_lossy().to_string();
+    let path = user_directory()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "~/.moose".to_string());
     Ok(RoutineSuccess::success(Message::new(
         "Bug report".to_string(),
         format!("Opening GitHub Issues. Log files are at: {}", path),

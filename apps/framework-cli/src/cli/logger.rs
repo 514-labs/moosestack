@@ -356,7 +356,11 @@ impl Default for LoggerSettings {
 fn clean_old_logs() {
     let cut_off = SystemTime::now() - Duration::from_secs(7 * 24 * 60 * 60);
 
-    if let Ok(dir) = user_directory().read_dir() {
+    let dir_path = match user_directory() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if let Ok(dir) = dir_path.read_dir() {
         for entry in dir.flatten() {
             if entry.path().extension().is_some_and(|ext| ext == "log") {
                 match entry.metadata().and_then(|md| md.modified()) {
@@ -405,7 +409,10 @@ impl<'a> MakeWriter<'a> for DateBasedWriter {
 
     fn make_writer(&'a self) -> Self::Writer {
         let formatted_name = chrono::Local::now().format(&self.date_format).to_string();
-        let file_path = user_directory().join(&formatted_name);
+        // HOME was already validated during CLI startup in setup_user_directory()
+        let file_path = user_directory()
+            .expect("HOME was validated at startup")
+            .join(&formatted_name);
 
         std::fs::OpenOptions::new()
             .create(true)
