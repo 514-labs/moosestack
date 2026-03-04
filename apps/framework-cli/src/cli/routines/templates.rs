@@ -48,17 +48,20 @@ impl TemplateConfig {
 }
 
 // TODO - no need to download every time, once cached once, use the cached version
-fn templates_download_dir() -> PathBuf {
-    let mut path = user_directory();
+fn templates_download_dir() -> std::io::Result<PathBuf> {
+    let mut path = user_directory()?;
     path.push(DOWNLOAD_DIR);
-    path
+    Ok(path)
 }
 
-pub(crate) fn template_file_archive(template_name: &str, template_version: &str) -> PathBuf {
-    let mut path = templates_download_dir();
+pub(crate) fn template_file_archive(
+    template_name: &str,
+    template_version: &str,
+) -> std::io::Result<PathBuf> {
+    let mut path = templates_download_dir()?;
     path.push(template_version);
     path.push(format!("{template_name}.tgz"));
-    path
+    Ok(path)
 }
 
 async fn download_from_local(template_name: &str) -> anyhow::Result<()> {
@@ -77,7 +80,7 @@ async fn download_from_local(template_name: &str) -> anyhow::Result<()> {
         anyhow::bail!("Local template not found. Did you run scripts/package-templates.js?")
     }
 
-    let mut dest: PathBuf = templates_download_dir();
+    let mut dest: PathBuf = templates_download_dir()?;
     dest.push("0.0.1"); // In local mode, we always use "latest"
 
     // Create the directory if it doesn't exist
@@ -108,7 +111,7 @@ pub(crate) async fn download(template_name: &str, template_version: &str) -> any
 
     res.error_for_status_ref()?;
 
-    let mut dest = templates_download_dir();
+    let mut dest = templates_download_dir()?;
     dest.push(template_version);
 
     // Create the directory if it doesn't exist
@@ -129,7 +132,7 @@ pub(crate) async fn download(template_name: &str, template_version: &str) -> any
 }
 
 fn unpack(template_name: &str, template_version: &str, target_dir: &PathBuf) -> anyhow::Result<()> {
-    let template_archive = template_file_archive(template_name, template_version);
+    let template_archive = template_file_archive(template_name, template_version)?;
     let tar_gz = File::open(template_archive)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);

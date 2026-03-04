@@ -77,11 +77,11 @@ struct GetLogsParams {
 }
 
 /// Gets the path to the current day's log file using the shared format from logger module
-fn get_log_file_path() -> PathBuf {
+fn get_log_file_path() -> std::io::Result<PathBuf> {
     let formatted_date = Local::now().format(DEFAULT_LOG_FILE_FORMAT).to_string();
-    let mut path = user_directory();
+    let mut path = user_directory()?;
     path.push(formatted_date);
-    path
+    Ok(path)
 }
 
 /// Helper to check if a log level string is valid
@@ -284,7 +284,7 @@ pub fn handle_call(arguments: Option<&Map<String, Value>>) -> CallToolResult {
 
 /// Main function to retrieve and filter logs
 fn execute_get_logs(params: GetLogsParams) -> Result<String, LogError> {
-    let log_file_path = get_log_file_path();
+    let log_file_path = get_log_file_path()?;
 
     // Check if log file exists
     if !log_file_path.exists() {
