@@ -928,6 +928,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/configuration/row-level-security",
+        title: "Row-Level Security",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/configuration/admin-api",
         title: "Admin API",
         languages: ["typescript", "python"],

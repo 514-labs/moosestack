@@ -58,6 +58,7 @@ impl ProcessRegistries {
     /// * `project` - Project configuration containing paths and settings for processes
     /// * `settings` - Global application settings
     /// * `syncing` - Syncing processes registry for Kafka to ClickHouse and topic-to-topic synchronization
+    /// * `row_policies_config` - Map of ClickHouse setting names to JWT claim names for row policy enforcement
     ///
     /// # Returns
     /// * `Self` - A new ProcessRegistries instance
