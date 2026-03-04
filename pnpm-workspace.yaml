@@ -15,7 +15,7 @@ catalog:
   "@types/js-yaml": "4.0.9"
   "@types/mocha": "10.0.10"
   "@types/node": "^20"
-  axios: "1.7.9"
+  axios: "1.13.5"
   chai: "4.5.0"
   eslint: "9.39.2"
   eslint-config-next: "16.1.6"
