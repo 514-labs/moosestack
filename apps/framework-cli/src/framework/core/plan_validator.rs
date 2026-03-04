@@ -13,6 +13,9 @@ pub enum ValidationError {
 
     #[error("Cluster validation failed: {0}")]
     ClusterValidation(String),
+
+    #[error("Row policy validation failed: {0}")]
+    RowPolicyValidation(String),
 }
 
 /// Validates that all tables with cluster_name reference clusters defined in the config
@@ -66,11 +69,50 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     Ok(())
 }
 
+/// Validates that row policies reference existing tables and columns.
+fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> {
+    for policy in plan.target_infra_map.select_row_policies.values() {
+        for table_name in &policy.tables {
+            let table = plan
+                .target_infra_map
+                .tables
+                .values()
+                .find(|t| t.name == *table_name);
+
+            let Some(table) = table else {
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policy '{}' references table '{}', which does not exist.",
+                    policy.name, table_name
+                )));
+            };
+
+            let has_column = table.columns.iter().any(|c| c.name == policy.column);
+            if !has_column {
+                let available = table
+                    .columns
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policy '{}' filters on column '{}', but table '{}' \
+                     has no such column.\n\nAvailable columns: {}",
+                    policy.name, policy.column, table_name, available
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationError> {
     stream::validate_changes(project, &plan.changes.streaming_engine_changes)?;
 
     // Validate cluster references
     validate_cluster_references(project, plan)?;
+
+    // Validate row policy table/column references
+    validate_row_policy_columns(plan)?;
 
     // Check for validation errors in OLAP changes
     for change in &plan.changes.olap_changes {
@@ -204,6 +246,7 @@ mod tests {
                 web_apps: HashMap::new(),
                 materialized_views: HashMap::new(),
                 views: HashMap::new(),
+                select_row_policies: HashMap::new(),
                 moose_version: None,
             },
             changes: Default::default(),

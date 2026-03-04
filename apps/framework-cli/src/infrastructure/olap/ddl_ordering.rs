@@ -1,3 +1,4 @@
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
@@ -201,6 +202,24 @@ pub enum AtomicOlapOperation {
     DropView {
         /// The custom view to drop
         view: crate::framework::core::infrastructure::view::View,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Create a row policy on one or more tables
+    CreateRowPolicy {
+        /// The row policy to create
+        policy: SelectRowPolicy,
+        /// The default database name
+        default_database: String,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a row policy from one or more tables
+    DropRowPolicy {
+        /// The row policy to drop
+        policy: SelectRowPolicy,
+        /// The default database name
+        default_database: String,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -434,6 +453,48 @@ impl AtomicOlapOperation {
                 name: view.name.clone(),
                 database: view.database.clone(),
             },
+            AtomicOlapOperation::CreateRowPolicy {
+                policy,
+                default_database,
+                ..
+            } => {
+                let mut sqls = vec!["CREATE ROLE IF NOT EXISTS moose_rls_role".to_string()];
+                for table in &policy.tables {
+                    sqls.push(format!(
+                        "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} TO moose_rls_role",
+                        name = policy.name,
+                        table = table,
+                        db = default_database,
+                        using = policy.using_expr(),
+                    ));
+                }
+                SerializableOlapOperation::RawSql {
+                    sql: sqls,
+                    description: format!("Creating row policy '{}'", policy.name),
+                }
+            }
+            AtomicOlapOperation::DropRowPolicy {
+                policy,
+                default_database,
+                ..
+            } => {
+                let sqls: Vec<String> = policy
+                    .tables
+                    .iter()
+                    .map(|table| {
+                        format!(
+                            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
+                            name = policy.name,
+                            table = table,
+                            db = default_database,
+                        )
+                    })
+                    .collect();
+                SerializableOlapOperation::RawSql {
+                    sql: sqls,
+                    description: format!("Dropping row policy '{}'", policy.name),
+                }
+            }
         }
     }
 
@@ -524,6 +585,12 @@ impl AtomicOlapOperation {
                     id: mv.id(default_database),
                 }
             }
+            AtomicOlapOperation::CreateRowPolicy { policy, .. }
+            | AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                InfrastructureSignature::SelectRowPolicy {
+                    id: policy.name.clone(),
+                }
+            }
         }
     }
 
@@ -594,6 +661,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateRowPolicy {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropRowPolicy {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -666,7 +739,8 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::RunTeardownSql { .. }
             | AtomicOlapOperation::DropDmv1View { .. }
             | AtomicOlapOperation::DropView { .. }
-            | AtomicOlapOperation::DropMaterializedView { .. } => {
+            | AtomicOlapOperation::DropMaterializedView { .. }
+            | AtomicOlapOperation::DropRowPolicy { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -1458,6 +1532,54 @@ pub fn order_olap_changes(
             OlapChange::View(Change::Removed(view)) => handle_view_remove(view, default_database),
             OlapChange::View(Change::Updated { before, after }) => {
                 handle_view_update(before, after, default_database)
+            }
+            OlapChange::SelectRowPolicy(Change::Added(policy)) => {
+                let dependency_info = create_dependency_info(
+                    policy
+                        .tables
+                        .iter()
+                        .map(|t| InfrastructureSignature::Table {
+                            id: format!("{}_{}", default_database, t),
+                        })
+                        .collect(),
+                    vec![],
+                );
+                OperationPlan::setup(vec![AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**policy).clone(),
+                    default_database: default_database.to_string(),
+                    dependency_info,
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+                OperationPlan::teardown(vec![AtomicOlapOperation::DropRowPolicy {
+                    policy: (**policy).clone(),
+                    default_database: default_database.to_string(),
+                    dependency_info: create_empty_dependency_info(),
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Updated { before, after }) => {
+                let mut plan = OperationPlan::new();
+                plan.teardown_ops.push(AtomicOlapOperation::DropRowPolicy {
+                    policy: (**before).clone(),
+                    default_database: default_database.to_string(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                let dependency_info = create_dependency_info(
+                    after
+                        .tables
+                        .iter()
+                        .map(|t| InfrastructureSignature::Table {
+                            id: format!("{}_{}", default_database, t),
+                        })
+                        .collect(),
+                    vec![],
+                );
+                plan.setup_ops.push(AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**after).clone(),
+                    default_database: default_database.to_string(),
+                    dependency_info,
+                });
+                plan
             }
         };
 

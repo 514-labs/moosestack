@@ -124,8 +124,23 @@ pub async fn execute_initial_infra_change(
         ctx.project.redpanda_config.clone(),
         ctx.project.clickhouse_config.clone(),
     );
-    let mut process_registries =
-        ProcessRegistries::new(ctx.project, ctx.settings, syncing_processes_registry);
+
+    // Build row policies config: maps ClickHouse setting name → JWT claim name
+    // e.g., { "custom_moose_rls_org_id": "org_id" }
+    let row_policies_config: std::collections::HashMap<String, String> = ctx
+        .plan
+        .target_infra_map
+        .select_row_policies
+        .values()
+        .map(|p| (p.setting_name(), p.claim.clone()))
+        .collect();
+
+    let mut process_registries = ProcessRegistries::new(
+        ctx.project,
+        ctx.settings,
+        syncing_processes_registry,
+        row_policies_config,
+    );
 
     // Execute changes that are allowed on any instance
     let changes = ctx.plan.target_infra_map.init_processes(ctx.project);

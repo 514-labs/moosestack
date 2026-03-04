@@ -1,7 +1,12 @@
 import http from "http";
 import * as path from "path";
 import { getClickhouseClient } from "../commons";
-import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
+import {
+  MooseClient,
+  QueryClient,
+  RowPolicyOptions,
+  getTemporalClient,
+} from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
 import { Cluster } from "../cluster-utils";
@@ -34,6 +39,12 @@ interface TemporalConfig {
   apiKey: string;
 }
 
+/**
+ * Map of ClickHouse setting name → JWT claim name for row policy enforcement.
+ * e.g., { "custom_moose_rls_org_id": "org_id" }
+ */
+export type RowPoliciesConfig = Record<string, string>;
+
 interface ApisConfig {
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
@@ -41,6 +52,7 @@ interface ApisConfig {
   enforceAuth: boolean;
   proxyPort?: number;
   workerCount?: number;
+  rowPoliciesConfig?: RowPoliciesConfig;
 }
 
 // Convert our config to Clickhouse client config
@@ -48,6 +60,51 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   ...config,
   useSSL: config.useSSL ? "true" : "false",
 });
+
+const MOOSE_RLS_ROLE = "moose_rls_role";
+
+/**
+ * Build RowPolicyOptions from a row policies config and JWT payload.
+ * Maps JWT claims to ClickHouse settings for per-query row policy enforcement.
+ * Returns undefined if no row policies config is provided.
+ * Throws if a required claim is missing from the JWT.
+ */
+function buildRowPolicyOptions(
+  config: RowPoliciesConfig | undefined,
+  jwt: Record<string, unknown> | undefined,
+): RowPolicyOptions | undefined {
+  if (!config || !jwt) return undefined;
+
+  const clickhouse_settings: Record<string, string> = {};
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = jwt[claimName];
+    if (value === undefined || value === null) {
+      throw new Error(
+        `Missing required row policy claim "${claimName}" in JWT payload`,
+      );
+    }
+    clickhouse_settings[settingName] = String(value);
+  }
+  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+}
+
+/**
+ * Extract claim values from a JWT payload to build an rlsContext map.
+ * Returns { claim_name: claim_value } for passing to getMooseUtils({ rlsContext }).
+ */
+function buildRlsContextFromJwt(
+  config: RowPoliciesConfig,
+  jwt: Record<string, unknown>,
+): Record<string, string> {
+  const context: Record<string, string> = {};
+  for (const [_settingName, claimName] of Object.entries(config)) {
+    const value = jwt[claimName];
+    if (value !== undefined && value !== null) {
+      context[claimName] = String(value);
+    }
+  }
+  return context;
+}
 
 const createPath = (apisDir: string, path: string) => {
   // Always use compiled JavaScript
@@ -91,6 +148,7 @@ const apiHandler = async (
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
 ) => {
   // Always use compiled JavaScript
   const sourceDir = getSourceDir();
@@ -236,7 +294,15 @@ const apiHandler = async (
         });
       }
 
-      const queryClient = new QueryClient(clickhouseClient, fileName);
+      const rowPolicyOpts = buildRowPolicyOptions(
+        rowPoliciesConfig,
+        jwtPayload as Record<string, unknown> | undefined,
+      );
+      const queryClient = new QueryClient(
+        clickhouseClient,
+        fileName,
+        rowPolicyOpts,
+      );
 
       // Use matched API name for structured logging context
       // This matches source_primitive.name in the infrastructure map
@@ -314,6 +380,7 @@ const createMainRouter = async (
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
@@ -321,6 +388,7 @@ const createMainRouter = async (
     temporalClient,
     enforceAuth,
     jwtConfig,
+    rowPoliciesConfig,
   );
 
   const webApps = await getWebApps();
@@ -380,7 +448,17 @@ const createMainRouter = async (
         if (webApp.config.injectMooseUtils !== false) {
           // Import getMooseUtils dynamically to avoid circular deps
           const { getMooseUtils } = await import("./standalone");
-          (req as any).moose = await getMooseUtils();
+          // When row policies + JWT are active, auto-scope the client
+          const rlsContext =
+            rowPoliciesConfig && jwtPayload ?
+              buildRlsContextFromJwt(
+                rowPoliciesConfig,
+                jwtPayload as Record<string, unknown>,
+              )
+            : undefined;
+          (req as any).moose = await getMooseUtils(
+            rlsContext ? { rlsContext } : undefined,
+          );
         }
 
         let proxiedUrl = req.url;
@@ -474,6 +552,9 @@ export const runApis = async (config: ApisConfig) => {
       const runtimeQueryClient = new QueryClient(clickhouseClient, "runtime");
       (globalThis as any)._mooseRuntimeContext = {
         client: new MooseClient(runtimeQueryClient, temporalClient),
+        clickhouseClient,
+        temporalClient,
+        rowPoliciesConfig: config.rowPoliciesConfig,
       };
 
       const server = http.createServer(
@@ -483,6 +564,7 @@ export const runApis = async (config: ApisConfig) => {
           temporalClient,
           config.enforceAuth,
           config.jwtConfig,
+          config.rowPoliciesConfig,
         ),
       );
       // port is now passed via config.proxyPort or defaults to 4001

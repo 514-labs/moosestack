@@ -32,6 +32,9 @@ pub struct ConsumptionProcessRegistry {
     jwt_config: Option<JwtConfig>,
     project: Project,
     proxy_port: Option<u16>,
+    /// Mapping of JWT claim name → ClickHouse column name for row policies.
+    /// When non-empty, passed as `--row-policies` JSON to the TS runner.
+    row_policies_config: std::collections::HashMap<String, String>,
 }
 
 impl ConsumptionProcessRegistry {
@@ -42,6 +45,7 @@ impl ConsumptionProcessRegistry {
         project_path: PathBuf,
         project: Project,
         proxy_port: Option<u16>,
+        row_policies_config: std::collections::HashMap<String, String>,
     ) -> Self {
         let proxy_port = proxy_port.or(Some(project.http_server_config.proxy_port));
         Self {
@@ -52,6 +56,7 @@ impl ConsumptionProcessRegistry {
             jwt_config,
             project,
             proxy_port,
+            row_policies_config,
         }
     }
 
@@ -84,6 +89,7 @@ impl ConsumptionProcessRegistry {
             }),
             SupportedLanguages::Typescript => {
                 let project_path = self.project_path.clone();
+                let row_policies_config = self.row_policies_config.clone();
                 Box::new(move || {
                     typescript::consumption::run(
                         &project,
@@ -92,6 +98,7 @@ impl ConsumptionProcessRegistry {
                         &project_path,
                         proxy_port,
                         project.is_production,
+                        &row_policies_config,
                     )
                 })
             }
