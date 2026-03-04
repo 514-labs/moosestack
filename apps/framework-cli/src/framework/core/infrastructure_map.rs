@@ -3527,6 +3527,7 @@ fn columns_are_equivalent(
         // primary_key change is handled at the table level
         || normalized_before.default != normalized_after.default
         || normalized_before.materialized != normalized_after.materialized
+        || normalized_before.alias != normalized_after.alias
         || normalized_before.annotations != normalized_after.annotations
         || normalized_before.comment != normalized_after.comment
     {
