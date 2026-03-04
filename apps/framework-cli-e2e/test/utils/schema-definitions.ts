@@ -467,7 +467,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "userId", type: "String" },
       {
         name: "eventDate",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         materialized: "toDate(timestamp)",
       },
       { name: "userHash", type: "UInt64", materialized: "cityHash64(userId)" },
@@ -490,7 +490,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "userId", type: "String" },
       {
         name: "eventDate",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         alias: "toDate(timestamp)",
       },
       { name: "userHash", type: "UInt64", alias: "cityHash64(userId)" },
@@ -934,7 +934,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "user_id", type: "String" },
       {
         name: "event_date",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         materialized: "toDate(timestamp)",
       },
       {
@@ -961,7 +961,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "user_id", type: "String" },
       {
         name: "event_date",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         alias: "toDate(timestamp)",
       },
       {
