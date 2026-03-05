@@ -644,7 +644,8 @@ fn now_rfc3339() -> String {
 fn truncate_error_summary(summary: &str) -> String {
     let mut truncated = summary.trim().to_string();
     if truncated.len() > ERROR_SUMMARY_MAX_LEN {
-        truncated.truncate(ERROR_SUMMARY_MAX_LEN);
+        let safe_boundary = truncated.floor_char_boundary(ERROR_SUMMARY_MAX_LEN);
+        truncated.truncate(safe_boundary);
     }
     truncated
 }
