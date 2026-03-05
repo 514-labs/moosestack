@@ -1247,6 +1247,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "B".to_string(),
@@ -1260,6 +1261,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "C".to_string(),
@@ -1279,6 +1281,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                             Column {
                                 name: "b".to_string(),
@@ -1298,6 +1301,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                         Column {
                                             name: "e".to_string(),
@@ -1311,6 +1315,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                         Column {
                                             name: "f".to_string(),
@@ -1324,6 +1329,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                     ],
                                 }),
@@ -1336,6 +1342,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                             Column {
                                 name: "c".to_string(),
@@ -1349,6 +1356,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                         ],
                     }),
@@ -1361,6 +1369,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "D".to_string(),
@@ -1374,6 +1383,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
         };

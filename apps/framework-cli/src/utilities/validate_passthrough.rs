@@ -650,6 +650,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         }
                     })
                     .collect();
@@ -1460,6 +1461,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "int_col".to_string(),
@@ -1473,6 +1475,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "float_col".to_string(),
@@ -1486,6 +1489,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "bool_col".to_string(),
@@ -1499,6 +1503,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "date_col".to_string(),
@@ -1512,6 +1517,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1548,6 +1554,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let json = r#"
@@ -1584,6 +1591,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let json = r#"
@@ -1627,6 +1635,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Test valid enum value
@@ -1678,6 +1687,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "nested_int".to_string(),
@@ -1691,6 +1701,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1707,6 +1718,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "nested_object".to_string(),
@@ -1724,6 +1736,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1784,6 +1797,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "optional_field".to_string(),
@@ -1797,6 +1811,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1830,6 +1845,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "aud".to_string(),
@@ -1843,6 +1859,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "exp".to_string(),
@@ -1856,6 +1873,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1872,6 +1890,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "jwt_object".to_string(),
@@ -1889,6 +1908,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1936,6 +1956,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Test valid map
@@ -1995,6 +2016,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Test valid map with numeric keys (as strings in JSON)
@@ -2051,6 +2073,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Min boundary 0
@@ -2096,6 +2119,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Min boundary -32768
@@ -2141,6 +2165,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
@@ -2188,6 +2213,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2235,6 +2261,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2283,6 +2310,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Valid keys
@@ -2325,6 +2353,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2367,6 +2396,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2413,6 +2443,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let json = r#"
@@ -2446,6 +2477,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // missing nested path
@@ -2480,6 +2512,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // null at the nested path counts as missing for non-nullable types
@@ -2529,6 +2562,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Test 1: Two's complement value (what -1 becomes with naive cast) should be rejected
@@ -2600,6 +2634,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         // Test negative values work with i64

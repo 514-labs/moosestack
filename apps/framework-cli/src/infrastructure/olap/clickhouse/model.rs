@@ -420,6 +420,52 @@ impl fmt::Display for ClickHouseFloat {
     }
 }
 
+/// The kind of default expression a ClickHouse column can have.
+/// DEFAULT, MATERIALIZED, and ALIAS are mutually exclusive in ClickHouse.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum DefaultExpressionKind {
+    Default,
+    Materialized,
+    Alias,
+}
+
+impl fmt::Display for DefaultExpressionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Default => "DEFAULT",
+            Self::Materialized => "MATERIALIZED",
+            Self::Alias => "ALIAS",
+        })
+    }
+}
+
+impl std::str::FromStr for DefaultExpressionKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "DEFAULT" => Ok(Self::Default),
+            "MATERIALIZED" => Ok(Self::Materialized),
+            "ALIAS" => Ok(Self::Alias),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tracks which column properties need REMOVE statements during ALTER TABLE MODIFY COLUMN.
+///
+/// ClickHouse doesn't allow mixing column properties with REMOVE clauses in a single
+/// statement, so these generate separate ALTER TABLE statements before the main MODIFY.
+#[derive(Debug, Clone, Default)]
+pub struct ColumnPropertyRemovals {
+    /// Which default expression kind to remove (DEFAULT/MATERIALIZED/ALIAS are mutually exclusive)
+    pub default_expression: Option<DefaultExpressionKind>,
+    /// Whether to remove the TTL definition from the column
+    pub ttl: bool,
+    /// Whether to remove the compression codec from the column
+    pub codec: bool,
+}
+
 // ClickHouse column defaults are expressed as raw SQL strings on the framework side
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -434,6 +480,7 @@ pub struct ClickHouseColumn {
     pub ttl: Option<String>,
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
     pub materialized: Option<String>, // MATERIALIZED column expression
+    pub alias: Option<String>, // ALIAS column expression
 }
 
 impl ClickHouseColumn {
@@ -442,6 +489,24 @@ impl ClickHouseColumn {
     }
     pub fn is_nested(&self) -> bool {
         matches!(&self.column_type, ClickHouseColumnType::Nested(_))
+    }
+
+    /// Returns the default expression kind and its SQL expression, if any is set.
+    ///
+    /// DEFAULT, MATERIALIZED, and ALIAS are mutually exclusive; this accessor
+    /// collapses the three `Option<String>` fields into a single typed pair.
+    /// Panics if multiple expression kinds are set (should be caught by upstream validation).
+    pub fn default_expression(&self) -> Option<(DefaultExpressionKind, &str)> {
+        match (&self.default, &self.materialized, &self.alias) {
+            (Some(expr), None, None) => Some((DefaultExpressionKind::Default, expr)),
+            (None, Some(expr), None) => Some((DefaultExpressionKind::Materialized, expr)),
+            (None, None, Some(expr)) => Some((DefaultExpressionKind::Alias, expr)),
+            (None, None, None) => None,
+            _ => panic!(
+                "Column '{}' has multiple of DEFAULT/MATERIALIZED/ALIAS set",
+                self.name
+            ),
+        }
     }
 }
 

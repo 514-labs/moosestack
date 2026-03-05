@@ -1680,6 +1680,7 @@ pub fn convert_ast_to_column_type(
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         });
                     }
                     TupleElement::Unnamed(_) => {

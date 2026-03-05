@@ -111,7 +111,7 @@ Use the exact field names from your data model. Moose preserves your naming conv
 </Callout>
 
 **Restrictions:**
-- Cannot combine MATERIALIZED with DEFAULT (mutually exclusive)
+- Cannot combine MATERIALIZED with DEFAULT or ALIAS (mutually exclusive)
 - Cannot be primary keys
 - Can combine with ClickHouseCodec and ClickHouseTTL
 
@@ -131,6 +131,7 @@ moose init my-app --from-remote --language typescript
 
 ## Related
 
+- [Alias Columns](/moosestack/olap/alias-columns) - Virtual columns computed at query time (zero storage cost)
 - [Data Types](/moosestack/data-types) - All supported column types
 - [Schema Optimization](/moosestack/olap/schema-optimization) - Optimize storage
 - [TTL (Time-to-Live)](/moosestack/olap/ttl) - Auto-expire data
