@@ -285,13 +285,11 @@ impl Drop for TerminalGuard {
 /// Requires raw mode for key-by-key reading via [`EventStream`]. Returns
 /// `true` if the user presses `y`/`Y`, `false` for any other key.
 async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
-    let (_cols, rows) = terminal::size()?;
-    let scroll_bottom = rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+    let (_cols, mut current_rows) = terminal::size()?;
 
     {
         let _lock = crate::cli::display::terminal_lock::acquire();
-        write!(stdout(), "\x1b[1;{}r", scroll_bottom + 1)?;
-        stdout().flush()?;
+        apply_scroll_region(current_rows)?;
     }
 
     terminal::enable_raw_mode()?;
@@ -304,13 +302,14 @@ async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
         }
     }
     let _guard = TerminalGuard {
-        original_rows: rows,
+        original_rows: current_rows,
     };
 
-    draw_pinned_prompt(rows, change_count)?;
+    draw_pinned_prompt(current_rows, change_count)?;
 
     {
         let _lock = crate::cli::display::terminal_lock::acquire();
+        let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
         execute!(stdout(), MoveTo(0, scroll_bottom))?;
         stdout().flush()?;
     }
@@ -333,23 +332,59 @@ async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
                         }
                     }
                     Some(Ok(Event::Resize(_new_cols, new_rows))) => {
-                        let _lock = crate::cli::display::terminal_lock::acquire();
-                        let new_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-                        let _ = write!(stdout(), "\x1b[1;{}r", new_bottom + 1);
-                        draw_pinned_prompt(new_rows, change_count)?;
-                        let _ = execute!(stdout(), MoveTo(0, new_bottom));
-                        stdout().flush()?;
+                        reconcile_resize(&mut current_rows, new_rows, change_count)?;
                     }
                     Some(Err(_)) | None => return Ok(false),
                     _ => {}
                 }
             }
             _ = tokio::time::sleep(PROMPT_REDRAW_INTERVAL) => {
-                let current_rows = terminal::size().map(|(_, r)| r).unwrap_or(rows);
-                draw_pinned_prompt(current_rows, change_count)?;
+                let actual_rows = terminal::size().map(|(_, r)| r).unwrap_or(current_rows);
+                if actual_rows != current_rows {
+                    reconcile_resize(&mut current_rows, actual_rows, change_count)?;
+                } else {
+                    draw_pinned_prompt(current_rows, change_count)?;
+                }
             }
         }
     }
+}
+
+/// Sets the scroll region to leave [`PINNED_PROMPT_LINES`] reserved at the
+/// bottom. Caller must hold the terminal lock.
+fn apply_scroll_region(rows: u16) -> std::io::Result<()> {
+    let scroll_bottom = rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+    write!(stdout(), "\x1b[1;{}r", scroll_bottom + 1)?;
+    stdout().flush()
+}
+
+/// Handles a terminal resize: clears old prompt residue, re-establishes the
+/// scroll region, redraws the prompt, and parks the cursor.
+fn reconcile_resize(
+    current_rows: &mut u16,
+    new_rows: u16,
+    change_count: usize,
+) -> std::io::Result<()> {
+    let old_rows = *current_rows;
+    *current_rows = new_rows;
+
+    let _lock = crate::cli::display::terminal_lock::acquire();
+
+    // Clear old prompt area (may now be mid-screen after a grow).
+    let old_start = old_rows.saturating_sub(PINNED_PROMPT_LINES);
+    for row in old_start..old_rows {
+        let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
+    }
+
+    apply_scroll_region(new_rows)?;
+    drop(_lock);
+
+    draw_pinned_prompt(new_rows, change_count)?;
+
+    let _lock = crate::cli::display::terminal_lock::acquire();
+    let new_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+    execute!(stdout(), MoveTo(0, new_bottom))?;
+    stdout().flush()
 }
 
 /// Draws the prompt in the reserved bottom rows without disturbing the cursor
