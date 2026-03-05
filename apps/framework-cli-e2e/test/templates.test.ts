@@ -1406,6 +1406,84 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
       });
 
+      it("should plan/apply switching ALIAS to DEFAULT on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        testLogger.info(
+          "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
+        );
+        await waitForStreamingFunctions(180_000);
+
+        // Verify initial state: AliasTest has ALIAS columns
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("AliasTest");
+            if (!ddl.includes("ALIAS toDate(timestamp)")) {
+              throw new Error(`Initial eventDate ALIAS not found. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+
+        // Modify the template file to switch eventDate from ALIAS to DEFAULT
+        const modelsPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelsPath, "utf8");
+
+        if (config.language === "typescript") {
+          contents = contents.replace(
+            'ClickHouseAlias<"toDate(timestamp)">',
+            'ClickHouseDefault<"toDate(timestamp)">',
+          );
+        } else {
+          contents = contents.replace(
+            'ClickHouseAlias("toDate(timestamp)")',
+            'clickhouse_default("toDate(timestamp)")',
+          );
+        }
+
+        const infrastructureChangesPromise = waitForInfrastructureChanges(
+          devProcess!,
+          60_000,
+        );
+
+        await fs.promises.writeFile(modelsPath, contents, "utf8");
+
+        testLogger.info(
+          "Waiting for infrastructure changes after ALIAS→DEFAULT switch...",
+        );
+        await infrastructureChangesPromise;
+        testLogger.info("Infrastructure changes completed");
+
+        testLogger.info("Waiting for streaming functions to stabilize...");
+        await waitForStreamingFunctions(180_000);
+        testLogger.info("Streaming functions stabilized");
+
+        // Verify DDL reflects the switch from ALIAS to DEFAULT
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("AliasTest");
+            if (ddl.includes("ALIAS toDate(timestamp)")) {
+              throw new Error(`ALIAS not removed from eventDate. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("DEFAULT toDate(timestamp)")) {
+              throw new Error(`DEFAULT not applied to eventDate. DDL: ${ddl}`);
+            }
+            // userHash should still be ALIAS (unchanged)
+            if (!ddl.includes("ALIAS cityHash64(user")) {
+              throw new Error(
+                `userHash ALIAS should be unchanged. DDL: ${ddl}`,
+              );
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
+
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 

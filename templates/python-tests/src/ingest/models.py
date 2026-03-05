@@ -902,6 +902,28 @@ materialized_test_model = IngestPipeline[MaterializedTest](
 )
 
 
+# =======Alias Columns Test=======
+from moose_lib import ClickHouseAlias
+
+
+class AliasTest(BaseModel):
+    """Test model for alias column support."""
+
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    event_date: Annotated[date, ClickHouseAlias("toDate(timestamp)")]
+    user_hash: Annotated[UInt64, ClickHouseAlias("cityHash64(user_id)")]
+
+
+alias_test_model = IngestPipeline[AliasTest](
+    "AliasTest",
+    IngestPipelineConfig(
+        ingest_api=True, stream=True, table=True, dead_letter_queue=True
+    ),
+)
+
+
 # =======Extra Fields Test (ENG-1617)=========
 # Tests the ability to accept arbitrary payload fields using Pydantic's extra='allow'
 # This is the Python equivalent of TypeScript's index signatures

@@ -249,6 +249,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Materialized Columns",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/olap/alias-columns",
+        title: "Alias Columns",
+        languages: ["typescript", "python"],
+      },
       { type: "separator" },
       { type: "label", title: "External Data & Introspection" },
       {

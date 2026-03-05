@@ -3618,6 +3618,7 @@ fn columns_are_equivalent(
         // primary_key change is handled at the table level
         || normalized_before.default != normalized_after.default
         || normalized_before.materialized != normalized_after.materialized
+        || normalized_before.alias != normalized_after.alias
         || normalized_before.annotations != normalized_after.annotations
         || normalized_before.comment != normalized_after.comment
     {
@@ -3964,6 +3965,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -3977,6 +3979,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "to_be_removed".to_string(),
@@ -3990,6 +3993,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -4030,6 +4034,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -4043,6 +4048,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "age".to_string(), // New column
@@ -4056,6 +4062,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
@@ -4110,6 +4117,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -4123,6 +4131,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -4141,6 +4150,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "new_column".to_string(),
@@ -4154,6 +4164,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -4275,6 +4286,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -4291,6 +4303,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         map1.tables
@@ -4351,6 +4364,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -4402,6 +4416,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -4462,6 +4477,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -4525,6 +4541,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -4619,6 +4636,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -4652,6 +4670,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -4682,6 +4701,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         after.columns.push(Column {
@@ -4696,6 +4716,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -4732,6 +4753,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -4745,6 +4767,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "to_modify".to_string(),
@@ -4758,6 +4781,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ]);
 
@@ -4775,6 +4799,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "to_modify".to_string(), // modified
@@ -4788,6 +4813,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "new_column".to_string(), // added
@@ -4801,6 +4827,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ]);
 
@@ -4947,6 +4974,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         after.columns.push(Column {
@@ -4961,6 +4989,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -4996,6 +5025,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         // Same column without DEFAULT value
@@ -5011,6 +5041,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -5050,6 +5081,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "name".to_string(),
@@ -5063,6 +5095,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ]);
 
@@ -5080,6 +5113,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "id".to_string(),
@@ -5093,6 +5127,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ]);
 
@@ -5122,6 +5157,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             };
             before.columns.push(col.clone());
             after.columns.push(col);
@@ -5165,6 +5201,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             });
 
             // Change every other column type in the after table
@@ -5200,6 +5237,7 @@ mod diff_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             });
         }
 
@@ -5232,6 +5270,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         after.columns.push(Column {
@@ -5249,6 +5288,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -5291,6 +5331,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         after.columns.push(Column {
@@ -5305,6 +5346,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         // Test special characters in column name
@@ -5320,6 +5362,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         after.columns.push(Column {
@@ -5334,6 +5377,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after, &[]);
@@ -5360,6 +5404,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
         let col2 = col1.clone();
         assert!(columns_are_equivalent(&col1, &col2, &[]));
@@ -5399,6 +5444,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_enum_col = Column {
@@ -5425,6 +5471,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // These should be equivalent due to the enum semantic comparison
@@ -5453,6 +5500,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -5474,6 +5522,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let int_col2 = Column {
@@ -5488,6 +5537,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2, &[]));
@@ -5521,6 +5571,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let json_col2 = Column {
@@ -5545,6 +5596,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // These should be equivalent - order of typed_paths doesn't matter
@@ -5572,6 +5624,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col3, &[]));
@@ -5599,6 +5652,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col4, &[]));
@@ -5643,6 +5697,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let nested_json_col2 = Column {
@@ -5678,6 +5733,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // These should be equivalent - order doesn't matter at any level
@@ -5715,6 +5771,7 @@ mod diff_tests {
                         ttl: None,
                         codec: None,
                         materialized: None,
+                        alias: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -5728,6 +5785,7 @@ mod diff_tests {
                         ttl: None,
                         codec: None,
                         materialized: None,
+                        alias: None,
                     },
                 ],
                 jwt: false,
@@ -5741,6 +5799,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let col_with_user_name = Column {
@@ -5763,6 +5822,7 @@ mod diff_tests {
                         ttl: None,
                         codec: None,
                         materialized: None,
+                        alias: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -5776,6 +5836,7 @@ mod diff_tests {
                         ttl: None,
                         codec: None,
                         materialized: None,
+                        alias: None,
                     },
                 ],
                 jwt: false,
@@ -5789,6 +5850,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // These should be equivalent - name difference doesn't matter if structure matches
@@ -5818,6 +5880,7 @@ mod diff_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 }], // Missing priority column
                 jwt: false,
             }),
@@ -5830,6 +5893,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -5869,6 +5933,7 @@ mod diff_tests {
                                         ttl: None,
                                         codec: None,
                                         materialized: None,
+                                        alias: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -5882,6 +5947,7 @@ mod diff_tests {
                                         ttl: None,
                                         codec: None,
                                         materialized: None,
+                                        alias: None,
                                     },
                                 ],
                                 jwt: false,
@@ -5895,6 +5961,7 @@ mod diff_tests {
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         }],
                         jwt: false,
                     }),
@@ -5907,6 +5974,7 @@ mod diff_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 }],
                 jwt: false,
             }),
@@ -5919,6 +5987,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let col_user = Column {
@@ -5946,6 +6015,7 @@ mod diff_tests {
                                         ttl: None,
                                         codec: None,
                                         materialized: None,
+                                        alias: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -5959,6 +6029,7 @@ mod diff_tests {
                                         ttl: None,
                                         codec: None,
                                         materialized: None,
+                                        alias: None,
                                     },
                                 ],
                                 jwt: false,
@@ -5972,6 +6043,7 @@ mod diff_tests {
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         }],
                         jwt: false,
                     }),
@@ -5984,6 +6056,7 @@ mod diff_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 }],
                 jwt: false,
             }),
@@ -5996,6 +6069,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // These should be equivalent - name differences at all levels don't matter
@@ -6018,6 +6092,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // Test 1: Columns with same codec should be equivalent
@@ -6129,6 +6204,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // Test 1: Columns with same materialized expression should be equivalent
@@ -6163,6 +6239,7 @@ mod diff_tests {
         // Test 5: Adding materialized to a column should be detected as a change
         let col_before = Column {
             materialized: None,
+            alias: None,
             ..base_col.clone()
         };
         let col_after = Column {
@@ -6178,6 +6255,7 @@ mod diff_tests {
         };
         let col_without_mat = Column {
             materialized: None,
+            alias: None,
             ..base_col.clone()
         };
         assert!(!columns_are_equivalent(
@@ -6209,6 +6287,7 @@ mod diff_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         map1.tables
@@ -6568,6 +6647,7 @@ mod diff_topic_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
@@ -6861,6 +6941,7 @@ mod diff_topic_to_table_sync_process_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             version: Some(version.clone()),
             source_primitive: PrimitiveSignature {
@@ -6986,6 +7067,7 @@ mod diff_topic_to_table_sync_process_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }];
 
         assert_eq!(
@@ -7639,6 +7721,7 @@ mod diff_orchestration_worker_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -7652,6 +7735,7 @@ mod diff_orchestration_worker_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -7692,6 +7776,7 @@ mod diff_orchestration_worker_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -7705,6 +7790,7 @@ mod diff_orchestration_worker_tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -8591,6 +8677,7 @@ mod mirrorable_external_tables_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -8635,6 +8722,7 @@ mod mirrorable_external_tables_tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,

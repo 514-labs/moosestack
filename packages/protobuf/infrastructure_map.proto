@@ -336,6 +336,8 @@ message Column {
   optional string codec = 11;
   // Materialized expression
   optional string materialized = 12;
+  // Alias expression (computed at query time, not stored)
+  optional string alias = 13;
 }
 
 enum SimpleColumnType {

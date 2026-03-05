@@ -467,7 +467,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "userId", type: "String" },
       {
         name: "eventDate",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         materialized: "toDate(timestamp)",
       },
       { name: "userHash", type: "UInt64", materialized: "cityHash64(userId)" },
@@ -479,6 +479,21 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
           "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))",
         codec: "ZSTD(1)",
       },
+    ],
+  },
+  // Alias column test table
+  {
+    tableName: "AliasTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "userId", type: "String" },
+      {
+        name: "eventDate",
+        type: /^Date(32)?$/,
+        alias: "toDate(timestamp)",
+      },
+      { name: "userHash", type: "UInt64", alias: "cityHash64(userId)" },
     ],
   },
   // Comment + Codec combination test table
@@ -919,7 +934,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "user_id", type: "String" },
       {
         name: "event_date",
-        type: /Date(32)?/,
+        type: /^Date(32)?$/,
         materialized: "toDate(timestamp)",
       },
       {
@@ -934,6 +949,25 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
         materialized:
           "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))",
         codec: "ZSTD(1)",
+      },
+    ],
+  },
+  // Alias column test table
+  {
+    tableName: "AliasTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "user_id", type: "String" },
+      {
+        name: "event_date",
+        type: /^Date(32)?$/,
+        alias: "toDate(timestamp)",
+      },
+      {
+        name: "user_hash",
+        type: "UInt64",
+        alias: "cityHash64(user_id)",
       },
     ],
   },

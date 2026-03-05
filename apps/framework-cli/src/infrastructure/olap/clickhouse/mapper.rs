@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
     AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseProjection, ClickHouseTable,
+    ClickHouseInt, ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -54,25 +54,37 @@ fn generate_column_comment(column: &Column) -> Result<Option<String>, Clickhouse
 pub fn std_column_to_clickhouse_column(
     column: Column,
 ) -> Result<ClickHouseColumn, ClickhouseError> {
-    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
-    if column.default.is_some() && column.materialized.is_some() {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot have both DEFAULT and MATERIALIZED. Use one or the other.",
-                column.name
-            ),
-        });
-    }
+    // Extract the default expression kind (validates mutual exclusivity)
+    let default_expr_kind = match (&column.default, &column.materialized, &column.alias) {
+        (Some(_), None, None) => Some(DefaultExpressionKind::Default),
+        (None, Some(_), None) => Some(DefaultExpressionKind::Materialized),
+        (None, None, Some(_)) => Some(DefaultExpressionKind::Alias),
+        (None, None, None) => None,
+        _ => {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' can only have one of DEFAULT, MATERIALIZED, or ALIAS.",
+                    column.name
+                ),
+            });
+        }
+    };
 
-    // Validate that MATERIALIZED columns are not primary keys
-    if column.materialized.is_some() && column.primary_key {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot be both MATERIALIZED and a primary key. \
-                 MATERIALIZED columns are computed and cannot be used as primary keys.",
-                column.name
-            ),
-        });
+    if let Some(kind) = default_expr_kind {
+        if column.primary_key
+            && matches!(
+                kind,
+                DefaultExpressionKind::Materialized | DefaultExpressionKind::Alias
+            )
+        {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' cannot be both {kind} and a primary key. \
+                     {kind} columns cannot be used as primary keys.",
+                    column.name,
+                ),
+            });
+        }
     }
 
     let comment = generate_column_comment(&column)?;
@@ -106,6 +118,7 @@ pub fn std_column_to_clickhouse_column(
         ttl: column.ttl.clone(),
         codec: column.codec.clone(),
         materialized: column.materialized.clone(),
+        alias: column.alias.clone(),
     };
 
     Ok(clickhouse_column)
@@ -460,6 +473,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -486,6 +500,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -514,6 +529,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -558,6 +574,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -571,6 +588,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             jwt: false,
@@ -648,6 +666,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_comment).unwrap();
@@ -674,6 +693,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_without_comment).unwrap();
@@ -699,6 +719,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -725,6 +746,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -752,6 +774,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -786,6 +809,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -843,6 +867,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -869,5 +894,104 @@ mod tests {
 
         let ch_table = std_table_to_clickhouse_table(&table).unwrap();
         assert!(ch_table.projections.is_empty());
+    }
+
+    fn make_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_validation_default_and_materialized_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            materialized: Some("cityHash64(name)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_default_and_alias_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_and_alias_mutually_exclusive() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_cannot_be_primary_key() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            primary_key: true,
+            ..make_column("pk_mat")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both MATERIALIZED"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_alias_cannot_be_primary_key() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            primary_key: true,
+            ..make_column("pk_alias")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both ALIAS"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_alias_column_converts_successfully() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("event_date")
+        };
+        let ch_col = std_column_to_clickhouse_column(col).unwrap();
+        assert_eq!(ch_col.alias, Some("toDate(ts)".to_string()));
+        assert_eq!(ch_col.default, None);
+        assert_eq!(ch_col.materialized, None);
     }
 }

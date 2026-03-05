@@ -3829,6 +3829,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_2".to_string(),
@@ -3841,6 +3842,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_3".to_string(),
@@ -3853,6 +3855,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_4".to_string(),
@@ -3865,6 +3868,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_5".to_string(),
@@ -3877,6 +3881,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_6".to_string(),
@@ -3901,6 +3906,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "nested_field_7".to_string(),
@@ -3913,6 +3919,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ]);
 
@@ -3999,6 +4006,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "name".to_string(),
@@ -4011,6 +4019,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -4054,6 +4063,7 @@ PRIMARY KEY (`id`)
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -4095,6 +4105,7 @@ ENGINE = MergeTree
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -4138,6 +4149,7 @@ ENGINE = MergeTree
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "sample_hash".to_string(),
@@ -4150,6 +4162,7 @@ ENGINE = MergeTree
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "created_at".to_string(),
@@ -4162,6 +4175,7 @@ ENGINE = MergeTree
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -4205,6 +4219,7 @@ ENGINE = MergeTree
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -4249,6 +4264,7 @@ ORDER BY (`id`) "#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -4289,6 +4305,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -4301,6 +4318,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -4348,6 +4366,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -4360,6 +4379,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "is_deleted".to_string(),
@@ -4372,6 +4392,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -4419,6 +4440,7 @@ ORDER BY (`id`) "#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -4528,6 +4550,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "nested_data".to_string(),
@@ -4543,6 +4566,7 @@ ORDER BY (`id`) "#;
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         },
                         ClickHouseColumn {
                             name: "field2".to_string(),
@@ -4555,6 +4579,7 @@ ORDER BY (`id`) "#;
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         },
                     ]),
                     required: true,
@@ -4565,6 +4590,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "status".to_string(),
@@ -4589,6 +4615,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             sample_by: None,
@@ -4634,6 +4661,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "event_id".to_string(),
@@ -4646,6 +4674,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "timestamp".to_string(),
@@ -4658,6 +4687,7 @@ ORDER BY (`id`) "#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::SingleExpr("(user_id, cityHash64(event_id), timestamp)".to_string()),
@@ -4703,6 +4733,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["product_id".to_string()]),
             partition_by: None,
@@ -4747,6 +4778,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "data".to_string(),
@@ -4759,6 +4791,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -5237,6 +5270,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -5828,6 +5862,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -5879,6 +5914,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -5980,6 +6016,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let cluster_clause = Some("test_cluster")
@@ -6858,6 +6895,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "log_blob".to_string(),
@@ -6870,6 +6908,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: Some("ZSTD(3)".to_string()),
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "timestamp".to_string(),
@@ -6882,6 +6921,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: Some("Delta, LZ4".to_string()),
                 materialized: None,
+                alias: None,
             },
             ClickHouseColumn {
                 name: "tags".to_string(),
@@ -6894,6 +6934,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 ttl: None,
                 codec: Some("ZSTD(1)".to_string()),
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -6942,6 +6983,7 @@ ORDER BY (`id`)
                 unique: false,
                 default: None,
                 materialized: None,
+                alias: None,
                 comment: None,
                 ttl: None,
                 codec: None,
@@ -6954,6 +6996,7 @@ ORDER BY (`id`)
                 unique: false,
                 default: None,
                 materialized: Some("toDate(event_time)".to_string()),
+                alias: None,
                 comment: None,
                 ttl: None,
                 codec: None,
@@ -7004,6 +7047,7 @@ ORDER BY (`event_time`)
                 unique: false,
                 default: None,
                 materialized: None,
+            alias: None,
                 comment: None,
                 ttl: None,
                 codec: Some("ZSTD(3)".to_string()),
@@ -7020,6 +7064,7 @@ ORDER BY (`event_time`)
                 materialized: Some(
                     "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))".to_string(),
                 ),
+                alias: None,
                 comment: None,
                 ttl: None,
                 codec: Some("ZSTD(1)".to_string()),
@@ -7063,6 +7108,7 @@ ORDER BY (`event_time`)
             primary_key: false,
             default: Some("42".to_string()),
             materialized: Some("id + 1".to_string()), // Invalid: both default and materialized
+            alias: None,
             annotations: vec![],
             comment: None,
             ttl: None,
@@ -7072,10 +7118,7 @@ ORDER BY (`event_time`)
         let result = std_column_to_clickhouse_column(column);
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        assert!(
-            error_msg.contains("both DEFAULT and MATERIALIZED")
-                || error_msg.contains("mutually exclusive")
-        );
+        assert!(error_msg.contains("only have one of DEFAULT, MATERIALIZED, or ALIAS"));
     }
 
     #[test]
@@ -7432,6 +7475,7 @@ ORDER BY (`event_time`)
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 ClickHouseColumn {
                     name: "user_id".to_string(),
@@ -7444,6 +7488,7 @@ ORDER BY (`event_time`)
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -7487,6 +7532,7 @@ ORDER BY (`event_time`)
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
