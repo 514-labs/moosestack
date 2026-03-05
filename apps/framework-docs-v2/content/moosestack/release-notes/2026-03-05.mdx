@@ -11,11 +11,10 @@ import { Callout } from "@/components/mdx";
 
 # March 5, 2026
 
-This week Moose adds ALIAS column support for computed-on-read fields in ClickHouse, and the 514 CLI gains direct ClickHouse query execution and query performance metrics commands with automatic project context detection. On the hosting side, a new query analysis dashboard ships with time-series performance graphs, sortable query tables, and column-level filtering.
+This week Moose adds ALIAS column support for computed-on-read fields in ClickHouse, and the 514 CLI gains direct ClickHouse query execution and query performance metrics commands with automatic project context detection.
 
 <Callout type="info" title="Highlights">
 * **New:** ALIAS column support for ClickHouse tables
-* **New:** Query analysis dashboard with performance metrics
 * **New:** CLI commands for ClickHouse queries and metrics
 * **Improved:** CLI auto-detects org, project, and branch from local git context
 </Callout>
@@ -56,14 +55,10 @@ This week Moose adds ALIAS column support for computed-on-read fields in ClickHo
 ### Bug Fixes
 
 - Fix `moose add` command to validate App Router directory structure and properly resolve target paths, preventing errors when pointing at non-existent directories or Pages Router projects. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
-- Fix config file handling when shell configuration files (e.g. `.zshrc`) are read-only, such as in Nix-managed environments. The CLI now skips writes and provides manual instructions instead of failing. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
 
 ## Fiveonefour Hosting
 
 ### New Features
-
-**Query analysis dashboard** ([@groy-514](https://github.com/groy-514))
-  New dashboard for inspecting ClickHouse query performance across deployments. Displays time-series graphs for query count, error rate, and latency percentiles (p50/p95/p99), backed by a dedicated materialized view for fast aggregation. The query table supports column-level filtering by query kind, duration, rows read, data volume, and memory usage, with sortable columns and text search.
 
 **CLI `metrics query` command** ([@LucioFranco](https://github.com/LucioFranco))
   New `514 metrics query` command fetches ClickHouse query performance metrics directly from the terminal. Supports filtering by time range, query kind, duration, data volume, and memory usage with formatted table output.
