@@ -1,0 +1,85 @@
+---
+title: March 5, 2026
+description: Release notes for March 5, 2026
+commits:
+  moosestack: 4c180bc3b4634cd5e8c63fd9f01b1d8cc27ed64a
+  commercial: 6508dbab71b8086e36ca6e73f0a2db754f005c6e
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 5, 2026
+
+This week Fiveonefour ships a query analysis dashboard for inspecting ClickHouse query performance, automatic schema initialization and data seeding for preview branches, and graduates lineage visualization and local dev setup to general availability. On the Moose side, ALIAS column support arrives for computed-on-read fields in data models.
+
+<Callout type="info" title="Highlights">
+* **New:** Query analysis dashboard for ClickHouse performance inspection
+* **New:** Automatic schema init and data seeding for preview branches
+* **New:** ALIAS column support for computed-on-read fields in Moose
+* **Improved:** Lineage and Start Developing now available to all users
+</Callout>
+
+## Moose
+
+### New Features
+
+**ALIAS column support for data models** ([@phiSgr](https://github.com/phiSgr))
+  ALIAS columns are computed on read rather than stored at write time, complementing the existing MATERIALIZED column support. Define computed fields directly in your data model and Moose handles the ClickHouse DDL and migration logic, including switching between ALIAS and DEFAULT column types.
+
+  ```typescript
+  import { OlapTable, Columns } from "@514labs/moose-lib";
+
+  interface UserEvents {
+    id: string;
+    userId: string;
+    timestamp: Date;
+    amount: number;
+    // ALIAS columns: computed on read, not stored
+    amountCents: number;
+    dayOfWeek: string;
+  }
+
+  export const userEventsTable = new OlapTable<UserEvents>("user_events", {
+    orderByFields: ["id"],
+    columns: {
+      amountCents: Columns.alias("amount * 100"),
+      dayOfWeek: Columns.alias("dayOfWeekName(timestamp)"),
+    },
+  });
+  ```
+
+  Docs: [Alias Columns](/moosestack/olap/alias-columns)
+
+### Bug Fixes
+
+- Fix `moose add` path validation and App Router check: The `--dir` argument now validates that the path exists, and `moose add chat` requires a Next.js App Router project with an `app/` directory. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
+
+### Improvements
+
+- Updated TypeScript MCP template with AI development guides: Added `.mcp.json` configuration and comprehensive `AGENTS.md` with project structure, setup steps, and common task documentation for AI-assisted development. ([@oatsandsugar](https://github.com/oatsandsugar))
+
+## Fiveonefour Hosting
+
+### New Features
+
+**Query analysis dashboard** ([@groy-514](https://github.com/groy-514))
+  New dashboard for inspecting ClickHouse query performance across your deployments. View query distribution by type, filter by table name, and sort through all queries with column-level filtering. A new materialized view powers the analytics for fast aggregation over large query log volumes.
+
+**Automatic schema init and data seeding for preview branches** ([@jmsuzuki](https://github.com/jmsuzuki))
+  Preview branches now automatically initialize with the ClickHouse schema from the parent branch and seed data, eliminating manual setup. Schema initialization runs concurrently with the GitHub Actions build to avoid added latency. Data seeding copies tables from the parent branch's ClickHouse database so preview environments start with realistic data.
+
+**Pre-built Docker images for template deployments** ([@jmsuzuki](https://github.com/jmsuzuki))
+  Projects created from templates now use pre-built Docker images from a registry instead of building from source, significantly reducing initial deployment time.
+
+### Improvements
+
+- Lineage visualization now generally available: All users can now view data flow relationships across their infrastructure. The layout algorithm displays all data pipeline components on the same axis, and a node details panel shows resource metadata on selection. ([@groy-514](https://github.com/groy-514))
+- Start Developing section now generally available: The local development setup panel with CLI instructions (`514 setup`, `moose dev`) is now shown to all users on deployment detail pages. ([@groy-514](https://github.com/groy-514))
+- CLI next-best-action after setup: The `514 setup` command now suggests an AI copilot prompt template for exploring projects with MCP tools and Moose CLI docs. ([@LucioFranco](https://github.com/LucioFranco))
+- CLI monorepo support for `link` command: The `link` command now handles monorepo root paths correctly, using git config subsections keyed by project path. ([@LucioFranco](https://github.com/LucioFranco))
+
+### Bug Fixes
+
+- Fix telemetry reporting: Resolved an issue with telemetry event submission. ([@callicles](https://github.com/callicles))
+- Fix build log pagination: Added missing pagination limit to build logs fetch to prevent incomplete log display. ([@LucioFranco](https://github.com/LucioFranco))
