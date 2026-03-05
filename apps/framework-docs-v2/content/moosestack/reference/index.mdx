@@ -521,20 +521,42 @@ active_user_events = View(
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
-Template tag for creating type-safe SQL queries with parameters.
+Template tag for creating type-safe SQL queries with parameters. Use `sql.statement` for complete SQL statements and `sql.fragment` for partial SQL (expressions, conditions, clauses).
 
 ```ts
-// Basic usage
-const query = sql`SELECT * FROM users WHERE id = ${userId}`;
+import { sql } from "@514labs/moose-lib";
 
-// With multiple parameters
-const query = sql`
-  SELECT * FROM users 
-  WHERE age > ${minAge} 
+// sql.statement — for complete SQL queries
+const query = sql.statement`
+  SELECT * FROM users
+  WHERE age > ${minAge}
   AND country = ${country}
   LIMIT ${limit}
 `;
+
+// sql.fragment — for partial SQL (conditions, expressions, clauses)
+const condition = sql.fragment`age > ${minAge} AND country = ${country}`;
+const fullQuery = sql.statement`SELECT * FROM users WHERE ${condition}`;
+
+// sql.join — join an array of Sql fragments with a separator
+const conditions = [
+  sql.fragment`age > ${minAge}`,
+  sql.fragment`country = ${country}`,
+];
+const joined = sql.statement`SELECT * FROM users WHERE ${sql.join(conditions, "AND")}`;
+
+// sql.raw — inject raw SQL strings (⚠️ SQL injection risk with untrusted input)
+const tableName = sql.raw("users");
+const rawQuery = sql.statement`SELECT * FROM ${tableName}`;
 ```
+
+| Tag | `isFragment` | Use for |
+|-----|-------------|---------|
+| `sql.statement` | `false` | Complete queries (SELECT, INSERT, CREATE, etc.) |
+| `sql.fragment` | `true` | Partial SQL (expressions, conditions, clauses) |
+| `sql` *(deprecated)* | `undefined` | Legacy usage — migrate to `sql.statement` or `sql.fragment` |
+
+All three produce the same `Sql` object. The `isFragment` property is metadata that enables the [Moose Language Server](/moosestack/language-server) to validate statements while skipping fragments.
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
 Python uses formatted strings with parameter substitution for SQL queries.
@@ -542,8 +564,8 @@ Python uses formatted strings with parameter substitution for SQL queries.
 ```python
 # Python uses formatted strings with execute method
 query = """
-  SELECT * FROM users 
-  WHERE age > {min_age} 
+  SELECT * FROM users
+  WHERE age > {min_age}
   AND country = {country}
   LIMIT {limit}
 """

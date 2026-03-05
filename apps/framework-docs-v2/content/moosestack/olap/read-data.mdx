@@ -401,23 +401,23 @@ in_rows = client.query.execute_raw(in_query, {
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-Use the `sql` template literal to build safe queries:
+Use `sql.statement` for complete SQL statements and `sql.fragment` for reusable SQL fragments (expressions, conditions, partial clauses). This distinction enables better tooling support — the [Moose Language Server](/moosestack/language-server) uses it to validate complete statements while skipping fragments that aren't valid standalone SQL.
 
 ```ts filename="SqlTemplateLiterals.ts" copy
 import { sql } from "@514labs/moose-lib";
 
-// Safe interpolation with sql template literal
+// Use sql.statement for complete SQL queries
 const status = 'active';
 const limit = 10;
 
-const query = sql`
+const query = sql.statement`
   SELECT id, name, email
   FROM ${UserTable}
   WHERE ${UserTable.columns.status} = ${status}
   LIMIT ${limit}
 `;
 
-// Conditional WHERE clauses
+// Use sql.fragment for partial SQL (conditions, expressions, clauses)
 interface FilterParams {
   minAge?: number;
   status?: "active" | "inactive";
@@ -426,28 +426,32 @@ interface FilterParams {
 
 const buildConditionalQuery = (filters: FilterParams) => {
   let conditions = [];
-  
+
   if (filters.minAge !== undefined) {
-    conditions.push(sql`age >= ${filters.minAge}`);
+    conditions.push(sql.fragment`age >= ${filters.minAge}`);
   }
-  
+
   if (filters.status) {
-    conditions.push(sql`status = ${filters.status}`);
+    conditions.push(sql.fragment`status = ${filters.status}`);
   }
-  
+
   if (filters.searchText) {
-    conditions.push(sql`(name ILIKE ${'%' + filters.searchText + '%'} OR email ILIKE ${'%' + filters.searchText + '%'})`);
+    conditions.push(sql.fragment`(name ILIKE ${'%' + filters.searchText + '%'} OR email ILIKE ${'%' + filters.searchText + '%'})`);
   }
-  
-  let query = sql`SELECT * FROM ${UserTable}`;
-  
+
+  let query = sql.fragment`SELECT * FROM ${UserTable}`;
+
   if (conditions.length > 0) {
-    query = sql`${query} WHERE ${conditions.join(' AND ')}`;
+    query = sql.fragment`${query} WHERE ${conditions.join(' AND ')}`;
   }
-  
-  return sql`${query} ORDER BY created_at DESC`;
+
+  return sql.statement`${query} ORDER BY created_at DESC`;
 };
 ```
+
+<Callout type="info" title="Migrating from bare sql tag">
+The bare `sql` template tag still works but is deprecated. Replace `sql\`...\`` with `sql.statement\`...\`` for complete queries or `sql.fragment\`...\`` for partial SQL. Both produce the same `Sql` object — the only difference is metadata that enables better editor tooling.
+</Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
 Moose provides two distinct approaches for executing queries in Python. Choose the right one for your use case:
