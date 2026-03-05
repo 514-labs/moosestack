@@ -230,7 +230,7 @@ export class Sql {
    * Append another Sql fragment, returning a new Sql instance.
    */
   append(other: Sql): Sql {
-    return new Sql([...this.strings, ""], [...this.values, other]);
+    return new Sql([...this.strings, ""], [...this.values, other], this.isFragment);
   }
 }
 
