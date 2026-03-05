@@ -58,18 +58,6 @@ const toClientConfig = (config: ClickhouseConfig) => ({
 });
 
 /**
- * Build RowPolicyOptions from a row policies config and JWT payload.
- * Returns undefined if no config or JWT is provided.
- */
-function buildRowPolicyOptions(
-  config: RowPoliciesConfig | undefined,
-  jwt: Record<string, unknown> | undefined,
-): RowPolicyOptions | undefined {
-  if (!config || !jwt) return undefined;
-  return buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
-}
-
-/**
  * Extract claim values from a JWT payload to build an rlsContext map.
  * Returns { claim_name: claim_value } for passing to getMooseUtils({ rlsContext }).
  */
@@ -178,16 +166,25 @@ const apiHandler = async (
           return;
         }
       } else if (requireAuth) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "Forbidden",
-            message:
-              rowPoliciesConfig ?
-                "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml."
-              : "Authentication is enforced but no JWT configuration is available.",
-          }),
-        );
+        if (rowPoliciesConfig) {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Forbidden",
+              message:
+                "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+            }),
+          );
+        } else {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Unauthorized",
+              message:
+                "Authentication is enforced but no JWT configuration is available.",
+            }),
+          );
+        }
         httpLogger(req, res, start);
         return;
       }
@@ -288,10 +285,14 @@ const apiHandler = async (
 
       let rowPolicyOpts: RowPolicyOptions | undefined;
       try {
-        rowPolicyOpts = buildRowPolicyOptions(
-          rowPoliciesConfig,
-          jwtPayload as Record<string, unknown> | undefined,
-        );
+        rowPolicyOpts =
+          rowPoliciesConfig && jwtPayload ?
+            buildRowPolicyOptionsFromClaims(
+              rowPoliciesConfig,
+              jwtPayload as Record<string, unknown>,
+              "JWT payload",
+            )
+          : undefined;
       } catch (error) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: (error as Error).message }));
@@ -444,16 +445,25 @@ const createMainRouter = async (
         return;
       }
     } else if (requireAuth) {
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: "Forbidden",
-          message:
-            rowPoliciesConfig ?
-              "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml."
-            : "Authentication is enforced but no JWT configuration is available.",
-        }),
-      );
+      if (rowPoliciesConfig) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Forbidden",
+            message:
+              "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+          }),
+        );
+      } else {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Unauthorized",
+            message:
+              "Authentication is enforced but no JWT configuration is available.",
+          }),
+        );
+      }
       return;
     }
 
