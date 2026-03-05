@@ -8562,6 +8562,48 @@ mod version_tests {
     }
 
     #[test]
+    fn test_proto_roundtrip_select_row_policies() {
+        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+
+        let mut map = InfrastructureMap::default();
+        map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec!["events_1_0_0".to_string(), "orders_1_0_0".to_string()],
+                column: "org_id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+        map.select_row_policies.insert(
+            "region_filter".to_string(),
+            SelectRowPolicy {
+                name: "region_filter".to_string(),
+                tables: vec!["events_1_0_0".to_string()],
+                column: "region".to_string(),
+                claim: "region".to_string(),
+            },
+        );
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.select_row_policies.len(), 2);
+
+        let tenant = decoded.select_row_policies.get("tenant_isolation").unwrap();
+        assert_eq!(tenant.name, "tenant_isolation");
+        assert_eq!(tenant.tables, vec!["events_1_0_0", "orders_1_0_0"]);
+        assert_eq!(tenant.column, "org_id");
+        assert_eq!(tenant.claim, "org_id");
+
+        let region = decoded.select_row_policies.get("region_filter").unwrap();
+        assert_eq!(region.name, "region_filter");
+        assert_eq!(region.tables, vec!["events_1_0_0"]);
+        assert_eq!(region.column, "region");
+        assert_eq!(region.claim, "region");
+    }
+
+    #[test]
     fn test_backward_compatibility_json() {
         let old_json = r#"{
             "default_database": "test_db",

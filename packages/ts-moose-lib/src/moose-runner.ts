@@ -121,14 +121,29 @@ program
         rowPoliciesConfig:
           options.rowPolicies ?
             (() => {
+              let parsed: unknown;
               try {
-                return JSON.parse(options.rowPolicies);
+                parsed = JSON.parse(options.rowPolicies);
               } catch (e) {
                 console.error(
                   `Failed to parse --row-policies JSON: ${(e as Error).message}`,
                 );
                 process.exit(1);
               }
+              if (
+                typeof parsed !== "object" ||
+                parsed === null ||
+                Array.isArray(parsed) ||
+                !Object.values(parsed as Record<string, unknown>).every(
+                  (v) => typeof v === "string",
+                )
+              ) {
+                console.error(
+                  `Invalid --row-policies JSON: expected a flat object with string values`,
+                );
+                process.exit(1);
+              }
+              return parsed as Record<string, string>;
             })()
           : undefined,
       });

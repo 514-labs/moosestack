@@ -1,6 +1,4 @@
 import { OlapTable } from "./olapTable";
-import { View } from "./view";
-import { MaterializedView } from "./materializedView";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 
 /**
@@ -10,8 +8,8 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
  * matched against a JWT claim via `getSetting()`.
  */
 export interface SelectRowPolicyConfig {
-  /** Tables and/or views the policy applies to */
-  tables: (OlapTable<any> | View | MaterializedView<any>)[];
+  /** Tables the policy applies to (ClickHouse row policies only support tables, not views) */
+  tables: OlapTable<any>[];
 
   /** Column to filter on (e.g., "org_id") */
   column: string;
@@ -58,8 +56,6 @@ export class SelectRowPolicy {
 
   /** Resolved table names for serialization (versioned ClickHouse names) */
   get tableNames(): string[] {
-    return this.config.tables.map((t) =>
-      t instanceof OlapTable ? t.generateTableName() : t.name,
-    );
+    return this.config.tables.map((t) => t.generateTableName());
   }
 }

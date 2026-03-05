@@ -1,6 +1,7 @@
 use clickhouse::sql_parser::normalize_sql_for_comparison;
 use clickhouse::ClickhouseChangesError;
 
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::lifecycle_filter::{self, LifecycleViolation};
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
@@ -93,6 +94,18 @@ pub trait OlapOperations {
         db_name: &str,
         default_database: &str,
     ) -> Result<Vec<SqlResource>, OlapChangesError>;
+
+    /// Retrieves all row policies from the database that are assigned to moose_rls_role.
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list row policies from
+    ///
+    /// # Returns
+    /// * `Result<Vec<SelectRowPolicy>, OlapChangesError>` - Row policies found in the database
+    async fn list_row_policies(
+        &self,
+        db_name: &str,
+    ) -> Result<Vec<SelectRowPolicy>, OlapChangesError>;
 
     /// Normalizes SQL using the database's native formatting.
     ///

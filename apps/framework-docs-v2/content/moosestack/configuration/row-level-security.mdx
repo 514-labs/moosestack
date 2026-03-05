@@ -51,7 +51,7 @@ Row-Level Security is currently available in TypeScript only. Python support is 
 | Parameter | Type | Description |
 |:----------|:-----|:------------|
 | `name` | `string` | Unique name for the policy (used in ClickHouse DDL) |
-| `tables` | `(OlapTable \| View \| MaterializedView)[]` | Tables and views the policy applies to |
+| `tables` | `OlapTable[]` | Tables the policy applies to (ClickHouse row policies only support tables, not views) |
 | `column` | `string` | Column to filter on (must exist on every listed table) |
 | `claim` | `string` | JWT claim name whose value is compared against the column |
 
