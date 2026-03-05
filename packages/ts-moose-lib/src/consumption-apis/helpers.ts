@@ -70,8 +70,18 @@ export interface RowPolicyOptions {
   clickhouse_settings: Record<string, string>;
 }
 
-/** Shared ClickHouse role name used by all row policies */
+/**
+ * Shared ClickHouse role name used by all row policies.
+ * IMPORTANT: Must match MOOSE_RLS_ROLE in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
 export const MOOSE_RLS_ROLE = "moose_rls_role";
+
+/**
+ * Prefix for ClickHouse custom settings used by row policies.
+ * Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
+ * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_SETTING_PREFIX = "custom_moose_rls_";
 
 /** Config mapping ClickHouse setting names to JWT claim names */
 export type RowPoliciesConfig = Record<string, string>;

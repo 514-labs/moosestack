@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Shared ClickHouse role name used by all row policies.
+/// IMPORTANT: Must match MOOSE_RLS_ROLE in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_ROLE: &str = "moose_rls_role";
 
 /// A ClickHouse Row Policy defined by the user.
@@ -25,6 +26,7 @@ pub struct SelectRowPolicy {
 
 impl SelectRowPolicy {
     /// ClickHouse setting name derived from the column: `custom_moose_rls_{column}`
+    /// IMPORTANT: Prefix must match MOOSE_RLS_SETTING_PREFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
     pub fn setting_name(&self) -> String {
         format!("custom_moose_rls_{}", self.column)
     }

@@ -1,5 +1,6 @@
 import {
   MooseClient,
+  MOOSE_RLS_SETTING_PREFIX,
   QueryClient,
   MooseUtils,
   RowPoliciesConfig,
@@ -26,17 +27,6 @@ function isNewOptionsArg(arg: unknown): boolean {
 }
 
 /**
- * Build RowPolicyOptions from the runtime row policies config and an rlsContext.
- * The rlsContext provides claim values; the config maps claims to ClickHouse settings.
- */
-function buildRowPolicyOptionsFromContext(
-  config: RowPoliciesConfig,
-  rlsContext: Record<string, string>,
-) {
-  return buildRowPolicyOptionsFromClaims(config, rlsContext, "rlsContext");
-}
-
-/**
  * Build a RowPoliciesConfig from the registered SelectRowPolicy primitives.
  * Returns undefined if no policies are registered.
  */
@@ -45,7 +35,8 @@ function getRowPoliciesConfigFromRegistry(): RowPoliciesConfig | undefined {
   if (policies.size === 0) return undefined;
   const config: RowPoliciesConfig = Object.create(null);
   for (const policy of policies.values()) {
-    config[`custom_moose_rls_${policy.config.column}`] = policy.config.claim;
+    config[`${MOOSE_RLS_SETTING_PREFIX}${policy.config.column}`] =
+      policy.config.claim;
   }
   return config;
 }
@@ -103,12 +94,19 @@ export async function getMooseUtils(
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
   if (runtimeContext) {
-    if (options?.rlsContext && runtimeContext.rowPoliciesConfig) {
+    if (options?.rlsContext) {
+      if (!runtimeContext.rowPoliciesConfig) {
+        throw new Error(
+          "rlsContext was provided but no row policies are configured. " +
+            "Define at least one SelectRowPolicy before using rlsContext.",
+        );
+      }
       // Create a new scoped QueryClient with row policy options.
       // Uses the same shared ClickHouseClient connection — no new connections.
-      const rowPolicyOpts = buildRowPolicyOptionsFromContext(
+      const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
         runtimeContext.rowPoliciesConfig,
         options.rlsContext,
+        "rlsContext",
       );
       const scopedQueryClient = new QueryClient(
         runtimeContext.clickhouseClient,
@@ -124,7 +122,7 @@ export async function getMooseUtils(
         jwt: runtimeContext.jwt,
       };
     }
-    // No rlsContext — return the shared singleton (today's behavior)
+    // No rlsContext — return the shared singleton
     return {
       client: runtimeContext.client,
       sql: sql,
@@ -182,9 +180,10 @@ export async function getMooseUtils(
           "Define at least one SelectRowPolicy before using rlsContext.",
       );
     }
-    const rowPolicyOpts = buildRowPolicyOptionsFromContext(
+    const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
       rowPoliciesConfig,
       options.rlsContext,
+      "rlsContext",
     );
     // Reuse the underlying ClickHouseClient from the cached QueryClient
     const baseQueryClient = standaloneUtils!.client.query;
