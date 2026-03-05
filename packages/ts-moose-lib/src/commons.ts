@@ -79,8 +79,10 @@ export const getClickhouseClient = ({
     password: password,
     database: database,
     application: "moose",
-    // Note: wait_end_of_query is configured per operation type, not globally
-    // to preserve SELECT query performance while ensuring INSERT/DDL reliability
+    clickhouse_settings: {
+      asterisk_include_materialized_columns: 1,
+      asterisk_include_alias_columns: 1,
+    },
   });
 };
 

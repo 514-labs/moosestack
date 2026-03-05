@@ -500,6 +500,10 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 username=clickhouse_config.username,
                 password=clickhouse_config.password,
                 database=effective_database,
+                settings={
+                    "asterisk_include_materialized_columns": 1,
+                    "asterisk_include_alias_columns": 1,
+                },
             )
 
             # Cache the new client and config hash

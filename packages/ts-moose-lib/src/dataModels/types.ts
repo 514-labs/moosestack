@@ -262,6 +262,51 @@ export type ClickHouseAlias<SqlExpression extends string> = {
  */
 export type WithDefault<T, _SqlExpression extends string> = T;
 
+// ---------------------------------------------------------------------------
+// Insert utility types (inspired by Drizzle's InferInsertModel)
+// ---------------------------------------------------------------------------
+
+type IsComputed<T> =
+  "_clickhouse_alias" extends keyof T ? true
+  : "_clickhouse_materialized" extends keyof T ? true
+  : false;
+
+type HasDefault<T> = "_clickhouse_default" extends keyof T ? true : false;
+
+/** Keys whose columns are ALIAS or MATERIALIZED — excluded from inserts entirely. */
+type ComputedKeys<T> = {
+  [K in keyof T]: IsComputed<T[K]> extends true ? K : never;
+}[keyof T];
+
+/** Keys whose columns carry a ClickHouseDefault expression — optional during inserts. */
+type DefaultKeys<T> = {
+  [K in keyof T]: HasDefault<T[K]> extends true ? K : never;
+}[keyof T];
+
+/**
+ * Derive the insert-safe shape of a model:
+ * - ALIAS / MATERIALIZED columns are **omitted** (ClickHouse computes them).
+ * - DEFAULT columns become **optional** (ClickHouse fills them when absent).
+ * - All other columns remain **required**.
+ *
+ * @example
+ * interface Events {
+ *   id: Key<string>;
+ *   timestamp: Date;
+ *   eventDate: Date & ClickHouseAlias<"toDate(timestamp)">;
+ *   createdAt: Date & ClickHouseDefault<"now()">;
+ * }
+ *
+ * // Insertable<Events> ≡ { id: string; timestamp: Date; createdAt?: Date }
+ * const table = new OlapTable<Events>("events");
+ * await table.insert([{ id: "1", timestamp: new Date() }]);
+ */
+export type Insertable<T> = {
+  [K in Exclude<keyof T, ComputedKeys<T> | DefaultKeys<T>>]: T[K];
+} & {
+  [K in Exclude<DefaultKeys<T>, ComputedKeys<T>>]?: T[K];
+};
+
 /**
  * ClickHouse table engine types supported by Moose.
  */

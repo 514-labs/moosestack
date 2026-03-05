@@ -112,6 +112,14 @@ class ClickHouseMaterialized:
 
     expression: str
 
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
+
 
 @dataclasses.dataclass(frozen=True)
 class ClickHouseAlias:
@@ -138,6 +146,14 @@ class ClickHouseAlias:
     """
 
     expression: str
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
 
 
 @dataclasses.dataclass(frozen=True)
