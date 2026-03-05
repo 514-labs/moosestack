@@ -163,7 +163,7 @@ describe("BYOF Standalone Functionality", function () {
     });
 
     it("should log deprecation warning when req parameter is passed", async () => {
-      const fakeReq = {};
+      const fakeReq = { method: "GET", url: "/test", headers: {} };
       const { matched } = await captureWarnings(
         () => getMooseUtils(fakeReq),
         /\[DEPRECATED\].*getMooseUtils/,
@@ -172,7 +172,7 @@ describe("BYOF Standalone Functionality", function () {
     });
 
     it("should still return valid utils when req parameter is passed (backwards compat)", async () => {
-      const fakeReq = {};
+      const fakeReq = { method: "GET", url: "/test", headers: {} };
       const { result: utils } = await captureWarnings(() =>
         getMooseUtils(fakeReq),
       );

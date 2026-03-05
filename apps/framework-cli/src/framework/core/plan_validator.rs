@@ -88,10 +88,11 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
 
         // Validate the column name produces a legal ClickHouse custom setting name.
         // getSetting() requires alphanumeric + underscore after the 'custom_moose_rls_' prefix.
-        if !policy
-            .column
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        if policy.column.is_empty()
+            || !policy
+                .column
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
         {
             return Err(ValidationError::RowPolicyValidation(format!(
                 "Row policy '{}': column '{}' contains characters that are invalid in a \

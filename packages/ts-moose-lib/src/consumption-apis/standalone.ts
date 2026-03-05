@@ -10,6 +10,32 @@ import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
 import { getSelectRowPolicies } from "../dmv2/registry";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { JWTPayload } from "jose";
+
+/**
+ * Per-request context stored via AsyncLocalStorage.
+ * Set by the runtime (runner.ts) before invoking WebApp handlers so that
+ * getMooseUtils() can auto-scope queries with row policies from the JWT.
+ */
+interface RequestContext {
+  rlsContext?: Record<string, string>;
+  jwt?: JWTPayload;
+}
+
+const requestContextStorage = new AsyncLocalStorage<RequestContext>();
+
+/**
+ * Run a callback with per-request context (rlsContext, jwt).
+ * Used by the runtime to wrap WebApp handler invocations so that
+ * getMooseUtils() inside the handler auto-scopes with row policies.
+ */
+export function runWithRequestContext<T>(
+  context: RequestContext,
+  fn: () => T,
+): T {
+  return requestContextStorage.run(context, fn);
+}
 
 export interface GetMooseUtilsOptions {
   /** Map of JWT claim names to their values for row policy scoping */
@@ -17,13 +43,15 @@ export interface GetMooseUtilsOptions {
 }
 
 /**
- * Detect whether the argument is the new options object or a legacy request (old API).
- * The new API uses `{ rlsContext }`. Anything else is treated as the deprecated `req` param.
+ * Detect whether the argument is a legacy HTTP request object (old API).
+ * Legacy callers passed an IncomingMessage or framework request which has
+ * HTTP-specific properties like `method`, `url`, and `headers`.
+ * Plain option objects (including `{}`) are NOT legacy requests.
  */
-function isNewOptionsArg(arg: unknown): boolean {
-  if (arg === undefined) return true;
+function isLegacyRequestArg(arg: unknown): boolean {
   if (arg === null || typeof arg !== "object") return false;
-  return "rlsContext" in (arg as Record<string, unknown>);
+  const obj = arg as Record<string, unknown>;
+  return "method" in obj || "url" in obj || "headers" in obj;
 }
 
 /**
@@ -82,7 +110,7 @@ export async function getMooseUtils(
   options?: GetMooseUtilsOptions | any,
 ): Promise<MooseUtils> {
   // Backward compatibility: detect old getMooseUtils(req) usage
-  if (options !== undefined && !isNewOptionsArg(options)) {
+  if (options !== undefined && isLegacyRequestArg(options)) {
     console.warn(
       "[DEPRECATED] getMooseUtils(req) no longer requires a request parameter. " +
         "Use getMooseUtils() instead, or getMooseUtils({ rlsContext }) for row policies.",
@@ -94,7 +122,12 @@ export async function getMooseUtils(
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
   if (runtimeContext) {
-    if (options?.rlsContext) {
+    // Resolve rlsContext: explicit option > per-request AsyncLocalStorage
+    const reqCtx = requestContextStorage.getStore();
+    const rlsContext = options?.rlsContext ?? reqCtx?.rlsContext;
+    const jwt = reqCtx?.jwt ?? runtimeContext.jwt;
+
+    if (rlsContext) {
       if (!runtimeContext.rowPoliciesConfig) {
         throw new Error(
           "rlsContext was provided but no row policies are configured. " +
@@ -105,7 +138,7 @@ export async function getMooseUtils(
       // Uses the same shared ClickHouseClient connection — no new connections.
       const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
         runtimeContext.rowPoliciesConfig,
-        options.rlsContext,
+        rlsContext,
         "rlsContext",
       );
       const scopedQueryClient = new QueryClient(
@@ -119,14 +152,14 @@ export async function getMooseUtils(
           runtimeContext.temporalClient,
         ),
         sql: sql,
-        jwt: runtimeContext.jwt,
+        jwt,
       };
     }
     // No rlsContext — return the shared singleton
     return {
       client: runtimeContext.client,
       sql: sql,
-      jwt: runtimeContext.jwt,
+      jwt,
     };
   }
 

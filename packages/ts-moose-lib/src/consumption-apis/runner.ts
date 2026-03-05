@@ -479,11 +479,14 @@ const createMainRouter = async (
         pathname.startsWith(normalizedMount + "/");
 
       if (matches) {
+        // Import once for both getMooseUtils and runWithRequestContext
+        const { getMooseUtils, runWithRequestContext } = await import(
+          "./standalone"
+        );
+
+        // Build per-request RLS context from JWT claims (if row policies are configured)
+        let rlsContext: Record<string, string> | undefined;
         if (webApp.config.injectMooseUtils !== false) {
-          // Import getMooseUtils dynamically to avoid circular deps
-          const { getMooseUtils } = await import("./standalone");
-          // When row policies + JWT are active, auto-scope the client
-          let rlsContext: Record<string, string> | undefined;
           try {
             rlsContext =
               rowPoliciesConfig && jwtPayload ?
@@ -520,7 +523,11 @@ const createMainRouter = async (
               url: proxiedUrl,
             },
           );
-          await webApp.handler(modifiedReq, res);
+          // Run the handler inside AsyncLocalStorage so getMooseUtils()
+          // auto-scopes with row policies without needing explicit rlsContext.
+          await runWithRequestContext({ rlsContext, jwt: jwtPayload }, () =>
+            webApp.handler(modifiedReq, res),
+          );
           return;
         } catch (error) {
           console.error(`Error in WebApp ${webApp.name}:`, error);
