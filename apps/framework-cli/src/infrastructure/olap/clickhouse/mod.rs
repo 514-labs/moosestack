@@ -2900,10 +2900,10 @@ fn parse_row_policy_filter(filter: &str) -> Option<(String, String)> {
     let column = captures.get(1)?.as_str().to_string();
     let claim_column = captures.get(2)?.as_str().to_string();
 
-    // The claim name equals the column name in our model (the setting is derived from the column).
-    // But to be accurate we return the column from the USING clause and derive the claim
-    // from the setting name. Since setting is SQL_moose_rls_{column} and claim maps to column,
-    // the claim is the same as the column extracted from the setting.
+    // The setting name is SQL_moose_rls_{column}, so the second capture group is the
+    // column name, NOT the JWT claim. The claim is not stored in the DDL and cannot be
+    // recovered from ClickHouse. We return the column twice here; the caller must handle
+    // the fact that the claim is unknown.
     Some((column, claim_column))
 }
 
