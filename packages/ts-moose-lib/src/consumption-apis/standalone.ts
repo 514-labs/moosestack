@@ -7,6 +7,7 @@ import {
 } from "./helpers";
 import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
+import { getSelectRowPolicies } from "../dmv2/registry";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
 
 export interface GetMooseUtilsOptions {
@@ -33,6 +34,20 @@ function buildRowPolicyOptionsFromContext(
   rlsContext: Record<string, string>,
 ) {
   return buildRowPolicyOptionsFromClaims(config, rlsContext, "rlsContext");
+}
+
+/**
+ * Build a RowPoliciesConfig from the registered SelectRowPolicy primitives.
+ * Returns undefined if no policies are registered.
+ */
+function getRowPoliciesConfigFromRegistry(): RowPoliciesConfig | undefined {
+  const policies = getSelectRowPolicies();
+  if (policies.size === 0) return undefined;
+  const config: RowPoliciesConfig = Object.create(null);
+  for (const policy of policies.values()) {
+    config[`custom_moose_rls_${policy.config.column}`] = policy.config.claim;
+  }
+  return config;
 }
 
 // Cached utilities and initialization promise for standalone mode
@@ -117,50 +132,75 @@ export async function getMooseUtils(
     };
   }
 
-  // Standalone mode - use cached client or create new one
-  if (standaloneUtils) {
-    return standaloneUtils;
+  // Standalone mode - initialize base client if needed
+  if (!standaloneUtils) {
+    if (!initPromise) {
+      initPromise = (async () => {
+        await import("../config/runtime");
+        const configRegistry = (globalThis as any)._mooseConfigRegistry;
+
+        if (!configRegistry) {
+          throw new Error(
+            "Moose not initialized. Ensure you're running within a Moose app " +
+              "or have proper configuration set up.",
+          );
+        }
+
+        const clickhouseConfig =
+          await configRegistry.getStandaloneClickhouseConfig();
+
+        const clickhouseClient = getClickhouseClient(
+          toClientConfig(clickhouseConfig),
+        );
+        const queryClient = new QueryClient(clickhouseClient, "standalone");
+        const mooseClient = new MooseClient(queryClient);
+
+        standaloneUtils = {
+          client: mooseClient,
+          sql: sql,
+          jwt: undefined,
+        };
+        return standaloneUtils;
+      })();
+
+      try {
+        await initPromise;
+      } finally {
+        initPromise = null;
+      }
+    } else {
+      await initPromise;
+    }
   }
 
-  // If initialization is in progress, wait for it
-  if (initPromise) {
-    return initPromise;
-  }
-
-  // Start initialization
-  initPromise = (async () => {
-    await import("../config/runtime");
-    const configRegistry = (globalThis as any)._mooseConfigRegistry;
-
-    if (!configRegistry) {
+  // If rlsContext is provided, create a scoped client using the shared connection
+  if (options?.rlsContext) {
+    const rowPoliciesConfig = getRowPoliciesConfigFromRegistry();
+    if (!rowPoliciesConfig) {
       throw new Error(
-        "Moose not initialized. Ensure you're running within a Moose app " +
-          "or have proper configuration set up.",
+        "rlsContext was provided but no SelectRowPolicy primitives are registered. " +
+          "Define at least one SelectRowPolicy before using rlsContext.",
       );
     }
-
-    const clickhouseConfig =
-      await configRegistry.getStandaloneClickhouseConfig();
-
-    const clickhouseClient = getClickhouseClient(
-      toClientConfig(clickhouseConfig),
+    const rowPolicyOpts = buildRowPolicyOptionsFromContext(
+      rowPoliciesConfig,
+      options.rlsContext,
     );
-    const queryClient = new QueryClient(clickhouseClient, "standalone");
-    const mooseClient = new MooseClient(queryClient);
-
-    standaloneUtils = {
-      client: mooseClient,
+    // Reuse the underlying ClickHouseClient from the cached QueryClient
+    const baseQueryClient = standaloneUtils!.client.query;
+    const scopedQueryClient = new QueryClient(
+      baseQueryClient.client,
+      "rls-scoped",
+      rowPolicyOpts,
+    );
+    return {
+      client: new MooseClient(scopedQueryClient),
       sql: sql,
       jwt: undefined,
     };
-    return standaloneUtils;
-  })();
-
-  try {
-    return await initPromise;
-  } finally {
-    initPromise = null;
   }
+
+  return standaloneUtils!;
 }
 
 /**

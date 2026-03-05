@@ -86,6 +86,21 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
             )));
         }
 
+        // Validate the column name produces a legal ClickHouse custom setting name.
+        // getSetting() requires alphanumeric + underscore after the 'custom_moose_rls_' prefix.
+        if !policy
+            .column
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(ValidationError::RowPolicyValidation(format!(
+                "Row policy '{}': column '{}' contains characters that are invalid in a \
+                 ClickHouse custom setting name. Only ASCII alphanumeric characters and \
+                 underscores are allowed.",
+                policy.name, policy.column
+            )));
+        }
+
         if let Some(&(existing_claim, existing_policy)) = column_claims.get(policy.column.as_str())
         {
             if existing_claim != policy.claim {
@@ -453,6 +468,108 @@ mod tests {
         let table = create_table_with_engine("test_table", None, ClickhouseEngine::MergeTree);
         let plan = create_test_plan(vec![table]);
 
+        let result = validate(&project, &plan);
+
+        assert!(result.is_ok());
+    }
+
+    fn create_test_table_with_columns(name: &str, columns: Vec<Column>) -> Table {
+        Table {
+            name: name.to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::default(),
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: name.to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn make_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_row_policy_column_with_invalid_setting_chars_rejected() {
+        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+
+        let table = create_test_table_with_columns(
+            "events_1_0_0",
+            vec![make_column("id"), make_column("org-id")],
+        );
+        let mut plan = create_test_plan(vec![table]);
+        plan.target_infra_map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec!["events_1_0_0".to_string()],
+                column: "org-id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::RowPolicyValidation(msg)) => {
+                assert!(msg.contains("org-id"));
+                assert!(msg.contains("invalid"));
+            }
+            _ => panic!("Expected RowPolicyValidation error"),
+        }
+    }
+
+    #[test]
+    fn test_row_policy_column_with_valid_chars_accepted() {
+        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+
+        let table = create_test_table_with_columns(
+            "events_1_0_0",
+            vec![make_column("id"), make_column("org_id")],
+        );
+        let mut plan = create_test_plan(vec![table]);
+        plan.target_infra_map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec!["events_1_0_0".to_string()],
+                column: "org_id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+
+        let project = create_test_project(None);
         let result = validate(&project, &plan);
 
         assert!(result.is_ok());
