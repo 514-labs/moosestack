@@ -823,7 +823,18 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         let mut mismatched_row_policies: Vec<OlapChange> = Vec::new();
         for (name, desired) in &infra_map.select_row_policies {
             if let Some(actual) = actual_policy_map.get(name) {
-                if actual != desired {
+                // Compare only the fields observable from ClickHouse: name, tables, column.
+                // The claim field cannot be recovered from DDL (the setting name encodes the
+                // column, not the claim), so we skip it to avoid permanent false mismatches
+                // when claim != column.
+                let tables_match = {
+                    let mut actual_tables = actual.tables.clone();
+                    let mut desired_tables = desired.tables.clone();
+                    actual_tables.sort();
+                    desired_tables.sort();
+                    actual_tables == desired_tables
+                };
+                if actual.column != desired.column || !tables_match {
                     debug!("Found mismatch in row policy: {}", name);
                     mismatched_row_policies.push(OlapChange::SelectRowPolicy(Change::Updated {
                         before: Box::new(actual.clone()),

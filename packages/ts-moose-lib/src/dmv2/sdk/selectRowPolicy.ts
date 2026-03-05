@@ -44,6 +44,19 @@ export class SelectRowPolicy {
   config: SelectRowPolicyConfig;
 
   constructor(name: string, config: SelectRowPolicyConfig) {
+    if (!name.trim()) {
+      throw new Error("SelectRowPolicy name must not be empty");
+    }
+    if (!config.tables.length) {
+      throw new Error(`SelectRowPolicy '${name}': tables must not be empty`);
+    }
+    if (!config.column.trim()) {
+      throw new Error(`SelectRowPolicy '${name}': column must not be empty`);
+    }
+    if (!config.claim.trim()) {
+      throw new Error(`SelectRowPolicy '${name}': claim must not be empty`);
+    }
+
     this.name = name;
     this.config = config;
 
