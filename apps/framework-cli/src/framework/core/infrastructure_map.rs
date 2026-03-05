@@ -269,6 +269,12 @@ pub enum ColumnChange {
     Removed(Column),
     /// An existing column has been modified
     Updated { before: Column, after: Column },
+    /// A column that was heuristically detected as a rename (same type, similar position/name)
+    Renamed {
+        before: Column,
+        after: Column,
+        confidence: f64,
+    },
 }
 
 /// Represents changes to the order_by configuration of a table
@@ -2352,10 +2358,11 @@ impl InfrastructureMap {
                         "Filtering out column removal for deletion-protected table '{}'",
                         table.name
                     );
-                    false // Remove destructive column removals
+                    false
                 }
-                ColumnChange::Added { .. } => true, // Allow additive changes
-                ColumnChange::Updated { .. } => true, // Allow column updates
+                ColumnChange::Added { .. }
+                | ColumnChange::Updated { .. }
+                | ColumnChange::Renamed { .. } => true,
             });
 
             if original_len != column_changes.len() {
@@ -3920,6 +3927,43 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     prev[n]
 }
 
+/// Rewrites a `Vec<ColumnChange>` by replacing matched `Removed`/`Added` pairs
+/// with `Renamed` variants.
+///
+/// For each detected rename, the corresponding `Removed` and `Added` entries
+/// are consumed and a single `Renamed` entry is emitted in their place. All
+/// non-matched changes pass through unchanged.
+pub fn apply_detected_renames(
+    column_changes: Vec<ColumnChange>,
+    renames: &[DetectedColumnRename],
+) -> Vec<ColumnChange> {
+    let renamed_before_names: std::collections::HashSet<&str> =
+        renames.iter().map(|r| r.before.name.as_str()).collect();
+    let renamed_after_names: std::collections::HashSet<&str> =
+        renames.iter().map(|r| r.after.name.as_str()).collect();
+
+    let mut result: Vec<ColumnChange> = column_changes
+        .into_iter()
+        .filter(|c| match c {
+            ColumnChange::Removed(col) => !renamed_before_names.contains(col.name.as_str()),
+            ColumnChange::Added { column, .. } => {
+                !renamed_after_names.contains(column.name.as_str())
+            }
+            _ => true,
+        })
+        .collect();
+
+    for rename in renames {
+        result.push(ColumnChange::Renamed {
+            before: rename.before.clone(),
+            after: rename.after.clone(),
+            confidence: rename.confidence,
+        });
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod rename_detection_tests {
     use super::*;
@@ -4115,6 +4159,67 @@ mod rename_detection_tests {
         assert_eq!(levenshtein_distance("", "abc"), 3);
         assert_eq!(levenshtein_distance("abc", "abc"), 0);
         assert_eq!(levenshtein_distance("abc", ""), 3);
+    }
+
+    #[test]
+    fn apply_renames_replaces_added_removed_with_renamed() {
+        let old_col = make_column("user_name", ColumnType::String);
+        let new_col = make_column("username", ColumnType::String);
+        let kept_add = make_column("email", ColumnType::String);
+
+        let changes = vec![
+            ColumnChange::Removed(old_col.clone()),
+            ColumnChange::Added {
+                column: new_col.clone(),
+                position_after: None,
+            },
+            ColumnChange::Added {
+                column: kept_add.clone(),
+                position_after: None,
+            },
+        ];
+
+        let renames = vec![DetectedColumnRename {
+            before: old_col.clone(),
+            after: new_col.clone(),
+            confidence: 0.9,
+        }];
+
+        let result = apply_detected_renames(changes, &renames);
+
+        assert_eq!(result.len(), 2);
+
+        let has_renamed = result.iter().any(|c| {
+            matches!(c, ColumnChange::Renamed { before, after, .. }
+                if before.name == "user_name" && after.name == "username")
+        });
+        assert!(has_renamed);
+
+        let has_email_add = result
+            .iter()
+            .any(|c| matches!(c, ColumnChange::Added { column, .. } if column.name == "email"));
+        assert!(has_email_add);
+
+        let has_removed = result.iter().any(|c| matches!(c, ColumnChange::Removed(_)));
+        assert!(!has_removed);
+    }
+
+    #[test]
+    fn apply_renames_passthrough_when_empty() {
+        let col = make_column("name", ColumnType::String);
+        let changes = vec![
+            ColumnChange::Added {
+                column: col.clone(),
+                position_after: None,
+            },
+            ColumnChange::Updated {
+                before: col.clone(),
+                after: col.clone(),
+            },
+        ];
+
+        let result = apply_detected_renames(changes.clone(), &[]);
+        assert_eq!(result.len(), 2);
     }
 }
 
@@ -5120,6 +5225,9 @@ mod diff_tests {
                     assert!(!b.required && a.required);
                     assert!(!b.unique && a.unique);
                     updated += 1;
+                }
+                ColumnChange::Renamed { .. } => {
+                    panic!("Unexpected Renamed variant in compute_table_columns_diff output");
                 }
             }
         }

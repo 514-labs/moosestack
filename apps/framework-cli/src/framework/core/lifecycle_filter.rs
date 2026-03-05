@@ -243,6 +243,7 @@ fn create_column_changes_filtered_change(
             ColumnChange::Removed(col) => col.name.clone(),
             ColumnChange::Added { column, .. } => column.name.clone(),
             ColumnChange::Updated { after: col, .. } => col.name.clone(),
+            ColumnChange::Renamed { after, .. } => after.name.clone(),
         })
         .collect();
 
@@ -678,6 +679,9 @@ fn create_column_change_violation(
         ColumnChange::Added { column, .. } => (column.name.clone(), ViolationType::ColumnAddition),
         ColumnChange::Updated { after: col, .. } => {
             (col.name.clone(), ViolationType::ColumnModification)
+        }
+        ColumnChange::Renamed { after, .. } => {
+            (after.name.clone(), ViolationType::ColumnModification)
         }
     };
 

@@ -213,6 +213,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
+    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -275,6 +276,10 @@ async fn watch(
                                         framework::core::plan_validator::validate(&project, &plan_result)
                                     })
                                     .await?;
+
+                                    // Gate on destructive changes
+                                    let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
+                                    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
 
                                     display::show_changes(&plan_result);
                                     // Hold the mutation guard only for execution/persist steps.
@@ -410,6 +415,7 @@ impl FileWatcher {
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
+        confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
@@ -442,6 +448,7 @@ impl FileWatcher {
                 shutdown_rx,
                 ignore_matcher,
                 app_dir,
+                confirmation_policy,
             )
             .await
         };

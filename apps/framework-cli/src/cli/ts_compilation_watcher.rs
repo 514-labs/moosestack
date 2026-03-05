@@ -289,6 +289,7 @@ async fn watch(
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
+    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -446,6 +447,10 @@ async fn watch(
                                                         )
                                                     })
                                                     .await?;
+
+                                                    // Gate on destructive changes
+                                                    let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
+                                                    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
 
                                                     display::show_changes(&plan_result);
                                                     // Hold the mutation guard only for execution/persist steps.
@@ -616,6 +621,7 @@ impl TsCompilationWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
+        confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -631,6 +637,7 @@ impl TsCompilationWatcher {
                 processing_coordinator,
                 shutdown_rx,
                 initial_handle,
+                confirmation_policy,
             )
             .await
         };

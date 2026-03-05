@@ -746,6 +746,7 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
+            yes_destructive,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -761,6 +762,15 @@ pub async fn top_command_handler(
             if *log_payloads {
                 info!("Payload logging enabled");
             }
+
+            let confirmation_policy = crate::framework::core::plan_risk::ConfirmationPolicy {
+                accept_destructive: *yes_destructive
+                    || std::env::var("MOOSE_ACCEPT_DESTRUCTIVE")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false),
+                is_dev: true,
+            };
+
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -820,6 +830,7 @@ pub async fn top_command_handler(
                 redis_client,
                 &settings,
                 *mcp,
+                confirmation_policy,
             )
             .await
             .map_err(|e| {
@@ -1084,6 +1095,7 @@ pub async fn top_command_handler(
         },
         Commands::Prod {
             start_include_dependencies,
+            yes_destructive,
         } => {
             info!("Running prod command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -1091,6 +1103,14 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
 
             project.set_is_production_env(true);
+
+            let confirmation_policy = crate::framework::core::plan_risk::ConfirmationPolicy {
+                accept_destructive: *yes_destructive
+                    || std::env::var("MOOSE_ACCEPT_DESTRUCTIVE")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false),
+                is_dev: false,
+            };
 
             let project_arc = Arc::new(project);
 
@@ -1143,14 +1163,20 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            routines::start_production_mode(&settings, project_arc, arc_metrics, redis_client)
-                .await
-                .map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "Prod".to_string(),
-                        details: format!("Failed to start production mode: {e:?}"),
-                    })
-                })?;
+            routines::start_production_mode(
+                &settings,
+                project_arc,
+                arc_metrics,
+                redis_client,
+                confirmation_policy,
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "Prod".to_string(),
+                    details: format!("Failed to start production mode: {e:?}"),
+                })
+            })?;
 
             wait_for_usage_capture(capture_handle).await;
 

@@ -554,6 +554,18 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                                 }
                             }
                         }
+                        crate::framework::core::infrastructure_map::ColumnChange::Renamed {
+                            before,
+                            after,
+                            ..
+                        } => {
+                            format!(
+                                "  ~ {}: {} -> {} (renamed)",
+                                before.name,
+                                format_column_type(&before.data_type),
+                                after.name
+                            )
+                        }
                     };
                     details.push(change_line);
                 }
@@ -890,6 +902,12 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
                                     before.name,
                                     format_column_type(&before.data_type),
                                     format_column_type(&after.data_type)
+                                ));
+                            }
+                            ColumnChange::Renamed { before, after, .. } => {
+                                details.push(format!(
+                                    "    ~ {} → {} (rename blocked)",
+                                    before.name, after.name
                                 ));
                             }
                         }
