@@ -126,7 +126,7 @@ pub async fn execute_initial_infra_change(
     );
 
     // Build row policies config: maps ClickHouse setting name → JWT claim name
-    // e.g., { "SQL_moose_rls_org_id": "org_id" }
+    // e.g., { "custom_moose_rls_org_id": "org_id" }
     let row_policies_config: std::collections::HashMap<String, String> = ctx
         .plan
         .target_infra_map
