@@ -1,0 +1,99 @@
+---
+title: March 5, 2026
+description: Release notes for March 5, 2026
+commits:
+  moosestack: cb3ed381ad4c072e0db8b2192fc227a8e19366dd
+  commercial: a641de86dabe8fe7570a5cd5e5697c2f015d32d2
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 5, 2026
+
+This week Moose adds ALIAS column support for computed-on-read fields in ClickHouse, and the 514 CLI gains direct ClickHouse query execution and query performance metrics commands with automatic project context detection. On the hosting side, a new query analysis dashboard ships with time-series performance graphs, sortable query tables, and column-level filtering.
+
+<Callout type="info" title="Highlights">
+* **New:** ALIAS column support for ClickHouse tables
+* **New:** Query analysis dashboard with performance metrics
+* **New:** CLI commands for ClickHouse queries and metrics
+* **Improved:** CLI auto-detects org, project, and branch from local git context
+</Callout>
+
+## Moose
+
+### New Features
+
+**ALIAS column support for OLAP tables** ([@phiSgr](https://github.com/phiSgr))
+  OLAP tables can now define ALIAS columns — virtual columns that are computed on read rather than stored on disk. Unlike MATERIALIZED columns which compute and store values at insert time, ALIAS columns evaluate their expression every time the column is queried, making them ideal for derived fields that should always reflect the latest expression logic.
+
+  ```typescript
+  import { OlapTable, Key, DateTime, ClickHouseAlias, UInt64 } from "@514labs/moose-lib";
+
+  interface UserEvents {
+    id: Key<string>;
+    timestamp: DateTime;
+    userId: string;
+
+    // Virtual date column — computed when queried
+    eventDate: Date & ClickHouseAlias<"toDate(timestamp)">;
+
+    // Virtual hash — no storage cost
+    userHash: UInt64 & ClickHouseAlias<"cityHash64(userId)">;
+  }
+
+  export const UserEventsTable = new OlapTable<UserEvents>("UserEvents", {
+    orderByFields: ["id"],
+  });
+  ```
+
+  Docs: [Alias Columns](/moosestack/olap/alias-columns)
+
+### Improvements
+
+- Updated TypeScript MCP template with agent harness documentation, MCP server configuration, and ClickHouse best practices skill integration for improved developer onboarding. ([@oatsandsugar](https://github.com/oatsandsugar))
+
+### Bug Fixes
+
+- Fix `moose add` command to validate App Router directory structure and properly resolve target paths, preventing errors when pointing at non-existent directories or Pages Router projects. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
+- Fix config file handling when shell configuration files (e.g. `.zshrc`) are read-only, such as in Nix-managed environments. The CLI now skips writes and provides manual instructions instead of failing. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
+
+## Fiveonefour Hosting
+
+### New Features
+
+**Query analysis dashboard** ([@groy-514](https://github.com/groy-514))
+  New dashboard for inspecting ClickHouse query performance across deployments. Displays time-series graphs for query count, error rate, and latency percentiles (p50/p95/p99), backed by a dedicated materialized view for fast aggregation. The query table supports column-level filtering by query kind, duration, rows read, data volume, and memory usage, with sortable columns and text search.
+
+**CLI `metrics query` command** ([@LucioFranco](https://github.com/LucioFranco))
+  New `514 metrics query` command fetches ClickHouse query performance metrics directly from the terminal. Supports filtering by time range, query kind, duration, data volume, and memory usage with formatted table output.
+
+  ```bash
+  # View recent query metrics for the current project
+  514 metrics query
+
+  # Filter by time range and duration
+  514 metrics query --start 2026-03-01 --end 2026-03-05 --duration-min 1s
+
+  # Output as JSON for scripting
+  514 metrics query --json
+  ```
+
+**CLI `clickhouse query` command** ([@LucioFranco](https://github.com/LucioFranco))
+  Run arbitrary ClickHouse SQL queries against deployed databases from the CLI. Accepts queries as positional arguments, from a file, or piped via stdin. Automatically resolves the target project and branch from local git context.
+
+  ```bash
+  # Run a query directly
+  514 clickhouse query "SELECT count() FROM events"
+
+  # From a file
+  514 clickhouse query --file analysis.sql
+
+  # Piped input
+  echo "SELECT count() FROM events" | 514 clickhouse query
+  ```
+
+### Improvements
+
+- CLI auto-detects organization, project, branch, and deployment from local git context and linked project configuration, removing the need to pass `--project` and `--branch` flags for most commands. ([@LucioFranco](https://github.com/LucioFranco))
+- CLI `link` command now supports monorepo projects with path-scoped configuration, allowing multiple projects to be linked within the same repository using `git config` subsections. ([@LucioFranco](https://github.com/LucioFranco))
