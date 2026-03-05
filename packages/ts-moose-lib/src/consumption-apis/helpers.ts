@@ -73,6 +73,37 @@ export interface RowPolicyOptions {
 /** Shared ClickHouse role name used by all row policies */
 export const MOOSE_RLS_ROLE = "moose_rls_role";
 
+/** Config mapping ClickHouse setting names to JWT claim names */
+export type RowPoliciesConfig = Record<string, string>;
+
+/**
+ * Build RowPolicyOptions from a row policies config and a claim-value source.
+ * The source can be a JWT payload or an rlsContext — any object keyed by claim name.
+ * Throws if a required claim is missing from the source.
+ *
+ * @param config  Maps ClickHouse setting name → claim name
+ * @param claims  Maps claim name → claim value (e.g., JWT payload or rlsContext)
+ * @param sourceLabel  Label for error messages (e.g., "JWT payload" or "rlsContext")
+ * @returns RowPolicyOptions with the shared RLS role and populated settings
+ */
+export function buildRowPolicyOptionsFromClaims(
+  config: RowPoliciesConfig,
+  claims: Record<string, unknown>,
+  sourceLabel: string,
+): RowPolicyOptions {
+  const clickhouse_settings: Record<string, string> = Object.create(null);
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = claims[claimName];
+    if (value === undefined || value === null) {
+      throw new Error(
+        `Missing required row policy claim "${claimName}" in ${sourceLabel}`,
+      );
+    }
+    clickhouse_settings[settingName] = String(value);
+  }
+  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+}
+
 export class QueryClient {
   client: ClickHouseClient;
   query_id_prefix: string;
@@ -123,14 +154,13 @@ export class QueryClient {
 
     console.log(`[QueryClient] | Command: ${toQueryPreview(sql)}`);
     const start = performance.now();
+    // Row policy role/settings are intentionally NOT applied to commands
+    // (INSERT/DDL). Row policies only affect SELECT; setting a role on
+    // non-SELECT operations can strip default role permissions.
     const result = await this.client.command({
       query,
       query_params,
       query_id: this.query_id_prefix + randomUUID(),
-      ...(this.rowPolicyOptions && {
-        role: this.rowPolicyOptions.role,
-        clickhouse_settings: this.rowPolicyOptions.clickhouse_settings,
-      }),
     });
     const elapsedMs = performance.now() - start;
     console.log(
