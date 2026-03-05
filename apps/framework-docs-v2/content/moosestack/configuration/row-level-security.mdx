@@ -61,15 +61,16 @@ For the example above, Moose generates:
 
 ```sql
 CREATE ROLE IF NOT EXISTS moose_rls_role;
+GRANT moose_rls_role TO `<clickhouse_user>`;
 
 CREATE ROW POLICY IF NOT EXISTS `tenant_isolation_on_orders`
   ON `local`.`orders_1_0_0`
-  USING org_id = getSetting('SQL_moose_rls_org_id')
+  USING `org_id` = getSetting('custom_moose_rls_org_id')
   TO moose_rls_role;
 
 CREATE ROW POLICY IF NOT EXISTS `tenant_isolation_on_invoices`
   ON `local`.`invoices_1_0_0`
-  USING org_id = getSetting('SQL_moose_rls_org_id')
+  USING `org_id` = getSetting('custom_moose_rls_org_id')
   TO moose_rls_role;
 ```
 

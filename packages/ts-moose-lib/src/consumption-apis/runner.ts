@@ -3,9 +3,10 @@ import * as path from "path";
 import { getClickhouseClient } from "../commons";
 import {
   MooseClient,
-  MOOSE_RLS_ROLE,
   QueryClient,
   RowPolicyOptions,
+  RowPoliciesConfig,
+  buildRowPolicyOptionsFromClaims,
   getTemporalClient,
 } from "./helpers";
 import * as jose from "jose";
@@ -40,12 +41,6 @@ interface TemporalConfig {
   apiKey: string;
 }
 
-/**
- * Map of ClickHouse setting name → JWT claim name for row policy enforcement.
- * e.g., { "SQL_moose_rls_org_id": "org_id" }
- */
-export type RowPoliciesConfig = Record<string, string>;
-
 interface ApisConfig {
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
@@ -64,27 +59,14 @@ const toClientConfig = (config: ClickhouseConfig) => ({
 
 /**
  * Build RowPolicyOptions from a row policies config and JWT payload.
- * Maps JWT claims to ClickHouse settings for per-query row policy enforcement.
- * Returns undefined if no row policies config is provided.
- * Throws if a required claim is missing from the JWT.
+ * Returns undefined if no config or JWT is provided.
  */
 function buildRowPolicyOptions(
   config: RowPoliciesConfig | undefined,
   jwt: Record<string, unknown> | undefined,
 ): RowPolicyOptions | undefined {
   if (!config || !jwt) return undefined;
-
-  const clickhouse_settings: Record<string, string> = {};
-  for (const [settingName, claimName] of Object.entries(config)) {
-    const value = jwt[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in JWT payload`,
-      );
-    }
-    clickhouse_settings[settingName] = String(value);
-  }
-  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+  return buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
 }
 
 /**
@@ -95,15 +77,11 @@ function buildRlsContextFromJwt(
   config: RowPoliciesConfig,
   jwt: Record<string, unknown>,
 ): Record<string, string> {
-  const context: Record<string, string> = {};
-  for (const [_settingName, claimName] of Object.entries(config)) {
-    const value = jwt[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in JWT payload`,
-      );
-    }
-    context[claimName] = String(value);
+  // Use buildRowPolicyOptionsFromClaims for validation, then extract claim→value pairs
+  const opts = buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
+  const context: Record<string, string> = Object.create(null);
+  for (const [settingName, claimName] of Object.entries(config)) {
+    context[claimName] = opts.clickhouse_settings[settingName];
   }
   return context;
 }

@@ -9,7 +9,7 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
  */
 export interface SelectRowPolicyConfig {
   /** Tables the policy applies to (ClickHouse row policies only support tables, not views) */
-  tables: OlapTable<any>[];
+  tables: readonly OlapTable<any>[];
 
   /** Column to filter on (e.g., "org_id") */
   column: string;
@@ -22,7 +22,7 @@ export interface SelectRowPolicyConfig {
  * Represents a ClickHouse Row Policy as a first-class Moose primitive.
  *
  * When defined, Moose generates `CREATE ROW POLICY` DDL that uses
- * `getSetting('SQL_moose_rls_{column}')` for dynamic per-query tenant scoping.
+ * `getSetting('custom_moose_rls_{column}')` for dynamic per-query tenant scoping.
  *
  * @example
  * ```typescript
@@ -38,10 +38,10 @@ export class SelectRowPolicy {
   public readonly kind = "SelectRowPolicy";
 
   /** The name of the row policy */
-  name: string;
+  readonly name: string;
 
   /** The policy configuration */
-  config: SelectRowPolicyConfig;
+  readonly config: Readonly<SelectRowPolicyConfig>;
 
   constructor(name: string, config: SelectRowPolicyConfig) {
     if (!name.trim()) {
@@ -49,6 +49,14 @@ export class SelectRowPolicy {
     }
     if (!config.tables.length) {
       throw new Error(`SelectRowPolicy '${name}': tables must not be empty`);
+    }
+    for (const table of config.tables) {
+      if (table.config.database) {
+        throw new Error(
+          `SelectRowPolicy '${name}': table '${table.name}' uses a custom database. ` +
+            `Row policies currently only support tables in the default database.`,
+        );
+      }
     }
     if (!config.column.trim()) {
       throw new Error(`SelectRowPolicy '${name}': column must not be empty`);
@@ -58,7 +66,10 @@ export class SelectRowPolicy {
     }
 
     this.name = name;
-    this.config = config;
+    this.config = Object.freeze({
+      ...config,
+      tables: Object.freeze([...config.tables]),
+    });
 
     const selectRowPolicies = getMooseInternal().selectRowPolicies;
     if (!isClientOnlyMode() && selectRowPolicies.has(this.name)) {

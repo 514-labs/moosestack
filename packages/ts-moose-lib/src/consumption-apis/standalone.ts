@@ -1,18 +1,27 @@
 import {
   MooseClient,
-  MOOSE_RLS_ROLE,
   QueryClient,
-  RowPolicyOptions,
   MooseUtils,
+  RowPoliciesConfig,
+  buildRowPolicyOptionsFromClaims,
 } from "./helpers";
 import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
-import type { RowPoliciesConfig } from "./runner";
 
 export interface GetMooseUtilsOptions {
   /** Map of JWT claim names to their values for row policy scoping */
   rlsContext?: Record<string, string>;
+}
+
+/**
+ * Detect whether the argument is the new options object or a legacy request (old API).
+ * The new API uses `{ rlsContext }`. Anything else is treated as the deprecated `req` param.
+ */
+function isNewOptionsArg(arg: unknown): boolean {
+  if (arg === undefined) return true;
+  if (arg === null || typeof arg !== "object") return false;
+  return "rlsContext" in (arg as Record<string, unknown>);
 }
 
 /**
@@ -22,18 +31,8 @@ export interface GetMooseUtilsOptions {
 function buildRowPolicyOptionsFromContext(
   config: RowPoliciesConfig,
   rlsContext: Record<string, string>,
-): RowPolicyOptions {
-  const clickhouse_settings: Record<string, string> = {};
-  for (const [settingName, claimName] of Object.entries(config)) {
-    const value = rlsContext[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in rlsContext`,
-      );
-    }
-    clickhouse_settings[settingName] = value;
-  }
-  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+) {
+  return buildRowPolicyOptionsFromClaims(config, rlsContext, "rlsContext");
 }
 
 // Cached utilities and initialization promise for standalone mode
@@ -70,11 +69,21 @@ const toClientConfig = (config: {
  * ```
  *
  * @param options - Optional. Pass `{ rlsContext }` to scope queries via row policies.
+ *                  DEPRECATED: Passing a request object is no longer needed and will be ignored.
  * @returns Promise resolving to MooseUtils with client and sql utilities.
  */
 export async function getMooseUtils(
-  options?: GetMooseUtilsOptions,
+  options?: GetMooseUtilsOptions | any,
 ): Promise<MooseUtils> {
+  // Backward compatibility: detect old getMooseUtils(req) usage
+  if (options !== undefined && !isNewOptionsArg(options)) {
+    console.warn(
+      "[DEPRECATED] getMooseUtils(req) no longer requires a request parameter. " +
+        "Use getMooseUtils() instead, or getMooseUtils({ rlsContext }) for row policies.",
+    );
+    options = undefined;
+  }
+
   // Check if running in Moose runtime
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
