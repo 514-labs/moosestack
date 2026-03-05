@@ -2,7 +2,7 @@ import { eventsModel } from "./model";
 import { executeQuery } from "../client";
 
 export async function getEventsMetrics(startDate?: Date, endDate?: Date) {
-  const query = await eventsModel.toSql({
+  const query = eventsModel.toSql({
     dimensions: [],
     metrics: [
       "totalEvents",

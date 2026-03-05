@@ -8,7 +8,7 @@ export async function getEventsTimeseries(
   endDate?: Date,
   bucketSize: BucketSize = "day",
 ): Promise<Array<{ time: string; totalEvents: number }>> {
-  const query = await eventsModel.toSql({
+  const query = eventsModel.toSql({
     dimensions: [bucketSize],
     metrics: ["totalEvents"],
     filters: {

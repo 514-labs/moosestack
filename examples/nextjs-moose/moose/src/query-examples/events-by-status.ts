@@ -4,7 +4,7 @@ import { cliLog, sql, where, filter } from "@514labs/moose-lib";
 import { Events } from "../models";
 
 export async function getEventsByStatus(startDate?: Date, endDate?: Date) {
-  const parts = await eventsModel.toParts({
+  const parts = eventsModel.toParts({
     dimensions: ["status"],
     metrics: ["totalEvents"],
     filters: {
