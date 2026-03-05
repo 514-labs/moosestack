@@ -63,7 +63,28 @@ const isColumn = (
  * Sql template tag interface with attached helper methods.
  */
 export interface SqlTemplateTag {
+  /**
+   * @deprecated Use `sql.statement` for full SQL statements or `sql.fragment` for SQL fragments.
+   */
   (
+    strings: readonly string[],
+    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+  ): Sql;
+
+  /**
+   * Template literal tag for complete SQL statements (e.g. SELECT, INSERT, CREATE).
+   * Produces a Sql instance with `isFragment = false`.
+   */
+  statement(
+    strings: readonly string[],
+    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+  ): Sql;
+
+  /**
+   * Template literal tag for SQL fragments (e.g. expressions, conditions, partial clauses).
+   * Produces a Sql instance with `isFragment = true`.
+   */
+  fragment(
     strings: readonly string[],
     ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
   ): Sql;
@@ -85,11 +106,25 @@ export interface SqlTemplateTag {
 function sqlImpl(
   strings: readonly string[],
   ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
-) {
+): Sql {
   return new Sql(strings, values);
 }
 
 export const sql: SqlTemplateTag = sqlImpl as SqlTemplateTag;
+
+sql.statement = function (
+  strings: readonly string[],
+  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+): Sql {
+  return new Sql(strings, values, false);
+};
+
+sql.fragment = function (
+  strings: readonly string[],
+  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+): Sql {
+  return new Sql(strings, values, true);
+};
 
 const instanceofSql = (
   value: RawValue | Column | OlapTable<any> | View,
@@ -102,10 +137,12 @@ const instanceofSql = (
 export class Sql {
   readonly values: Value[];
   readonly strings: string[];
+  readonly isFragment: boolean | undefined;
 
   constructor(
     rawStrings: readonly string[],
     rawValues: readonly (RawValue | Column | OlapTable<any> | View | Sql)[],
+    isFragment?: boolean,
   ) {
     if (rawStrings.length - 1 !== rawValues.length) {
       if (rawStrings.length === 0) {
@@ -130,6 +167,7 @@ export class Sql {
 
     this.values = new Array(valuesLength);
     this.strings = new Array(valuesLength + 1);
+    this.isFragment = isFragment;
 
     this.strings[0] = rawStrings[0];
 
