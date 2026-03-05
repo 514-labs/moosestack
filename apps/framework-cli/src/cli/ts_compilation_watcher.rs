@@ -419,17 +419,28 @@ async fn watch(
                                         continue;
                                     }
 
-                                    // Show success message for incremental builds
                                     display_compilation_success(&event);
 
+                                    let activate_spinner = {
+                                        use crate::utilities::constants::SHOW_TIMING;
+                                        use std::sync::atomic::Ordering;
+                                        !project.is_production
+                                            && !SHOW_TIMING.load(Ordering::Relaxed)
+                                    };
                                     let project_clone = project.clone();
+                                    let state_storage = state_storage.clone();
+                                    let processing_coordinator = processing_coordinator.clone();
+                                    let project_registries = project_registries.clone();
+                                    let route_update_channel = route_update_channel.clone();
+                                    let webapp_update_channel = webapp_update_channel.clone();
+                                    let metrics = metrics.clone();
+                                    let settings = settings.clone();
+
                                     let result: anyhow::Result<()> = with_spinner_completion_async(
                                         "Processing infrastructure changes",
                                         "Infrastructure changes processed successfully",
-                                        async {
+                                        |spinner_handle| async move {
                                             let plan_result = with_timing_async("Planning", async {
-                                                // IS_DEV_MODE is set, so ensure_typescript_compiled is a no-op
-                                                // (moose-tspc --watch already compiled)
                                                 framework::core::plan::plan_changes(
                                                     &**state_storage,
                                                     &project_clone,
@@ -448,9 +459,13 @@ async fn watch(
                                                     })
                                                     .await?;
 
-                                                    // Gate on destructive changes
                                                     let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
-                                                    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
+                                                    spinner_handle.pause();
+                                                    let proceed = crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                                    spinner_handle.resume();
+                                                    if !proceed? {
+                                                        return Ok(());
+                                                    }
 
                                                     display::show_changes(&plan_result);
                                                     // Hold the mutation guard only for execution/persist steps.
@@ -509,12 +524,7 @@ async fn watch(
                                                 }
                                             }
                                         },
-                                        {
-                                            use crate::utilities::constants::SHOW_TIMING;
-                                            use std::sync::atomic::Ordering;
-                                            !project.is_production
-                                                && !SHOW_TIMING.load(Ordering::Relaxed)
-                                        },
+                                        activate_spinner,
                                     )
                                     .await;
 

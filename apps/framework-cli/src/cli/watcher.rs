@@ -261,25 +261,43 @@ async fn watch(
                     receiver_ack.send_replace(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
                     rx.mark_unchanged();
 
+                    let activate_spinner = {
+                        use crate::utilities::constants::SHOW_TIMING;
+                        use std::sync::atomic::Ordering;
+                        !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+                    };
+                    let state_storage = state_storage.clone();
+                    let project_inner = project.clone();
+                    let processing_coordinator = processing_coordinator.clone();
+                    let project_registries = project_registries.clone();
+                    let route_update_channel = route_update_channel.clone();
+                    let webapp_update_channel = webapp_update_channel.clone();
+                    let metrics = metrics.clone();
+                    let settings = settings.clone();
+
                     let result: anyhow::Result<()> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
-                        async {
+                        |spinner_handle| async move {
                             let plan_result = with_timing_async("Planning", async {
-                                framework::core::plan::plan_changes(&**state_storage, &project).await
+                                framework::core::plan::plan_changes(&**state_storage, &project_inner).await
                             })
                             .await;
 
                             match plan_result {
                                 Ok((_, plan_result)) => {
                                     with_timing_async("Validation", async {
-                                        framework::core::plan_validator::validate(&project, &plan_result)
+                                        framework::core::plan_validator::validate(&project_inner, &plan_result)
                                     })
                                     .await?;
 
-                                    // Gate on destructive changes
                                     let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
-                                    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
+                                    spinner_handle.pause();
+                                    let proceed = crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                    spinner_handle.resume();
+                                    if !proceed? {
+                                        return Ok(());
+                                    }
 
                                     display::show_changes(&plan_result);
                                     // Hold the mutation guard only for execution/persist steps.
@@ -288,7 +306,7 @@ async fn watch(
 
                                     let execution_result = with_timing_async("Execution", async {
                                         framework::core::execute::execute_online_change(
-                                            &project,
+                                            &project_inner,
                                             &plan_result,
                                             route_update_channel.clone(),
                                             webapp_update_channel.clone(),
@@ -310,7 +328,7 @@ async fn watch(
                                             .await?;
 
                                             with_timing_async("OpenAPI Gen", async {
-                                                openapi(&project, &plan_result.target_infra_map).await
+                                                openapi(&project_inner, &plan_result.target_infra_map).await
                                             })
                                             .await?;
 
@@ -344,11 +362,7 @@ async fn watch(
                             }
                             Ok(())
                         },
-                        {
-                            use crate::utilities::constants::SHOW_TIMING;
-                            use std::sync::atomic::Ordering;
-                            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
-                        },
+                        activate_spinner,
                     )
                     .await;
                     match result {

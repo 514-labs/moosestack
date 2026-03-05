@@ -704,9 +704,15 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    // Gate on destructive operations before executing
     let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan.changes);
-    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
+    if !crate::framework::core::plan_risk::destructive_confirmation_gate(
+        &risk,
+        &confirmation_policy,
+    )
+    .await?
+    {
+        return Ok(());
+    }
 
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
@@ -979,9 +985,15 @@ pub async fn start_production_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    // Gate on destructive operations before executing
     let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan.changes);
-    crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy)?;
+    if !crate::framework::core::plan_risk::destructive_confirmation_gate(
+        &risk,
+        &confirmation_policy,
+    )
+    .await?
+    {
+        return Ok(());
+    }
 
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)

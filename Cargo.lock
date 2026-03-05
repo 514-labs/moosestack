@@ -3074,6 +3074,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "lazy_static",
+ "libc",
  "logos",
  "notify",
  "num-bigint",

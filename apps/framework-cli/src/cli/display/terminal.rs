@@ -276,8 +276,7 @@ pub fn write_styled_line(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> IoResult<()> {
-    // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
-    // for structured/JSON output
+    let _guard = super::terminal_lock::acquire();
     if quiet_stdout {
         let mut stderr = stderr();
         write_styled_line_to(&mut stderr, styled_text, message, no_ansi, show_timestamps)
