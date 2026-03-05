@@ -79,6 +79,13 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
         std::collections::HashMap::new();
 
     for policy in plan.target_infra_map.select_row_policies.values() {
+        if policy.tables.is_empty() {
+            return Err(ValidationError::RowPolicyValidation(format!(
+                "Row policy '{}' has no tables. At least one table must be specified.",
+                policy.name
+            )));
+        }
+
         if let Some(&(existing_claim, existing_policy)) = column_claims.get(policy.column.as_str())
         {
             if existing_claim != policy.claim {
@@ -106,6 +113,17 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
                     policy.name, table_name
                 )));
             };
+
+            // Row policies currently only support tables in the default database.
+            // The DDL generation uses default_database for all tables in a policy,
+            // so a table in a custom database would produce incorrect SQL.
+            if table.database.is_some() {
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policy '{}' references table '{}' which is in a custom database. \
+                     Row policies currently only support tables in the default database.",
+                    policy.name, table_name
+                )));
+            }
 
             let has_column = table.columns.iter().any(|c| c.name == policy.column);
             if !has_column {

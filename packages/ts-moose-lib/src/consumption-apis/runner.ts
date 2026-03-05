@@ -200,8 +200,16 @@ const apiHandler = async (
           return;
         }
       } else if (requireAuth) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Forbidden",
+            message:
+              rowPoliciesConfig ?
+                "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml."
+              : "Authentication is enforced but no JWT configuration is available.",
+          }),
+        );
         httpLogger(req, res, start);
         return;
       }
@@ -458,8 +466,16 @@ const createMainRouter = async (
         return;
       }
     } else if (requireAuth) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "Forbidden",
+          message:
+            rowPoliciesConfig ?
+              "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml."
+            : "Authentication is enforced but no JWT configuration is available.",
+        }),
+      );
       return;
     }
 
@@ -583,6 +599,14 @@ export const runApis = async (config: ApisConfig) => {
       if (config.jwtConfig?.secret) {
         console.log("Importing JWT public key...");
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
+      }
+
+      if (config.rowPoliciesConfig && !publicKey) {
+        console.error(
+          "WARNING: Row policies are configured but no JWT public key is set. " +
+            "All consumption API requests will be rejected with 403. " +
+            "Configure jwt.secret in moose.config.toml to enable authentication.",
+        );
       }
 
       // Set runtime context for getMooseUtils() to detect

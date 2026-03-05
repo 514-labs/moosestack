@@ -824,6 +824,16 @@ mod tests {
         ) -> Result<Vec<SqlResource>, OlapChangesError> {
             Ok(self.sql_resources.clone())
         }
+
+        async fn list_row_policies(
+            &self,
+            _db_name: &str,
+        ) -> Result<
+            Vec<crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
+            OlapChangesError,
+        > {
+            Ok(vec![])
+        }
     }
 
     // Helper function to create a test table
