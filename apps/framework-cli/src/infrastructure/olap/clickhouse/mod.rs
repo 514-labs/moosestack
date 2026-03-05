@@ -32,6 +32,7 @@
 
 use clickhouse::Client;
 
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use errors::{validate_clickhouse_identifier, ClickhouseError};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
@@ -2741,6 +2742,104 @@ impl OlapOperations for ConfiguredDBClient {
         Ok(sql_resources)
     }
 
+    /// Retrieves row policies from ClickHouse that are assigned to moose_rls_role.
+    ///
+    /// Queries `system.row_policies` and parses the `select_filter` expression
+    /// to reconstruct `SelectRowPolicy` structs for reality checking.
+    async fn list_row_policies(
+        &self,
+        db_name: &str,
+    ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
+        use std::collections::HashMap;
+
+        debug!(
+            "Starting list_row_policies operation for database: {}",
+            db_name
+        );
+
+        // Query row policies that belong to moose_rls_role
+        let query = format!(
+            r#"
+            SELECT
+                short_name,
+                `table`,
+                select_filter
+            FROM system.row_policies
+            WHERE database = '{}'
+            AND apply_to_list = ['moose_rls_role']
+            ORDER BY short_name, `table`
+            "#,
+            db_name
+        );
+        debug!("Executing row policies query: {}", query);
+
+        let mut cursor = self
+            .client
+            .query(&query)
+            .fetch::<(String, String, String)>()
+            .map_err(|e| {
+                debug!("Error fetching row policies: {}", e);
+                OlapChangesError::DatabaseError(e.to_string())
+            })?;
+
+        // Group by policy name — a single SelectRowPolicy can apply to multiple tables.
+        // The short_name format is "{policy_name}_on_{table}", so we extract the base name.
+        let mut policy_map: HashMap<String, (Vec<String>, String, String)> = HashMap::new();
+
+        while let Some((short_name, table, select_filter)) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            debug!(
+                "Found row policy: {} on table {} with filter: {}",
+                short_name, table, select_filter
+            );
+
+            // Parse the select_filter to extract column and setting name.
+            // Expected format: `column` = getSetting('SQL_moose_rls_column')
+            let (column, claim) = match parse_row_policy_filter(&select_filter) {
+                Some(parsed) => parsed,
+                None => {
+                    debug!(
+                        "Skipping row policy '{}': could not parse select_filter '{}'",
+                        short_name, select_filter
+                    );
+                    continue;
+                }
+            };
+
+            // Extract the base policy name from short_name by removing "_on_{table}" suffix
+            let policy_name = if let Some(base) = short_name.strip_suffix(&format!("_on_{}", table))
+            {
+                base.to_string()
+            } else {
+                short_name.clone()
+            };
+
+            let entry = policy_map
+                .entry(policy_name)
+                .or_insert_with(|| (Vec::new(), column.clone(), claim.clone()));
+            entry.0.push(table);
+        }
+
+        let policies: Vec<SelectRowPolicy> = policy_map
+            .into_iter()
+            .map(|(name, (tables, column, claim))| SelectRowPolicy {
+                name,
+                tables,
+                column,
+                claim,
+            })
+            .collect();
+
+        debug!(
+            "Completed list_row_policies operation, found {} policies",
+            policies.len()
+        );
+        Ok(policies)
+    }
+
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
     ///
     /// This provides accurate SQL normalization that handles:
@@ -2768,6 +2867,29 @@ impl OlapOperations for ConfiguredDBClient {
             }
         }
     }
+}
+
+/// Parse a ClickHouse row policy `select_filter` expression to extract column and claim.
+///
+/// Expected format: `` `column` = getSetting('SQL_moose_rls_column') ``
+/// Returns `Some((column, claim))` on success, `None` if the format doesn't match.
+fn parse_row_policy_filter(filter: &str) -> Option<(String, String)> {
+    static ROW_POLICY_FILTER_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+        // Match: `column` = getSetting('SQL_moose_rls_something')
+        // Also handle unquoted column names
+        regex::Regex::new(r"^`?([^`=\s]+)`?\s*=\s*getSetting\('SQL_moose_rls_([^']+)'\)$")
+            .expect("ROW_POLICY_FILTER_PATTERN regex should compile")
+    });
+
+    let captures = ROW_POLICY_FILTER_PATTERN.captures(filter.trim())?;
+    let column = captures.get(1)?.as_str().to_string();
+    let claim_column = captures.get(2)?.as_str().to_string();
+
+    // The claim name equals the column name in our model (the setting is derived from the column).
+    // But to be accurate we return the column from the USING clause and derive the claim
+    // from the setting name. Since setting is SQL_moose_rls_{column} and claim maps to column,
+    // the claim is the same as the column extracted from the setting.
+    Some((column, claim_column))
 }
 
 static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {

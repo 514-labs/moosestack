@@ -458,13 +458,16 @@ impl AtomicOlapOperation {
                 default_database,
                 ..
             } => {
+                let escaped_name = policy.name.replace('`', "``");
+                let escaped_db = default_database.replace('`', "``");
                 let mut sqls = vec!["CREATE ROLE IF NOT EXISTS moose_rls_role".to_string()];
                 for table in &policy.tables {
+                    let escaped_table = table.replace('`', "``");
                     sqls.push(format!(
                         "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} TO moose_rls_role",
-                        name = policy.name,
-                        table = table,
-                        db = default_database,
+                        name = escaped_name,
+                        table = escaped_table,
+                        db = escaped_db,
                         using = policy.using_expr(),
                     ));
                 }
@@ -478,15 +481,18 @@ impl AtomicOlapOperation {
                 default_database,
                 ..
             } => {
+                let escaped_name = policy.name.replace('`', "``");
+                let escaped_db = default_database.replace('`', "``");
                 let sqls: Vec<String> = policy
                     .tables
                     .iter()
                     .map(|table| {
+                        let escaped_table = table.replace('`', "``");
                         format!(
                             "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
-                            name = policy.name,
-                            table = table,
-                            db = default_database,
+                            name = escaped_name,
+                            table = escaped_table,
+                            db = escaped_db,
                         )
                     })
                     .collect();
@@ -3870,5 +3876,191 @@ mod tests {
                 _ => panic!("Expected RawSql operation"),
             }
         }
+    }
+
+    fn create_test_table(name: &str) -> Table {
+        Table {
+            name: name.to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn create_test_row_policy(name: &str, tables: Vec<&str>, column: &str) -> SelectRowPolicy {
+        SelectRowPolicy {
+            name: name.to_string(),
+            tables: tables.into_iter().map(String::from).collect(),
+            column: column.to_string(),
+            claim: column.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_generates_correct_sql() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy: policy.clone(),
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::RawSql { sql, description } => {
+                assert_eq!(sql.len(), 2); // CREATE ROLE + CREATE ROW POLICY
+                assert!(sql[0].contains("CREATE ROLE IF NOT EXISTS moose_rls_role"));
+                assert!(sql[1].contains("CREATE ROW POLICY IF NOT EXISTS"));
+                assert!(sql[1].contains("`tenant_iso_on_events_1_0_0`"));
+                assert!(sql[1].contains(&format!("`{}`.`events_1_0_0`", DEFAULT_DATABASE_NAME)));
+                assert!(sql[1].contains("getSetting('SQL_moose_rls_org_id')"));
+                assert!(sql[1].contains("TO moose_rls_role"));
+                assert!(description.contains("tenant_iso"));
+            }
+            _ => panic!("Expected RawSql operation"),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_multiple_tables() {
+        let policy =
+            create_test_row_policy("tenant_iso", vec!["events_1_0_0", "orders_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy,
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::RawSql { sql, .. } => {
+                assert_eq!(sql.len(), 3); // CREATE ROLE + 2 CREATE ROW POLICY
+                assert!(sql[1].contains("events_1_0_0"));
+                assert!(sql[2].contains("orders_1_0_0"));
+            }
+            _ => panic!("Expected RawSql operation"),
+        }
+    }
+
+    #[test]
+    fn test_drop_row_policy_generates_correct_sql() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::DropRowPolicy {
+            policy,
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::RawSql { sql, description } => {
+                assert_eq!(sql.len(), 1);
+                assert!(sql[0].contains("DROP ROW POLICY IF EXISTS"));
+                assert!(sql[0].contains("`tenant_iso_on_events_1_0_0`"));
+                assert!(description.contains("tenant_iso"));
+            }
+            _ => panic!("Expected RawSql operation"),
+        }
+    }
+
+    #[test]
+    fn test_row_policy_added_produces_create_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Added(Box::new(policy)))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(teardown.is_empty());
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_removed_produces_drop_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Removed(Box::new(
+            policy,
+        )))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(setup.is_empty());
+        assert_eq!(teardown.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_updated_produces_drop_then_create() {
+        let before = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let after = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "tenant_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert_eq!(teardown.len(), 1);
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_drop_ordered_before_table_drop() {
+        let table = create_test_table("events_1_0_0");
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(table)),
+            OlapChange::SelectRowPolicy(Change::Removed(Box::new(policy))),
+        ];
+
+        let (teardown, _setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        // Row policy drop should come before table drop in teardown order
+        let policy_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropRowPolicy { .. }))
+            .expect("DropRowPolicy not found");
+        let table_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropTable { .. }))
+            .expect("DropTable not found");
+
+        assert!(
+            policy_idx < table_idx,
+            "Row policy should be dropped before its table"
+        );
     }
 }

@@ -26,7 +26,7 @@ function buildRowPolicyOptionsFromContext(
   const clickhouse_settings: Record<string, string> = {};
   for (const [settingName, claimName] of Object.entries(config)) {
     const value = rlsContext[claimName];
-    if (value === undefined) {
+    if (value === undefined || value === null) {
       throw new Error(
         `Missing required row policy claim "${claimName}" in rlsContext`,
       );
