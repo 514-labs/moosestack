@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 /// IMPORTANT: Must match MOOSE_RLS_ROLE in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_ROLE: &str = "moose_rls_role";
 
+/// Prefix for ClickHouse custom settings used by row policies.
+/// Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
+/// IMPORTANT: Must match MOOSE_RLS_SETTING_PREFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
+pub const MOOSE_RLS_SETTING_PREFIX: &str = "custom_moose_rls_";
+
 /// A ClickHouse Row Policy defined by the user.
 ///
 /// Maps 1:1 to a `CREATE ROW POLICY` DDL statement. Uses `getSetting()` for
@@ -28,7 +33,7 @@ impl SelectRowPolicy {
     /// ClickHouse setting name derived from the column: `custom_moose_rls_{column}`
     /// IMPORTANT: Prefix must match MOOSE_RLS_SETTING_PREFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
     pub fn setting_name(&self) -> String {
-        format!("custom_moose_rls_{}", self.column)
+        format!("{}{}", MOOSE_RLS_SETTING_PREFIX, self.column)
     }
 
     /// USING expression for the row policy DDL.
