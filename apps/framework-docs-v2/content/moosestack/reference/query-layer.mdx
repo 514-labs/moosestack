@@ -29,19 +29,19 @@ const visitsModel = defineQueryModel({
   table: VisitsTable,
 
   dimensions: {
-    status: { column: "status" },
+    status: { column: "status", description: "Visit status category" },
     ...timeDimensions(VisitsTable.columns.timestamp),
   },
 
   metrics: {
-    totalVisits: { agg: count(), as: "total_visits" },
-    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue" },
+    totalVisits: { agg: count(), as: "total_visits", description: "Total number of visits" },
+    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue", description: "Sum of visit revenue" },
   },
 
   filters: {
-    status: { column: "status", operators: ["eq", "in"] as const },
-    amount: { column: "amount", operators: ["gte", "lte"] as const },
-    totalRevenue: { metric: "totalRevenue", operators: ["gte"] as const },
+    status: { column: "status", operators: ["eq", "in"] as const, description: "Filter by visit status" },
+    amount: { column: "amount", operators: ["gte", "lte"] as const, description: "Filter by amount range" },
+    totalRevenue: { metric: "totalRevenue", operators: ["gte"] as const, description: "Filter by minimum total revenue" },
   },
 
   columns: {
@@ -86,6 +86,7 @@ const visitsModel = defineQueryModel({
 | `column` | `keyof TModel` | Column name for simple fields |
 | `expression` | `Sql` | Custom SQL expression (alternative to `column`) |
 | `as` | `string` | Output alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 
 ### MetricDef
 
@@ -93,6 +94,7 @@ const visitsModel = defineQueryModel({
 |----------|------|-------------|
 | `agg` | `Sql` | Aggregation expression (e.g., `count()`, `sum(col)`) |
 | `as` | `string` | Output column alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 
 ### ColumnDef
 
@@ -121,6 +123,7 @@ const visitsModel = defineQueryModel({
 | `operators` | `readonly FilterOperator[]` | Allowed operators |
 | `transform` | `(value) => SqlValue` | Optional value transformer |
 | `inputType` | `FilterInputTypeHint` | UI hint: `"text"`, `"number"`, `"date"`, `"select"`, `"multiselect"` |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 | `required` | `true` | Make the `eq` parameter required for MCP |
 
 ### Filter Operators
@@ -148,8 +151,8 @@ The object returned by `defineQueryModel()`.
 | `defaults` | `object` | Default query behavior |
 | `filters` | `TFilters` | Filter definitions |
 | `sortable` | `readonly TSortable[]` | Sortable field names |
-| `dimensionNames` | `readonly string[]` | Dimension key names |
-| `metricNames` | `readonly string[]` | Metric key names |
+| `dimensions` | `TDimensions \| undefined` | Dimension definitions record (derive names via `Object.keys(model.dimensions)`) |
+| `metrics` | `TMetrics \| undefined` | Metric definitions record (derive names via `Object.keys(model.metrics)`) |
 | `columnNames` | `readonly string[]` | Column key names |
 
 ### Type Inference Helpers

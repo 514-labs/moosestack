@@ -414,9 +414,6 @@ export function defineQueryModel<
   const dimensionNamesSet = new Set(Object.keys(normalizedDimensions));
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
 
-  const dimensionNames = Object.keys(normalizedDimensions) as readonly string[];
-  const metricNames = Object.keys(normalizedMetrics) as readonly string[];
-
   // Build field SQL expression with alias
   const buildFieldExpr = (field: FieldDef, defaultAlias: string): Sql => {
     const expr =
