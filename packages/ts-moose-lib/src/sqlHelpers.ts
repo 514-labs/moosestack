@@ -230,21 +230,25 @@ export class Sql {
    * Append another Sql fragment, returning a new Sql instance.
    */
   append(other: Sql): Sql {
-    return new Sql([...this.strings, ""], [...this.values, other]);
+    return new Sql(
+      [...this.strings, ""],
+      [...this.values, other],
+      this.isFragment,
+    );
   }
 }
 
 sql.join = function (fragments: Sql[], separator?: string): Sql {
-  if (fragments.length === 0) return new Sql([""], []);
+  if (fragments.length === 0) return new Sql([""], [], true);
   if (fragments.length === 1) return fragments[0];
   const sep = separator ?? ", ";
   const normalized = sep.includes(" ") ? sep : ` ${sep} `;
   const strings = ["", ...Array(fragments.length - 1).fill(normalized), ""];
-  return new Sql(strings, fragments);
+  return new Sql(strings, fragments, true);
 };
 
 sql.raw = function (text: string): Sql {
-  return new Sql([text], []);
+  return new Sql([text], [], true);
 };
 
 export const toStaticQuery = (sql: Sql): string => {
