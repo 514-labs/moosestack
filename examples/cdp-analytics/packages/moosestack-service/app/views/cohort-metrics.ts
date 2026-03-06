@@ -48,7 +48,7 @@ export interface CohortMetrics {
  * ClickHouse automatically updates this when new customers or sessions are inserted.
  */
 export const cohortMetricsView = new MaterializedView<CohortMetrics>({
-  selectStatement: sql`
+  selectStatement: sql.statement`
     WITH customer_metrics AS (
       SELECT
         c.customerId,

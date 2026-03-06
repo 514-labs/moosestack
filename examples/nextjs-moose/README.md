@@ -49,11 +49,11 @@ export const eventsModel = defineQueryModel({
   table: Events,
   dimensions: {
     status: { column: "status" },
-    day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
+    day: { expression: sql.fragment`toDate(${Events.columns.event_time})`, as: "time" },
   },
   metrics: {
-    totalEvents: { agg: sql`count(*)` },
-    totalAmount: { agg: sql`sum(${Events.columns.amount})` },
+    totalEvents: { agg: sql.fragment`count(*)` },
+    totalAmount: { agg: sql.fragment`sum(${Events.columns.amount})` },
   },
   filters: {
     timestamp: { column: "event_time", operators: ["gte", "lte"] as const },
@@ -292,7 +292,7 @@ In `moose/src/query-examples/model.ts`, add a metric:
 ```typescript
 metrics: {
   // ... existing metrics
-  uniqueStatuses: { agg: sql`uniqExact(${Events.columns.status})` },
+  uniqueStatuses: { agg: sql.fragment`uniqExact(${Events.columns.status})` },
 }
 ```
 

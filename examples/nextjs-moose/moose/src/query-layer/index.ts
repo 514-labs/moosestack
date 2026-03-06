@@ -13,7 +13,7 @@
  * export const statsModel = defineQueryModel({
  *   table: Events,
  *   dimensions: { status: { column: "status" } },
- *   metrics: { totalEvents: { agg: sql`count(*)`, as: "total_events" } },
+ *   metrics: { totalEvents: { agg: sql.fragment`count(*)`, as: "total_events" } },
  *   filters: { status: { column: "status", operators: ["eq", "in"] as const } },
  *   sortable: ["total_events"] as const,
  * });
