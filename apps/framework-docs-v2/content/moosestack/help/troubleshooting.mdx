@@ -199,7 +199,7 @@ native_port = 9000
      <LanguageTabContent value="typescript" label="TypeScript">
      ```typescript
      // In query API
-     const results = await client.query.execute(sql`
+     const results = await client.query.execute(sql.statement`
        SELECT * FROM large_table
        WHERE category = 'example'
        LIMIT 100

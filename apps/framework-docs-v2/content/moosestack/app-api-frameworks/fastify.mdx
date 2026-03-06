@@ -40,8 +40,8 @@ app.get("/data", async (request, reply) => {
   const limit = parseInt((request.query as any).limit || "10");
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${MyTable.columns.id},
         ${MyTable.columns.name},
         ${MyTable.columns.createdAt}
@@ -131,14 +131,14 @@ app.get<{
   const { limit = 10, eventType } = request.query;
 
   const cols = UserEvents.columns;
-  const query = sql`
+  const query = sql.statement`
     SELECT
       ${cols.id},
       ${cols.event_type},
       ${cols.timestamp}
     FROM ${UserEvents}
     WHERE ${cols.user_id} = ${userId}
-      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+      ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
     ORDER BY ${cols.timestamp} DESC
     LIMIT ${limit}
   `;
@@ -276,8 +276,8 @@ app.get("/data", async (request, reply) => {
   }
 
   const { client, sql } = moose;
-  const result = await client.query.execute(sql`
-    SELECT 
+  const result = await client.query.execute(sql.statement`
+    SELECT
       ${MyTable.columns.id},
       ${MyTable.columns.name},
       ${MyTable.columns.status}

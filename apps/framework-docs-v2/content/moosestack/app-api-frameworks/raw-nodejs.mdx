@@ -46,8 +46,8 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     const limit = parseInt((url.query.limit as string) || "10");
 
     try {
-      const query = sql`
-        SELECT 
+      const query = sql.statement`
+        SELECT
           ${MyTable.columns.id},
           ${MyTable.columns.name},
           ${MyTable.columns.createdAt}
@@ -144,14 +144,14 @@ const handleGetUserEvents = async (
 
   try {
     const cols = UserEvents.columns;
-    const querySQL = sql`
+    const querySQL = sql.statement`
       SELECT
         ${cols.id},
         ${cols.event_type},
         ${cols.timestamp}
       FROM ${UserEvents}
       WHERE ${cols.user_id} = ${userId}
-        ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+        ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
       ORDER BY ${cols.timestamp} DESC
       LIMIT ${limit}
     `;
@@ -326,8 +326,8 @@ const handleStreamData = async (req: IncomingMessage, res: ServerResponse) => {
     "Transfer-Encoding": "chunked"
   });
 
-  const query = sql`
-    SELECT 
+  const query = sql.statement`
+    SELECT
       ${MyTable.columns.id},
       ${MyTable.columns.name},
       ${MyTable.columns.data}

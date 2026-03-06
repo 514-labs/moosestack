@@ -10,12 +10,15 @@ export const eventsModel = defineQueryModel({
   dimensions: {
     status: { column: "status" },
     hour: {
-      expression: sql`toStartOfHour(${Events.columns.event_time})`,
+      expression: sql.fragment`toStartOfHour(${Events.columns.event_time})`,
       as: "time",
     },
-    day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
+    day: {
+      expression: sql.fragment`toDate(${Events.columns.event_time})`,
+      as: "time",
+    },
     month: {
-      expression: sql`toStartOfMonth(${Events.columns.event_time})`,
+      expression: sql.fragment`toStartOfMonth(${Events.columns.event_time})`,
       as: "time",
     },
   },
@@ -23,13 +26,13 @@ export const eventsModel = defineQueryModel({
   // Metrics: aggregates computed over dimensions
   // Key names are used as SQL aliases automatically (no `as` needed)
   metrics: {
-    totalEvents: { agg: sql`count(*)` },
-    totalAmount: { agg: sql`sum(${Events.columns.amount})` },
-    avgAmount: { agg: sql`avg(${Events.columns.amount})` },
-    minAmount: { agg: sql`min(${Events.columns.amount})` },
-    maxAmount: { agg: sql`max(${Events.columns.amount})` },
+    totalEvents: { agg: sql.fragment`count(*)` },
+    totalAmount: { agg: sql.fragment`sum(${Events.columns.amount})` },
+    avgAmount: { agg: sql.fragment`avg(${Events.columns.amount})` },
+    minAmount: { agg: sql.fragment`min(${Events.columns.amount})` },
+    maxAmount: { agg: sql.fragment`max(${Events.columns.amount})` },
     highValueRatio: {
-      agg: sql`countIf(${Events.columns.amount} > 100) / count(*)`,
+      agg: sql.fragment`countIf(${Events.columns.amount} > 100) / count(*)`,
     },
   },
 

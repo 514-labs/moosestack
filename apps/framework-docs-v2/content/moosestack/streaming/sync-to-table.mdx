@@ -240,7 +240,7 @@ fetch('http://localhost:4000/ingest/events', {
 //    - 1 second has elapsed since last flush
 
 // 5. Data available for queries in events table
-sql`SELECT * FROM events WHERE userId = 'user_456';`
+sql.statement`SELECT * FROM events WHERE userId = 'user_456';`
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">

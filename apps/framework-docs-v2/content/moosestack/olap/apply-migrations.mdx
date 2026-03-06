@@ -449,12 +449,12 @@ interface TargetSchema {
   sum: number;
 }
 
-const selectStatement = sql`
-  SELECT 
-    toStartOfDay(${sourceTable.columns.a_date}) as day, 
-    uniq(${sourceTable.columns.id}) as count, 
-    SUM(${sourceTable.columns.a_number}) as sum 
-    FROM ${sourceTable} 
+const selectStatement = sql.statement`
+  SELECT
+    toStartOfDay(${sourceTable.columns.a_date}) as day,
+    uniq(${sourceTable.columns.id}) as count,
+    SUM(${sourceTable.columns.a_number}) as sum
+    FROM ${sourceTable}
     GROUP BY day
 `;
 
@@ -480,13 +480,13 @@ interface TargetSchema {
   avg: number; // New column - migration applied
 }
 
-const selectStatement = sql`
-  SELECT 
-    toStartOfDay(${sourceTable.columns.a_date}) as day, 
-    uniq(${sourceTable.columns.id}) as count, 
+const selectStatement = sql.statement`
+  SELECT
+    toStartOfDay(${sourceTable.columns.a_date}) as day,
+    uniq(${sourceTable.columns.id}) as count,
     sum(${sourceTable.columns.a_number}) as sum,
-    avg(${sourceTable.columns.a_number}) as avg 
-    FROM ${sourceTable} 
+    avg(${sourceTable.columns.a_number}) as avg
+    FROM ${sourceTable}
     GROUP BY day
 `;
 

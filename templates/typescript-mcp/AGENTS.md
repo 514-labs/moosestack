@@ -116,7 +116,7 @@ app.get("/top-pages", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`
+    const query = sql.statement`
       SELECT url, count() as totalViews
       FROM PageView
       WHERE userId = ${userId}
@@ -142,8 +142,8 @@ export const analyticsApi = new WebApp("analytics", app, {
 
 Key patterns:
 
-- Use `getMooseUtils()` to get the ClickHouse `client` and type-safe `sql` template tag
-- Use the `sql` template tag for parameterized queries (prevents injection)
+- Use `getMooseUtils()` to get the ClickHouse `client` and type-safe `sql` template literal
+- Use `sql.statement` for complete SQL queries and `sql.fragment` for reusable SQL expressions (prevents injection)
 - Export the `WebApp` from the file — MooseStack discovers it automatically
 - This template uses Express, but MooseStack also supports Fastify and FastAPI. See `moose docs moosestack/app-api-frameworks` for all options
 

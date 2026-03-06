@@ -31,8 +31,8 @@ app.get("/query", async (request, reply) => {
   const limit = parseInt((request.query as any).limit as string) || 10;
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns.totalRows}
       FROM ${BarAggregatedMV.targetTable}
@@ -75,13 +75,13 @@ app.post<{ Body: PostDataBody }>("/data", async (request, reply) => {
   } = request.body || {};
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns[orderBy]}
       FROM ${BarAggregatedMV.targetTable}
-      WHERE 
-        dayOfMonth >= ${startDay} 
+      WHERE
+        dayOfMonth >= ${startDay}
         AND dayOfMonth <= ${endDay}
       ORDER BY ${BarAggregatedMV.targetTable.columns[orderBy]} DESC
       LIMIT ${limit}
@@ -151,13 +151,13 @@ export const BarApi = new Api<ApiQueryParams, ResponseData[]>(
       return cachedData;
     }
 
-    const query = sql`
-        SELECT 
+    const query = sql.statement`
+        SELECT
           ${BarAggregatedMV.targetTable.columns.dayOfMonth},
           ${BarAggregatedMV.targetTable.columns[orderBy]}
         FROM ${BarAggregatedMV.targetTable}
-        WHERE 
-          dayOfMonth >= ${startDay} 
+        WHERE
+          dayOfMonth >= ${startDay}
           AND dayOfMonth <= ${endDay}
         ORDER BY ${BarAggregatedMV.targetTable.columns[orderBy]} DESC
         LIMIT ${limit}
