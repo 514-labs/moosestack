@@ -13,17 +13,17 @@ export const eventsModel = defineQueryModel({
       description: "Event processing status",
     },
     hour: {
-      expression: sql`toStartOfHour(${Events.columns.event_time})`,
+      expression: sql.fragment`toStartOfHour(${Events.columns.event_time})`,
       as: "time",
       description: "Event time truncated to the hour",
     },
     day: {
-      expression: sql`toDate(${Events.columns.event_time})`,
+      expression: sql.fragment`toDate(${Events.columns.event_time})`,
       as: "time",
       description: "Event date (day granularity)",
     },
     month: {
-      expression: sql`toStartOfMonth(${Events.columns.event_time})`,
+      expression: sql.fragment`toStartOfMonth(${Events.columns.event_time})`,
       as: "time",
       description: "Event date truncated to the start of the month",
     },
@@ -33,27 +33,27 @@ export const eventsModel = defineQueryModel({
   // Key names are used as SQL aliases automatically (no `as` needed)
   metrics: {
     totalEvents: {
-      agg: sql`count(*)`,
+      agg: sql.fragment`count(*)`,
       description: "Total number of events",
     },
     totalAmount: {
-      agg: sql`sum(${Events.columns.amount})`,
+      agg: sql.fragment`sum(${Events.columns.amount})`,
       description: "Sum of event amounts",
     },
     avgAmount: {
-      agg: sql`avg(${Events.columns.amount})`,
+      agg: sql.fragment`avg(${Events.columns.amount})`,
       description: "Average event amount",
     },
     minAmount: {
-      agg: sql`min(${Events.columns.amount})`,
+      agg: sql.fragment`min(${Events.columns.amount})`,
       description: "Minimum event amount",
     },
     maxAmount: {
-      agg: sql`max(${Events.columns.amount})`,
+      agg: sql.fragment`max(${Events.columns.amount})`,
       description: "Maximum event amount",
     },
     highValueRatio: {
-      agg: sql`countIf(${Events.columns.amount} > 100) / count(*)`,
+      agg: sql.fragment`countIf(${Events.columns.amount} > 100) / count(*)`,
       description: "Ratio of events with amount greater than 100",
     },
   },

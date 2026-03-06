@@ -214,7 +214,7 @@ const results = await model.query(
 
 ```typescript
 const parts = model.toParts(request);
-const customSql = sql`
+const customSql = sql.statement`
   ${parts.select}
   ${parts.from}
   WHERE ${parts.conditions[0]} OR ${parts.conditions[1]}

@@ -59,9 +59,9 @@ export const visitMetrics = defineQueryModel({
   metrics: {
     totalVisits:   { agg: count(),                                           as: "totalVisits" },
     uniqueClients: { agg: countDistinct(VisitsTable.columns.user_id),        as: "uniqueClients" },
-    attended:      { agg: sum(sql`CASE WHEN status = 1 THEN 1 ELSE 0 END`), as: "attended" },
-    noShows:       { agg: sum(sql`CASE WHEN status = 2 THEN 1 ELSE 0 END`), as: "noShows" },
-    lateCancels:   { agg: sum(sql`CASE WHEN status = 3 THEN 1 ELSE 0 END`), as: "lateCancels" },
+    attended:      { agg: sum(sql.fragment`CASE WHEN status = 1 THEN 1 ELSE 0 END`), as: "attended" },
+    noShows:       { agg: sum(sql.fragment`CASE WHEN status = 2 THEN 1 ELSE 0 END`), as: "noShows" },
+    lateCancels:   { agg: sum(sql.fragment`CASE WHEN status = 3 THEN 1 ELSE 0 END`), as: "lateCancels" },
   },
 
   // Which columns can be filtered and with which operators
@@ -488,7 +488,7 @@ Add `earlyCancels` to the query model:
 metrics: {
   // ...existing metrics...
   earlyCancels: {
-    agg: sum(sql`CASE WHEN status = 4 THEN 1 ELSE 0 END`),
+    agg: sum(sql.fragment`CASE WHEN status = 4 THEN 1 ELSE 0 END`),
     as: "earlyCancels",
   },
 },

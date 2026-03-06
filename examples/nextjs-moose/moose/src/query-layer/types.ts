@@ -22,7 +22,7 @@ export type SqlValue = string | number | boolean | Date;
  *
  * @example
  * const col = Events.columns.amount;
- * const expr = sql`CASE WHEN ${Events.columns.amount} > 100 THEN 'high' ELSE 'low' END`;
+ * const expr = sql.fragment`CASE WHEN ${Events.columns.amount} > 100 THEN 'high' ELSE 'low' END`;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ColRef<TModel> = Sql | any;
@@ -71,7 +71,7 @@ export type SortDir = "ASC" | "DESC";
  * @example
  * dimensions: {
  *   status: { column: "status" },  // Simple column
- *   day: { expression: sql`toDate(timestamp)`, as: "day" },  // Computed
+ *   day: { expression: sql.fragment`toDate(timestamp)`, as: "day" },  // Computed
  * }
  */
 export interface DimensionDef<
@@ -97,10 +97,10 @@ export interface DimensionDef<
  * @example
  * metrics: {
  *   // Key name is used as alias automatically
- *   totalAmount: { agg: sql`sum(amount)` },
- *   totalEvents: { agg: sql`count(*)` },
+ *   totalAmount: { agg: sql.fragment`sum(amount)` },
+ *   totalEvents: { agg: sql.fragment`count(*)` },
  *   // Or specify explicit alias if different from key
- *   revenue: { agg: sql`sum(amount)`, as: "total_revenue" },
+ *   revenue: { agg: sql.fragment`sum(amount)`, as: "total_revenue" },
  * }
  */
 export interface MetricDef {
@@ -284,7 +284,7 @@ export type QueryRequest<
  *
  * @example
  * const parts = model.toParts(request);
- * const customQuery = sql`
+ * const customQuery = sql.statement`
  *   SELECT ${parts.dimensions}, ${parts.metrics}
  *   ${parts.from}
  *   ${parts.where}

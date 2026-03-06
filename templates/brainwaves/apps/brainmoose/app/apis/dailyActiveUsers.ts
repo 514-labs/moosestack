@@ -18,7 +18,7 @@ export const dailyActiveUsersApi = new Api<
   "daily-active-users",
   async ({ limit = "10", minDailyActiveUsers = "0" }, { client, sql }) => {
     const result = await client.query.execute(
-      sql`SELECT 
+      sql.statement`SELECT
         date,
         uniqMerge(dailyActiveUsers) as dailyActiveUsers
       FROM DailyActiveUsers

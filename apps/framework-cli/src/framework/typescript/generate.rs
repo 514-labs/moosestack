@@ -332,6 +332,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         })
     });
 
+    let uses_low_cardinality = tables.iter().any(|table| {
+        table.columns.iter().any(|column| {
+            column
+                .annotations
+                .iter()
+                .any(|(k, v)| k == "LowCardinality" && v == &serde_json::json!(true))
+        })
+    });
+
     // Add imports
     let mut base_imports = vec![
         "IngestPipeline",
@@ -354,6 +363,10 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
     if uses_simple_aggregate {
         base_imports.push("SimpleAggregated");
+    }
+
+    if uses_low_cardinality {
+        base_imports.push("LowCardinality");
     }
 
     writeln!(
@@ -592,6 +605,14 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                         type_str, function_name, type_str
                     );
                 }
+            }
+
+            if column
+                .annotations
+                .iter()
+                .any(|(k, v)| k == "LowCardinality" && v == &serde_json::json!(true))
+            {
+                type_str = format!("{type_str} & LowCardinality");
             }
 
             // Apply TTL and Codec first (these can coexist with DEFAULT/MATERIALIZED)
@@ -2147,6 +2168,96 @@ export const TaskTable = new OlapTable<Task>("Task", {
         assert!(
             result.contains("SELECT * ORDER BY user_id"),
             "Output should contain projection body. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_emission() {
+        let tables = vec![Table {
+            name: "LcTest".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+                Column {
+                    name: "status".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+                Column {
+                    name: "plain".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "LcTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        assert!(
+            result.contains("LowCardinality"),
+            "Import should include LowCardinality. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("status: string & LowCardinality;"),
+            "LowCardinality column should have & LowCardinality. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("plain: string;"),
+            "Plain column should remain unmodified. Got: {}",
             result
         );
     }

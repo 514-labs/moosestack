@@ -16,28 +16,36 @@ async function getEvents(params: GetEventsParams): Promise<EventModel[]> {
   const conditions: Sql[] = [];
 
   if (params.minAmount !== undefined) {
-    conditions.push(sql`${Events.columns.amount} >= ${params.minAmount}`);
+    conditions.push(
+      sql.fragment`${Events.columns.amount} >= ${params.minAmount}`,
+    );
   }
   if (params.maxAmount !== undefined) {
-    conditions.push(sql`${Events.columns.amount} <= ${params.maxAmount}`);
+    conditions.push(
+      sql.fragment`${Events.columns.amount} <= ${params.maxAmount}`,
+    );
   }
   if (params.status) {
-    conditions.push(sql`${Events.columns.status} = ${params.status}`);
+    conditions.push(sql.fragment`${Events.columns.status} = ${params.status}`);
   }
 
   // Use sql.join() to combine WHERE conditions with AND
   const whereClause =
-    conditions.length > 0 ? sql` WHERE ${sql.join(conditions, "AND")}` : sql``;
+    conditions.length > 0 ?
+      sql.fragment` WHERE ${sql.join(conditions, "AND")}`
+    : sql.fragment``;
 
   // Use sql.raw() for static SQL keywords (ORDER BY direction)
   const orderDirection = sql.raw("DESC");
 
   // Use Sql.append() to build query incrementally
-  const query = sql`SELECT * FROM ${Events}`
+  const query = sql.statement`SELECT * FROM ${Events}`
     .append(whereClause)
-    .append(sql` ORDER BY ${Events.columns.event_time} ${orderDirection}`)
-    .append(sql` LIMIT ${params.limit ?? 100}`)
-    .append(sql` OFFSET ${params.offset ?? 0}`);
+    .append(
+      sql.fragment` ORDER BY ${Events.columns.event_time} ${orderDirection}`,
+    )
+    .append(sql.fragment` LIMIT ${params.limit ?? 100}`)
+    .append(sql.fragment` OFFSET ${params.offset ?? 0}`);
 
   return await executeQuery<EventModel>(query);
 }

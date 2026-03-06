@@ -26,7 +26,7 @@ export const sessionInsightsApi = new Api<QueryParams, SessionInsightResponse>(
     // Map through each sessionData and run the query
     const queryResults = await Promise.all(
       sessionData.map(async ({ sessionId, sessionLabel }) => {
-        const result = await client.query.execute(sql`SELECT
+        const result = await client.query.execute(sql.statement`SELECT
           sessionId,
           ${sessionLabel} AS sessionLabel,
           SUM(sqrt((arrayElement(acc, 1) * arrayElement(acc, 1)) +

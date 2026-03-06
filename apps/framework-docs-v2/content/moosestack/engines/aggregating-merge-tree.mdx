@@ -155,7 +155,7 @@ const mv = new MaterializedView<DailyPageStats>({
   materializedViewName: "mv_daily_page_stats",
   selectTables: [pageViews],
   targetTable: targetTable,
-  selectStatement: sql`
+  selectStatement: sql.statement`
     SELECT
       toStartOfDay(${pageViews.columns.timestamp}) AS date,
       ${pageViews.columns.user_id}                AS user_id,
