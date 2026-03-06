@@ -1380,9 +1380,16 @@ fn internal_server_error_response() -> Response<Full<Bytes>> {
 }
 
 fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
+    let message = r#"404 Not Found
+
+Your Moose project is running, but there is no route at this path.
+
+To see available routes, run: moose ls
+"#;
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Full::new(Bytes::from("no match")))
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Full::new(Bytes::from(message)))
 }
 
 async fn to_reader(
