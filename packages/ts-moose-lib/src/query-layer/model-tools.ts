@@ -67,6 +67,17 @@ function titleFromName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function buildEnumDescription(
+  metadata: Record<string, { description?: string }>,
+): string | undefined {
+  const entries = Object.entries(metadata);
+  if (entries.length === 0) return undefined;
+  const lines = entries.map(([name, def]) => {
+    return def.description ? `- ${name}: ${def.description}` : `- ${name}`;
+  });
+  return lines.join("\n");
+}
+
 /** Map FilterInputTypeHint to a base Zod type */
 function zodBaseType(inputType?: FilterInputTypeHint): z.ZodType {
   if (inputType === "number") return z.number();
@@ -165,14 +176,18 @@ export function createModelTool(
   const dimensionNames = Object.keys(model.dimensions ?? {});
   if (dimensionNames.length > 0) {
     const names = dimensionNames as [string, ...string[]];
-    schema.dimensions = z.array(z.enum(names)).optional();
+    const desc = buildEnumDescription(model.dimensions!);
+    const dimSchema = z.array(z.enum(names)).optional();
+    schema.dimensions = desc ? dimSchema.describe(desc) : dimSchema;
   }
 
   // --- Metrics ---
   const metricNames = Object.keys(model.metrics ?? {});
   if (metricNames.length > 0) {
     const names = metricNames as [string, ...string[]];
-    schema.metrics = z.array(z.enum(names)).optional();
+    const desc = buildEnumDescription(model.metrics!);
+    const metSchema = z.array(z.enum(names)).optional();
+    schema.metrics = desc ? metSchema.describe(desc) : metSchema;
   }
 
   // --- Columns ---
@@ -202,6 +217,11 @@ export function createModelTool(
         paramType = z.boolean();
       } else {
         paramType = baseType;
+      }
+
+      // Apply description from filter definition
+      if (filterDef.description) {
+        paramType = paramType.describe(filterDef.description);
       }
 
       // Required if filter is in requiredFilters AND op is eq
