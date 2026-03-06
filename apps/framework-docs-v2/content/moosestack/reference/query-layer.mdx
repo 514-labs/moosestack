@@ -96,6 +96,31 @@ const visitsModel = defineQueryModel({
 | `as` | `string` | Output column alias |
 | `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 
+#### Conditional metrics
+
+To define a metric that only aggregates rows matching a condition, use ClickHouse's
+[`-If` aggregate combinators](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators#-if)
+directly in the `agg` expression. This makes the metric self-contained — callers don't
+need to remember to add a filter.
+
+```typescript
+metrics: {
+  // Total revenue — only from completed events
+  revenue: {
+    agg: sql`sumIf(${Events.columns.amount}, ${Events.columns.status} = 'completed')`,
+    description: "Total revenue from completed events",
+  },
+  // Completion rate
+  completionRate: {
+    agg: sql`countIf(${Events.columns.status} = 'completed') / count(*)`,
+    description: "Fraction of events that completed",
+  },
+}
+```
+
+Common `-If` combinators: `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`, `uniqIf`, `uniqExactIf`.
+Every ClickHouse aggregate function supports the `-If` suffix.
+
 ### ColumnDef
 
 | Property | Type | Description |
