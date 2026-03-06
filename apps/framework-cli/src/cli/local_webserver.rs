@@ -1381,10 +1381,10 @@ fn internal_server_error_response() -> Response<Full<Bytes>> {
 
 fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
     Response::builder()
-        .status(StatusCode::NOT_FOUND)
+        .status(StatusCode::OK)
         .header("Content-Type", "text/plain; charset=utf-8")
         .body(Full::new(Bytes::from(
-            "MooseStack: 404 Not Found\nTo see available routes, run: moose ls\n",
+            "MooseStack is running.\nTo see available routes, run: moose ls\n",
         )))
 }
 
