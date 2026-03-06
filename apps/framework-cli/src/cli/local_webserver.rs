@@ -1379,13 +1379,31 @@ fn internal_server_error_response() -> Response<Full<Bytes>> {
         .unwrap()
 }
 
-fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Full::new(Bytes::from(
-            "MooseStack is running.\nTo see available routes, run: moose ls\n",
-        )))
+fn route_not_found_response(accept_header: &str) -> hyper::http::Result<Response<Full<Bytes>>> {
+    if accept_header.contains("text/html") {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .body(Full::new(Bytes::from(
+                r#"<!DOCTYPE html>
+<html>
+<head><title>MooseStack</title></head>
+<body>
+<h1>MooseStack</h1>
+<p><strong>Status:</strong> ok</p>
+<p><strong>Docs:</strong> <a href="https://docs.moosestacking.com">https://docs.moosestacking.com</a></p>
+<p>To see available routes, run <code>moose ls</code> or view <a href="https://www.fiveonefour.com">Fiveonefour dashboard</a></p>
+</body>
+</html>"#,
+            )))
+    } else {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(
+                r#"{"name":"MooseStack","status":"ok","docs":"https://docs.moosestacking.com","info":"To see available routes, run `moose ls` or view Fiveonefour dashboard at https://www.fiveonefour.com"}"#,
+            )))
+    }
 }
 
 async fn to_reader(
@@ -1826,6 +1844,13 @@ async fn router(
         }
     };
 
+    let accept_header = req
+        .headers()
+        .get(hyper::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
     let route_table = request.route_table;
 
     debug!(
@@ -2085,7 +2110,7 @@ async fn router(
                     }
                 }
             } else {
-                route_not_found_response()
+                route_not_found_response(&accept_header)
             }
         }
     };
@@ -2185,6 +2210,13 @@ async fn management_router<I: InfraMapProvider>(
         );
     }
 
+    let accept_header = req
+        .headers()
+        .get(hyper::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
     let route = get_path_without_prefix(PathBuf::from(req.uri().path()), path_prefix);
     let route = route.to_str().unwrap();
     let res = match (req.method(), route) {
@@ -2194,13 +2226,6 @@ async fn management_router<I: InfraMapProvider>(
         (&hyper::Method::GET, "metrics") => metrics_route(metrics.clone()).await,
         // TODO: changes from admin/integrate-changes should apply here
         (&hyper::Method::GET, "infra-map") => {
-            let accept_header = req
-                .headers()
-                .get(hyper::header::ACCEPT)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-
             if accept_header.contains("application/protobuf") {
                 let bytes = infra_map.serialize_proto().await;
                 Ok(hyper::Response::builder()
@@ -2227,7 +2252,7 @@ async fn management_router<I: InfraMapProvider>(
         (&hyper::Method::GET, constants::OPENAPI_FILE) => {
             openapi_route(is_prod, openapi_path).await
         }
-        _ => route_not_found_response(),
+        _ => route_not_found_response(&accept_header),
     };
 
     res
