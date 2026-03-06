@@ -152,8 +152,6 @@ This week Moose ships the new `moose add` command for streamlined component inst
 - Migration ignore for LowCardinality String differences: New ignore operation suppresses migration warnings when column types differ only by LowCardinality wrapper, reducing noise when ClickHouse automatically optimizes String columns. ([@hh2110](https://github.com/hh2110)) Docs: [Migrations](/moosestack/configuration/migrations)
 - Documentation improvements: Updated CLI documentation with new command structure. Added GitHub edit links in sidebar, fixed API reference headings in TOC, and included WSL performance warnings. ([@callicles](https://github.com/callicles), [@oatsandsugar](https://github.com/oatsandsugar), [@LucioFranco](https://github.com/LucioFranco)) Docs: [Moose CLI](/moosestack/moose-cli)
 - TypeScript compilation and version compatibility: Docker packaging honors custom tsconfig outDir settings. CLI validates @514labs/moose-lib version matches CLI version before running commands to prevent runtime errors. ([@phiSgr](https://github.com/phiSgr)) Docs: [Typescript](/moosestack/configuration/typescript)
-- `moose docs search` now matches page headings (H1/H2/H3) in addition to TOC title/description, with `slug#anchor` deep links and hyphen/underscore-insensitive matching for better discoverability. ([@oatsandsugar](https://github.com/oatsandsugar)) Docs: [Moose CLI](/moosestack/moose-cli)
-- Python dependency migration from `sqlglot[rs]` to `sqlglot[c]` across moose-lib and Python templates, with improved CLI infra-map loading to handle non-fatal stderr output. ([@phiSgr](https://github.com/phiSgr))
 
 ### Bug Fixes
 
@@ -161,8 +159,6 @@ This week Moose ships the new `moose add` command for streamlined component inst
 - Fix aggregation function Merge suffix placement: Fixes -Merge suffix placement for aggregation functions with parameters (e.g., `quantile(0.5)` becomes `quantileMerge(0.5)` instead of `quantile(0.5)Merge`). ([@phiSgr](https://github.com/phiSgr)) Docs: [Aggregates](/moosestack/data-types/aggregates)
 - Fix ClickHouse SQL parameter handling and DDL parsing: Fixes SQL parameter ordering and column property parsing in ClickHouse DDL operations, resolving issues with comment and codec combinations in table migrations. ([@phiSgr](https://github.com/phiSgr)) Docs: [Migrate](/moosestack/migrate)
 - Fix config file handling with read-only permissions: Gracefully handles externally-managed config files by skipping writes instead of failing. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
-- Fix absolute paths leaking into `/admin/inframap` output by normalizing source paths for function processes, materialized views, and views. ([@phiSgr](https://github.com/phiSgr))
-- Fix CI telemetry configuration to disable Moose telemetry globally via workflow-level environment variables instead of inconsistent per-step overrides. ([@callicles](https://github.com/callicles))
 - Fix configurable ClickHouse native port in Docker Compose: Fixed Docker Compose to respect the configured native_port instead of hardcoding 9000. ([@514Ben](https://github.com/514Ben)) Docs: [Clickhouse](/moosestack/configuration/clickhouse)
 - Fix Redis port extraction from URL for Docker Compose: Docker Compose now correctly uses port from Redis URL instead of separate port field for host binding. ([@514Ben](https://github.com/514Ben)) Docs: [Redis](/moosestack/configuration/redis)
 

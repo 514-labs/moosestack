@@ -51,11 +51,15 @@ This week Moose adds ALIAS column support for computed-on-read fields in ClickHo
 ### Improvements
 
 - Updated TypeScript MCP template with agent harness documentation, MCP server configuration, and ClickHouse best practices skill integration for improved developer onboarding. ([@oatsandsugar](https://github.com/oatsandsugar))
+- `moose docs search` now matches page headings (H1/H2/H3) in addition to TOC title/description, with `slug#anchor` deep links and hyphen/underscore-insensitive matching for better discoverability. ([@oatsandsugar](https://github.com/oatsandsugar)) Docs: [Moose CLI](/moosestack/moose-cli)
+- Python dependency migration from `sqlglot[rs]` to `sqlglot[c]` across moose-lib and Python templates, with improved CLI infra-map loading to handle non-fatal stderr output. ([@phiSgr](https://github.com/phiSgr))
 
 ### Bug Fixes
 
 - Fix `moose add` command to validate App Router directory structure and properly resolve target paths, preventing errors when pointing at non-existent directories or Pages Router projects. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
 - Fix CLI startup and config handling when `~/.moose/config.toml` or shell configuration files are read-only or externally managed (e.g. Nix environments). The CLI now warns and continues with defaults instead of panicking, and surfaces init/read failures cleanly. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
+- Fix absolute paths leaking into `/admin/inframap` output by normalizing source paths for function processes, materialized views, and views. ([@phiSgr](https://github.com/phiSgr))
+- Fix CI telemetry configuration to disable Moose telemetry globally via workflow-level environment variables instead of inconsistent per-step overrides. ([@callicles](https://github.com/callicles))
 
 ## Fiveonefour Hosting
 
