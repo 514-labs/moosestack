@@ -107,12 +107,12 @@ need to remember to add a filter.
 metrics: {
   // Total revenue — only from completed events
   revenue: {
-    agg: sql`sumIf(${Events.columns.amount}, ${Events.columns.status} = 'completed')`,
+    agg: sql.fragment`sumIf(${Events.columns.amount}, ${Events.columns.status} = 'completed')`,
     description: "Total revenue from completed events",
   },
   // Completion rate
   completionRate: {
-    agg: sql`countIf(${Events.columns.status} = 'completed') / count(*)`,
+    agg: sql.fragment`countIf(${Events.columns.status} = 'completed') / count(*)`,
     description: "Fraction of events that completed",
   },
 }
