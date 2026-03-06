@@ -219,16 +219,16 @@ export function createModelTool(
         paramType = baseType;
       }
 
-      // Apply description from filter definition
-      if (filterDef.description) {
-        paramType = paramType.describe(filterDef.description);
-      }
-
       // Required if filter is in requiredFilters AND op is eq
       if (requiredSet.has(filterName) && op === "eq") {
-        schema[paramName] = paramType;
+        schema[paramName] =
+          filterDef.description ?
+            paramType.describe(filterDef.description)
+          : paramType;
       } else {
-        schema[paramName] = paramType.optional();
+        const opt = paramType.optional();
+        schema[paramName] =
+          filterDef.description ? opt.describe(filterDef.description) : opt;
       }
 
       filterParamMap[paramName] = { filterName, op };
