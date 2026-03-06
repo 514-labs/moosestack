@@ -74,6 +74,7 @@ export interface DimensionDef<
   column?: TKey;
   expression?: Sql;
   as?: string;
+  description?: string;
 }
 
 /**
@@ -89,6 +90,7 @@ export interface DimensionDef<
 export interface MetricDef {
   agg: Sql;
   as?: string;
+  description?: string;
 }
 
 /**
@@ -167,6 +169,7 @@ export interface ModelFilterDef<
   inputType?: FilterInputTypeHint;
   /** When true, this filter's `eq` param is required in MCP tool schemas */
   required?: true;
+  description?: string;
 }
 
 // --- Type Inference Helpers ---
