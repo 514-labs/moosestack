@@ -110,12 +110,10 @@ MATERIALIZED columns are computed by ClickHouse at insert time — you should **
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-Moose exports an `Insertable<T>` utility type that derives the insert-safe shape of your model:
-- **MATERIALIZED columns are omitted** — they don't appear in the type at all
-- **DEFAULT columns become optional** — ClickHouse fills them when absent
+`OlapTable.insert()` accepts `Insertable<T>[]` — a type that automatically omits ALIAS/MATERIALIZED fields and makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself; the method signature handles it.
 
 ```ts filename="InsertableExample.ts" copy
-import { OlapTable, Key, DateTime, ClickHouseMaterialized, ClickHouseDefault, Insertable } from "@514labs/moose-lib";
+import { OlapTable, Key, DateTime, ClickHouseMaterialized, ClickHouseDefault } from "@514labs/moose-lib";
 
 interface UserEvents {
   id: Key<string>;
@@ -125,8 +123,8 @@ interface UserEvents {
   createdAt: Date & ClickHouseDefault<"now()">;
 }
 
-// Insertable<UserEvents> ≡ { id: string; timestamp: Date; userId: string; createdAt?: Date }
 const table = new OlapTable<UserEvents>("UserEvents");
+// eventDate is omitted, createdAt is optional — enforced by the method signature
 await table.insert([{ id: "1", timestamp: new Date(), userId: "u1" }]);
 ```
 
@@ -161,9 +159,7 @@ table.insert([{"id": "1", "timestamp": datetime.now(), "user_id": "u1"}])
 
 ## Query Behavior
 
-When you query data through Moose's `QueryClient` (via `MooseClient.query.execute`), MATERIALIZED columns are automatically included in `SELECT *` results. This means your typed query results will contain the pre-computed MATERIALIZED values without needing to name them explicitly.
-
-If you write custom SQL outside of `QueryClient`, MATERIALIZED columns are excluded from `SELECT *` by default (standard ClickHouse behavior). Name them explicitly or set `asterisk_include_materialized_columns=1` in your query settings.
+By default, ClickHouse excludes MATERIALIZED columns from `SELECT *` results. When you query through `MooseClient.query.execute`, Moose sets `asterisk_include_materialized_columns` per-query so that `SELECT *` includes MATERIALIZED values. If you have complex SQL where extra columns could affect column ordering, name your columns explicitly instead of using `*`.
 
 ## Important Notes
 

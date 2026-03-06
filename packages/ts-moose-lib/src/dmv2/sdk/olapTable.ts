@@ -5,7 +5,7 @@ import {
   isArrayNestedType,
   isNestedType,
 } from "../../dataModels/dataModelTypes";
-import { ClickHouseEngines } from "../../dataModels/types";
+import { ClickHouseEngines, Insertable } from "../../dataModels/types";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
@@ -1583,15 +1583,17 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    * ```
    */
   async insert(
-    data: T[] | Readable,
+    data: Insertable<T>[] | Readable,
     options?: InsertOptions,
   ): Promise<InsertResult<T>> {
+    const rawData = data as T[] | Readable;
+
     // Validate input parameters and strategy compatibility
     const { isStream, strategy, shouldValidate } =
-      this.validateInsertParameters(data, options);
+      this.validateInsertParameters(rawData, options);
 
     // Handle early return cases for empty data
-    const emptyResult = this.handleEmptyData(data, isStream);
+    const emptyResult = this.handleEmptyData(rawData, isStream);
     if (emptyResult) {
       return emptyResult;
     }
@@ -1602,7 +1604,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
     if (!isStream && shouldValidate) {
       const validationResult = await this.performPreInsertionValidation(
-        data as T[],
+        rawData as T[],
         shouldValidate,
         strategy,
         options,
@@ -1611,7 +1613,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       validationErrors = validationResult.validationErrors;
     } else {
       // No validation or stream input
-      validatedData = isStream ? [] : (data as T[]);
+      validatedData = isStream ? [] : (rawData as T[]);
     }
 
     // Get memoized client and generate cached table name
@@ -1622,7 +1624,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       // Prepare and execute insertion with optimized settings
       const insertOptions = this.prepareInsertOptions(
         tableName,
-        data,
+        rawData,
         validatedData,
         isStream,
         strategy,
@@ -1633,7 +1635,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
       // Return success result
       return this.createSuccessResult(
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,
@@ -1646,7 +1648,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
         batchError,
         strategy,
         tableName,
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,

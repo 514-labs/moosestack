@@ -563,10 +563,10 @@ To build REST APIs that expose your data, see the [Bring Your Own API Framework 
 
 ## Computed Columns in Query Results
 
-When you query through `MooseClient.query.execute`, [ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns are automatically included in `SELECT *` results. This means your typed results will contain all computed column values without needing to name them explicitly.
+By default, ClickHouse excludes [ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns from `SELECT *` results. When you query through `MooseClient.query.execute`, Moose sets `asterisk_include_alias_columns` and `asterisk_include_materialized_columns` per-query so that `SELECT *` returns all columns including computed ones.
 
-<Callout type="info" title="Custom SQL outside QueryClient">
-If you write custom SQL using the ClickHouse client directly (outside of `MooseClient.query`), ALIAS and MATERIALIZED columns are excluded from `SELECT *` by default (standard ClickHouse behavior). You can either name them explicitly in your SELECT clause or set `asterisk_include_alias_columns=1` and `asterisk_include_materialized_columns=1` in your query settings.
+<Callout type="warning" title="Complex queries with SELECT *">
+Because these settings apply per-query on `execute`, any `SELECT *` within your query will include computed columns. If you have complex SQL where the extra columns could affect column ordering or subquery results, name your columns explicitly in the `SELECT` clause instead of relying on `*`.
 </Callout>
 
 ## Common Pitfalls
