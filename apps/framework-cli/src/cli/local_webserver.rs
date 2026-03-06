@@ -1410,7 +1410,9 @@ fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Full::new(Bytes::from("Not Found")))
+        .body(Full::new(Bytes::from(
+            "MooseStack: 404 Not Found\nTo see available routes, run: `moose ls` or view Fiveonefour dashboard",
+        )))
 }
 
 async fn to_reader(
