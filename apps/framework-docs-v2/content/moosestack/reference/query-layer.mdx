@@ -34,8 +34,8 @@ const visitsModel = defineQueryModel({
   },
 
   metrics: {
-    totalVisits: { agg: sql.fragment`count(*)`, as: "total_visits", description: "Total number of visits" },
-    totalRevenue: { agg: sql.fragment`sum(${VisitsTable.columns.amount})`, as: "total_revenue", description: "Sum of visit revenue" },
+    totalVisits: { agg: count(), as: "total_visits", description: "Total number of visits" },
+    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue", description: "Sum of visit revenue" },
   },
 
   filters: {
