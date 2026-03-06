@@ -55,6 +55,7 @@ This week Moose adds ALIAS column support for computed-on-read fields in ClickHo
 ### Bug Fixes
 
 - Fix `moose add` command to validate App Router directory structure and properly resolve target paths, preventing errors when pointing at non-existent directories or Pages Router projects. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
+- Fix CLI startup and config handling when `~/.moose/config.toml` or shell configuration files are read-only or externally managed (e.g. Nix environments). The CLI now warns and continues with defaults instead of panicking, and surfaces init/read failures cleanly. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
 
 ## Fiveonefour Hosting
 
