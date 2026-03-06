@@ -43,15 +43,17 @@ Ensure all of these are active before starting work.
 | `app/index.ts` | **Barrel export file — all primitives (tables, streams, pipelines, APIs, views, workflows) must be exported here or MooseStack won't discover them** |
 | `moose.config.toml` | Port and service configuration |
 
-## Common Tasks
+## Core Primitives
 
-### Adding a data model
+These are the building blocks you'll use most. Detailed examples below; for all other primitives see the [Documentation](#documentation) links.
 
-MooseStack's `IngestPipeline` bundles a table, stream, and ingest API from a single interface:
+### OlapTable
+
+Define ClickHouse tables with type-safe schemas. `orderByFields` controls the ClickHouse primary key — put your most-filtered columns first.
 
 ```typescript
-// app/ingest/models.ts
-import { IngestPipeline, Key, DateTime } from "@514labs/moose-lib";
+// app/models/pageViews.ts
+import { OlapTable, Key, DateTime } from "@514labs/moose-lib";
 
 export interface PageView {
   viewId: Key<string>;
@@ -61,134 +63,110 @@ export interface PageView {
   durationMs: number;
 }
 
-export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
-  table: true,    // Persist in ClickHouse
-  stream: true,   // Buffer for transforms
-  ingestApi: true, // POST /ingest/PageView
+export const PageViewTable = new OlapTable<PageView>("PageView", {
+  orderByFields: ["userId", "timestamp"],
 });
 ```
 
-Then add the export to `app/index.ts`:
+Then export from `app/index.ts`:
 
 ```typescript
-export * from "./ingest/models";
+export * from "./models/pageViews";
 ```
 
-For more control, use individual primitives (`OlapTable`, `Stream`, `IngestApi`) instead of `IngestPipeline`. See `moose docs moosestack/olap/model-table` for advanced table configuration (engines, indexes, projections).
+Use the ClickHouse Best Practices Skill to choose the right `orderByFields` for the user's query patterns. For advanced configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
 
-### Adding a transform
+### MaterializedView
 
-Wire a transform between two streams to process data in flight:
-
-```typescript
-// app/ingest/transforms.ts
-import { SourcePipeline, DestPipeline, SourceType, DestType } from "./models";
-
-SourcePipeline.stream!.addTransform(
-  DestPipeline.stream!,
-  async (source: SourceType): Promise<DestType> => {
-    return {
-      // ... transform fields
-    };
-  },
-);
-```
-
-Then add the export to `app/index.ts`:
+Pre-compute and store aggregated query results in ClickHouse. Runs automatically as data arrives — no cron jobs needed.
 
 ```typescript
-export * from "./ingest/transforms";
-```
-
-### Adding a materialized view
-
-Pre-aggregate data in ClickHouse for fast queries:
-
-```typescript
-// app/views/myView.ts
+// app/views/pageViewStats.ts
 import { MaterializedView, sql } from "@514labs/moose-lib";
-import { MyPipeline } from "../ingest/models";
+import { PageViewTable } from "../models/pageViews";
 
-const table = MyPipeline.table!;
-
-export const MyMV = new MaterializedView<MyAggregated>({
-  tableName: "MyAggregated",
-  materializedViewName: "MyAggregated_MV",
-  orderByFields: ["groupingField"],
-  selectStatement: sql.statement`SELECT ... FROM ${table} GROUP BY ...`,
-  selectTables: [table],
-});
-```
-
-### Adding an API endpoint
-
-Use the `Api` primitive for typed consumption APIs:
-
-```typescript
-// app/apis/myApi.ts
-import { Api } from "@514labs/moose-lib";
-
-interface QueryParams {
-  limit?: number;
+interface PageViewStats {
+  day: number;
+  totalViews: number;
+  uniqueUsers: number;
 }
 
-interface ResponseRow {
-  name: string;
-  count: number;
-}
-
-export const MyApi = new Api<QueryParams, ResponseRow[]>(
-  "my-endpoint",
-  async ({ limit = 10 }, { client, sql }) => {
-    const query = sql.statement`
-      SELECT name, count() as count
-      FROM MyTable
-      ORDER BY count DESC
-      LIMIT ${limit}
-    `;
-    const data = await client.query.execute<ResponseRow>(query);
-    return await data.json();
-  },
-);
+export const PageViewStatsMV = new MaterializedView<PageViewStats>({
+  tableName: "PageViewStats",
+  materializedViewName: "PageViewStats_MV",
+  orderByFields: ["day"],
+  selectStatement: sql.statement`
+    SELECT
+      toDayOfMonth(${PageViewTable.columns.timestamp}) as day,
+      count(${PageViewTable.columns.viewId}) as totalViews,
+      uniqExact(${PageViewTable.columns.userId}) as uniqueUsers
+    FROM ${PageViewTable}
+    GROUP BY day
+  `,
+  selectTables: [PageViewTable],
+});
 ```
 
-Key patterns:
-
-- Use `sql.statement` for complete SQL queries and `sql.fragment` for reusable SQL expressions (prevents injection)
-- Use `currentDatabase()` in SQL instead of hardcoding the database name
-- Export the `Api` from the file and re-export from `app/index.ts`
-
-### Adding a workflow
-
-Use workflows for scheduled or multi-step data processing:
+Then export from `app/index.ts`:
 
 ```typescript
-// app/workflows/myWorkflow.ts
-import { Task, Workflow } from "@514labs/moose-lib";
+export * from "./views/pageViewStats";
+```
 
-const myTask = new Task<null, number>("myTask", {
-  run: async () => {
-    // ... do work
-    return 42;
+### Semantic Layer (Query Models)
+
+Define a single query model that auto-projects into REST APIs, AI SDK tools, and MCP server tools. This is the primary way to expose data for querying.
+
+```typescript
+// app/queries/pageViewMetrics.ts
+import { defineQueryModel, timeDimensions, sql } from "@514labs/moose-lib";
+import { PageViewStatsMV } from "../views/pageViewStats";
+
+export const pageViewMetrics = defineQueryModel(PageViewStatsMV.targetTable, {
+  dimensions: {
+    ...timeDimensions(PageViewStatsMV.targetTable.columns.day),
   },
-  retries: 3,
-  timeout: "30s",
-});
-
-export const myWorkflow = new Workflow("myWorkflow", {
-  startingTask: myTask,
-  retries: 3,
-  timeout: "30s",
-  // schedule: "@every 5m",  // Uncomment to run on a schedule
+  metrics: {
+    totalViews: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.totalViews})`,
+    uniqueUsers: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.uniqueUsers})`,
+  },
+  filters: {
+    day: { operators: ["eq", "gte", "lte"] },
+  },
+  defaults: {
+    dimensions: ["day"],
+    metrics: ["totalViews"],
+    orderBy: { field: "day", direction: "DESC" },
+    limit: 30,
+  },
 });
 ```
+
+Then export from `app/index.ts`:
+
+```typescript
+export * from "./queries/pageViewMetrics";
+```
+
+Use `buildQuery` for REST APIs, `createModelTool` for AI SDK, or `registerModelTools` for MCP servers — all from the same model definition.
+
+## Other Primitives
+
+| Primitive | Use for | Docs |
+| --- | --- | --- |
+| `IngestPipeline` | Bundle table + stream + ingest API in one declaration | [Ingestion](https://docs.fiveonefour.com/moosestack/ingestion) |
+| `Stream` | Standalone streaming topics, transforms, consumers | [Streaming](https://docs.fiveonefour.com/moosestack/streaming) |
+| `IngestApi` | POST endpoints that validate and route to streams/tables | [Ingest API](https://docs.fiveonefour.com/moosestack/apis/ingest-api) |
+| `Api` | Typed GET endpoints for analytics queries | [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api) |
+| `Workflow` / `Task` | Scheduled or multi-step data processing | [Workflows](https://docs.fiveonefour.com/moosestack/workflows) |
+| `WebApp` | BYO Express/Fastify/Koa for custom endpoints | [App Frameworks](https://docs.fiveonefour.com/moosestack/app-api-frameworks) |
 
 ### Do / Don't
 
 - **DO** export new primitives from `app/index.ts`. **DON'T** forget to export — MooseStack won't discover unexported primitives.
 - **DO** use `orderByFields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
-- **DO** use `IngestPipeline` or `OlapTable` + `Stream` + `IngestApi` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use MooseStack primitives for data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** use `sql.statement` / `sql.fragment` for queries. **DON'T** use string interpolation for SQL — it's vulnerable to injection.
 - **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
 
@@ -229,8 +207,10 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 - [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling)
 - [OlapTable](https://docs.fiveonefour.com/moosestack/olap/model-table)
 - [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/materialized-view)
+- [Semantic Layer](https://docs.fiveonefour.com/moosestack/apis/semantic-layer)
 - [Streams & Transforms](https://docs.fiveonefour.com/moosestack/streaming)
-- [Consumption APIs](https://docs.fiveonefour.com/moosestack/consumption-apis)
+- [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api)
 - [Workflows](https://docs.fiveonefour.com/moosestack/workflows)
+- [App API Frameworks](https://docs.fiveonefour.com/moosestack/app-api-frameworks)
 - [MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp)
 - [Data Types](https://docs.fiveonefour.com/moosestack/data-types)
