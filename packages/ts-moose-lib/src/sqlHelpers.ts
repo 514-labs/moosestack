@@ -240,7 +240,10 @@ export class Sql {
 
 sql.join = function (fragments: Sql[], separator?: string): Sql {
   if (fragments.length === 0) return new Sql([""], [], true);
-  if (fragments.length === 1) return fragments[0];
+  if (fragments.length === 1) {
+    const frag = fragments[0];
+    return new Sql(frag.strings, frag.values, true);
+  }
   const sep = separator ?? ", ";
   const normalized = sep.includes(" ") ? sep : ` ${sep} `;
   const strings = ["", ...Array(fragments.length - 1).fill(normalized), ""];

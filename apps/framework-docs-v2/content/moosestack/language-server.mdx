@@ -38,7 +38,7 @@ Experimental: TypeScript only.
 The language server uses `sql.statement` and `sql.fragment` to determine how to validate your SQL:
 
 - **`sql.statement`** — validated as complete SQL (must be a valid standalone query)
-- **`sql.fragment`** — skipped for statement-level validation (partial SQL like conditions or expressions)
+- **`sql.fragment`** — skipped for statement-level validation (partial SQL-like conditions or expressions)
 - **`sql`** *(deprecated)* — treated as a statement by default
 
 Using the explicit tags gives you accurate diagnostics without false positives on SQL fragments:

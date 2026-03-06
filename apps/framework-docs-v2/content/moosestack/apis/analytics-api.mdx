@@ -815,7 +815,7 @@ const queryHandler = async ({ sortBy = "id", fields = "id,name" }: QueryParams, 
   // Build the query by selecting each column individually
   const query = sql.statement`
     SELECT
-      ${fieldList.map(field => sql.fragment`${CH.column(field)}`).join(', ')}
+      ${sql.join(fieldList.map(field => sql.fragment`${CH.column(field)}`), ",")}
     FROM ${userTable}
     ORDER BY ${CH.column(sortBy)}
   `;

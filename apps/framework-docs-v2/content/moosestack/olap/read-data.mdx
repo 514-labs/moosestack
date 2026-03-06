@@ -293,7 +293,9 @@ const filterQuery = sql.statement`
 // Using IN clauses
 const inQuery = sql.statement`
   SELECT * FROM ${UserTable}
-  WHERE ${UserTable.columns.id} IN (${userIds})
+  WHERE ${UserTable.columns.id} IN (${sql.join(
+    userIds.map((id) => sql.fragment`${id}`),
+  )})
 `;
 
 // Using BETWEEN
@@ -442,7 +444,7 @@ const buildConditionalQuery = (filters: FilterParams) => {
   let query = sql.fragment`SELECT * FROM ${UserTable}`;
 
   if (conditions.length > 0) {
-    query = sql.fragment`${query} WHERE ${conditions.join(' AND ')}`;
+    query = sql.fragment`${query} WHERE ${sql.join(conditions, "AND")}`;
   }
 
   return sql.statement`${query} ORDER BY created_at DESC`;
