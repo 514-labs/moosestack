@@ -104,6 +104,67 @@ user_events_table = OlapTable[UserEvents](
 - `JSONExtractString(log_blob, 'level')` - Extract specific field
 - `arrayMap(kv -> cityHash64(...), JSONExtractKeysAndValuesRaw(...))` - Hash all key-value pairs
 
+## Insert Behavior
+
+MATERIALIZED columns are computed by ClickHouse at insert time — you should **never** supply values for them. Moose handles this automatically across all ingest paths (streams, HTTP ingest, and direct `OlapTable.insert()`).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Moose exports an `Insertable<T>` utility type that derives the insert-safe shape of your model:
+- **MATERIALIZED columns are omitted** — they don't appear in the type at all
+- **DEFAULT columns become optional** — ClickHouse fills them when absent
+
+```ts filename="InsertableExample.ts" copy
+import { OlapTable, Key, DateTime, ClickHouseMaterialized, ClickHouseDefault, Insertable } from "@514labs/moose-lib";
+
+interface UserEvents {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  eventDate: Date & ClickHouseMaterialized<"toDate(timestamp)">;
+  createdAt: Date & ClickHouseDefault<"now()">;
+}
+
+// Insertable<UserEvents> ≡ { id: string; timestamp: Date; userId: string; createdAt?: Date }
+const table = new OlapTable<UserEvents>("UserEvents");
+await table.insert([{ id: "1", timestamp: new Date(), userId: "u1" }]);
+```
+
+<Callout type="info" title="WithDefault and Insertable">
+`Insertable<T>` detects `ClickHouseDefault<E>` (branded intersection) but not `WithDefault<T, E>`, which erases to the base type at the type level. If you use `WithDefault`, mark the field as optional (`field?: Type & WithDefault<...>`) yourself.
+</Callout>
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+In Python, fields annotated with `ClickHouseMaterialized` are automatically optional at construction time — Pydantic will accept `None` (or omission) and default the field to `None`. ClickHouse computes the real value at insert time.
+
+```python filename="materialized_insert.py" copy
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseMaterialized
+from pydantic import BaseModel
+from typing import Annotated
+from datetime import datetime, date
+
+class UserEvents(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    event_date: Annotated[date, ClickHouseMaterialized("toDate(timestamp)")]
+
+# event_date can be omitted — Pydantic defaults it to None
+event = UserEvents(id="1", timestamp=datetime.now(), user_id="u1")
+
+table = OlapTable[UserEvents]("UserEvents", OlapConfig(order_by_fields=["id"]))
+table.insert([{"id": "1", "timestamp": datetime.now(), "user_id": "u1"}])
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Query Behavior
+
+When you query data through Moose's `QueryClient` (via `MooseClient.query.execute`), MATERIALIZED columns are automatically included in `SELECT *` results. This means your typed query results will contain the pre-computed MATERIALIZED values without needing to name them explicitly.
+
+If you write custom SQL outside of `QueryClient`, MATERIALIZED columns are excluded from `SELECT *` by default (standard ClickHouse behavior). Name them explicitly or set `asterisk_include_materialized_columns=1` in your query settings.
+
 ## Important Notes
 
 <Callout type="info" title="Column Names in Expressions">
