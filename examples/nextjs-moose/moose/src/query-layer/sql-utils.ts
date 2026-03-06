@@ -21,7 +21,7 @@ import type { SqlValue, ColRef } from "./types";
  * WARNING: Only use with trusted input - SQL injection risk.
  */
 export function raw(text: string): Sql {
-  return new Sql([text], []);
+  return sql.raw(text);
 }
 
 /** Empty SQL fragment - useful as a no-op. */
