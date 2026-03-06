@@ -28,7 +28,7 @@ import { events } from "./Events";
 
 export const activeUserEvents = new View(
   "active_user_events",
-  sql`
+  sql.statement`
     SELECT
       ${events.columns.id}    AS event_id,
       ${users.columns.id}     AS user_id,
@@ -73,7 +73,7 @@ active_user_events = View(
 // new View(name, selectStatement, baseTables)
 new View(
   "view_name",
-  sql`SELECT ... FROM ${someTable}`,
+  sql.statement`SELECT ... FROM ${someTable}`,
   [someTable, /* other tables or views */],
 );
 ```

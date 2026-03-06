@@ -29,7 +29,7 @@ import { UserTable } from "./tables/UserTable";
 const client = new MooseClient();
 
 // Query existing table
-const query = sql`
+const query = sql.statement`
   SELECT id, name, email
   FROM ${UserTable}
   WHERE status = 'active'
@@ -103,7 +103,7 @@ import { MooseClient, sql } from "@514labs/moose-lib";
 const client = new MooseClient();
 
 // Query existing materialized view
-const query = sql`
+const query = sql.statement`
   SELECT user_id, total_orders, average_order_value
   FROM user_stats_view
   WHERE total_orders > 10
@@ -172,8 +172,8 @@ import { UserTable, OrderTable } from "./tables";
 
 // Reference table columns with type safety
 const cols = UserTable.columns;
-const query = sql`
-  SELECT 
+const query = sql.statement`
+  SELECT
     ${cols.id},
     ${cols.name},
     ${cols.email}
@@ -182,8 +182,8 @@ const query = sql`
 `;
 
 // Multiple table references
-const joinQuery = sql`
-  SELECT 
+const joinQuery = sql.statement`
+  SELECT
     ${UserTable.columns.id},
     ${UserTable.columns.name},
     ${OrderTable.columns.order_value}
@@ -199,8 +199,8 @@ import { sql } from "@514labs/moose-lib";
 import { ExampleMaterializedView } from "./materialized-views";
 
 
-const query = sql`
-  SELECT 
+const query = sql.statement`
+  SELECT
     ${ExampleMaterializedView.targetTable.columns.id},
     ${ExampleMaterializedView.targetTable.columns.name},
     ${ExampleMaterializedView.targetTable.columns.email}
@@ -220,7 +220,7 @@ When querying this with Moose, you can just reference the column name in the `sq
 import { sql } from "@514labs/moose-lib";
 import { ExampleMaterializedView } from "./materialized-views";
 
-const query = sql`
+const query = sql.statement`
   SELECT ${ExampleMaterializedView.targetTable.columns.amount}
   FROM ${ExampleMaterializedView.targetTable}
 `;
@@ -282,7 +282,7 @@ rows = client.query.execute_raw(query, {"table": UserTable.name, "status": "acti
 import { sql } from "@514labs/moose-lib";
 
 // Multiple WHERE conditions
-const filterQuery = sql`
+const filterQuery = sql.statement`
   SELECT ${UserTable.columns.id}, ${UserTable.columns.name}
   FROM ${UserTable}
   WHERE ${UserTable.columns.status} = 'active'
@@ -291,13 +291,13 @@ const filterQuery = sql`
 `;
 
 // Using IN clauses
-const inQuery = sql`
+const inQuery = sql.statement`
   SELECT * FROM ${UserTable}
   WHERE ${UserTable.columns.id} IN (${userIds})
 `;
 
 // Using BETWEEN
-const rangeQuery = sql`
+const rangeQuery = sql.statement`
   SELECT * FROM ${UserTable}
   WHERE ${UserTable.columns.age} BETWEEN ${minAge} AND ${maxAge}
 `;
