@@ -1,0 +1,347 @@
+diff --git a/apps/framework-cli/src/framework/core/infrastructure/topic.rs b/apps/framework-cli/src/framework/core/infrastructure/topic.rs
+index 5568e3d8..a21ac72c 100644
+--- a/apps/framework-cli/src/framework/core/infrastructure/topic.rs
++++ b/apps/framework-cli/src/framework/core/infrastructure/topic.rs
+@@ -7,6 +7,8 @@ use crate::framework::{
+ };
+ use crate::proto;
+ use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
++use crate::proto::infrastructure_map::SchemaRegistry as ProtoSchemaRegistry;
++use crate::proto::infrastructure_map::SubjectVersion as ProtoSubjectVersion;
+ use protobuf::MessageField;
+ use serde::{Deserialize, Serialize};
+ use std::time::Duration;
+@@ -34,6 +36,25 @@ pub struct Topic {
+ 
+     #[serde(default = "LifeCycle::default_for_deserialization")]
+     pub life_cycle: LifeCycle,
++
++    /// Optional minimal Schema Registry configuration.
++    #[serde(default)]
++    pub schema_registry: Option<KafkaSchema>,
++}
++
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++pub struct KafkaSchema {
++    /// Encoding/wire format (e.g. "JSON", "AVRO", "PROTOBUF")
++    pub kind: String,
++    /// Reference sum type
++    pub reference: SchemaResgistryReference,
++}
++
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++pub enum SchemaResgistryReference {
++    Id(u8),
++    Latest { subject_name: String },
++    SubjectVersion { name: String, version: u8 },
+ }
+ 
+ impl Topic {
+@@ -52,6 +73,7 @@ impl Topic {
+             },
+             metadata: None,
+             life_cycle: LifeCycle::FullyManaged,
++            schema_registry: None,
+         }
+     }
+ 
+@@ -113,6 +135,11 @@ impl Topic {
+                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
+                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
+             },
++            schema_registry: self
++                .schema_registry
++                .as_ref()
++                .map(kafka_schema_to_proto)
++                .into(),
+             special_fields: Default::default(),
+         }
+     }
+@@ -145,6 +172,62 @@ impl Topic {
+                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
+                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
+             },
++            schema_registry: proto
++                .schema_registry
++                .into_option()
++                .and_then(proto_to_kafka_schema),
++        }
++    }
++}
++
++fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
++    let mut sr = ProtoSchemaRegistry::new();
++    sr.encoding = match s.kind.as_str() {
++        "JSON" => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
++        "AVRO" => crate::proto::infrastructure_map::schema_registry::Encoding::AVRO.into(),
++        "PROTOBUF" => crate::proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into(),
++        _ => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
++    };
++    use crate::proto::infrastructure_map::schema_registry::SchemaRef as ProtoSchemaRef;
++    sr.schema_ref = Some(match &s.reference {
++        SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id as u32),
++        SchemaResgistryReference::Latest { subject_name } => {
++            ProtoSchemaRef::Subject(subject_name.clone())
++        }
++        SchemaResgistryReference::SubjectVersion { name, version } => {
++            let mut sv = ProtoSubjectVersion::new();
++            sv.subject = name.clone();
++            sv.version = *version as u32;
++            ProtoSchemaRef::SubjectVersion(sv)
+         }
++    });
++    sr
++}
++
++fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
++    use crate::proto::infrastructure_map::schema_registry::Encoding as ProtoEncoding;
++    let kind = match sr.encoding.enum_value_or_default() {
++        ProtoEncoding::JSON => "JSON",
++        ProtoEncoding::AVRO => "AVRO",
++        ProtoEncoding::PROTOBUF => "PROTOBUF",
+     }
++    .to_string();
++
++    let r = sr.schema_ref?;
++    let reference = match r {
++        crate::proto::infrastructure_map::schema_registry::SchemaRef::SchemaId(id) => {
++            SchemaResgistryReference::Id(id as u8)
++        }
++        crate::proto::infrastructure_map::schema_registry::SchemaRef::Subject(s) => {
++            SchemaResgistryReference::Latest { subject_name: s }
++        }
++        crate::proto::infrastructure_map::schema_registry::SchemaRef::SubjectVersion(sv) => {
++            SchemaResgistryReference::SubjectVersion {
++                name: sv.subject,
++                version: sv.version as u8,
++            }
++        }
++    };
++
++    Some(KafkaSchema { kind, reference })
+ }
+diff --git a/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs b/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
+index 001234d2..f3a66bbc 100644
+--- a/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
++++ b/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
+@@ -60,7 +60,7 @@ use super::{
+         orchestration_worker::OrchestrationWorker,
+         sql_resource::SqlResource,
+         table::{Column, Metadata, Table},
+-        topic::{Topic, DEFAULT_MAX_MESSAGE_BYTES},
++        topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
+         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
+         view::View,
+     },
+@@ -179,6 +179,9 @@ struct PartialTopic {
+     pub consumers: Vec<Consumer>,
+     pub metadata: Option<Metadata>,
+     pub life_cycle: Option<LifeCycle>,
++    /// Optional minimal Schema Registry config passthrough from TS/Py
++    #[serde(default)]
++    pub schema_registry: Option<KafkaSchema>,
+ }
+ 
+ /// Specifies the type of destination for write operations.
+@@ -605,6 +608,7 @@ impl PartialInfrastructureMap {
+                     },
+                     metadata: partial_topic.metadata.clone(),
+                     life_cycle: partial_topic.life_cycle.unwrap_or(LifeCycle::FullyManaged),
++                    schema_registry: partial_topic.schema_registry.clone(),
+                 };
+                 (topic.id(), topic)
+             })
+diff --git a/packages/protobuf/infrastructure_map.proto b/packages/protobuf/infrastructure_map.proto
+index 0b6aa3c5..fd3c048f 100644
+--- a/packages/protobuf/infrastructure_map.proto
++++ b/packages/protobuf/infrastructure_map.proto
+@@ -37,6 +37,32 @@ message Topic {
+   optional int32 max_message_bytes = 7;
+   Metadata metadata = 8;
+   LifeCycle life_cycle = 9;
++  // Optional minimal Schema Registry configuration
++  optional SchemaRegistry schema_registry = 10;
++}
++
++// Encodes minimal schema reference used for Schema Registry integration
++message SchemaRegistry {
++  enum Encoding {
++    JSON = 0;
++    AVRO = 1;
++    PROTOBUF = 2;
++  }
++  // Encoding/wire format; avoid reserved names in generators
++  Encoding encoding = 1;
++  oneof schema_ref {
++    // Use a concrete schema ID
++    uint32 schema_id = 2;
++    // Use subject name (latest version)
++    string subject = 3;
++    // Use subject name with explicit version
++    SubjectVersion subject_version = 4;
++  }
++}
++
++message SubjectVersion {
++  string subject = 1;
++  uint32 version = 2;
+ }
+ 
+ message ApiEndpoint {
+diff --git a/packages/py-moose-lib/moose_lib/dmv2/stream.py b/packages/py-moose-lib/moose_lib/dmv2/stream.py
+index 25eaca25..71019377 100644
+--- a/packages/py-moose-lib/moose_lib/dmv2/stream.py
++++ b/packages/py-moose-lib/moose_lib/dmv2/stream.py
+@@ -8,6 +8,36 @@ import dataclasses
+ import datetime
+ import json
+ from typing import Any, Optional, Callable, Union, Literal, Generic
++class LatestRef(BaseModel):
++    subject_name: str
++
++
++class SubjectVersionRef(BaseModel):
++    name: str
++    version: int
++
++
++class SchemaRegistryReference(BaseModel):
++    Id: Optional[int] = None
++    Latest: Optional[LatestRef] = None
++    SubjectVersion: Optional[SubjectVersionRef] = None
++
++    def model_post_init(self, __context: Any) -> None:
++        present = sum(
++            1
++            for v in (self.Id, self.Latest, self.SubjectVersion)
++            if v is not None
++        )
++        if present != 1:
++            raise ValueError(
++                "Exactly one of Id, Latest, SubjectVersion must be provided"
++            )
++
++
++class KafkaSchema(BaseModel):
++    kind: Literal["JSON", "AVRO", "PROTOBUF"]
++    reference: SchemaRegistryReference
++
+ from pydantic import BaseModel, ConfigDict, AliasGenerator
+ from pydantic.alias_generators import to_camel
+ from kafka import KafkaProducer
+@@ -41,6 +71,9 @@ class StreamConfig(BaseModel):
+     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
+     # allow DeadLetterQueue
+     model_config = ConfigDict(arbitrary_types_allowed=True)
++    # Optional minimal Schema Registry configuration
++    # Matches Rust shape
++    schema_registry: Optional[KafkaSchema] = None
+ 
+ 
+ class TransformConfig(BaseModel):
+diff --git a/packages/py-moose-lib/moose_lib/internal.py b/packages/py-moose-lib/moose_lib/internal.py
+index 359f9053..5bcde23f 100644
+--- a/packages/py-moose-lib/moose_lib/internal.py
++++ b/packages/py-moose-lib/moose_lib/internal.py
+@@ -27,6 +27,12 @@ from moose_lib.dmv2 import (
+ from pydantic.alias_generators import to_camel
+ from pydantic.json_schema import JsonSchemaValue
+ 
++try:
++    # Import for type hints without creating runtime cycles
++    from moose_lib.dmv2.stream import KafkaSchema as _KafkaSchema
++except Exception:
++    _KafkaSchema = Any  # fallback for type checker/runtime if import cycle
++
+ model_config = ConfigDict(alias_generator=AliasGenerator(
+     serialization_alias=to_camel,
+ ))
+@@ -163,6 +169,8 @@ class TopicConfig(BaseModel):
+     consumers: List[Consumer]
+     metadata: Optional[dict] = None
+     life_cycle: Optional[str] = None
++    # Optional minimal Schema Registry config; typed to KafkaSchema
++    schema_registry: Optional[_KafkaSchema] = None
+ 
+ 
+ class IngestApiConfig(BaseModel):
+@@ -477,6 +485,7 @@ def to_infra_map() -> dict:
+             consumers=consumers,
+             metadata=getattr(stream, "metadata", None),
+             life_cycle=stream.config.life_cycle.value if stream.config.life_cycle else None,
++            schema_registry=getattr(stream.config, "schema_registry", None),
+         )
+ 
+     for name, api in get_ingest_apis().items():
+diff --git a/packages/ts-moose-lib/src/dmv2/internal.ts b/packages/ts-moose-lib/src/dmv2/internal.ts
+index 32a7b55f..aae0d039 100644
+--- a/packages/ts-moose-lib/src/dmv2/internal.ts
++++ b/packages/ts-moose-lib/src/dmv2/internal.ts
+@@ -127,6 +127,16 @@ interface Consumer {
+ /**
+  * JSON representation of a Stream/Topic configuration.
+  */
++type SchemaRegistryReferenceJson =
++  | { Id: number }
++  | { Latest: { subject_name: string } }
++  | { SubjectVersion: { name: string; version: number } };
++
++interface SchemaRegistryJson {
++  kind: "JSON" | "AVRO" | "PROTOBUF";
++  reference: SchemaRegistryReferenceJson;
++}
++
+ interface StreamJson {
+   /** The name of the stream/topic. */
+   name: string;
+@@ -152,6 +162,8 @@ interface StreamJson {
+   metadata?: { description?: string };
+   /** Lifecycle management setting for the stream. */
+   lifeCycle?: string;
++  /** Optional minimal Schema Registry config */
++  schemaRegistry?: SchemaRegistryJson;
+ }
+ /**
+  * JSON representation of an Ingest API configuration.
+@@ -383,6 +395,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
+       consumers,
+       metadata,
+       lifeCycle: stream.config.lifeCycle,
++      schemaRegistry: (stream.config as any).schemaRegistry,
+     };
+   });
+ 
+diff --git a/packages/ts-moose-lib/src/dmv2/sdk/stream.ts b/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
+index 9e24be06..83d93d4c 100644
+--- a/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
++++ b/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
+@@ -127,6 +127,19 @@ export interface ConsumerConfig<T> {
+   deadLetterQueue?: DeadLetterQueue<T> | null;
+ }
+ 
++// Minimal Schema Registry configuration
++export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
++
++export type SchemaRegistryReference =
++  | { Id: number }
++  | { Latest: { subject_name: string } }
++  | { SubjectVersion: { name: string; version: number } };
++
++export interface SchemaRegistryConfig {
++  kind: SchemaRegistryEncoding;
++  reference: SchemaRegistryReference;
++}
++
+ /**
+  * Represents a message routed to a specific destination stream.
+  * Used internally by the multi-transform functionality to specify
+@@ -178,6 +191,9 @@ export interface StreamConfig<T> {
+   lifeCycle?: LifeCycle;
+ 
+   defaultDeadLetterQueue?: DeadLetterQueue<T>;
++
++  /** Optional Schema Registry configuration for this stream */
++  schemaRegistry?: SchemaRegistryConfig;
+ }
+ 
+ /**

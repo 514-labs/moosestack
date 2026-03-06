@@ -1,0 +1,1903 @@
+diff --git a/apps/framework-cli/Cargo.toml b/apps/framework-cli/Cargo.toml
+index 2c37ee8c..3cec0fd4 100644
+--- a/apps/framework-cli/Cargo.toml
++++ b/apps/framework-cli/Cargo.toml
+@@ -109,6 +109,8 @@ prost-types = "0.13.0"
+ tonic = { version = "0.12", features = ["transport", "prost", "codegen"] }
+ tempfile = "3.15.0"
+ prost-wkt-types = "0.6.0"
++globset = "0.4"
++schema-registry-client = "0.4.1"
+ 
+ keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
+ 
+diff --git a/apps/framework-cli/src/cli.rs b/apps/framework-cli/src/cli.rs
+index 3008b9e4..b44e6baf 100644
+--- a/apps/framework-cli/src/cli.rs
++++ b/apps/framework-cli/src/cli.rs
+@@ -11,7 +11,10 @@ mod watcher;
+ use super::metrics::Metrics;
+ use crate::utilities::docker::DockerClient;
+ use clap::Parser;
+-use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
++use commands::{
++    Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
++    WorkflowCommands,
++};
+ use config::ConfigError;
+ use display::with_spinner_completion;
+ use log::{debug, info, warn};
+@@ -20,6 +23,7 @@ use routines::auth::generate_hash_token;
+ use routines::build::build_package;
+ use routines::clean::clean_project;
+ use routines::docker_packager::{build_dockerfile, create_dockerfile};
++use routines::kafka_pull::write_external_topics;
+ use routines::metrics_console::run_console;
+ use routines::peek::peek;
+ use routines::ps::show_processes;
+@@ -61,6 +65,7 @@ use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for
+ use crate::cli::routines::ls::ls_dmv2;
+ use crate::cli::routines::templates::create_project_from_template;
+ use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
++use crate::framework::languages::SupportedLanguages;
+ use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
+ use anyhow::Result;
+ use std::time::Duration;
+@@ -1160,6 +1165,27 @@ pub async fn top_command_handler(
+             let project = load_project()?;
+             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
+         }
++        Commands::Kafka(KafkaArgs { command }) => match command {
++            KafkaCommands::Pull {
++                bootstrap,
++                path,
++                include,
++                exclude,
++                schema_registry,
++            } => {
++                let project = load_project()?;
++                let path = path.as_deref().unwrap_or(match project.language {
++                    SupportedLanguages::Typescript => "app/external-topics",
++                    SupportedLanguages::Python => "app/external_topics",
++                });
++                write_external_topics(&project, bootstrap, path, include, exclude, schema_registry)
++                    .await?;
++                Ok(RoutineSuccess::success(Message::new(
++                    "Kafka".to_string(),
++                    "external topics written".to_string(),
++                )))
++            }
++        },
+     }
+ }
+ 
+diff --git a/apps/framework-cli/src/cli/commands.rs b/apps/framework-cli/src/cli/commands.rs
+index 685da465..b5f1d9f0 100644
+--- a/apps/framework-cli/src/cli/commands.rs
++++ b/apps/framework-cli/src/cli/commands.rs
+@@ -170,6 +170,8 @@ pub enum Commands {
+         #[arg(long)]
+         rows: Option<u64>,
+     },
++    /// Manage Kafka-related operations
++    Kafka(KafkaArgs),
+ }
+ 
+ #[derive(Debug, Args)]
+@@ -349,3 +351,37 @@ pub enum DbCommands {
+         file_path: Option<String>,
+     },
+ }
++
++#[derive(Debug, Args)]
++#[command(arg_required_else_help = true)]
++pub struct KafkaArgs {
++    #[command(subcommand)]
++    pub command: KafkaCommands,
++}
++
++#[derive(Debug, Subcommand)]
++pub enum KafkaCommands {
++    /// Discover topics and generate external stream declarations;
++    /// optionally fetch JSON Schemas (Avro support coming soon)
++    /// from Schema Registry to emit typed models.
++    Pull {
++        /// Kafka bootstrap servers, e.g. localhost:9092
++        bootstrap: String,
++
++        /// Output path for schemas
++        #[arg(long, value_name = "PATH")]
++        path: Option<String>,
++
++        /// Include pattern (glob). Defaults to '*'
++        #[arg(long, default_value = "*")]
++        include: String,
++
++        /// Exclude pattern (glob). Defaults to '{__consumer_offsets,_schemas}'
++        #[arg(long, default_value = "{__consumer_offsets,_schemas}")]
++        exclude: String,
++
++        /// Schema Registry base URL (e.g. http://localhost:8081)
++        #[arg(long, value_name = "URL")]
++        schema_registry: Option<String>,
++    },
++}
+diff --git a/apps/framework-cli/src/cli/local_webserver.rs b/apps/framework-cli/src/cli/local_webserver.rs
+index e3a44450..c5f4b733 100644
+--- a/apps/framework-cli/src/cli/local_webserver.rs
++++ b/apps/framework-cli/src/cli/local_webserver.rs
+@@ -42,6 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
+ use crate::infrastructure::stream::kafka;
+ use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
+ 
++use crate::framework::core::infrastructure::topic::SchemaResgistryReference;
+ use crate::framework::typescript::bin::CliMessage;
+ use crate::project::{JwtConfig, Project};
+ use crate::utilities::docker::DockerClient;
+@@ -65,6 +66,9 @@ use rdkafka::error::KafkaError;
+ use rdkafka::producer::future_producer::OwnedDeliveryResult;
+ use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord};
+ use reqwest::Client;
++use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
++use schema_registry_client::rest::schema_registry_client::Client as SrClient;
++use schema_registry_client::rest::schema_registry_client::SchemaRegistryClient;
+ use serde::Serialize;
+ use serde::{Deserialize, Deserializer};
+ use serde_json::{json, Deserializer as JsonDeserializer, Value};
+@@ -75,6 +79,7 @@ use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVis
+ use hyper_util::server::graceful::GracefulShutdown;
+ use lazy_static::lazy_static;
+ use log::Level::{Debug, Trace};
++use num_traits::ToPrimitive;
+ use std::collections::{HashMap, HashSet};
+ use std::env;
+ use std::env::VarError;
+@@ -124,6 +129,56 @@ pub struct RouteMeta {
+     pub dead_letter_queue: Option<String>,
+     /// The version of the the api
+     pub version: Option<Version>,
++    /// Optional resolved Schema Registry schema ID for this route's topic (currently JSON only)
++    #[serde(default)]
++    pub schema_registry_schema_id: Option<i32>,
++}
++
++async fn resolve_schema_id_for_topic(
++    project: &Project,
++    topic: &crate::framework::core::infrastructure::topic::Topic,
++) -> Result<Option<i32>, schema_registry_client::rest::apis::Error> {
++    let sr = match &topic.schema_registry {
++        Some(sr) if sr.kind.eq_ignore_ascii_case("JSON") => sr,
++        None => return Ok(None),
++        _ => panic!("Only JSON schema allowed"),
++    };
++
++    let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
++        SchemaResgistryReference::Id(id) => return Ok(Some(*id)),
++        SchemaResgistryReference::Latest { subject_name } => (subject_name, None),
++        SchemaResgistryReference::SubjectVersion { name, version } => (name, Some(*version)),
++    };
++
++    let sr_url = project
++        .redpanda_config
++        .schema_registry_url
++        .as_deref()
++        .map(|s| s.to_string())
++        .unwrap_or_else(|| "http://localhost:8081".to_string());
++
++    let client = SchemaRegistryClient::new(SrClientConfig {
++        base_urls: vec![sr_url.to_string()],
++        ..Default::default()
++    });
++
++    let version = match explicit_version {
++        None => client
++            .get_all_versions(subject)
++            .await?
++            .into_iter()
++            .max()
++            .unwrap(),
++        Some(v) => v.to_i32().unwrap(),
++    };
++
++    Ok(Some(
++        client
++            .get_version(subject, version, false, None)
++            .await?
++            .id
++            .unwrap(),
++    ))
+ }
+ 
+ /// Configuration for the local webserver.
+@@ -1123,6 +1178,7 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
+     res_arr
+ }
+ 
++#[allow(clippy::too_many_arguments)]
+ async fn handle_json_array_body(
+     configured_producer: &ConfiguredProducer,
+     topic_name: &str,
+@@ -1131,6 +1187,7 @@ async fn handle_json_array_body(
+     req: Request<Incoming>,
+     jwt_config: &Option<JwtConfig>,
+     max_request_body_size: usize,
++    schema_registry_schema_id: Option<i32>,
+ ) -> Response<Full<Bytes>> {
+     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+     let jwt_claims = get_claims(auth_header, jwt_config);
+@@ -1222,10 +1279,25 @@ async fn handle_json_array_body(
+         );
+         return bad_json_response(e);
+     }
++    let mut records = parsed.ok().unwrap();
++    if let Some(id) = schema_registry_schema_id {
++        let id_bytes = id.to_be_bytes();
++        records = records
++            .into_iter()
++            .map(|payload| {
++                let mut out = Vec::with_capacity(1 + 4 + payload.len());
++                out.push(0x00);
++                out.extend_from_slice(&id_bytes);
++                out.extend_from_slice(&payload);
++                out
++            })
++            .collect();
++    }
++
+     let res_arr = send_to_kafka(
+         &configured_producer.producer,
+         topic_name,
+-        parsed.ok().unwrap().into_iter(),
++        records.into_iter(),
+     )
+     .await;
+ 
+@@ -1333,6 +1405,7 @@ async fn ingest_route(
+             req,
+             &jwt_config,
+             max_request_body_size,
++            route_meta.schema_registry_schema_id,
+         )
+         .await),
+         None => {
+@@ -1912,15 +1985,32 @@ impl Webserver {
+                                 let kafka_topic =
+                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
+ 
+-                                route_table.insert(
+-                                    api_endpoint.path.clone(),
+-                                    RouteMeta {
+-                                        data_model: *data_model.unwrap(),
+-                                        dead_letter_queue,
+-                                        kafka_topic_name: kafka_topic.name,
+-                                        version: api_endpoint.version,
+-                                    },
+-                                );
++                                match resolve_schema_id_for_topic(&project, topic).await {
++                                    Ok(schema_id) => {
++                                        route_table.insert(
++                                            api_endpoint.path.clone(),
++                                            RouteMeta {
++                                                data_model: *data_model.unwrap(),
++                                                dead_letter_queue,
++                                                kafka_topic_name: kafka_topic.name,
++                                                version: api_endpoint.version,
++                                                schema_registry_schema_id: schema_id,
++                                            },
++                                        );
++                                    }
++                                    Err(e) => {
++                                        show_message!(MessageType::Error, {
++                                            Message {
++                                                action: "\nFailed".to_string(),
++                                                details: format!(
++                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
++                                                    topic.name
++                                                ),
++                                            }
++                                        });
++                                        // Do not insert the route when schema resolution fails
++                                    }
++                                }
+                             }
+                             APIType::EGRESS { .. } => {
+                                 consumption_apis
+@@ -1962,15 +2052,32 @@ impl Webserver {
+                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
+ 
+                                 route_table.remove(&before.path);
+-                                route_table.insert(
+-                                    after.path.clone(),
+-                                    RouteMeta {
+-                                        data_model: *data_model.as_ref().unwrap().clone(),
+-                                        dead_letter_queue: dead_letter_queue.clone(),
+-                                        kafka_topic_name: kafka_topic.name,
+-                                        version: after.version,
+-                                    },
+-                                );
++                                match resolve_schema_id_for_topic(&project, topic).await {
++                                    Ok(schema_id) => {
++                                        route_table.insert(
++                                            after.path.clone(),
++                                            RouteMeta {
++                                                data_model: *data_model.as_ref().unwrap().clone(),
++                                                dead_letter_queue: dead_letter_queue.clone(),
++                                                kafka_topic_name: kafka_topic.name,
++                                                version: after.version,
++                                                schema_registry_schema_id: schema_id,
++                                            },
++                                        );
++                                    }
++                                    Err(e) => {
++                                        show_message!(MessageType::Error, {
++                                            Message {
++                                                action: "\nFailed".to_string(),
++                                                details: format!(
++                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
++                                                    topic.name
++                                                ),
++                                            }
++                                        });
++                                        // Do not insert the route when schema resolution fails
++                                    }
++                                }
+                             }
+                             APIType::EGRESS { .. } => {
+                                 // Nothing to do, we don't need to update the route table
+diff --git a/apps/framework-cli/src/cli/routines.rs b/apps/framework-cli/src/cli/routines.rs
+index cc83e4b1..353b623a 100644
+--- a/apps/framework-cli/src/cli/routines.rs
++++ b/apps/framework-cli/src/cli/routines.rs
+@@ -163,6 +163,7 @@ pub mod clean;
+ pub mod code_generation;
+ pub mod dev;
+ pub mod docker_packager;
++pub mod kafka_pull;
+ pub mod logs;
+ pub mod ls;
+ pub mod metrics_console;
+diff --git a/apps/framework-cli/src/cli/routines/kafka_pull.rs b/apps/framework-cli/src/cli/routines/kafka_pull.rs
+new file mode 100644
+index 00000000..d5269e97
+--- /dev/null
++++ b/apps/framework-cli/src/cli/routines/kafka_pull.rs
+@@ -0,0 +1,378 @@
++use crate::cli::display::{Message, MessageType};
++use crate::cli::routines::RoutineFailure;
++use crate::framework::languages::SupportedLanguages;
++use crate::infrastructure::stream::kafka::client::fetch_topics;
++use crate::project::Project;
++use convert_case::{Case, Casing};
++use globset::{Glob, GlobMatcher};
++use log::{info, warn};
++use schema_registry_client::rest::apis::Error as SchemaRegistryError;
++use schema_registry_client::rest::schema_registry_client::{
++    Client as SrClientTrait, SchemaRegistryClient,
++};
++use std::fs;
++use std::path::Path;
++
++fn build_matcher(s: &str) -> Result<GlobMatcher, RoutineFailure> {
++    let matcher = Glob::new(s)
++        .map_err(|e| {
++            RoutineFailure::new(
++                Message::new("Kafka".to_string(), format!("invalid glob pattern: {s}")),
++                e,
++            )
++        })?
++        .compile_matcher();
++    Ok(matcher)
++}
++
++pub async fn write_external_topics(
++    project: &Project,
++    bootstrap: &str,
++    path: &str,
++    include: &str,
++    exclude: &str,
++    schema_registry: &Option<String>,
++) -> Result<(), RoutineFailure> {
++    info!(
++        "Fetching topics from {} with include='{}' exclude='{:?}'",
++        bootstrap, include, exclude
++    );
++
++    let mut kafka_cfg = project.redpanda_config.clone();
++    kafka_cfg.broker = bootstrap.to_string();
++    let inc = build_matcher(include)?;
++    let exc = build_matcher(exclude)?;
++
++    let topics = fetch_topics(&kafka_cfg).await.map_err(|e| {
++        RoutineFailure::new(
++            Message::new("Kafka".to_string(), "failed to fetch topics".to_string()),
++            e,
++        )
++    })?;
++
++    let mut names: Vec<String> = topics
++        .into_iter()
++        .map(|t| t.name)
++        .filter(|n| inc.is_match(n) && !exc.is_match(n))
++        .collect();
++    names.sort();
++
++    fs::create_dir_all(path).map_err(|e| {
++        RoutineFailure::new(
++            Message::new("Kafka".to_string(), format!("creating directory {path}")),
++            e,
++        )
++    })?;
++
++    // Build type maps by fetching schemas first (if configured)
++    let mut ts_type_map: std::collections::HashMap<String, (String, String)> = Default::default();
++    let mut py_type_map: std::collections::HashMap<String, (String, String)> = Default::default();
++    // Accumulate schemas to generate single-file outputs
++    let mut ts_schema_items: Vec<(String, String)> = Vec::new(); // (type_name, schema_json)
++    let mut py_schema_items: Vec<(String, String)> = Vec::new(); // (class_name, schema_json)
++    if let Some(sr_url) = schema_registry {
++        let config = schema_registry_client::rest::client_config::ClientConfig {
++            base_urls: vec![sr_url.to_string()],
++            ..Default::default()
++        };
++        let sr_client = SchemaRegistryClient::new(config);
++        for topic in &names {
++            let subject = format!("{}-value", topic);
++            match fetch_latest_json_schema(&sr_client, &subject).await {
++                Ok(Some(schema_json)) => match project.language {
++                    SupportedLanguages::Typescript => {
++                        let type_name = sanitize_ts_ident(topic);
++                        ts_schema_items.push((type_name.clone(), schema_json));
++                        // All types will be emitted into a single file `externalTypes.ts`
++                        ts_type_map.insert(topic.clone(), (type_name, "externalTypes".to_string()));
++                    }
++                    SupportedLanguages::Python => {
++                        let class_name = sanitize_ts_ident(topic); // PascalCase class name
++                        py_schema_items.push((class_name.clone(), schema_json));
++                        // All classes will be emitted into a single file `external_models.py`
++                        py_type_map
++                            .insert(topic.clone(), (class_name, "external_models".to_string()));
++                    }
++                },
++                Ok(None) => {
++                    info!("No JSON schema found for subject {}", subject);
++                }
++                Err(e) => {
++                    warn!("Failed to fetch schema for {}: {:?}", subject, e);
++                }
++            }
++        }
++        // After collecting all schemas, write single-file outputs per language
++        match project.language {
++            SupportedLanguages::Typescript => {
++                if !ts_schema_items.is_empty() {
++                    let out = Path::new(path).join("externalTypes.ts");
++                    if let Err(e) = generate_typescript_bundle(&ts_schema_items, &out) {
++                        warn!("Failed to generate bundled TS types: {:?}", e);
++                    }
++                }
++            }
++            SupportedLanguages::Python => {
++                // Ensure package for relative imports
++                let init_py = Path::new(path).join("__init__.py");
++                if !init_py.exists() {
++                    let _ = fs::write(&init_py, b"");
++                }
++                if !py_schema_items.is_empty() {
++                    let out = Path::new(path).join("external_models.py");
++                    if let Err(e) = generate_python_bundle(&py_schema_items, &out) {
++                        warn!("Failed to generate bundled Python models: {:?}", e);
++                    }
++                }
++            }
++        }
++    }
++
++    // Now write stream declarations with imports referencing generated types where available
++    match project.language {
++        SupportedLanguages::Typescript => {
++            let file_path = Path::new(path).join("externalTopics.ts");
++            let contents = render_typescript_streams(&names, &ts_type_map);
++            fs::write(&file_path, contents.as_bytes()).map_err(|e| {
++                RoutineFailure::new(
++                    Message::new(
++                        "Kafka".to_string(),
++                        format!("writing {}", file_path.display()),
++                    ),
++                    e,
++                )
++            })?;
++            crate::cli::display::show_message_wrapper(
++                MessageType::Success,
++                Message::new(
++                    "Kafka".to_string(),
++                    format!("wrote {} streams to {}", names.len(), file_path.display()),
++                ),
++            );
++        }
++        SupportedLanguages::Python => {
++            let file_path = Path::new(path).join("external_topics.py");
++            let contents = render_python_streams(&names, &py_type_map);
++            fs::write(&file_path, contents.as_bytes()).map_err(|e| {
++                RoutineFailure::new(
++                    Message::new(
++                        "Kafka".to_string(),
++                        format!("writing {}", file_path.display()),
++                    ),
++                    e,
++                )
++            })?;
++            crate::cli::display::show_message_wrapper(
++                MessageType::Success,
++                Message::new(
++                    "Kafka".to_string(),
++                    format!("wrote {} streams to {}", names.len(), file_path.display()),
++                ),
++            );
++        }
++    }
++
++    Ok(())
++}
++
++fn sanitize_ts_ident(topic: &str) -> String {
++    let mut ident = topic.to_case(Case::Pascal);
++    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
++        ident.insert(0, '_');
++    }
++    ident
++}
++
++fn sanitize_py_ident(topic: &str) -> String {
++    let mut ident = topic.to_case(Case::Snake);
++    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
++        ident.insert(0, '_');
++    }
++    ident
++}
++
++fn render_typescript_streams(
++    topics: &[String],
++    type_map: &std::collections::HashMap<String, (String, String)>,
++) -> String {
++    let mut out = String::new();
++    out.push_str("// AUTO-GENERATED FILE. DO NOT EDIT.\n");
++    out.push_str("// This file will be replaced when you run `moose kafka pull`.\n\n");
++    out.push_str("import { Stream, LifeCycle } from \"@514labs/moose-lib\";\n");
++    for (_topic, (type_name, file_stem)) in type_map.iter() {
++        out.push_str(&format!(
++            "import type {{ {type_name} }} from \"./{file_stem}\";\n"
++        ));
++    }
++    out.push('\n');
++
++    for t in topics {
++        let var_name = sanitize_ts_ident(t);
++        if let Some((type_name, _)) = type_map.get(t) {
++            // Include schema registry config (Latest subject) for topics with discovered JSON schema
++            let subject = format!("{}-value", t);
++            out.push_str(&format!(
++                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED, schemaRegistry: {{ kind: \"JSON\", reference: {{ Latest: {{ subject_name: \"{subject}\" }} }} }} }});\n"
++            ));
++        } else {
++            out.push_str(&format!(
++                "export const {var_name} = new Stream<{{}}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED }});\n"
++            ));
++        }
++    }
++    out
++}
++
++fn render_python_streams(
++    topics: &[String],
++    type_map: &std::collections::HashMap<String, (String, String)>,
++) -> String {
++    let mut out = String::new();
++    out.push_str("# AUTO-GENERATED FILE. DO NOT EDIT.\n");
++    out.push_str("# This file will be replaced when you run `moose kafka pull`.\n\n");
++    out.push_str("from moose_lib import Stream, StreamConfig, LifeCycle\n");
++    let needs_empty = topics.iter().any(|t| !type_map.contains_key(t));
++    if needs_empty {
++        out.push_str("from pydantic import BaseModel\n");
++    }
++    for (_topic, (class_name, module_stem)) in type_map.iter() {
++        out.push_str(&format!("from .{module_stem} import {class_name}\n"));
++    }
++    out.push('\n');
++    if needs_empty {
++        out.push_str("class EmptyModel(BaseModel):\n");
++        out.push_str("    pass\n\n");
++    }
++
++    for t in topics {
++        let var_name = sanitize_py_ident(t);
++        if let Some((class_name, _)) = type_map.get(t) {
++            // Include schema registry config (Latest subject) for topics with discovered JSON schema
++            let subject = format!("{}-value", t);
++            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED, schema_registry={{\"kind\": \"JSON\", \"reference\": {{\"Latest\": {{\"subject_name\": \"{subject}\"}}}}}}))\n"));
++        } else {
++            out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
++        }
++    }
++    out
++}
++
++/// Returns None if the subject does not exist or schema type is not JSON.
++async fn fetch_latest_json_schema(
++    client: &SchemaRegistryClient,
++    subject: &str,
++) -> Result<Option<String>, RoutineFailure> {
++    let meta = client.get_latest_version(subject, None).await;
++    let meta = match meta {
++        Ok(rs) => rs,
++        Err(SchemaRegistryError::ResponseError(r)) if r.status == 404 => return Ok(None),
++        Err(e) => {
++            return Err(RoutineFailure::new(
++                Message::new("Schema Registry".to_string(), "request failed".to_string()),
++                e,
++            ))
++        }
++    };
++    if meta.schema_type.is_none_or(|t| t != "JSON") {
++        return Ok(None);
++    }
++    Ok(meta.schema)
++}
++
++fn generate_typescript_bundle(
++    schema_items: &[(String, String)],
++    out_path: &Path,
++) -> Result<(), anyhow::Error> {
++    use std::io::Write;
++    let mut combined = String::new();
++    for (type_name, schema_json) in schema_items {
++        let mut child = std::process::Command::new("npx")
++            .arg("--yes")
++            .arg("json-schema-to-typescript")
++            .arg("--stdin")
++            .arg("--no-banner")
++            .arg("--name")
++            .arg(type_name)
++            .stdin(std::process::Stdio::piped())
++            .stdout(std::process::Stdio::piped())
++            .stderr(std::process::Stdio::piped())
++            .spawn()?;
++        if let Some(stdin) = child.stdin.as_mut() {
++            stdin.write_all(schema_json.as_bytes())?;
++        }
++        let output = child.wait_with_output()?;
++        if !output.status.success() {
++            anyhow::bail!(
++                "json-schema-to-typescript failed: {}",
++                String::from_utf8_lossy(&output.stderr)
++            );
++        }
++        combined.push_str(&String::from_utf8_lossy(&output.stdout));
++        if !combined.ends_with('\n') {
++            combined.push('\n');
++        }
++    }
++    fs::write(out_path, combined.as_bytes()).map_err(|e| e.into())
++}
++
++fn generate_python_bundle(
++    schema_items: &[(String, String)],
++    out_path: &Path,
++) -> Result<(), anyhow::Error> {
++    use std::io::Write;
++    let mut combined = String::new();
++    for (class_name, schema_json) in schema_items {
++        // Write schema to a temp file because some versions of datamodel-codegen do not support '-' stdin
++        let mut tmp_schema = tempfile::NamedTempFile::new()?;
++        tmp_schema.write_all(schema_json.as_bytes())?;
++        tmp_schema.flush()?;
++        let tmp_schema_path = tmp_schema.into_temp_path();
++
++        // Create a temp output file to capture generated code
++        let tmp_out = tempfile::NamedTempFile::new()?;
++        let tmp_out_path = tmp_out.path().to_path_buf();
++        drop(tmp_out); // Allow the tool to write to this path
++
++        let mut cmd = std::process::Command::new("datamodel-codegen");
++        cmd.arg("--input")
++            .arg(&tmp_schema_path)
++            .arg("--output")
++            .arg(&tmp_out_path)
++            .arg("--input-file-type")
++            .arg("jsonschema")
++            .arg("--class-name")
++            .arg(class_name)
++            .stdout(std::process::Stdio::piped())
++            .stderr(std::process::Stdio::piped());
++
++        let child = match cmd.spawn() {
++            Ok(child) => child,
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++                crate::cli::display::show_message_wrapper(
++                    MessageType::Highlight,
++                    Message::new(
++                        "Python".to_string(),
++                        "datamodel-code-generator not found. Install with: pip install datamodel-code-generator".to_string(),
++                    ),
++                );
++                return Ok(());
++            }
++            Err(e) => return Err(e.into()),
++        };
++        let output = child.wait_with_output()?;
++        if !output.status.success() {
++            anyhow::bail!(
++                "datamodel-codegen failed: {}",
++                String::from_utf8_lossy(&output.stderr)
++            );
++        }
++        let code = fs::read_to_string(&tmp_out_path)?;
++        combined.push_str(&code);
++        if !combined.ends_with('\n') {
++            combined.push('\n');
++        }
++        // Best-effort cleanup; ignore errors
++        let _ = std::fs::remove_file(&tmp_out_path);
++    }
++    fs::write(out_path, combined.as_bytes()).map_err(|e| e.into())
++}
+diff --git a/apps/framework-cli/src/framework/bulk_import.rs b/apps/framework-cli/src/framework/bulk_import.rs
+index 95fceebd..d463d016 100644
+--- a/apps/framework-cli/src/framework/bulk_import.rs
++++ b/apps/framework-cli/src/framework/bulk_import.rs
+@@ -2,7 +2,6 @@ use crate::framework::core::infrastructure::api_endpoint::APIType;
+ use crate::framework::core::infrastructure::table::ColumnType;
+ use anyhow::bail;
+ use itertools::Itertools;
+-use serde::__private::from_utf8_lossy;
+ use serde_json::json;
+ use std::collections::HashMap;
+ use std::path::Path;
+@@ -105,7 +104,7 @@ pub async fn import_csv_file(
+         let status = res.status();
+         if status != 200 {
+             let body = match res.bytes().await {
+-                Ok(bytes) => from_utf8_lossy(&bytes).to_string(),
++                Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                 Err(e) => format!("Getting body failed: {e}"),
+             };
+             bail!("Import failure with status {}: {}", status, body)
+diff --git a/apps/framework-cli/src/framework/core/infrastructure/topic.rs b/apps/framework-cli/src/framework/core/infrastructure/topic.rs
+index 5568e3d8..fe710a76 100644
+--- a/apps/framework-cli/src/framework/core/infrastructure/topic.rs
++++ b/apps/framework-cli/src/framework/core/infrastructure/topic.rs
+@@ -7,6 +7,8 @@ use crate::framework::{
+ };
+ use crate::proto;
+ use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
++use crate::proto::infrastructure_map::SchemaRegistry as ProtoSchemaRegistry;
++use crate::proto::infrastructure_map::SubjectVersion as ProtoSubjectVersion;
+ use protobuf::MessageField;
+ use serde::{Deserialize, Serialize};
+ use std::time::Duration;
+@@ -34,6 +36,25 @@ pub struct Topic {
+ 
+     #[serde(default = "LifeCycle::default_for_deserialization")]
+     pub life_cycle: LifeCycle,
++
++    /// Optional minimal Schema Registry configuration.
++    #[serde(default)]
++    pub schema_registry: Option<KafkaSchema>,
++}
++
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++pub struct KafkaSchema {
++    /// Encoding/wire format (e.g. "JSON", "AVRO", "PROTOBUF")
++    pub kind: String,
++    /// Reference sum type
++    pub reference: SchemaResgistryReference,
++}
++
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++pub enum SchemaResgistryReference {
++    Id(i32),
++    Latest { subject_name: String },
++    SubjectVersion { name: String, version: i32 },
+ }
+ 
+ impl Topic {
+@@ -52,6 +73,7 @@ impl Topic {
+             },
+             metadata: None,
+             life_cycle: LifeCycle::FullyManaged,
++            schema_registry: None,
+         }
+     }
+ 
+@@ -113,6 +135,11 @@ impl Topic {
+                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
+                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
+             },
++            schema_registry: self
++                .schema_registry
++                .as_ref()
++                .map(kafka_schema_to_proto)
++                .into(),
+             special_fields: Default::default(),
+         }
+     }
+@@ -145,6 +172,62 @@ impl Topic {
+                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
+                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
+             },
++            schema_registry: proto
++                .schema_registry
++                .into_option()
++                .and_then(proto_to_kafka_schema),
++        }
++    }
++}
++
++fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
++    let mut sr = ProtoSchemaRegistry::new();
++    sr.encoding = match s.kind.as_str() {
++        "JSON" => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
++        "AVRO" => crate::proto::infrastructure_map::schema_registry::Encoding::AVRO.into(),
++        "PROTOBUF" => crate::proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into(),
++        _ => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
++    };
++    use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
++    sr.schema_ref = Some(match &s.reference {
++        SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id),
++        SchemaResgistryReference::Latest { subject_name } => {
++            ProtoSchemaRef::Subject(subject_name.clone())
++        }
++        SchemaResgistryReference::SubjectVersion { name, version } => {
++            let mut sv = ProtoSubjectVersion::new();
++            sv.subject = name.clone();
++            sv.version = *version;
++            ProtoSchemaRef::SubjectVersion(sv)
+         }
++    });
++    sr
++}
++
++fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
++    use crate::proto::infrastructure_map::schema_registry::Encoding as ProtoEncoding;
++    let kind = match sr.encoding.enum_value_or_default() {
++        ProtoEncoding::JSON => "JSON",
++        ProtoEncoding::AVRO => "AVRO",
++        ProtoEncoding::PROTOBUF => "PROTOBUF",
+     }
++    .to_string();
++
++    let r = sr.schema_ref?;
++    let reference = match r {
++        crate::proto::infrastructure_map::schema_registry::Schema_ref::SchemaId(id) => {
++            SchemaResgistryReference::Id(id)
++        }
++        crate::proto::infrastructure_map::schema_registry::Schema_ref::Subject(s) => {
++            SchemaResgistryReference::Latest { subject_name: s }
++        }
++        crate::proto::infrastructure_map::schema_registry::Schema_ref::SubjectVersion(sv) => {
++            SchemaResgistryReference::SubjectVersion {
++                name: sv.subject,
++                version: sv.version,
++            }
++        }
++    };
++
++    Some(KafkaSchema { kind, reference })
+ }
+diff --git a/apps/framework-cli/src/framework/core/infrastructure_map.rs b/apps/framework-cli/src/framework/core/infrastructure_map.rs
+index 2f3e1161..ddd96ee8 100644
+--- a/apps/framework-cli/src/framework/core/infrastructure_map.rs
++++ b/apps/framework-cli/src/framework/core/infrastructure_map.rs
+@@ -3602,6 +3602,7 @@ mod diff_topic_tests {
+             }],
+             metadata: None,
+             life_cycle: LifeCycle::FullyManaged,
++            schema_registry: None,
+         }
+     }
+ 
+diff --git a/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs b/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
+index 001234d2..f3a66bbc 100644
+--- a/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
++++ b/apps/framework-cli/src/framework/core/partial_infrastructure_map.rs
+@@ -60,7 +60,7 @@ use super::{
+         orchestration_worker::OrchestrationWorker,
+         sql_resource::SqlResource,
+         table::{Column, Metadata, Table},
+-        topic::{Topic, DEFAULT_MAX_MESSAGE_BYTES},
++        topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
+         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
+         view::View,
+     },
+@@ -179,6 +179,9 @@ struct PartialTopic {
+     pub consumers: Vec<Consumer>,
+     pub metadata: Option<Metadata>,
+     pub life_cycle: Option<LifeCycle>,
++    /// Optional minimal Schema Registry config passthrough from TS/Py
++    #[serde(default)]
++    pub schema_registry: Option<KafkaSchema>,
+ }
+ 
+ /// Specifies the type of destination for write operations.
+@@ -605,6 +608,7 @@ impl PartialInfrastructureMap {
+                     },
+                     metadata: partial_topic.metadata.clone(),
+                     life_cycle: partial_topic.life_cycle.unwrap_or(LifeCycle::FullyManaged),
++                    schema_registry: partial_topic.schema_registry.clone(),
+                 };
+                 (topic.id(), topic)
+             })
+diff --git a/apps/framework-cli/src/infrastructure/olap/clickhouse_alt_client.rs b/apps/framework-cli/src/infrastructure/olap/clickhouse_alt_client.rs
+index 18727cf0..6e42b1ea 100644
+--- a/apps/framework-cli/src/infrastructure/olap/clickhouse_alt_client.rs
++++ b/apps/framework-cli/src/infrastructure/olap/clickhouse_alt_client.rs
+@@ -22,7 +22,6 @@ use futures::StreamExt;
+ use itertools::{Either, Itertools};
+ use log::{info, warn};
+ use serde::Serialize;
+-use serde::__private::from_utf8_lossy;
+ use serde_json::{json, Map, Value};
+ 
+ use crate::framework::core::infrastructure::table::EnumValue;
+@@ -96,7 +95,7 @@ fn value_to_json(
+         ValueRef::Int64(v) => json!(v),
+         // TODO: base64 encode if type is Bytes (probably Uint8Array in TS)
+         // In clickhouse the String type means arbitrary bytes
+-        ValueRef::String(v) => json!(from_utf8_lossy(v)),
++        ValueRef::String(v) => json!(String::from_utf8_lossy(v)),
+         ValueRef::Float32(v) => json!(v),
+         ValueRef::Float64(v) => json!(v),
+         ValueRef::Date(v) => {
+diff --git a/apps/framework-cli/src/infrastructure/processes/kafka_clickhouse_sync.rs b/apps/framework-cli/src/infrastructure/processes/kafka_clickhouse_sync.rs
+index 037d7f19..9eb6d07f 100644
+--- a/apps/framework-cli/src/infrastructure/processes/kafka_clickhouse_sync.rs
++++ b/apps/framework-cli/src/infrastructure/processes/kafka_clickhouse_sync.rs
+@@ -321,38 +321,46 @@ async fn sync_kafka_to_kafka(
+             }
+ 
+             Ok(message) => match message.payload() {
+-                Some(payload) => match std::str::from_utf8(payload) {
+-                    Ok(payload_str) => {
+-                        log::trace!(
+-                            "Received message from {}: {}",
+-                            source_topic_name,
+-                            payload_str
+-                        );
+-                        metrics
+-                            .send_metric_event(MetricEvent::TopicToOLAPEvent {
+-                                timestamp: chrono::Utc::now(),
+-                                count: 1,
+-                                bytes: payload.len() as u64,
+-                                consumer_group: "clickhouse sync".to_string(),
+-                                topic_name: source_topic_name.clone(),
+-                            })
++                Some(payload) => {
++                    // Strip Schema Registry JSON envelope if present: 0x00 + 4-byte schema ID
++                    let payload = if payload.len() >= 5 && payload[0] == 0x00 {
++                        &payload[5..]
++                    } else {
++                        payload
++                    };
++                    match std::str::from_utf8(payload) {
++                        Ok(payload_str) => {
++                            log::trace!(
++                                "Received message from {}: {}",
++                                source_topic_name,
++                                payload_str
++                            );
++                            metrics
++                                .send_metric_event(MetricEvent::TopicToOLAPEvent {
++                                    timestamp: chrono::Utc::now(),
++                                    count: 1,
++                                    bytes: payload.len() as u64,
++                                    consumer_group: "clickhouse sync".to_string(),
++                                    topic_name: source_topic_name.clone(),
++                                })
++                                .await;
++
++                            send_with_back_pressure(
++                                &mut queue,
++                                &producer.producer,
++                                target_topic_name,
++                                payload_str.to_string(),
++                            )
+                             .await;
+-
+-                        send_with_back_pressure(
+-                            &mut queue,
+-                            &producer.producer,
+-                            target_topic_name,
+-                            payload_str.to_string(),
+-                        )
+-                        .await;
+-                    }
+-                    Err(_) => {
+-                        error!(
+-                            "Received message from {} with invalid UTF-8",
+-                            source_topic_name
+-                        );
++                        }
++                        Err(_) => {
++                            error!(
++                                "Received message from {} with invalid UTF-8",
++                                source_topic_name
++                            );
++                        }
+                     }
+-                },
++                }
+                 None => {
+                     debug!(
+                         "Received message from {} with no payload",
+@@ -451,39 +459,43 @@ async fn sync_kafka_to_clickhouse(
+                     }
+ 
+                     Ok(message) => match message.payload() {
+-                        Some(payload) => match std::str::from_utf8(payload) {
+-                            Ok(payload_str) => {
+-                                log::trace!(
+-                                    "Received message from {}: {}",
+-                                    source_topic_name, payload_str
+-                                );
+-                                metrics
+-                                    .send_metric_event(MetricEvent::TopicToOLAPEvent {
+-                                        timestamp: chrono::Utc::now(),
+-                                        count: 1,
+-                                        bytes: payload.len() as u64,
+-                                        consumer_group: "clickhouse sync".to_string(),
+-                                        topic_name: source_topic_name.clone(),
+-                                    })
+-                                    .await;
+-
+-                                if let Ok(json_value) = serde_json::from_str(payload_str) {
+-                                    if let Ok(clickhouse_record) =
+-                                        mapper_json_to_clickhouse_record(&source_topic_columns, json_value)
+-                                    {
+-                                        inserter.insert(
+-                                            clickhouse_record,
+-                                            message.partition(),
+-                                            message.offset(),
+-                                        );
++                        Some(payload) => {
++                            // Strip Schema Registry JSON envelope if present: 0x00 + 4-byte schema ID
++                            let payload = if payload.len() >= 5 && payload[0] == 0x00 { &payload[5..] } else { payload };
++                            match std::str::from_utf8(payload) {
++                                Ok(payload_str) => {
++                                    log::trace!(
++                                        "Received message from {}: {}",
++                                        source_topic_name, payload_str
++                                    );
++                                    metrics
++                                        .send_metric_event(MetricEvent::TopicToOLAPEvent {
++                                            timestamp: chrono::Utc::now(),
++                                            count: 1,
++                                            bytes: payload.len() as u64,
++                                            consumer_group: "clickhouse sync".to_string(),
++                                            topic_name: source_topic_name.clone(),
++                                        })
++                                        .await;
++
++                                    if let Ok(json_value) = serde_json::from_str(payload_str) {
++                                        if let Ok(clickhouse_record) =
++                                            mapper_json_to_clickhouse_record(&source_topic_columns, json_value)
++                                        {
++                                            inserter.insert(
++                                                clickhouse_record,
++                                                message.partition(),
++                                                message.offset(),
++                                            );
++                                        }
+                                     }
+                                 }
+-                            }
+-                            Err(_) => {
+-                                error!(
+-                                    "Received message from {} with invalid UTF-8",
+-                                    source_topic_name
+-                                );
++                                Err(_) => {
++                                    error!(
++                                        "Received message from {} with invalid UTF-8",
++                                        source_topic_name
++                                    );
++                                }
+                             }
+                         },
+                         None => {
+diff --git a/apps/framework-cli/src/infrastructure/stream/kafka/models.rs b/apps/framework-cli/src/infrastructure/stream/kafka/models.rs
+index 21ce8d44..1b3a9f5b 100644
+--- a/apps/framework-cli/src/infrastructure/stream/kafka/models.rs
++++ b/apps/framework-cli/src/infrastructure/stream/kafka/models.rs
+@@ -128,6 +128,9 @@ impl KafkaStreamConfig {
+ pub struct KafkaConfig {
+     /// Broker connection string in format "host:port"
+     pub broker: String,
++    /// Optional Schema Registry base URL (e.g., http://localhost:8081)
++    #[serde(default)]
++    pub schema_registry_url: Option<String>,
+     /// Message timeout in milliseconds
+     pub message_timeout_ms: i32,
+     /// Default retention period in milliseconds
+@@ -299,6 +302,7 @@ impl Default for KafkaConfig {
+     fn default() -> Self {
+         Self {
+             broker: "localhost:19092".to_string(),
++            schema_registry_url: None,
+             message_timeout_ms: 1000,
+             retention_ms: 30000,
+             replication_factor: 1,
+diff --git a/packages/protobuf/infrastructure_map.proto b/packages/protobuf/infrastructure_map.proto
+index 0b6aa3c5..ca6294d8 100644
+--- a/packages/protobuf/infrastructure_map.proto
++++ b/packages/protobuf/infrastructure_map.proto
+@@ -37,6 +37,32 @@ message Topic {
+   optional int32 max_message_bytes = 7;
+   Metadata metadata = 8;
+   LifeCycle life_cycle = 9;
++  // Optional minimal Schema Registry configuration
++  optional SchemaRegistry schema_registry = 10;
++}
++
++// Encodes minimal schema reference used for Schema Registry integration
++message SchemaRegistry {
++  enum Encoding {
++    JSON = 0;
++    AVRO = 1;
++    PROTOBUF = 2;
++  }
++  // Encoding/wire format; avoid reserved names in generators
++  Encoding encoding = 1;
++  oneof schema_ref {
++    // Use a concrete schema ID
++    int32 schema_id = 2;
++    // Use subject name (latest version)
++    string subject = 3;
++    // Use subject name with explicit version
++    SubjectVersion subject_version = 4;
++  }
++}
++
++message SubjectVersion {
++  string subject = 1;
++  int32 version = 2;
+ }
+ 
+ message ApiEndpoint {
+diff --git a/packages/py-moose-lib/moose_lib/config/config_file.py b/packages/py-moose-lib/moose_lib/config/config_file.py
+index 69228827..35ee8bce 100644
+--- a/packages/py-moose-lib/moose_lib/config/config_file.py
++++ b/packages/py-moose-lib/moose_lib/config/config_file.py
+@@ -32,6 +32,7 @@ class KafkaConfig:
+     sasl_mechanism: Optional[str] = None
+     security_protocol: Optional[str] = None
+     namespace: Optional[str] = None
++    schema_registry_url: Optional[str] = None
+ 
+ 
+ @dataclass
+@@ -103,6 +104,7 @@ def read_project_config() -> ProjectConfig:
+                 sasl_mechanism=sec.get("sasl_mechanism"),
+                 security_protocol=sec.get("security_protocol"),
+                 namespace=sec.get("namespace"),
++                schema_registry_url=sec.get("schema_registry_url"),
+             )
+ 
+         kafka_cfg = _parse_kafka("kafka_config")
+diff --git a/packages/py-moose-lib/moose_lib/config/runtime.py b/packages/py-moose-lib/moose_lib/config/runtime.py
+index 0801525d..5d9d91fe 100644
+--- a/packages/py-moose-lib/moose_lib/config/runtime.py
++++ b/packages/py-moose-lib/moose_lib/config/runtime.py
+@@ -30,6 +30,7 @@ class RuntimeKafkaConfig:
+     sasl_mechanism: Optional[str]
+     security_protocol: Optional[str]
+     namespace: Optional[str]
++    schema_registry_url: Optional[str]
+ 
+ 
+ class ConfigurationRegistry:
+@@ -160,6 +161,9 @@ class ConfigurationRegistry:
+                                 _env("MOOSE_KAFKA_CONFIG__SECURITY_PROTOCOL")
+             namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or \
+                         _env("MOOSE_KAFKA_CONFIG__NAMESPACE")
++            schema_registry_url = _env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") or \
++                                  _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL") or \
++                                  _env("SCHEMA_REGISTRY_URL")
+ 
+             file_kafka = config.kafka_config
+ 
+@@ -181,6 +185,8 @@ class ConfigurationRegistry:
+                 security_protocol=security_protocol if security_protocol is not None else (
+                     file_kafka.security_protocol if file_kafka else None),
+                 namespace=namespace if namespace is not None else (file_kafka.namespace if file_kafka else None),
++                schema_registry_url=schema_registry_url if schema_registry_url is not None else (
++                    file_kafka.schema_registry_url if file_kafka else None),
+             )
+         except Exception as e:
+             raise RuntimeError(f"Failed to get Kafka configuration: {e}")
+diff --git a/packages/py-moose-lib/moose_lib/dmv2/stream.py b/packages/py-moose-lib/moose_lib/dmv2/stream.py
+index 25eaca25..ca7c76cb 100644
+--- a/packages/py-moose-lib/moose_lib/dmv2/stream.py
++++ b/packages/py-moose-lib/moose_lib/dmv2/stream.py
+@@ -8,6 +8,36 @@ import dataclasses
+ import datetime
+ import json
+ from typing import Any, Optional, Callable, Union, Literal, Generic
++class LatestRef(BaseModel):
++    subject_name: str
++
++
++class SubjectVersionRef(BaseModel):
++    name: str
++    version: int
++
++
++class SchemaRegistryReference(BaseModel):
++    Id: Optional[int] = None
++    Latest: Optional[LatestRef] = None
++    SubjectVersion: Optional[SubjectVersionRef] = None
++
++    def model_post_init(self, __context: Any) -> None:
++        present = sum(
++            1
++            for v in (self.Id, self.Latest, self.SubjectVersion)
++            if v is not None
++        )
++        if present != 1:
++            raise ValueError(
++                "Exactly one of Id, Latest, SubjectVersion must be provided"
++            )
++
++
++class KafkaSchema(BaseModel):
++    kind: Literal["JSON", "AVRO", "PROTOBUF"]
++    reference: SchemaRegistryReference
++
+ from pydantic import BaseModel, ConfigDict, AliasGenerator
+ from pydantic.alias_generators import to_camel
+ from kafka import KafkaProducer
+@@ -41,6 +71,9 @@ class StreamConfig(BaseModel):
+     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
+     # allow DeadLetterQueue
+     model_config = ConfigDict(arbitrary_types_allowed=True)
++    # Optional minimal Schema Registry configuration
++    # Matches Rust shape
++    schema_registry: Optional[KafkaSchema] = None
+ 
+ 
+ class TransformConfig(BaseModel):
+@@ -300,7 +333,9 @@ class Stream(TypedMooseResource, Generic[T]):
+     def send(self, values: ZeroOrMany[T]) -> None:
+         """Send one or more records to this stream's Kafka topic.
+ 
+-        Values are JSON-serialized using EnhancedJSONEncoder.
++        If `schema_registry` (JSON) is configured, resolve schema id and
++        send using Confluent wire format (0x00 + 4-byte schema id + JSON bytes).
++        Otherwise, values are JSON-serialized.
+         """
+         # Normalize inputs to a flat list of records
+         filtered: list[T] = []
+@@ -328,6 +363,52 @@ class Stream(TypedMooseResource, Generic[T]):
+         producer, cfg = self._get_memoized_producer()
+         topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
+ 
++        sr = getattr(self.config, "schema_registry", None)
++        if sr and sr.kind == "JSON":
++            # Use Confluent JSONSerializer to encode envelope in one call
++            try:
++                from confluent_kafka.schema_registry import SchemaRegistryClient
++                from confluent_kafka.schema_registry.json_schema import JSONSerializer
++            except Exception as e:
++                raise RuntimeError(
++                    "confluent-kafka[json,protobuf,avro] is required for Schema Registry JSON"
++                ) from e
++
++            sr_url = getattr(cfg, "schema_registry_url", None)
++            if not sr_url:
++                raise RuntimeError("Schema Registry URL not configured")
++            client = SchemaRegistryClient({"url": sr_url})
++
++            ref = sr.reference
++            subject: Optional[str] = None
++            schema_id: Optional[int] = None
++            version: Optional[int] = None
++            if ref.Id is not None:
++                schema_id = int(ref.Id)
++            elif ref.Latest is not None:
++                subject = ref.Latest.subject_name
++            elif ref.SubjectVersion is not None:
++                subject = ref.SubjectVersion.name
++                version = int(ref.SubjectVersion.version)
++
++            if schema_id is None:
++                if version is not None:
++                    meta = client.get_schema(subject, version=version)
++                    schema_id = meta[0]
++                else:
++                    meta = client.get_latest_version(subject)
++                    schema_id = meta.schema_id
++
++            # Build JSONSerializer bound to the resolved schema id
++            # Note: JSONSerializer uses the registered schema and envelopes per Confluent wire format
++            serializer = JSONSerializer(client, schema_id=schema_id)
++
++            for rec in filtered:
++                value_bytes = serializer(rec.model_dump())
++                producer.send(topic, value=value_bytes)
++            producer.flush()
++            return
++
+         for rec in filtered:
+             producer.send(topic, value=rec)
+         producer.flush()
+diff --git a/packages/py-moose-lib/moose_lib/internal.py b/packages/py-moose-lib/moose_lib/internal.py
+index 359f9053..5bcde23f 100644
+--- a/packages/py-moose-lib/moose_lib/internal.py
++++ b/packages/py-moose-lib/moose_lib/internal.py
+@@ -27,6 +27,12 @@ from moose_lib.dmv2 import (
+ from pydantic.alias_generators import to_camel
+ from pydantic.json_schema import JsonSchemaValue
+ 
++try:
++    # Import for type hints without creating runtime cycles
++    from moose_lib.dmv2.stream import KafkaSchema as _KafkaSchema
++except Exception:
++    _KafkaSchema = Any  # fallback for type checker/runtime if import cycle
++
+ model_config = ConfigDict(alias_generator=AliasGenerator(
+     serialization_alias=to_camel,
+ ))
+@@ -163,6 +169,8 @@ class TopicConfig(BaseModel):
+     consumers: List[Consumer]
+     metadata: Optional[dict] = None
+     life_cycle: Optional[str] = None
++    # Optional minimal Schema Registry config; typed to KafkaSchema
++    schema_registry: Optional[_KafkaSchema] = None
+ 
+ 
+ class IngestApiConfig(BaseModel):
+@@ -477,6 +485,7 @@ def to_infra_map() -> dict:
+             consumers=consumers,
+             metadata=getattr(stream, "metadata", None),
+             life_cycle=stream.config.life_cycle.value if stream.config.life_cycle else None,
++            schema_registry=getattr(stream.config, "schema_registry", None),
+         )
+ 
+     for name, api in get_ingest_apis().items():
+diff --git a/packages/py-moose-lib/moose_lib/streaming/streaming_function_runner.py b/packages/py-moose-lib/moose_lib/streaming/streaming_function_runner.py
+index eba67f94..b8bf7e52 100644
+--- a/packages/py-moose-lib/moose_lib/streaming/streaming_function_runner.py
++++ b/packages/py-moose-lib/moose_lib/streaming/streaming_function_runner.py
+@@ -299,11 +299,19 @@ def create_consumer() -> KafkaConsumer:
+     Returns:
+         Configured KafkaConsumer instance
+     """
++    def _sr_json_deserializer(m: bytes):
++        if m is None:
++            return None
++        # Schema Registry JSON envelope: 0x00 + 4-byte schema ID (big-endian) + JSON
++        if len(m) >= 5 and m[0] == 0x00:
++            m = m[5:]
++        return json.loads(m.decode("utf-8"))
++
+     kwargs = dict(
+         broker=broker,
+         client_id="python_streaming_function_consumer",
+         group_id=streaming_function_id,
+-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
++        value_deserializer=_sr_json_deserializer,
+         sasl_username=sasl_config.get("username"),
+         sasl_password=sasl_config.get("password"),
+         sasl_mechanism=sasl_config.get("mechanism"),
+diff --git a/packages/ts-moose-lib/package.json b/packages/ts-moose-lib/package.json
+index 8c204f9f..42907edc 100644
+--- a/packages/ts-moose-lib/package.json
++++ b/packages/ts-moose-lib/package.json
+@@ -43,6 +43,7 @@
+     "fastq": "1.17.1",
+     "jose": "5.9.2",
+     "@confluentinc/kafka-javascript": "1.5.0",
++    "@kafkajs/confluent-schema-registry": "3.9.0",
+     "pretty-ms": "9.2.0",
+     "redis": "^4.6.13",
+     "toml": "3.0.0",
+diff --git a/packages/ts-moose-lib/src/config/configFile.ts b/packages/ts-moose-lib/src/config/configFile.ts
+index c2e8848c..d4a97ec8 100644
+--- a/packages/ts-moose-lib/src/config/configFile.ts
++++ b/packages/ts-moose-lib/src/config/configFile.ts
+@@ -36,6 +36,8 @@ export interface KafkaConfig {
+   security_protocol?: string;
+   /** Optional namespace used as a prefix for topics */
+   namespace?: string;
++  /** Optional Confluent Schema Registry URL */
++  schema_registry_url?: string;
+ }
+ 
+ /**
+diff --git a/packages/ts-moose-lib/src/config/runtime.ts b/packages/ts-moose-lib/src/config/runtime.ts
+index 8ff80661..653a0a6d 100644
+--- a/packages/ts-moose-lib/src/config/runtime.ts
++++ b/packages/ts-moose-lib/src/config/runtime.ts
+@@ -17,6 +17,7 @@ interface RuntimeKafkaConfig {
+   saslMechanism?: string;
+   securityProtocol?: string;
+   namespace?: string;
++  schemaRegistryUrl?: string;
+ }
+ 
+ class ConfigurationRegistry {
+@@ -121,6 +122,10 @@ class ConfigurationRegistry {
+     const envNamespace =
+       this._env("MOOSE_REDPANDA_CONFIG__NAMESPACE") ??
+       this._env("MOOSE_KAFKA_CONFIG__NAMESPACE");
++    const envSchemaRegistryUrl =
++      this._env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") ??
++      this._env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL") ??
++      this._env("SCHEMA_REGISTRY_URL");
+ 
+     const fileKafka =
+       projectConfig.kafka_config ?? projectConfig.redpanda_config;
+@@ -136,6 +141,7 @@ class ConfigurationRegistry {
+       saslMechanism: envSaslMechanism ?? fileKafka?.sasl_mechanism,
+       securityProtocol: envSecurityProtocol ?? fileKafka?.security_protocol,
+       namespace: envNamespace ?? fileKafka?.namespace,
++      schemaRegistryUrl: envSchemaRegistryUrl ?? fileKafka?.schema_registry_url,
+     };
+   }
+ 
+diff --git a/packages/ts-moose-lib/src/dmv2/internal.ts b/packages/ts-moose-lib/src/dmv2/internal.ts
+index 32a7b55f..aae0d039 100644
+--- a/packages/ts-moose-lib/src/dmv2/internal.ts
++++ b/packages/ts-moose-lib/src/dmv2/internal.ts
+@@ -127,6 +127,16 @@ interface Consumer {
+ /**
+  * JSON representation of a Stream/Topic configuration.
+  */
++type SchemaRegistryReferenceJson =
++  | { Id: number }
++  | { Latest: { subject_name: string } }
++  | { SubjectVersion: { name: string; version: number } };
++
++interface SchemaRegistryJson {
++  kind: "JSON" | "AVRO" | "PROTOBUF";
++  reference: SchemaRegistryReferenceJson;
++}
++
+ interface StreamJson {
+   /** The name of the stream/topic. */
+   name: string;
+@@ -152,6 +162,8 @@ interface StreamJson {
+   metadata?: { description?: string };
+   /** Lifecycle management setting for the stream. */
+   lifeCycle?: string;
++  /** Optional minimal Schema Registry config */
++  schemaRegistry?: SchemaRegistryJson;
+ }
+ /**
+  * JSON representation of an Ingest API configuration.
+@@ -383,6 +395,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
+       consumers,
+       metadata,
+       lifeCycle: stream.config.lifeCycle,
++      schemaRegistry: (stream.config as any).schemaRegistry,
+     };
+   });
+ 
+diff --git a/packages/ts-moose-lib/src/dmv2/sdk/stream.ts b/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
+index 9e24be06..87226b46 100644
+--- a/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
++++ b/packages/ts-moose-lib/src/dmv2/sdk/stream.ts
+@@ -127,6 +127,19 @@ export interface ConsumerConfig<T> {
+   deadLetterQueue?: DeadLetterQueue<T> | null;
+ }
+ 
++// Minimal Schema Registry configuration
++export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
++
++export type SchemaRegistryReference =
++  | { Id: number }
++  | { Latest: { subject_name: string } }
++  | { SubjectVersion: { name: string; version: number } };
++
++export interface SchemaRegistryConfig {
++  kind: SchemaRegistryEncoding;
++  reference: SchemaRegistryReference;
++}
++
+ /**
+  * Represents a message routed to a specific destination stream.
+  * Used internally by the multi-transform functionality to specify
+@@ -178,6 +191,9 @@ export interface StreamConfig<T> {
+   lifeCycle?: LifeCycle;
+ 
+   defaultDeadLetterQueue?: DeadLetterQueue<T>;
++
++  /** Optional Schema Registry configuration for this stream */
++  schemaRegistry?: SchemaRegistryConfig;
+ }
+ 
+ /**
+@@ -392,6 +408,64 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
+     const { producer, kafkaConfig } = await this.getMemoizedProducer();
+     const topic = this.buildFullTopicName(kafkaConfig.namespace);
+ 
++    // Use Schema Registry JSON envelope if configured
++    const sr = this.config.schemaRegistry;
++    if (sr && sr.kind === "JSON") {
++      const schemaRegistryUrl = kafkaConfig.schemaRegistryUrl;
++      if (!schemaRegistryUrl)
++        throw new Error("Schema Registry URL not configured");
++
++      // Resolve reference into either a concrete ID or a (subject, version?) pair
++      let schemaId: number | undefined;
++      let subject: string | undefined;
++      let version: number | undefined;
++      const ref: any = sr.reference as any;
++      if (ref && typeof ref === "object" && "Id" in ref && ref.Id != null) {
++        schemaId = Number(ref.Id);
++      } else if (
++        ref &&
++        typeof ref === "object" &&
++        "Latest" in ref &&
++        ref.Latest?.subject_name
++      ) {
++        subject = String(ref.Latest.subject_name);
++      } else if (
++        ref &&
++        typeof ref === "object" &&
++        "SubjectVersion" in ref &&
++        ref.SubjectVersion
++      ) {
++        subject = String(ref.SubjectVersion.name);
++        version = Number(ref.SubjectVersion.version);
++      }
++
++      const {
++        default: { SchemaRegistry },
++      } = await import("@kafkajs/confluent-schema-registry");
++      const registry = new SchemaRegistry({ host: schemaRegistryUrl });
++
++      if (schemaId === undefined) {
++        if (version !== undefined) {
++          throw new Error(
++            "SubjectVersion is not supported in TS send; use Latest or Id",
++          );
++        } else {
++          schemaId = await registry.getLatestSchemaId(subject!);
++        }
++      }
++
++      const encoded = await Promise.all(
++        flat.map((v) =>
++          registry.encode(schemaId!, v as unknown as Record<string, unknown>),
++        ),
++      );
++      await producer.send({
++        topic,
++        messages: encoded.map((value) => ({ value })),
++      });
++      return;
++    }
++
+     await producer.send({
+       topic,
+       messages: flat.map((v) => ({ value: JSON.stringify(v) })),
+diff --git a/packages/ts-moose-lib/src/streaming-functions/runner.ts b/packages/ts-moose-lib/src/streaming-functions/runner.ts
+index feee2957..e600afaf 100755
+--- a/packages/ts-moose-lib/src/streaming-functions/runner.ts
++++ b/packages/ts-moose-lib/src/streaming-functions/runner.ts
+@@ -384,7 +384,16 @@ const handleMessage = async (
+   }
+ 
+   try {
+-    const parsedData = JSON.parse(message.value.toString(), jsonDateReviver);
++    // Detect Schema Registry JSON envelope: 0x00 + 4-byte schema ID (big-endian) + JSON bytes
++    let payloadBuffer = message.value as Buffer;
++    if (
++      payloadBuffer &&
++      payloadBuffer.length >= 5 &&
++      payloadBuffer[0] === 0x00
++    ) {
++      payloadBuffer = payloadBuffer.subarray(5);
++    }
++    const parsedData = JSON.parse(payloadBuffer.toString(), jsonDateReviver);
+     const transformedData = await Promise.all(
+       streamingFunctionWithConfigList.map(async ([fn, config]) => {
+         try {
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 055161c0..6a8ad62b 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -539,6 +539,9 @@ importers:
+       '@confluentinc/kafka-javascript':
+         specifier: 1.5.0
+         version: 1.5.0
++      '@kafkajs/confluent-schema-registry':
++        specifier: 3.9.0
++        version: 3.9.0
+       '@temporalio/activity':
+         specifier: ^1.11.7
+         version: 1.11.8
+@@ -550,7 +553,7 @@ importers:
+         version: 1.11.8
+       '@temporalio/worker':
+         specifier: ^1.11.7
+-        version: 1.11.8(@swc/helpers@0.5.17)
++        version: 1.11.8(@swc/helpers@0.5.17)(esbuild@0.25.5)
+       '@temporalio/workflow':
+         specifier: ^1.11.7
+         version: 1.11.8
+@@ -1526,6 +1529,9 @@ packages:
+     peerDependencies:
+       tslib: '2'
+ 
++  '@kafkajs/confluent-schema-registry@3.9.0':
++    resolution: {integrity: sha512-QiwinzNVlHPvylFCSiKBcTDxNDp9/xDj7ZWTxlsel5h4hwLxMLjnuJUcW/LhzNPPi/V4Vfa4Yq0uv30CYGtRnA==}
++
+   '@mapbox/node-pre-gyp@1.0.11':
+     resolution: {integrity: sha512-Yhlar6v9WQgUp/He7BdgzOz8lqMQ8sU+jkCq7Wx8Myc5YFJLbEe7lgui/V7G1qB1DJykHSGwreceSaD60Y0PUQ==}
+     hasBin: true
+@@ -3428,6 +3434,9 @@ packages:
+   ajv@6.12.6:
+     resolution: {integrity: sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g==}
+ 
++  ajv@7.2.4:
++    resolution: {integrity: sha512-nBeQgg/ZZA3u3SYxyaDvpvDtgZ/EZPF547ARgZBrG9Bhu1vKDwAIjtIf+sDtJUKa2zOcEbmRLBRSyMraS/Oy1A==}
++
+   ajv@8.17.1:
+     resolution: {integrity: sha512-B/gBuNg5SiMTrPkC+A2+cW0RszwxYmn6VYxB/inlBStS5nx6xHIt/ehKRhIMhqusl7a8LjQoZnjCs5vhwxOQ1g==}
+ 
+@@ -3571,6 +3580,10 @@ packages:
+     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
+     engines: {node: '>= 0.4'}
+ 
++  avsc@5.7.9:
++    resolution: {integrity: sha512-yOA4wFeI7ET3v32Di/sUybQ+ttP20JHSW3mxLuNGeO0uD6PPcvLrIQXSvy/rhJOWU5JrYh7U4OHplWMmtAtjMg==}
++    engines: {node: '>=0.11'}
++
+   axe-core@4.10.3:
+     resolution: {integrity: sha512-Xm7bpRXnDSX2YE2YFfBk2FnF0ep6tmG7xPh8iHee8MIcrgq762Nkce856dYtJYLkuIoYZvGfTs/PbZhideTcEg==}
+     engines: {node: '>=4'}
+@@ -4230,8 +4243,8 @@ packages:
+     resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
+     engines: {node: '>=6'}
+ 
+-  detect-libc@2.1.0:
+-    resolution: {integrity: sha512-vEtk+OcP7VBRtQZ1EJ3bdgzSfBjgnEalLTp5zjJrS+2Z1w2KZly4SBdac/WDU3hhsNAZ9E8SC96ME4Ey8MZ7cg==}
++  detect-libc@2.1.1:
++    resolution: {integrity: sha512-ecqj/sy1jcK1uWrwpR67UhYrIFQ+5WlGxth34WquCbamhFA6hkkwiu37o6J5xCHdo1oixJRfVRw+ywV+Hq/0Aw==}
+     engines: {node: '>=8'}
+ 
+   detect-newline@3.1.0:
+@@ -5762,6 +5775,9 @@ packages:
+   makeerror@1.0.12:
+     resolution: {integrity: sha512-JmqCvUhmt43madlpFzG4BQzG2Z3m6tvQDNKdClZnO3VbIudJYmxsT0FNJMeiB2+JTSlTQTSbU8QdesVmwJcmLg==}
+ 
++  mappersmith@2.46.0:
++    resolution: {integrity: sha512-HE1kFZmVGuffVFDqZvqWIMn0GVNQU/JRr7ClrJjsuTslmM7fDgiukLK6I7ewio51PfxlrMEcdAe9xtcpx0nh7w==}
++
+   markdown-extensions@2.0.0:
+     resolution: {integrity: sha512-o5vL7aDWatOTX8LzaS1WMoaoxIiLRQJuIKKe2wAw6IeULDHaqbiqiggmx+pKvZDb1Sj+pE46Sn1T7lCqfFtg1Q==}
+     engines: {node: '>=16'}
+@@ -9165,9 +9181,16 @@ snapshots:
+     dependencies:
+       tslib: 2.8.1
+ 
++  '@kafkajs/confluent-schema-registry@3.9.0':
++    dependencies:
++      ajv: 7.2.4
++      avsc: 5.7.9
++      mappersmith: 2.46.0
++      protobufjs: 7.4.0
++
+   '@mapbox/node-pre-gyp@1.0.11':
+     dependencies:
+-      detect-libc: 2.1.0
++      detect-libc: 2.1.1
+       https-proxy-agent: 5.0.1
+       make-dir: 3.1.0
+       node-fetch: 2.7.0
+@@ -10620,7 +10643,7 @@ snapshots:
+       long: 5.3.2
+       protobufjs: 7.4.0
+ 
+-  '@temporalio/worker@1.11.8(@swc/helpers@0.5.17)':
++  '@temporalio/worker@1.11.8(@swc/helpers@0.5.17)(esbuild@0.25.5)':
+     dependencies:
+       '@swc/core': 1.11.29(@swc/helpers@0.5.17)
+       '@temporalio/activity': 1.11.8
+@@ -10634,11 +10657,11 @@ snapshots:
+       memfs: 4.17.2
+       rxjs: 7.8.2
+       source-map: 0.7.4
+-      source-map-loader: 4.0.2(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17)))
++      source-map-loader: 4.0.2(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5))
+       supports-color: 8.1.1
+-      swc-loader: 0.2.6(@swc/core@1.11.29(@swc/helpers@0.5.17))(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17)))
++      swc-loader: 0.2.6(@swc/core@1.11.29(@swc/helpers@0.5.17))(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5))
+       unionfs: 4.5.4
+-      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))
++      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)
+     transitivePeerDependencies:
+       - '@swc/helpers'
+       - esbuild
+@@ -11506,6 +11529,13 @@ snapshots:
+       json-schema-traverse: 0.4.1
+       uri-js: 4.4.1
+ 
++  ajv@7.2.4:
++    dependencies:
++      fast-deep-equal: 3.1.3
++      json-schema-traverse: 1.0.0
++      require-from-string: 2.0.2
++      uri-js: 4.4.1
++
+   ajv@8.17.1:
+     dependencies:
+       fast-deep-equal: 3.1.3
+@@ -11664,6 +11694,8 @@ snapshots:
+     dependencies:
+       possible-typed-array-names: 1.1.0
+ 
++  avsc@5.7.9: {}
++
+   axe-core@4.10.3: {}
+ 
+   axobject-query@4.1.0: {}
+@@ -12358,7 +12390,7 @@ snapshots:
+ 
+   dequal@2.0.3: {}
+ 
+-  detect-libc@2.1.0: {}
++  detect-libc@2.1.1: {}
+ 
+   detect-newline@3.1.0: {}
+ 
+@@ -12616,8 +12648,8 @@ snapshots:
+       '@typescript-eslint/parser': 5.62.0(eslint@8.57.1)(typescript@5.8.3)
+       eslint: 8.57.1
+       eslint-import-resolver-node: 0.3.9
+-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1)
+-      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
++      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.31.0)(eslint@8.57.1)
++      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
+       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.1)
+       eslint-plugin-react: 7.37.4(eslint@8.57.1)
+       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.1)
+@@ -12666,7 +12698,7 @@ snapshots:
+     transitivePeerDependencies:
+       - supports-color
+ 
+-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1):
++  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0)(eslint@8.57.1):
+     dependencies:
+       '@nolyfill/is-core-module': 1.0.39
+       debug: 4.4.1(supports-color@8.1.1)
+@@ -12677,7 +12709,7 @@ snapshots:
+       tinyglobby: 0.2.14
+       unrs-resolver: 1.7.2
+     optionalDependencies:
+-      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
++      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -12703,7 +12735,7 @@ snapshots:
+       '@typescript-eslint/parser': 5.62.0(eslint@8.57.1)(typescript@5.8.3)
+       eslint: 8.57.1
+       eslint-import-resolver-node: 0.3.9
+-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1)
++      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.31.0)(eslint@8.57.1)
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -12718,7 +12750,7 @@ snapshots:
+     transitivePeerDependencies:
+       - supports-color
+ 
+-  eslint-plugin-import@2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
++  eslint-plugin-import@2.31.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
+     dependencies:
+       '@rtsao/scc': 1.1.0
+       array-includes: 3.1.8
+@@ -14543,6 +14575,8 @@ snapshots:
+     dependencies:
+       tmpl: 1.0.5
+ 
++  mappersmith@2.46.0: {}
++
+   markdown-extensions@2.0.0: {}
+ 
+   markdown-table@3.0.4: {}
+@@ -16315,11 +16349,11 @@ snapshots:
+ 
+   source-map-js@1.2.1: {}
+ 
+-  source-map-loader@4.0.2(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))):
++  source-map-loader@4.0.2(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)):
+     dependencies:
+       iconv-lite: 0.6.3
+       source-map-js: 1.2.1
+-      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))
++      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)
+ 
+   source-map-support@0.5.13:
+     dependencies:
+@@ -16518,11 +16552,11 @@ snapshots:
+ 
+   supports-preserve-symlinks-flag@1.0.0: {}
+ 
+-  swc-loader@0.2.6(@swc/core@1.11.29(@swc/helpers@0.5.17))(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))):
++  swc-loader@0.2.6(@swc/core@1.11.29(@swc/helpers@0.5.17))(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)):
+     dependencies:
+       '@swc/core': 1.11.29(@swc/helpers@0.5.17)
+       '@swc/counter': 0.1.3
+-      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))
++      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)
+ 
+   symbol-tree@3.2.4: {}
+ 
+@@ -16632,6 +16666,18 @@ snapshots:
+       mkdirp: 1.0.4
+       yallist: 4.0.0
+ 
++  terser-webpack-plugin@5.3.14(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)):
++    dependencies:
++      '@jridgewell/trace-mapping': 0.3.25
++      jest-worker: 27.5.1
++      schema-utils: 4.3.2
++      serialize-javascript: 6.0.2
++      terser: 5.40.0
++      webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)
++    optionalDependencies:
++      '@swc/core': 1.11.29(@swc/helpers@0.5.17)
++      esbuild: 0.25.5
++
+   terser-webpack-plugin@5.3.14(@swc/core@1.11.29(@swc/helpers@0.5.17))(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))):
+     dependencies:
+       '@jridgewell/trace-mapping': 0.3.25
+@@ -16642,6 +16688,7 @@ snapshots:
+       webpack: 5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))
+     optionalDependencies:
+       '@swc/core': 1.11.29(@swc/helpers@0.5.17)
++    optional: true
+ 
+   terser@5.40.0:
+     dependencies:
+@@ -17343,6 +17390,38 @@ snapshots:
+       - '@swc/core'
+       - esbuild
+       - uglify-js
++    optional: true
++
++  webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5):
++    dependencies:
++      '@types/eslint-scope': 3.7.7
++      '@types/estree': 1.0.7
++      '@types/json-schema': 7.0.15
++      '@webassemblyjs/ast': 1.14.1
++      '@webassemblyjs/wasm-edit': 1.14.1
++      '@webassemblyjs/wasm-parser': 1.14.1
++      acorn: 8.14.1
++      browserslist: 4.24.5
++      chrome-trace-event: 1.0.4
++      enhanced-resolve: 5.18.1
++      es-module-lexer: 1.7.0
++      eslint-scope: 5.1.1
++      events: 3.3.0
++      glob-to-regexp: 0.4.1
++      graceful-fs: 4.2.11
++      json-parse-even-better-errors: 2.3.1
++      loader-runner: 4.3.0
++      mime-types: 2.1.35
++      neo-async: 2.6.2
++      schema-utils: 4.3.2
++      tapable: 2.2.2
++      terser-webpack-plugin: 5.3.14(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5)(webpack@5.99.9(@swc/core@1.11.29(@swc/helpers@0.5.17))(esbuild@0.25.5))
++      watchpack: 2.4.4
++      webpack-sources: 3.3.0
++    transitivePeerDependencies:
++      - '@swc/core'
++      - esbuild
++      - uglify-js
+ 
+   whatwg-encoding@2.0.0:
+     dependencies:
