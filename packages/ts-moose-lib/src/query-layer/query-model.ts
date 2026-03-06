@@ -258,8 +258,6 @@ export interface QueryModel<
   readonly metrics?: TMetrics;
   readonly columns?: TColumns;
 
-  readonly dimensionNames: readonly string[];
-  readonly metricNames: readonly string[];
   readonly columnNames: readonly string[];
 
   /** Type inference helpers (similar to Drizzle's $inferSelect pattern). */
@@ -859,8 +857,6 @@ export function defineQueryModel<
     dimensions,
     metrics,
     columns: columnDefs,
-    dimensionNames,
-    metricNames,
     columnNames,
     query: async (request, client: QueryClient) => {
       const result = await client.execute(toSql(request));
