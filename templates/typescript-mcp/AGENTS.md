@@ -47,6 +47,7 @@ Ensure all of these are active before starting work.
 
 | File | Purpose | Docs |
 | --- | --- | --- |
+| `app/index.ts` | **Barrel export file — all primitives (tables, streams, APIs, workflows) must be exported here or MooseStack won't discover them** | |
 | `app/apis/mcp.ts` | Custom MCP server (tools, auth middleware, `/tools` endpoint) | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
 | `app/ingest/models.ts` | Data models (interfaces + IngestPipeline declarations) | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
 | `moose.config.toml` | Port and service configuration | |
