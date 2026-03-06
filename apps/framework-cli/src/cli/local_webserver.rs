@@ -1391,8 +1391,8 @@ fn route_not_found_response(accept_header: &str) -> hyper::http::Result<Response
 <body>
 <h1>MooseStack</h1>
 <p><strong>Status:</strong> ok</p>
-<p><strong>Docs:</strong> <a href="https://docs.moosestacking.com">https://docs.moosestacking.com</a></p>
-<p>To see available routes, run <code>moose ls</code> or view <a href="https://www.fiveonefour.com">Fiveonefour dashboard</a></p>
+<p><strong>Docs:</strong> <a href="https://docs.fiveonefour.com/moosestack">https://docs.fiveonefour.com/moosestack</a></p>
+<p>To see available routes, run <code>moose ls</code> or view <a href="https://www.boreal.cloud">Fiveonefour dashboard</a></p>
 </body>
 </html>"#,
             )))
@@ -1401,7 +1401,7 @@ fn route_not_found_response(accept_header: &str) -> hyper::http::Result<Response
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
-                r#"{"name":"MooseStack","status":"ok","docs":"https://docs.moosestacking.com","info":"To see available routes, run `moose ls` or view Fiveonefour dashboard at https://www.fiveonefour.com"}"#,
+                r#"{"name":"MooseStack","status":"ok","docs":"https://docs.fiveonefour.com/moosestack","info":"To see available routes, run `moose ls` or view Fiveonefour dashboard at https://www.boreal.cloud"}"#,
             )))
     }
 }
