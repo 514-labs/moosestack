@@ -441,13 +441,13 @@ const buildConditionalQuery = (filters: FilterParams) => {
     conditions.push(sql.fragment`(name ILIKE ${'%' + filters.searchText + '%'} OR email ILIKE ${'%' + filters.searchText + '%'})`);
   }
 
-  let query = sql.fragment`SELECT * FROM ${UserTable}`;
+  let query = sql.statement`SELECT * FROM ${UserTable}`;
 
   if (conditions.length > 0) {
-    query = sql.fragment`${query} WHERE ${sql.join(conditions, "AND")}`;
+    query = query.append(sql.fragment` WHERE ${sql.join(conditions, "AND")}`);
   }
 
-  return sql.statement`${query} ORDER BY created_at DESC`;
+  return query.append(sql.fragment` ORDER BY created_at DESC`);
 };
 ```
 
