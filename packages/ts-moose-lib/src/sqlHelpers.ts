@@ -60,13 +60,30 @@ const isColumn = (
   "annotations" in value;
 
 /**
- * Sql template tag interface with attached helper methods.
+ * Callable template tag signature shared by sql, sql.statement, and sql.fragment.
  */
-export interface SqlTemplateTag {
+interface SqlTagFn {
   (
     strings: readonly string[],
     ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
   ): Sql;
+}
+
+/**
+ * Sql template tag interface with attached helper methods.
+ */
+export interface SqlTemplateTag extends SqlTagFn {
+  /**
+   * Tag a template as a complete SQL statement (isFragment = false).
+   * Preferred over the bare sql tag for full queries.
+   */
+  statement: SqlTagFn;
+
+  /**
+   * Tag a template as a SQL fragment (isFragment = true).
+   * Preferred over the bare sql tag for partial clauses, conditions, or expressions.
+   */
+  fragment: SqlTagFn;
 
   /**
    * Join an array of Sql fragments with a separator.
@@ -89,7 +106,26 @@ function sqlImpl(
   return new Sql(strings, values);
 }
 
+/**
+ * @deprecated Use `sql.statement` for full queries or `sql.fragment` for
+ * partial clauses. The bare `sql` tag leaves `isFragment` undefined which
+ * prevents the language server from distinguishing statements from fragments.
+ */
 export const sql: SqlTemplateTag = sqlImpl as SqlTemplateTag;
+
+sql.statement = function (
+  strings: readonly string[],
+  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+): Sql {
+  return new Sql(strings, values, false);
+};
+
+sql.fragment = function (
+  strings: readonly string[],
+  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+): Sql {
+  return new Sql(strings, values, true);
+};
 
 const instanceofSql = (
   value: RawValue | Column | OlapTable<any> | View,
@@ -102,10 +138,12 @@ const instanceofSql = (
 export class Sql {
   readonly values: Value[];
   readonly strings: string[];
+  readonly isFragment: boolean | undefined;
 
   constructor(
     rawStrings: readonly string[],
     rawValues: readonly (RawValue | Column | OlapTable<any> | View | Sql)[],
+    isFragment?: boolean,
   ) {
     if (rawStrings.length - 1 !== rawValues.length) {
       if (rawStrings.length === 0) {
@@ -118,6 +156,8 @@ export class Sql {
         } values`,
       );
     }
+
+    this.isFragment = isFragment;
 
     const valuesLength = rawValues.reduce<number>(
       (len: number, value: RawValue | Column | OlapTable<any> | View | Sql) =>
@@ -192,21 +232,25 @@ export class Sql {
    * Append another Sql fragment, returning a new Sql instance.
    */
   append(other: Sql): Sql {
-    return new Sql([...this.strings, ""], [...this.values, other]);
+    return new Sql(
+      [...this.strings, ""],
+      [...this.values, other],
+      this.isFragment,
+    );
   }
 }
 
 sql.join = function (fragments: Sql[], separator?: string): Sql {
-  if (fragments.length === 0) return new Sql([""], []);
+  if (fragments.length === 0) return new Sql([""], [], true);
   if (fragments.length === 1) return fragments[0];
   const sep = separator ?? ", ";
   const normalized = sep.includes(" ") ? sep : ` ${sep} `;
   const strings = ["", ...Array(fragments.length - 1).fill(normalized), ""];
-  return new Sql(strings, fragments);
+  return new Sql(strings, fragments, true);
 };
 
 sql.raw = function (text: string): Sql {
-  return new Sql([text], []);
+  return new Sql([text], [], true);
 };
 
 export const toStaticQuery = (sql: Sql): string => {
