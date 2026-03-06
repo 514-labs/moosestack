@@ -149,10 +149,10 @@ By default, [deduplication happens automatically in the background](https://clic
 import { sql } from "@514labs/moose-lib";
 
 // Force deduplication at query time
-const deduped = sql`SELECT * FROM ${users} FINAL WHERE ${users.columns.id} = '123'`;
+const deduped = sql.statement`SELECT * FROM ${users} FINAL WHERE ${users.columns.id} = '123'`;
 
 // Or use aggregation to pick the latest values
-const latest = sql`
+const latest = sql.statement`
   SELECT
     argMax(${users.columns.name}, ${users.columns.updated_at}) AS name
   FROM ${users}

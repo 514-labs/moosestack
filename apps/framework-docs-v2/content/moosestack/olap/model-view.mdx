@@ -91,5 +91,5 @@ View(
 </LanguageTabs>
 
 <Callout type="info" title="Static SQL recommended" compact icon="Database" href="https://clickhouse.com/docs/en/sql-reference" ctaLabel="ClickHouse SQL">
-The `SELECT` should be static (no runtime parameters). In TypeScript, prefer Moose's `sql` template for safe table/column interpolation; in Python, use string templates with `{table.columns.col}`.
+The `SELECT` should be static (no runtime parameters). In TypeScript, prefer Moose's `sql.statement` / `sql.fragment` templates for safe table/column interpolation; in Python, use string templates with `{table.columns.col}`.
 </Callout>
