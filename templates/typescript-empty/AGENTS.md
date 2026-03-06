@@ -40,7 +40,7 @@ Ensure all of these are active before starting work.
 
 | File | Purpose |
 | --- | --- |
-| `app/index.ts` | **Barrel export file — all primitives (tables, streams, pipelines, APIs, views, workflows) must be exported here or MooseStack won't discover them** |
+| `app/index.ts` | **Barrel export file — all primitives (tables, streams, ingest APIs, query APIs, views, workflows) must be exported here or MooseStack won't discover them** |
 | `moose.config.toml` | Port and service configuration |
 
 ## Core Primitives
@@ -119,24 +119,30 @@ Define a single query model that auto-projects into REST APIs, AI SDK tools, and
 
 ```typescript
 // app/queries/pageViewMetrics.ts
-import { defineQueryModel, timeDimensions, sql } from "@514labs/moose-lib";
+import { defineQueryModel, sql } from "@514labs/moose-lib";
 import { PageViewStatsMV } from "../views/pageViewStats";
 
-export const pageViewMetrics = defineQueryModel(PageViewStatsMV.targetTable, {
+export const pageViewMetrics = defineQueryModel({
+  table: PageViewStatsMV.targetTable,
   dimensions: {
-    ...timeDimensions(PageViewStatsMV.targetTable.columns.day),
+    day: { column: "day" },
   },
   metrics: {
-    totalViews: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.totalViews})`,
-    uniqueUsers: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.uniqueUsers})`,
+    totalViews: {
+      agg: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.totalViews})`,
+    },
+    uniqueUsers: {
+      agg: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.uniqueUsers})`,
+    },
   },
   filters: {
-    day: { operators: ["eq", "gte", "lte"] },
+    day: { column: "day", operators: ["eq", "gte", "lte"] as const },
   },
+  sortable: ["day", "totalViews", "uniqueUsers"] as const,
   defaults: {
     dimensions: ["day"],
     metrics: ["totalViews"],
-    orderBy: { field: "day", direction: "DESC" },
+    orderBy: [["day", "DESC"]],
     limit: 30,
   },
 });
@@ -152,11 +158,12 @@ Use `buildQuery` for REST APIs, `createModelTool` for AI SDK, or `registerModelT
 
 ## Other Primitives
 
+Prefer composing `OlapTable` + `Stream` + `IngestApi` for ingestion flows in new code instead of `IngestPipeline`.
+
 | Primitive | Use for | Docs |
 | --- | --- | --- |
-| `IngestPipeline` | Bundle table + stream + ingest API in one declaration | [Ingestion](https://docs.fiveonefour.com/moosestack/ingestion) |
+| `IngestApi` | POST endpoints that validate and route events to streams/tables | [Ingest API](https://docs.fiveonefour.com/moosestack/apis/ingest-api) |
 | `Stream` | Standalone streaming topics, transforms, consumers | [Streaming](https://docs.fiveonefour.com/moosestack/streaming) |
-| `IngestApi` | POST endpoints that validate and route to streams/tables | [Ingest API](https://docs.fiveonefour.com/moosestack/apis/ingest-api) |
 | `Api` | Typed GET endpoints for analytics queries | [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api) |
 | `Workflow` / `Task` | Scheduled or multi-step data processing | [Workflows](https://docs.fiveonefour.com/moosestack/workflows) |
 | `WebApp` | BYO Express/Fastify/Koa for custom endpoints | [App Frameworks](https://docs.fiveonefour.com/moosestack/app-api-frameworks) |
@@ -206,7 +213,7 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 - [Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 - [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling)
 - [OlapTable](https://docs.fiveonefour.com/moosestack/olap/model-table)
-- [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/materialized-view)
+- [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/model-materialized-view)
 - [Semantic Layer](https://docs.fiveonefour.com/moosestack/apis/semantic-layer)
 - [Streams & Transforms](https://docs.fiveonefour.com/moosestack/streaming)
 - [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api)

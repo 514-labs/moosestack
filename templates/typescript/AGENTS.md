@@ -1,6 +1,6 @@
 # TypeScript Template
 
-Single-package MooseStack app with data ingestion, transforms, materialized views, APIs, and workflows.
+Single-package MooseStack app built from core components: OlapTable, Streams, Ingest APIs, query APIs, materialized views, and workflows.
 
 ## Pre-Development Steps
 
@@ -40,11 +40,11 @@ Ensure all of these are active before starting work.
 
 | File | Purpose | Docs |
 | --- | --- | --- |
-| `app/index.ts` | **Barrel export file — all primitives (tables, streams, pipelines, APIs, views, workflows) must be exported here or MooseStack won't discover them** | |
-| `app/ingest/models.ts` | Data models (interfaces + IngestPipeline declarations) | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
+| `app/index.ts` | **Barrel export file — all primitives (tables, streams, ingest APIs, query APIs, views, workflows) must be exported here or MooseStack won't discover them** | |
+| `app/ingest/models.ts` | Data models (interfaces + ingestion declarations). Prefer `OlapTable` + `Stream` + `IngestApi` for new work. | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
 | `app/ingest/transforms.ts` | Stream transforms (Foo -> Bar), consumers, and DLQ handling | [Streams](https://docs.fiveonefour.com/moosestack/streaming) |
 | `app/apis/bar.ts` | Consumption APIs with typed query params and caching | [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api) |
-| `app/views/barAggregated.ts` | Materialized views for pre-aggregated analytics | [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/materialized-view) |
+| `app/views/barAggregated.ts` | Materialized views for pre-aggregated analytics | [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/model-materialized-view) |
 | `app/workflows/generator.ts` | Workflows and tasks (data generation, scheduling) | [Workflows](https://docs.fiveonefour.com/moosestack/workflows) |
 | `moose.config.toml` | Port and service configuration | |
 
@@ -108,23 +108,29 @@ export const PageViewStatsMV = new MaterializedView<PageViewStats>({
 Define a single query model that auto-projects into REST APIs, AI SDK tools, and MCP server tools. This is the primary way to expose data for querying.
 
 ```typescript
-import { defineQueryModel, timeDimensions, sql } from "@514labs/moose-lib";
+import { defineQueryModel, sql } from "@514labs/moose-lib";
 
-export const pageViewMetrics = defineQueryModel(PageViewStatsMV.targetTable, {
+export const pageViewMetrics = defineQueryModel({
+  table: PageViewStatsMV.targetTable,
   dimensions: {
-    ...timeDimensions(PageViewStatsMV.targetTable.columns.day),
+    day: { column: "day" },
   },
   metrics: {
-    totalViews: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.totalViews})`,
-    uniqueUsers: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.uniqueUsers})`,
+    totalViews: {
+      agg: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.totalViews})`,
+    },
+    uniqueUsers: {
+      agg: sql.fragment`sum(${PageViewStatsMV.targetTable.columns.uniqueUsers})`,
+    },
   },
   filters: {
-    day: { operators: ["eq", "gte", "lte"] },
+    day: { column: "day", operators: ["eq", "gte", "lte"] as const },
   },
+  sortable: ["day", "totalViews", "uniqueUsers"] as const,
   defaults: {
     dimensions: ["day"],
     metrics: ["totalViews"],
-    orderBy: { field: "day", direction: "DESC" },
+    orderBy: [["day", "DESC"]],
     limit: 30,
   },
 });
@@ -134,11 +140,11 @@ Use `buildQuery` for REST APIs, `createModelTool` for AI SDK, or `registerModelT
 
 ## Other Primitives
 
-These are already demonstrated in the template code. Refer to the existing files and docs for patterns:
+These are demonstrated in the template code (or linked docs). For new development, prefer composing `OlapTable` + `Stream` + `IngestApi` rather than `IngestPipeline`.
 
 | Primitive | Use for | Example in template | Docs |
 | --- | --- | --- | --- |
-| `IngestPipeline` | Bundle table + stream + ingest API in one declaration | `app/ingest/models.ts` | [Ingestion](https://docs.fiveonefour.com/moosestack/ingestion) |
+| `IngestApi` | POST endpoints that validate and route events to streams/tables | — | [Ingest API](https://docs.fiveonefour.com/moosestack/apis/ingest-api) |
 | `Stream` | Standalone streaming topics, transforms, consumers | `app/ingest/transforms.ts` | [Streaming](https://docs.fiveonefour.com/moosestack/streaming) |
 | `Api` | Typed GET endpoints for analytics queries | `app/apis/bar.ts` | [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api) |
 | `Workflow` / `Task` | Scheduled or multi-step data processing | `app/workflows/generator.ts` | [Workflows](https://docs.fiveonefour.com/moosestack/workflows) |
@@ -189,7 +195,7 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 - [Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 - [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling)
 - [OlapTable](https://docs.fiveonefour.com/moosestack/olap/model-table)
-- [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/materialized-view)
+- [Materialized Views](https://docs.fiveonefour.com/moosestack/olap/model-materialized-view)
 - [Semantic Layer](https://docs.fiveonefour.com/moosestack/apis/semantic-layer)
 - [Streams & Transforms](https://docs.fiveonefour.com/moosestack/streaming)
 - [Analytics API](https://docs.fiveonefour.com/moosestack/apis/analytics-api)
