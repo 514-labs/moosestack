@@ -1379,7 +1379,7 @@ fn internal_server_error_response() -> Response<Full<Bytes>> {
         .unwrap()
 }
 
-fn route_not_found_response(accept_header: &str) -> hyper::http::Result<Response<Full<Bytes>>> {
+fn root_status_response(accept_header: &str) -> hyper::http::Result<Response<Full<Bytes>>> {
     if accept_header.contains("text/html") {
         Response::builder()
             .status(StatusCode::OK)
@@ -1404,6 +1404,13 @@ fn route_not_found_response(accept_header: &str) -> hyper::http::Result<Response
                 r#"{"name":"MooseStack","status":"ok","docs":"https://docs.fiveonefour.com/moosestack","info":"To see available routes, run `moose ls` or view Fiveonefour dashboard at https://www.boreal.cloud"}"#,
             )))
     }
+}
+
+fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
+    Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Full::new(Bytes::from("Not Found")))
 }
 
 async fn to_reader(
@@ -2023,6 +2030,7 @@ async fn router(
         {
             workflows_terminate_route(req, project.clone(), name.to_string()).await
         }
+        (_, &hyper::Method::GET, [""]) => root_status_response(&accept_header),
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
             // Check if this is a WebApp route by checking mount paths
@@ -2110,7 +2118,7 @@ async fn router(
                     }
                 }
             } else {
-                route_not_found_response(&accept_header)
+                route_not_found_response()
             }
         }
     };
@@ -2252,7 +2260,8 @@ async fn management_router<I: InfraMapProvider>(
         (&hyper::Method::GET, constants::OPENAPI_FILE) => {
             openapi_route(is_prod, openapi_path).await
         }
-        _ => route_not_found_response(&accept_header),
+        (&hyper::Method::GET, "") => root_status_response(&accept_header),
+        _ => route_not_found_response(),
     };
 
     res
