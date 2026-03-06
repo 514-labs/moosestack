@@ -21,6 +21,7 @@ export interface QueryModelFilter {
   operators: readonly string[];
   inputType?: FilterInputTypeHint;
   required?: true;
+  description?: string;
 }
 
 /**
@@ -44,8 +45,8 @@ export interface QueryModelBase {
   };
   readonly filters: Record<string, QueryModelFilter>;
   readonly sortable: readonly string[];
-  readonly dimensionNames: readonly string[];
-  readonly metricNames: readonly string[];
+  readonly dimensions?: Record<string, { description?: string }>;
+  readonly metrics?: Record<string, { description?: string }>;
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
@@ -161,14 +162,16 @@ export function createModelTool(
   const filterParamMap: Record<string, { filterName: string; op: string }> = {};
 
   // --- Dimensions ---
-  if (model.dimensionNames.length > 0) {
-    const names = model.dimensionNames as readonly [string, ...string[]];
+  const dimensionNames = Object.keys(model.dimensions ?? {});
+  if (dimensionNames.length > 0) {
+    const names = dimensionNames as [string, ...string[]];
     schema.dimensions = z.array(z.enum(names)).optional();
   }
 
   // --- Metrics ---
-  if (model.metricNames.length > 0) {
-    const names = model.metricNames as readonly [string, ...string[]];
+  const metricNames = Object.keys(model.metrics ?? {});
+  if (metricNames.length > 0) {
+    const names = metricNames as [string, ...string[]];
     schema.metrics = z.array(z.enum(names)).optional();
   }
 
@@ -227,14 +230,14 @@ export function createModelTool(
     const request: Record<string, unknown> = {};
 
     // Dimensions
-    if (model.dimensionNames.length > 0) {
+    if (dimensionNames.length > 0) {
       request.dimensions =
         (params.dimensions as string[] | undefined) ??
         mergedDefaults.dimensions;
     }
 
     // Metrics
-    if (model.metricNames.length > 0) {
+    if (metricNames.length > 0) {
       request.metrics =
         (params.metrics as string[] | undefined) ?? mergedDefaults.metrics;
     }
