@@ -54,5 +54,6 @@ postgresql_version = "13"
 ignore_patterns = []
 
 [features]
+olap = true
 streaming_engine = true
 workflows = true

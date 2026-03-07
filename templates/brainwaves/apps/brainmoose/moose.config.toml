@@ -34,6 +34,7 @@ main_branch_name = "main"
 ignore_patterns = []
 
 [features]
+olap = true
 streaming_engine = true
 workflows = true
 apis = true

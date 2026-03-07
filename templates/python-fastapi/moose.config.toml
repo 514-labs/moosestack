@@ -54,6 +54,7 @@ api_key = ""
 ignore_patterns = []
 
 [features]
+olap = true
 streaming_engine = false
 workflows = false
 apis = true

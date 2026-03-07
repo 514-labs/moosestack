@@ -84,6 +84,8 @@ export interface DimensionDef<
   expression?: Sql;
   /** Output alias for the dimension */
   as?: string;
+  /** Human-readable description (used for MCP tool generation and documentation) */
+  description?: string;
 }
 
 /**
@@ -106,6 +108,8 @@ export interface MetricDef {
   agg: Sql;
   /** Output alias for the metric (defaults to the key name if not specified) */
   as?: string;
+  /** Human-readable description (used for MCP tool generation and documentation) */
+  description?: string;
 }
 
 // =============================================================================
@@ -154,6 +158,8 @@ export interface ModelFilterDef<
    * If not specified, will be inferred from the column's ClickHouse data type.
    */
   inputType?: FilterInputTypeHint;
+  /** Human-readable description (used for MCP tool generation and documentation) */
+  description?: string;
 }
 
 // =============================================================================

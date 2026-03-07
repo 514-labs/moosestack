@@ -205,11 +205,6 @@ export interface QueryModel<
   /** Metric definitions */
   readonly metrics?: TMetrics;
 
-  /** Available dimension names (runtime access) */
-  readonly dimensionNames: readonly string[];
-  /** Available metric names (runtime access) */
-  readonly metricNames: readonly string[];
-
   /**
    * Type inference helpers (similar to Drizzle's $inferSelect pattern).
    * These are type-only properties that don't exist at runtime.
@@ -418,9 +413,6 @@ export function defineQueryModel<
 
   const dimensionNamesSet = new Set(Object.keys(normalizedDimensions));
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
-
-  const dimensionNames = Object.keys(normalizedDimensions) as readonly string[];
-  const metricNames = Object.keys(normalizedMetrics) as readonly string[];
 
   // Build field SQL expression with alias
   const buildFieldExpr = (field: FieldDef, defaultAlias: string): Sql => {
@@ -737,8 +729,6 @@ export function defineQueryModel<
     sortable,
     dimensions: dimensions as TDimensions | undefined,
     metrics: metrics as TMetrics | undefined,
-    dimensionNames,
-    metricNames,
     query: async (request, client: QueryClient) => {
       const result = await client.execute(toSql(request));
       return result.json();
