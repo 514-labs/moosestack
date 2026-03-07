@@ -1414,6 +1414,14 @@ const hostingNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
   { type: "separator" },
+  { type: "label", title: "Integrations" },
+  {
+    type: "page",
+    slug: "hosting/integrations/vercel",
+    title: "Vercel",
+    languages: ["typescript", "python"],
+  },
+  { type: "separator" },
   { type: "label", title: "Troubleshooting" },
   {
     type: "page",
