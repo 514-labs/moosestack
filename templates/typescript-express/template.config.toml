@@ -26,4 +26,4 @@ default_sloan_telemetry = "standard"
 enabled = true
 display_name = "Express API Starter"
 short_description = "Expose ClickHouse analytics to apps through an Express + TypeScript API."
-featured = false
+featured = true

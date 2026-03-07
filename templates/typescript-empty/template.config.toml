@@ -27,4 +27,4 @@ visible=true
 enabled = true
 display_name = "Blank TypeScript Starter"
 short_description = "Start a blank TypeScript MooseStack project."
-featured = true
+featured = false
