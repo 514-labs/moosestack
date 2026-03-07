@@ -6,7 +6,7 @@ Empty MooseStack app — a blank canvas for building your analytical backend.
 
 ### 1. Check local environment
 
-- Verify ports 4000, 5001, 7233, 8080, 9000, and 18123 are free. See `moose.config.toml` to change them if needed.
+- Verify ports 4000, 5001, 7233, 8080, 9000, and 18123 are free. See `moose.config.toml` to change them if needed. If you change MooseDev's port from `4000`, update `.mcp.json` (`mcpServers.moose-dev.url`) to match.
 - The project must be initialized (`moose init`) and dependencies installed (`npm install`).
 
 ### 2. Clarify requirements with the user
@@ -86,7 +86,7 @@ import { MaterializedView, sql } from "@514labs/moose-lib";
 import { PageViewTable } from "../models/pageViews";
 
 interface PageViewStats {
-  day: number;
+  day: Date;
   totalViews: number;
   uniqueUsers: number;
 }
@@ -97,7 +97,7 @@ export const PageViewStatsMV = new MaterializedView<PageViewStats>({
   orderByFields: ["day"],
   selectStatement: sql.statement`
     SELECT
-      toDayOfMonth(${PageViewTable.columns.timestamp}) as day,
+      toDate(${PageViewTable.columns.timestamp}) as day,
       count(${PageViewTable.columns.viewId}) as totalViews,
       uniqExact(${PageViewTable.columns.userId}) as uniqueUsers
     FROM ${PageViewTable}
