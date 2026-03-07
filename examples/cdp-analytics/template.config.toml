@@ -35,4 +35,3 @@ Or start services individually:
     $ pnpm dev:moose    # Start MooseStack service only
     $ pnpm dev:web      # Start web app only
 """
-default_sloan_telemetry = "standard"

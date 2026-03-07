@@ -36,7 +36,6 @@ Or start each service separately:
     $ pnpm dev:moose    # Start MooseStack service only
     $ pnpm dev:web      # Start web app only
 """
-default_sloan_telemetry = "standard"
 
 # Boreal one-click deploy configuration
 [boreal]

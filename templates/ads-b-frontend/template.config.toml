@@ -33,6 +33,5 @@ https://boreal.cloud
 🛠️ Start dev server:
     $ npm run dev
 """
-default_sloan_telemetry="comprehensive"
 
 visible=true

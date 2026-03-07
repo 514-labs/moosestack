@@ -20,7 +20,6 @@ Run this next:
 🛠️ Start the dev server:
     $ moose dev
 """
-default_sloan_telemetry="standard"
 visible=true
 
 [boreal]

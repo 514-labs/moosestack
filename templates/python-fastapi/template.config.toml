@@ -23,4 +23,3 @@ https://boreal.cloud
 🛠️ Start Moose Server:
     $ moose dev
 """
-default_sloan_telemetry = "standard"

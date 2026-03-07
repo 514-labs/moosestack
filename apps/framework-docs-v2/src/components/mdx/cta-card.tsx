@@ -24,11 +24,11 @@ interface CTACardProps {
     | React.FC<React.SVGProps<SVGSVGElement>>
     | string;
   badge?: {
-    variant: "fiveonefour" | "sloan" | "moose" | "default";
+    variant: "fiveonefour" | "moose" | "default";
     text: string;
   };
   className?: string;
-  variant?: "default" | "gradient" | "sloan";
+  variant?: "default" | "gradient";
   orientation?: "vertical" | "horizontal";
   isMooseModule?: boolean;
 }
@@ -63,7 +63,7 @@ export function CTACard({
               <IconComponent
                 className={cn(
                   "h-6 w-6",
-                  variant === "sloan" ? "text-sloan-teal" : "text-primary",
+                  text-primary,
                 )}
               />
             </div>
@@ -95,7 +95,7 @@ export function CTACard({
                 <IconComponent
                   className={cn(
                     "h-6 w-6",
-                    variant === "sloan" ? "text-sloan-teal" : "text-primary",
+                    text-primary,
                   )}
                 />
               </div>

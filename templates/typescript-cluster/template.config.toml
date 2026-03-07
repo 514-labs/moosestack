@@ -16,7 +16,6 @@ This template is designed for E2E testing of ON CLUSTER functionality.
 🛠️ Start dev server:
     $ moose dev
 """
-default_sloan_telemetry="standard"
 
 visible=false
 

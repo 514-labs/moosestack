@@ -19,5 +19,4 @@ https://boreal.cloud
 🛠️ Start dev server:
     $ moose dev
 """
-default_sloan_telemetry="comprehensive"
 visible=true

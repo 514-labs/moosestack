@@ -246,7 +246,6 @@ print(greet("World"))`}
           </CardHeader>
           <CardContent className="flex flex-wrap gap-4">
             <IconBadge variant="moose" label="Moose Module" />
-            <IconBadge variant="sloan" label="Sloan Feature" />
             <IconBadge variant="fiveonefour" label="Fiveonefour hosting" />
             <IconBadge variant="default" label="Default Badge" />
           </CardContent>

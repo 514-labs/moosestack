@@ -39,7 +39,6 @@ The versioned tables are defined in `app/ingest/models.py` and showcase how mult
 To learn more about Moose, take a look at the following resources:
 
 - [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose.
-- [Sloan Documentation](https://docs.fiveonefour.com/sloan) - learn about Sloan, the MCP interface for data engineering.
 
 ## Community
 

@@ -1,6 +1,5 @@
 # Moose specific
 .moose
-.sloan
 
 # Environment files with secrets
 .env.local

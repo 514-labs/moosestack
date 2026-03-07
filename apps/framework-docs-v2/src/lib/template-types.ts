@@ -5,7 +5,6 @@ export interface TemplateConfig {
   language: "typescript" | "python";
   description: string;
   visible?: boolean;
-  default_sloan_telemetry?: string;
 }
 
 /**

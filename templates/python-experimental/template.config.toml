@@ -30,4 +30,3 @@ It requires the development version of moose_lib.
 
 Deploy on Boreal: https://boreal.cloud
 """
-default_sloan_telemetry="standard"

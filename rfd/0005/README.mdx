@@ -61,20 +61,12 @@ Key design principles:
 - Latest installed version is used outside of project contexts (e.g., for `moose init`)
 - Single installation method (curl-based) works across all supported languages
 - Standardized installation location for simplified support
-- Maintains existing behavior for Sloan CLI installation
 - Libraries managed separately through language-specific package managers
 
 ### Installation Script Behavior
 
-The installation script will handle two distinct installation patterns:
+The installation script will install the Moose CLI with version management:
 
-#### Sloan CLI Installation
-- Maintains current direct installation behavior
-- Single version installation
-- No explicit version management wrapper
-- Preserves existing update mechanisms
-
-#### Moose CLI Installation
 - Installs version management wrapper
 - Supports multiple versions
 - Automatic version selection based on project
@@ -82,20 +74,12 @@ The installation script will handle two distinct installation patterns:
 - Does not manage language-specific libraries
 - Always installs latest version initially for new project creation
 
-The script will detect which CLI is being installed and apply the appropriate installation pattern:
-
 ```bash
-# Sloan - direct installation (unchanged behavior)
-bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) sloan
-
-# Moose - new version management behavior
+# Moose - version management behavior
 bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) moose
 
-# Installing both at the same time
-bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) sloan,moose
-
 # Installing a specific version
-bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) moose@1.0.0,sloan@1.0.0
+bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) moose@1.0.0
 
 # Specifying a channel
 RELEASE_CHANNEL=dev bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) moose
@@ -196,19 +180,11 @@ To prevent unlimited growth of cached versions:
 #### Installation Script Changes
 
 The installation script will be modified to:
-1. Detect which CLI is being installed (Sloan or Moose)
-2. For Sloan:
-   - Maintain current direct installation behavior
-   - Install single version globally
-3. For Moose:
-   - Install version management wrapper
-   - Support version-specific installation via flags
-   - Handle PATH setup for both interactive and MCP usage
+1. Install version management wrapper
+2. Support version-specific installation via flags
+3. Handle PATH setup for both interactive and MCP usage
 
 ```bash
-# Install Sloan (unchanged behavior)
-curl -sSL https://www.fiveonefour.com/install.sh | sh -s sloan
-
 # Install Moose wrapper
 curl -sSL https://www.fiveonefour.com/install.sh | sh -s moose
 ```
@@ -235,10 +211,6 @@ curl -sSL https://www.fiveonefour.com/install.sh | sh -s moose
    - Pros: Language-specific isolation
    - Cons: Complicates multi-language support, duplicate installations
 
-5. **Unified Version Management for Both CLIs**
-   - Apply same version management to both Sloan and Moose
-   - Pros: Consistent behavior across tools
-   - Cons: Unnecessary complexity for Sloan, breaks existing workflows
 
 ### Performance Implications
 
@@ -247,7 +219,6 @@ curl -sSL https://www.fiveonefour.com/install.sh | sh -s moose
 - Disk space usage proportional to number of cached versions
 - Network usage only when new versions are required
 - No performance impact on MCP operations
-- No impact on Sloan performance (maintains direct installation)
 
 ### Dependencies
 
@@ -264,7 +235,7 @@ curl -sSL https://www.fiveonefour.com/install.sh | sh -s moose
 - Test coverage: New tests needed for version management
 - Maintenance: Additional version management code
 - MCP integration: Path handling modifications
-- Installation script: Dual-mode support for Sloan and Moose
+- Installation script: Moose version management support
 
 ### Platforms and Environments
 
@@ -282,16 +253,12 @@ curl -sSL https://www.fiveonefour.com/install.sh | sh -s moose
 - Version cleanup recommendations
 - Avoid using "latest" in production environments
 - Regular cleanup of unused versions
-- Clear distinction between Sloan and Moose installation patterns
 - Use language-specific package managers for library dependencies
 
 ### Tutorials and Examples
 
 Example workflow:
 ```bash
-# Install Sloan (unchanged)
-bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) sloan
-
 # Install Moose wrapper
 bash -i <(curl -sSL https://www.fiveonefour.com/install.sh) moose
 
@@ -314,7 +281,6 @@ moose build  # Uses version from project config
 - Migration: Optional, can continue using fixed versions
 - Rollout: Gradual, with opt-in for version management
 - Unified installation experience across languages
-- No impact on Sloan users (maintains existing behavior)
 - Libraries continue to be managed by language package managers
 
 ## Implementation Plan
@@ -324,7 +290,7 @@ Goal: Basic version management with complete channel support and backward compat
 
 1. Basic Wrapper Script:
    - Install wrapper script via existing install.sh
-   - Support `moose` vs `sloan` installation modes
+   - Support `moose` installation mode
    - Basic version detection from project files
    - Use latest version outside projects
    - Simple version caching in ~/.moose/versions

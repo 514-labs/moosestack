@@ -19,4 +19,3 @@ https://boreal.cloud
 🛠️ Start dev servers:
     $ pnpm run dev
 """
-default_sloan_telemetry="comprehensive"

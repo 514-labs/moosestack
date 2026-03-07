@@ -1,6 +1,5 @@
-# Moose / Sloan / Cursor folders
+# Moose / Cursor folders
 .moose
-.sloan
 .cursor
 
 # Environment files with secrets

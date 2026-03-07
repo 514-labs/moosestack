@@ -23,4 +23,3 @@ To get started, follow these steps:
 🛠️ Start dev server:
     $ moose dev
 """
-default_sloan_telemetry="comprehensive"

@@ -81,7 +81,7 @@ function generateHtml(
   const section = slug.split("/")[0] || "docs";
   const sectionLabels: Record<string, string> = {
     moosestack: "MooseStack",
-    ai: "AI / Sloan",
+    ai: "AI",
     hosting: "Hosting",
     guides: "Guides",
     templates: "Templates",

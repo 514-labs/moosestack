@@ -1424,7 +1424,7 @@ const hostingNavigationConfig: NavigationConfig = [
 ];
 
 /**
- * AI navigation configuration (Sloan)
+ * AI navigation configuration
  */
 const aiNavigationConfig: NavigationConfig = [
   {

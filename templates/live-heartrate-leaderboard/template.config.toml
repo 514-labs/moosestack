@@ -27,4 +27,3 @@ https://boreal.cloud
 🚀 Run streamlit:
     $ streamlit run streamlit_app.py
 """
-default_sloan_telemetry="comprehensive"

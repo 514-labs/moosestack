@@ -9,7 +9,7 @@ export interface FeatureCardProps {
   title: string;
   description: string;
   features?: string[];
-  variant?: "moose" | "sloan" | "default";
+  variant?: "moose" | "default";
   size?: "default" | "compact";
   className?: string;
 }

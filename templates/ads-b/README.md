@@ -18,8 +18,8 @@ This project processes and transforms aircraft tracking data from various source
 
 ### Installation
 
-1. Install Moose / Sloan: `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,sloan`
-2. Create project: `sloan init aircraft ads-b`
+1. Install Moose: `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose`
+2. Create project: `moose init aircraft ads-b`
 3. Install dependencies: `cd aircraft && npm install`
 4. Run Moose: `moose dev`
 
@@ -30,7 +30,6 @@ You are ready to go! You can start editing the app by modifying primitives in th
 To learn more about Moose, take a look at the following resources:
 
 - [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose.
-- [Sloan Documentation](https://docs.fiveonefour.com/sloan) - learn about Sloan, the MCP interface for data engineering.
 
 ## Community
 

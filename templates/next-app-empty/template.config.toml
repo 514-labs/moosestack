@@ -29,5 +29,4 @@ https://boreal.cloud
 🛠️ Start frontend dev server:
 	$ npm run dev
 """
-default_sloan_telemetry="standard"
 visible=true

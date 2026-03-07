@@ -2,7 +2,7 @@
 
 This project processes and transforms aircraft tracking data from various sources into a standardized format for analysis and visualization. It currently pulls military aircraft data from adsb.lol.
 
-It has example workflows, data models and streaming functions. If you want to explore egress primitives, try using [Sloan](https://docs.fiveonefour.com/sloan) to generate them.
+It has example workflows, data models and streaming functions.
 
 This project also has a seed frontend written in Node, to be used when generating frontend applications on top of this.
 
@@ -30,8 +30,8 @@ ads-b-frontend/
 
 ### Installation
 
-1. Install Moose / Sloan: `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,sloan`
-2. Create project: `sloan init aircraft ads-b-frontend`
+1. Install Moose: `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose`
+2. Create project: `moose init aircraft ads-b-frontend`
 3. Install dependencies: `cd aircraft/moose && npm install`
 4. Run Moose: `moose dev`
 5. In a new terminal, install frontend dependencies: `cd aircraft/frontend && npm install`
@@ -44,7 +44,6 @@ You are ready to go! You can start editing the app by modifying primitives in th
 To learn more about Moose, take a look at the following resources:
 
 - [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose.
-- [Sloan Documentation](https://docs.fiveonefour.com/sloan) - learn about Sloan, the MCP interface for data engineering.
 
 ## Community
 
