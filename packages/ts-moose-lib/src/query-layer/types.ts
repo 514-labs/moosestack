@@ -8,7 +8,7 @@
 
 import type { Column } from "../dataModels/dataModelTypes";
 import type { Sql } from "../sqlHelpers";
-import type { OlapTable } from "../dmv2";
+import type { OlapTable, MaterializedView } from "../dmv2";
 
 // --- Basic Types ---
 
@@ -128,7 +128,7 @@ export interface ColumnDef<
  * }
  */
 export interface JoinDef {
-  table: OlapTable<any>;
+  table: OlapTable<any> | MaterializedView<any>;
   on?: Sql;
   leftKey?: string;
   rightKey?: string;
