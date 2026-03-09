@@ -119,6 +119,19 @@ export const GUIDE_SETTINGS_CONFIG = [
     visible: false, // Hidden from customizer modal
     showInSummary: false, // Hidden from bottom-left panel
   },
+  {
+    id: "startingPoint",
+    label: "Starting Point",
+    options: [
+      { value: "scratch", label: "Starting from scratch" },
+      { value: "existing-nextjs", label: "Existing Next.js app" },
+    ],
+    defaultValue: "scratch",
+    description:
+      "Whether you're starting a new project or adding to an existing app",
+    visible: true,
+    syncToUrl: true,
+  },
 ] as const satisfies readonly SettingConfig[];
 
 // Auto-generate TypeScript types from config
