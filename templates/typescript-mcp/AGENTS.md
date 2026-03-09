@@ -25,21 +25,15 @@ Before building data models or tools, ask the user:
 
 The user knows their data and use case; use the ClickHouse Best Practices Skill to translate their requirements into optimal schemas, `orderByFields`, and queries.
 
-### 3. Set up agent harness
+### 2. Agent tools available
 
-Ensure all of these are active before starting work.
+1. **Dev server** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
 
-1. **Dev server running** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
+2. **MooseDev MCP** — Pre-configured in `.mcp.json`. Primary tool for inspecting the project (see Available Tools below).
 
-2. **MooseDev MCP connected** — Pre-configured in `.mcp.json`. Verify it is connected in your copilot. This is your primary tool for inspecting the project.
+3. **Context7** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts for MooseStack documentation.
 
-3. **Context7 connected** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
-
-4. **ClickHouse Best Practices Skill installed** — Install at the start of every session if not already present:
-
-   ```bash
-   npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
-   ```
+4. **ClickHouse Best Practices Skill** — Pre-installed by `514 agent init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ## Key Files
 
