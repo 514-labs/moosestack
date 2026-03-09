@@ -6,7 +6,7 @@
 
 import type { Column } from "../dataModels/dataModelTypes";
 import { sql, Sql, quoteIdentifier } from "../sqlHelpers";
-import { OlapTable } from "../dmv2";
+import { OlapTable, MaterializedView } from "../dmv2";
 import { QueryClient } from "../consumption-apis/helpers";
 import {
   raw,
@@ -48,6 +48,14 @@ const applyFilter = filterSql as (
 ) => Sql;
 
 const identity = (v: SqlValue): SqlValue => v;
+
+function resolveTable<T>(
+  tableOrMv: OlapTable<T> | MaterializedView<T>,
+): OlapTable<T> {
+  return tableOrMv instanceof MaterializedView ?
+      tableOrMv.targetTable
+    : tableOrMv;
+}
 
 /**
  * Apply a transform function to a filter value, respecting operator-specific
@@ -145,8 +153,8 @@ export interface QueryModelConfig<
   name?: string;
   /** Tool description used by registerModelTools */
   description?: string;
-  /** The OlapTable to query */
-  table: OlapTable<TTable>;
+  /** The OlapTable or MaterializedView to query. If a MaterializedView is passed, its targetTable is used. */
+  table: OlapTable<TTable> | MaterializedView<TTable>;
 
   /**
    * Dimension fields — columns used for grouping, filtering, and display.
@@ -373,7 +381,7 @@ export function defineQueryModel<
   >;
 
   const {
-    table,
+    table: tableOrMv,
     dimensions,
     metrics,
     columns: columnDefs,
@@ -382,6 +390,7 @@ export function defineQueryModel<
     sortable,
     defaults = {},
   } = config;
+  const table = resolveTable(tableOrMv);
   const { maxLimit = 1000 } = defaults;
 
   const primaryTableName = table.name;
@@ -429,7 +438,7 @@ export function defineQueryModel<
             `Column '${name}' references unknown join '${def.join}'`,
           );
         }
-        const joinTableName = joinDef.table.name;
+        const joinTableName = resolveTable(joinDef.table).name;
         normalizedColumns[name] = {
           expression: raw(
             `${quoteIdentifier(joinTableName)}.${quoteIdentifier(String(def.column))}`,
@@ -679,10 +688,11 @@ export function defineQueryModel<
     let fromClause = sql`FROM ${table}`;
     for (const [, joinDef] of Object.entries(joinDefs!)) {
       const joinType = joinDef.type ?? "LEFT";
+      const joinTable = resolveTable(joinDef.table);
 
       let onClause: Sql;
       if (joinDef.leftKey && joinDef.rightKey) {
-        const joinTableName = joinDef.table.name;
+        const joinTableName = joinTable.name;
         onClause = raw(
           `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(joinDef.leftKey)} = ${quoteIdentifier(joinTableName)}.${quoteIdentifier(joinDef.rightKey)}`,
         );
@@ -692,7 +702,7 @@ export function defineQueryModel<
         throw new Error("JoinDef must specify either leftKey/rightKey or on");
       }
 
-      fromClause = sql`${fromClause} ${raw(joinType)} JOIN ${joinDef.table} ON ${onClause}`;
+      fromClause = sql`${fromClause} ${raw(joinType)} JOIN ${joinTable} ON ${onClause}`;
     }
     return fromClause;
   }

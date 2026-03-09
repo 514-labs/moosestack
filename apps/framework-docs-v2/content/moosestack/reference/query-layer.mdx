@@ -70,7 +70,7 @@ const visitsModel = defineQueryModel({
 |----------|------|----------|-------------|
 | `name` | `string` | No | Tool name for MCP registration |
 | `description` | `string` | No | Tool description for MCP |
-| `table` | `OlapTable<T>` | Yes | The ClickHouse table to query |
+| `table` | `OlapTable<T> \| MaterializedView<T>` | Yes | The ClickHouse table or [materialized view](/moosestack/olap/model-materialized-view) to query. If a `MaterializedView` is passed, its target table is used automatically. |
 | `dimensions` | `Record<string, DimensionDef>` | No | Grouping fields (GROUP BY) |
 | `metrics` | `Record<string, MetricDef>` | No | Aggregate functions |
 | `columns` | `Record<string, ColumnDef>` | No | Detail mode fields (non-aggregated) |
@@ -133,7 +133,7 @@ Every ClickHouse aggregate function supports the `-If` suffix.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `table` | `OlapTable<any>` | The table to join |
+| `table` | `OlapTable<any> \| MaterializedView<any>` | The table or materialized view to join. If a `MaterializedView` is passed, its target table is used automatically. |
 | `on` | `Sql` | Custom ON clause (alternative to `leftKey`/`rightKey`) |
 | `leftKey` | `string` | Left table column name |
 | `rightKey` | `string` | Right table column name |
