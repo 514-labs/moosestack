@@ -12,7 +12,7 @@ Ports used: 4000, 5001, 7233, 8080, 9000, 18123. See `moose.config.toml` to chan
 
 | File | Purpose |
 | --- | --- |
-| `app/ingest/models.py` | Data models (dataclasses + pipeline declarations) |
+| `app/ingest/models.py` | Data models (Pydantic models + pipeline declarations) |
 | `moose.config.toml` | Port and service configuration |
 
 ## Dev Environment
@@ -58,24 +58,28 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 
 ### Adding a data model
 
-MooseStack's core pattern: define a Python dataclass once, then wire up individual primitives (`OlapTable`, `Stream`, `IngestApi`) to create your data pipeline.
+MooseStack's core pattern: define a Pydantic model once, then configure an `IngestPipeline` to create your data pipeline.
 
 ```python
-from moose_lib import OlapTable, Stream, IngestApi
-from dataclasses import dataclass
+from moose_lib import IngestPipeline, IngestPipelineConfig
+from pydantic import BaseModel
 from datetime import datetime
 
-@dataclass
-class PageView:
+class PageView(BaseModel):
     view_id: str
     timestamp: datetime
     url: str
     user_id: str
     duration_ms: int
 
-PageViewTable = OlapTable[PageView]("PageView", order_by_fields=["user_id", "timestamp"])
-PageViewStream = Stream[PageView]("PageView", destination=PageViewTable)
-PageViewApi = IngestApi[PageView]("PageView", destination=PageViewStream)
+page_view_pipeline = IngestPipeline[PageView](
+    "PageView",
+    IngestPipelineConfig(
+        table=True,
+        stream=True,
+        ingest_api=True,
+    ),
+)
 ```
 
 Use `order_by_fields` to control ClickHouse table ordering — put your most-filtered columns first. Use the ClickHouse Best Practices Skill to choose the right ordering.
@@ -86,6 +90,6 @@ For advanced table configuration (engines, indexes, projections), see `moose doc
 
 - **DO** use `order_by_fields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
-- **DO** use `OlapTable` + `Stream` + `IngestApi` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use `IngestPipeline` with `IngestPipelineConfig` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
-- **DO** export new primitives from your app's entry file. **DON'T** forget to export — MooseStack won't discover unexported primitives.
+- **DO** import new primitives in your app's `main.py`. **DON'T** leave modules unimported — MooseStack discovers primitives by loading `main.py`, so unimported modules won't be found.

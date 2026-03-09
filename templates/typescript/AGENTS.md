@@ -58,10 +58,10 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 
 ### Adding a data model
 
-MooseStack's core pattern: define a TypeScript interface once, then wire up individual primitives (`OlapTable`, `Stream`, `IngestApi`) to create your data pipeline.
+MooseStack's core pattern: define a TypeScript interface once, then configure an `IngestPipeline` to create your data pipeline.
 
 ```typescript
-import { OlapTable, Stream, IngestApi } from "@514labs/moose-lib";
+import { IngestPipeline } from "@514labs/moose-lib";
 
 export interface PageView {
   viewId: string;
@@ -71,16 +71,10 @@ export interface PageView {
   durationMs: number;
 }
 
-export const PageViewTable = new OlapTable<PageView>("PageView", {
-  orderByFields: ["userId", "timestamp"],
-});
-
-export const PageViewStream = new Stream<PageView>("PageView", {
-  destination: PageViewTable,
-});
-
-export const PageViewApi = new IngestApi<PageView>("PageView", {
-  destination: PageViewStream,
+export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
+  table: { orderByFields: ["userId", "timestamp"] },
+  stream: true,
+  ingestApi: true,
 });
 ```
 
@@ -92,6 +86,6 @@ For advanced table configuration (engines, indexes, projections), see `moose doc
 
 - **DO** use `orderByFields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
-- **DO** use `OlapTable` + `Stream` + `IngestApi` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
-- **DO** export new primitives from your app's entry file. **DON'T** forget to export — MooseStack won't discover unexported primitives.
+- **DO** export new primitives from your app's entry file (`app/index.ts`). **DON'T** forget to export — MooseStack won't discover unexported primitives.

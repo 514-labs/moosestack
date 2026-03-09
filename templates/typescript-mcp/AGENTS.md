@@ -25,7 +25,7 @@ Before building data models or tools, ask the user:
 
 The user knows their data and use case; use the ClickHouse Best Practices Skill to translate their requirements into optimal schemas, `orderByFields`, and queries.
 
-### 2. Agent tools available
+### 3. Agent tools available
 
 1. **Dev server** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
 
@@ -58,11 +58,11 @@ The user knows their data and use case; use the ClickHouse Best Practices Skill 
 
 ### Adding a data model
 
-MooseStack's core pattern: define a TypeScript interface once, then wire up individual primitives (`OlapTable`, `Stream`, `IngestApi`) to create your data pipeline.
+MooseStack's core pattern: define a TypeScript interface once, then configure an `IngestPipeline` to create your data pipeline.
 
 ```typescript
 // app/ingest/models.ts
-import { OlapTable, Stream, IngestApi } from "@514labs/moose-lib";
+import { IngestPipeline } from "@514labs/moose-lib";
 
 export interface PageView {
   viewId: string;
@@ -72,19 +72,11 @@ export interface PageView {
   durationMs: number;
 }
 
-// ClickHouse table — orderByFields is critical for query performance
-export const PageViewTable = new OlapTable<PageView>("PageView", {
-  orderByFields: ["userId", "timestamp"],
-});
-
-// Streaming topic — wired to the table
-export const PageViewStream = new Stream<PageView>("PageView", {
-  destination: PageViewTable,
-});
-
-// REST API endpoint — POST /ingest/PageView
-export const PageViewApi = new IngestApi<PageView>("PageView", {
-  destination: PageViewStream,
+// IngestPipeline configures table, stream, and API in one declaration
+export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
+  table: { orderByFields: ["userId", "timestamp"] },
+  stream: true,
+  ingestApi: true, // POST /ingest/PageView
 });
 ```
 
@@ -179,7 +171,7 @@ Key patterns from this template:
 - **DO** use `orderByFields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
 - **DO** use `clickhouseReadonlyQuery()` for MCP tool DB access. **DON'T** use `client.query.client.query()` directly without readonly settings.
-- **DO** use `OlapTable` + `Stream` + `IngestApi` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** return user-friendly error messages in MCP tool responses. **DON'T** expose internal error details or stack traces.
 - **DO** export new primitives from `app/index.ts`. **DON'T** forget to export — MooseStack won't discover unexported primitives.
 - **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
