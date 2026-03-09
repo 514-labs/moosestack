@@ -276,7 +276,7 @@ export interface QueryModel<
   readonly $inferResult: TResult;
 
   /** Execute query with Moose QueryClient. */
-  query: (
+  query(
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
@@ -286,10 +286,10 @@ export interface QueryModel<
       TTable
     >,
     client: QueryClient,
-  ) => Promise<TResult[]>;
+  ): Promise<TResult[]>;
 
   /** Build complete SQL query from request. */
-  toSql: (
+  toSql(
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
@@ -298,10 +298,10 @@ export interface QueryModel<
       Names<TColumns>,
       TTable
     >,
-  ) => Sql;
+  ): Sql;
 
   /** Get individual SQL parts for custom assembly. */
-  toParts: (
+  toParts(
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
@@ -310,7 +310,7 @@ export interface QueryModel<
       Names<TColumns>,
       TTable
     >,
-  ) => QueryParts;
+  ): QueryParts;
 }
 
 // --- defineQueryModel Implementation ---
