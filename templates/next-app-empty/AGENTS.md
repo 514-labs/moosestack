@@ -83,13 +83,13 @@ export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
 });
 ```
 
-Use `orderByFields` to control ClickHouse table ordering — put your most-filtered columns first. If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering.
+The `table` field accepts either a boolean (`true` for defaults, `false` to skip table creation) or an object with `orderByFields` for explicit ordering. Use `orderByFields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering.
 
 For advanced table configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
 
 ### Do / Don't
 
-- **DO** use `orderByFields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
+- **DO** specify `orderByFields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
 - **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.

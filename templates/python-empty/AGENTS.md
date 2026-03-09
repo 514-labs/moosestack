@@ -12,6 +12,7 @@ Ports used: 4000, 5001, 7233, 8080, 9000, 18123. See `moose.config.toml` to chan
 
 | File | Purpose |
 | --- | --- |
+| `app/main.py` | App entrypoint — import all modules here so MooseStack discovers them |
 | `moose.config.toml` | Port and service configuration |
 
 ## Dev Environment
@@ -36,9 +37,9 @@ Pre-configured in `.mcp.json`. Prefer these over CLI commands — they return st
 
 Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
 
-### ClickHouse Best Practices Skill
+### ClickHouse Best Practices Skill (optional)
 
-Use when creating or refining data models, writing ClickHouse queries, designing schemas, or configuring materialized views. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+Not included by default. Install with `514 agent init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ### Moose CLI
 
@@ -81,14 +82,14 @@ page_view_pipeline = IngestPipeline[PageView](
 )
 ```
 
-Use `order_by_fields` to control ClickHouse table ordering — put your most-filtered columns first. Use the ClickHouse Best Practices Skill to choose the right ordering.
+The `table` field accepts either a boolean (`True` for defaults, `False` to skip table creation) or an `OlapConfig` with `order_by_fields` for explicit ordering. Use `order_by_fields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering.
 
 For advanced table configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
 
 ### Do / Don't
 
-- **DO** use `order_by_fields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
+- **DO** specify `order_by_fields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
 - **DO** use `IngestPipeline` with `IngestPipelineConfig` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
-- **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
+- **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
 - **DO** import new primitives in your app's `main.py`. **DON'T** leave modules unimported — MooseStack discovers primitives by loading `main.py`, so unimported modules won't be found.

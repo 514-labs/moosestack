@@ -101,7 +101,7 @@ This template ships with an agent harness — a set of tools that give your AI c
 The MCP servers are pre-configured in `.mcp.json` and most AI copilots (Claude Code, Cursor, etc.) pick them up automatically. To install the skill:
 
 ```bash
-npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
+514 agent init
 ```
 
 ## Next Steps
