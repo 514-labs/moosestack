@@ -42,9 +42,9 @@ Pre-configured in `.mcp.json`. Prefer these over CLI commands — they return st
 
 Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
 
-### ClickHouse Best Practices Skill
+### ClickHouse Best Practices Skill (optional)
 
-Use when creating or refining data models, writing ClickHouse queries, designing schemas, or configuring materialized views. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+Not included by default. Install with `npx skills add 514-labs/agent-skills` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ### Moose CLI
 
@@ -93,4 +93,4 @@ For advanced table configuration (engines, indexes, projections), see `moose doc
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
 - **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
-- **DO** export new primitives from your app's entry file (`app/index.ts`). **DON'T** forget to export — MooseStack won't discover unexported primitives.
+- **DO** export new primitives from your app's entry file (`moose/app/index.ts`). **DON'T** forget to export — MooseStack won't discover unexported primitives.

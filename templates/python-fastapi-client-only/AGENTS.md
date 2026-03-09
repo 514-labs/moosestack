@@ -12,7 +12,7 @@ Ports used: 4000, 5001, 7233, 8080, 9000, 18123. See `moose.config.toml` to chan
 
 | File | Purpose |
 | --- | --- |
-| `app/ingest/models.py` | Data models (Pydantic models + pipeline declarations) |
+| `app/db/models.py` | Data models (Pydantic models + pipeline declarations) |
 | `app/apis/*.py` | FastAPI endpoints |
 | `moose.config.toml` | Port and service configuration |
 

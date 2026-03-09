@@ -26,6 +26,14 @@ Ports used: 4000, 5001, 7233, 8080, 9000, 18123 (Moose), 8501 (Streamlit). See `
 
 ## Dev Environment
 
+### Initial setup
+
+Install Python dependencies before starting either process.
+
+```bash
+pip install -r requirements.txt
+```
+
 ### Start the dev server
 
 This starts ClickHouse, the data pipeline, and the MooseDev MCP server on `localhost:4000`.

@@ -62,7 +62,7 @@ Use `moose --help` to discover all commands. Most useful for getting context:
 MooseStack's core pattern: define a Pydantic model once, then configure an `IngestPipeline` to create your data pipeline.
 
 ```python
-from moose_lib import IngestPipeline, IngestPipelineConfig
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -76,7 +76,7 @@ class PageView(BaseModel):
 page_view_pipeline = IngestPipeline[PageView](
     "PageView",
     IngestPipelineConfig(
-        table=True,
+        table=OlapConfig(order_by_fields=["user_id", "timestamp"]),
         stream=True,
         ingest_api=True,
     ),

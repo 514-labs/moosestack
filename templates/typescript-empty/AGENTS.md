@@ -12,6 +12,7 @@ Ports used: 4000, 5001, 7233, 8080, 9000, 18123. See `moose.config.toml` to chan
 
 | File | Purpose |
 | --- | --- |
+| `app/index.ts` | Entry file for primitives (tables, streams, APIs) |
 | `moose.config.toml` | Port and service configuration |
 
 ## Dev Environment
