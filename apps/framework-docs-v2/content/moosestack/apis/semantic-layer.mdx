@@ -198,7 +198,7 @@ VisitsTable = OlapTable[Visit]("visits", OlapConfig(
 |---|---|---|
 | **`name`** | Identifier | Becomes the tool name in MCP and AI SDK registrations |
 | **`description`** | What this model queries | Used as the tool description for LLMs |
-| **`table`** | Source table or view | The ClickHouse table, view, or materialized view queries run against |
+| **`table`** | Source `OlapTable` or `MaterializedView` | The ClickHouse [table](/moosestack/olap/model-table) or [materialized view](/moosestack/olap/model-materialized-view) to query. If a `MaterializedView` is passed, its target table is used automatically. |
 | **`dimensions`** | Allowed `GROUP BY` columns | `timeDimensions()` generates `day`, `month`, `week` from a date column |
 | **`metrics`** | Aggregate computations | Appear in `SELECT` alongside requested dimensions |
 | **`filters`** | Allowed `WHERE` clauses with operators | `required: true` enforces mandatory filtering (e.g., tenant isolation) |
