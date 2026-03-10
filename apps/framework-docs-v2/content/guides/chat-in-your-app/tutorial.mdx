@@ -1016,7 +1016,7 @@ https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/mooses
 
 See the [financial demo transaction API](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis/transaction.ts) for a working example with `/schema` and `/metrics` endpoints.
 
-<ToggleBlock openText="See: what gets built" closedText="See: what gets built">
+<ToggleBlock openText="What gets built" closedText="What gets built">
 
 An example of what an agent will build:
 
@@ -1051,79 +1051,193 @@ For working code, see the [financial demo API](https://github.com/514-labs/finan
 
 ## Deploy to Production
 
-Deploy your backend and frontend, then load data into production.
+Ship your backend to Fiveonefour and your frontend to Vercel. Both platforms deploy from GitHub, so pushing to your repo triggers builds automatically.
 
 <GuideStepper id="chat-deploy" persist>
 
-<GuideStepper.Step id="deploy" number={1} title="Deploy to Production" summary="Deploy MooseStack to Fiveonefour and Next.js to Vercel">
+<GuideStepper.Step id="push-to-github" number={1} title="Push to GitHub" summary="Get your project into a GitHub repo">
 <GuideStepper.WhatYouNeed>
-    - Working local setup with chat verified
-    - Fiveonefour hosting account and Vercel account
-    - GitHub repository connected to both platforms
+    - A [GitHub account](https://github.com)
+    - Your project working locally
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-    - MooseStack backend deployed on Fiveonefour
-    - Next.js frontend deployed on Vercel
-    - Production authentication configured
+    - Your project in a GitHub repo, ready for deployment
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="deploy-fiveonefour-vercel" title="Deploy MooseStack and Next.js">
+<GuideStepper.Checkpoint id="push-github" title="Push your project to GitHub">
 
-:::include /shared/chat-guide/deploy-to-fiveonefour-and-vercel.mdx
+Create a new repo on GitHub and push your project:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/<your-username>/<your-repo>.git
+git push -u origin main
+```
+
+Both Fiveonefour and Vercel will deploy from this repo.
 
 </GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="hydrate-production" number={2} title="Hydrate Production Data" summary="Load data into your production ClickHouse instance">
+<GuideStepper.Step id="deploy-backend" number={2} title="Deploy MooseStack to Fiveonefour" summary="Create an account and deploy your backend">
 <GuideStepper.WhatYouNeed>
-    - Deployed MooseStack project on Fiveonefour
-    - Access to your S3 data source
+    - A [Fiveonefour hosting account](https://www.boreal.cloud/sign-up)
+    - Your GitHub repo from step 1
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-    - Production ClickHouse populated with data
-    - Fully functional production chat application
+    - MooseStack backend running in production (tables, APIs, query layer)
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="get-connection-string" title="Get your Fiveonefour connection string">
+<GuideStepper.Checkpoint id="signup-514" title="Create a Fiveonefour hosting account (or sign in)">
 
-Your project is now deployed. You have a Vercel hosted frontend. You have a Fiveonefour hosted backend, with tables, APIs etc. set up for you.
-
-Your backend, however, is still unpopulated.
-
-This section will cover how to get data into prod.
-
-Note, it assumes a bulk ingest from a Parquet file on S3 with direct insertion through SQL, like the rest of this tutorial. If you configured a recurring workflow, that would automate data ingest (depending on the trigger). If you set up an ingestion endpoint, you may need to send data to said endpoint.
-
-**Find your Fiveonefour connection string / database details:**
-
-It is in the Database tab of your deployment overview. Make sure to select the appropriate connection string type.
+Go to [Fiveonefour hosting](https://www.boreal.cloud/sign-up) and create an account, or [sign in](https://www.boreal.cloud/sign-in) if you already have one.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="run-production-insert" title="Connect and load data into production">
+<GuideStepper.Checkpoint id="create-514-project" title="Create and deploy your project">
 
-**Connect your SQL client, and run the following ClickHouse SQL query:**
+1. Connect your GitHub account — authorize and install the Fiveonefour GitHub App:
 
-```sql
--- Bulk load Parquet data from S3 into ClickHouse
-INSERT INTO `<clickhouse-database>`.`<table-name>`   -- Target ClickHouse database and table
-SELECT *
-FROM s3(
-  's3://<bucket-name>/<path-to-file>.parquet',       -- S3 bucket and path to the Parquet file
-  '<aws-access-key-id>',                              -- AWS Access Key ID
-  '<aws-secret-access-key>',                          -- AWS Secret Access Key
-  'Parquet'                                           -- File format
-);
+![Connect your GitHub account to Fiveonefour](/deploy-1-github.png)
+
+2. Select your repo under **Create project from existing repository** and click **Import**:
+
+![Select your repo and click Import](/deploy-2-select-repo.png)
+
+3. Set the project root to your MooseStack service path (e.g. `/packages/moosestack-service` for monorepos, or `/` for single-repo setups). Fiveonefour auto-detects the `moose.config.toml`:
+
+![Configure project name and root directory](/deploy-3-configure.png)
+
+4. Configure infrastructure and add environment variables. Use managed defaults for the easiest setup, or bring your own ClickHouse and Redpanda:
+
+![Configure infrastructure — managed ClickHouse, Redpanda, and Workflows](/deploy-4-infra.png)
+
+5. Click **Deploy** — Fiveonefour provisions everything and starts building:
+
+![Deployment building with build logs](/deploy-5-building.png)
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step id="link-514" number={3} title="Link Your Local Project" summary="Connect your local dev environment to production">
+<GuideStepper.WhatYouNeed>
+    - Your Fiveonefour deployment running
+    - The `514` CLI installed locally
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+    - Local project linked to your production deployment
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint id="run-514-link" title="Authenticate and link your project">
+
+Log in to the 514 CLI:
+
+```bash
+514 auth login
 ```
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-```sql
-INSERT INTO `<clickhouse-database>`.AmazonReviews
+This opens a browser to authenticate with your Fiveonefour account.
+
+Then link your local project to the deployed one:
+
+```bash
+514 project link <org>/<project> --yes --org <org>
+```
+
+- `<org>/<project>` — your project reference (e.g. `my-org/my-chat-app`). You can also pass a project name, project ID, or 514 URL
+- `--yes` — skip confirmation prompts
+- `--org <org>` — specify the organization name or ID
+
+Once linked, you can manage your production deployment from the CLI:
+
+- `514 clickhouse` — run queries against your production ClickHouse
+- `514 logs` — tail runtime application logs
+- `514 metrics` — query metrics and analytics
+- `514 agent` — agent-focused read-only commands (infra map, resource inspection)
+- `514 deployment list` — view deployment status
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step id="deploy-frontend" number={4} title="Deploy Next.js to Vercel" summary="Deploy your frontend">
+<GuideStepper.WhatYouNeed>
+    - A [Vercel account](https://vercel.com/)
+    - Your Fiveonefour deployment URL (found at the top of your project overview page)
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+    - Next.js frontend deployed and connected to your production backend
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint id="deploy-vercel" title="Link and deploy via Fiveonefour">
+
+From your Fiveonefour project **Overview** page, scroll to the **Integrations** section and link your Vercel project:
+
+![Link your Vercel project from the Fiveonefour integrations panel](/deploy-7-vercel-link.png)
+
+1. Connect your Vercel account if you haven't already
+2. Select your Vercel project from the dropdown and click **Link Project**
+3. Set the following environment variables in Vercel:
+
+```text
+ANTHROPIC_API_KEY=<your Anthropic API key>
+NEXT_PUBLIC_API_URL=<your Fiveonefour endpoint URL, e.g. https://your-project.boreal.cloud>
+API_KEY=<the bearer token from your MOOSE_WEB_APP_API_KEYS>
+```
+
+4. Deploy from the Vercel dashboard or push to your repo
+
+<Callout type="warning" title="Authentication">
+The API keys above secure communication between your frontend and backend. You still need to add authentication to restrict access to your frontend itself.
+
+Vercel offers native protection for preview deployments. For production, consider [NextAuth](https://next-auth.js.org/), [Auth0](https://auth0.com/), or [Clerk](https://clerk.com/). See [Vercel authentication docs](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication).
+</Callout>
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step id="hydrate-production" number={5} title="Load Production Data" summary="Populate your production database">
+<GuideStepper.WhatYouNeed>
+    - Your Fiveonefour deployment running
+    - Your local project linked via `514 project link`
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+    - Production ClickHouse populated with data
+    - Fully functional production application
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint id="load-prod-data" title="Load data into production">
+
+Your backend is deployed but empty. How you load data depends on how you set up ingestion in dev:
+
+**Flat file (SQL insert)** — run the same SQL you used locally, but against production via `514 clickhouse`:
+
+```bash
+514 clickhouse "INSERT INTO <table-name>
+SELECT * FROM s3(
+  's3://<bucket-name>/<path-to-file>.parquet',
+  '<aws-access-key-id>',
+  '<aws-secret-access-key>',
+  'Parquet'
+)"
+```
+
+**Push API (ingestion endpoint)** — point your data source at your production ingest URL instead of `localhost:4000`. Find the URL at the top of your Fiveonefour project overview.
+
+**Pull workflow** — if you configured a recurring workflow, it runs automatically on deploy. No action needed.
+
+<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closedText="Hide Amazon dataset example">
+```bash
+514 clickhouse "INSERT INTO AmazonReviews
 SELECT * FROM s3(
   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet',
   'Parquet'
-);
+)"
 ```
 <Callout type="tip" title="Large dataset">
 This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
@@ -1132,13 +1246,10 @@ This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="validate-production" title="Validate the data loaded correctly">
+<GuideStepper.Checkpoint id="validate-prod" title="Validate the load">
 
-This will again return 0 rows. This is expected. You can validate that the transfer worked correctly as follows:
-
-```sql
-"SELECT COUNT(*) FROM
-      `<clickhouse-database>`.tablename"
+```bash
+514 clickhouse "SELECT COUNT(*) FROM <table-name>"
 ```
 
 </GuideStepper.Checkpoint>
@@ -1146,6 +1257,4 @@ This will again return 0 rows. This is expected. You can validate that the trans
 </GuideStepper.Step>
 
 </GuideStepper>
-
-:::include /shared/chat-guide/troubleshooting.mdx
 
