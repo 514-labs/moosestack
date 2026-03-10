@@ -99,11 +99,14 @@ export class View {
 
     // Register in the views registry using a database-aware composite key
     // to allow same view name in different databases.
+    // Using '::' as separator to avoid ambiguity with view names containing dots.
     const views = getMooseInternal().views;
     const registryKey =
-      this.database ? `${this.database}.${this.name}` : this.name;
+      this.database ? `${this.database}::${this.name}` : this.name;
     if (!isClientOnlyMode() && views.has(registryKey)) {
-      throw new Error(`View with name ${this.name} already exists`);
+      const qualifiedName =
+        this.database ? `${this.database}.${this.name}` : this.name;
+      throw new Error(`View with name ${qualifiedName} already exists`);
     }
     views.set(registryKey, this);
   }

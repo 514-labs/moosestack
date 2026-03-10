@@ -1326,7 +1326,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
         } else if (r.kind === "View") {
           const view = r as View;
           return {
-            id: view.name,
+            id: view.database ? `${view.database}::${view.name}` : view.name,
             kind: "View",
           };
         } else if (r.kind === "MaterializedView") {
@@ -1359,7 +1359,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
         } else if (r.kind === "View") {
           const view = r as View;
           return {
-            id: view.name,
+            id: view.database ? `${view.database}::${view.name}` : view.name,
             kind: "View",
           };
         } else if (r.kind === "MaterializedView") {
@@ -1413,7 +1413,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
 
   // Serialize views with structured data
   registry.views.forEach((view) => {
-    const viewKey = view.database ? `${view.database}.${view.name}` : view.name;
+    const viewKey =
+      view.database ? `${view.database}::${view.name}` : view.name;
     views[viewKey] = {
       name: view.name,
       ...(view.database !== undefined && { database: view.database }),
