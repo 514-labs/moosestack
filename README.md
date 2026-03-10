@@ -45,7 +45,7 @@ In short, when everything is code, coding agents can thrive.
 - [Moose **OLAP**](https://docs.fiveonefour.com/moosestack/olap): Manage ClickHouse tables, materialized views, and migrations in code.
 - [Moose **Streaming**](https://docs.fiveonefour.com/moosestack/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
 - [Moose **Workflows**](https://docs.fiveonefour.com/moosestack/workflows): ETL pipelines and tasks with Temporal.
-- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, code-first sematic layer, and bring your own API framework (Nextjs, Express, FastAPI, Fastify, etc.)
+- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, code-first semantic layer, and bring your own API framework (Nextjs, Express, FastAPI, Fastify, etc.)
 
 ## Get Started
 
