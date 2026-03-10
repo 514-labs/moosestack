@@ -596,6 +596,7 @@ async fn sync_kafka_to_clickhouse(
 
     let clickhouse_columns: Vec<String> = target_table_columns
         .iter()
+        .filter(|column| column.materialized.is_none() && column.alias.is_none())
         .map(|column| column.name.clone())
         .collect();
 
@@ -1247,6 +1248,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "B".to_string(),
@@ -1260,6 +1262,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "C".to_string(),
@@ -1279,6 +1282,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                             Column {
                                 name: "b".to_string(),
@@ -1298,6 +1302,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                         Column {
                                             name: "e".to_string(),
@@ -1311,6 +1316,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                         Column {
                                             name: "f".to_string(),
@@ -1324,6 +1330,7 @@ mod tests {
                                             ttl: None,
                                             codec: None,
                                             materialized: None,
+                                            alias: None,
                                         },
                                     ],
                                 }),
@@ -1336,6 +1343,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                             Column {
                                 name: "c".to_string(),
@@ -1349,6 +1357,7 @@ mod tests {
                                 ttl: None,
                                 codec: None,
                                 materialized: None,
+                                alias: None,
                             },
                         ],
                     }),
@@ -1361,6 +1370,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "D".to_string(),
@@ -1374,6 +1384,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
         };

@@ -29,26 +29,26 @@ export async function getTopicTimeseries(
 
   const intervalMap = {
     hour: {
-      select: sql`toStartOfHour(${cols.createdAt}) AS time`,
-      groupBy: sql`GROUP BY time, topic`,
-      orderBy: sql`ORDER BY time, totalEvents DESC`,
-      limit: sql`LIMIT ${limit} BY time`,
+      select: sql.fragment`toStartOfHour(${cols.createdAt}) AS time`,
+      groupBy: sql.fragment`GROUP BY time, topic`,
+      orderBy: sql.fragment`ORDER BY time, totalEvents DESC`,
+      limit: sql.fragment`LIMIT ${limit} BY time`,
     },
     day: {
-      select: sql`toStartOfDay(${cols.createdAt}) AS time`,
-      groupBy: sql`GROUP BY time, topic`,
-      orderBy: sql`ORDER BY time, totalEvents DESC`,
-      limit: sql`LIMIT ${limit} BY time`,
+      select: sql.fragment`toStartOfDay(${cols.createdAt}) AS time`,
+      groupBy: sql.fragment`GROUP BY time, topic`,
+      orderBy: sql.fragment`ORDER BY time, totalEvents DESC`,
+      limit: sql.fragment`LIMIT ${limit} BY time`,
     },
     minute: {
-      select: sql`toStartOfFifteenMinutes(${cols.createdAt}) AS time`,
-      groupBy: sql`GROUP BY time, topic`,
-      orderBy: sql`ORDER BY time, totalEvents DESC`,
-      limit: sql`LIMIT ${limit} BY time`,
+      select: sql.fragment`toStartOfFifteenMinutes(${cols.createdAt}) AS time`,
+      groupBy: sql.fragment`GROUP BY time, topic`,
+      orderBy: sql.fragment`ORDER BY time, totalEvents DESC`,
+      limit: sql.fragment`LIMIT ${limit} BY time`,
     },
   };
 
-  const query = sql`
+  const query = sql.statement`
             SELECT
                 time,
                 arrayMap(
@@ -72,7 +72,7 @@ export async function getTopicTimeseries(
                     uniqExact(${cols.actorId}) AS uniqueUsersCount
                 FROM ${RepoStarEvent.table!}
                 WHERE length(${cols.repoTopics!}) > 0
-                ${exclude ? sql`AND arrayAll(x -> x NOT IN (${exclude}), ${cols.repoTopics!})` : sql``}
+                ${exclude ? sql.fragment`AND arrayAll(x -> x NOT IN (${exclude}), ${cols.repoTopics!})` : sql.fragment``}
                 ${intervalMap[interval].groupBy}
                 ${intervalMap[interval].orderBy}
                 ${intervalMap[interval].limit}

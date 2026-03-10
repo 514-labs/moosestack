@@ -67,6 +67,7 @@ export {
   ClickHouseDefault,
   ClickHouseTTL,
   ClickHouseMaterialized,
+  ClickHouseAlias,
   WithDefault,
   ClickHouseCodec,
   // Added friendly aliases and numeric helpers
@@ -87,6 +88,7 @@ export {
   UInt64,
   Decimal,
 } from "./dataModels/types";
+export type { Insertable } from "./dataModels/types";
 
 export type { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 

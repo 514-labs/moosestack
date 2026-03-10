@@ -275,7 +275,14 @@ class QueryClient:
         self.ch_client.ping()
 
         start = perf_counter()
-        val = self.ch_client.query(clickhouse_query, parameters)
+        val = self.ch_client.query(
+            clickhouse_query,
+            parameters,
+            settings={
+                "asterisk_include_materialized_columns": 1,
+                "asterisk_include_alias_columns": 1,
+            },
+        )
         secs = perf_counter() - start
         if secs < 1:
             print(f"[QueryClient] | Query completed: {secs * 1000:.0f} ms")

@@ -13,7 +13,7 @@ export const getBrainBySessionIdApi = new Api<QueryParams, Brain[]>(
     }
 
     const result = await client.query.execute(
-      sql`SELECT * FROM Brain WHERE sessionId = ${sessionId}`,
+      sql.statement`SELECT * FROM Brain WHERE sessionId = ${sessionId}`,
     );
     return await result.json();
   },

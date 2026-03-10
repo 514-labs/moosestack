@@ -780,6 +780,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -820,6 +821,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
         table
     }
@@ -1165,6 +1167,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 after_column: None,
                 database: Some("bad_db".to_string()),
@@ -1184,6 +1187,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 after_column: Column {
                     name: "col".to_string(),
@@ -1197,6 +1201,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 database: Some("another_bad_db".to_string()),
                 cluster_name: None,

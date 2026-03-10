@@ -5,7 +5,7 @@ import {
   isArrayNestedType,
   isNestedType,
 } from "../../dataModels/dataModelTypes";
-import { ClickHouseEngines } from "../../dataModels/types";
+import { ClickHouseEngines, Insertable } from "../../dataModels/types";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
@@ -717,6 +717,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
   /** @internal */
   public readonly kind = "OlapTable";
 
+  /** @internal Typia validators for Insertable<T> — used during insert validation */
+  private insertValidators?: TypiaValidators<Insertable<T>>;
+
   /** @internal Memoized ClickHouse client for reusing connections across insert calls */
   private _memoizedClient?: any;
   /** @internal Hash of the configuration used to create the memoized client */
@@ -738,6 +741,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
     validators?: TypiaValidators<T>,
+    insertValidators?: TypiaValidators<Insertable<T>>,
   );
 
   constructor(
@@ -746,6 +750,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    insertValidators?: TypiaValidators<Insertable<T>>,
   ) {
     // Handle legacy configuration by defaulting to MergeTree when no engine is specified
     const resolvedConfig =
@@ -783,6 +788,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     super(name, resolvedConfig, schema, columns, validators);
+    this.insertValidators = insertValidators;
     this.name = name;
 
     const tables = getMooseInternal().tables;
@@ -968,6 +974,62 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     throw new Error("No typia validator found");
+  }
+
+  /**
+   * Validates records for insert using Insertable<T> validators when available.
+   * Falls back to the full T validators if insert validators weren't generated.
+   * @private
+   */
+  private async validateInsertRecords(
+    data: unknown[],
+  ): Promise<ValidationResult<T>> {
+    const iv = this.insertValidators;
+    if (!iv?.is) {
+      return this.validateRecords(data);
+    }
+
+    const valid: T[] = [];
+    const invalid: ValidationError[] = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const record = data[i];
+      try {
+        if (iv.is(record)) {
+          valid.push(this.mapToClickhouseRecord(record as T));
+        } else if (iv.validate) {
+          const result = iv.validate(record);
+          if (result.success) {
+            valid.push(this.mapToClickhouseRecord(record as T));
+          } else {
+            invalid.push({
+              record,
+              error:
+                result.errors?.map((e: any) => String(e)).join(", ") ||
+                "Validation failed",
+              index: i,
+              path: "root",
+            });
+          }
+        } else {
+          invalid.push({
+            record,
+            error: "Validation failed",
+            index: i,
+            path: "root",
+          });
+        }
+      } catch (error) {
+        invalid.push({
+          record,
+          error: error instanceof Error ? error.message : String(error),
+          index: i,
+          path: "root",
+        });
+      }
+    }
+
+    return { valid, invalid, total: data.length };
   }
 
   /**
@@ -1159,7 +1221,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     try {
-      const validationResult = await this.validateRecords(data as unknown[]);
+      const validationResult = await this.validateInsertRecords(
+        data as unknown[],
+      );
       const validatedData = validationResult.valid;
       const validationErrors = validationResult.invalid;
 
@@ -1583,15 +1647,17 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    * ```
    */
   async insert(
-    data: T[] | Readable,
+    data: Insertable<T>[] | Readable,
     options?: InsertOptions,
   ): Promise<InsertResult<T>> {
+    const rawData = data as T[] | Readable;
+
     // Validate input parameters and strategy compatibility
     const { isStream, strategy, shouldValidate } =
-      this.validateInsertParameters(data, options);
+      this.validateInsertParameters(rawData, options);
 
     // Handle early return cases for empty data
-    const emptyResult = this.handleEmptyData(data, isStream);
+    const emptyResult = this.handleEmptyData(rawData, isStream);
     if (emptyResult) {
       return emptyResult;
     }
@@ -1602,7 +1668,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
     if (!isStream && shouldValidate) {
       const validationResult = await this.performPreInsertionValidation(
-        data as T[],
+        rawData as T[],
         shouldValidate,
         strategy,
         options,
@@ -1611,7 +1677,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       validationErrors = validationResult.validationErrors;
     } else {
       // No validation or stream input
-      validatedData = isStream ? [] : (data as T[]);
+      validatedData = isStream ? [] : (rawData as T[]);
     }
 
     // Get memoized client and generate cached table name
@@ -1622,7 +1688,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       // Prepare and execute insertion with optimized settings
       const insertOptions = this.prepareInsertOptions(
         tableName,
-        data,
+        rawData,
         validatedData,
         isStream,
         strategy,
@@ -1633,7 +1699,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
       // Return success result
       return this.createSuccessResult(
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,
@@ -1646,7 +1712,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
         batchError,
         strategy,
         tableName,
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,

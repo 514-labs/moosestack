@@ -34,8 +34,8 @@ export const getMostActiveBrainwavesApi = new Api<QueryParams, any>(
     }
 
     const result = await client.query.execute(
-      sql`
-        SELECT 
+      sql.statement`
+        SELECT
           sessionId,
           AVG(alpha) as avg_alpha,
           AVG(beta) as avg_beta, 

@@ -249,6 +249,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Materialized Columns",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/olap/alias-columns",
+        title: "Alias Columns",
+        languages: ["typescript", "python"],
+      },
       { type: "separator" },
       { type: "label", title: "External Data & Introspection" },
       {
@@ -1408,6 +1414,14 @@ const hostingNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
   { type: "separator" },
+  { type: "label", title: "Integrations" },
+  {
+    type: "page",
+    slug: "hosting/integrations/vercel",
+    title: "Vercel",
+    languages: ["typescript", "python"],
+  },
+  { type: "separator" },
   { type: "label", title: "Troubleshooting" },
   {
     type: "page",
@@ -1629,12 +1643,6 @@ const guidesNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "guides/chat-in-your-app/overview",
         title: "Overview",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "guides/chat-in-your-app/build",
-        title: "Build",
         languages: ["typescript", "python"],
       },
       {

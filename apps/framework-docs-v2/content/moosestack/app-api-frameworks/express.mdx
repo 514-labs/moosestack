@@ -42,12 +42,12 @@ app.get("/data", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${MyTable.columns.id},
         ${MyTable.columns.name},
         ${MyTable.columns.createdAt}
-      FROM ${MyTable} 
+      FROM ${MyTable}
       ORDER BY ${MyTable.columns.createdAt} DESC
       LIMIT ${limit}
     `;
@@ -126,14 +126,14 @@ app.get("/users/:userId/events", asyncHandler(async (req: Request, res: Response
   const eventType = req.query.eventType as string;
 
   const cols = UserEvents.columns;
-  const query = sql`
+  const query = sql.statement`
     SELECT
       ${cols.id},
       ${cols.event_type},
       ${cols.timestamp}
     FROM ${UserEvents}
     WHERE ${cols.user_id} = ${userId}
-      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+      ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
     ORDER BY ${cols.timestamp} DESC
     LIMIT ${limit}
   `;
@@ -297,8 +297,8 @@ usersRouter.get("/:userId", async (req, res) => {
   const { client, sql } = moose;
   const { userId } = req.params;
 
-  const query = sql`
-    SELECT 
+  const query = sql.statement`
+    SELECT
       ${UserProfile.columns.id},
       ${UserProfile.columns.name},
       ${UserProfile.columns.email},

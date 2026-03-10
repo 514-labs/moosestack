@@ -112,6 +112,49 @@ class ClickHouseMaterialized:
 
     expression: str
 
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class ClickHouseAlias:
+    """
+    ClickHouse ALIAS column annotation.
+    The column value is computed on-the-fly at SELECT time and NOT physically stored.
+    Cannot be explicitly inserted by users.
+
+    Args:
+        expression: ClickHouse SQL expression using column names (snake_case)
+
+    Examples:
+        # Computed at query time, not stored on disk
+        event_date: Annotated[date, ClickHouseAlias("toDate(event_time)")]
+
+        # Virtual computed column
+        full_name: Annotated[str, ClickHouseAlias("concat(first_name, ' ', last_name)")]
+
+    Notes:
+        - Expression uses ClickHouse column names, not Python field names
+        - ALIAS, MATERIALIZED, and DEFAULT are mutually exclusive
+        - ALIAS columns are NOT stored on disk (saves storage, costs CPU at query time)
+        - Cannot be used in ORDER BY, PRIMARY KEY, or PARTITION BY
+    """
+
+    expression: str
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
+
 
 @dataclasses.dataclass(frozen=True)
 class ClickHouseJson:
@@ -314,6 +357,7 @@ class Column(BaseModel):
     ttl: str | None = None
     codec: str | None = None
     materialized: str | None = None
+    alias: str | None = None
     comment: str | None = None
 
     def to_expr(self):
@@ -668,11 +712,24 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
-        # Validate mutual exclusivity of DEFAULT and MATERIALIZED
-        if default_expr and materialized_expr:
+        # Extract ALIAS expression from metadata, if provided
+        alias_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseAlias)),
+            None,
+        )
+
+        # Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
+        modifier_count = sum(
+            1 for v in [default_expr, materialized_expr, alias_expr] if v is not None
+        )
+        if modifier_count > 1:
             raise ValueError(
-                f"Column '{column_name}' cannot have both DEFAULT and MATERIALIZED. "
-                f"Use one or the other."
+                f"Column '{column_name}' can only have one of DEFAULT, MATERIALIZED, or ALIAS."
+            )
+
+        if alias_expr is not None and primary_key:
+            raise ValueError(
+                f"Column '{column_name}' with ALIAS cannot be a primary key."
             )
 
         # Extract TTL expression from metadata, if provided
@@ -700,6 +757,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 primary_key=primary_key,
                 default=default_expr,
                 materialized=materialized_expr,
+                alias=alias_expr,
                 annotations=annotations,
                 ttl=ttl_expr,
                 codec=codec_expr,

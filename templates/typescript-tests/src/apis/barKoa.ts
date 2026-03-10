@@ -37,7 +37,7 @@ router.get("/query", async (ctx) => {
   const limit = parseInt((ctx.query.limit as string) || "10");
 
   try {
-    const query = sql`
+    const query = sql.statement`
       SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns.totalRows}
@@ -75,7 +75,7 @@ router.post("/data", async (ctx) => {
   } = ctx.request.body as any;
 
   try {
-    const query = sql`
+    const query = sql.statement`
       SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns[orderBy]}

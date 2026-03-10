@@ -56,11 +56,11 @@ interface TargetSchema {
 }
 export const mv = new MaterializedView<TargetSchema>({
   // The transformation to run on the source table
-  selectStatement: sql`
+  selectStatement: sql.statement`
   SELECT
     ${sourceTable.columns.id},
-    avg(${sourceTable.columns.rating}) AS average_rating, 
-    count(*) AS num_reviews 
+    avg(${sourceTable.columns.rating}) AS average_rating,
+    count(*) AS num_reviews
     FROM ${sourceTable}
     GROUP BY ${sourceTable.columns.id}
   `,
@@ -191,7 +191,7 @@ import { MaterializedView, LifeCycle, sql } from "@514labs/moose-lib";
 
 // DELETION_PROTECTED: Moose will auto-create but never drop or update
 export const protectedMV = new MaterializedView<TargetSchema>({
-  selectStatement: sql`SELECT id, value FROM ${sourceTable}`,
+  selectStatement: sql.statement`SELECT id, value FROM ${sourceTable}`,
   selectTables: [sourceTable],
   targetTable: { name: "protected_target", orderByFields: ["id"] },
   materializedViewName: "protected_mv",
@@ -200,7 +200,7 @@ export const protectedMV = new MaterializedView<TargetSchema>({
 
 // EXTERNALLY_MANAGED: Moose will not touch this MV at all
 export const externalMV = new MaterializedView<TargetSchema>({
-  selectStatement: sql`SELECT id, value FROM ${sourceTable}`,
+  selectStatement: sql.statement`SELECT id, value FROM ${sourceTable}`,
   selectTables: [sourceTable],
   targetTable: { name: "external_target", orderByFields: ["id"] },
   materializedViewName: "external_mv",
@@ -259,7 +259,7 @@ import { MaterializedView, ClickHouseEngines, sql } from "@514labs/moose-lib";
 interface Dest { id: string; value: number }
 
 new MaterializedView<Dest>({
-  selectStatement: sql`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
+  selectStatement: sql.statement`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
   selectTables: [sourceTable],
   targetTable: { name: "serving_table", orderByFields: ["id"] }, // MergeTree by default
   materializedViewName: "mv_to_serving_table",
@@ -307,7 +307,7 @@ const targetTable = new OlapTable<Dest>("target_table", {
 });
 
 new MaterializedView<Dest>({
-  selectStatement: sql`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
+  selectStatement: sql.statement`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
   selectTables: [sourceTable],
   targetTable: targetTable,
   materializedViewName: "mv_to_target_table",
@@ -355,7 +355,7 @@ import { MaterializedView, sql } from "@514labs/moose-lib";
 interface Dest { id: string; value: number; created_at: string }
 
 new MaterializedView<Dest>({
-  selectStatement: sql`
+  selectStatement: sql.statement`
     SELECT id, toInt32(value) AS value, created_at
     FROM ${sourceTable}
     WHERE active = 1
@@ -413,10 +413,10 @@ interface DailyCounts {
   events: number; 
 }
 
-const stmt = sql`
-  SELECT 
-    toDate(${events.columns.timestamp}) AS day, 
-    ${events.columns.user_id} AS user_id, 
+const stmt = sql.statement`
+  SELECT
+    toDate(${events.columns.timestamp}) AS day,
+    ${events.columns.user_id} AS user_id,
     count(*) AS events
   FROM ${events}
   GROUP BY day, user_id
@@ -483,7 +483,7 @@ interface MetricsById {
 }
 
 //  All Aggregate Functions in this query have a [functionName][State]() suffix.
-const stmt = sql`
+const stmt = sql.statement`
   SELECT
     ${events.columns.id} AS id,
     avgState(${events.columns.rating})      AS avg_rating,
@@ -562,7 +562,7 @@ const daily = new OlapTable<DailyCounts>("daily_counts", {
 
 
 // MV 1 - write to the daily_counts table
-const webStmt = sql`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${webEvents}`;
+const webStmt = sql.statement`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${webEvents}`;
 const mv1 = new MaterializedView<DailyCounts>({
   selectStatement: webStmt,
   selectTables: [webEvents],
@@ -571,7 +571,7 @@ const mv1 = new MaterializedView<DailyCounts>({
 });
 
 // MV 2 - write to the daily_counts table
-const mobileStmt = sql`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${mobileEvents}`;
+const mobileStmt = sql.statement`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${mobileEvents}`;
 const mv2 = new MaterializedView<DailyCounts>({
   selectStatement: mobileStmt,
   selectTables: [mobileEvents],
@@ -639,7 +639,7 @@ import { MaterializedView, sql } from "@514labs/moose-lib";
 
 interface Dest { id: string; name: string; day: string }
 
-const transformation = sql`
+const transformation = sql.statement`
   SELECT
     ${users.columns.id}        AS id,
     ${users.columns.name}      AS name,
@@ -730,12 +730,12 @@ For inline or decoupled target tables, you can reference target table columns an
 import { sql } from "@514labs/moose-lib";
 
 // Inline-defined destination table from earlier examples
-const q = sql`
-SELECT 
+const q = sql.statement`
+SELECT
   ${mv.targetTable.columns.id},
-  ${mv.targetTable.columns.value} 
-FROM ${mv.targetTable} 
-ORDER BY ${mv.targetTable.columns.id} 
+  ${mv.targetTable.columns.value}
+FROM ${mv.targetTable}
+ORDER BY ${mv.targetTable.columns.id}
 LIMIT 10`;
 ```
   </LanguageTabContent>
@@ -764,7 +764,7 @@ import { sql } from "@514labs/moose-lib";
 const targetTable = new OlapTable<{ id: string; average_rating: number }>("target_table")
 
 // Assuming `targetTable` is the OlapTable you created explicitly
-const q = sql`
+const q = sql.statement`
   SELECT ${targetTable.columns.id}, ${targetTable.columns.average_rating}
   FROM ${targetTable}
   WHERE ${targetTable.columns.id} = 'abc'
@@ -830,7 +830,7 @@ interface MetricsById {
 }
 
 //  All Aggregate Functions in this query have a [functionName][State]() suffix.
-const stmt = sql`
+const stmt = sql.statement`
   SELECT
     ${events.columns.id} AS id,
     avgState(${events.columns.rating})      AS avg_rating,
@@ -957,7 +957,7 @@ interface MetricsById {
   total_reviews: number & Aggregated<"sum", [number]>;
 }
 
-const aggStmt = sql`
+const aggStmt = sql.statement`
   SELECT
     ${reviews.columns.id} AS id,
     avgState(${reviews.columns.rating}) AS avg_rating,
@@ -1025,14 +1025,14 @@ import { sql } from "@514labs/moose-lib";
 
 // Auto-finalized via Aggregated + sql
 const cols = mv.targetTable.columns; // mv from earlier Agg example
-const autoFinalized = sql`
+const autoFinalized = sql.statement`
   SELECT ${cols.avg_rating}, ${cols.total_reviews}
   FROM ${mv.targetTable}
   WHERE ${cols.id} = '123'
 `;
 
 // Manual finalization (explicit ...Merge)
-const manual = sql`
+const manual = sql.statement`
   SELECT
     avgMerge(avg_rating)   AS avg_rating,
     countMerge(total_reviews) AS total_reviews

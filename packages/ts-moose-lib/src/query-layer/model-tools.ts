@@ -21,6 +21,7 @@ export interface QueryModelFilter {
   operators: readonly string[];
   inputType?: FilterInputTypeHint;
   required?: true;
+  description?: string;
 }
 
 /**
@@ -44,8 +45,8 @@ export interface QueryModelBase {
   };
   readonly filters: Record<string, QueryModelFilter>;
   readonly sortable: readonly string[];
-  readonly dimensionNames: readonly string[];
-  readonly metricNames: readonly string[];
+  readonly dimensions?: Record<string, { description?: string }>;
+  readonly metrics?: Record<string, { description?: string }>;
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
@@ -64,6 +65,17 @@ function titleFromName(name: string): string {
     .replace(/^list_/, "List ")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildEnumDescription(
+  metadata: Record<string, { description?: string }>,
+): string | undefined {
+  const entries = Object.entries(metadata);
+  if (entries.length === 0) return undefined;
+  const lines = entries.map(([name, def]) => {
+    return def.description ? `- ${name}: ${def.description}` : `- ${name}`;
+  });
+  return lines.join("\n");
 }
 
 /** Map FilterInputTypeHint to a base Zod type */
@@ -161,15 +173,21 @@ export function createModelTool(
   const filterParamMap: Record<string, { filterName: string; op: string }> = {};
 
   // --- Dimensions ---
-  if (model.dimensionNames.length > 0) {
-    const names = model.dimensionNames as readonly [string, ...string[]];
-    schema.dimensions = z.array(z.enum(names)).optional();
+  const dimensionNames = Object.keys(model.dimensions ?? {});
+  if (dimensionNames.length > 0) {
+    const names = dimensionNames as [string, ...string[]];
+    const desc = buildEnumDescription(model.dimensions!);
+    const dimSchema = z.array(z.enum(names)).optional();
+    schema.dimensions = desc ? dimSchema.describe(desc) : dimSchema;
   }
 
   // --- Metrics ---
-  if (model.metricNames.length > 0) {
-    const names = model.metricNames as readonly [string, ...string[]];
-    schema.metrics = z.array(z.enum(names)).optional();
+  const metricNames = Object.keys(model.metrics ?? {});
+  if (metricNames.length > 0) {
+    const names = metricNames as [string, ...string[]];
+    const desc = buildEnumDescription(model.metrics!);
+    const metSchema = z.array(z.enum(names)).optional();
+    schema.metrics = desc ? metSchema.describe(desc) : metSchema;
   }
 
   // --- Columns ---
@@ -203,9 +221,14 @@ export function createModelTool(
 
       // Required if filter is in requiredFilters AND op is eq
       if (requiredSet.has(filterName) && op === "eq") {
-        schema[paramName] = paramType;
+        schema[paramName] =
+          filterDef.description ?
+            paramType.describe(filterDef.description)
+          : paramType;
       } else {
-        schema[paramName] = paramType.optional();
+        const opt = paramType.optional();
+        schema[paramName] =
+          filterDef.description ? opt.describe(filterDef.description) : opt;
       }
 
       filterParamMap[paramName] = { filterName, op };
@@ -227,14 +250,14 @@ export function createModelTool(
     const request: Record<string, unknown> = {};
 
     // Dimensions
-    if (model.dimensionNames.length > 0) {
+    if (dimensionNames.length > 0) {
       request.dimensions =
         (params.dimensions as string[] | undefined) ??
         mergedDefaults.dimensions;
     }
 
     // Metrics
-    if (model.metricNames.length > 0) {
+    if (metricNames.length > 0) {
       request.metrics =
         (params.metrics as string[] | undefined) ?? mergedDefaults.metrics;
     }

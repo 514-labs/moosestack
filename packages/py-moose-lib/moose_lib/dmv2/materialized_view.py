@@ -14,15 +14,7 @@ from .olap_table import OlapTable, OlapConfig
 from .life_cycle import LifeCycle
 from ._registry import _materialized_views
 from ._source_capture import get_source_file_from_stack
-from .view import View
-
-
-def _format_table_reference(table: Union[OlapTable, View]) -> str:
-    """Helper function to format a table reference as `database`.`table` or just `table`"""
-    database = table.config.database if isinstance(table, OlapTable) else None
-    if database:
-        return f"`{database}`.`{table.name}`"
-    return f"`{table.name}`"
+from .view import View, _format_table_reference
 
 
 class MaterializedViewOptions(BaseModel):

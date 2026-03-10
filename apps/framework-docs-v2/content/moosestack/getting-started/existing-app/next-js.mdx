@@ -239,7 +239,7 @@ import { executeQuery } from "./client";
 
 export async function getEvents(limit: number = 10): Promise<EventModel[]> {
   return await executeQuery<EventModel>(
-    sql`SELECT * FROM ${Events} ORDER BY ${Events.columns.event_time} DESC LIMIT ${limit}`,
+    sql.statement`SELECT * FROM ${Events} ORDER BY ${Events.columns.event_time} DESC LIMIT ${limit}`,
   );
 }
 ```

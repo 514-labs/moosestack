@@ -130,7 +130,7 @@ export interface QueryModelConfig<
    * @example
    * dimensions: {
    *   status: { column: "status" },
-   *   day: { expression: sql`toDate(timestamp)`, as: "day" },
+   *   day: { expression: sql.fragment`toDate(timestamp)`, as: "day" },
    * }
    */
   dimensions?: TDimensions;
@@ -205,11 +205,6 @@ export interface QueryModel<
   /** Metric definitions */
   readonly metrics?: TMetrics;
 
-  /** Available dimension names (runtime access) */
-  readonly dimensionNames: readonly string[];
-  /** Available metric names (runtime access) */
-  readonly metricNames: readonly string[];
-
   /**
    * Type inference helpers (similar to Drizzle's $inferSelect pattern).
    * These are type-only properties that don't exist at runtime.
@@ -278,7 +273,7 @@ export interface QueryModel<
    *
    * @example
    * const parts = model.toParts(request);
-   * const customQuery = sql`
+   * const customQuery = sql.statement`
    *   SELECT ${parts.dimensions}, ${parts.metrics}
    *   ${parts.from}
    *   ${parts.where}
@@ -325,7 +320,7 @@ export interface QueryModel<
  *   table: Events,
  *   dimensions: {
  *     status: { column: "status" },
- *     day: { expression: sql`toDate(timestamp)`, as: "day" },
+ *     day: { expression: sql.fragment`toDate(timestamp)`, as: "day" },
  *   },
  *   metrics: {
  *     totalEvents: { agg: count(), as: "total_events" },
@@ -419,18 +414,15 @@ export function defineQueryModel<
   const dimensionNamesSet = new Set(Object.keys(normalizedDimensions));
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
 
-  const dimensionNames = Object.keys(normalizedDimensions) as readonly string[];
-  const metricNames = Object.keys(normalizedMetrics) as readonly string[];
-
   // Build field SQL expression with alias
   const buildFieldExpr = (field: FieldDef, defaultAlias: string): Sql => {
     const expr =
       field.agg ??
       field.expression ??
-      (field.column ? sql`${field.column}` : empty);
+      (field.column ? sql.fragment`${field.column}` : empty);
     if (!expr || isEmpty(expr)) return empty;
     const alias = field.as ?? field.alias ?? defaultAlias;
-    return sql`${expr} AS ${raw(String(alias))}`;
+    return sql.fragment`${expr} AS ${raw(String(alias))}`;
   };
 
   // Build list of field SQL expressions
@@ -458,7 +450,7 @@ export function defineQueryModel<
         return buildFieldExpr(field, name);
       })
       .filter((s) => s !== empty);
-    return sql`SELECT ${join(parts)}`;
+    return sql.fragment`SELECT ${join(parts)}`;
   }
 
   function applyOperator(
@@ -570,17 +562,17 @@ export function defineQueryModel<
         const alias = fieldDef.as ?? fieldDef.alias ?? String(field);
         const col =
           fieldDef.expression ??
-          (fieldDef.column ? sql`${fieldDef.column}` : empty);
+          (fieldDef.column ? sql.fragment`${fieldDef.column}` : empty);
 
         // For aggregate metrics, ORDER BY the SELECT alias.
         const orderExpr = fieldDef.agg ? raw(alias) : col;
         if (isEmpty(orderExpr)) return empty;
 
-        return sql`${orderExpr} ${raw(dir)}`;
+        return sql.fragment`${orderExpr} ${raw(dir)}`;
       })
       .filter((p) => !isEmpty(p));
 
-    return parts.length > 0 ? sql`ORDER BY ${join(parts)}` : empty;
+    return parts.length > 0 ? sql.fragment`ORDER BY ${join(parts)}` : empty;
   }
 
   function resolveQuerySpec(
@@ -636,7 +628,7 @@ export function defineQueryModel<
       if (!field) {
         throw new Error(`Field '${fieldName}' is not a valid dimension`);
       }
-      if (field.column) return sql`${field.column}`;
+      if (field.column) return sql.fragment`${field.column}`;
       if (field.expression) return field.expression;
       return raw(fieldName);
     });
@@ -659,7 +651,7 @@ export function defineQueryModel<
     const offsetVal = spec.offset ?? (spec.page ?? 0) * limitVal;
     const pagination =
       spec.offset != null ?
-        sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
+        sql.fragment`LIMIT ${limitVal} OFFSET ${offsetVal}`
       : paginate(limitVal, spec.page ?? 0);
 
     const selectedFields = spec.select ?? Object.keys(normalizedFields);
@@ -687,14 +679,14 @@ export function defineQueryModel<
       select: selectClause,
       dimensions: dimensionParts.length > 0 ? join(dimensionParts) : empty,
       metrics: metricParts.length > 0 ? join(metricParts) : empty,
-      from: sql`FROM ${table}`,
+      from: sql.fragment`FROM ${table}`,
       conditions,
       where: whereClause,
       groupBy: groupByPart,
       orderBy: orderByPart,
       pagination,
-      limit: sql`LIMIT ${limitVal}`,
-      offset: offsetVal > 0 ? sql`OFFSET ${offsetVal}` : empty,
+      limit: sql.fragment`LIMIT ${limitVal}`,
+      offset: offsetVal > 0 ? sql.fragment`OFFSET ${offsetVal}` : empty,
     };
   }
 
@@ -708,7 +700,7 @@ export function defineQueryModel<
     >,
   ): Sql {
     const parts = toParts(request);
-    return sql`
+    return sql.statement`
       ${parts.select}
       ${parts.from}
       ${parts.where}
@@ -737,8 +729,6 @@ export function defineQueryModel<
     sortable,
     dimensions: dimensions as TDimensions | undefined,
     metrics: metrics as TMetrics | undefined,
-    dimensionNames,
-    metricNames,
     query: async (request, client: QueryClient) => {
       const result = await client.execute(toSql(request));
       return result.json();

@@ -13,6 +13,7 @@ import {
   ClickHouseRing,
   ClickHouseLineString,
   ClickHouseMaterialized,
+  ClickHouseAlias,
   ClickHouseMultiLineString,
   ClickHousePolygon,
   ClickHouseMultiPolygon,
@@ -800,6 +801,23 @@ export const MaterializedTestPipeline = new IngestPipeline<MaterializedTest>(
     ingestApi: true,
   },
 );
+
+// =======Alias Columns Test=======
+export interface AliasTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  eventDate: string &
+    typia.tags.Format<"date"> &
+    ClickHouseAlias<"toDate(timestamp)">;
+  userHash: UInt64 & ClickHouseAlias<"cityHash64(userId)">;
+}
+
+export const AliasTestPipeline = new IngestPipeline<AliasTest>("AliasTest", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
 
 /** =======Non-Default Database Insert Test (Issue #3101)========= */
 // Tests that OlapTable.insert() respects the database field in OlapConfig

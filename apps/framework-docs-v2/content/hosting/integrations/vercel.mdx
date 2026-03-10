@@ -1,19 +1,109 @@
 ---
 title: Vercel integration
-description: Placeholder for upcoming Vercel integration workflows in 514 Hosting.
+description: Connect a Vercel project to Fiveonefour Hosting so frontend previews and deployments stay coordinated with your Moose application.
 order: 1
 ---
 
+import { Callout, CTACard, CTACards, ZoomImg } from "@/components/mdx";
+
 # Vercel integration
 
-Vercel integration for 514 Hosting is coming soon.
+This integration is for a Vercel-hosted frontend or full-stack app that depends on a Moose project hosted on Fiveonefour. Use it to connect that Vercel project to the matching Fiveonefour project so previews and production deploys use the right ClickHouse environment.
 
-This page will document:
+By the end of this guide, you will have:
 
-- How Vercel projects connect to Fiveonefour Hosting.
-- How branch previews map between Vercel and Fiveonefour.
-- Recommended workflows for deployment coordination and rollback.
+- a Fiveonefour project linked to your Vercel project
+- a dedicated ClickHouse preview database for each preview branch
+- coordinated production deploys between Vercel and Fiveonefour
+- environment variables synced between the two platforms
 
-## Current status
+Before you start, make sure you have:
+- a Vercel project
+- a Fiveonefour account and project
+- a GitHub repo connected to both
 
-Coming soon. Check back for implementation details and setup steps once the Vercel integration is available.
+<Callout type="warning" title="Current limitations">
+- One Fiveonefour project can map to exactly one Vercel project.
+- The Vercel project and the Fiveonefour project must be in the same GitHub repository.
+</Callout>
+
+<CTACards columns={1}>
+  <CTACard
+    title="New here? Create a Fiveonefour project first"
+    description="Create a Fiveonefour project, then come back here to connect your Vercel app."
+    ctaLink="https://fiveonefour.boreal.cloud/[orgId]/projects/new"
+    ctaLabel="Create a project →"
+    orientation="horizontal"
+  />
+</CTACards>
+
+![Fiveonefour in the Vercel Marketplace](/vercel/marketplace.png)
+
+## Connect the projects
+
+### 1. Open the integration from Fiveonefour
+
+Sign in to Fiveonefour and open the project overview for the project you want to link to Vercel. On that overview page, find the Vercel integration card and click `Connect Account`.
+
+<ZoomImg light="/vercel/connect-vercel.png" dark="/vercel/connect-vercel.png" alt="Fiveonefour project overview" />
+
+Expected result: Fiveonefour opens the Vercel Marketplace listing for the Fiveonefour integration.
+
+### 2. Authorize in Vercel
+
+You should land on the [Fiveonefour integration in the Vercel Marketplace](https://vercel.com/marketplace/fiveonefour) page. Click `Connect Account` and authorize the integration for the account or team that owns the frontend project.
+
+Expected result: after authorization, switch back to the Fiveonefour project overview tab where you started. The Vercel integration card should refresh to show that the account is connected. If it does not refresh, reload the project overview and check again.
+
+### 3. Select the Vercel project
+
+On the Fiveonefour project overview, use the Vercel integration card to choose which Vercel project to link. Select the project you came here to connect to this Fiveonefour project. If this is a monorepo, verify the root directory before you continue.
+
+<ZoomImg light="/vercel/select-project.png" dark="/vercel/select-project.png" alt="Select Vercel project" />
+
+### 4. Link the project
+
+After you select the Vercel project, click `Link Project` in the integration card to save the connection.
+
+Expected result: the Fiveonefour project overview shows the linked Vercel project under the Fiveonefour project.
+
+<ZoomImg light="/vercel/connected-project.png" dark="/vercel/connected-project.png" alt="Connected projects" />
+
+
+## Verify with your first preview deployment
+
+The fastest way to prove the integration is working is to push a frontend-only branch. You do not need a schema change for this first check.
+
+1. Create a short-lived branch from your default branch.
+
+```bash
+git checkout -b feature/test-preview-integration
+```
+
+2. Make a small frontend change, such as copy text or UI text that is easy to recognize in a preview.
+
+3. Push the branch.
+
+```bash
+git add .
+git commit -m "Add test preview integration"
+git push origin feature/test-preview-integration
+```
+
+4. Go to your Fiveonefour project deployment page and confirm the preview deployment was created. You should see a new deployment with the branch name you pushed and the commit message you used.
+5. Open the Vercel preview and confirm the branch is using the linked Fiveonefour preview path, not production.
+6. Confirm the Vercel deployment waits for the linked Fiveonefour deployment before it finishes.
+7. If your team shares environment configuration, confirm the expected values appear in the linked environment.
+
+This is the first concrete payoff: one push, one coordinated preview flow, and no manual environment rewiring.
+
+<Callout type="warning" title="Frontend auth is still your responsibility">
+This integration coordinates deployment behavior. It does not replace authentication, deployment protection, or access control in Vercel.
+</Callout>
+
+## Related
+
+- [`514 project link`](/hosting/cli/projects/link)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

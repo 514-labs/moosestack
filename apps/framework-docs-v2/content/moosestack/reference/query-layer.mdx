@@ -29,19 +29,19 @@ const visitsModel = defineQueryModel({
   table: VisitsTable,
 
   dimensions: {
-    status: { column: "status" },
+    status: { column: "status", description: "Visit status category" },
     ...timeDimensions(VisitsTable.columns.timestamp),
   },
 
   metrics: {
-    totalVisits: { agg: count(), as: "total_visits" },
-    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue" },
+    totalVisits: { agg: count(), as: "total_visits", description: "Total number of visits" },
+    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue", description: "Sum of visit revenue" },
   },
 
   filters: {
-    status: { column: "status", operators: ["eq", "in"] as const },
-    amount: { column: "amount", operators: ["gte", "lte"] as const },
-    totalRevenue: { metric: "totalRevenue", operators: ["gte"] as const },
+    status: { column: "status", operators: ["eq", "in"] as const, description: "Filter by visit status" },
+    amount: { column: "amount", operators: ["gte", "lte"] as const, description: "Filter by amount range" },
+    totalRevenue: { metric: "totalRevenue", operators: ["gte"] as const, description: "Filter by minimum total revenue" },
   },
 
   columns: {
@@ -70,7 +70,7 @@ const visitsModel = defineQueryModel({
 |----------|------|----------|-------------|
 | `name` | `string` | No | Tool name for MCP registration |
 | `description` | `string` | No | Tool description for MCP |
-| `table` | `OlapTable<T>` | Yes | The ClickHouse table to query |
+| `table` | `OlapTable<T> \| MaterializedView<T>` | Yes | The ClickHouse table or [materialized view](/moosestack/olap/model-materialized-view) to query. If a `MaterializedView` is passed, its target table is used automatically. |
 | `dimensions` | `Record<string, DimensionDef>` | No | Grouping fields (GROUP BY) |
 | `metrics` | `Record<string, MetricDef>` | No | Aggregate functions |
 | `columns` | `Record<string, ColumnDef>` | No | Detail mode fields (non-aggregated) |
@@ -86,6 +86,7 @@ const visitsModel = defineQueryModel({
 | `column` | `keyof TModel` | Column name for simple fields |
 | `expression` | `Sql` | Custom SQL expression (alternative to `column`) |
 | `as` | `string` | Output alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 
 ### MetricDef
 
@@ -93,6 +94,32 @@ const visitsModel = defineQueryModel({
 |----------|------|-------------|
 | `agg` | `Sql` | Aggregation expression (e.g., `count()`, `sum(col)`) |
 | `as` | `string` | Output column alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
+
+#### Conditional metrics
+
+To define a metric that only aggregates rows matching a condition, use ClickHouse's
+[`-If` aggregate combinators](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators#-if)
+directly in the `agg` expression. This makes the metric self-contained — callers don't
+need to remember to add a filter.
+
+```typescript
+metrics: {
+  // Total revenue — only from completed events
+  revenue: {
+    agg: sql.fragment`sumIf(${Events.columns.amount}, ${Events.columns.status} = 'completed')`,
+    description: "Total revenue from completed events",
+  },
+  // Completion rate
+  completionRate: {
+    agg: sql.fragment`countIf(${Events.columns.status} = 'completed') / count(*)`,
+    description: "Fraction of events that completed",
+  },
+}
+```
+
+Common `-If` combinators: `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`, `uniqIf`, `uniqExactIf`.
+Every ClickHouse aggregate function supports the `-If` suffix.
 
 ### ColumnDef
 
@@ -106,7 +133,7 @@ const visitsModel = defineQueryModel({
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `table` | `OlapTable<any>` | The table to join |
+| `table` | `OlapTable<any> \| MaterializedView<any>` | The table or materialized view to join. If a `MaterializedView` is passed, its target table is used automatically. |
 | `on` | `Sql` | Custom ON clause (alternative to `leftKey`/`rightKey`) |
 | `leftKey` | `string` | Left table column name |
 | `rightKey` | `string` | Right table column name |
@@ -121,6 +148,7 @@ const visitsModel = defineQueryModel({
 | `operators` | `readonly FilterOperator[]` | Allowed operators |
 | `transform` | `(value) => SqlValue` | Optional value transformer |
 | `inputType` | `FilterInputTypeHint` | UI hint: `"text"`, `"number"`, `"date"`, `"select"`, `"multiselect"` |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
 | `required` | `true` | Make the `eq` parameter required for MCP |
 
 ### Filter Operators
@@ -148,8 +176,8 @@ The object returned by `defineQueryModel()`.
 | `defaults` | `object` | Default query behavior |
 | `filters` | `TFilters` | Filter definitions |
 | `sortable` | `readonly TSortable[]` | Sortable field names |
-| `dimensionNames` | `readonly string[]` | Dimension key names |
-| `metricNames` | `readonly string[]` | Metric key names |
+| `dimensions` | `TDimensions \| undefined` | Dimension definitions record (derive names via `Object.keys(model.dimensions)`) |
+| `metrics` | `TMetrics \| undefined` | Metric definitions record (derive names via `Object.keys(model.metrics)`) |
 | `columnNames` | `readonly string[]` | Column key names |
 
 ### Type Inference Helpers
@@ -186,7 +214,7 @@ const results = await model.query(
 
 ```typescript
 const parts = model.toParts(request);
-const customSql = sql`
+const customSql = sql.statement`
   ${parts.select}
   ${parts.from}
   WHERE ${parts.conditions[0]} OR ${parts.conditions[1]}
