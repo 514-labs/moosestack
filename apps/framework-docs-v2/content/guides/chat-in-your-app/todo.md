@@ -56,12 +56,24 @@ Reference material:
 - [x] Section intro explaining query builder concept + auto-update with new metrics
 - [x] Dashboard step: shadcn chart prompt, CORS warning, amazon-dash.png screenshot
 - [x] Query builder step: two-endpoint pattern (/schema + /metrics) with reference prompt
-- [ ] Add screenshot of query builder UI once demo is built
+- [x] Query builder screenshot (amazon-query-builder.png)
+- [x] "What gets built" collapsible with sample output + links to financial demo
 
 ## 5. Deploy section
 
-- [ ] Add deployment-specific prerequisites to WhatYouNeed:
-  - Fiveonefour hosting account (https://www.boreal.cloud/sign-in)
-  - Vercel account (https://vercel.com/)
-  - GitHub account (if not already mentioned)
-- [ ] Review deploy steps for completeness
+- [x] Deleted build.mdx page and nav entry
+- [x] Restructured into 5 steps: push to GitHub, deploy to Fiveonefour, 514 link, Vercel, load data
+- [x] Added deploy screenshots (GitHub connect, select repo, configure, infra, building, Vercel link)
+- [x] Fiveonefour signup checkpoint
+- [x] 514 auth login + 514 project link with flag descriptions
+- [x] Vercel deploy via Fiveonefour integrations panel
+- [x] Load data using 514 clickhouse (matches dev ingestion options)
+- [x] Deploy prerequisites in WhatYouNeed for each step
+
+## Remaining
+
+- [ ] **Check brownfield path** — verify the "Add to existing Next.js app" (`existing-nextjs`) conditional content works end-to-end. Currently 5 `<ConditionalContent>` blocks at lines 91, 110, 163, 324, 332. Need to walk through the full tutorial with that setting selected and confirm all steps make sense.
+- [x] Configurator: whenId kebab-case → camelCase handled by `normalizeFieldId()` in `guide-settings.ts`
+- [x] Configurator: settings visible on tutorial page (confirmed)
+- [x] Stepper unification: multi-stepper per section, each with own numbering
+- [x] Review overall flow for new users
