@@ -1,0 +1,62 @@
+language = "typescript" # Must be typescript or python
+description = "Amazon product reviews analytics with semantic query layer — 25M rows powering dashboard, query builder, and AI chat."
+
+[metadata]
+features = ["query-layer", "mcp", "rest-api", "query-builder-ui"]
+data_source = "Amazon Customer Reviews (~25M rows, loaded from S3)"
+difficulty = "beginner"
+post_install_print = """
+Deploy on Boreal
+
+Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+Run this next:
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install all dependencies:
+    $ pnpm install
+
+🔐 Create API authentication tokens:
+    $ cp packages/moosestack-service/.env.{example,local}
+    $ cp packages/web-app/.env.{example,local}
+    $ cd packages/moosestack-service
+    $ moose generate hash-token # use the output values below
+
+⚙️ Set environment variables:
+    1. Set `MCP_API_KEY` in packages/moosestack-service/.env.local to the `ENV API Key` value.
+    2. Set `MCP_API_TOKEN` in packages/web-app/.env.local to the `Bearer Token` value.
+    3. Set `ANTHROPIC_API_KEY` in packages/web-app/.env.local to your Anthropic API key.
+
+🚀 Start both services:
+    $ cd ../.. # go back to project root
+    $ pnpm dev
+
+Or start each service separately:
+    $ pnpm dev:moose    # Start MooseStack service only
+    $ pnpm dev:web      # Start web app only
+"""
+default_sloan_telemetry = "standard"
+
+# Boreal one-click deploy configuration
+[boreal]
+enabled = true
+display_name = "Product Reviews Analytics"
+short_description = "Amazon reviews analytics with semantic query layer powering dashboard, query builder, and AI chat."
+featured = true
+
+# Commands Boreal runs during setup, with JSON output parsing
+[[boreal.setup_commands]]
+command = "moose generate hash-token --json"
+outputs = [
+  { env_var = "MCP_API_KEY", json_path = "api_key_hash" },
+  { env_var = "MCP_API_TOKEN", json_path = "bearer_token" },
+]
+
+# Env vars user must provide
+[[boreal.env_vars]]

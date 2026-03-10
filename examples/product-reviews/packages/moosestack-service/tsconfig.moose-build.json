@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "plugins": [
+      {
+        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js"
+      },
+      {
+        "transform": "typia/lib/transform"
+      }
+    ],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmitOnError": true,
+    "incremental": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  }
+}

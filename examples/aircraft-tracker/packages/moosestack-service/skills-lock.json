@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "clickhouse-best-practices-ts-py": {
+      "source": "514-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "19dbd8cbb1867a4b925a2ee3293492bab4f7f136d2ba028cabe21f6b5a9f3460"
+    }
+  }
+}

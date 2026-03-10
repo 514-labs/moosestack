@@ -1,0 +1,22 @@
+{
+  "name": "financial-query-layer-demo",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --stream -r dev",
+    "dev:moose": "pnpm --filter moosestack-service dev",
+    "dev:web": "pnpm --filter web-app dev"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ],
+    "overrides": {
+      "tar": "7.5.7"
+    }
+  }
+}

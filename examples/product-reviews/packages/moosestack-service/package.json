@@ -1,0 +1,25 @@
+{
+  "name": "moosestack-service",
+  "version": "0.0",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "0.6.439",
+    "@514labs/express-pbkdf2-api-key-auth": "^1.0.4",
+    "@cfworker/json-schema": "4.1.1",
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "express": "^5.1.0",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typia": "^9.6.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "0.6.439",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.12.12"
+  }
+}

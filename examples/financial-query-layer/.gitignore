@@ -1,0 +1,13 @@
+.moose
+node_modules
+dist
+coverage
+.ts-node
+
+# Local environment files with secrets
+.env.local
+.env*.local
+
+# Demo guide (not part of the template)
+guide.md
+
