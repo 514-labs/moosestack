@@ -14,10 +14,7 @@ from ._source_capture import get_source_file_from_stack
 
 def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
     """Helper function to format a table reference as `database`.`table` or just `table`"""
-    if isinstance(table, OlapTable):
-        database = table.config.database
-    else:
-        database = getattr(table, "database", None)
+    database = table.config.database if isinstance(table, OlapTable) else None
     if database:
         return f"`{database}`.`{table.name}`"
     return f"`{table.name}`"
@@ -50,7 +47,6 @@ class View:
     database: Optional[str]
     select_sql: str
     source_tables: list[str]
-    database: Optional[str] = None
     metadata: Optional[dict] = None
 
     def __init__(
@@ -60,10 +56,8 @@ class View:
         base_tables: list[Union[OlapTable, "View"]],
         database: Optional[str] = None,
         metadata: Optional[dict] = None,
-        database: Optional[str] = None,
     ):
         self.name = name
-        self.database = database
         self.select_sql = select_statement
         self.source_tables = [_format_table_reference(t) for t in base_tables]
 
