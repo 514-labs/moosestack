@@ -8,8 +8,14 @@ import { formatTableReference } from "./tableReferenceUtils";
  * Configuration options for creating a View.
  */
 export interface ViewConfig {
-  /** Optional database name where the view is created. When set, the view is created as `database`.`name` in ClickHouse. */
+  /** The SQL SELECT statement or Sql object defining the view's logic. */
+  selectStatement: string | Sql;
+  /** Source tables/views the SELECT reads from. Used for dependency tracking during migrations. */
+  baseTables: (OlapTable<any> | View)[];
+  /** Optional database where the view is created. When set, the view is created as `database`.`name` in ClickHouse. */
   database?: string;
+  /** Optional metadata for the view (e.g., description, source file). */
+  metadata?: { [key: string]: any };
 }
 
 /**
@@ -38,29 +44,21 @@ export class View {
   /**
    * Creates a new View instance.
    * @param name The name of the view to be created.
-   * @param selectStatement The SQL SELECT statement that defines the view's logic.
-   * @param baseTables An array of OlapTable or View objects that the `selectStatement` reads from. Used for dependency tracking.
-   * @param config Optional configuration for the view (e.g., database name).
-   * @param metadata Optional metadata for the view (e.g., description, source file).
+   * @param config Configuration for the view: select statement, base tables, optional database, and optional metadata.
    */
-  constructor(
-    name: string,
-    selectStatement: string | Sql,
-    baseTables: (OlapTable<any> | View)[],
-    config?: ViewConfig,
-    metadata?: { [key: string]: any },
-  ) {
+  constructor(name: string, config: ViewConfig) {
+    let selectStatement = config.selectStatement;
     if (typeof selectStatement !== "string") {
       selectStatement = toStaticQuery(selectStatement);
     }
 
     this.name = name;
-    this.database = config?.database;
+    this.database = config.database;
     this.selectSql = selectStatement;
-    this.sourceTables = baseTables.map((t) => formatTableReference(t));
+    this.sourceTables = config.baseTables.map((t) => formatTableReference(t));
 
     // Initialize metadata, preserving user-provided metadata if any
-    this.metadata = metadata ? { ...metadata } : {};
+    this.metadata = config.metadata ? { ...config.metadata } : {};
 
     // Capture source file from stack trace if not already provided
     if (!this.metadata.source) {

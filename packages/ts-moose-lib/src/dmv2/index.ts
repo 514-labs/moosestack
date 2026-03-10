@@ -80,7 +80,7 @@ export {
   MaterializedViewConfig,
 } from "./sdk/materializedView";
 export { SqlResource } from "./sdk/sqlResource";
-export { View } from "./sdk/view";
+export { View, ViewConfig } from "./sdk/view";
 export { SelectRowPolicy, SelectRowPolicyConfig } from "./sdk/selectRowPolicy";
 export { LifeCycle } from "./sdk/lifeCycle";
 export {
