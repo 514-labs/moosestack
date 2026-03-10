@@ -15,7 +15,7 @@
 - [Redis](https://redis.io/) (internal state)
 
 Generalist coding agents like Claude Code, Cursor, and Copilot work well for most coding tasks. But ClickHouse and realtime analytical infrastructure are specialized terrain. MooseStack sits between your agent and your data stack, and enables your agent to handle the stickiest parts of building out applications on real time analytical infra. Think:
-- Optimizating data models & queries for OLAP
+- Optimizing data models & queries for OLAP
 - Managing schema changes and migrations
 - Building out realtime streaming ETL/ELT data pipelines
 - Integrating analytics into your frontend application layer
