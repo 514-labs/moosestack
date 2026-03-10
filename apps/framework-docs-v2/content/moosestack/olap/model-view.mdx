@@ -116,7 +116,7 @@ new View(
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="Signature.py" copy
-# View(name, select_statement, base_tables, database=None, metadata=None)
+# View(name: str, select_statement: str, base_tables: list[OlapTable | View], database: str | None = None, metadata: dict | None = None)
 View(
     "view_name",
     "SELECT ... FROM {someTable}",
