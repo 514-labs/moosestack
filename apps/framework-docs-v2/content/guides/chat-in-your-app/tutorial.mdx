@@ -178,6 +178,7 @@ moose generate hash-token
 ```
 
 This outputs two values:
+
 - **ENV API Key** → Put this in packages/moosestack-service/.env.local as MCP_API_KEY
 - **Bearer Token** → Save this for your frontend config (see next checkpoint)
 
@@ -253,7 +254,7 @@ docker version
 From the root of your project, run:
 
 ```shell
-pnpm dev						# run the MooseStack and web app services
+pnpm dev      # run the MooseStack and web app services
 ```
 
 Alternatively, run MooseStack and your frontend separately
@@ -261,8 +262,8 @@ Alternatively, run MooseStack and your frontend separately
 From the root of your project, run:
 
 ```shell
-pnpm dev:moose    					# Start MooseStack service only
-pnpm dev:web      					# Start web app only
+pnpm dev:moose         # Start MooseStack service only
+pnpm dev:web           # Start web app only
 ```
 
 You can also run moose dev from your moose project directory `/packages/moosestack-service`.
@@ -320,28 +321,19 @@ Configure your copilot with MooseDev MCP for live ClickHouse introspection, add 
 <GuideStepper.WhatYouGet>
     - MooseDev MCP connected to your copilot for live ClickHouse introspection
     - Context7 providing up-to-date MooseStack docs
+    - MooseStack LSP Server
     - A context workspace for organizing data modeling artifacts
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="connect-moosedev-mcp" title="Connect MooseDev MCP to your copilot">
 
-Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). By way of example, here's how you configure Claude Code:
+Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). Run this command to automatically detect and set up your installed copilots:
 
 ```shell
-claude mcp add --transport http moose-dev http://localhost:4000/mcp
+514 agent init
 ```
 
 Note, you may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up). You can validate that it is working with the `/mcp` slash command.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="add-context7" title="Add Context7 for MooseStack documentation">
-
-[Context7](https://context7.com) can serve up-to-date MooseStack docs to your copilot.
-
-**Setup:** [Install Context7 for your IDE](https://github.com/upstash/context7#installation). You may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up).
-
-**Usage:** When you refer to MooseStack documentation in prompts, add `use context7` for better results.
 
 </GuideStepper.Checkpoint>
 
@@ -405,15 +397,15 @@ There are many ways to copy data down from S3, e.g.:
 Using the [S3 CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) (once you've authenticated):
 
 ```shell
-aws s3 ls s3://source-data/ 			# list files in S3
+aws s3 ls s3://source-data/    # list files in S3
 
-aws s3 cp s3://source-data/ . --recursive 	# copy data from S3 to context directory
+aws s3 cp s3://source-data/ . --recursive  # copy data from S3 to context directory
 ```
 
 Using `moose query` (this only copies one file at a time):
 
 ```shell
-cd packages/moosestack-service			# navigate to your MooseStack project
+cd packages/moosestack-service   # navigate to your MooseStack project
 
 moose query "Select * FROM s3('s3://source-data/file-name.parquet', '<Access-Key-ID>', '<Secret-Access-Key>', 'parquet') limit 10;" > context/data/file-name.txt # copy data retrieved from that SQL query to the .txt file
 ```
@@ -437,6 +429,7 @@ moose query "
   ) LIMIT 10;
 " > packages/moosestack-service/context/data/amazon-reviews-sample.txt
 ```
+
 </ToggleBlock>
 
 </GuideStepper.Checkpoint>
@@ -515,6 +508,7 @@ Supported types: https://docs.fiveonefour.com/moosestack/supported-types
 
 Then, create the OlapTable object.
 ```
+
 </ToggleBlock>
 
 </GuideStepper.Checkpoint>
@@ -586,8 +580,8 @@ This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2
 
 Make sure to properly apply any transformations to conform your S3 data to the data model you've created. ClickHouse will do many of these transformations naturally. Notably though:
 
-* Column renamings will have to be done in SQL
-* Default values in CH only set the value where the column is omitted in an insert. If the column was "null" in the source, you will have to cast that in the insert.
+- Column renamings will have to be done in SQL
+- Default values in CH only set the value where the column is omitted in an insert. If the column was "null" in the source, you will have to cast that in the insert.
 
 </GuideStepper.Checkpoint>
 
@@ -707,6 +701,7 @@ Add type-safe query models and serving tables to optimize common query patterns 
 Before optimizing, understand what queries your chat is actually running. Review the tool call results in your chat UI — each `query_clickhouse` call shows the SQL that was executed.
 
 Look for:
+
 - Repeated aggregation patterns (e.g., `GROUP BY date`, `COUNT(*)`)
 - Slow queries on large tables
 - Common filter combinations
@@ -906,23 +901,23 @@ With MooseOlap, you can set these table and column level descriptions in your da
 
 ```ts
 export interface AircraftTrackingData {
-	/** Unique aircraft identifier */
-	hex: string;
+ /** Unique aircraft identifier */
+ hex: string;
 
-	// no comment for this column
-	transponder_type: string;
+ // no comment for this column
+ transponder_type: string;
 
-	/** callsign, the flight name or aircraft registration as 8 chars */
-	flight: string;
+ /** callsign, the flight name or aircraft registration as 8 chars */
+ flight: string;
 
-	/** aircraft registration pulled from database */
-	r: string;
+ /** aircraft registration pulled from database */
+ r: string;
 
-	/** unique aircraft identifier */
-	aircraft_type?: string;
+ /** unique aircraft identifier */
+ aircraft_type?: string;
 
-	/** bitfield for certain database flags */
-	dbFlags: number;
+ /** bitfield for certain database flags */
+ dbFlags: number;
 }
 ```
 
