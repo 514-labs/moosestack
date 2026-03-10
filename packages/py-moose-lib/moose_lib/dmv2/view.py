@@ -50,6 +50,7 @@ class View:
     database: Optional[str]
     select_sql: str
     source_tables: list[str]
+    database: Optional[str] = None
     metadata: Optional[dict] = None
 
     def __init__(
@@ -59,6 +60,7 @@ class View:
         base_tables: list[Union[OlapTable, "View"]],
         database: Optional[str] = None,
         metadata: Optional[dict] = None,
+        database: Optional[str] = None,
     ):
         self.name = name
         self.database = database
