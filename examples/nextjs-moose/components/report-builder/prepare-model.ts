@@ -186,8 +186,6 @@ export function prepareModel<
         inputType?: FilterInputType;
       }
     >;
-    readonly dimensionNames?: readonly string[];
-    readonly metricNames?: readonly string[];
   },
 >(queryModel: TModel, options: PrepareModelOptions = {}): ReportModel {
   const {

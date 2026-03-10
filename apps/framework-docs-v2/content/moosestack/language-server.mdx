@@ -33,6 +33,26 @@ Experimental: TypeScript only.
 
 ![Hover documentation for ClickHouse functions](/lsp-hover-docs.png)
 
+## sql.statement vs sql.fragment
+
+The language server uses `sql.statement` and `sql.fragment` to determine how to validate your SQL:
+
+- **`sql.statement`** — validated as complete SQL (must be a valid standalone query)
+- **`sql.fragment`** — skipped for statement-level validation (partial SQL-like conditions or expressions)
+- **`sql`** *(deprecated)* — treated as a statement by default
+
+Using the explicit tags gives you accurate diagnostics without false positives on SQL fragments:
+
+```ts
+// ✅ Validated as a complete statement
+const query = sql.statement`SELECT * FROM ${UserTable} WHERE status = 'active'`;
+
+// ✅ Not validated as a statement (would fail since it's not complete SQL)
+const condition = sql.fragment`status = ${status}`;
+```
+
+See the [sql template tag reference](/moosestack/reference#sql-template-tag) for full details.
+
 ## Installation
 
 For VS Code and Cursor, search for "MooseStack LSP" in the Extensions panel and click Install.

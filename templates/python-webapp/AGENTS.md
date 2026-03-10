@@ -1,0 +1,97 @@
+# Python WebApp Template
+
+MooseStack Python project with web application endpoints.
+
+## Dev Server
+
+Start with: `moose dev`
+
+Ports used: 4000, 5001, 7233, 8080, 9000, 18123. See `moose.config.toml` to change.
+
+## Key Files
+
+| File | Purpose |
+| --- | --- |
+| `app/main.py` | App entrypoint — import all modules here so MooseStack discovers them |
+| `app/ingest/models.py` | Data models (Pydantic models + pipeline declarations) |
+| `app/apis/*.py` | Web application endpoints |
+| `moose.config.toml` | Port and service configuration |
+
+## Dev Environment
+
+### Start the dev server
+
+This starts ClickHouse, the data pipeline, and the MooseDev MCP server on `localhost:4000`.
+
+### MooseDev MCP (live project inspection)
+
+Pre-configured in `.mcp.json`. Prefer these over CLI commands — they return structured, token-optimized output.
+
+| Tool | When to use |
+| --- | --- |
+| `get_infra_map` | **Start here.** Understand project topology (tables, streams, APIs, workflows) and data flow |
+| `query_olap` | Explore data, verify ingestion, check schemas (read-only SQL) |
+| `get_logs` | Debug errors, connection issues, or unexpected behavior |
+| `get_issues` | Diagnose infrastructure health (stuck mutations, replication errors) |
+| `get_stream_sample` | Inspect recent messages from streaming topics to verify data flow |
+
+### Context7
+
+Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
+
+### ClickHouse Best Practices Skill (optional)
+
+Not included by default. Install with `514 agent init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+
+### Moose CLI
+
+Use `moose --help` to discover all commands. Most useful for getting context:
+
+| Command | Purpose |
+| --- | --- |
+| `moose docs <slug>` | Fetch documentation (e.g., `moose docs moosestack/olap`) |
+| `moose docs search "query"` | Search documentation by keyword |
+| `moose query "SQL"` | Execute SQL directly against ClickHouse |
+| `moose ls` | List all project primitives (tables, streams, APIs, workflows) |
+| `moose peek <name>` | View sample data from a table or stream |
+| `moose logs` | View dev server logs (use `-f "error"` to filter) |
+
+## Common Patterns
+
+### Adding a data model
+
+MooseStack's core pattern: define a Pydantic model once, then configure an `IngestPipeline` to create your data pipeline.
+
+```python
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class PageView(BaseModel):
+    view_id: str
+    timestamp: datetime
+    url: str
+    user_id: str
+    duration_ms: int
+
+page_view_pipeline = IngestPipeline[PageView](
+    "PageView",
+    IngestPipelineConfig(
+        table=OlapConfig(order_by_fields=["user_id", "timestamp"]),
+        stream=True,
+        ingest_api=True,
+    ),
+)
+```
+
+The `table` field accepts either a boolean (`True` for defaults, `False` to skip table creation) or an `OlapConfig` with `order_by_fields` for explicit ordering. Use `order_by_fields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering.
+
+For advanced table configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
+
+### Do / Don't
+
+- **DO** specify `order_by_fields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
+- **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
+- **DO** use `IngestPipeline` with `IngestPipelineConfig` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
+- **DO** import new primitives in your app's `main.py`. **DON'T** leave modules unimported — MooseStack discovers primitives by loading `main.py`, so unimported modules won't be found.

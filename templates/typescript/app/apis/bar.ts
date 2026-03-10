@@ -46,13 +46,13 @@ export const BarApi = new Api<QueryParams, ResponseData[]>(
       return cachedData;
     }
 
-    const query = sql`
-        SELECT 
+    const query = sql.statement`
+        SELECT
           ${BarAggregatedMV.targetTable.columns.dayOfMonth},
           ${BarAggregatedMV.targetTable.columns[orderBy]}
         FROM ${BarAggregatedMV.targetTable}
-        WHERE 
-          dayOfMonth >= ${startDay} 
+        WHERE
+          dayOfMonth >= ${startDay}
           AND dayOfMonth <= ${endDay}
         ORDER BY ${BarAggregatedMV.targetTable.columns[orderBy]} DESC
         LIMIT ${limit}
@@ -82,7 +82,7 @@ export const BarApiV1 = new Api<QueryParams, ResponseDataV1[]>(
       return cachedData;
     }
 
-    const query = sql`
+    const query = sql.statement`
         SELECT 
           ${BarAggregatedMV.targetTable.columns.dayOfMonth},
           ${BarAggregatedMV.targetTable.columns[orderBy]}

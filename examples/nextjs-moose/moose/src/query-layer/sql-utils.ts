@@ -21,11 +21,11 @@ import type { SqlValue, ColRef } from "./types";
  * WARNING: Only use with trusted input - SQL injection risk.
  */
 export function raw(text: string): Sql {
-  return new Sql([text], []);
+  return sql.raw(text);
 }
 
 /** Empty SQL fragment - useful as a no-op. */
-export const empty = sql``;
+export const empty = sql.fragment``;
 
 /** Join SQL fragments with a separator. */
 export function join(fragments: Sql[], separator: string = ","): Sql {
@@ -35,7 +35,7 @@ export function join(fragments: Sql[], separator: string = ","): Sql {
   const sep = raw(separator.includes(" ") ? separator : ` ${separator} `);
   return fragments
     .slice(1)
-    .reduce((acc, frag) => sql`${acc}${sep}${frag}`, fragments[0]);
+    .reduce((acc, frag) => sql.fragment`${acc}${sep}${frag}`, fragments[0]);
 }
 
 /** Check if a Sql fragment is empty */
@@ -99,34 +99,34 @@ export function filter<TModel>(
 
   switch (op) {
     case "eq":
-      return sql`${col} = ${value as SqlValue}`;
+      return sql.fragment`${col} = ${value as SqlValue}`;
     case "ne":
-      return sql`${col} != ${value as SqlValue}`;
+      return sql.fragment`${col} != ${value as SqlValue}`;
     case "gt":
-      return sql`${col} > ${value as SqlValue}`;
+      return sql.fragment`${col} > ${value as SqlValue}`;
     case "gte":
-      return sql`${col} >= ${value as SqlValue}`;
+      return sql.fragment`${col} >= ${value as SqlValue}`;
     case "lt":
-      return sql`${col} < ${value as SqlValue}`;
+      return sql.fragment`${col} < ${value as SqlValue}`;
     case "lte":
-      return sql`${col} <= ${value as SqlValue}`;
+      return sql.fragment`${col} <= ${value as SqlValue}`;
     case "like":
-      return sql`${col} LIKE ${value as string}`;
+      return sql.fragment`${col} LIKE ${value as string}`;
     case "ilike":
-      return sql`${col} ILIKE ${value as string}`;
+      return sql.fragment`${col} ILIKE ${value as string}`;
     case "in": {
       const arr = value as SqlValue[];
-      if (arr.length === 0) return sql`1 = 0`;
-      return sql`${col} IN (${join(arr.map((v) => sql`${v}`))})`;
+      if (arr.length === 0) return sql.fragment`1 = 0`;
+      return sql.fragment`${col} IN (${join(arr.map((v) => sql.fragment`${v}`))})`;
     }
     case "notIn": {
       const arr = value as SqlValue[];
-      if (arr.length === 0) return sql`1 = 1`;
-      return sql`${col} NOT IN (${join(arr.map((v) => sql`${v}`))})`;
+      if (arr.length === 0) return sql.fragment`1 = 1`;
+      return sql.fragment`${col} NOT IN (${join(arr.map((v) => sql.fragment`${v}`))})`;
     }
     case "between": {
       const [low, high] = value as [SqlValue, SqlValue];
-      return sql`${col} BETWEEN ${low} AND ${high}`;
+      return sql.fragment`${col} BETWEEN ${low} AND ${high}`;
     }
   }
 }
@@ -137,54 +137,54 @@ export function filter<TModel>(
 
 /** Equal: column = value */
 export function eq<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} = ${value}`;
+  return sql.fragment`${col} = ${value}`;
 }
 
 /** Not equal: column != value */
 export function ne<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} != ${value}`;
+  return sql.fragment`${col} != ${value}`;
 }
 
 /** Greater than: column > value */
 export function gt<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} > ${value}`;
+  return sql.fragment`${col} > ${value}`;
 }
 
 /** Greater than or equal: column >= value */
 export function gte<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} >= ${value}`;
+  return sql.fragment`${col} >= ${value}`;
 }
 
 /** Less than: column < value */
 export function lt<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} < ${value}`;
+  return sql.fragment`${col} < ${value}`;
 }
 
 /** Less than or equal: column <= value */
 export function lte<TModel>(col: ColRef<TModel>, value: SqlValue): Sql {
-  return sql`${col} <= ${value}`;
+  return sql.fragment`${col} <= ${value}`;
 }
 
 /** LIKE pattern match (case-sensitive) */
 export function like<TModel>(col: ColRef<TModel>, pattern: string): Sql {
-  return sql`${col} LIKE ${pattern}`;
+  return sql.fragment`${col} LIKE ${pattern}`;
 }
 
 /** ILIKE pattern match (case-insensitive, ClickHouse) */
 export function ilike<TModel>(col: ColRef<TModel>, pattern: string): Sql {
-  return sql`${col} ILIKE ${pattern}`;
+  return sql.fragment`${col} ILIKE ${pattern}`;
 }
 
 /** IN list: column IN (a, b, c) */
 export function inList<TModel>(col: ColRef<TModel>, values: SqlValue[]): Sql {
-  if (values.length === 0) return sql`1 = 0`;
-  return sql`${col} IN (${join(values.map((v) => sql`${v}`))})`;
+  if (values.length === 0) return sql.fragment`1 = 0`;
+  return sql.fragment`${col} IN (${join(values.map((v) => sql.fragment`${v}`))})`;
 }
 
 /** NOT IN list */
 export function notIn<TModel>(col: ColRef<TModel>, values: SqlValue[]): Sql {
-  if (values.length === 0) return sql`1 = 1`;
-  return sql`${col} NOT IN (${join(values.map((v) => sql`${v}`))})`;
+  if (values.length === 0) return sql.fragment`1 = 1`;
+  return sql.fragment`${col} NOT IN (${join(values.map((v) => sql.fragment`${v}`))})`;
 }
 
 /** BETWEEN: column BETWEEN low AND high */
@@ -193,17 +193,17 @@ export function between<TModel>(
   low: SqlValue,
   high: SqlValue,
 ): Sql {
-  return sql`${col} BETWEEN ${low} AND ${high}`;
+  return sql.fragment`${col} BETWEEN ${low} AND ${high}`;
 }
 
 /** IS NULL */
 export function isNull<TModel>(col: ColRef<TModel>): Sql {
-  return sql`${col} IS NULL`;
+  return sql.fragment`${col} IS NULL`;
 }
 
 /** IS NOT NULL */
 export function isNotNull<TModel>(col: ColRef<TModel>): Sql {
-  return sql`${col} IS NOT NULL`;
+  return sql.fragment`${col} IS NOT NULL`;
 }
 
 // =============================================================================
@@ -221,13 +221,13 @@ export function or(...conditions: Sql[]): Sql {
   const nonEmpty = conditions.filter((c) => !isEmpty(c));
   if (nonEmpty.length === 0) return empty;
   if (nonEmpty.length === 1) return nonEmpty[0];
-  return sql`(${join(nonEmpty, "OR")})`;
+  return sql.fragment`(${join(nonEmpty, "OR")})`;
 }
 
 /** Negate a condition: NOT (condition) */
 export function not(condition: Sql): Sql {
   if (isEmpty(condition)) return empty;
-  return sql`NOT (${condition})`;
+  return sql.fragment`NOT (${condition})`;
 }
 
 // =============================================================================
@@ -237,7 +237,7 @@ export function not(condition: Sql): Sql {
 /** Build WHERE clause - returns empty if no conditions */
 export function where(...conditions: Sql[]): Sql {
   const combined = and(...conditions);
-  return isEmpty(combined) ? empty : sql`WHERE ${combined}`;
+  return isEmpty(combined) ? empty : sql.fragment`WHERE ${combined}`;
 }
 
 /** Build ORDER BY clause */
@@ -248,41 +248,41 @@ export function orderBy<TModel>(
   const parts = cols.map((c) => {
     if (Array.isArray(c)) {
       const [col, dir] = c;
-      return sql`${col} ${raw(dir)}`;
+      return sql.fragment`${col} ${raw(dir)}`;
     }
-    return sql`${c}`;
+    return sql.fragment`${c}`;
   });
-  return sql`ORDER BY ${join(parts)}`;
+  return sql.fragment`ORDER BY ${join(parts)}`;
 }
 
 /** Build LIMIT clause */
 export function limit(n: number): Sql {
-  return sql`LIMIT ${n}`;
+  return sql.fragment`LIMIT ${n}`;
 }
 
 /** Build OFFSET clause */
 export function offset(n: number): Sql {
-  return sql`OFFSET ${n}`;
+  return sql.fragment`OFFSET ${n}`;
 }
 
 /** Build LIMIT + OFFSET for pagination */
 export function paginate(pageSize: number, page: number = 0): Sql {
   const offsetVal = page * pageSize;
   return offsetVal > 0 ?
-      sql`LIMIT ${pageSize} OFFSET ${offsetVal}`
-    : sql`LIMIT ${pageSize}`;
+      sql.fragment`LIMIT ${pageSize} OFFSET ${offsetVal}`
+    : sql.fragment`LIMIT ${pageSize}`;
 }
 
 /** Build GROUP BY clause */
 export function groupBy<TModel>(...cols: ColRef<TModel>[]): Sql {
   if (cols.length === 0) return empty;
-  return sql`GROUP BY ${join(cols.map((c) => sql`${c}`))}`;
+  return sql.fragment`GROUP BY ${join(cols.map((c) => sql.fragment`${c}`))}`;
 }
 
 /** Build HAVING clause */
 export function having(...conditions: Sql[]): Sql {
   const combined = and(...conditions);
-  return isEmpty(combined) ? empty : sql`HAVING ${combined}`;
+  return isEmpty(combined) ? empty : sql.fragment`HAVING ${combined}`;
 }
 
 // =============================================================================
@@ -298,7 +298,7 @@ export interface Expr extends Sql {
 function expr(fragment: Sql): Expr {
   // Use composition instead of prototype delegation
   return Object.assign(Object.create(Sql.prototype), fragment, {
-    as: (alias: string) => sql`${fragment} AS ${raw(alias)}`,
+    as: (alias: string) => sql.fragment`${fragment} AS ${raw(alias)}`,
   }) as Expr;
 }
 
@@ -308,32 +308,32 @@ function expr(fragment: Sql): Expr {
 
 /** COUNT(*) or COUNT(column) */
 export function count<TModel>(col?: ColRef<TModel>): Expr {
-  return expr(col ? sql`count(${col})` : sql`count(*)`);
+  return expr(col ? sql.fragment`count(${col})` : sql.fragment`count(*)`);
 }
 
 /** COUNT(DISTINCT column) */
 export function countDistinct<TModel>(col: ColRef<TModel>): Expr {
-  return expr(sql`count(DISTINCT ${col})`);
+  return expr(sql.fragment`count(DISTINCT ${col})`);
 }
 
 /** SUM(column) */
 export function sum<TModel>(col: ColRef<TModel>): Expr {
-  return expr(sql`sum(${col})`);
+  return expr(sql.fragment`sum(${col})`);
 }
 
 /** AVG(column) */
 export function avg<TModel>(col: ColRef<TModel>): Expr {
-  return expr(sql`avg(${col})`);
+  return expr(sql.fragment`avg(${col})`);
 }
 
 /** MIN(column) */
 export function min<TModel>(col: ColRef<TModel>): Expr {
-  return expr(sql`min(${col})`);
+  return expr(sql.fragment`min(${col})`);
 }
 
 /** MAX(column) */
 export function max<TModel>(col: ColRef<TModel>): Expr {
-  return expr(sql`max(${col})`);
+  return expr(sql.fragment`max(${col})`);
 }
 
 // =============================================================================
@@ -344,20 +344,20 @@ export function max<TModel>(col: ColRef<TModel>): Expr {
 export function select<TModel>(
   ...cols: Array<ColRef<TModel> | [ColRef<TModel>, string]>
 ): Sql {
-  if (cols.length === 0) return sql`SELECT *`;
+  if (cols.length === 0) return sql.fragment`SELECT *`;
   const parts = cols.map((c) => {
     if (Array.isArray(c)) {
       const [col, alias] = c;
-      return sql`${col} AS ${raw(alias)}`;
+      return sql.fragment`${col} AS ${raw(alias)}`;
     }
-    return sql`${c}`;
+    return sql.fragment`${c}`;
   });
-  return sql`SELECT ${join(parts)}`;
+  return sql.fragment`SELECT ${join(parts)}`;
 }
 
 /** Alias a column or expression */
 export function as(expr: Sql, alias: string): Sql {
-  return sql`${expr} AS ${raw(alias)}`;
+  return sql.fragment`${expr} AS ${raw(alias)}`;
 }
 
 // =============================================================================
@@ -421,7 +421,7 @@ export interface QueryHandler<P, R> {
  *   fromUrl: typia.http.createValidateQuery<MyParams>(),
  *   fromObject: typia.createValidate<MyParams>(),
  *   queryFn: async (params) => {
- *     const query = sql`SELECT * FROM ${Table} ${where(...)}`;
+ *     const query = sql.statement`SELECT * FROM ${Table} ${where(...)}`;
  *     return executeQuery(query);
  *   },
  * });

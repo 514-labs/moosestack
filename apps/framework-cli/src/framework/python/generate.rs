@@ -672,6 +672,16 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 &json_types,
             );
 
+            let type_str = if column
+                .annotations
+                .iter()
+                .any(|(k, v)| k == "LowCardinality" && v == &serde_json::json!(true))
+            {
+                format!("Annotated[{type_str}, \"LowCardinality\"]")
+            } else {
+                type_str
+            };
+
             let mut type_str = if !column.required {
                 format!("Optional[{type_str}]")
             } else {
@@ -2215,6 +2225,65 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(
             result.contains("OlapConfig.TableProjection(name=\"proj_by_user\", body=\"SELECT _part_offset ORDER BY user_id\")"),
             "Expected projection entry. Result: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_emission() {
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                Column {
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    ..test_column("status", ColumnType::String)
+                },
+                test_column("plain", ColumnType::String),
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            ..test_table("LcTest", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(
+            result.contains("status: Annotated[str, \"LowCardinality\"]"),
+            "LowCardinality column should have Annotated wrapper. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("plain: str"),
+            "Plain column should remain unmodified. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_optional() {
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                Column {
+                    required: false,
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    ..test_column("tag", ColumnType::String)
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            ..test_table("LcOptional", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(
+            result.contains("tag: Optional[Annotated[str, \"LowCardinality\"]]"),
+            "Optional LowCardinality should wrap correctly. Got: {}",
             result
         );
     }

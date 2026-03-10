@@ -28,7 +28,7 @@ import { events } from "./Events";
 
 export const activeUserEvents = new View(
   "active_user_events",
-  sql`
+  sql.statement`
     SELECT
       ${events.columns.id}    AS event_id,
       ${users.columns.id}     AS user_id,
@@ -65,31 +65,68 @@ active_user_events = View(
   </LanguageTabContent>
 </LanguageTabs>
 
+## Multi-Database Views
+
+Pass a `database` argument to create the view in a specific ClickHouse database:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="MultiDatabase.ts" copy
+import { View, sql } from "@514labs/moose-lib";
+import { events } from "./Events";
+
+export const rawEvents = new View(
+  "raw_events",
+  sql.statement`SELECT * FROM ${events}`,
+  [events],
+  { database: "analytics" },
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="MultiDatabase.py" copy
+from moose_lib import View
+from tables import events
+
+raw_events = View(
+    "raw_events",
+    "SELECT * FROM {events}",
+    [events],
+    database="analytics",
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+When `database` is set, Moose creates the view as `` `database`.`view_name` `` in ClickHouse. Source table references that also carry a `database` config are automatically qualified as `` `database`.`table` `` in `source_tables`.
+
 ## Quick Reference
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="Signature.ts" copy
-// new View(name, selectStatement, baseTables)
+// new View(name, selectStatement, baseTables, config?, metadata?)
 new View(
   "view_name",
-  sql`SELECT ... FROM ${someTable}`,
+  sql.statement`SELECT ... FROM ${someTable}`,
   [someTable, /* other tables or views */],
+  { database: "optional_db" }, // optional ViewConfig
 );
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="Signature.py" copy
-# View(name: str, select_statement: str, base_tables: list[OlapTable | View])
+# View(name: str, select_statement: str, base_tables: list[OlapTable | View], database: str | None = None, metadata: dict | None = None)
 View(
     "view_name",
     "SELECT ... FROM {someTable}",
     [someTable],
+    database="optional_db",  # optional
 )
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
 <Callout type="info" title="Static SQL recommended" compact icon="Database" href="https://clickhouse.com/docs/en/sql-reference" ctaLabel="ClickHouse SQL">
-The `SELECT` should be static (no runtime parameters). In TypeScript, prefer Moose's `sql` template for safe table/column interpolation; in Python, use string templates with `{table.columns.col}`.
+The `SELECT` should be static (no runtime parameters). In TypeScript, prefer Moose's `sql.statement` / `sql.fragment` templates for safe table/column interpolation; in Python, use string templates with `{table.columns.col}`.
 </Callout>

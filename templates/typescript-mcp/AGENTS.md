@@ -23,23 +23,17 @@ Before building data models or tools, ask the user:
 - How the data will be consumed (chat interface, dashboards, API endpoints)
 - Whether ingestion is real-time streaming or batch
 
-The user knows their data and use case; use the ClickHouse Best Practices Skill to translate their requirements into optimal schemas, `orderByFields`, and queries.
+The user knows their data and use case; if the ClickHouse Best Practices Skill is installed, use it to translate their requirements into optimal schemas, `orderByFields`, and queries.
 
-### 3. Set up agent harness
+### 3. Agent tools available
 
-Ensure all of these are active before starting work.
+1. **Dev server** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
 
-1. **Dev server running** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
+2. **MooseDev MCP** — Pre-configured in `.mcp.json`. Primary tool for inspecting the project (see Available Tools below).
 
-2. **MooseDev MCP connected** — Pre-configured in `.mcp.json`. Verify it is connected in your copilot. This is your primary tool for inspecting the project.
+3. **Context7** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts for MooseStack documentation.
 
-3. **Context7 connected** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
-
-4. **ClickHouse Best Practices Skill installed** — Install at the start of every session if not already present:
-
-   ```bash
-   npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
-   ```
+4. **ClickHouse Best Practices Skill** (optional) — Install with `514 agent init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ## Key Files
 
@@ -64,11 +58,11 @@ Ensure all of these are active before starting work.
 
 ### Adding a data model
 
-MooseStack's core pattern: define a TypeScript interface once, then wire up individual primitives (`OlapTable`, `Stream`, `IngestApi`) to create your data pipeline.
+MooseStack's core pattern: define a TypeScript interface once, then configure an `IngestPipeline` to create your data pipeline.
 
 ```typescript
 // app/ingest/models.ts
-import { OlapTable, Stream, IngestApi } from "@514labs/moose-lib";
+import { IngestPipeline } from "@514labs/moose-lib";
 
 export interface PageView {
   viewId: string;
@@ -78,23 +72,15 @@ export interface PageView {
   durationMs: number;
 }
 
-// ClickHouse table — orderByFields is critical for query performance
-export const PageViewTable = new OlapTable<PageView>("PageView", {
-  orderByFields: ["userId", "timestamp"],
-});
-
-// Streaming topic — wired to the table
-export const PageViewStream = new Stream<PageView>("PageView", {
-  destination: PageViewTable,
-});
-
-// REST API endpoint — POST /ingest/PageView
-export const PageViewApi = new IngestApi<PageView>("PageView", {
-  destination: PageViewStream,
+// IngestPipeline configures table, stream, and API in one declaration
+export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
+  table: { orderByFields: ["userId", "timestamp"] },
+  stream: true,
+  ingestApi: true, // POST /ingest/PageView
 });
 ```
 
-Use `orderByFields` to control ClickHouse table ordering — put your most-filtered columns first. Use the ClickHouse Best Practices Skill to choose the right ordering for the user's query patterns.
+The `table` field accepts either a boolean (`true` for defaults, `false` to skip table creation) or an object with `orderByFields` for explicit ordering. Use `orderByFields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering for the user's query patterns.
 
 For advanced table configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
 
@@ -116,7 +102,7 @@ app.get("/top-pages", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`
+    const query = sql.statement`
       SELECT url, count() as totalViews
       FROM PageView
       WHERE userId = ${userId}
@@ -142,8 +128,8 @@ export const analyticsApi = new WebApp("analytics", app, {
 
 Key patterns:
 
-- Use `getMooseUtils()` to get the ClickHouse `client` and type-safe `sql` template tag
-- Use the `sql` template tag for parameterized queries (prevents injection)
+- Use `getMooseUtils()` to get the ClickHouse `client` and type-safe `sql` template literal
+- Use `sql.statement` for complete SQL queries and `sql.fragment` for reusable SQL expressions (prevents injection)
 - Export the `WebApp` from the file — MooseStack discovers it automatically
 - This template uses Express, but MooseStack also supports Fastify and FastAPI. See `moose docs moosestack/app-api-frameworks` for all options
 
@@ -182,13 +168,13 @@ Key patterns from this template:
 
 ### Do / Don't
 
-- **DO** use `orderByFields` to define ClickHouse table ordering. **DON'T** rely on default ordering — always specify based on query patterns.
+- **DO** specify `orderByFields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
 - **DO** use `currentDatabase()` in SQL queries. **DON'T** hardcode the database name.
 - **DO** use `clickhouseReadonlyQuery()` for MCP tool DB access. **DON'T** use `client.query.client.query()` directly without readonly settings.
-- **DO** use `OlapTable` + `Stream` + `IngestApi` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** return user-friendly error messages in MCP tool responses. **DON'T** expose internal error details or stack traces.
 - **DO** export new primitives from `app/index.ts`. **DON'T** forget to export — MooseStack won't discover unexported primitives.
-- **DO** use the ClickHouse Best Practices Skill for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
+- **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
 - **DON'T** modify `packages/web-app/.env.development` — it is pre-configured for local dev.
 
 ## Available Tools
@@ -214,9 +200,9 @@ These are the tools exposed to the chat UI and external MCP clients. Edit them i
 | `query_clickhouse` | Read-only SQL (SELECT, SHOW, DESCRIBE, EXPLAIN). Blocks writes and DDL. Uses `currentDatabase()` automatically. | `query` (required), `limit` (optional, default 100, max 1000) |
 | `get_data_catalog` | Discover tables and materialized views with schema info. Uses `currentDatabase()` automatically. | `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed) |
 
-### ClickHouse Best Practices Skill
+### ClickHouse Best Practices Skill (optional)
 
-Use when creating or refining data models, writing ClickHouse queries, designing schemas, or configuring materialized views. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+Not included by default. Install with `514 agent init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ### Moose CLI
 
