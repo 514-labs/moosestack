@@ -1693,6 +1693,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1706,6 +1707,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1719,6 +1721,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1732,6 +1735,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1745,6 +1749,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
 ];

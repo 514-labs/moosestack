@@ -1,6 +1,7 @@
 import ts, { factory } from "typescript";
 import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
+import type { Column } from "../dataModels/dataModelTypes";
 import {
   generateValidateFunction,
   generateIsFunction,
@@ -140,15 +141,16 @@ export const transformNewMooseResource = (
   const typiaCtx = ctx.typiaContext;
 
   let internalArguments: ts.Expression[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let columns: any[] | undefined;
+  let columns: Column[] | undefined;
 
   if (typeName === "DeadLetterQueue") {
+    // DeadLetterQueue uses type guard (assert)
     internalArguments = [generateAssertFunction(typiaCtx, typeAtLocation)];
   } else {
     columns = toColumns(typeAtLocation, checker, {
       allowIndexSignatures,
     });
+    // Other resources use JSON schemas + columns
     internalArguments = [
       generateJsonSchemas(typiaCtx, typeAtLocation),
       parseAsAny(JSON.stringify(columns)),
@@ -202,13 +204,11 @@ export const transformNewMooseResource = (
       const insertColumnSets: InsertColumnSets = {
         computed: new Set(
           columns
-            .filter((c: any) => c.alias != null || c.materialized != null)
-            .map((c: any) => c.name as string),
+            .filter((c) => c.alias != null || c.materialized != null)
+            .map((c) => c.name),
         ),
         defaults: new Set(
-          columns
-            .filter((c: any) => c.default != null)
-            .map((c: any) => c.name as string),
+          columns.filter((c) => c.default != null).map((c) => c.name),
         ),
       };
 
