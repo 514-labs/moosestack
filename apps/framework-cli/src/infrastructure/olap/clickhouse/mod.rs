@@ -1884,24 +1884,39 @@ pub struct ConfiguredDBClient {
 /// });
 /// ```
 pub fn create_client(clickhouse_config: ClickHouseConfig) -> ConfiguredDBClient {
+    let mut client = create_base_client(&clickhouse_config);
+    client = client
+        .with_option("enable_json_type", "1")
+        .with_option("flatten_nested", "0");
+    ConfiguredDBClient {
+        client,
+        config: clickhouse_config,
+    }
+}
+
+/// Creates a client without setting session-level options like `flatten_nested`.
+/// Use this for connecting to remote/read-only ClickHouse servers (e.g. `init --from-remote`, `db pull`).
+pub fn create_readonly_client(clickhouse_config: ClickHouseConfig) -> ConfiguredDBClient {
+    ConfiguredDBClient {
+        client: create_base_client(&clickhouse_config),
+        config: clickhouse_config,
+    }
+}
+
+fn create_base_client(clickhouse_config: &ClickHouseConfig) -> Client {
     let protocol = if clickhouse_config.use_ssl {
         "https"
     } else {
         "http"
     };
-    ConfiguredDBClient {
-        client: Client::default()
-            .with_url(format!(
-                "{}://{}:{}",
-                protocol, clickhouse_config.host, clickhouse_config.host_port
-            ))
-            .with_user(clickhouse_config.user.to_string())
-            .with_password(clickhouse_config.password.to_string())
-            .with_database(clickhouse_config.db_name.to_string())
-            .with_option("enable_json_type", "1")
-            .with_option("flatten_nested", "0"),
-        config: clickhouse_config,
-    }
+    Client::default()
+        .with_url(format!(
+            "{}://{}:{}",
+            protocol, clickhouse_config.host, clickhouse_config.host_port
+        ))
+        .with_user(clickhouse_config.user.to_string())
+        .with_password(clickhouse_config.password.to_string())
+        .with_database(clickhouse_config.db_name.to_string())
 }
 
 /// Executes a SQL query against the ClickHouse database
