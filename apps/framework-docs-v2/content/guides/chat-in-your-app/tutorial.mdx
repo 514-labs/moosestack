@@ -60,7 +60,8 @@ You'll work through:
 2. [Model and Load Data](#model-and-load-your-data) to define your data models and populate ClickHouse.
 3. [Test Basic Chat](#test-basic-chat-with-data-access) to verify the chat can query your data and customize the system prompt.
 4. [Query Layer](#query-layer-optional) (optional) to add type-safe metrics that stay consistent across every surface.
-5. [Deploy to Production](#deploy-to-production) to ship your backend to Fiveonefour and frontend to Vercel.
+5. [Query Builder](#query-builder-optional) (optional) to create deterministic REST API endpoints from your query model.
+6. [Deploy to Production](#deploy-to-production) to ship your backend to Fiveonefour and frontend to Vercel.
 
 <Callout type="info" title="AI-assisted Development">
   We recommend using an AI copilot to accelerate development. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work. Editors that support MCPs can make this workflow even faster.
@@ -616,6 +617,12 @@ Open [http://localhost:3000](http://localhost:3000/) and try asking questions ab
 
 Try a few queries and pay attention to the tool call results — each one shows the SQL that was executed. This will help you identify patterns for the optional query layer later.
 
+<ToggleBlock openText="See example with Amazon Reviews data" closeText="Hide example">
+
+![Chat with Amazon Reviews data](/amazon-review-chat.png)
+
+</ToggleBlock>
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint id="customize-system-prompt" title="(Optional) Customize the system prompt">
@@ -634,111 +641,380 @@ packages/web-app/src/features/chat/system-prompt.ts
 
 ## Query Layer (Optional)
 
-Add type-safe query models and serving tables to optimize common query patterns identified during chat testing.
+Right now, the chat generates SQL on the fly. That works for exploration, but the moment the same metric lives in chat, an API, a dashboard, and an MCP tool, you have multiple SQL definitions that can drift.
+
+Example: chat generates `SUM(amount)` for revenue. The dashboard uses `sumIf(amount, status = 'completed')`. One is wrong. A query layer prevents this by giving every surface the same definition.
+
+It solves two problems:
+
+1. **Consistency**: one metric definition, same answer everywhere. No re-implementation per surface.
+2. **Safe changes**: update a metric once, every consumer stays in sync. The type system catches breaking changes at compile time.
+
+![Query layer architecture](/query-layer.png)
+
+See the [query layer docs](https://docs.fiveonefour.com/moosestack/reference/query-layer?lang=typescript) and [Define once, project everywhere](https://clickhouse.com/blog/metrics-layer-with-fiveonefour) for more detail. The steps below walk you through implementing it.
 
 <GuideStepper id="chat-query-layer" persist>
 
-<GuideStepper.Step id="query-layer" number={1} title="Add Query Layer" summary="Define query models, create serving tables, and wire up type-safe API handlers">
+<GuideStepper.Step id="query-layer" number={1} title="Add Query Layer" summary="Define query models with type-safe metrics, dimensions, and filters">
 <GuideStepper.WhatYouNeed>
     - Working MooseStack project with data loaded
     - Familiarity with the queries your chat is running (check chat tool call results)
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
     - Type-safe query models with `defineQueryModel`
-    - Serving tables optimized for your query patterns
-    - API handlers that serve pre-aggregated data
+    - Consistent metric definitions projected to every surface
+    - Constrained chat and MCP tools that use the query model instead of freestyle SQL
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="identify-query-patterns" title="Identify query patterns from chat usage">
 
-Before optimizing, understand what queries your chat is actually running. Review the tool call results in your chat UI — each `query_clickhouse` call shows the SQL that was executed.
+Before building the query layer, understand what queries your chat is actually running. Review the tool call results in your chat UI — each `query_clickhouse` call shows the SQL that was executed.
 
 Look for:
 
 - Repeated aggregation patterns (e.g., `GROUP BY date`, `COUNT(*)`)
-- Slow queries on large tables
-- Common filter combinations
+- Metrics that should have constraints (e.g., revenue should only count completed transactions)
+- Common filter and grouping combinations
 
-These patterns are candidates for serving tables and materialized views.
+These patterns become the dimensions, metrics, and filters in your query model.
+
+<Callout type="tip" title="Materialized Views for heavy metrics">
+For compute-heavy metrics, consider backing your query model with a [Materialized View](https://docs.fiveonefour.com/moosestack/materialized-views?lang=typescript) that pre-aggregates data into a serving table. The query model can reference the MV's target table instead of the raw data.
+</Callout>
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint id="define-query-model" title="Define a query model with defineQueryModel">
 
-Use `defineQueryModel` to create a type-safe query layer. This defines the shape of your API response and the ClickHouse query that powers it.
+Ask your coding agent to create the query layer:
 
-```ts filename="app/queries/example-query.ts"
-import { sql, defineQueryModel } from "@514labs/moose-lib";
-import { MyDataModel } from "../ingest/models";
+```text
+Create a query layer for me to use in defining APIs for a dashboard and
+tools for chat.
 
-interface QueryParams {
-  startDate: string;
-  endDate: string;
-}
+Docs: https://docs.fiveonefour.com/moosestack/apis/semantic-layer
+API reference: https://docs.fiveonefour.com/moosestack/reference/query-layer
+Example App: https://github.com/514-labs/financial-query-layer-demo
 
-interface QueryResult {
-  day: string;
-  total_count: number;
-  avg_value: number;
-}
-
-export const myQuery = defineQueryModel<QueryParams, QueryResult>({
-  table: MyDataModel,
-  queryFn: (params, table) => sql`
-    SELECT
-      toDate(created_at) AS day,
-      count() AS total_count,
-      avg(value) AS avg_value
-    FROM ${table}
-    WHERE created_at >= toDateTime(${params.startDate})
-      AND created_at < toDateTime(${params.endDate})
-    GROUP BY day
-    ORDER BY day ASC
-  `,
-});
+Make sure to use column references from the OlapTable object in the SQL
+fragments (e.g. `TransactionTable.columns.totalAmount`).
+Make sure to use description fields on metrics, dimensions, and filters —
+these propagate to tool definitions and help the LLM understand what each
+metric means.
+Make sure to export anything that needs to be exported in index.ts.
 ```
 
-Export from your project's `index.ts`:
-
-```ts
-export { myQuery } from "./queries/example-query";
-```
+The agent will generate a `defineQueryModel` with dimensions, metrics, and filters derived from your OlapTable.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="create-serving-table" title="Create a serving table (optional optimization)">
+<GuideStepper.Checkpoint id="review-query-model" title="Review the generated query model">
 
-For frequently-run aggregations, create a materialized view that pre-computes results into a serving table. This is the same pattern used in the [Performant Dashboards guide](/guides/performant-dashboards/tutorial).
+Review the output — you can explicitly define any metric to ensure it matches your business logic. Check that:
 
-```ts filename="app/views/daily-summary.ts"
-import { sql, OlapTable, MaterializedView } from "@514labs/moose-lib";
-import { MyDataModel } from "../ingest/models";
+- **Dimensions** cover the groupings you need (time buckets, categories, etc.)
+- **Metrics** use the right aggregations — especially constrained metrics like `countIf` or `sumIf`
+- **Filters** expose the right columns and operators for your use cases
+- **Column references** use `YourTable.columns.*` (not raw strings) for type safety
+- **Descriptions** are clear — they propagate to tool definitions and help the LLM
 
-interface DailySummary {
-  day: Date;
-  total_count: number;
-  avg_value: number;
-}
+<ToggleBlock openText="Example: Amazon Reviews query model" closeText="Hide example">
 
-export const DailySummaryTable = new OlapTable<DailySummary>("DailySummary", {
-  orderBy: ["day"],
-});
+```ts
+import { defineQueryModel, sql, count, avg, countDistinct } from "@514labs/moose-lib";
+import { AmazonReviewTable } from "../ingest/models";
 
-export const dailySummaryMV = new MaterializedView({
-  name: "daily_summary_mv",
-  targetTable: DailySummaryTable,
-  query: sql`
-    SELECT
-      toDate(created_at) AS day,
-      count() AS total_count,
-      avg(value) AS avg_value
-    FROM ${MyDataModel}
-    GROUP BY day
-  `,
+export const reviewMetrics = defineQueryModel({
+  name: "query_review_metrics",
+  description:
+    "Amazon product review metrics from the Customer Reviews Dataset (~25M reviews). " +
+    "Dimensions: marketplace, product_category, star_rating, vine, verified_purchase, " +
+    "and time granularities (day, month). " +
+    "Metrics: review counts, average rating, helpful vote stats, product/customer counts. " +
+    "Filters: marketplace, product_category, star_rating, vine, verified_purchase, " +
+    "review_date range, product_id, and text search on review_headline.",
+
+  table: AmazonReviewTable,
+
+  dimensions: {
+    marketplace: {
+      column: "marketplace",
+      description: "Amazon marketplace code (US, UK, DE, FR, JP)",
+    },
+    product_category: {
+      column: "product_category",
+      description: "Product category (Books, Electronics, Music, etc. — ~43 unique values)",
+    },
+    star_rating: {
+      column: "star_rating",
+      description: "Star rating (1–5)",
+    },
+    vine: {
+      column: "vine",
+      description: "Whether the reviewer is in the Amazon Vine program",
+    },
+    verified_purchase: {
+      column: "verified_purchase",
+      description: "Whether the review is from a verified purchase",
+    },
+    day: {
+      expression: sql`FROM_UNIXTIME(${AmazonReviewTable.columns.review_date} * 86400, '%Y-%m-%d')`,
+      as: "day",
+      description: "Calendar day (derived from review_date epoch days)",
+    },
+    month: {
+      expression: sql`FROM_UNIXTIME(${AmazonReviewTable.columns.review_date} * 86400, '%Y-%m')`,
+      as: "month",
+      description: "Year-month bucket",
+    },
+  },
+
+  metrics: {
+    totalReviews: {
+      agg: count(),
+      as: "totalReviews",
+      description: "Total number of reviews",
+    },
+    avgRating: {
+      agg: avg(AmazonReviewTable.columns.star_rating),
+      as: "avgRating",
+      description: "Average star rating (1–5)",
+    },
+    totalHelpfulVotes: {
+      agg: sql`sum(${AmazonReviewTable.columns.helpful_votes})`,
+      as: "totalHelpfulVotes",
+      description: "Sum of helpful votes across all reviews",
+    },
+    totalVotes: {
+      agg: sql`sum(${AmazonReviewTable.columns.total_votes})`,
+      as: "totalVotes",
+      description: "Sum of all votes (helpful + unhelpful)",
+    },
+    avgHelpfulVotes: {
+      agg: avg(AmazonReviewTable.columns.helpful_votes),
+      as: "avgHelpfulVotes",
+      description: "Average helpful votes per review",
+    },
+    uniqueProducts: {
+      agg: countDistinct(AmazonReviewTable.columns.product_id),
+      as: "uniqueProducts",
+      description: "Count of distinct products reviewed",
+    },
+    uniqueCustomers: {
+      agg: countDistinct(AmazonReviewTable.columns.customer_id),
+      as: "uniqueCustomers",
+      description: "Count of distinct customers who left reviews",
+    },
+    fiveStarReviews: {
+      agg: sql`countIf(${AmazonReviewTable.columns.star_rating} = 5)`,
+      as: "fiveStarReviews",
+      description: "Count of 5-star reviews",
+    },
+    oneStarReviews: {
+      agg: sql`countIf(${AmazonReviewTable.columns.star_rating} = 1)`,
+      as: "oneStarReviews",
+      description: "Count of 1-star reviews",
+    },
+    verifiedPurchaseCount: {
+      agg: sql`countIf(${AmazonReviewTable.columns.verified_purchase} = true)`,
+      as: "verifiedPurchaseCount",
+      description: "Count of verified purchase reviews",
+    },
+    vineReviewCount: {
+      agg: sql`countIf(${AmazonReviewTable.columns.vine} = true)`,
+      as: "vineReviewCount",
+      description: "Count of Amazon Vine program reviews",
+    },
+    helpfulnessRate: {
+      agg: sql`if(sum(${AmazonReviewTable.columns.total_votes}) > 0, round(sum(${AmazonReviewTable.columns.helpful_votes}) / sum(${AmazonReviewTable.columns.total_votes}), 4), 0)`,
+      as: "helpfulnessRate",
+      description: "Ratio of helpful votes to total votes (0–1)",
+    },
+  },
+
+  filters: {
+    marketplace: {
+      column: "marketplace",
+      operators: ["eq", "in"] as const,
+      description: "Filter by marketplace (US, UK, DE, FR, JP)",
+    },
+    product_category: {
+      column: "product_category",
+      operators: ["eq", "in"] as const,
+      description: "Filter by product category",
+    },
+    star_rating: {
+      column: "star_rating",
+      operators: ["eq", "gte", "lte"] as const,
+      description: "Filter by star rating (1–5)",
+    },
+    vine: {
+      column: "vine",
+      operators: ["eq"] as const,
+      description: "Filter by Vine program membership (true/false)",
+    },
+    verified_purchase: {
+      column: "verified_purchase",
+      operators: ["eq"] as const,
+      description: "Filter by verified purchase status (true/false)",
+    },
+    review_date: {
+      column: "review_date",
+      operators: ["gte", "lte"] as const,
+      description: "Filter by review_date (UInt16 days since epoch)",
+    },
+    product_id: {
+      column: "product_id",
+      operators: ["eq", "in"] as const,
+      description: "Filter by Amazon product ASIN",
+    },
+    review_headline: {
+      column: "review_headline",
+      operators: ["ilike"] as const,
+      description: "Search review headlines (case-insensitive pattern match)",
+    },
+  },
+
+  sortable: [
+    "totalReviews", "avgRating", "totalHelpfulVotes",
+    "uniqueProducts", "uniqueCustomers", "fiveStarReviews",
+    "oneStarReviews", "helpfulnessRate", "day", "month",
+  ] as const,
+
+  defaults: {
+    metrics: ["totalReviews", "avgRating", "uniqueProducts"],
+    dimensions: [],
+    orderBy: [],
+    limit: 100,
+    maxLimit: 1000,
+  },
 });
 ```
 
-Export both from `index.ts`. The serving table will be automatically available to the MCP server's `query_clickhouse` tool, giving your chat faster access to pre-aggregated data.
+</ToggleBlock>
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="use-query-model" title="Use the query model in APIs and tools">
+
+The same query model object can be consumed by every surface. Add a metric to the model, and it becomes available everywhere.
+
+<ToggleBlock openText="MCP tool — Claude Desktop, Cursor, or any MCP client" closedText="MCP tool — Claude Desktop, Cursor, or any MCP client">
+```ts
+registerModelTools(server, [reviewMetrics], mooseUtils.client.query);
+```
+</ToggleBlock>
+
+<ToggleBlock openText="Chat tool — Vercel AI SDK for in-app chat" closedText="Chat tool — Vercel AI SDK for in-app chat">
+```ts
+const tool = createModelTool(reviewMetrics);
+```
+</ToggleBlock>
+
+<ToggleBlock openText="REST API — deterministic, parameterized queries (next section)" closedText="REST API — deterministic, parameterized queries (next section)">
+```ts
+const data = await buildQuery(reviewMetrics)
+  .metrics(["totalReviews", "avgRating"])
+  .dimensions(["product_category"])
+  .execute(client.query);
+```
+</ToggleBlock>
+
+Try asking your chat a question that uses your query model's metrics and dimensions — the model's tool will be called automatically.
+
+<ToggleBlock openText="See: query model metrics in chat" closedText="See: query model metrics in chat">
+![Query model metrics propagated to chat — asking for average ratings by product category returns structured results via the query_review_metrics tool](/amazon-query.png)
+</ToggleBlock>
+
+</GuideStepper.Checkpoint>
+
+
+</GuideStepper.Step>
+
+</GuideStepper>
+
+## Dashboard and Query Builder (Optional)
+
+Your chat app works — now add visual components. This section covers slotting in dashboard charts powered by your query model, and building a composable query builder for flexible data exploration.
+
+A query builder gives users a point-and-click interface to explore data — select metrics, pick dimensions, apply filters — without writing SQL or relying on an LLM. Because it reads directly from your query model's metadata, any metric or dimension you add to your `defineQueryModel` automatically appears as an option in the UI. One definition, every surface.
+
+See the [query builder docs](https://docs.fiveonefour.com/moosestack/reference/query-layer?lang=typescript) and the [financial demo APIs](https://github.com/514-labs/financial-query-layer-demo/tree/main/packages/moosestack-service/app/apis) for working examples.
+
+<GuideStepper id="chat-query-builder" persist>
+
+<GuideStepper.Step id="dashboard-charts" number={1} title="Add Dashboard Charts" summary="Use your query model to power visual components">
+<GuideStepper.WhatYouNeed>
+    - A `defineQueryModel` from the previous section
+    - Your Next.js frontend running
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+    - Dashboard charts powered by `buildQuery` endpoints
+    - Visual components that stay in sync with your query model
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint id="add-charts" title="Add dashboard charts">
+
+Ask your coding agent to build the dashboard:
+
+```
+Use a shadcn chart to create a
+"number of reviews over time" chart
+and a "average rating over time" chart
+```
+
+Your agent will create the `buildQuery` API endpoints and chart components for you. Since `buildQuery` assembles SQL from your query model, the charts stay in sync with your metrics definitions.
+
+<Callout type="warning" title="CORS">
+If your Next.js frontend and MooseStack service run on different ports, you may hit CORS errors when fetching from these endpoints. See the [financial demo middleware](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis) for a middleware approach to handle this.
+</Callout>
+
+<ToggleBlock openText="See: dashboard built from prompt" closedText="See: dashboard built from prompt">
+![Amazon Reviews Dashboard with reviews over time and average rating charts alongside the chat interface](/amazon-dash.png)
+</ToggleBlock>
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step id="query-builder" number={2} title="Add a Query Builder" summary="Let users explore data without writing queries">
+<GuideStepper.WhatYouNeed>
+    - A `defineQueryModel` from the Query Layer section
+    - Your Next.js frontend running
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+    - A query builder UI with metric selectors, dimension pickers, and filters
+    - Dynamic controls that automatically update when you add metrics to your query model
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint id="add-query-builder" title="Add a query builder to your frontend">
+
+Ask your coding agent to build it:
+
+```
+Create a query builder that lets users select metrics,
+dimensions, and filters to explore data.
+
+Two API endpoints are needed:
+
+1. GET /schema — returns the query model's metadata
+   (metrics, dimensions, filters, sortable fields, defaults).
+   For categorical filters, fetch distinct values via
+   buildQuery so the UI can render toggle chips.
+
+2. GET /metrics — accepts query params (metrics, dimensions,
+   limit, filter.{name}.{op}=value) and uses buildQuery()
+   to assemble and execute the query.
+
+The frontend reads /schema to populate selectors dynamically,
+then calls /metrics with the user's selections.
+
+Reference implementation:
+https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis/transaction.ts
+```
+
+See the [financial demo transaction API](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis/transaction.ts) for a working example with `/schema` and `/metrics` endpoints.
 
 </GuideStepper.Checkpoint>
 
@@ -846,32 +1122,3 @@ This will again return 0 rows. This is expected. You can validate that the trans
 
 :::include /shared/chat-guide/troubleshooting.mdx
 
-## Appendix: Data context as code
-
-Clickhouse allows you to embed [table](https://clickhouse.com/docs/en/sql-reference/statements/alter/comment) and [column level](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#modify-column) metadata.
-
-With MooseOlap, you can set these table and column level descriptions in your data models. e.g.
-
-```ts
-export interface AircraftTrackingData {
- /** Unique aircraft identifier */
- hex: string;
-
- // no comment for this column
- transponder_type: string;
-
- /** callsign, the flight name or aircraft registration as 8 chars */
- flight: string;
-
- /** aircraft registration pulled from database */
- r: string;
-
- /** unique aircraft identifier */
- aircraft_type?: string;
-
- /** bitfield for certain database flags */
- dbFlags: number;
-}
-```
-
-The `/** JSDoc */` comments on the column level will now be embedded in your ClickHouse database. This additional context will be available to your chat, and retrievable with the same tool-calls that retrieve data.
