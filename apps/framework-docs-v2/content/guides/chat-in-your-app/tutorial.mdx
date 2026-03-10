@@ -5,58 +5,66 @@ languages: ["typescript"]
 tags: ["MCP"]
 ---
 
-import { FileTree, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { FileTree, Callout, BulletPointsCard, ToggleBlock, CommunityCallout } from "@/components/mdx";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
-# Tutorial: From Parquet in S3 to Chat Application
+# Tutorial: Add Chat to Your App
 
-:::include /shared/chat-guide/prerequisites.mdx
+This tutorial walks you through building a chat-over-data application with MooseStack: an LLM-powered chat UI backed by ClickHouse, with MCP tools for querying your data, and a Next.js frontend where you can build custom dashboards or use a query builder.
 
-<Callout type="info" title="Data source">
-This tutorial requires a Parquet data source in S3. Bring your own, or use the [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) (150M+ rows, no auth required).
+<BulletPointsCard
+  title="By the end of this guide you'll have"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Chat UI with MCP-backed data access",
+      description:
+        "A resizable chat panel in your Next.js app, powered by Claude, that queries your ClickHouse data through MCP tools.",
+    },
+    {
+      title: "MooseStack backend with MCP server",
+      description:
+        "A MooseStack service exposing query_clickhouse and get_data_catalog tools, with bearer token authentication.",
+    },
+    {
+      title: "Type-safe query layer (optional)",
+      description:
+        "A defineQueryModel-based metrics layer that projects consistent metric definitions to chat, MCP, APIs, and dashboards.",
+    },
+    {
+      title: "Query builder APIs (optional)",
+      description:
+        "Deterministic REST endpoints powered by buildQuery — no LLM in the loop, same metric definitions as chat and MCP.",
+    },
+    {
+      title: "Production deployment",
+      description:
+        "Backend deployed on Fiveonefour, frontend on Vercel, with production data loaded and authenticated.",
+    },
+  ]}
+/>
+
+Everything is code: your data models, query layer, MCP tools, and chat configuration all live in your repo, go through PR review, and deploy through your normal CI/CD pipeline. With MooseStack, you iterate locally against a real ClickHouse instance, then deploy to Fiveonefour when you're ready to ship.
+
+<Callout type="info" title="Sample data">
+If you don't have your own data yet, you can use the [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) (150M+ rows, no auth required) to follow along.
 </Callout>
 
-In this tutorial, you'll bootstrap the MooseStack MCP template, load real Parquet data from S3 into ClickHouse, validate queries via the MCP-enabled chat UI, then deploy the backend to Fiveonefour and the Next.js app to Vercel.
+<CommunityCallout title="Want Python Examples?">
+This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
+</CommunityCallout>
 
-### Architecture & Scope
+You'll work through:
 
-This tutorial bootstraps a complete chat-over-data application using the MooseStack MCP template with Parquet data from S3.
+1. [Project Setup](#project-setup) to initialize your MooseStack project, configure authentication, connect your dev harness, and verify the chat UI runs locally.
+2. [Model and Load Data](#model-and-load-your-data) to define your data models and populate ClickHouse.
+3. [Chat and Test](#chat-and-test) to validate the chat experience and extend with custom endpoints.
+4. [Query Layer](#query-layer-optional) (optional) to add type-safe metrics that stay consistent across every surface.
+5. [Deploy to Production](#deploy-to-production) to ship your backend to Fiveonefour and frontend to Vercel.
 
-```mermaid
-flowchart LR
-    subgraph nextjs["Next.js App"]
-        direction LR
-        ChatUI["Chat UI"] --> APIRoute["/api/chat"] --> MCPClient["MCP Client"]
-    end
-
-    subgraph moose["MooseStack Service"]
-        direction LR
-        Tools["/tools"] --> MCP["MCP Server"] --> CH["ClickHouse"]
-    end
-
-    MCPClient -->|"HTTP + Bearer Token"| Tools
-```
-
-**What you'll build:**
-
-| Component | Description |
-| :---- | :---- |
-| **Chat UI** | Resizable panel with message input/output, tool result rendering |
-| **API Route** | Handles chat requests, streams responses from Claude |
-| **MCP Server** | Exposes `query_clickhouse` and `get_data_catalog` tools |
-| **Authentication** | Bearer token flow between frontend and backend |
-| **Production deployment** | Backend on Fiveonefour, frontend on Vercel |
-
-**What this covers:**
-
-- Installing the Moose CLI and initializing the template (or adding to an existing app)
-- Modeling your data and bulk-loading from S3 into ClickHouse
-- Setting up a development harness with MooseDev MCP and copilot context
-- Testing chat locally and customizing the frontend
-- Optionally adding a type-safe query layer for performance
-- Deploying MooseStack to Fiveonefour and the Next.js app to Vercel
-
-**Not in scope:** Continuous data ingestion. This covers initial bulk load only. For recurring ingestion, see [MooseStack Workflows](https://docs.fiveonefour.com/moosestack/workflows).
+<Callout type="info" title="AI-assisted Development">
+  We recommend using an AI copilot to accelerate development. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work. Editors that support MCPs can make this workflow even faster.
+</Callout>
 
 ## Project Setup
 

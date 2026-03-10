@@ -121,14 +121,21 @@ export const GUIDE_SETTINGS_CONFIG = [
   },
   {
     id: "startingPoint",
-    label: "Starting Point",
+    label: "Project Setup",
     options: [
-      { value: "scratch", label: "Starting from scratch" },
-      { value: "existing-nextjs", label: "Existing Next.js app" },
+      {
+        value: "scratch",
+        label: "New MooseStack project",
+        chipLabel: "New Project",
+      },
+      {
+        value: "existing-nextjs",
+        label: "Add to existing Next.js app",
+        chipLabel: "Existing App",
+      },
     ],
     defaultValue: "scratch",
-    description:
-      "Whether you're starting a new project or adding to an existing app",
+    description: "Create a new MooseStack project or add to an existing one",
     visible: true,
     syncToUrl: true,
   },
