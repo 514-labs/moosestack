@@ -100,9 +100,6 @@ function createBuildTsconfig(
 function runSingleCompilation(moduleSystem: ModuleSystem): void {
   const moduleOptions = getModuleOptions(moduleSystem);
   const buildTsconfig = createBuildTsconfig(moduleOptions);
-  // Use noEmitOnError: true to match dev mode (watch) behavior —
-  // build should fail on type errors just like dev does
-  buildTsconfig.compilerOptions.noEmitOnError = true;
 
   writeFileSync(tempTsconfigPath, JSON.stringify(buildTsconfig, null, 2));
   console.log("Created temporary tsconfig with moose plugins...");
