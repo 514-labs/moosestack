@@ -596,6 +596,7 @@ async fn sync_kafka_to_clickhouse(
 
     let clickhouse_columns: Vec<String> = target_table_columns
         .iter()
+        .filter(|column| column.materialized.is_none() && column.alias.is_none())
         .map(|column| column.name.clone())
         .collect();
 

@@ -82,6 +82,10 @@ export class QueryClient {
       query_id: this.query_id_prefix + randomUUID(),
       // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
       // where response buffering would harm streaming performance and concurrency
+      clickhouse_settings: {
+        asterisk_include_materialized_columns: 1,
+        asterisk_include_alias_columns: 1,
+      },
     });
     const elapsedMs = performance.now() - start;
     console.log(

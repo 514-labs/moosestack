@@ -44,5 +44,6 @@ export {
   ClickHousePolygon,
   ClickHouseMultiPolygon,
 } from "./dataModels/types";
+export type { Insertable } from "./dataModels/types";
 
 export * from "./query-layer";
