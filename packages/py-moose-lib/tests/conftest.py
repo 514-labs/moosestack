@@ -18,6 +18,8 @@ def clear_registries():
         _api_path_map,
         _sql_resources,
         _workflows,
+        _views,
+        _materialized_views,
     )
 
     # Clear all registries
@@ -29,6 +31,8 @@ def clear_registries():
     _api_path_map.clear()
     _sql_resources.clear()
     _workflows.clear()
+    _views.clear()
+    _materialized_views.clear()
 
     yield
 
@@ -41,3 +45,5 @@ def clear_registries():
     _api_path_map.clear()
     _sql_resources.clear()
     _workflows.clear()
+    _views.clear()
+    _materialized_views.clear()
