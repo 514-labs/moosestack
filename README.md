@@ -25,7 +25,7 @@ Generalist coding agents like Claude Code, Cursor, and Copilot work well for mos
 ## How it works
 In short, when everything is code, coding agents can thrive.
 
-- **AI agent harness**: AI-friendly framework and CLI enable coding agents to iterate quickly and safely on your analytical workloads
+- **Dev framework & CLI**: AI-friendly framework and CLI enable coding agents to iterate quickly and safely on your analytical workloads
 - **Local-first experience**: Full mirror of production environment on your laptop with `moose dev`
 - **Schema & migration management**: Typed schemas in your application code, with automated schema migration support
 - **Code‑first infrastructure**: Declare tables, streams, workflows, and APIs in TS/Python -> MooseStack wires it all up
