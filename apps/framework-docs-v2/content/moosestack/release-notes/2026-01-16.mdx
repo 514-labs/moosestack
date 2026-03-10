@@ -74,11 +74,11 @@ Users can now use View objects in SQL template literals alongside existing OlapT
 import { sql } from "@514labs/moose-lib";
 import { OlapTable, View } from "@514labs/moose-lib/dmv2";
 
-const eventsTable = new OlapTable({ name: "events", columns: { ... } });
+const eventsTable = new OlapTable("events");
 
-const activeSessionsView = new View({
-  name: "active_sessions",
-  query: sql`SELECT user_id, COUNT(*) FROM ${eventsTable} GROUP BY user_id`,
+const activeSessionsView = new View("active_sessions", {
+  selectStatement: sql`SELECT user_id, COUNT(*) FROM ${eventsTable} GROUP BY user_id`,
+  baseTables: [eventsTable],
 });
 
 // Reference View directly in SQL queries

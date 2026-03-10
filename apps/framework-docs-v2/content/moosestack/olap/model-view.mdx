@@ -26,9 +26,8 @@ import { View, sql } from "@514labs/moose-lib";
 import { users } from "./Users";
 import { events } from "./Events";
 
-export const activeUserEvents = new View(
-  "active_user_events",
-  sql.statement`
+export const activeUserEvents = new View("active_user_events", {
+  selectStatement: sql.statement`
     SELECT
       ${events.columns.id}    AS event_id,
       ${users.columns.id}     AS user_id,
@@ -38,8 +37,8 @@ export const activeUserEvents = new View(
     JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
     WHERE ${users.columns.active} = 1
   `,
-  [events, users],
-);
+  baseTables: [events, users],
+});
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
@@ -67,7 +66,7 @@ active_user_events = View(
 
 ## Multi-Database Views
 
-Pass a `ViewConfig` object as the fourth argument to create the view in a specific ClickHouse database:
+Add the `database` property to the `ViewConfig` to create the view in a specific ClickHouse database:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -75,12 +74,11 @@ Pass a `ViewConfig` object as the fourth argument to create the view in a specif
 import { View, sql } from "@514labs/moose-lib";
 import { events } from "./Events";
 
-export const rawEvents = new View(
-  "raw_events",
-  sql.statement`SELECT * FROM ${events}`,
-  [events],
-  { database: "analytics" },
-);
+export const rawEvents = new View("raw_events", {
+  selectStatement: sql.statement`SELECT * FROM ${events}`,
+  baseTables: [events],
+  database: "analytics",
+});
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
@@ -105,13 +103,12 @@ When `database` is set, Moose creates the view as `` `database`.`view_name` `` i
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="Signature.ts" copy
-// new View(name, selectStatement, baseTables, config?, metadata?)
-new View(
-  "view_name",
-  sql.statement`SELECT ... FROM ${someTable}`,
-  [someTable, /* other tables or views */],
-  { database: "optional_db" }, // optional ViewConfig
-);
+// new View(name: string, config: ViewConfig)
+new View("view_name", {
+  selectStatement: sql.statement`SELECT ... FROM ${someTable}`,
+  baseTables: [someTable /* , other tables or views */],
+  database: "optional_db", // optional
+});
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
