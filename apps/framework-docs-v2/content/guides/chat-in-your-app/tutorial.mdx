@@ -58,7 +58,7 @@ You'll work through:
 
 1. [Project and Dev Harness Setup](#project-and-dev-harness-setup) to initialize your MooseStack project, configure authentication, connect your dev harness, and verify the chat UI runs locally.
 2. [Model and Load Data](#model-and-load-your-data) to define your data models and populate ClickHouse.
-3. [Chat and Test](#chat-and-test) to validate the chat experience and extend with custom endpoints.
+3. [Test Basic Chat](#test-basic-chat-with-data-access) to verify the chat can query your data and customize the system prompt.
 4. [Query Layer](#query-layer-optional) (optional) to add type-safe metrics that stay consistent across every surface.
 5. [Deploy to Production](#deploy-to-production) to ship your backend to Fiveonefour and frontend to Vercel.
 
@@ -75,6 +75,7 @@ Get your project initialized and running locally.
 <GuideStepper.Step id="setup" number={1} title="Initialize Your Project and Dev Harness" summary="Install CLIs, create project, configure environment variables, and set up the dev harness">
 <GuideStepper.WhatYouGet>
     - Configured project with MCP server and chat UI ready to run
+    - Dev harness: MooseDev MCP, Context7, Skills, LSP, and agent context files
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="prerequisites" title="Prerequisites">
@@ -151,6 +152,10 @@ moose generate hash-token
 ```
 
 This sets up [MooseStack Skills](https://github.com/514-labs/agent-skills) and the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server), giving your coding agent access to MooseStack-specific actions and language intelligence.
+
+<Callout type="info" title="Dev harness complete">
+With `moose init` and `514 agent init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
+</Callout>
 
 </GuideStepper.Checkpoint>
 
@@ -275,6 +280,7 @@ export default function RootLayout({ children }) {
 <GuideStepper.WhatYouGet>
     - MooseStack and web app running locally
     - Chat UI accessible at localhost:3000
+    - Dev harness connected: coding agent has MooseStack Dev Server access via MCP
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="verify-docker" title="Make sure Docker Desktop is running">
@@ -304,9 +310,11 @@ pnpm dev:web           # Start web app only
 
 You can also run moose dev from your moose project directory `/packages/moosestack-service`.
 
-<Callout type="info" title="Restart your coding agent">
-Once you've confirmed the MooseDev server is running, restart your coding agent (or IDE). This ensures the [MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp) is loaded and your agent has live access to ClickHouse introspection.
-</Callout>
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="restart-agent" title="Restart your coding agent">
+
+Now that the MooseDev server is running, restart your coding agent (or IDE). This ensures it picks up the [MooseDev MCP](https://docs.fiveonefour.com/moosestack/moosedev-mcp) and your agent has live access to ClickHouse introspection.
 
 </GuideStepper.Checkpoint>
 
@@ -339,6 +347,12 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 
 <Callout type="info" title="No data yet">
 The chat will be functional, but since you've not added any data to your MooseStack project, the tools available in the chat won't be able to retrieve any data. The next section covers exploring and modeling the data.
+
+<ToggleBlock openText="See what this looks like" closeText="Hide screenshot">
+
+![Empty app with chat](/empty-app.png)
+
+</ToggleBlock>
 </Callout>
 
 </GuideStepper.Checkpoint>
@@ -350,13 +364,13 @@ The chat will be functional, but since you've not added any data to your MooseSt
 
 ## Model and Load Your Data
 
-Model your S3 data in MooseStack, create ClickHouse tables, and bulk-load data locally.
+Define your data models in MooseStack and get data into ClickHouse.
 
 <GuideStepper id="chat-model-data" persist>
 
-<GuideStepper.Step id="model-data" number={1} title="Model Your Data" summary="Copy data from S3, create a data model, and verify tables in ClickHouse">
+<GuideStepper.Step id="model-data" number={1} title="Model Your Data" summary="Gather context, create data models with ClickHouse best practices, and verify tables">
 <GuideStepper.WhatYouNeed>
-    - A Parquet data source in S3 (bring your own or use the Amazon Customer Reviews dataset)
+    - Sample data, schema documentation, or API docs for your data source
     - MooseStack dev server running
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -364,292 +378,182 @@ Model your S3 data in MooseStack, create ClickHouse tables, and bulk-load data l
     - Tables created in local ClickHouse
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="copy-from-s3" title="Copy data from S3">
+<GuideStepper.Checkpoint id="gather-context" title="Gather sample data and schema context">
 
-The following steps cover how to get data from a source, model that data in MooseStack, creating the relevant ClickHouse tables and other infrastructure, and then loading the data into ClickHouse (either local or Fiveonefour hosted).
-
-You can [model your data manually](https://docs.fiveonefour.com/moosestack/data-modeling?lang=typescript) or you can generate a data model from your data. This guide will walk through the generative approach. This guide assumes you have direct access to the files in S3.
-
-There are many ways to copy data down from S3, e.g.:
-
-Using the [S3 CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) (once you've authenticated):
-
-```shell
-aws s3 ls s3://source-data/    # list files in S3
-
-aws s3 cp s3://source-data/ . --recursive  # copy data from S3 to context directory
-```
-
-Using `moose query` (this only copies one file at a time):
-
-```shell
-cd packages/moosestack-service   # navigate to your MooseStack project
-
-moose query "Select * FROM s3('s3://source-data/file-name.parquet', '<Access-Key-ID>', '<Secret-Access-Key>', 'parquet') limit 10;" > context/data/file-name.txt # copy data retrieved from that SQL query to the .txt file
-```
+Give your coding agent the context it needs to model your data: sample records, schema documentation, data dictionaries, or API response examples. The more context, the better the model.
 
 <ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) has 150M+ product reviews in Parquet on S3. No authentication required:
+The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) has 150M+ product reviews in Parquet on S3. The schema is documented on that page, so you can point your agent directly at it.
 
-```shell
-aws s3 cp \
-  s3://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/ \
-  packages/moosestack-service/context/data/ \
-  --recursive --no-sign-request
-```
-
-Or query directly:
+To grab sample data locally:
 
 ```shell
 moose query "
   SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
   ) LIMIT 10;
-" > packages/moosestack-service/context/data/amazon-reviews-sample.txt
+"
 ```
-
 </ToggleBlock>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="create-data-model" title="Model your data manually or with your copilot">
+<GuideStepper.Checkpoint id="create-data-model" title="Create a data model and OlapTable">
 
-Create:
+Ask your coding agent to create a [data model](https://docs.fiveonefour.com/moosestack/data-modeling?lang=typescript) and [OlapTable](https://docs.fiveonefour.com/moosestack/reference?lang=typescript#olaptablelttgt), and to invoke the **ClickHouse Best Practices skill** (`/moosestack-clickhouse-best-practices`) for efficient modeling.
 
-1. A data model object defining the data model of your data to be ingested
-2. An [OlapTable](https://docs.fiveonefour.com/moosestack/reference?lang=typescript#olaptablelttgt) object, declaring that table in MooseStack
-3. A reference in index at the root of the MooseStack project (so that MooseOLAP will create the table.
+Key considerations:
+- **Typing matters**: use tight types, `LowCardinality` for low-cardinality strings, appropriate numeric precision. See [supported types](https://docs.fiveonefour.com/moosestack/supported-types?lang=typescript).
+- **Order By is critical**: the `orderBy` determines how data is physically stored in ClickHouse. Think about how the data will be queried and filtered.
+- **Think about consumption**: model with your query patterns in mind. What will you `GROUP BY`? What will you filter on?
 
-<FileTree>
-<FileTree.Folder name="&lt;project-name&gt;">
-    <FileTree.Folder name="packages">
-      <FileTree.Folder name="moosestack-service">
-        <FileTree.Folder name="app">
-          <FileTree.Folder name="ingest">
-            <FileTree.File name="data-model.ts" />
-          </FileTree.Folder>
-          <FileTree.File name="index.ts" />
-        </FileTree.Folder>
-        <FileTree.Folder name="..." />
-      </FileTree.Folder>
-      <FileTree.Folder name="web-app" />
-    </FileTree.Folder>
-    <FileTree.File name="README.md" />
-</FileTree.Folder>
-</FileTree>
-
-Do this sequentially, e.g. with the following prompt pattern:
-
-```text
-'<project-name>/packages/moosestack-service/app/ingest/models.ts' look at this
-  file. It does two things, declares an interface "DataEvent", and then creates
-  an IngestPipeline that declares a table, streaming topic and ingest API for
-  that interface. I want to do this for the data that I'm ingesting, that I've
-  extracted samples of to this directory:
-  '<project-name>/packages/moosestack-service/context/data'. Let's go step by step.
-
-First, let's create the DataModel interface. Refer to the data sample here:
-'<project-name>/packages/moosestack-service/context/data/sample1.parquet',
-and the data dictionary here:
-'<project-name>/packages/moosestack-service/context/data/data_dictionary.csv'
-
-Use good OLAP data modeling practices (tight typing, LowCardinality where
-appropriate, etc). MooseStack data modeling docs are here:
-https://docs.fiveonefour.com/moosestack/data-modeling
-Supported types: https://docs.fiveonefour.com/moosestack/supported-types
-
-Then, create the OlapTable object.
-```
-
-Make sure to then prompt the copilot to export the object to `moosestack-service/index.ts` too:
-
-```text
-'<project-name>/packages/moosestack-service/app/index.ts' make sure the above is exported in the index
-```
-
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-If you're using the Amazon dataset, your prompt would look like:
-
-```text
-'<project-name>/packages/moosestack-service/app/ingest/models.ts' look at this
-  file. It does two things, declares an interface "DataEvent", and then creates
-  an IngestPipeline that declares a table, streaming topic and ingest API for
-  that interface. I want to do this for Amazon Customer Reviews data.
-
-First, let's create the DataModel interface. The schema is documented here:
-https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews
-
-Use good OLAP data modeling practices (tight typing, LowCardinality where
-appropriate, etc). MooseStack data modeling docs are here:
-https://docs.fiveonefour.com/moosestack/data-modeling
-Supported types: https://docs.fiveonefour.com/moosestack/supported-types
-
-Then, create the OlapTable object.
-```
-
-</ToggleBlock>
+Make sure the model is exported from your project's `index.ts` so MooseStack creates the table.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="verify-tables" title="Verify the tables were created correctly">
+<GuideStepper.Checkpoint id="verify-tables" title="Verify the tables were created">
 
-The dev server should then pick up the new table, and the copilot should be able to confirm this with the MooseDev MCP, or by being prompted to use `moose query`:
-
-```text
-Ensure the table was created by using `moose query` from the moosestack service directory
-```
-
-Or you can do this manually:
+The dev server picks up new models automatically. Verify with `moose ls` or ask your agent to use the infra map MCP tool:
 
 ```shell
-moose query "SELECT name, engine, total_rows FROM
-      system.tables WHERE database = currentDatabase();"
+moose ls
 ```
-
-It is also good practice to ask the copilot to double check the model generated against the sample data (LLMs can make assumptions about types of data, even when presented with sample data):
-
-```text
-validate the inferred types against the sample data in context/data - check for type mismatches or incorrect assumptions
-```
-
-Repeat this for each table you want to model.
 
 </GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="bulk-load" number={2} title="Load Data Locally" summary="Create a load SQL file, execute it, and validate row counts">
+<GuideStepper.Step id="load-data" number={2} title="Load Your Data" summary="Get data into ClickHouse via flat file, push API, or pull workflow">
 <GuideStepper.WhatYouNeed>
-    - Data model created and tables verified from Step 1
-    - Access to your S3 data source
+    - Data model created and tables verified
+    - Access to your data source
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
     - Local ClickHouse populated with real data, ready for chat testing
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="create-load-sql" title="Create a SQL file to load your data">
+<GuideStepper.Checkpoint id="load-flat-file" title="Option A: Load a flat file">
 
-Create a SQL file to load up your data from your remote source to your local ClickHouse:
+If you have data in a flat file (Parquet, CSV, etc.) accessible via S3 or a URL, write a SQL file to insert it:
 
 ```sql
---load-data.sql
-INSERT INTO `local`.PlayerActivity
+-- load-data.sql
+INSERT INTO local.YourTable
   SELECT * FROM s3(
-      's3://source-data/file.parquet',
-'<Access-Key-ID>',
-'<Secret-Access-Key>'
-      'Parquet'
-  );
-```
-
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-```sql
---load-data.sql
-INSERT INTO `local`.AmazonReviews
-  SELECT * FROM s3(
-    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet',
+    's3://your-bucket/path/to/file.parquet',
+    '<Access-Key-ID>',
+    '<Secret-Access-Key>',
     'Parquet'
   );
 ```
-<Callout type="tip" title="Large dataset">
-This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
-</Callout>
-</ToggleBlock>
 
-Make sure to properly apply any transformations to conform your S3 data to the data model you've created. ClickHouse will do many of these transformations naturally. Notably though:
-
-- Column renamings will have to be done in SQL
-- Default values in CH only set the value where the column is omitted in an insert. If the column was "null" in the source, you will have to cast that in the insert.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="execute-load" title="Execute the SQL query and validate">
-
-**Execute the SQL query to load data into your local ClickHouse:**
+Then execute it with `moose query`:
 
 ```shell
 moose query -f load-data.sql
 ```
 
-It will return:
+In production, you can use `514 query` to run the same SQL against your hosted ClickHouse.
 
-```text
-Node Id: moosestack-service::2dadb086-d9fb-4e42-9462-680185fac0ef
-          Query 0 rows
+<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+```sql
+-- load-data.sql
+INSERT INTO local.AmazonReviews
+  SELECT * FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet',
+    'Parquet'
+  );
 ```
-
-This is expected. The query doesn't return any rows of data to the query client. To validate that it worked, use this query:
-
-```shell
-moose query "SELECT COUNT(*) FROM
-      \`local\`.tablename"
-```
-
-You will now have a ready to test and iterate on local development environment: with your local MooseStack up and running, with local ClickHouse populated with real data, and the front-end ready to test.
+<Callout type="tip" title="Large dataset">
+The full dataset is ~150M rows across multiple files. Start with a single year file for testing, then use a wildcard (`amazon_reviews_*.snappy.parquet`) for the full load.
+</Callout>
+</ToggleBlock>
 
 </GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="load-push-api" title="Option B: Create an API to receive data">
+
+If your data is pushed to you (webhooks, event streams, etc.), create an API endpoint using the [MooseStack BYO API framework](https://docs.fiveonefour.com/moosestack/api-framework?lang=typescript) to receive and write data to ClickHouse.
+
+Ask your coding agent:
+
+```text
+Create an Express API endpoint to receive incoming data and insert it into
+ClickHouse. Use the MooseStack BYO API framework
+(https://docs.fiveonefour.com/moosestack/api-framework?lang=typescript).
+See this example for reference:
+https://github.com/514-labs/financial-query-layer-demo/tree/main/packages/moosestack-service/app/apis
+```
+
+Once your endpoint is running, configure your data source to send data to it (e.g. point your webhook URL at `http://localhost:4000/your-endpoint`).
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="load-pull-workflow" title="Option C: Create a workflow to pull data">
+
+If you need to pull data on a schedule (from an API, database, etc.), create a [MooseStack Workflow](https://docs.fiveonefour.com/moosestack/workflows?lang=typescript) to fetch and load it.
+
+Ask your coding agent:
+
+```text
+Create a MooseStack Workflow that fetches data from [your source] and inserts
+it into ClickHouse. Use the MooseStack Workflows docs
+(https://docs.fiveonefour.com/moosestack/workflows?lang=typescript).
+See this example for reference:
+https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/workflows/generate-data.ts
+```
+
+The workflow will run on the schedule you configure, keeping your ClickHouse data up to date.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="validate-data" title="Validate data loaded correctly">
+
+```shell
+moose query "SELECT COUNT(*) FROM \`local\`.your_table_name"
+```
+
+</GuideStepper.Checkpoint>
+
+<Callout type="info" title="Views and Materialized Views">
+Once your base tables are loaded, you can use [Views](https://docs.fiveonefour.com/moosestack/views?lang=typescript) or [Materialized Views](https://docs.fiveonefour.com/moosestack/materialized-views?lang=typescript) to simplify querying or improve performance on common access patterns. We'll cover this more in the optional Query Layer section.
+</Callout>
 
 </GuideStepper.Step>
 
 </GuideStepper>
 
-## Chat and Test
+## Test Basic Chat with Data Access
 
-Test your chat with real data and extend the frontend with custom endpoints.
+Verify that your chat can query your data through the MCP tools.
 
 <GuideStepper id="chat-test" persist>
 
-<GuideStepper.Step id="test-extend" number={1} title="Test and Extend" summary="Chat with your data, customize the system prompt, and create custom endpoints">
+<GuideStepper.Step id="test-chat" number={1} title="Test Basic Chat" summary="Verify chat can access and query your data">
 <GuideStepper.WhatYouNeed>
     - Local ClickHouse populated with data
     - MooseStack and web app running (`pnpm dev`)
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
     - Verified chat experience with real data
-    - Customized system prompt and optional custom API endpoints
+    - Understanding of what queries the LLM generates
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="chat-with-data" title="Chat with your data">
 
-Just go to [http://localhost:3000](http://localhost:3000/): everything should be good to go. Chat away!
+Open [http://localhost:3000](http://localhost:3000/) and try asking questions about your data. The chat uses MCP tools (`query_clickhouse` and `get_data_catalog`) to answer.
 
-<Callout type="info" title="System prompt">
-To customize your chat's system prompt, edit `packages/web-app/src/features/chat/system-prompt.ts`.
-</Callout>
+Try a few queries and pay attention to the tool call results — each one shows the SQL that was executed. This will help you identify patterns for the optional query layer later.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="custom-endpoints" title="Create custom API endpoints and a custom front-end">
+<GuideStepper.Checkpoint id="customize-system-prompt" title="(Optional) Customize the system prompt">
 
-There's a bootstrapped Next.js application, and an Express app that you can use to add to your framework.
+The system prompt shapes how the LLM interacts with your data. Edit it to add domain context, preferred terminology, or query guidelines:
 
-Example prompt that references a ShadCN component, Express/MooseStack docs, and your app folder:
-
-```text
-I want to add a Data Table component from ShadCN (here:
-https://ui.shadcn.com/docs/components/data-table.md) to the web app here:
-<project-name>/packages/web-app.
-
-I want it to serve data from DataModel here:
-<project-name>/packages/moosestack-service/app/ingest/models.ts.
-
-Please create an Express API in this directory to serve this component:
-<project-name>/packages/moosestack-service/app/apis
-
-Reference docs:
-- Express API docs: https://docs.fiveonefour.com/moose/app-api-frameworks/express/llm-ts.txt
-
-Examples:
-- cdp-analytics routes: https://github.com/514-labs/moose/tree/main/examples/cdp-analytics/packages/moosestack-service/app/apis
-- cdp-analytics services: https://github.com/514-labs/moose/tree/main/examples/cdp-analytics/packages/moosestack-service/app/services
-- fastify-moose router: https://github.com/514-labs/moose/blob/main/examples/fastify-moose/src/router.ts
-- fastify-moose controllers: https://github.com/514-labs/moose/tree/main/examples/fastify-moose/src/controller
-
-Follow Express best practices: separate routing from business logic, keep route
-handlers thin, maintain type safety throughout.
 ```
-
-You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
+packages/web-app/src/features/chat/system-prompt.ts
+```
 
 </GuideStepper.Checkpoint>
 
