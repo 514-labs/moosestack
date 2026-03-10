@@ -144,22 +144,6 @@ moose generate hash-token
 
 </ConditionalContent>
 
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="agent-init" title="Initialize MooseStack Skills and LSP">
-
-```shell
-514 agent init
-```
-
-This sets up [MooseStack Skills](https://github.com/514-labs/agent-skills) and the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server), giving your coding agent access to MooseStack-specific actions and language intelligence.
-
-<Callout type="info" title="Dev harness complete">
-With `moose init` and `514 agent init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
-</Callout>
-
-</GuideStepper.Checkpoint>
-
 <ConditionalContent whenId="starting-point" whenValue="existing-nextjs">
 
 <Callout type="info" title="Assumptions">
@@ -170,8 +154,6 @@ With `moose init` and `514 agent init`, your development harness is fully set up
 </Callout>
 
 **Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
-
-<GuideStepper.Checkpoint id="add-mcp" title="Add MCP server to your MooseStack service">
 
 <Callout type="info" title="Don't have a MooseStack service yet?">
 <ToggleBlock openText="Show instructions to create one" closeText="Hide instructions">
@@ -203,7 +185,7 @@ Then add dev scripts to your root `package.json`:
 </ToggleBlock>
 </Callout>
 
-From your monorepo root, run:
+**1. Add MCP server:**
 
 ```shell
 moose add mcp-server --dir packages/moosestack-service
@@ -211,9 +193,7 @@ moose add mcp-server --dir packages/moosestack-service
 
 This adds the MCP server (with `query_clickhouse` and `get_data_catalog` tools), adds the required npm dependencies, creates an `MCP_API_KEY` placeholder in `.env.local`, and exports the MCP server from your project's entry file.
 
-Add `--yes` to skip confirmation prompts, or `--overwrite` to replace existing files if re-running.
-
-**Generate an API key:**
+**2. Generate an API key:**
 
 ```shell
 moose generate hash-token
@@ -221,28 +201,20 @@ moose generate hash-token
 
 This outputs two values:
 
-- **ENV API Key** → Put this in packages/moosestack-service/.env.local as MCP_API_KEY
-- **Bearer Token** → Save this for your frontend config (see next checkpoint)
+- **ENV API Key** → Put this in `packages/moosestack-service/.env.local` as `MCP_API_KEY`
+- **Bearer Token** → Save this for your frontend config
 
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="add-chat" title="Add chat UI to your Next.js app">
+**3. Add chat UI:**
 
 <Callout type="info" title="shadcn/ui setup">
 If you don't have shadcn/ui set up, you'll also need the UI components. See [ui.shadcn.com/docs/installation](https://ui.shadcn.com/docs/installation).
 </Callout>
-
-From your monorepo root, run:
 
 ```shell
 moose add chat --dir packages/web-app
 ```
 
 This installs all chat UI components, API routes, layout components, npm dependencies, shadcn/ui components, and adds the required env vars to `.env.local` and `.env.development`.
-
-<Callout type="info" title="System prompt">
-To customize your chat's system prompt, edit `src/features/chat/system-prompt.ts`.
-</Callout>
 
 After `moose add chat` completes, follow the printed "Next steps":
 
@@ -267,9 +239,23 @@ export default function RootLayout({ children }) {
 }
 ```
 
+</ConditionalContent>
+
 </GuideStepper.Checkpoint>
 
-</ConditionalContent>
+<GuideStepper.Checkpoint id="agent-init" title="Initialize MooseStack Skills and LSP">
+
+```shell
+514 agent init
+```
+
+This sets up [MooseStack Skills](https://github.com/514-labs/agent-skills) and the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server), giving your coding agent access to MooseStack-specific actions and language intelligence.
+
+<Callout type="info" title="Dev harness complete">
+With `moose init` and `514 agent init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
+</Callout>
+
+</GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
 
@@ -321,30 +307,7 @@ Now that the MooseDev server is running, restart your coding agent (or IDE). Thi
 
 <GuideStepper.Checkpoint id="verify-chat-ui" title="Verify the chat UI loads">
 
-<ConditionalContent whenId="starting-point" whenValue="scratch">
-
-Your web-application is available at [http://localhost:3000](http://localhost:3000). Don't be alarmed!
-
-This is a blank canvas for you to use to build whatever user facing analytics you want to. And the chat's already configured, click the chat icon on the bottom right to open your chat. Our engineer GRoy put some work into that chat panel, and you'll find that it is resizable, has differentiated scrolling, and more! Feel free to use and modify how you like.
-
-</ConditionalContent>
-
-<ConditionalContent whenId="starting-point" whenValue="existing-nextjs">
-
-Open your app at [http://localhost:3000](http://localhost:3000) and click the chat button (floating button in bottom-right).
-
-Verify the MCP server is running:
-
-```shell
-curl http://localhost:4000/tools \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-mcp-api-token>" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-You should see a response listing `query_clickhouse` and `get_data_catalog` tools.
-
-</ConditionalContent>
+Open your app at [http://localhost:3000](http://localhost:3000) and click the chat button (floating button in bottom-right). The chat panel is resizable with differentiated scrolling — feel free to modify it how you like.
 
 <Callout type="info" title="No data yet">
 The chat will be functional, but since you've not added any data to your MooseStack project, the tools available in the chat won't be able to retrieve any data. The next section covers exploring and modeling the data.
@@ -1255,6 +1218,10 @@ This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2
 ```bash
 514 clickhouse "SELECT COUNT(*) FROM <table-name>"
 ```
+
+Check your Fiveonefour project overview — you should see storage populated, the infra map with your tables and APIs, and your Vercel integration connected:
+
+![Production overview with data stored, infra map showing tables and APIs, Vercel connected](/deploy-9-prod-overview.png)
 
 </GuideStepper.Checkpoint>
 
