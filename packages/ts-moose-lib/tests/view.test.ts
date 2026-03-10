@@ -6,12 +6,15 @@ import { expect } from "chai";
 import { View } from "../src/dmv2/sdk/view";
 import { OlapTable } from "../src/dmv2";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
+import { getView } from "../src/dmv2/registry";
+import { SqlResource } from "../src/dmv2/sdk/sqlResource";
 
 function clearRegistry() {
   const registry = getMooseInternal();
   registry.tables.clear();
   registry.views.clear();
   registry.materializedViews.clear();
+  registry.sqlResources.clear();
 }
 
 beforeEach(() => {
@@ -104,6 +107,22 @@ describe("View — construction", () => {
     ).to.throw(/already exists/);
   });
 
+  it("includes database in duplicate view error message", () => {
+    new View("dup_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "raw",
+    });
+    expect(
+      () =>
+        new View("dup_view", {
+          selectStatement: "SELECT 2",
+          baseTables: [],
+          database: "raw",
+        }),
+    ).to.throw(/raw\.dup_view/);
+  });
+
   it("allows the same view name in different databases", () => {
     expect(() => {
       new View("dup_view", {
@@ -117,6 +136,55 @@ describe("View — construction", () => {
         database: "analytics",
       });
     }).to.not.throw();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getView registry lookup
+// ---------------------------------------------------------------------------
+
+describe("View — getView() registry lookup", () => {
+  it("finds a view without database by plain name", () => {
+    new View("plain_view", { selectStatement: "SELECT 1", baseTables: [] });
+    const found = getView("plain_view");
+    expect(found).to.exist;
+    expect(found!.name).to.equal("plain_view");
+  });
+
+  it("finds a view with database using name + database params", () => {
+    new View("db_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "analytics",
+    });
+    const found = getView("db_view", "analytics");
+    expect(found).to.exist;
+    expect(found!.name).to.equal("db_view");
+    expect(found!.database).to.equal("analytics");
+  });
+
+  it("returns undefined when looking up a database view by plain name only", () => {
+    new View("db_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "analytics",
+    });
+    expect(getView("db_view")).to.be.undefined;
+  });
+
+  it("distinguishes same name in different databases", () => {
+    new View("shared_name", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "raw",
+    });
+    new View("shared_name", {
+      selectStatement: "SELECT 2",
+      baseTables: [],
+      database: "analytics",
+    });
+    expect(getView("shared_name", "raw")!.selectSql).to.equal("SELECT 1");
+    expect(getView("shared_name", "analytics")!.selectSql).to.equal("SELECT 2");
   });
 });
 
@@ -140,7 +208,7 @@ describe("View — serialization", () => {
       database: "analytics",
     });
     const infra = toInfraMap(getMooseInternal());
-    const viewJson = infra.views["analytics.ser_with_db"];
+    const viewJson = infra.views["analytics::ser_with_db"];
     expect(viewJson).to.exist;
     expect(viewJson.database).to.equal("analytics");
   });
@@ -159,5 +227,63 @@ describe("View — serialization", () => {
     const derived = infra.views["derived_ser"];
     expect(derived.selectSql).to.equal("SELECT * FROM src_db.base_ser");
     expect(derived.sourceTables).to.include("`src_db`.`base_ser`");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SqlResource dependency serialization with database-qualified views
+// ---------------------------------------------------------------------------
+
+describe("View — SqlResource dependency IDs", () => {
+  it("uses plain view name as dependency id when no database", () => {
+    const view = new View("events_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+    });
+    new SqlResource(
+      "my_resource",
+      ["CREATE TABLE t AS SELECT 1"],
+      ["DROP TABLE t"],
+      { pullsDataFrom: [view] },
+    );
+    const infra = toInfraMap(getMooseInternal());
+    const deps = infra.sqlResources["my_resource"].pullsDataFrom;
+    expect(deps).to.deep.include({ id: "events_view", kind: "View" });
+  });
+
+  it("uses composite key database::name as dependency id when database is set", () => {
+    const view = new View("events_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "raw",
+    });
+    new SqlResource(
+      "my_resource",
+      ["CREATE TABLE t AS SELECT 1"],
+      ["DROP TABLE t"],
+      { pullsDataFrom: [view] },
+    );
+    const infra = toInfraMap(getMooseInternal());
+    const deps = infra.sqlResources["my_resource"].pullsDataFrom;
+    expect(deps).to.deep.include({ id: "raw::events_view", kind: "View" });
+  });
+
+  it("dependency id matches the key used in the views map", () => {
+    const view = new View("metrics", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "analytics",
+    });
+    new SqlResource(
+      "consumer",
+      ["CREATE TABLE t AS SELECT 1"],
+      ["DROP TABLE t"],
+      { pullsDataFrom: [view] },
+    );
+    const infra = toInfraMap(getMooseInternal());
+    const depId = infra.sqlResources["consumer"].pullsDataFrom[0].id;
+    // The dependency id must match the key in the views map so consumers can correlate them
+    expect(infra.views[depId]).to.exist;
+    expect(infra.views[depId].name).to.equal("metrics");
   });
 });

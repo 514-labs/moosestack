@@ -206,8 +206,10 @@ export function getViews(): Map<string, View> {
 /**
  * Get a registered view by name.
  * @param name - The name of the view
+ * @param database - Optional database the view belongs to (for multi-database setups)
  * @returns The View instance or undefined if not found
  */
-export function getView(name: string): View | undefined {
-  return getMooseInternal().views.get(name);
+export function getView(name: string, database?: string): View | undefined {
+  const key = database ? `${database}::${name}` : name;
+  return getMooseInternal().views.get(key);
 }
