@@ -484,7 +484,31 @@ export const activeUserEvents = new View(
   `,
   [events, users]
 );
+
+// With a specific database (multi-database support)
+export const analyticsView = new View(
+  "analytics_events",
+  sql.statement`SELECT * FROM ${events}`,
+  [events],
+  { database: "analytics" }
+);
 ```
+
+**Constructor:** `new View(name, selectStatement, baseTables, config?, metadata?)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Name of the view |
+| `selectStatement` | `string \| Sql` | SELECT SQL defining the view |
+| `baseTables` | `(OlapTable \| View)[]` | Source tables/views for dependency tracking |
+| `config` | `ViewConfig` (optional) | Configuration options (e.g. `database`) |
+| `metadata` | `object` (optional) | Optional metadata |
+
+**ViewConfig:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `database` | `string` (optional) | ClickHouse database to create the view in. When set, the view is created as `` `database`.`view_name` `` |
 
 **Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
   </LanguageTabContent>
