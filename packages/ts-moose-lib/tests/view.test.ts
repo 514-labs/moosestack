@@ -34,7 +34,9 @@ describe("View — formatTableReference", () => {
   });
 
   it("uses database-qualified reference for View with database", () => {
-    const base = new View("base_view", "SELECT 1", [], "analytics");
+    const base = new View("base_view", "SELECT 1", [], {
+      database: "analytics",
+    });
     const derived = new View(
       "derived_view",
       "SELECT * FROM analytics.base_view",
@@ -61,15 +63,15 @@ describe("View — formatTableReference", () => {
 // ---------------------------------------------------------------------------
 
 describe("View — construction", () => {
-  it("creates a View without database (backward compat)", () => {
+  it("creates a View without config (backward compat)", () => {
     const view = new View("my_view", "SELECT 1", []);
     expect(view.name).to.equal("my_view");
     expect(view.database).to.be.undefined;
     expect(view.selectSql).to.equal("SELECT 1");
   });
 
-  it("creates a View with database", () => {
-    const view = new View("my_view", "SELECT 1", [], "prod_db");
+  it("creates a View with database in config", () => {
+    const view = new View("my_view", "SELECT 1", [], { database: "prod_db" });
     expect(view.database).to.equal("prod_db");
     expect(view.name).to.equal("my_view");
   });
@@ -95,8 +97,8 @@ describe("View — serialization", () => {
     expect(viewJson).to.not.have.property("database");
   });
 
-  it("includes database in ViewJson when set", () => {
-    new View("ser_with_db", "SELECT 1", [], "analytics");
+  it("includes database in ViewJson when set via config", () => {
+    new View("ser_with_db", "SELECT 1", [], { database: "analytics" });
     const infra = toInfraMap(getMooseInternal());
     const viewJson = infra.views["ser_with_db"];
     expect(viewJson).to.exist;
@@ -104,7 +106,7 @@ describe("View — serialization", () => {
   });
 
   it("serializes selectSql and sourceTables correctly", () => {
-    const base = new View("base_ser", "SELECT 1", [], "src_db");
+    const base = new View("base_ser", "SELECT 1", [], { database: "src_db" });
     new View("derived_ser", "SELECT * FROM src_db.base_ser", [base]);
     const infra = toInfraMap(getMooseInternal());
     const derived = infra.views["derived_ser"];

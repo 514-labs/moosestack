@@ -2,17 +2,14 @@ import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapTable } from "./olapTable";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
+import { formatTableReference } from "./tableReferenceUtils";
 
 /**
- * Helper function to format a table reference as `database`.`table` or just `table`
+ * Configuration options for creating a View.
  */
-function formatTableReference(table: OlapTable<any> | View): string {
-  const database =
-    table instanceof OlapTable ? table.config.database : table.database;
-  if (database) {
-    return `\`${database}\`.\`${table.name}\``;
-  }
-  return `\`${table.name}\``;
+export interface ViewConfig {
+  /** Optional database name where the view is created. When set, the view is created as `database`.`name` in ClickHouse. */
+  database?: string;
 }
 
 /**
@@ -43,14 +40,14 @@ export class View {
    * @param name The name of the view to be created.
    * @param selectStatement The SQL SELECT statement that defines the view's logic.
    * @param baseTables An array of OlapTable or View objects that the `selectStatement` reads from. Used for dependency tracking.
-   * @param database Optional database name where the view is created.
+   * @param config Optional configuration for the view (e.g., database name).
    * @param metadata Optional metadata for the view (e.g., description, source file).
    */
   constructor(
     name: string,
     selectStatement: string | Sql,
     baseTables: (OlapTable<any> | View)[],
-    database?: string,
+    config?: ViewConfig,
     metadata?: { [key: string]: any },
   ) {
     if (typeof selectStatement !== "string") {
@@ -58,7 +55,7 @@ export class View {
     }
 
     this.name = name;
-    this.database = database;
+    this.database = config?.database;
     this.selectSql = selectStatement;
     this.sourceTables = baseTables.map((t) => formatTableReference(t));
 
