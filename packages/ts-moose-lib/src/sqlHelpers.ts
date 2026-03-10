@@ -217,7 +217,11 @@ export class Sql {
         }
         this.strings[pos] += rawString;
       } else if (isView(child)) {
-        this.strings[pos] += `\`${child.name}\``;
+        if (child.database) {
+          this.strings[pos] += `\`${child.database}\`.\`${child.name}\``;
+        } else {
+          this.strings[pos] += `\`${child.name}\``;
+        }
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;

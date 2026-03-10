@@ -470,9 +470,8 @@ Creates a standard SQL view in ClickHouse. Views are read-time projections defin
 
 ```ts
 // Basic usage
-export const activeUserEvents = new View(
-  "active_user_events",
-  sql.statement`
+export const activeUserEvents = new View("active_user_events", {
+  selectStatement: sql.statement`
     SELECT
       ${events.columns.id}    AS event_id,
       ${users.columns.id}     AS user_id,
@@ -482,9 +481,32 @@ export const activeUserEvents = new View(
     JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
     WHERE ${users.columns.active} = 1
   `,
-  [events, users]
-);
+  baseTables: [events, users],
+});
+
+// With a specific database (multi-database support)
+export const analyticsView = new View("analytics_events", {
+  selectStatement: sql.statement`SELECT * FROM ${events}`,
+  baseTables: [events],
+  database: "analytics",
+});
 ```
+
+**Constructor:** `new View(name, config)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Name of the view |
+| `config` | `ViewConfig` | Configuration object (see below) |
+
+**ViewConfig:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `selectStatement` | `string \| Sql` | SELECT SQL defining the view |
+| `baseTables` | `(OlapTable \| View)[]` | Source tables/views for dependency tracking |
+| `database` | `string` (optional) | ClickHouse database to create the view in. When set, the view is created as `` `database`.`view_name` `` |
+| `metadata` | `object` (optional) | Optional metadata |
 
 **Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
   </LanguageTabContent>

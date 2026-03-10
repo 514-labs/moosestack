@@ -7,18 +7,7 @@ import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
-
-/**
- * Helper function to format a table reference as `database`.`table` or just `table`
- */
-function formatTableReference(table: OlapTable<any> | View): string {
-  const database =
-    table instanceof OlapTable ? table.config.database : undefined;
-  if (database) {
-    return `\`${database}\`.\`${table.name}\``;
-  }
-  return `\`${table.name}\``;
-}
+import { formatTableReference } from "./tableReferenceUtils";
 
 /**
  * Configuration options for creating a Materialized View.

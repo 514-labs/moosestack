@@ -1376,6 +1376,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   registry.views.forEach((view) => {
     views[view.name] = {
       name: view.name,
+      ...(view.database !== undefined && { database: view.database }),
       selectSql: view.selectSql,
       sourceTables: view.sourceTables,
       metadata: view.metadata,
