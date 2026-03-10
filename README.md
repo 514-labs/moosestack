@@ -25,7 +25,7 @@ Generalist coding agents like Claude Code, Cursor, and Copilot work well for mos
 ## How it works
 In short, when everything is code, coding agents can thrive.
 
-- **AI agent harness**: AI-friendly interfaces enable coding agents to iterate quickly and safely on your analytical workloads
+- **AI agent harness**: AI-friendly framework and CLI enable coding agents to iterate quickly and safely on your analytical workloads
 - **Local-first experience**: Full mirror of production environment on your laptop with `moose dev`
 - **Schema & migration management**: Typed schemas in your application code, with automated schema migration support
 - **Code‑first infrastructure**: Declare tables, streams, workflows, and APIs in TS/Python -> MooseStack wires it all up
@@ -45,7 +45,7 @@ In short, when everything is code, coding agents can thrive.
 - [Moose **OLAP**](https://docs.fiveonefour.com/moosestack/olap): Manage ClickHouse tables, materialized views, and migrations in code.
 - [Moose **Streaming**](https://docs.fiveonefour.com/moosestack/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
 - [Moose **Workflows**](https://docs.fiveonefour.com/moosestack/workflows): ETL pipelines and tasks with Temporal.
-- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, or bring your own API framework (Nextjs, Express, FastAPI, Fastify, etc)
+- [Moose **APIs** and Web apps](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints, code-first sematic layer, and bring your own API framework (Nextjs, Express, FastAPI, Fastify, etc.)
 
 ## Get Started
 
@@ -56,7 +56,7 @@ In short, when everything is code, coding agents can thrive.
 ## Deploy to Production
 ### Fiveonefour hosting
 
-The fastest way to deploy your MooseStack application is with [hosting from Fiveonefour](https://fiveonefour.boreal.cloud/sign-up), the creators of MooseStack. Fiveonefour provides automated preview branches, managed schema migrations, deep integration with Github and CI/CD, and an agentic harness for your realtime analytical infrastructure in the cloud.
+The fastest way to deploy your MooseStack application is with [hosting from Fiveonefour](https://fiveonefour.boreal.cloud/sign-up), the creators of MooseStack. Fiveonefour provides automated preview branches, managed schema migrations, deep integration with GitHub and CI/CD, and an agentic harness for your realtime analytical infrastructure in the cloud.
 
 [Get started with Fiveonefour hosting →](https://fiveonefour.boreal.cloud/sign-up)
 
