@@ -103,6 +103,21 @@ describe("View — construction", () => {
         new View("dup_view", { selectStatement: "SELECT 2", baseTables: [] }),
     ).to.throw(/already exists/);
   });
+
+  it("allows the same view name in different databases", () => {
+    expect(() => {
+      new View("dup_view", {
+        selectStatement: "SELECT 1",
+        baseTables: [],
+        database: "raw",
+      });
+      new View("dup_view", {
+        selectStatement: "SELECT 2",
+        baseTables: [],
+        database: "analytics",
+      });
+    }).to.not.throw();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -125,7 +140,7 @@ describe("View — serialization", () => {
       database: "analytics",
     });
     const infra = toInfraMap(getMooseInternal());
-    const viewJson = infra.views["ser_with_db"];
+    const viewJson = infra.views["analytics.ser_with_db"];
     expect(viewJson).to.exist;
     expect(viewJson.database).to.equal("analytics");
   });

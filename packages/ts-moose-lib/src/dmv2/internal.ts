@@ -1374,7 +1374,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
 
   // Serialize views with structured data
   registry.views.forEach((view) => {
-    views[view.name] = {
+    const viewKey = view.database ? `${view.database}.${view.name}` : view.name;
+    views[viewKey] = {
       name: view.name,
       ...(view.database !== undefined && { database: view.database }),
       selectSql: view.selectSql,

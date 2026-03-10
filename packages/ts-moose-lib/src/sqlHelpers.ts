@@ -1,7 +1,7 @@
 // source https://github.com/blakeembrey/sql-template-tag/blob/main/src/index.ts
 import { Column } from "./dataModels/dataModelTypes";
 import { OlapTable, View } from "./dmv2";
-
+import { formatTableReference } from "./dmv2/sdk/tableReferenceUtils";
 import { AggregationFunction } from "./dataModels/typeConvert";
 
 /**
@@ -210,18 +210,10 @@ export class Sql {
         }
         this.strings[pos] += rawString;
       } else if (isTable(child)) {
-        if (child.config.database) {
-          this.strings[pos] += `\`${child.config.database}\`.\`${child.name}\``;
-        } else {
-          this.strings[pos] += `\`${child.name}\``;
-        }
+        this.strings[pos] += formatTableReference(child);
         this.strings[pos] += rawString;
       } else if (isView(child)) {
-        if (child.database) {
-          this.strings[pos] += `\`${child.database}\`.\`${child.name}\``;
-        } else {
-          this.strings[pos] += `\`${child.name}\``;
-        }
+        this.strings[pos] += formatTableReference(child);
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;

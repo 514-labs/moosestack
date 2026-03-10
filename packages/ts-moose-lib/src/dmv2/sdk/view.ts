@@ -46,7 +46,35 @@ export class View {
    * @param name The name of the view to be created.
    * @param config Configuration for the view: select statement, base tables, optional database, and optional metadata.
    */
-  constructor(name: string, config: ViewConfig) {
+  constructor(name: string, config: ViewConfig);
+  /**
+   * @deprecated Use the config-object overload: `new View(name, { selectStatement, baseTables, metadata? })`.
+   */
+  constructor(
+    name: string,
+    selectStatement: string | Sql,
+    baseTables: (OlapTable<any> | View)[],
+    metadata?: { [key: string]: any },
+  );
+  constructor(
+    name: string,
+    configOrSelectStatement: ViewConfig | string | Sql,
+    baseTables?: (OlapTable<any> | View)[],
+    metadata?: { [key: string]: any },
+  ) {
+    const config: ViewConfig =
+      (
+        typeof configOrSelectStatement === "object" &&
+        configOrSelectStatement !== null &&
+        "selectStatement" in configOrSelectStatement
+      ) ?
+        configOrSelectStatement
+      : {
+          selectStatement: configOrSelectStatement as string | Sql,
+          baseTables: baseTables ?? [],
+          metadata,
+        };
+
     let selectStatement = config.selectStatement;
     if (typeof selectStatement !== "string") {
       selectStatement = toStaticQuery(selectStatement);
@@ -69,11 +97,14 @@ export class View {
       }
     }
 
-    // Register in the views registry
+    // Register in the views registry using a database-aware composite key
+    // to allow same view name in different databases.
     const views = getMooseInternal().views;
-    if (!isClientOnlyMode() && views.has(this.name)) {
+    const registryKey =
+      this.database ? `${this.database}.${this.name}` : this.name;
+    if (!isClientOnlyMode() && views.has(registryKey)) {
       throw new Error(`View with name ${this.name} already exists`);
     }
-    views.set(this.name, this);
+    views.set(registryKey, this);
   }
 }
