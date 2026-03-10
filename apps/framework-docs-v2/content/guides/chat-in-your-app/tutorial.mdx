@@ -1016,6 +1016,33 @@ https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/mooses
 
 See the [financial demo transaction API](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis/transaction.ts) for a working example with `/schema` and `/metrics` endpoints.
 
+<ToggleBlock openText="See: what gets built" closedText="See: what gets built">
+
+An example of what an agent will build:
+
+**Backend** (MooseStack service):
+- `app/apis/reviews.ts` — Express API with two endpoints:
+  - `GET /reviews/schema` — Returns the full query model schema (metrics, dimensions, filters with distinct categorical values from ClickHouse)
+  - `GET /reviews/metrics` — Executes queries via `buildQuery(reviewMetrics)` with URL params for metrics, dimensions, and `filter.{name}.{op}=value` filters
+
+**Frontend** (Next.js app):
+- Server actions for `fetchSchema()` and `executeQuery()`
+- A `use-report` hook managing dimensions/metrics/filter state + auto-querying via `@tanstack/react-query`
+- UI components:
+  - **MetricChips** — toggle chips for each metric in your query model
+  - **DimensionChips** — toggle chips for each dimension
+  - **FilterControls** — toggle chips for categorical filters (e.g. product_category, marketplace), text inputs for free-form filters
+  - **ResultsChart** — bar chart visualization
+  - **ResultsTable** — styled data table with dimension/metric columns
+- A main report builder component that fetches schema, initializes state, and renders everything
+- A `/builder` page with navigation links to and from the dashboard
+
+![Query builder with metric selectors, dimension pickers, category filter chips, and bar chart results for Amazon review data](/amazon-query-builder.png)
+
+For working code, see the [financial demo API](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/moosestack-service/app/apis/transaction.ts), [report builder component](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/web-app/src/components/report-builder/report-builder.tsx), and [use-report hook](https://github.com/514-labs/financial-query-layer-demo/blob/main/packages/web-app/src/components/report-builder/use-report.ts).
+
+</ToggleBlock>
+
 </GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
