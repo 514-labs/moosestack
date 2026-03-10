@@ -19,7 +19,10 @@ from .view import View
 
 def _format_table_reference(table: Union[OlapTable, View]) -> str:
     """Helper function to format a table reference as `database`.`table` or just `table`"""
-    database = table.config.database if isinstance(table, OlapTable) else None
+    if isinstance(table, OlapTable):
+        database = table.config.database
+    else:
+        database = getattr(table, "database", None)
     if database:
         return f"`{database}`.`{table.name}`"
     return f"`{table.name}`"
