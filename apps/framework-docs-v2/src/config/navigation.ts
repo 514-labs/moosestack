@@ -1639,12 +1639,6 @@ const guidesNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "guides/chat-in-your-app/build",
-        title: "Build",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "guides/chat-in-your-app/tutorial",
         title: "Tutorial",
         languages: ["typescript", "python"],
