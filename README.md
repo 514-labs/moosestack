@@ -8,7 +8,11 @@
 
 # MooseStack
 
-**The developer agent harness for ClickHouse** — MooseStack gives your AI coding agents the interfaces, context, code, and skills to build and ship applications on popular OSS realtime analytical infrastructure: safely, efficiently, and effectively.
+**The developer agent harness for ClickHouse** — MooseStack gives your AI coding agents the interfaces, context, code, and skills to build and ship applications on popular OSS realtime analytical infrastructure: safely, efficiently, and effectively. Including:
+- [ClickHouse](https://clickhouse.com/) (realtime OLAP)
+- [Redpanda](https://redpanda.com/) (streaming)
+- [Temporal](https://temporal.io/) (workflow orchestration)
+- [Redis](https://redis.io/) (internal state)
 
 Generalist coding agents like Claude Code, Cursor, and Copilot work well for most coding tasks. But ClickHouse and realtime analytical infrastructure are specialized terrain. MooseStack sits between your agent and your data stack, and enables your agent to handle the stickiest parts of building out applications on real time analytical infra. Think:
 - Optimizating data models & queries for OLAP
@@ -59,13 +63,6 @@ The fastest way to deploy your MooseStack application is with [hosting from Five
 ### Deploy Yourself
 
 MooseStack is open source and can be self-hosted. If you're only using MooseOLAP, you can use the Moose library in your app for schema management, migrations, and typed queries on your ClickHouse database without deploying the Moose runtime. For detailed self-hosting instructions, see our [deployment documentation](https://docs.fiveonefour.com/moosestack/deploying).
-
-## Built on
-
-- [ClickHouse](https://clickhouse.com/) (OLAP storage)
-- [Redpanda](https://redpanda.com/) (streaming)
-- [Temporal](https://temporal.io/) (workflow orchestration)
-- [Redis](https://redis.io/) (internal state)
 
 ## Community
 
