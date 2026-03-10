@@ -8,7 +8,7 @@ import { getSourceFileFromStack } from "../utils/stackTrace";
  */
 function formatTableReference(table: OlapTable<any> | View): string {
   const database =
-    table instanceof OlapTable ? table.config.database : undefined;
+    table instanceof OlapTable ? table.config.database : table.database;
   if (database) {
     return `\`${database}\`.\`${table.name}\``;
   }
@@ -26,6 +26,9 @@ export class View {
   /** The name of the view */
   name: string;
 
+  /** Optional database where the view is created. When set, the view is created as `database`.`name` in ClickHouse. */
+  database?: string;
+
   /** The SELECT SQL statement that defines the view */
   selectSql: string;
 
@@ -40,12 +43,14 @@ export class View {
    * @param name The name of the view to be created.
    * @param selectStatement The SQL SELECT statement that defines the view's logic.
    * @param baseTables An array of OlapTable or View objects that the `selectStatement` reads from. Used for dependency tracking.
+   * @param database Optional database name where the view is created.
    * @param metadata Optional metadata for the view (e.g., description, source file).
    */
   constructor(
     name: string,
     selectStatement: string | Sql,
     baseTables: (OlapTable<any> | View)[],
+    database?: string,
     metadata?: { [key: string]: any },
   ) {
     if (typeof selectStatement !== "string") {
@@ -53,6 +58,7 @@ export class View {
     }
 
     this.name = name;
+    this.database = database;
     this.selectSql = selectStatement;
     this.sourceTables = baseTables.map((t) => formatTableReference(t));
 
