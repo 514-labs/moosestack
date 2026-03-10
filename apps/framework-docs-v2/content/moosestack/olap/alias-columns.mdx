@@ -106,11 +106,13 @@ If you find yourself querying an ALIAS column frequently or using it in WHERE/OR
 
 ## Insert Behavior
 
-ALIAS columns are computed by ClickHouse — you should **never** supply values for them when inserting data. Moose handles this automatically across all ingest paths (streams, HTTP ingest, and direct `OlapTable.insert()`).
+ALIAS columns are computed by ClickHouse — you should not supply values for them when inserting data.
+Moose handles this automatically across all ingest paths (streams, HTTP ingest, and direct `OlapTable.insert()`).
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-`OlapTable.insert()` accepts `Insertable<T>[]` — a type that automatically omits ALIAS/MATERIALIZED fields and makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself; the method signature handles it.
+`OlapTable.insert()` accepts `Insertable<T>[]` — a type that omits ALIAS/MATERIALIZED fields and
+    makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself; the method signature handles it.
 
 ```ts filename="InsertableExample.ts" copy
 import { OlapTable, Key, DateTime, ClickHouseAlias, ClickHouseDefault } from "@514labs/moose-lib";
