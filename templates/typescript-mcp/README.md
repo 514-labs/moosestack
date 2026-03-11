@@ -90,6 +90,13 @@ If you want to use MooseStack skills, bootstrap them with:
 514 agent init
 ```
 
+This installs the following skills:
+
+- **ClickHouse Best Practices** — Schema design, query optimization, and insert strategy rules with MooseStack-specific examples
+- **514 CLI** — Interact with the 514 platform (login, link project, check deployments, browse docs)
+- **514 Debug** — Debug 514 deployments (check status, tail logs, find slow queries, run diagnostics)
+- **514 Perf Optimize** — Guided ClickHouse performance optimization workflow with benchmarking
+
 If you start your copilot now, you will have the MooseStack Skills, LSP, and MCPs up and running.
 
 ### Local Development Ports
