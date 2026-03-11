@@ -8,7 +8,7 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
  * matched against a JWT claim via `getSetting()`.
  */
 export interface SelectRowPolicyConfig {
-  /** Tables the policy applies to (ClickHouse row policies only support tables, not views) */
+  /** Tables the policy applies to. Policies propagate through regular Views automatically. */
   tables: readonly OlapTable<any>[];
 
   /** Column to filter on (e.g., "org_id") */
@@ -22,7 +22,7 @@ export interface SelectRowPolicyConfig {
  * Represents a ClickHouse Row Policy as a first-class Moose primitive.
  *
  * When defined, Moose generates `CREATE ROW POLICY` DDL that uses
- * `getSetting('custom_moose_rls_{column}')` for dynamic per-query tenant scoping.
+ * `getSetting('SQL_moose_rls_{column}')` for dynamic per-query tenant scoping.
  *
  * @example
  * ```typescript

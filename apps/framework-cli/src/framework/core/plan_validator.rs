@@ -87,7 +87,7 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
         }
 
         // Validate the column name produces a legal ClickHouse custom setting name.
-        // getSetting() requires alphanumeric + underscore after the 'custom_moose_rls_' prefix.
+        // getSetting() requires alphanumeric + underscore after the 'SQL_moose_rls_' prefix.
         if policy.column.is_empty()
             || !policy
                 .column

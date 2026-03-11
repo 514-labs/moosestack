@@ -81,7 +81,7 @@ export const MOOSE_RLS_ROLE = "moose_rls_role";
  * Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
  * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
  */
-export const MOOSE_RLS_SETTING_PREFIX = "custom_moose_rls_";
+export const MOOSE_RLS_SETTING_PREFIX = "SQL_moose_rls_";
 
 /** Config mapping ClickHouse setting names to JWT claim names */
 export type RowPoliciesConfig = Record<string, string>;

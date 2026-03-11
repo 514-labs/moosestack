@@ -516,6 +516,54 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
 
+    // Handle SelectRowPolicy reconciliation
+    debug!("Reconciling SelectRowPolicies");
+
+    for missing_policy_id in discrepancies.missing_row_policies {
+        debug!(
+            "Removing missing row policy from infrastructure map: {}",
+            missing_policy_id
+        );
+        reconciled_map
+            .select_row_policies
+            .remove(&missing_policy_id);
+    }
+
+    for unmapped_policy in discrepancies.unmapped_row_policies {
+        let name = &unmapped_policy.name;
+
+        if filter.select_row_policy_ids.contains(name) {
+            debug!(
+                "Adding unmapped row policy found in reality to infrastructure map: {}",
+                name
+            );
+            reconciled_map
+                .select_row_policies
+                .insert(name.clone(), unmapped_policy);
+        }
+    }
+
+    for change in discrepancies.mismatched_row_policies {
+        match change {
+            OlapChange::SelectRowPolicy(Change::Updated { before, .. }) => {
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched row policy in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map
+                    .select_row_policies
+                    .insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!(
+                    "Unexpected change type in mismatched_row_policies: {:?}",
+                    change
+                );
+            }
+        }
+    }
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }

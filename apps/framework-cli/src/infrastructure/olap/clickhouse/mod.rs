@@ -2813,7 +2813,7 @@ impl OlapOperations for ConfiguredDBClient {
             );
 
             // Parse the select_filter to extract the column name.
-            // Expected format: `column` = getSetting('custom_moose_rls_column')
+            // Expected format: `column` = getSetting('SQL_moose_rls_column')
             // Note: The JWT claim cannot be recovered from DDL; it is set to the column
             // name as a placeholder. The reality checker must skip the claim field when
             // comparing policies.
@@ -2892,17 +2892,16 @@ impl OlapOperations for ConfiguredDBClient {
 
 /// Parse a ClickHouse row policy `select_filter` expression to extract the column name.
 ///
-/// Expected format: `` `column` = getSetting('custom_moose_rls_column') ``
+/// Expected format: `` `column` = getSetting('SQL_moose_rls_column') ``
 /// Returns `Some(column)` on success, `None` if the format doesn't match.
 ///
 /// Note: The JWT claim name is NOT stored in ClickHouse DDL. The setting name
-/// `custom_moose_rls_{column}` encodes the column, not the claim. The caller must
+/// `SQL_moose_rls_{column}` encodes the column, not the claim. The caller must
 /// resolve the claim from the desired infrastructure map.
 fn parse_row_policy_filter(filter: &str) -> Option<String> {
     static ROW_POLICY_FILTER_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
-        // Match: `column` = getSetting('custom_moose_rls_something')
         // Also handle unquoted column names
-        regex::Regex::new(r"^`?([^`=\s]+)`?\s*=\s*getSetting\('custom_moose_rls_([^']+)'\)$")
+        regex::Regex::new(r"^`?([^`=\s]+)`?\s*=\s*getSetting\('SQL_moose_rls_([^']+)'\)$")
             .expect("ROW_POLICY_FILTER_PATTERN regex should compile")
     });
 
