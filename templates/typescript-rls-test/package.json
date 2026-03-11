@@ -1,0 +1,33 @@
+{
+  "name": "ts-rls-test",
+  "version": "0.0",
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev",
+    "generate-runtime": "tspc app/index.ts"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "latest",
+    "axios": "^1.7.7",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typia": "^9.6.1"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "latest",
+    "@faker-js/faker": "^9.7.0",
+    "@types/node": "^20.12.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@514labs/kafka-javascript",
+      "@confluentinc/kafka-javascript"
+    ]
+  }
+}

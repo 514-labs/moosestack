@@ -177,6 +177,9 @@ importers:
       chai:
         specifier: 'catalog:'
         version: 4.5.0
+      jose:
+        specifier: 5.9.2
+        version: 5.9.2
       js-yaml:
         specifier: 'catalog:'
         version: 4.1.1

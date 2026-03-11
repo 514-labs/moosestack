@@ -471,7 +471,7 @@ impl AtomicOlapOperation {
                 for table in &policy.tables {
                     let escaped_table = table.replace('`', "``");
                     sqls.push(format!(
-                        "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} TO {MOOSE_RLS_ROLE}",
+                        "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO {MOOSE_RLS_ROLE}",
                         name = escaped_name,
                         table = escaped_table,
                         db = escaped_db,
@@ -3953,8 +3953,8 @@ mod tests {
                 assert!(sql[2].contains("CREATE ROW POLICY IF NOT EXISTS"));
                 assert!(sql[2].contains("`tenant_iso_on_events_1_0_0`"));
                 assert!(sql[2].contains(&format!("`{}`.`events_1_0_0`", DEFAULT_DATABASE_NAME)));
-                assert!(sql[2].contains("getSetting('custom_moose_rls_org_id')"));
-                assert!(sql[2].contains("TO moose_rls_role"));
+                assert!(sql[2].contains("getSetting('SQL_moose_rls_org_id')"));
+                assert!(sql[2].contains("AS RESTRICTIVE TO moose_rls_role"));
                 assert!(description.contains("tenant_iso"));
             }
             _ => panic!("Expected RawSql operation"),
