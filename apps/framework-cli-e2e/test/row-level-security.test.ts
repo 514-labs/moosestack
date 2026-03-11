@@ -160,6 +160,28 @@ describe("Row-Level Security E2E Tests", function () {
       logger: testLogger,
     });
 
+    // Ingest PublicEvent data (no RLS policies)
+    testLogger.info("Ingesting PublicEvent data");
+    const publicIngestUrl = `${SERVER_CONFIG.url}/ingest/PublicEvent`;
+    const publicData = [
+      {
+        eventId: "p1",
+        timestamp: "2026-03-10T00:00:00Z",
+        message: "hello",
+      },
+      {
+        eventId: "p2",
+        timestamp: "2026-03-10T00:00:00Z",
+        message: "world",
+      },
+    ];
+    const publicResponse = await fetch(publicIngestUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(publicData),
+    });
+    expect(publicResponse.status).to.equal(200);
+
     // Ingest test data: 3 acme rows, 2 other rows
     testLogger.info("Ingesting test data");
     const ingestUrl = `${SERVER_CONFIG.url}/ingest/TenantEvent`;
@@ -399,6 +421,31 @@ describe("Row-Level Security E2E Tests", function () {
     expect(rows.length).to.equal(
       0,
       "RESTRICTIVE policies should propagate through views (AND semantics)",
+    );
+  });
+
+  it("should return all rows from a non-RLS table with JWT", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    // PublicEvent has no row policies. Even though the request carries a JWT
+    // with RLS claims, the moose_rls_user should be able to query it and
+    // return all rows without filtering.
+    const token = await signJwt({ org_id: "acme", data: "acme-1" });
+    const response = await fetch(`${SERVER_CONFIG.url}/api/publicEvents`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).to.equal(200);
+    const rows = (await response.json()) as any[];
+
+    testLogger.info("Non-RLS table query result", {
+      count: rows.length,
+      rows,
+    });
+
+    expect(rows.length).to.equal(
+      2,
+      "Non-RLS table should return all rows regardless of JWT claims",
     );
   });
 });

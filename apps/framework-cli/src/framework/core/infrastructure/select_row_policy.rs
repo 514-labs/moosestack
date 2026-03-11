@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 /// IMPORTANT: Must match MOOSE_RLS_ROLE in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_ROLE: &str = "moose_rls_role";
 
+pub const MOOSE_RLS_USER: &str = "moose_rls_user";
+pub const MOOSE_RLS_PASSWORD_SUFFIX: &str = "_Aa1!";
+
 /// Prefix for ClickHouse custom settings used by row policies.
 /// Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
 /// IMPORTANT: Must match MOOSE_RLS_SETTING_PREFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts

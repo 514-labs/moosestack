@@ -194,7 +194,7 @@ services:
         mkdir -p /docker-entrypoint-initdb.d
         cat > /docker-entrypoint-initdb.d/init-user.sql << 'EOSQL'
         CREATE USER IF NOT EXISTS `{{clickhouse_user}}` IDENTIFIED BY '{{clickhouse_password}}';
-        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}`;
+        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}` WITH GRANT OPTION;
         EOSQL
         exec /entrypoint.sh
 
@@ -258,7 +258,7 @@ services:
         mkdir -p /docker-entrypoint-initdb.d
         cat > /docker-entrypoint-initdb.d/init-user.sql << 'EOSQL'
         CREATE USER IF NOT EXISTS `{{clickhouse_user}}` IDENTIFIED BY '{{clickhouse_password}}';
-        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}`;
+        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}` WITH GRANT OPTION;
         EOSQL
         exec /entrypoint.sh
   {{/if}}
