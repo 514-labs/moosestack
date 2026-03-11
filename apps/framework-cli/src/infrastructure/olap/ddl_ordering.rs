@@ -458,16 +458,11 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::CreateRowPolicy {
                 policy,
                 default_database,
-                clickhouse_user,
                 ..
             } => {
                 let escaped_name = policy.name.replace('`', "``");
                 let escaped_db = default_database.replace('`', "``");
-                let escaped_user = clickhouse_user.replace('`', "``");
-                let mut sqls = vec![
-                    format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
-                    format!("GRANT {MOOSE_RLS_ROLE} TO `{}`", escaped_user),
-                ];
+                let mut sqls = vec![];
                 for table in &policy.tables {
                     let escaped_table = table.replace('`', "``");
                     sqls.push(format!(
@@ -1636,6 +1631,46 @@ pub fn order_olap_changes(
         };
 
         plan.combine(change_plan);
+    }
+
+    // Inject RLS role setup before row policies if needed
+    let has_row_policy = plan
+        .setup_ops
+        .iter()
+        .any(|op| matches!(op, AtomicOlapOperation::CreateRowPolicy { .. }));
+
+    if has_row_policy {
+        // Find the ClickHouse user from the first CreateRowPolicy operation
+        if let Some(AtomicOlapOperation::CreateRowPolicy {
+            clickhouse_user, ..
+        }) = plan
+            .setup_ops
+            .iter()
+            .find(|op| matches!(op, AtomicOlapOperation::CreateRowPolicy { .. }))
+        {
+            let escaped_user = clickhouse_user.replace('`', "``");
+            // Insert role setup operation at the beginning
+            plan.setup_ops.insert(
+                0,
+                AtomicOlapOperation::RunSetupSql {
+                    resource: SqlResource {
+                        name: "__rls_role_setup__".to_string(),
+                        database: None,
+                        source_file: None,
+                        source_line: None,
+                        source_column: None,
+                        setup: vec![
+                            format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
+                            format!("GRANT {MOOSE_RLS_ROLE} TO `{}`", escaped_user),
+                        ],
+                        teardown: vec![],
+                        pulls_data_from: vec![],
+                        pushes_data_to: vec![],
+                    },
+                    dependency_info: create_empty_dependency_info(),
+                },
+            );
+        }
     }
 
     // Now apply topological sorting to both the teardown and setup plans
@@ -3947,14 +3982,12 @@ mod tests {
         let serialized = op.to_minimal();
         match serialized {
             SerializableOlapOperation::RawSql { sql, description } => {
-                assert_eq!(sql.len(), 3); // CREATE ROLE + GRANT ROLE + CREATE ROW POLICY
-                assert!(sql[0].contains("CREATE ROLE IF NOT EXISTS moose_rls_role"));
-                assert!(sql[1].contains("GRANT moose_rls_role TO `panda`"));
-                assert!(sql[2].contains("CREATE ROW POLICY IF NOT EXISTS"));
-                assert!(sql[2].contains("`tenant_iso_on_events_1_0_0`"));
-                assert!(sql[2].contains(&format!("`{}`.`events_1_0_0`", DEFAULT_DATABASE_NAME)));
-                assert!(sql[2].contains("getSetting('SQL_moose_rls_org_id')"));
-                assert!(sql[2].contains("AS RESTRICTIVE TO moose_rls_role"));
+                assert_eq!(sql.len(), 1); // Only CREATE ROW POLICY (role setup is extracted)
+                assert!(sql[0].contains("CREATE ROW POLICY IF NOT EXISTS"));
+                assert!(sql[0].contains("`tenant_iso_on_events_1_0_0`"));
+                assert!(sql[0].contains(&format!("`{}`.`events_1_0_0`", DEFAULT_DATABASE_NAME)));
+                assert!(sql[0].contains("getSetting('custom_moose_rls_org_id')"));
+                assert!(sql[0].contains("AS RESTRICTIVE TO moose_rls_role"));
                 assert!(description.contains("tenant_iso"));
             }
             _ => panic!("Expected RawSql operation"),
@@ -3975,11 +4008,9 @@ mod tests {
         let serialized = op.to_minimal();
         match serialized {
             SerializableOlapOperation::RawSql { sql, .. } => {
-                assert_eq!(sql.len(), 4); // CREATE ROLE + GRANT ROLE + 2 CREATE ROW POLICY
-                assert!(sql[0].contains("CREATE ROLE IF NOT EXISTS moose_rls_role"));
-                assert!(sql[1].contains("GRANT moose_rls_role TO `panda`"));
-                assert!(sql[2].contains("events_1_0_0"));
-                assert!(sql[3].contains("orders_1_0_0"));
+                assert_eq!(sql.len(), 2); // 2 CREATE ROW POLICY (role setup is extracted)
+                assert!(sql[0].contains("events_1_0_0"));
+                assert!(sql[1].contains("orders_1_0_0"));
             }
             _ => panic!("Expected RawSql operation"),
         }
@@ -4015,9 +4046,10 @@ mod tests {
             order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
 
         assert!(teardown.is_empty());
-        assert_eq!(setup.len(), 1);
+        assert_eq!(setup.len(), 2); // Role setup + CreateRowPolicy
+        assert!(matches!(&setup[0], AtomicOlapOperation::RunSetupSql { .. }));
         assert!(matches!(
-            &setup[0],
+            &setup[1],
             AtomicOlapOperation::CreateRowPolicy { .. }
         ));
     }
@@ -4053,13 +4085,14 @@ mod tests {
             order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
 
         assert_eq!(teardown.len(), 1);
-        assert_eq!(setup.len(), 1);
+        assert_eq!(setup.len(), 2); // Role setup + CreateRowPolicy
         assert!(matches!(
             &teardown[0],
             AtomicOlapOperation::DropRowPolicy { .. }
         ));
+        assert!(matches!(&setup[0], AtomicOlapOperation::RunSetupSql { .. }));
         assert!(matches!(
-            &setup[0],
+            &setup[1],
             AtomicOlapOperation::CreateRowPolicy { .. }
         ));
     }
