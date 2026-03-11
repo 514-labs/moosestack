@@ -218,17 +218,13 @@ pub async fn destructive_confirmation_gate(
         );
     }
 
-    let accepted = match pinned_prompt(risk.destructive_changes.len()).await {
-        Ok(result) => result,
-        Err(_) => {
-            let input = crate::cli::prompt_user_async(
-                "\nProceed with destructive changes? [y/N]",
-                Some("N"),
-                None,
-            )
-            .await?;
-            matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+    let accepted = if std::io::stdout().is_terminal() {
+        match pinned_prompt(risk.destructive_changes.len()).await {
+            Ok(result) => result,
+            Err(_) => plain_prompt().await?,
         }
+    } else {
+        plain_prompt().await?
     };
 
     if accepted {
@@ -243,6 +239,13 @@ pub async fn destructive_confirmation_gate(
         );
         Ok(false)
     }
+}
+
+async fn plain_prompt() -> Result<bool, RoutineFailure> {
+    let input =
+        crate::cli::prompt_user_async("\nProceed with destructive changes? [y/N]", Some("N"), None)
+            .await?;
+    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
 // ---------------------------------------------------------------------------
