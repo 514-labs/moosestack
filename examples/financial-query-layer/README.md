@@ -32,9 +32,15 @@ Companion demo for the blog post [Define one, project everywhere: a metrics laye
 | **Node.js** | v20+ | [nodejs.org](https://nodejs.org/) |
 | **pnpm** | v8+ | `npm install -g pnpm` |
 | **Docker** | v20+ | [docker.com](https://www.docker.com/get-started/) - must be running |
-| **Moose CLI** | latest | `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose` |
+| **Moose CLI** | latest | see below |
 
 For the AI chat feature, you'll also need an [Anthropic API key](https://console.anthropic.com/).
+
+Install MooseStack (and optionally the 514 hosting) CLIs:
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
+```
 
 ### 1. Clone and Install
 
@@ -74,6 +80,23 @@ pnpm dev          # Both services
 pnpm dev:moose    # Backend only
 pnpm dev:web      # Frontend only
 ```
+
+### 4. Set Up Agent Skills (optional)
+
+If you want to use MooseStack skills with your AI copilot, bootstrap them with:
+
+```bash
+514 agent init
+```
+
+This installs the following skills:
+
+- **ClickHouse Best Practices** — Schema design, query optimization, and insert strategy rules with MooseStack-specific examples
+- **514 CLI** — Interact with the 514 platform (login, link project, check deployments, browse docs)
+- **514 Debug** — Debug 514 deployments (check status, tail logs, find slow queries, run diagnostics)
+- **514 Perf Optimize** — Guided ClickHouse performance optimization workflow with benchmarking
+
+If you start your copilot now, you will have the MooseStack Skills, LSP, and MCPs up and running.
 
 - Dashboard: http://localhost:3000
 - Report Builder: http://localhost:3000/builder

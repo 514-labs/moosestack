@@ -35,10 +35,10 @@ Ensure all of these are active before starting work.
 
 3. **Context7 connected** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need MooseStack documentation.
 
-4. **ClickHouse Best Practices Skill installed** — Install at the start of every session if not already present:
+4. **MooseStack Skills installed** — Install at the start of every session if not already present:
 
    ```bash
-   npx skills add https://github.com/514-labs/agent-skills --skill moosestack-clickhouse-best-practices
+   514 agent init
    ```
 
 ## Key Files
