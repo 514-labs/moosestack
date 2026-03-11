@@ -853,7 +853,6 @@ pub async fn start_production_mode(
     project: Arc<Project>,
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
-    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Success,

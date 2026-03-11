@@ -154,10 +154,6 @@ pub enum Commands {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
         #[arg(long)]
         start_include_dependencies: bool,
-
-        /// Skip the confirmation prompt for destructive operations (column/table drops)
-        #[arg(long)]
-        yes_destructive: bool,
     },
     /// Generates helpers for your data models (i.e. sdk, api tokens)
     #[command(visible_alias = "g")]
