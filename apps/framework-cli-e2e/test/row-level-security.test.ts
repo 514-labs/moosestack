@@ -257,6 +257,35 @@ describe("Row-Level Security E2E Tests", function () {
       },
     );
 
+    testLogger.info("Waiting for PublicEvent data to land in ClickHouse");
+    await withRetries(
+      async () => {
+        const client = createClient(CLICKHOUSE_CONFIG);
+        try {
+          const result = await client.query({
+            query:
+              "SELECT sum(rows) as cnt FROM system.parts WHERE table = 'PublicEvent' AND database = 'local' AND active = 1",
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          const count = parseInt(rows[0].cnt);
+          if (count < 2) {
+            throw new Error(`Expected 2 rows, found ${count}`);
+          }
+          testLogger.info(`Data landed: ${count} rows in PublicEvent`);
+        } finally {
+          await client.close();
+        }
+      },
+      {
+        attempts: RETRY_CONFIG.DB_WRITE_ATTEMPTS,
+        delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
+        backoffFactor: 1,
+        logger: testLogger,
+        operationName: "Wait for PublicEvent data",
+      },
+    );
+
     testLogger.info("Test setup complete");
   });
 
