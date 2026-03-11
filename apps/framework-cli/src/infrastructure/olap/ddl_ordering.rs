@@ -3828,6 +3828,7 @@ mod tests {
                 materialized: None,
                 alias: None,
             }],
+            order_by: OrderBy::Fields(vec!["username".to_string()]),
             ..before_table.clone()
         };
 

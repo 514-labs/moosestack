@@ -1452,4 +1452,150 @@ mod tests {
             "Should allow creating DeletionProtected MVs"
         );
     }
+
+    #[test]
+    fn test_guard_blocks_rename_on_externally_managed() {
+        let before = create_test_table("ext_table", LifeCycle::ExternallyManaged);
+        let after = create_test_table("ext_table", LifeCycle::ExternallyManaged);
+        let col_before = create_test_column("old_name");
+        let col_after = create_test_column("new_name");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "ext_table".to_string(),
+            column_changes: vec![ColumnChange::Renamed {
+                before: col_before,
+                after: col_after,
+                confidence: 0.9,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::ColumnModification
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_allows_rename_on_deletion_protected() {
+        let before = create_test_table("prot_table", LifeCycle::DeletionProtected);
+        let after = create_test_table("prot_table", LifeCycle::DeletionProtected);
+        let col_before = create_test_column("old_name");
+        let col_after = create_test_column("new_name");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "prot_table".to_string(),
+            column_changes: vec![ColumnChange::Renamed {
+                before: col_before,
+                after: col_after,
+                confidence: 0.9,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            violations.is_empty(),
+            "DeletionProtected should allow renames (non-destructive)"
+        );
+    }
+
+    #[test]
+    fn test_filter_blocks_rename_on_externally_managed() {
+        let before = create_test_table("ext_table", LifeCycle::ExternallyManaged);
+        let after = create_test_table("ext_table", LifeCycle::ExternallyManaged);
+        let col_before = create_test_column("old_name");
+        let col_after = create_test_column("new_name");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "ext_table".to_string(),
+            column_changes: vec![ColumnChange::Renamed {
+                before: col_before,
+                after: col_after,
+                confidence: 0.9,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after: after.clone(),
+        })];
+
+        let result = apply_lifecycle_filter(changes, &after, "test_db");
+        assert_eq!(
+            result.filtered.len(),
+            1,
+            "ExternallyManaged should block renames"
+        );
+        // The Updated change is still in applied but with empty column_changes
+        if let Some(OlapChange::Table(TableChange::Updated { column_changes, .. })) =
+            result.applied.first()
+        {
+            assert!(
+                column_changes.is_empty(),
+                "All column changes should be blocked"
+            );
+        }
+    }
+
+    #[test]
+    fn test_filter_allows_rename_on_deletion_protected() {
+        let before = create_test_table("prot_table", LifeCycle::DeletionProtected);
+        let after = create_test_table("prot_table", LifeCycle::DeletionProtected);
+        let col_before = create_test_column("old_name");
+        let col_after = create_test_column("new_name");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "prot_table".to_string(),
+            column_changes: vec![ColumnChange::Renamed {
+                before: col_before,
+                after: col_after,
+                confidence: 0.9,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after: after.clone(),
+        })];
+
+        let result = apply_lifecycle_filter(changes, &after, "test_db");
+        assert_eq!(
+            result.applied.len(),
+            1,
+            "DeletionProtected should allow renames"
+        );
+        assert!(result.filtered.is_empty());
+    }
 }

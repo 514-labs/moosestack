@@ -3855,12 +3855,11 @@ fn rename_confidence(
     after_positions: &HashMap<&str, usize>,
     max_columns: f64,
 ) -> f64 {
-    let mut score = 0.0;
-
-    // --- 1. Type equality (strongest signal, 0.4) ---
-    if removed.data_type == added.data_type {
-        score += 0.4;
+    if removed.data_type != added.data_type {
+        return 0.0;
     }
+
+    let mut score = 0.4;
 
     // --- 2. Positional proximity (0.2) ---
     if let (Some(&before_pos), Some(&after_pos)) = (
@@ -3938,28 +3937,35 @@ pub fn apply_detected_renames(
     column_changes: Vec<ColumnChange>,
     renames: &[DetectedColumnRename],
 ) -> Vec<ColumnChange> {
-    let renamed_before_names: std::collections::HashSet<&str> =
-        renames.iter().map(|r| r.before.name.as_str()).collect();
+    let rename_by_before: std::collections::HashMap<&str, &DetectedColumnRename> = renames
+        .iter()
+        .map(|r| (r.before.name.as_str(), r))
+        .collect();
     let renamed_after_names: std::collections::HashSet<&str> =
         renames.iter().map(|r| r.after.name.as_str()).collect();
 
-    let mut result: Vec<ColumnChange> = column_changes
-        .into_iter()
-        .filter(|c| match c {
-            ColumnChange::Removed(col) => !renamed_before_names.contains(col.name.as_str()),
-            ColumnChange::Added { column, .. } => {
-                !renamed_after_names.contains(column.name.as_str())
-            }
-            _ => true,
-        })
-        .collect();
+    let mut result = Vec::with_capacity(column_changes.len());
 
-    for rename in renames {
-        result.push(ColumnChange::Renamed {
-            before: rename.before.clone(),
-            after: rename.after.clone(),
-            confidence: rename.confidence,
-        });
+    for change in column_changes {
+        match &change {
+            ColumnChange::Removed(col) => {
+                if let Some(rename) = rename_by_before.get(col.name.as_str()) {
+                    result.push(ColumnChange::Renamed {
+                        before: rename.before.clone(),
+                        after: rename.after.clone(),
+                        confidence: rename.confidence,
+                    });
+                } else {
+                    result.push(change);
+                }
+            }
+            ColumnChange::Added { column, .. } => {
+                if !renamed_after_names.contains(column.name.as_str()) {
+                    result.push(change);
+                }
+            }
+            _ => result.push(change),
+        }
     }
 
     result

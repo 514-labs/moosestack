@@ -289,6 +289,9 @@ impl TerminalComponent for SpinnerComponent {
                 frame_index = (frame_index + 1) % DOTS9_FRAMES.len();
 
                 let _guard = terminal_lock::acquire();
+                if stop_signal.load(Ordering::Relaxed) || pause_signal.load(Ordering::Relaxed) {
+                    continue;
+                }
                 let sync_result = queue!(
                     stdout(),
                     BeginSynchronizedUpdate,

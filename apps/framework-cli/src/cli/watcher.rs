@@ -275,7 +275,7 @@ async fn watch(
                     let metrics = metrics.clone();
                     let settings = settings.clone();
 
-                    let result: anyhow::Result<()> = with_spinner_completion_async(
+                    let result: anyhow::Result<bool> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         |spinner_handle| async move {
@@ -296,11 +296,10 @@ async fn watch(
                                     let proceed = crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy).await;
                                     spinner_handle.resume();
                                     if !proceed? {
-                                        return Ok(());
+                                        return Ok(false);
                                     }
 
                                     display::show_changes(&plan_result);
-                                    // Hold the mutation guard only for execution/persist steps.
                                     let _processing_guard = processing_coordinator.begin_processing().await;
                                     let mut project_registries = project_registries.write().await;
 
@@ -360,17 +359,25 @@ async fn watch(
                                     });
                                 }
                             }
-                            Ok(())
+                            Ok(true)
                         },
                         activate_spinner,
                     )
                     .await;
                     match result {
-                        Ok(()) => {
+                        Ok(true) => {
                             project
                                 .http_server_config
                                 .run_after_dev_server_reload_script()
                                 .await;
+                        }
+                        Ok(false) => {
+                            show_message!(MessageType::Info, {
+                                Message {
+                                    action: "Skipped".to_string(),
+                                    details: "Destructive changes declined by user".to_string(),
+                                }
+                            });
                         }
                         Err(e) => {
                             show_message!(MessageType::Error, {

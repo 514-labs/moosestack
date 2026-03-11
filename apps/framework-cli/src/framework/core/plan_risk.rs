@@ -1,3 +1,11 @@
+//! Destructive-change detection and confirmation gate for migration plans.
+//!
+//! Before executing a migration, [`classify_plan_risk`] scans OLAP changes for
+//! operations that may cause data loss (table/column drops, recreates, view
+//! removals). [`destructive_confirmation_gate`] then enforces user confirmation
+//! via an interactive prompt (with a pinned terminal region in TTY mode) or via
+//! the `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE` overrides.
+
 use std::fmt;
 use std::io::{stdout, IsTerminal, Write};
 use std::time::Duration;
@@ -28,6 +36,12 @@ pub enum DestructiveChange {
         table_name: String,
         reason: String,
     },
+    ViewDrop {
+        view_name: String,
+    },
+    MaterializedViewDrop {
+        view_name: String,
+    },
 }
 
 impl fmt::Display for DestructiveChange {
@@ -43,17 +57,29 @@ impl fmt::Display for DestructiveChange {
             DestructiveChange::TableRecreate { table_name, reason } => {
                 write!(f, "DROP + RECREATE `{table_name}` ({reason})")
             }
+            DestructiveChange::ViewDrop { view_name } => {
+                write!(f, "DROP VIEW `{view_name}`")
+            }
+            DestructiveChange::MaterializedViewDrop { view_name } => {
+                write!(f, "DROP MATERIALIZED VIEW `{view_name}`")
+            }
         }
     }
 }
 
 /// Aggregated risk assessment for a migration plan.
+///
+/// Produced by [`classify_plan_risk`] and consumed by
+/// [`destructive_confirmation_gate`] to decide whether the user must confirm.
 #[derive(Debug, Clone)]
 pub struct PlanRisk {
+    /// Every destructive operation found in the plan. Empty when the migration
+    /// is purely additive / non-destructive.
     pub destructive_changes: Vec<DestructiveChange>,
 }
 
 impl PlanRisk {
+    /// Returns `true` when the plan contains at least one destructive operation.
     pub fn is_destructive(&self) -> bool {
         !self.destructive_changes.is_empty()
     }
@@ -67,34 +93,39 @@ impl PlanRisk {
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
     let mut destructive_changes = Vec::new();
 
-    // Collect table names that are both removed and added (recreates).
-    let removed_table_names: std::collections::HashSet<&str> = changes
+    // Collect (database, name) pairs for tables that are both removed and added (recreates).
+    let removed_table_keys: std::collections::HashSet<(Option<&str>, &str)> = changes
         .olap_changes
         .iter()
         .filter_map(|c| match c {
-            OlapChange::Table(TableChange::Removed(t)) => Some(t.name.as_str()),
+            OlapChange::Table(TableChange::Removed(t)) => {
+                Some((t.database.as_deref(), t.name.as_str()))
+            }
             _ => None,
         })
         .collect();
 
-    let added_table_names: std::collections::HashSet<&str> = changes
+    let added_table_keys: std::collections::HashSet<(Option<&str>, &str)> = changes
         .olap_changes
         .iter()
         .filter_map(|c| match c {
-            OlapChange::Table(TableChange::Added(t)) => Some(t.name.as_str()),
+            OlapChange::Table(TableChange::Added(t)) => {
+                Some((t.database.as_deref(), t.name.as_str()))
+            }
             _ => None,
         })
         .collect();
 
-    let recreated_table_names: std::collections::HashSet<&str> = removed_table_names
-        .intersection(&added_table_names)
+    let recreated_table_keys: std::collections::HashSet<(Option<&str>, &str)> = removed_table_keys
+        .intersection(&added_table_keys)
         .copied()
         .collect();
 
     for change in &changes.olap_changes {
         match change {
             OlapChange::Table(TableChange::Removed(table)) => {
-                if recreated_table_names.contains(table.name.as_str()) {
+                let key = (table.database.as_deref(), table.name.as_str());
+                if recreated_table_keys.contains(&key) {
                     destructive_changes.push(DestructiveChange::TableRecreate {
                         table_name: table.name.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
@@ -120,13 +151,13 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                 }
             }
             OlapChange::MaterializedView(Change::Removed(mv)) => {
-                destructive_changes.push(DestructiveChange::TableDrop {
-                    table_name: mv.name.clone(),
+                destructive_changes.push(DestructiveChange::MaterializedViewDrop {
+                    view_name: mv.name.clone(),
                 });
             }
             OlapChange::View(Change::Removed(v)) => {
-                destructive_changes.push(DestructiveChange::TableDrop {
-                    table_name: v.name.clone(),
+                destructive_changes.push(DestructiveChange::ViewDrop {
+                    view_name: v.name.clone(),
                 });
             }
             _ => {}
@@ -262,8 +293,8 @@ struct ScrollRegionGuard {
 
 impl Drop for ScrollRegionGuard {
     fn drop(&mut self) {
-        crate::cli::display::terminal_lock::clear_scroll_region_bottom();
         let _lock = crate::cli::display::terminal_lock::acquire();
+        crate::cli::display::terminal_lock::clear_scroll_region_bottom();
         let rows = terminal::size()
             .map(|(_, r)| r)
             .unwrap_or(self.original_rows);
@@ -286,20 +317,19 @@ impl Drop for ScrollRegionGuard {
 async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
     let (_cols, mut current_rows) = terminal::size()?;
 
+    let _guard = ScrollRegionGuard {
+        original_rows: current_rows,
+    };
+
     {
         let _lock = crate::cli::display::terminal_lock::acquire();
         for _ in 0..PINNED_PROMPT_LINES + 1 {
             execute!(stdout(), Print("\n"))?;
         }
         apply_scroll_region(current_rows)?;
+        let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+        crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
     }
-
-    let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-    crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
-
-    let _guard = ScrollRegionGuard {
-        original_rows: current_rows,
-    };
 
     draw_pinned_prompt_full(current_rows, change_count)?;
     park_cursor(current_rows)?;
@@ -371,6 +401,8 @@ fn reconcile_resize(
 /// so the user's in-progress typing is preserved.
 fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
     let start = rows.saturating_sub(PINNED_PROMPT_LINES);
+    let cols = terminal::size().map(|(c, _)| c).unwrap_or(50) as usize;
+    let separator = "─".repeat(cols);
     let prompt_text = format!(
         " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
         change_count
@@ -383,7 +415,7 @@ fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
         crossterm::cursor::SavePosition,
         MoveTo(0, start),
         Clear(ClearType::CurrentLine),
-        Print("\x1b[90m───────────────────────────────────────────────────\x1b[0m"),
+        Print(format!("\x1b[90m{separator}\x1b[0m")),
         MoveTo(0, start + 1),
         Clear(ClearType::CurrentLine),
         Print(&prompt_text),

@@ -285,9 +285,10 @@ pub fn write_styled_line(
         let mut out = stdout();
         if let Some(row) = super::terminal_lock::scroll_region_bottom() {
             execute!(out, SavePosition, crossterm::cursor::MoveTo(0, row))?;
-            write_styled_line_to(&mut out, styled_text, message, no_ansi, show_timestamps)?;
-            execute!(out, RestorePosition)?;
-            Ok(())
+            let write_result =
+                write_styled_line_to(&mut out, styled_text, message, no_ansi, show_timestamps);
+            let restore_result = execute!(out, RestorePosition);
+            write_result.and(restore_result)
         } else {
             write_styled_line_to(&mut out, styled_text, message, no_ansi, show_timestamps)
         }
