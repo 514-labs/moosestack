@@ -93,26 +93,7 @@ pub fn prompt_user(
 ) -> Result<String, RoutineFailure> {
     use std::io::{self, Write};
 
-    // Build the prompt with proper formatting
-    let mut full_prompt = String::new();
-
-    // Add the main prompt text
-    full_prompt.push_str(prompt_text);
-
-    // Add default value if provided
-    if let Some(default_value) = default {
-        full_prompt.push_str(&format!(" (default: {})", default_value));
-    }
-
-    // Add hint if provided
-    if let Some(hint_text) = hint {
-        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
-    }
-
-    // Add the prompt indicator
-    full_prompt.push_str("\n> ");
-
-    print!("{}", full_prompt);
+    print!("{}", format_prompt(prompt_text, default, hint));
     let _ = io::stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
@@ -124,16 +105,55 @@ pub fn prompt_user(
             e,
         )
     })?;
-    let trimmed = input.trim();
+    Ok(apply_default(input.trim(), default))
+}
 
-    // Return default if input is empty, otherwise return the trimmed input
-    let result = if trimmed.is_empty() {
+/// Async version of [`prompt_user`] that doesn't block the tokio runtime.
+pub async fn prompt_user_async(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    use std::io::Write;
+    use tokio::io::AsyncBufReadExt;
+
+    print!("{}", format_prompt(prompt_text, default, hint));
+    let _ = std::io::stdout().flush();
+
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = stdin.lines();
+    let line = lines.next_line().await.map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Prompt".to_string(),
+                details: "Failed to read user input".to_string(),
+            },
+            e,
+        )
+    })?;
+    let trimmed = line.as_deref().unwrap_or("").trim();
+    Ok(apply_default(trimmed, default))
+}
+
+fn format_prompt(prompt_text: &str, default: Option<&str>, hint: Option<&str>) -> String {
+    let mut full_prompt = String::new();
+    full_prompt.push_str(prompt_text);
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+    full_prompt.push_str("\n> ");
+    full_prompt
+}
+
+fn apply_default(trimmed: &str, default: Option<&str>) -> String {
+    if trimmed.is_empty() {
         default.unwrap_or("").to_string()
     } else {
         trimmed.to_string()
-    };
-
-    Ok(result)
+    }
 }
 
 /// Prompts user for password input with masked characters (shows * instead of typed chars)

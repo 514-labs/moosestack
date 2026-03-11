@@ -3985,6 +3985,7 @@ mod rename_detection_tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }
     }
 

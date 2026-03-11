@@ -3,11 +3,10 @@ use std::io::{stdout, IsTerminal, Write};
 use std::time::Duration;
 
 use crossterm::cursor::MoveTo;
-use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::style::Print;
 use crossterm::terminal::{self, Clear, ClearType};
-use futures::StreamExt;
+use tokio::io::AsyncBufReadExt;
 
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
@@ -222,12 +221,12 @@ pub async fn destructive_confirmation_gate(
     let accepted = match pinned_prompt(risk.destructive_changes.len()).await {
         Ok(result) => result,
         Err(_) => {
-            // Pinned prompt failed (unsupported terminal, etc.) — fall back to sync prompt
-            let input = crate::cli::prompt_user(
+            let input = crate::cli::prompt_user_async(
                 "\nProceed with destructive changes? [y/N]",
                 Some("N"),
                 None,
-            )?;
+            )
+            .await?;
             matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
         }
     };
@@ -247,20 +246,20 @@ pub async fn destructive_confirmation_gate(
 }
 
 // ---------------------------------------------------------------------------
-// Pinned terminal prompt
+// Pinned terminal prompt (scroll-region based, no raw mode)
 // ---------------------------------------------------------------------------
 
 const PINNED_PROMPT_LINES: u16 = 3;
 const PROMPT_REDRAW_INTERVAL: Duration = Duration::from_millis(500);
 
-/// RAII guard that restores terminal state (raw mode, scroll region) on drop.
-struct TerminalGuard {
+/// RAII guard that restores the scroll region on drop.
+struct ScrollRegionGuard {
     original_rows: u16,
 }
 
-impl Drop for TerminalGuard {
+impl Drop for ScrollRegionGuard {
     fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
+        crate::cli::display::terminal_lock::clear_scroll_region_bottom();
         let _lock = crate::cli::display::terminal_lock::acquire();
         let rows = terminal::size()
             .map(|(_, r)| r)
@@ -276,66 +275,43 @@ impl Drop for TerminalGuard {
 }
 
 /// Displays a pinned prompt at the bottom of the terminal while log output
-/// scrolls above it, and waits for a single-key response.
+/// scrolls above it, and waits for line-based input (y/yes + Enter).
 ///
 /// Uses an ANSI scroll region to confine normal output to the upper portion
 /// of the terminal. The bottom [`PINNED_PROMPT_LINES`] rows are reserved for
 /// the prompt and redrawn periodically to stay visible.
-///
-/// Requires raw mode for key-by-key reading via [`EventStream`]. Returns
-/// `true` if the user presses `y`/`Y`, `false` for any other key.
 async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
     let (_cols, mut current_rows) = terminal::size()?;
 
     {
         let _lock = crate::cli::display::terminal_lock::acquire();
+        for _ in 0..PINNED_PROMPT_LINES + 1 {
+            execute!(stdout(), Print("\n"))?;
+        }
         apply_scroll_region(current_rows)?;
     }
 
-    terminal::enable_raw_mode()?;
-    #[cfg(unix)]
-    unsafe {
-        let mut termios: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(libc::STDOUT_FILENO, &mut termios) == 0 {
-            termios.c_oflag |= libc::OPOST;
-            libc::tcsetattr(libc::STDOUT_FILENO, libc::TCSANOW, &termios);
-        }
-    }
-    let _guard = TerminalGuard {
+    let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+    crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
+
+    let _guard = ScrollRegionGuard {
         original_rows: current_rows,
     };
 
-    draw_pinned_prompt(current_rows, change_count)?;
+    draw_pinned_prompt_full(current_rows, change_count)?;
+    park_cursor(current_rows)?;
 
-    {
-        let _lock = crate::cli::display::terminal_lock::acquire();
-        let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-        execute!(stdout(), MoveTo(0, scroll_bottom))?;
-        stdout().flush()?;
-    }
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = stdin.lines();
 
-    let mut stream = EventStream::new();
     loop {
         tokio::select! {
-            event = stream.next() => {
-                match event {
-                    Some(Ok(Event::Key(key_event))) => {
-                        match (key_event.code, key_event.modifiers) {
-                            (KeyCode::Char('y' | 'Y'), _) => return Ok(true),
-                            (KeyCode::Char('n' | 'N'), _)
-                            | (KeyCode::Enter, _)
-                            | (KeyCode::Esc, _) => return Ok(false),
-                            (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => {
-                                return Ok(false);
-                            }
-                            _ => {}
-                        }
+            line = lines.next_line() => {
+                match line {
+                    Ok(Some(input)) => {
+                        return Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"));
                     }
-                    Some(Ok(Event::Resize(_new_cols, new_rows))) => {
-                        reconcile_resize(&mut current_rows, new_rows, change_count)?;
-                    }
-                    Some(Err(_)) | None => return Ok(false),
-                    _ => {}
+                    Ok(None) | Err(_) => return Ok(false),
                 }
             }
             _ = tokio::time::sleep(PROMPT_REDRAW_INTERVAL) => {
@@ -350,16 +326,22 @@ async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
     }
 }
 
-/// Sets the scroll region to leave [`PINNED_PROMPT_LINES`] reserved at the
-/// bottom. Caller must hold the terminal lock.
 fn apply_scroll_region(rows: u16) -> std::io::Result<()> {
     let scroll_bottom = rows.saturating_sub(PINNED_PROMPT_LINES + 1);
     write!(stdout(), "\x1b[1;{}r", scroll_bottom + 1)?;
     stdout().flush()
 }
 
-/// Handles a terminal resize: clears old prompt residue, re-establishes the
-/// scroll region, redraws the prompt, and parks the cursor.
+/// Parks the cursor at the ` > ` input line so the user's typed text
+/// echoes there. Log output is redirected into the scroll region by
+/// `write_styled_line` via the global scroll-region marker.
+fn park_cursor(rows: u16) -> std::io::Result<()> {
+    let _lock = crate::cli::display::terminal_lock::acquire();
+    let prompt_row = rows.saturating_sub(1);
+    execute!(stdout(), MoveTo(3, prompt_row))?;
+    stdout().flush()
+}
+
 fn reconcile_resize(
     current_rows: &mut u16,
     new_rows: u16,
@@ -369,34 +351,25 @@ fn reconcile_resize(
     *current_rows = new_rows;
 
     let _lock = crate::cli::display::terminal_lock::acquire();
-
-    // Clear old prompt area (may now be mid-screen after a grow).
     let old_start = old_rows.saturating_sub(PINNED_PROMPT_LINES);
     for row in old_start..old_rows {
         let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
     }
-
     apply_scroll_region(new_rows)?;
+    let scroll_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+    crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
     drop(_lock);
 
-    draw_pinned_prompt(new_rows, change_count)?;
-
-    let _lock = crate::cli::display::terminal_lock::acquire();
-    let new_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-    execute!(stdout(), MoveTo(0, new_bottom))?;
-    stdout().flush()
+    draw_pinned_prompt_full(new_rows, change_count)?;
+    park_cursor(new_rows)
 }
 
-/// Draws the prompt in the reserved bottom rows without disturbing the cursor
-/// position in the scroll region (saves/restores it around the draw).
-///
-/// Uses synchronized updates so the entire prompt paints atomically, preventing
-/// the spinner (which also redraws on a timer) from tearing through it.
+/// Redraws the separator and prompt text but NOT the ` > ` input line,
+/// so the user's in-progress typing is preserved.
 fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
     let start = rows.saturating_sub(PINNED_PROMPT_LINES);
-
     let prompt_text = format!(
-        " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — press \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
+        " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
         change_count
     );
 
@@ -411,11 +384,23 @@ fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
         MoveTo(0, start + 1),
         Clear(ClearType::CurrentLine),
         Print(&prompt_text),
-        MoveTo(0, start + 2),
-        Clear(ClearType::CurrentLine),
-        Print(" > "),
         crossterm::cursor::RestorePosition,
         crossterm::terminal::EndSynchronizedUpdate,
+    )?;
+    stdout().flush()
+}
+
+/// Draws the full prompt area including the ` > ` input line.
+/// Used only on initial setup and after terminal resize.
+fn draw_pinned_prompt_full(rows: u16, change_count: usize) -> std::io::Result<()> {
+    draw_pinned_prompt(rows, change_count)?;
+    let input_row = rows.saturating_sub(1);
+    let _lock = crate::cli::display::terminal_lock::acquire();
+    execute!(
+        stdout(),
+        MoveTo(0, input_row),
+        Clear(ClearType::CurrentLine),
+        Print(" > "),
     )?;
     stdout().flush()
 }
@@ -480,6 +465,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }
     }
 

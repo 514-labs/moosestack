@@ -3787,6 +3787,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["user_name".to_string()]),
             partition_by: None,
@@ -3825,6 +3826,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             ..before_table.clone()
         };
