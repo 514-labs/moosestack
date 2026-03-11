@@ -34,3 +34,20 @@ export const dataFilter = new SelectRowPolicy("data_filter", {
   column: "data",
   claim: "data",
 });
+
+export interface PublicEvent {
+  eventId: Key<string>;
+  timestamp: DateTime;
+  message: string;
+}
+
+export const PublicEventPipeline = new IngestPipeline<PublicEvent>(
+  "PublicEvent",
+  {
+    table: {
+      orderByFields: ["eventId"],
+    },
+    stream: true,
+    ingestApi: true,
+  },
+);

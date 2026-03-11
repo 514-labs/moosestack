@@ -166,7 +166,7 @@ pub async fn execute_changes(
     let (teardown_plan, setup_plan) = ddl_ordering::order_olap_changes(
         changes,
         &project.clickhouse_config.db_name,
-        &project.clickhouse_config.user,
+        &project.clickhouse_config.password,
     )?;
 
     // Execute the ordered changes

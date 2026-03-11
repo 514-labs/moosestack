@@ -134,15 +134,15 @@ export async function getMooseUtils(
             "Define at least one SelectRowPolicy before using rlsContext.",
         );
       }
-      // Create a new scoped QueryClient with row policy options.
-      // Uses the same shared ClickHouseClient connection — no new connections.
       const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
         runtimeContext.rowPoliciesConfig,
         rlsContext,
         "rlsContext",
       );
+      const rlsClient =
+        runtimeContext.rlsClickhouseClient ?? runtimeContext.clickhouseClient;
       const scopedQueryClient = new QueryClient(
-        runtimeContext.clickhouseClient,
+        rlsClient,
         "rls-scoped",
         rowPolicyOpts,
       );

@@ -8,6 +8,8 @@ import {
   RowPoliciesConfig,
   buildRowPolicyOptionsFromClaims,
   getTemporalClient,
+  MOOSE_RLS_USER,
+  MOOSE_RLS_PASSWORD_SUFFIX,
 } from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
@@ -117,6 +119,7 @@ const apiHandler = async (
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
   rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   // Always use compiled JavaScript
   const sourceDir = getSourceDir();
@@ -299,8 +302,12 @@ const apiHandler = async (
         httpLogger(req, res, start);
         return;
       }
+      const queryClickhouseClient =
+        rowPolicyOpts && rlsClickhouseClient ? rlsClickhouseClient : (
+          clickhouseClient
+        );
       const queryClient = new QueryClient(
-        clickhouseClient,
+        queryClickhouseClient,
         fileName,
         rowPolicyOpts,
       );
@@ -382,6 +389,7 @@ const createMainRouter = async (
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
   rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
@@ -390,6 +398,7 @@ const createMainRouter = async (
     enforceAuth,
     jwtConfig,
     rowPoliciesConfig,
+    rlsClickhouseClient,
   );
 
   const webApps = await getWebApps();
@@ -590,6 +599,22 @@ export const runApis = async (config: ApisConfig) => {
       const clickhouseClient = getClickhouseClient(
         toClientConfig(config.clickhouseConfig),
       );
+
+      // When RLS is configured, create a second client as moose_rls_user.
+      // This user has the RLS role granted and is used for all API queries
+      // so that row policies are enforced. The main client remains for DDL/ingest.
+      let rlsClickhouseClient: ClickHouseClient | undefined;
+      if (config.rowPoliciesConfig) {
+        rlsClickhouseClient = getClickhouseClient(
+          toClientConfig({
+            ...config.clickhouseConfig,
+            username: MOOSE_RLS_USER,
+            password:
+              config.clickhouseConfig.password + MOOSE_RLS_PASSWORD_SUFFIX,
+          }),
+        );
+      }
+
       let publicKey: jose.KeyLike | undefined;
       if (config.jwtConfig?.secret) {
         console.log("Importing JWT public key...");
@@ -609,6 +634,7 @@ export const runApis = async (config: ApisConfig) => {
       (globalThis as any)._mooseRuntimeContext = {
         client: new MooseClient(runtimeQueryClient, temporalClient),
         clickhouseClient,
+        rlsClickhouseClient,
         temporalClient,
         rowPoliciesConfig: config.rowPoliciesConfig,
       };
@@ -621,6 +647,7 @@ export const runApis = async (config: ApisConfig) => {
           config.enforceAuth,
           config.jwtConfig,
           config.rowPoliciesConfig,
+          rlsClickhouseClient,
         ),
       );
       // port is now passed via config.proxyPort or defaults to 4001

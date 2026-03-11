@@ -77,11 +77,19 @@ export interface RowPolicyOptions {
 export const MOOSE_RLS_ROLE = "moose_rls_role";
 
 /**
+ * Dedicated ClickHouse user for RLS queries.
+ * Created at DDL time with SELECT-only permissions and the RLS role granted.
+ * IMPORTANT: Must match MOOSE_RLS_USER in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_USER = "moose_rls_user";
+
+/**
  * Prefix for ClickHouse custom settings used by row policies.
  * Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
  * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
  */
 export const MOOSE_RLS_SETTING_PREFIX = "SQL_moose_rls_";
+export const MOOSE_RLS_PASSWORD_SUFFIX = "_Aa1!";
 
 /** Config mapping ClickHouse setting names to JWT claim names */
 export type RowPoliciesConfig = Record<string, string>;
@@ -146,7 +154,7 @@ export class QueryClient {
       clickhouse_settings: {
         asterisk_include_materialized_columns: 1,
         asterisk_include_alias_columns: 1,
-        ...(this.rowPolicyOptions?.clickhouse_settings),
+        ...this.rowPolicyOptions?.clickhouse_settings,
       },
       ...(this.rowPolicyOptions && {
         role: this.rowPolicyOptions.role,
