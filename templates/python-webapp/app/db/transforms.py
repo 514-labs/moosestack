@@ -43,7 +43,7 @@ foo_pipeline.get_stream().add_consumer(print_foo_event)
 # DLQ consumer for handling failed events (alternate flow)
 def print_dead_letter_messages(dead_letter: DeadLetterModel[Foo]) -> None:
     print("Dead letter event received:")
-    print(f"  Error: {dead_letter.error}")
+    print(f"  Error [{dead_letter.error_type}]: {dead_letter.error_message}")
     print(f"  Original data: {dead_letter.as_typed()}")
 
 
