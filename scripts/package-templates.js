@@ -44,6 +44,27 @@ if (fs.existsSync(SHARED_DIR)) {
   console.log("\nShared files:", sharedFiles);
 }
 
+// Collect language-specific shared files
+const langSharedFiles = {};
+for (const lang of ["typescript", "python"]) {
+  const langSharedDir = path.join(TEMPLATE_DIR, `_shared-${lang}`);
+  if (fs.existsSync(langSharedDir)) {
+    langSharedFiles[lang] = [];
+    const collectLangSharedFiles = (dir, prefix = "") => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const relPath = prefix ? path.join(prefix, entry.name) : entry.name;
+        if (entry.isDirectory()) {
+          collectLangSharedFiles(path.join(dir, entry.name), relPath);
+        } else {
+          langSharedFiles[lang].push(relPath);
+        }
+      }
+    };
+    collectLangSharedFiles(langSharedDir);
+    console.log(`\nShared files for ${lang}:`, langSharedFiles[lang]);
+  }
+}
+
 // Read versions
 let versions = null;
 const versionsPath = path.join(TEMPLATE_DIR, "_versions.toml");
@@ -144,8 +165,8 @@ function verifyVersions(stagingDir, versions, templateName) {
           ["@514labs/moose-cli", versions["moose-cli"]],
         ]) {
           if (deps[name] && deps[name] !== ver && deps[name] !== "latest") {
-            console.warn(
-              `  WARNING: ${templateName} ${filePath} has ${name}@${deps[name]}, expected ${ver}`,
+            throw new Error(
+              `${templateName} ${filePath} has ${name}@${deps[name]}, expected ${ver}`,
             );
           }
         }
@@ -157,8 +178,8 @@ function verifyVersions(stagingDir, versions, templateName) {
       ]) {
         const match = content.match(new RegExp(`${pkg}==([\\w.\\-]+)`));
         if (match && match[1] !== ver) {
-          console.warn(
-            `  WARNING: ${templateName} ${filePath} has ${pkg}==${match[1]}, expected ${ver}`,
+          throw new Error(
+            `${templateName} ${filePath} has ${pkg}==${match[1]}, expected ${ver}`,
           );
         }
       }
@@ -204,8 +225,15 @@ function regenerateLockfiles(stagingDir) {
       console.warn(
         `  Warning: lockfile regeneration failed in ${dir}: ${error.message}`,
       );
-      // Non-fatal — the version in _versions.toml may not be published yet
-      // during a release. The existing lockfile will be used.
+      // Remove stale lockfile so users get a fresh one on install
+      if (hasPnpmLock) {
+        fs.rmSync(path.join(dir, "pnpm-lock.yaml"), { force: true });
+        console.log(`  Removed stale pnpm-lock.yaml from: ${dir}`);
+      }
+      if (hasNpmLock) {
+        fs.rmSync(path.join(dir, "package-lock.json"), { force: true });
+        console.log(`  Removed stale package-lock.json from: ${dir}`);
+      }
     }
   };
 
@@ -237,12 +265,15 @@ const templates = fs
 
 console.log("\nFound templates:", templates);
 
+const failures = [];
+
 templates.forEach((template) => {
   const configPath = path.join(TEMPLATE_DIR, template, "template.config.toml");
   console.log(`\nProcessing template: ${template}`);
   console.log("Config path:", path.resolve(configPath));
 
   if (fs.existsSync(configPath)) {
+    const stagingDir = path.join(TEMPLATE_PACKAGES_DIR, `_staging_${template}`);
     try {
       const configContent = fs.readFileSync(configPath, "utf8");
       const config = toml.parse(configContent);
@@ -258,10 +289,7 @@ templates.forEach((template) => {
       );
 
       // Create a staging directory for this template
-      const stagingDir = path.join(
-        TEMPLATE_PACKAGES_DIR,
-        `_staging_${template}`,
-      );
+      fs.rmSync(stagingDir, { recursive: true, force: true });
       fs.cpSync(path.join(TEMPLATE_DIR, template), stagingDir, {
         recursive: true,
         filter: (src) => !src.includes("node_modules"),
@@ -275,6 +303,21 @@ templates.forEach((template) => {
           fs.mkdirSync(destDir, { recursive: true });
           fs.copyFileSync(path.join(SHARED_DIR, sharedFile), destPath);
           console.log(`  Injected shared file: ${sharedFile}`);
+        }
+      }
+
+      // Inject language-specific shared files
+      const language = config.language;
+      if (language && langSharedFiles[language]) {
+        const langSharedDir = path.join(TEMPLATE_DIR, `_shared-${language}`);
+        for (const sharedFile of langSharedFiles[language]) {
+          const destPath = path.join(stagingDir, sharedFile);
+          if (!fs.existsSync(destPath)) {
+            const destDir = path.dirname(destPath);
+            fs.mkdirSync(destDir, { recursive: true });
+            fs.copyFileSync(path.join(langSharedDir, sharedFile), destPath);
+            console.log(`  Injected ${language} shared file: ${sharedFile}`);
+          }
         }
       }
 
@@ -307,11 +350,11 @@ templates.forEach((template) => {
         },
       );
       console.log(`Successfully created tar file for ${template}`);
-
-      // Clean up staging directory
-      fs.rmSync(stagingDir, { recursive: true, force: true });
     } catch (error) {
       console.error(`Error processing ${template}:`, error.message);
+      failures.push(template);
+    } finally {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
     }
   } else {
     console.warn(`Warning: No template.config.toml found in ${template}`);
@@ -333,5 +376,10 @@ try {
   });
 } catch (error) {
   console.error("Error writing manifest file:", error.message);
+  process.exit(1);
+}
+
+if (failures.length > 0) {
+  console.error(`\nFailed to package templates: ${failures.join(", ")}`);
   process.exit(1);
 }
