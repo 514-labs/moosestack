@@ -9,10 +9,9 @@ from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
 from moose_lib.dmv2.web_app_helpers import get_moose_utils
-from app.db.views import bar_aggregated_mv
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 
 app = FastAPI()
 
@@ -40,7 +39,7 @@ async def health():
     """Health check endpoint"""
     return {
         "status": "ok",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "bar-fastapi-api",
     }
 
@@ -82,7 +81,7 @@ async def query(request: Request, limit: int = 10):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 # POST endpoint with request body validation
@@ -116,24 +115,23 @@ async def data(request: Request, body: DataRequest):
         )
 
     try:
-        # Build the query with safe parameterization
-        query_str = """
+        # Build the query - column identifiers use f-string (safe: validated by Literal type),
+        # value parameters use ClickHouse parameterization
+        query_str = f"""
             SELECT
                 day_of_month,
-                {select_column}
+                {body.order_by}
             FROM BarAggregated
             WHERE
-                day_of_month >= {start_day}
-                AND day_of_month <= {end_day}
-            ORDER BY {order_by} DESC
-            LIMIT {limit}
+                day_of_month >= {{start_day}}
+                AND day_of_month <= {{end_day}}
+            ORDER BY {body.order_by} DESC
+            LIMIT {{limit}}
         """
 
         result = moose.client.query.execute(
             query_str,
             {
-                "select_column": body.order_by,
-                "order_by": body.order_by,
                 "start_day": body.start_day,
                 "end_day": body.end_day,
                 "limit": body.limit,
@@ -153,7 +151,7 @@ async def data(request: Request, body: DataRequest):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 # Protected endpoint requiring JWT authentication

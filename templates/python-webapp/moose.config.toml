@@ -55,6 +55,6 @@ ignore_patterns = []
 
 [features]
 olap = true
-streaming_engine = false
-workflows = false
+streaming_engine = true
+workflows = true
 apis = true
