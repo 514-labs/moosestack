@@ -465,10 +465,10 @@ async fn watch(
                                                     let risk = classify_plan_risk(&plan_result.changes);
                                                     spinner_handle.pause();
                                                     let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
-                                                    spinner_handle.resume();
                                                     if !proceed? {
                                                         return Ok(false);
                                                     }
+                                                    spinner_handle.resume();
 
                                                     display::show_changes(&plan_result);
                                                     let _processing_guard =

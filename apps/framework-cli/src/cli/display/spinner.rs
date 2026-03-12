@@ -52,7 +52,10 @@ impl SpinnerHandle {
         self.pause_signal.store(false, Ordering::Relaxed);
     }
 
-    /// Creates a no-op handle (pause/resume have no effect).
+    fn is_paused(&self) -> bool {
+        self.pause_signal.load(Ordering::Relaxed)
+    }
+
     fn noop() -> Self {
         Self {
             pause_signal: Arc::new(AtomicBool::new(false)),
@@ -599,14 +602,16 @@ where
         (None, SpinnerHandle::noop())
     };
 
-    let res = f(handle).await;
+    let res = f(handle.clone()).await;
 
     if let Some(mut spinner) = sp {
-        let _ = spinner.done(completion_message);
+        if handle.is_paused() {
+            let _ = spinner.stop();
+        } else {
+            let _ = spinner.done(completion_message);
+        }
         let _ = spinner.cleanup();
-    } else if activate {
-        // In non-TTY mode (e.g., CI), still print the completion message
-        // so tests can detect when operations complete
+    } else if activate && !handle.is_paused() {
         println!("✓ {completion_message}");
     }
 
