@@ -1,6 +1,4 @@
-use crate::framework::core::infrastructure::select_row_policy::{
-    SelectRowPolicy, MOOSE_RLS_PASSWORD_SUFFIX, MOOSE_RLS_ROLE, MOOSE_RLS_USER,
-};
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
@@ -211,10 +209,6 @@ pub enum AtomicOlapOperation {
     CreateRowPolicy {
         /// The row policy to create
         policy: SelectRowPolicy,
-        /// The default database name
-        default_database: String,
-        /// The ClickHouse password (for moose_rls_user)
-        clickhouse_password: String,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -222,8 +216,6 @@ pub enum AtomicOlapOperation {
     DropRowPolicy {
         /// The row policy to drop
         policy: SelectRowPolicy,
-        /// The default database name
-        default_database: String,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -457,66 +449,14 @@ impl AtomicOlapOperation {
                 name: view.name.clone(),
                 database: view.database.clone(),
             },
-            AtomicOlapOperation::CreateRowPolicy {
-                policy,
-                default_database,
-                clickhouse_password,
-                ..
-            } => {
-                let escaped_name = policy.name.replace('`', "``");
-                let escaped_db = default_database.replace('`', "``");
-                let rls_password = format!("{}{}", clickhouse_password, MOOSE_RLS_PASSWORD_SUFFIX);
-                let escaped_password = rls_password.replace('\'', "''");
-                let mut sqls = vec![
-                    format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
-                    format!(
-                        "CREATE USER IF NOT EXISTS {MOOSE_RLS_USER} IDENTIFIED BY '{}'",
-                        escaped_password
-                    ),
-                    format!(
-                        "GRANT SELECT ON `{db}`.* TO {MOOSE_RLS_USER}",
-                        db = escaped_db
-                    ),
-                    format!("GRANT {MOOSE_RLS_ROLE} TO {MOOSE_RLS_USER}"),
-                ];
-                for table in &policy.tables {
-                    let escaped_table = table.replace('`', "``");
-                    sqls.push(format!(
-                        "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO {MOOSE_RLS_ROLE}",
-                        name = escaped_name,
-                        table = escaped_table,
-                        db = escaped_db,
-                        using = policy.using_expr(),
-                    ));
-                }
-                SerializableOlapOperation::RawSql {
-                    sql: sqls,
-                    description: format!("Creating row policy '{}'", policy.name),
+            AtomicOlapOperation::CreateRowPolicy { policy, .. } => {
+                SerializableOlapOperation::CreateRowPolicy {
+                    policy: policy.clone(),
                 }
             }
-            AtomicOlapOperation::DropRowPolicy {
-                policy,
-                default_database,
-                ..
-            } => {
-                let escaped_name = policy.name.replace('`', "``");
-                let escaped_db = default_database.replace('`', "``");
-                let sqls: Vec<String> = policy
-                    .tables
-                    .iter()
-                    .map(|table| {
-                        let escaped_table = table.replace('`', "``");
-                        format!(
-                            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
-                            name = escaped_name,
-                            table = escaped_table,
-                            db = escaped_db,
-                        )
-                    })
-                    .collect();
-                SerializableOlapOperation::RawSql {
-                    sql: sqls,
-                    description: format!("Dropping row policy '{}'", policy.name),
+            AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                SerializableOlapOperation::DropRowPolicy {
+                    policy: policy.clone(),
                 }
             }
         }
@@ -1396,6 +1336,30 @@ fn handle_view_update(before: &View, after: &View, default_database: &str) -> Op
     plan
 }
 
+/// Resolve table dependencies for a SelectRowPolicy by matching each
+/// TableReference against the known tables map.
+fn resolve_policy_table_deps(
+    policy: &SelectRowPolicy,
+    tables: &HashMap<String, Table>,
+    default_database: &str,
+) -> Vec<InfrastructureSignature> {
+    policy
+        .tables
+        .iter()
+        .filter_map(|table_ref| {
+            tables
+                .values()
+                .find(|table| {
+                    table.name == table_ref.name
+                        && table.database.as_deref() == table_ref.database.as_deref()
+                })
+                .map(|table| InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                })
+        })
+        .collect()
+}
+
 /// Orders OLAP changes based on dependencies to ensure proper execution sequence.
 ///
 /// This function takes a list of OLAP changes and orders them according to their
@@ -1412,7 +1376,6 @@ fn handle_view_update(before: &View, after: &View, default_database: &str) -> Op
 pub fn order_olap_changes(
     changes: &[OlapChange],
     default_database: &str,
-    clickhouse_password: &str,
 ) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
     // First, collect all tables from the changes to provide context for SQL resource processing
     let mut tables = HashMap::new();
@@ -1560,86 +1523,40 @@ pub fn order_olap_changes(
             }
             OlapChange::SelectRowPolicy(Change::Added(policy)) => {
                 let dependency_info = create_dependency_info(
-                    policy
-                        .tables
-                        .iter()
-                        .filter_map(|t| {
-                            tables.values().find(|table| table.name == *t).map(|table| {
-                                InfrastructureSignature::Table {
-                                    id: table.id(default_database),
-                                }
-                            })
-                        })
-                        .collect(),
+                    resolve_policy_table_deps(policy, &tables, default_database),
                     vec![],
                 );
                 OperationPlan::setup(vec![AtomicOlapOperation::CreateRowPolicy {
                     policy: (**policy).clone(),
-                    default_database: default_database.to_string(),
-                    clickhouse_password: clickhouse_password.to_string(),
                     dependency_info,
                 }])
             }
             OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
                 let dependency_info = create_dependency_info(
-                    policy
-                        .tables
-                        .iter()
-                        .filter_map(|t| {
-                            tables.values().find(|table| table.name == *t).map(|table| {
-                                InfrastructureSignature::Table {
-                                    id: table.id(default_database),
-                                }
-                            })
-                        })
-                        .collect(),
+                    resolve_policy_table_deps(policy, &tables, default_database),
                     vec![],
                 );
                 OperationPlan::teardown(vec![AtomicOlapOperation::DropRowPolicy {
                     policy: (**policy).clone(),
-                    default_database: default_database.to_string(),
                     dependency_info,
                 }])
             }
             OlapChange::SelectRowPolicy(Change::Updated { before, after }) => {
                 let mut plan = OperationPlan::new();
                 let before_dependency_info = create_dependency_info(
-                    before
-                        .tables
-                        .iter()
-                        .filter_map(|t| {
-                            tables.values().find(|table| table.name == *t).map(|table| {
-                                InfrastructureSignature::Table {
-                                    id: table.id(default_database),
-                                }
-                            })
-                        })
-                        .collect(),
+                    resolve_policy_table_deps(before, &tables, default_database),
                     vec![],
                 );
                 plan.teardown_ops.push(AtomicOlapOperation::DropRowPolicy {
                     policy: (**before).clone(),
-                    default_database: default_database.to_string(),
                     dependency_info: before_dependency_info,
                 });
                 let dependency_info = create_dependency_info(
-                    after
-                        .tables
-                        .iter()
-                        .filter_map(|t| {
-                            tables.values().find(|table| table.name == *t).map(|table| {
-                                InfrastructureSignature::Table {
-                                    id: table.id(default_database),
-                                }
-                            })
-                        })
-                        .collect(),
+                    resolve_policy_table_deps(after, &tables, default_database),
                     vec![],
                 );
                 plan.setup_ops.push(AtomicOlapOperation::CreateRowPolicy {
                     policy: (**after).clone(),
-                    default_database: default_database.to_string(),
-                    clickhouse_password: clickhouse_password.to_string(),
                     dependency_info,
                 });
                 plan
@@ -1804,7 +1721,7 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy, TableReference};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -3939,39 +3856,38 @@ mod tests {
     fn create_test_row_policy(name: &str, tables: Vec<&str>, column: &str) -> SelectRowPolicy {
         SelectRowPolicy {
             name: name.to_string(),
-            tables: tables.into_iter().map(String::from).collect(),
+            tables: tables
+                .into_iter()
+                .map(|t| TableReference {
+                    name: t.to_string(),
+                    database: None,
+                })
+                .collect(),
             column: column.to_string(),
             claim: column.to_string(),
         }
     }
 
     #[test]
-    fn test_create_row_policy_generates_correct_sql() {
+    fn test_create_row_policy_passes_through_to_minimal() {
         let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
         let op = AtomicOlapOperation::CreateRowPolicy {
             policy: policy.clone(),
-            default_database: DEFAULT_DATABASE_NAME.to_string(),
-            clickhouse_password: "pandapass".to_string(),
             dependency_info: create_empty_dependency_info(),
         };
 
         let serialized = op.to_minimal();
         match serialized {
-            SerializableOlapOperation::RawSql { sql, description } => {
-                assert_eq!(sql.len(), 5); // CREATE ROLE + CREATE USER + GRANT SELECT + GRANT ROLE + CREATE ROW POLICY
-                assert!(sql[0].contains("CREATE ROLE IF NOT EXISTS moose_rls_role"));
-                assert!(sql[1].contains("CREATE USER IF NOT EXISTS moose_rls_user IDENTIFIED BY"));
-                assert!(sql[1].contains(&format!("pandapass{}", MOOSE_RLS_PASSWORD_SUFFIX)));
-                assert!(sql[2].contains("GRANT SELECT ON"));
-                assert!(sql[3].contains("GRANT moose_rls_role TO moose_rls_user"));
-                assert!(sql[4].contains("CREATE ROW POLICY IF NOT EXISTS"));
-                assert!(sql[4].contains("`tenant_iso_on_events_1_0_0`"));
-                assert!(sql[4].contains(&format!("`{}`.`events_1_0_0`", DEFAULT_DATABASE_NAME)));
-                assert!(sql[4].contains("getSetting('SQL_moose_rls_org_id')"));
-                assert!(sql[4].contains("AS RESTRICTIVE TO moose_rls_role"));
-                assert!(description.contains("tenant_iso"));
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[0].database, None);
+                assert_eq!(serialized_policy.column, "org_id");
             }
-            _ => panic!("Expected RawSql operation"),
+            _ => panic!("Expected CreateRowPolicy operation"),
         }
     }
 
@@ -3981,44 +3897,39 @@ mod tests {
             create_test_row_policy("tenant_iso", vec!["events_1_0_0", "orders_1_0_0"], "org_id");
         let op = AtomicOlapOperation::CreateRowPolicy {
             policy,
-            default_database: DEFAULT_DATABASE_NAME.to_string(),
-            clickhouse_password: "pandapass".to_string(),
             dependency_info: create_empty_dependency_info(),
         };
 
         let serialized = op.to_minimal();
         match serialized {
-            SerializableOlapOperation::RawSql { sql, .. } => {
-                assert_eq!(sql.len(), 6); // CREATE ROLE + CREATE USER + GRANT SELECT + GRANT ROLE + 2 CREATE ROW POLICY
-                assert!(sql[0].contains("CREATE ROLE IF NOT EXISTS moose_rls_role"));
-                assert!(sql[1].contains("CREATE USER IF NOT EXISTS moose_rls_user"));
-                assert!(sql[2].contains("GRANT SELECT ON"));
-                assert!(sql[3].contains("GRANT moose_rls_role TO moose_rls_user"));
-                assert!(sql[4].contains("events_1_0_0"));
-                assert!(sql[5].contains("orders_1_0_0"));
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.tables.len(), 2);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[1].name, "orders_1_0_0");
             }
-            _ => panic!("Expected RawSql operation"),
+            _ => panic!("Expected CreateRowPolicy operation"),
         }
     }
 
     #[test]
-    fn test_drop_row_policy_generates_correct_sql() {
+    fn test_drop_row_policy_passes_through_to_minimal() {
         let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
         let op = AtomicOlapOperation::DropRowPolicy {
             policy,
-            default_database: DEFAULT_DATABASE_NAME.to_string(),
             dependency_info: create_empty_dependency_info(),
         };
 
         let serialized = op.to_minimal();
         match serialized {
-            SerializableOlapOperation::RawSql { sql, description } => {
-                assert_eq!(sql.len(), 1);
-                assert!(sql[0].contains("DROP ROW POLICY IF EXISTS"));
-                assert!(sql[0].contains("`tenant_iso_on_events_1_0_0`"));
-                assert!(description.contains("tenant_iso"));
+            SerializableOlapOperation::DropRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
             }
-            _ => panic!("Expected RawSql operation"),
+            _ => panic!("Expected DropRowPolicy operation"),
         }
     }
 
@@ -4027,8 +3938,7 @@ mod tests {
         let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
         let changes = vec![OlapChange::SelectRowPolicy(Change::Added(Box::new(policy)))];
 
-        let (teardown, setup) =
-            order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "pandapass").unwrap();
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         assert!(teardown.is_empty());
         assert_eq!(setup.len(), 1);
@@ -4045,8 +3955,7 @@ mod tests {
             policy,
         )))];
 
-        let (teardown, setup) =
-            order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "pandapass").unwrap();
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         assert!(setup.is_empty());
         assert_eq!(teardown.len(), 1);
@@ -4065,8 +3974,7 @@ mod tests {
             after: Box::new(after),
         })];
 
-        let (teardown, setup) =
-            order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "pandapass").unwrap();
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         assert_eq!(teardown.len(), 1);
         assert_eq!(setup.len(), 1);
@@ -4089,8 +3997,7 @@ mod tests {
             OlapChange::SelectRowPolicy(Change::Removed(Box::new(policy))),
         ];
 
-        let (teardown, _setup) =
-            order_olap_changes(&changes, DEFAULT_DATABASE_NAME, "pandapass").unwrap();
+        let (teardown, _setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         // Row policy drop should come before table drop in teardown order
         let policy_idx = teardown

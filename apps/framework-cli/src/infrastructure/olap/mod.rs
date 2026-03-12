@@ -163,11 +163,8 @@ pub async fn execute_changes(
     };
 
     // Order changes based on dependencies, including database context for SQL resources
-    let (teardown_plan, setup_plan) = ddl_ordering::order_olap_changes(
-        changes,
-        &project.clickhouse_config.db_name,
-        &project.clickhouse_config.password,
-    )?;
+    let (teardown_plan, setup_plan) =
+        ddl_ordering::order_olap_changes(changes, &project.clickhouse_config.db_name)?;
 
     // Execute the ordered changes
     clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;

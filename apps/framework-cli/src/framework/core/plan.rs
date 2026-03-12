@@ -609,7 +609,6 @@ pub struct InfraPlan {
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
-    clickhouse_user: &str,
 ) -> Result<
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
@@ -617,8 +616,7 @@ pub fn infra_changes_to_operations(
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
     // Convert OLAP changes to atomic operations with dependency ordering
-    let (teardown_ops, setup_ops) =
-        order_olap_changes(&changes.olap_changes, default_database, clickhouse_user)?;
+    let (teardown_ops, setup_ops) = order_olap_changes(&changes.olap_changes, default_database)?;
 
     let mut operations = Vec::new();
 
@@ -1735,8 +1733,8 @@ mod tests {
             filtered_olap_changes: vec![],
         };
 
-        let ops1 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
-        let ops2 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
+        let ops1 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
+        let ops2 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         // Same input should produce identical output
         assert_eq!(ops1.len(), ops2.len());
@@ -1756,7 +1754,7 @@ mod tests {
             filtered_olap_changes: vec![],
         };
 
-        let ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
+        let ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
         assert_eq!(ops.len(), 0);
     }
 
@@ -1776,15 +1774,13 @@ mod tests {
         };
 
         // Get operations directly from the conversion function
-        let direct_ops =
-            infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME, "panda").unwrap();
+        let direct_ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
 
         // Get operations via MigrationPlan (the execution path)
         let migration_plan =
             crate::framework::core::migration_plan::MigrationPlan::from_infra_plan(
                 &changes,
                 DEFAULT_DATABASE_NAME,
-                "panda",
             )
             .unwrap();
 

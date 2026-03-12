@@ -4,21 +4,23 @@
 /**
  * Row-Level Security (RLS) E2E Tests
  *
- * Tests the SelectRowPolicy primitive end-to-end using a dedicated template
- * (typescript-rls-test) that includes:
- * - A TenantEvent IngestPipeline with a table and ingest API
- * - Two SelectRowPolicies: tenant_isolation (org_id) and data_filter (data)
- * - A View (TenantEventView) over the TenantEvent table
- * - APIs querying both the table directly and through the view
+ * Tests the SelectRowPolicy primitive end-to-end using the typescript-rls-test
+ * template, which includes:
+ * - TenantEvent (default db) with two policies: tenant_isolation + data_filter
+ * - AnalyticsTenantEvent (analytics db) with one policy: tenant_isolation
+ * - PublicEvent (default db, no policies)
+ * - A View over TenantEvent
  * - JWT configuration with a test RSA keypair
  *
  * Verifies:
- * 1. Row policies are created in ClickHouse as RESTRICTIVE with getSetting()
- * 2. JWT with matching claims returns only matching rows
- * 3. No JWT returns 401 Unauthorized
- * 4. Multiple RESTRICTIVE policies enforce AND semantics (not OR)
- * 5. Row policies on base tables propagate through regular Views
- *
+ * 1. Row policies are created as RESTRICTIVE with getSetting() across databases
+ * 2. AND semantics: multiple RESTRICTIVE policies on the same table
+ * 3. Missing claims: ClickHouse errors when a policy needs a claim the JWT omits
+ * 4. Multi-DB: policies work across databases; JWT claims that no policy on
+ *    the queried table references have no effect
+ * 5. View propagation: policies on base tables apply through views
+ * 6. Non-RLS tables return all rows regardless of JWT claims
+ * 7. No JWT returns 401 Unauthorized
  */
 
 import { spawn, ChildProcess } from "child_process";
@@ -160,131 +162,130 @@ describe("Row-Level Security E2E Tests", function () {
       logger: testLogger,
     });
 
-    // Ingest PublicEvent data (no RLS policies)
-    testLogger.info("Ingesting PublicEvent data");
-    const publicIngestUrl = `${SERVER_CONFIG.url}/ingest/PublicEvent`;
-    const publicData = [
-      {
-        eventId: "p1",
-        timestamp: "2026-03-10T00:00:00Z",
-        message: "hello",
-      },
-      {
-        eventId: "p2",
-        timestamp: "2026-03-10T00:00:00Z",
-        message: "world",
-      },
-    ];
-    const publicResponse = await fetch(publicIngestUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(publicData),
-    });
+    // Ingest all test data in parallel
+    testLogger.info("Ingesting test data");
+    const [tenantResponse, analyticsResponse, publicResponse] =
+      await Promise.all([
+        fetch(`${SERVER_CONFIG.url}/ingest/TenantEvent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify([
+            {
+              eventId: "t1",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "acme",
+              data: "acme-1",
+            },
+            {
+              eventId: "t2",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "acme",
+              data: "acme-2",
+            },
+            {
+              eventId: "t3",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "acme",
+              data: "acme-3",
+            },
+            {
+              eventId: "t4",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "other",
+              data: "other-1",
+            },
+            {
+              eventId: "t5",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "other",
+              data: "other-2",
+            },
+          ]),
+        }),
+        fetch(`${SERVER_CONFIG.url}/ingest/AnalyticsTenantEvent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify([
+            {
+              eventId: "a1",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "acme",
+              data: "analytics-1",
+            },
+            {
+              eventId: "a2",
+              timestamp: "2026-03-10T00:00:00Z",
+              org_id: "other",
+              data: "analytics-2",
+            },
+          ]),
+        }),
+        fetch(`${SERVER_CONFIG.url}/ingest/PublicEvent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify([
+            {
+              eventId: "p1",
+              timestamp: "2026-03-10T00:00:00Z",
+              message: "hello",
+            },
+            {
+              eventId: "p2",
+              timestamp: "2026-03-10T00:00:00Z",
+              message: "world",
+            },
+          ]),
+        }),
+      ]);
+    expect(tenantResponse.status).to.equal(200);
+    expect(analyticsResponse.status).to.equal(200);
     expect(publicResponse.status).to.equal(200);
 
-    // Ingest test data: 3 acme rows, 2 other rows
-    testLogger.info("Ingesting test data");
-    const ingestUrl = `${SERVER_CONFIG.url}/ingest/TenantEvent`;
-    const testData = [
-      {
-        eventId: "e1",
-        timestamp: "2026-03-10T00:00:00Z",
-        org_id: "acme",
-        data: "acme-1",
-      },
-      {
-        eventId: "e2",
-        timestamp: "2026-03-10T00:00:00Z",
-        org_id: "acme",
-        data: "acme-2",
-      },
-      {
-        eventId: "e3",
-        timestamp: "2026-03-10T00:00:00Z",
-        org_id: "acme",
-        data: "acme-3",
-      },
-      {
-        eventId: "e4",
-        timestamp: "2026-03-10T00:00:00Z",
-        org_id: "other",
-        data: "other-1",
-      },
-      {
-        eventId: "e5",
-        timestamp: "2026-03-10T00:00:00Z",
-        org_id: "other",
-        data: "other-2",
-      },
-    ];
-
-    const response = await fetch(ingestUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(testData),
-    });
-    expect(response.status).to.equal(200);
-
     // Wait for data to land in ClickHouse.
-    // Query system.parts instead of the table directly because the row policy
-    // on TenantEvent requires SQL_moose_rls_org_id to be set in the session.
-    testLogger.info("Waiting for data to land in ClickHouse");
-    await withRetries(
-      async () => {
-        const client = createClient(CLICKHOUSE_CONFIG);
-        try {
-          const result = await client.query({
-            query:
-              "SELECT sum(rows) as cnt FROM system.parts WHERE table = 'TenantEvent' AND database = 'local' AND active = 1",
-            format: "JSONEachRow",
-          });
-          const rows: any[] = await result.json();
-          const count = parseInt(rows[0].cnt);
-          if (count < 5) {
-            throw new Error(`Expected 5 rows, found ${count}`);
+    // Query system.parts instead of the tables directly because row policies
+    // require SQL_moose_rls_* settings to be set in the session.
+    const waitForTable = (
+      table: string,
+      database: string,
+      expectedRows: number,
+    ) =>
+      withRetries(
+        async () => {
+          const client = createClient(CLICKHOUSE_CONFIG);
+          try {
+            const result = await client.query({
+              query: `SELECT sum(rows) as cnt FROM system.parts WHERE table = '${table}' AND database = '${database}' AND active = 1`,
+              format: "JSONEachRow",
+            });
+            const rows: any[] = await result.json();
+            const count = parseInt(rows[0].cnt);
+            if (count < expectedRows) {
+              throw new Error(
+                `${database}.${table}: expected ${expectedRows} rows, found ${count}`,
+              );
+            }
+            testLogger.info(
+              `Data landed: ${count} rows in ${database}.${table}`,
+            );
+          } finally {
+            await client.close();
           }
-          testLogger.info(`Data landed: ${count} rows in TenantEvent`);
-        } finally {
-          await client.close();
-        }
-      },
-      {
-        attempts: RETRY_CONFIG.DB_WRITE_ATTEMPTS,
-        delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
-        backoffFactor: 1,
-        logger: testLogger,
-        operationName: "Wait for TenantEvent data",
-      },
-    );
+        },
+        {
+          attempts: RETRY_CONFIG.DB_WRITE_ATTEMPTS,
+          delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
+          backoffFactor: 1,
+          logger: testLogger,
+          operationName: `Wait for ${database}.${table} data`,
+        },
+      );
 
-    testLogger.info("Waiting for PublicEvent data to land in ClickHouse");
-    await withRetries(
-      async () => {
-        const client = createClient(CLICKHOUSE_CONFIG);
-        try {
-          const result = await client.query({
-            query:
-              "SELECT sum(rows) as cnt FROM system.parts WHERE table = 'PublicEvent' AND database = 'local' AND active = 1",
-            format: "JSONEachRow",
-          });
-          const rows: any[] = await result.json();
-          const count = parseInt(rows[0].cnt);
-          if (count < 2) {
-            throw new Error(`Expected 2 rows, found ${count}`);
-          }
-          testLogger.info(`Data landed: ${count} rows in PublicEvent`);
-        } finally {
-          await client.close();
-        }
-      },
-      {
-        attempts: RETRY_CONFIG.DB_WRITE_ATTEMPTS,
-        delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
-        backoffFactor: 1,
-        logger: testLogger,
-        operationName: "Wait for PublicEvent data",
-      },
-    );
+    testLogger.info("Waiting for data to land in ClickHouse");
+    await Promise.all([
+      waitForTable("TenantEvent", "local", 5),
+      waitForTable("AnalyticsTenantEvent", "analytics", 2),
+      waitForTable("PublicEvent", "local", 2),
+    ]);
 
     testLogger.info("Test setup complete");
   });
@@ -297,24 +298,29 @@ describe("Row-Level Security E2E Tests", function () {
     });
   });
 
-  it("should create restrictive row policies in ClickHouse", async function () {
+  it("should create restrictive row policies across databases", async function () {
     this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
     const client = createClient(CLICKHOUSE_CONFIG);
     try {
       const result = await client.query({
         query:
-          "SELECT name, select_filter, is_restrictive FROM system.row_policies WHERE database = 'local' ORDER BY name",
+          "SELECT database, name, select_filter, is_restrictive FROM system.row_policies ORDER BY database, name",
         format: "JSONEachRow",
       });
       const policies: any[] = await result.json();
 
       testLogger.info("Row policies found", { policies });
 
-      expect(policies.length).to.equal(
-        2,
-        "Expected exactly 2 row policies (tenant_isolation + data_filter)",
+      // 2 on local.TenantEvent + 1 on analytics.AnalyticsTenantEvent
+      expect(policies.length).to.equal(3);
+
+      const analyticsPolicies = policies.filter(
+        (p) => p.database === "analytics",
       );
+      const localPolicies = policies.filter((p) => p.database === "local");
+      expect(analyticsPolicies.length).to.equal(1);
+      expect(localPolicies.length).to.equal(2);
 
       for (const policy of policies) {
         expect(policy.select_filter).to.include("getSetting");
@@ -377,27 +383,6 @@ describe("Row-Level Security E2E Tests", function () {
     );
   });
 
-  it("should return only other rows when both claims match other", async function () {
-    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
-
-    const token = await signJwt({ org_id: "other", data: "other-1" });
-    const response = await fetch(`${SERVER_CONFIG.url}/api/tenantEvents`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    expect(response.status).to.equal(200);
-    const rows = (await response.json()) as any[];
-
-    testLogger.info("Other + data=other-1 query result", {
-      count: rows.length,
-      rows,
-    });
-
-    expect(rows.length).to.equal(1);
-    expect(rows[0].org_id).to.equal("other");
-    expect(rows[0].data).to.equal("other-1");
-  });
-
   it("should return 401 without a JWT", async function () {
     this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
@@ -406,6 +391,101 @@ describe("Row-Level Security E2E Tests", function () {
     testLogger.info("No-JWT response", { status: response.status });
 
     expect(response.status).to.equal(401);
+  });
+
+  it("should error when data claim is missing on a table that requires it", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    // TenantEvent has both tenant_isolation (org_id) and data_filter (data).
+    // Omitting the data claim means SQL_moose_rls_data is never set, so
+    // ClickHouse's getSetting('SQL_moose_rls_data') errors — the JWT is
+    // incomplete for this table.
+    const token = await signJwt({ org_id: "acme" });
+    const response = await fetch(`${SERVER_CONFIG.url}/api/tenantEvents`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    testLogger.info("Missing data claim result", {
+      status: response.status,
+    });
+
+    expect(response.status).to.equal(500);
+  });
+
+  it("should error when org_id claim is missing on a table that requires it", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    const token = await signJwt({ data: "acme-1" });
+    const response = await fetch(`${SERVER_CONFIG.url}/api/tenantEvents`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    testLogger.info("Missing org_id claim result", {
+      status: response.status,
+    });
+
+    expect(response.status).to.equal(500);
+  });
+
+  it("should filter analytics table with only org_id claim (multi-db)", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    // AnalyticsTenantEvent (analytics db) only has tenant_isolation.
+    // A JWT with just org_id is sufficient — no data_filter policy on this table.
+    const token = await signJwt({ org_id: "acme" });
+    const response = await fetch(
+      `${SERVER_CONFIG.url}/api/analyticsTenantEvents`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    expect(response.status).to.equal(200);
+    const rows = (await response.json()) as any[];
+
+    testLogger.info("Analytics multi-db result", { count: rows.length, rows });
+
+    expect(rows.length).to.equal(1);
+    expect(rows[0].org_id).to.equal("acme");
+  });
+
+  it("should not filter by claims that the table has no policy for (multi-db)", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    // AnalyticsTenantEvent only has a tenant_isolation policy (org_id).
+    // The JWT also includes data:"nonexistent", but since there's no
+    // data_filter policy on this table, it doesn't affect the results.
+    const token = await signJwt({ org_id: "acme", data: "nonexistent" });
+    const response = await fetch(
+      `${SERVER_CONFIG.url}/api/analyticsTenantEvents`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    expect(response.status).to.equal(200);
+    const rows = (await response.json()) as any[];
+
+    testLogger.info("Analytics extra claim result", {
+      count: rows.length,
+      rows,
+    });
+
+    expect(rows.length).to.equal(1);
+    expect(rows[0].org_id).to.equal("acme");
+  });
+
+  it("should return 0 rows for non-matching org on analytics (multi-db)", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    const token = await signJwt({ org_id: "nobody" });
+    const response = await fetch(
+      `${SERVER_CONFIG.url}/api/analyticsTenantEvents`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    expect(response.status).to.equal(200);
+    const rows = (await response.json()) as any[];
+
+    testLogger.info("Analytics no-match result", { count: rows.length });
+
+    expect(rows.length).to.equal(0);
   });
 
   it("should propagate row policies through a View", async function () {
