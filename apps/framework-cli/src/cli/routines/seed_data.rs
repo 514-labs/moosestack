@@ -549,7 +549,7 @@ pub async fn handle_seed_command(
             let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
                 "Initializing database seeding operation...",
                 "Database seeding completed",
-                |_handle| {
+                async |_handle| {
                     seed_clickhouse_operation(
                         project,
                         &resolved_clickhouse_url,
@@ -561,6 +561,7 @@ pub async fn handle_seed_command(
                         },
                         order_by.as_deref(),
                     )
+                    .await
                 },
                 !project.is_production,
             )

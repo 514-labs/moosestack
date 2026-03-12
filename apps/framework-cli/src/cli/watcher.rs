@@ -281,7 +281,7 @@ async fn watch(
                     let result: anyhow::Result<bool> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
-                        |spinner_handle| async move {
+                        async move |spinner_handle| {
                             let plan_result = with_timing_async("Planning", async {
                                 framework::core::plan::plan_changes(&**state_storage, &project_inner).await
                             })

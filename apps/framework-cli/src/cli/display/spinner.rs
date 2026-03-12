@@ -23,8 +23,6 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
-use tokio::macros::support::Future;
-
 /// Dots9 animation frames for the spinner
 const DOTS9_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -547,7 +545,7 @@ where
 #[cfg(test)]
 pub async fn with_spinner_async<F, R>(message: &str, f: F, activate: bool) -> R
 where
-    F: Future<Output = R>,
+    F: std::future::Future<Output = R>,
 {
     let sp = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
@@ -583,15 +581,14 @@ where
 /// # Returns
 ///
 /// The result of the future, unchanged
-pub async fn with_spinner_completion_async<F, Fut, R>(
+pub async fn with_spinner_completion_async<F, R>(
     message: &str,
     completion_message: &str,
     f: F,
     activate: bool,
 ) -> R
 where
-    F: FnOnce(SpinnerHandle) -> Fut,
-    Fut: Future<Output = R>,
+    F: AsyncFnOnce(&SpinnerHandle) -> R,
 {
     let (sp, handle) = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
@@ -602,7 +599,7 @@ where
         (None, SpinnerHandle::noop())
     };
 
-    let res = f(handle.clone()).await;
+    let res = f(&handle).await;
 
     if let Some(mut spinner) = sp {
         if handle.is_paused() {
@@ -750,7 +747,7 @@ mod tests {
     #[tokio::test]
     async fn test_with_spinner_completion_async() {
         let result =
-            with_spinner_completion_async("Processing", "Task completed", |_h| async { 42 }, false)
+            with_spinner_completion_async("Processing", "Task completed", async |_h| 42, false)
                 .await;
         assert_eq!(result, 42);
     }
