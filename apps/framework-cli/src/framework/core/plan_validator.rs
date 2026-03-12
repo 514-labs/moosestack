@@ -116,30 +116,22 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
             column_claims.insert(&policy.column, (&policy.claim, &policy.name));
         }
 
-        for table_name in &policy.tables {
-            let table = plan
-                .target_infra_map
-                .tables
-                .values()
-                .find(|t| t.name == *table_name);
+        for table_ref in &policy.tables {
+            let table = plan.target_infra_map.tables.values().find(|t| {
+                t.name == table_ref.name && t.database.as_deref() == table_ref.database.as_deref()
+            });
+
+            let table_display = match &table_ref.database {
+                Some(db) => format!("{}.{}", db, table_ref.name),
+                None => table_ref.name.clone(),
+            };
 
             let Some(table) = table else {
                 return Err(ValidationError::RowPolicyValidation(format!(
                     "Row policy '{}' references table '{}', which does not exist.",
-                    policy.name, table_name
+                    policy.name, table_display
                 )));
             };
-
-            // Row policies currently only support tables in the default database.
-            // The DDL generation uses default_database for all tables in a policy,
-            // so a table in a custom database would produce incorrect SQL.
-            if table.database.is_some() {
-                return Err(ValidationError::RowPolicyValidation(format!(
-                    "Row policy '{}' references table '{}' which is in a custom database. \
-                     Row policies currently only support tables in the default database.",
-                    policy.name, table_name
-                )));
-            }
 
             let has_column = table.columns.iter().any(|c| c.name == policy.column);
             if !has_column {
@@ -152,7 +144,7 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
                 return Err(ValidationError::RowPolicyValidation(format!(
                     "Row policy '{}' filters on column '{}', but table '{}' \
                      has no such column.\n\nAvailable columns: {}",
-                    policy.name, policy.column, table_name, available
+                    policy.name, policy.column, table_display, available
                 )));
             }
         }
@@ -521,7 +513,9 @@ mod tests {
 
     #[test]
     fn test_row_policy_column_with_invalid_setting_chars_rejected() {
-        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
 
         let table = create_test_table_with_columns(
             "events_1_0_0",
@@ -532,7 +526,10 @@ mod tests {
             "tenant_isolation".to_string(),
             SelectRowPolicy {
                 name: "tenant_isolation".to_string(),
-                tables: vec!["events_1_0_0".to_string()],
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
                 column: "org-id".to_string(),
                 claim: "org_id".to_string(),
             },
@@ -553,7 +550,9 @@ mod tests {
 
     #[test]
     fn test_row_policy_column_with_valid_chars_accepted() {
-        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
 
         let table = create_test_table_with_columns(
             "events_1_0_0",
@@ -564,7 +563,10 @@ mod tests {
             "tenant_isolation".to_string(),
             SelectRowPolicy {
                 name: "tenant_isolation".to_string(),
-                tables: vec!["events_1_0_0".to_string()],
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
                 column: "org_id".to_string(),
                 claim: "org_id".to_string(),
             },

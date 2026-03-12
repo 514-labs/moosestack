@@ -1,10 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+pub use super::table::TableReference;
+
 /// Shared ClickHouse role name used by all row policies.
 /// IMPORTANT: Must match MOOSE_RLS_ROLE in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_ROLE: &str = "moose_rls_role";
 
+/// Dedicated ClickHouse user for RLS queries.
+/// IMPORTANT: Must match MOOSE_RLS_USER in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_USER: &str = "moose_rls_user";
+
+/// Suffix appended to the ClickHouse password when creating moose_rls_user.
+/// ClickHouse Cloud enforces password complexity on SQL-created users.
+/// IMPORTANT: Must match MOOSE_RLS_PASSWORD_SUFFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_PASSWORD_SUFFIX: &str = "_Aa1!";
 
 /// Prefix for ClickHouse custom settings used by row policies.
@@ -22,8 +30,8 @@ pub struct SelectRowPolicy {
     /// Name of the row policy
     pub name: String,
 
-    /// Table names the policy applies to
-    pub tables: Vec<String>,
+    /// Tables the policy applies to
+    pub tables: Vec<TableReference>,
 
     /// Column to filter on (e.g., "org_id")
     pub column: String,
@@ -46,16 +54,48 @@ impl SelectRowPolicy {
         let escaped_setting = self.setting_name().replace('\'', "''");
         format!("`{}` = getSetting('{}')", escaped_column, escaped_setting)
     }
+
+    /// Unique database names this policy's tables belong to, sorted.
+    pub fn resolved_databases(&self, default_database: &str) -> Vec<String> {
+        let mut dbs: Vec<String> = self
+            .tables
+            .iter()
+            .map(|t| {
+                t.database
+                    .as_deref()
+                    .unwrap_or(default_database)
+                    .to_string()
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        dbs.sort();
+        dbs
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn make_table_ref(name: &str) -> TableReference {
+        TableReference {
+            name: name.to_string(),
+            database: None,
+        }
+    }
+
+    fn make_table_ref_with_db(name: &str, db: &str) -> TableReference {
+        TableReference {
+            name: name.to_string(),
+            database: Some(db.to_string()),
+        }
+    }
+
     fn make_policy(column: &str) -> SelectRowPolicy {
         SelectRowPolicy {
             name: "test_policy".to_string(),
-            tables: vec!["events".to_string()],
+            tables: vec![make_table_ref("events")],
             column: column.to_string(),
             claim: "org_id".to_string(),
         }
@@ -112,5 +152,26 @@ mod tests {
         let policy_a = make_policy("org_id");
         let policy_b = make_policy("region");
         assert_ne!(policy_a.setting_name(), policy_b.setting_name());
+    }
+
+    #[test]
+    fn test_resolved_databases_default_only() {
+        let policy = make_policy("org_id");
+        assert_eq!(policy.resolved_databases("local"), vec!["local"]);
+    }
+
+    #[test]
+    fn test_resolved_databases_multi_db() {
+        let policy = SelectRowPolicy {
+            name: "multi".to_string(),
+            tables: vec![
+                make_table_ref("events"),
+                make_table_ref_with_db("orders", "analytics"),
+            ],
+            column: "org_id".to_string(),
+            claim: "org_id".to_string(),
+        };
+        let dbs = policy.resolved_databases("local");
+        assert_eq!(dbs, vec!["analytics", "local"]);
     }
 }

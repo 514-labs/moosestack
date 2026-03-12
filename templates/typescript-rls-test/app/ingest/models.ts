@@ -1,12 +1,12 @@
 import {
   IngestPipeline,
-  Key,
   DateTime,
   SelectRowPolicy,
+  ClickHouseEngines,
 } from "@514labs/moose-lib";
 
 export interface TenantEvent {
-  eventId: Key<string>;
+  eventId: string;
   timestamp: DateTime;
   org_id: string;
   data: string;
@@ -16,6 +16,7 @@ export const TenantEventPipeline = new IngestPipeline<TenantEvent>(
   "TenantEvent",
   {
     table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
       orderByFields: ["eventId", "org_id"],
     },
     stream: true,
@@ -23,8 +24,21 @@ export const TenantEventPipeline = new IngestPipeline<TenantEvent>(
   },
 );
 
+export const AnalyticsTenantEventPipeline = new IngestPipeline<TenantEvent>(
+  "AnalyticsTenantEvent",
+  {
+    table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields: ["eventId", "org_id"],
+      database: "analytics",
+    },
+    stream: true,
+    ingestApi: true,
+  },
+);
+
 export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
-  tables: [TenantEventPipeline.table!],
+  tables: [TenantEventPipeline.table!, AnalyticsTenantEventPipeline.table!],
   column: "org_id",
   claim: "org_id",
 });
@@ -36,7 +50,7 @@ export const dataFilter = new SelectRowPolicy("data_filter", {
 });
 
 export interface PublicEvent {
-  eventId: Key<string>;
+  eventId: string;
   timestamp: DateTime;
   message: string;
 }
@@ -45,6 +59,7 @@ export const PublicEventPipeline = new IngestPipeline<PublicEvent>(
   "PublicEvent",
   {
     table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
       orderByFields: ["eventId"],
     },
     stream: true,

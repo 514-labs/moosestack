@@ -24,12 +24,10 @@ impl MigrationPlan {
     pub fn from_infra_plan(
         infra_plan_changes: &InfraChanges,
         default_database: &str,
-        clickhouse_user: &str,
     ) -> Result<Self, PlanOrderingError> {
         let operations = crate::framework::core::plan::infra_changes_to_operations(
             infra_plan_changes,
             default_database,
-            clickhouse_user,
         )?;
 
         Ok(MigrationPlan {

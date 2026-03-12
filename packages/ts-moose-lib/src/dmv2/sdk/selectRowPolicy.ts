@@ -50,14 +50,6 @@ export class SelectRowPolicy {
     if (!config.tables.length) {
       throw new Error(`SelectRowPolicy '${name}': tables must not be empty`);
     }
-    for (const table of config.tables) {
-      if (table.config.database) {
-        throw new Error(
-          `SelectRowPolicy '${name}': table '${table.name}' uses a custom database. ` +
-            `Row policies currently only support tables in the default database.`,
-        );
-      }
-    }
     if (!config.column.trim()) {
       throw new Error(`SelectRowPolicy '${name}': column must not be empty`);
     }
@@ -78,8 +70,11 @@ export class SelectRowPolicy {
     selectRowPolicies.set(this.name, this);
   }
 
-  /** Resolved table names for serialization (versioned ClickHouse names) */
-  get tableNames(): string[] {
-    return this.config.tables.map((t) => t.generateTableName());
+  /** Resolved table references for serialization */
+  get tableRefs(): { name: string; database?: string }[] {
+    return this.config.tables.map((t) => ({
+      name: t.generateTableName(),
+      ...(t.config.database ? { database: t.config.database } : {}),
+    }));
   }
 }

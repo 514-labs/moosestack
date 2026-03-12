@@ -96,28 +96,28 @@ export type RowPoliciesConfig = Record<string, string>;
 
 /**
  * Build RowPolicyOptions from a row policies config and a claim-value source.
- * The source can be a JWT payload or an rlsContext — any object keyed by claim name.
- * Throws if a required claim is missing from the source.
+ * Only sets ClickHouse settings for claims that are present in the source.
+ *
+ * Missing claims are skipped — if a table's row policy calls getSetting()
+ * for a setting that wasn't set, ClickHouse will error. This is correct:
+ * it means the JWT is missing a claim that the queried table requires.
+ * Tables whose policies don't reference the missing setting are unaffected.
  *
  * @param config  Maps ClickHouse setting name → claim name
  * @param claims  Maps claim name → claim value (e.g., JWT payload or rlsContext)
- * @param sourceLabel  Label for error messages (e.g., "JWT payload" or "rlsContext")
  * @returns RowPolicyOptions with the shared RLS role and populated settings
  */
 export function buildRowPolicyOptionsFromClaims(
   config: RowPoliciesConfig,
   claims: Record<string, unknown>,
-  sourceLabel: string,
+  _sourceLabel: string,
 ): RowPolicyOptions {
   const clickhouse_settings: Record<string, string> = Object.create(null);
   for (const [settingName, claimName] of Object.entries(config)) {
     const value = claims[claimName];
-    if (value === undefined || value === null) {
-      throw new Error(
-        `Missing required row policy claim "${claimName}" in ${sourceLabel}`,
-      );
+    if (value !== undefined && value !== null) {
+      clickhouse_settings[settingName] = String(value);
     }
-    clickhouse_settings[settingName] = String(value);
   }
   return { role: MOOSE_RLS_ROLE, clickhouse_settings };
 }

@@ -37,8 +37,9 @@ use super::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
+use super::infrastructure::select_row_policy::SelectRowPolicy;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table};
+use super::infrastructure::table::{Column, OrderBy, Table, TableReference};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -399,7 +400,7 @@ pub enum OlapChange {
     /// Change to a structured view (user-defined SELECT views)
     View(Change<View>),
     /// Change to a row policy
-    SelectRowPolicy(Change<super::infrastructure::select_row_policy::SelectRowPolicy>),
+    SelectRowPolicy(Change<SelectRowPolicy>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -594,8 +595,7 @@ pub struct InfrastructureMap {
 
     /// Collection of row policies indexed by policy name
     #[serde(default)]
-    pub select_row_policies:
-        HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
+    pub select_row_policies: HashMap<String, SelectRowPolicy>,
 
     /// Version of Moose CLI that created or last updated this infrastructure map.
     /// Populated automatically during storage operations.
@@ -1927,11 +1927,8 @@ impl InfrastructureMap {
 
     /// Compare row policies between two infrastructure maps and compute differences.
     pub fn diff_select_row_policies(
-        self_policies: &HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
-        target_policies: &HashMap<
-            String,
-            super::infrastructure::select_row_policy::SelectRowPolicy,
-        >,
+        self_policies: &HashMap<String, SelectRowPolicy>,
+        target_policies: &HashMap<String, SelectRowPolicy>,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         for (id, policy) in self_policies {
@@ -2796,7 +2793,15 @@ impl InfrastructureMap {
                         k.clone(),
                         crate::proto::infrastructure_map::SelectRowPolicy {
                             name: v.name.clone(),
-                            tables: v.tables.clone(),
+                            tables: v
+                                .tables
+                                .iter()
+                                .map(|t| crate::proto::infrastructure_map::TableReference {
+                                    database: t.database.clone(),
+                                    table: t.name.clone(),
+                                    special_fields: Default::default(),
+                                })
+                                .collect(),
                             column: v.column.clone(),
                             claim: v.claim.clone(),
                             special_fields: Default::default(),
@@ -2960,9 +2965,16 @@ impl InfrastructureMap {
                 .map(|(k, v)| {
                     (
                         k,
-                        super::infrastructure::select_row_policy::SelectRowPolicy {
+                        SelectRowPolicy {
                             name: v.name,
-                            tables: v.tables,
+                            tables: v
+                                .tables
+                                .into_iter()
+                                .map(|t| TableReference {
+                                    name: t.table,
+                                    database: t.database,
+                                })
+                                .collect(),
                             column: v.column,
                             claim: v.claim,
                         },
@@ -3892,8 +3904,7 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
-            select_row_policies:
-                &'a HashMap<String, super::infrastructure::select_row_policy::SelectRowPolicy>,
+            select_row_policies: &'a HashMap<String, SelectRowPolicy>,
             #[serde(skip_serializing_if = "Option::is_none")]
             moose_version: &'a Option<String>,
         }
@@ -8563,14 +8574,25 @@ mod version_tests {
 
     #[test]
     fn test_proto_roundtrip_select_row_policies() {
-        use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
 
         let mut map = InfrastructureMap::default();
         map.select_row_policies.insert(
             "tenant_isolation".to_string(),
             SelectRowPolicy {
                 name: "tenant_isolation".to_string(),
-                tables: vec!["events_1_0_0".to_string(), "orders_1_0_0".to_string()],
+                tables: vec![
+                    TableReference {
+                        name: "events_1_0_0".to_string(),
+                        database: None,
+                    },
+                    TableReference {
+                        name: "orders_1_0_0".to_string(),
+                        database: None,
+                    },
+                ],
                 column: "org_id".to_string(),
                 claim: "org_id".to_string(),
             },
@@ -8579,7 +8601,10 @@ mod version_tests {
             "region_filter".to_string(),
             SelectRowPolicy {
                 name: "region_filter".to_string(),
-                tables: vec!["events_1_0_0".to_string()],
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
                 column: "region".to_string(),
                 claim: "region".to_string(),
             },
@@ -8592,13 +8617,17 @@ mod version_tests {
 
         let tenant = decoded.select_row_policies.get("tenant_isolation").unwrap();
         assert_eq!(tenant.name, "tenant_isolation");
-        assert_eq!(tenant.tables, vec!["events_1_0_0", "orders_1_0_0"]);
+        assert_eq!(tenant.tables.len(), 2);
+        assert_eq!(tenant.tables[0].name, "events_1_0_0");
+        assert_eq!(tenant.tables[0].database, None);
+        assert_eq!(tenant.tables[1].name, "orders_1_0_0");
         assert_eq!(tenant.column, "org_id");
         assert_eq!(tenant.claim, "org_id");
 
         let region = decoded.select_row_policies.get("region_filter").unwrap();
         assert_eq!(region.name, "region_filter");
-        assert_eq!(region.tables, vec!["events_1_0_0"]);
+        assert_eq!(region.tables.len(), 1);
+        assert_eq!(region.tables[0].name, "events_1_0_0");
         assert_eq!(region.column, "region");
         assert_eq!(region.claim, "region");
     }
@@ -8967,9 +8996,16 @@ mod diff_select_row_policy_tests {
         column: &str,
         claim: &str,
     ) -> crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy {
+        use crate::framework::core::infrastructure::table::TableReference;
         crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy {
             name: name.to_string(),
-            tables: tables.into_iter().map(|t| t.to_string()).collect(),
+            tables: tables
+                .into_iter()
+                .map(|t| TableReference {
+                    name: t.to_string(),
+                    database: None,
+                })
+                .collect(),
             column: column.to_string(),
             claim: claim.to_string(),
         }

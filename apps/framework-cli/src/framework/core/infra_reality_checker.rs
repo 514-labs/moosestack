@@ -21,7 +21,7 @@ use crate::{
         infrastructure::materialized_view::MaterializedView,
         infrastructure::select_row_policy::SelectRowPolicy,
         infrastructure::sql_resource::SqlResource,
-        infrastructure::table::Table,
+        infrastructure::table::{Table, TableReference},
         infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
@@ -790,22 +790,26 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         // Fetch and compare row policies
         debug!("Fetching actual row policies from OLAP databases");
 
-        let mut actual_row_policies = Vec::new();
+        let default_database = &project.clickhouse_config.db_name;
+        // A single SelectRowPolicy can span multiple databases.
+        // We query each database separately, so the same policy name may appear in
+        // multiple results. Merge them by extending the tables vec.
+        let mut actual_policy_map: HashMap<String, SelectRowPolicy> = HashMap::new();
         for database in &all_databases {
             debug!("Fetching row policies from database: {}", database);
-            let mut db_policies = self.olap_client.list_row_policies(database).await?;
-            actual_row_policies.append(&mut db_policies);
+            let db_policies = self.olap_client.list_row_policies(database).await?;
+            for policy in db_policies {
+                actual_policy_map
+                    .entry(policy.name.clone())
+                    .and_modify(|existing| existing.tables.extend(policy.tables.clone()))
+                    .or_insert(policy);
+            }
         }
 
         debug!(
             "Found {} row policies across all databases",
-            actual_row_policies.len()
+            actual_policy_map.len()
         );
-
-        let actual_policy_map: HashMap<String, SelectRowPolicy> = actual_row_policies
-            .into_iter()
-            .map(|p| (p.name.clone(), p))
-            .collect();
 
         let unmapped_row_policies: Vec<SelectRowPolicy> = actual_policy_map
             .values()
@@ -827,9 +831,18 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
                 // The claim field cannot be recovered from DDL (the setting name encodes the
                 // column, not the claim), so we skip it to avoid permanent false mismatches
                 // when claim != column.
+                let to_qualified_name = |t: &TableReference| {
+                    format!(
+                        "{}.{}",
+                        normalize_database(&t.database, default_database),
+                        t.name
+                    )
+                };
                 let tables_match = {
-                    let mut actual_tables = actual.tables.clone();
-                    let mut desired_tables = desired.tables.clone();
+                    let mut actual_tables: Vec<_> =
+                        actual.tables.iter().map(&to_qualified_name).collect();
+                    let mut desired_tables: Vec<_> =
+                        desired.tables.iter().map(&to_qualified_name).collect();
                     actual_tables.sort();
                     desired_tables.sort();
                     actual_tables == desired_tables

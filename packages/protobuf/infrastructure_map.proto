@@ -565,8 +565,8 @@ message Workflow {
 message SelectRowPolicy {
   // Policy name
   string name = 1;
-  // Table names the policy applies to
-  repeated string tables = 2;
+  // Tables the policy applies to (with optional per-table database)
+  repeated TableReference tables = 2;
   // Column to filter on
   string column = 3;
   // JWT claim name that provides the filter value

@@ -670,8 +670,8 @@ interface MaterializedViewJson {
 interface SelectRowPolicyJson {
   /** Name of the row policy */
   name: string;
-  /** Table names the policy applies to */
-  tables: string[];
+  /** Tables the policy applies to */
+  tables: { name: string; database?: string }[];
   /** Column to filter on */
   column: string;
   /** JWT claim name for the filter value */
@@ -1407,7 +1407,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   registry.selectRowPolicies.forEach((policy) => {
     selectRowPolicies[policy.name] = {
       name: policy.name,
-      tables: policy.tableNames,
+      tables: policy.tableRefs,
       column: policy.config.column,
       claim: policy.config.claim,
     };

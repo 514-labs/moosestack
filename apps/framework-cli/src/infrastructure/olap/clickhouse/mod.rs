@@ -32,7 +32,6 @@
 
 use clickhouse::Client;
 
-use crate::framework::core::infrastructure::select_row_policy::{SelectRowPolicy, MOOSE_RLS_ROLE};
 use errors::{validate_clickhouse_identifier, ClickhouseError};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::{ClickHouseColumn, ColumnPropertyRemovals, DefaultExpressionKind};
@@ -56,6 +55,9 @@ use tracing::{debug, info, instrument, warn};
 use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
+use crate::framework::core::infrastructure::select_row_policy::{
+    SelectRowPolicy, TableReference, MOOSE_RLS_PASSWORD_SUFFIX, MOOSE_RLS_ROLE, MOOSE_RLS_USER,
+};
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
@@ -291,6 +293,12 @@ pub enum SerializableOlapOperation {
         sql: Vec<String>,
         description: String,
     },
+    /// Create row policies on one or more tables.
+    /// Bootstrap SQL (role, user, grants) is generated at execution time
+    /// using the runtime password — never serialized.
+    CreateRowPolicy { policy: SelectRowPolicy },
+    /// Drop row policies from one or more tables.
+    DropRowPolicy { policy: SelectRowPolicy },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -629,6 +637,12 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             format!("Dropping custom view '{}'", name)
         }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
+        SerializableOlapOperation::CreateRowPolicy { policy } => {
+            format!("Creating row policy '{}'", policy.name)
+        }
+        SerializableOlapOperation::DropRowPolicy { policy } => {
+            format!("Dropping row policy '{}'", policy.name)
+        }
     }
 }
 
@@ -891,6 +905,12 @@ pub async fn execute_atomic_operation(
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
+        }
+        SerializableOlapOperation::CreateRowPolicy { policy } => {
+            execute_create_row_policy(db_name, policy, client).await?;
+        }
+        SerializableOlapOperation::DropRowPolicy { policy } => {
+            execute_drop_row_policy(db_name, policy, client).await?;
         }
     }
     Ok(())
@@ -1611,6 +1631,113 @@ async fn execute_raw_sql(
                     resource: None,
                 })?;
         }
+    }
+    Ok(())
+}
+
+/// Execute a CREATE ROW POLICY operation with runtime RLS bootstrap.
+///
+/// Bootstraps the RLS infrastructure (role, user, grants) using the password
+/// from the client config, then creates the row policy per table.
+/// All bootstrap statements are idempotent (IF NOT EXISTS / IF EXISTS).
+async fn execute_create_row_policy(
+    db_name: &str,
+    policy: &SelectRowPolicy,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let databases = policy.resolved_databases(db_name);
+    let rls_password = format!("{}{}", client.config.password, MOOSE_RLS_PASSWORD_SUFFIX);
+    let escaped_password = rls_password.replace('\'', "''");
+
+    // Bootstrap: role + user
+    let bootstrap_sqls = vec![
+        format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
+        format!(
+            "CREATE USER IF NOT EXISTS {MOOSE_RLS_USER} IDENTIFIED BY '{}'",
+            escaped_password
+        ),
+    ];
+    for sql in &bootstrap_sqls {
+        tracing::debug!("RLS bootstrap: {}", sql);
+        run_query(sql, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some("rls-bootstrap".to_string()),
+            })?;
+    }
+
+    // Grant SELECT on each relevant database
+    for db in &databases {
+        let escaped_db = db.replace('`', "``");
+        let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO {MOOSE_RLS_USER}");
+        tracing::debug!("RLS grant: {}", grant_sql);
+        run_query(&grant_sql, client).await.map_err(|e| {
+            ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("rls-grant:{db}")),
+            }
+        })?;
+    }
+
+    // Grant role to user
+    let grant_role_sql = format!("GRANT {MOOSE_RLS_ROLE} TO {MOOSE_RLS_USER}");
+    run_query(&grant_role_sql, client).await.map_err(|e| {
+        ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some("rls-grant-role".to_string()),
+        }
+    })?;
+
+    // Create row policy per table
+    let escaped_name = policy.name.replace('`', "``");
+    for table_ref in &policy.tables {
+        let db = table_ref.database.as_deref().unwrap_or(db_name);
+        let escaped_db = db.replace('`', "``");
+        let escaped_table = table_ref.name.replace('`', "``");
+        let sql = format!(
+            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO {MOOSE_RLS_ROLE}",
+            name = escaped_name,
+            table = escaped_table,
+            db = escaped_db,
+            using = policy.using_expr(),
+        );
+        tracing::debug!("Creating row policy: {}", sql);
+        run_query(&sql, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
+            })?;
+    }
+
+    Ok(())
+}
+
+/// Execute a DROP ROW POLICY operation.
+async fn execute_drop_row_policy(
+    db_name: &str,
+    policy: &SelectRowPolicy,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let escaped_name = policy.name.replace('`', "``");
+    for table_ref in &policy.tables {
+        let db = table_ref.database.as_deref().unwrap_or(db_name);
+        let escaped_db = db.replace('`', "``");
+        let escaped_table = table_ref.name.replace('`', "``");
+        let sql = format!(
+            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
+            name = escaped_name,
+            table = escaped_table,
+            db = escaped_db,
+        );
+        tracing::debug!("Dropping row policy: {}", sql);
+        run_query(&sql, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
+            })?;
     }
     Ok(())
 }
@@ -2800,7 +2927,7 @@ impl OlapOperations for ConfiguredDBClient {
 
         // Group by policy name — a single SelectRowPolicy can apply to multiple tables.
         // The short_name format is "{policy_name}_on_{table}", so we extract the base name.
-        let mut policy_map: HashMap<String, (Vec<String>, String)> = HashMap::new();
+        let mut policy_map: HashMap<String, (Vec<TableReference>, String)> = HashMap::new();
 
         while let Some((short_name, table, select_filter)) = cursor
             .next()
@@ -2839,7 +2966,10 @@ impl OlapOperations for ConfiguredDBClient {
             let entry = policy_map
                 .entry(policy_name)
                 .or_insert_with(|| (Vec::new(), column.clone()));
-            entry.0.push(table);
+            entry.0.push(TableReference {
+                name: table,
+                database: Some(db_name.to_string()),
+            });
         }
 
         let policies: Vec<SelectRowPolicy> = policy_map

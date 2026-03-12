@@ -67,11 +67,13 @@ function buildRlsContextFromJwt(
   config: RowPoliciesConfig,
   jwt: Record<string, unknown>,
 ): Record<string, string> {
-  // Use buildRowPolicyOptionsFromClaims for validation, then extract claim→value pairs
   const opts = buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
   const context: Record<string, string> = Object.create(null);
   for (const [settingName, claimName] of Object.entries(config)) {
-    context[claimName] = opts.clickhouse_settings[settingName];
+    const value = opts.clickhouse_settings[settingName];
+    if (value !== undefined) {
+      context[claimName] = value;
+    }
   }
   return context;
 }
