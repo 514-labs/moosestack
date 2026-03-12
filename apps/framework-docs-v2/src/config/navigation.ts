@@ -1413,6 +1413,12 @@ const hostingNavigationConfig: NavigationConfig = [
     title: "Fiveonefour to Local Setup",
     languages: ["typescript", "python"],
   },
+  {
+    type: "page",
+    slug: "hosting/workflow/environment-variables",
+    title: "Manage Environment Variables",
+    languages: ["typescript", "python"],
+  },
   { type: "separator" },
   { type: "label", title: "Integrations" },
   {
