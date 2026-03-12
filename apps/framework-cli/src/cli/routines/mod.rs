@@ -121,6 +121,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
+use crate::framework::core::plan_risk::ConfirmationPolicy;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -468,7 +469,7 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
-    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
+    confirmation_policy: ConfirmationPolicy,
 ) -> anyhow::Result<()> {
     // Set global flag so ensure_typescript_compiled knows to skip
     // (tspc --watch handles compilation in dev mode)
@@ -981,6 +982,8 @@ pub async fn start_production_mode(
         )
         .await?;
     };
+
+    plan_validator::validate(&project, &plan)?;
 
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)

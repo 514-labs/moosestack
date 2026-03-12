@@ -185,6 +185,7 @@ impl SpinnerComponent {
             let _ = handle.join();
         }
 
+        // Display checkmark with completion message on the reserved line
         if let Some(initial_line) = self.initial_line {
             let _guard = terminal_lock::acquire();
             queue!(
@@ -361,6 +362,7 @@ impl TerminalComponent for SpinnerComponent {
 
         self.started = false;
         self.initial_line = None;
+        // Note: is_done is NOT set to true when just stopping (only when completing with done())
         Ok(())
     }
 
@@ -603,6 +605,8 @@ where
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
     } else if activate {
+        // In non-TTY mode (e.g., CI), still print the completion message
+        // so tests can detect when operations complete
         println!("✓ {completion_message}");
     }
 

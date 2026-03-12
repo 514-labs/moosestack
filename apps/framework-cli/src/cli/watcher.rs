@@ -39,6 +39,9 @@ use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, destructive_confirmation_gate, ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -213,7 +216,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
-    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
+    confirmation_policy: ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -291,15 +294,16 @@ async fn watch(
                                     })
                                     .await?;
 
-                                    let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
+                                    let risk = classify_plan_risk(&plan_result.changes);
                                     spinner_handle.pause();
-                                    let proceed = crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
                                     spinner_handle.resume();
                                     if !proceed? {
                                         return Ok(false);
                                     }
 
                                     display::show_changes(&plan_result);
+                                    // Hold the mutation guard only for execution/persist steps.
                                     let _processing_guard = processing_coordinator.begin_processing().await;
                                     let mut project_registries = project_registries.write().await;
 
@@ -436,7 +440,7 @@ impl FileWatcher {
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
-        confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
+        confirmation_policy: ConfirmationPolicy,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project

@@ -16,7 +16,7 @@ use crossterm::style::Print;
 use crossterm::terminal::{self, Clear, ClearType};
 use tokio::io::AsyncBufReadExt;
 
-use crate::cli::display::{Message, MessageType};
+use crate::cli::display::{terminal_lock, Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 
 use super::infrastructure_map::{Change, ColumnChange, InfraChanges, OlapChange, TableChange};
@@ -293,8 +293,8 @@ struct ScrollRegionGuard {
 
 impl Drop for ScrollRegionGuard {
     fn drop(&mut self) {
-        let _lock = crate::cli::display::terminal_lock::acquire();
-        crate::cli::display::terminal_lock::clear_scroll_region_bottom();
+        let _lock = terminal_lock::acquire();
+        terminal_lock::clear_scroll_region_bottom();
         let rows = terminal::size()
             .map(|(_, r)| r)
             .unwrap_or(self.original_rows);
@@ -302,7 +302,7 @@ impl Drop for ScrollRegionGuard {
         for row in start..rows {
             let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
         }
-        let _ = write!(stdout(), "\x1b[1;{}r", rows);
+        let _ = write!(stdout(), "\x1b[1;{}r", rows); // reset scroll region to whole screen
         let _ = execute!(stdout(), MoveTo(0, start));
         let _ = stdout().flush();
     }
@@ -322,13 +322,13 @@ async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
     };
 
     {
-        let _lock = crate::cli::display::terminal_lock::acquire();
+        let _lock = terminal_lock::acquire();
         for _ in 0..PINNED_PROMPT_LINES + 1 {
             execute!(stdout(), Print("\n"))?;
         }
         apply_scroll_region(current_rows)?;
         let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-        crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
+        terminal_lock::set_scroll_region_bottom(scroll_bottom);
     }
 
     draw_pinned_prompt_full(current_rows, change_count)?;
@@ -369,7 +369,7 @@ fn apply_scroll_region(rows: u16) -> std::io::Result<()> {
 /// echoes there. Log output is redirected into the scroll region by
 /// `write_styled_line` via the global scroll-region marker.
 fn park_cursor(rows: u16) -> std::io::Result<()> {
-    let _lock = crate::cli::display::terminal_lock::acquire();
+    let _lock = terminal_lock::acquire();
     let prompt_row = rows.saturating_sub(1);
     execute!(stdout(), MoveTo(3, prompt_row))?;
     stdout().flush()
@@ -383,14 +383,14 @@ fn reconcile_resize(
     let old_rows = *current_rows;
     *current_rows = new_rows;
 
-    let _lock = crate::cli::display::terminal_lock::acquire();
+    let _lock = terminal_lock::acquire();
     let old_start = old_rows.saturating_sub(PINNED_PROMPT_LINES);
     for row in old_start..old_rows {
         let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
     }
     apply_scroll_region(new_rows)?;
     let scroll_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-    crate::cli::display::terminal_lock::set_scroll_region_bottom(scroll_bottom);
+    terminal_lock::set_scroll_region_bottom(scroll_bottom);
     drop(_lock);
 
     draw_pinned_prompt_full(new_rows, change_count)?;
@@ -408,7 +408,7 @@ fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
         change_count
     );
 
-    let _lock = crate::cli::display::terminal_lock::acquire();
+    let _lock = terminal_lock::acquire();
     execute!(
         stdout(),
         crossterm::terminal::BeginSynchronizedUpdate,
@@ -430,7 +430,7 @@ fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
 fn draw_pinned_prompt_full(rows: u16, change_count: usize) -> std::io::Result<()> {
     draw_pinned_prompt(rows, change_count)?;
     let input_row = rows.saturating_sub(1);
-    let _lock = crate::cli::display::terminal_lock::acquire();
+    let _lock = terminal_lock::acquire();
     execute!(
         stdout(),
         MoveTo(0, input_row),

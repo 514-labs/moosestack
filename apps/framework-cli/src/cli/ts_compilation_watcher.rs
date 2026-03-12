@@ -39,6 +39,9 @@ use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, destructive_confirmation_gate, ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -289,7 +292,7 @@ async fn watch(
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
-    confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
+    confirmation_policy: ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -459,9 +462,9 @@ async fn watch(
                                                     })
                                                     .await?;
 
-                                                    let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan_result.changes);
+                                                    let risk = classify_plan_risk(&plan_result.changes);
                                                     spinner_handle.pause();
-                                                    let proceed = crate::framework::core::plan_risk::destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
                                                     spinner_handle.resume();
                                                     if !proceed? {
                                                         return Ok(false);
@@ -638,7 +641,7 @@ impl TsCompilationWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
-        confirmation_policy: crate::framework::core::plan_risk::ConfirmationPolicy,
+        confirmation_policy: ConfirmationPolicy,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
