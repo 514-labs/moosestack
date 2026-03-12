@@ -42,6 +42,7 @@ use tracing::{debug, info, warn};
 
 use settings::Settings;
 use std::collections::HashMap;
+use std::io::stdout;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -77,6 +78,7 @@ use crate::cli::routines::code_generation::{
 use crate::cli::routines::ls::ls;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::framework::core::plan_risk::ConfirmationPolicy;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -94,7 +96,7 @@ pub fn prompt_user(
     use std::io::{self, Write};
 
     print!("{}", format_prompt(prompt_text, default, hint));
-    let _ = io::stdout().flush();
+    let _ = stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
         RoutineFailure::new(
@@ -118,7 +120,7 @@ pub async fn prompt_user_async(
     use tokio::io::AsyncBufReadExt;
 
     print!("{}", format_prompt(prompt_text, default, hint));
-    let _ = std::io::stdout().flush();
+    let _ = stdout().flush();
 
     let stdin = tokio::io::BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
@@ -168,7 +170,7 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 
     // Print the prompt
     print!("{}\n> ", prompt_text);
-    let _ = io::stdout().flush();
+    let _ = stdout().flush();
 
     // Enable raw mode to capture individual key presses
     enable_raw_mode().map_err(|e| {
@@ -219,13 +221,13 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                             password.pop();
                             // Erase the last asterisk: move back, print space, move back again
                             print!("\x08 \x08");
-                            let _ = io::stdout().flush();
+                            let _ = stdout().flush();
                         }
                     }
                     KeyCode::Char(c) => {
                         password.push(c);
                         print!("*"); // Show asterisk instead of actual character
-                        let _ = io::stdout().flush();
+                        let _ = stdout().flush();
                     }
                     _ => {} // Ignore other keys
                 }
@@ -783,7 +785,7 @@ pub async fn top_command_handler(
                 info!("Payload logging enabled");
             }
 
-            let confirmation_policy = crate::framework::core::plan_risk::ConfirmationPolicy {
+            let confirmation_policy = ConfirmationPolicy {
                 accept_destructive: *yes_destructive
                     || std::env::var("MOOSE_ACCEPT_DESTRUCTIVE")
                         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
