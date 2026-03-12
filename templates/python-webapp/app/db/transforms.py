@@ -3,7 +3,7 @@
 
 from app.db.models import foo_pipeline, bar_pipeline, Foo, Bar
 from moose_lib import DeadLetterQueue, DeadLetterModel, MooseCache
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def foo_to_bar(foo: Foo) -> Bar:
@@ -32,7 +32,7 @@ def foo_to_bar(foo: Foo) -> Bar:
     # Transform the data
     result = Bar(
         primary_key=foo.primary_key,
-        utc_timestamp=datetime.fromtimestamp(foo.timestamp),
+        utc_timestamp=datetime.fromtimestamp(foo.timestamp, tz=timezone.utc),
         has_text=foo.optional_text is not None,
         text_length=len(foo.optional_text) if foo.optional_text else 0,
     )
@@ -51,9 +51,9 @@ foo_pipeline.get_stream().add_transform(
 
 # Add a streaming consumer to print Foo events
 def print_foo_event(foo: Foo):
-    print(f"Received Foo event:")
+    print("Received Foo event:")
     print(f"  Primary Key: {foo.primary_key}")
-    print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp)}")
+    print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp, tz=timezone.utc)}")
     print(f"  Optional Text: {foo.optional_text or 'None'}")
     print("---")
 

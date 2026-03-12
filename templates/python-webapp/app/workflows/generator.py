@@ -54,12 +54,13 @@ def run_task(ctx: TaskContext[None]) -> None:
                 "http://localhost:4000/ingest/Foo",
                 data=foo_http.model_dump_json().encode("utf-8"),
                 headers={"Content-Type": "application/json"},
+                timeout=10,
             )
             if req.status_code == 200:
                 workflow_table.insert(
                     [
                         {
-                            "id": "1",
+                            "id": f"http-{i}",
                             "success": True,
                             "message": f"HTTP inserted: {foo_http.primary_key}",
                         }
@@ -69,7 +70,7 @@ def run_task(ctx: TaskContext[None]) -> None:
                 workflow_table.insert(
                     [
                         {
-                            "id": "1",
+                            "id": f"http-{i}",
                             "success": False,
                             "message": f"HTTP failed: {req.status_code}",
                         }
@@ -77,7 +78,7 @@ def run_task(ctx: TaskContext[None]) -> None:
                 )
         except Exception as e:
             workflow_table.insert(
-                [{"id": "1", "success": False, "message": f"HTTP error: {e}"}]
+                [{"id": f"http-{i}", "success": False, "message": f"HTTP error: {e}"}]
             )
 
         # Direct stream send path
@@ -86,7 +87,7 @@ def run_task(ctx: TaskContext[None]) -> None:
             workflow_table.insert(
                 [
                     {
-                        "id": "1",
+                        "id": f"stream-{i}",
                         "success": True,
                         "message": f"SEND inserted: {foo_send.primary_key}",
                     }
@@ -94,7 +95,7 @@ def run_task(ctx: TaskContext[None]) -> None:
             )
         except Exception as e:
             workflow_table.insert(
-                [{"id": "1", "success": False, "message": f"SEND error: {e}"}]
+                [{"id": f"stream-{i}", "success": False, "message": f"SEND error: {e}"}]
             )
 
 
