@@ -24,10 +24,10 @@ jobs:
         name: Find buildable examples
         run: |
           # Find directories in examples/ that contain buildable indicators
-          # at any depth up to 2 levels (handles monorepo examples like brainwaves/apps/*)
+          # at any depth up to 3 levels (handles monorepo examples like brainwaves/apps/brainmoose/*)
           examples=$(find examples -mindepth 1 -maxdepth 1 -type d | while read dir; do
             name=$(basename "$dir")
-            if find "$dir" -maxdepth 2 \( -name package.json -o -name requirements.txt -o -name moose.config.toml -o -name setup.py -o -name pnpm-workspace.yaml \) -print -quit | grep -q .; then
+            if find "$dir" -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name moose.config.toml -o -name setup.py -o -name pnpm-workspace.yaml \) -print -quit | grep -q .; then
               echo "$name"
             fi
           done | jq -R -s -c 'split("\n") | map(select(. != ""))')
@@ -59,7 +59,7 @@ jobs:
         run: |
           if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
             corepack enable
-            pnpm install --frozen-lockfile || pnpm install
+            pnpm install --frozen-lockfile
           elif [ -f "package-lock.json" ]; then
             npm ci
           elif [ -f "package.json" ]; then
@@ -78,24 +78,31 @@ jobs:
       - name: Build / typecheck
         working-directory: examples/${{ matrix.example }}
         run: |
+          validated=false
           if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
-            # pnpm workspace — use pnpm for build
-            if pnpm run build --if-present; then
-              echo "pnpm build succeeded"
-            else
-              echo "::warning::Build failed for ${{ matrix.example }}"
-              exit 1
-            fi
+            pnpm run build --if-present
+            pnpm run typecheck --if-present
+            validated=true
           elif [ -f "package.json" ]; then
-            # Check if build or typecheck scripts exist before running
+            ran_any=false
             if node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null; then
               npm run build
-            elif node -e "const p=require('./package.json'); process.exit(p.scripts?.typecheck ? 0 : 1)" 2>/dev/null; then
+              ran_any=true
+            fi
+            if node -e "const p=require('./package.json'); process.exit(p.scripts?.typecheck ? 0 : 1)" 2>/dev/null; then
               npm run typecheck
-            else
+              ran_any=true
+            fi
+            if [ "$ran_any" = false ]; then
               echo "No build/typecheck script found, deps install verified"
             fi
+            validated=true
           fi
-          if [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
-            python -c "import moose_lib; print('moose_lib imported successfully')" || echo "Python deps verified (moose_lib not a direct dep)"
+          if python -m pip show moose-lib >/dev/null 2>&1; then
+            python -c "import moose_lib; print('moose_lib imported successfully')"
+            validated=true
+          fi
+          if [ "$validated" = false ]; then
+            echo "::error::No root-level manifest found for ${{ matrix.example }} — nothing was validated"
+            exit 1
           fi
