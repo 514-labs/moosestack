@@ -1,3 +1,0 @@
-# Brainwaves Template
-
-@AGENTS.md
