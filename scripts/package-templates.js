@@ -353,8 +353,6 @@ templates.forEach((template) => {
     } catch (error) {
       console.error(`Error processing ${template}:`, error.message);
       failures.push(template);
-    } finally {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
     }
   } else {
     console.warn(`Warning: No template.config.toml found in ${template}`);
