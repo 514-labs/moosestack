@@ -2779,7 +2779,7 @@ impl OlapOperations for ConfiguredDBClient {
             SELECT
                 short_name,
                 `table`,
-                select_filter
+                COALESCE(select_filter, '') AS select_filter
             FROM system.row_policies
             WHERE database = ?
             AND has(apply_to_list, '{MOOSE_RLS_ROLE}')
