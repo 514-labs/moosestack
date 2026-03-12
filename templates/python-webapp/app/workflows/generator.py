@@ -10,6 +10,8 @@ from moose_lib import (
     Key,
     TaskContext,
 )
+from datetime import timezone
+
 from pydantic import BaseModel
 from faker import Faker
 from app.db.models import Foo, foo_pipeline
@@ -32,7 +34,9 @@ def run_task(ctx: TaskContext[None]) -> None:
     fake = Faker()
 
     for i in range(1000):
-        base_ts = fake.date_time_between(start_date="-1y", end_date="now").timestamp()
+        base_ts = fake.date_time_between(
+            start_date="-1y", end_date="now", tzinfo=timezone.utc
+        ).timestamp()
 
         # HTTP path payload
         foo_http = Foo(
