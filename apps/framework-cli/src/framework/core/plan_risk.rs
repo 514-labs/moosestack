@@ -17,6 +17,7 @@ use crossterm::terminal::{self, Clear, ClearType};
 use tokio::io::AsyncBufReadExt;
 
 use crate::cli::display::{terminal_lock, Message, MessageType};
+use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
 
 use super::infrastructure_map::{Change, ColumnChange, InfraChanges, OlapChange, TableChange};
@@ -249,7 +250,7 @@ pub async fn destructive_confirmation_gate(
         );
     }
 
-    let accepted = if std::io::stdout().is_terminal() {
+    let accepted = if stdout().is_terminal() {
         match pinned_prompt(risk.destructive_changes.len()).await {
             Ok(result) => result,
             Err(_) => plain_prompt().await?,
@@ -274,8 +275,7 @@ pub async fn destructive_confirmation_gate(
 
 async fn plain_prompt() -> Result<bool, RoutineFailure> {
     let input =
-        crate::cli::prompt_user_async("\nProceed with destructive changes? [y/N]", Some("N"), None)
-            .await?;
+        prompt_user_async("\nProceed with destructive changes? [y/N]", Some("N"), None).await?;
     Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
