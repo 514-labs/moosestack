@@ -5,27 +5,31 @@ This file demonstrates how to use FastAPI with MooseStack for consumption
 APIs using the WebApp class.
 """
 
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
-from moose_lib.dmv2.web_app_helpers import get_moose_utils
-from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Literal, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response
+from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
+from moose_lib.dmv2.web_app_helpers import ApiUtil, get_moose_utils
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
 
 # Middleware to log requests
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def log_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     print(f"[bar.py] {request.method} {request.url.path}")
     response = await call_next(request)
     return response
 
 
 # JWT authentication dependency
-async def require_auth(request: Request):
+async def require_auth(request: Request) -> ApiUtil:
     """Require JWT authentication for protected endpoints"""
     moose = get_moose_utils(request)
     if not moose or not moose.jwt:
@@ -35,7 +39,7 @@ async def require_auth(request: Request):
 
 # Health check endpoint
 @app.get("/health")
-async def health():
+async def health() -> dict:
     """Health check endpoint"""
     return {
         "status": "ok",
@@ -46,7 +50,7 @@ async def health():
 
 # Query endpoint with URL parameters
 @app.get("/query")
-async def query(request: Request, limit: int = 10):
+async def query(request: Request, limit: int = Query(default=10, gt=0, le=100)) -> dict:
     """
     Query aggregated bar data.
 
@@ -81,7 +85,7 @@ async def query(request: Request, limit: int = 10):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(status_code=500, detail=str(error)) from error
+        raise HTTPException(status_code=500, detail="Query execution failed") from error
 
 
 # POST endpoint with request body validation
@@ -99,7 +103,7 @@ class DataRequest(BaseModel):
 
 
 @app.post("/data")
-async def data(request: Request, body: DataRequest):
+async def data(request: Request, body: DataRequest) -> dict:
     """
     Query aggregated bar data with filters.
 
@@ -151,12 +155,12 @@ async def data(request: Request, body: DataRequest):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(status_code=500, detail=str(error)) from error
+        raise HTTPException(status_code=500, detail="Query execution failed") from error
 
 
 # Protected endpoint requiring JWT authentication
 @app.get("/protected")
-async def protected(moose=Depends(require_auth)):
+async def protected(moose: ApiUtil = Depends(require_auth)) -> dict:
     """
     Protected endpoint requiring JWT authentication.
 
@@ -173,13 +177,12 @@ async def protected(moose=Depends(require_auth)):
 
 # Global error handler
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     print(f"FastAPI error: {exc}")
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal Server Error",
-            "message": str(exc),
         },
     )
 
