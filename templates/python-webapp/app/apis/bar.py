@@ -112,6 +112,12 @@ async def data(request: Request, body: DataRequest) -> dict:
     - Request body validation with Pydantic
     - Dynamic query building based on request parameters
     """
+    if body.start_day > body.end_day:
+        raise HTTPException(
+            status_code=422,
+            detail="start_day must be less than or equal to end_day",
+        )
+
     moose = get_moose_utils(request)
     if not moose:
         raise HTTPException(
