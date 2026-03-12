@@ -1,0 +1,17 @@
+{
+  "sqltools.connections": [
+    {
+      "server": "localhost",
+      "port": 18123,
+      "useHTTPS": false,
+      "database": "local",
+      "username": "panda",
+      "enableTls": false,
+      "password": "pandapass",
+      "driver": "ClickHouse",
+      "name": "moose clickhouse"
+    }
+  ],
+  "python.analysis.extraPaths": [".moose/versions"],
+  "python.analysis.typeCheckingMode": "basic"
+}
