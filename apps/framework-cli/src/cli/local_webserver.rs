@@ -44,6 +44,8 @@ use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::infrastructure::olap::clickhouse;
+use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
+use crate::infrastructure::processes::kafka_clickhouse_sync::mapper_json_to_clickhouse_record;
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 use crate::project::{JwtConfig, Project};
@@ -190,6 +192,9 @@ pub struct RouteMeta {
     /// Optional resolved Schema Registry schema ID for this route's topic (currently JSON only)
     #[serde(default)]
     pub schema_registry_schema_id: Option<i32>,
+    /// ClickHouse table name for direct insert (alpha mode, no streaming engine)
+    #[serde(default)]
+    pub clickhouse_table_name: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -602,6 +607,7 @@ struct RouteService {
     web_apps: &'static RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
+    clickhouse_client: Option<Arc<ClickHouseClient>>,
     current_version: String,
     is_prod: bool,
     metrics: Arc<Metrics>,
@@ -696,6 +702,7 @@ impl Service<Request<Incoming>> for RouteService {
             self.web_apps,
             self.jwt_config.clone(),
             self.configured_producer.clone(),
+            self.clickhouse_client.clone(),
             self.host.clone(),
             self.is_prod,
             self.metrics.clone(),
@@ -1459,6 +1466,38 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+/// Sends records directly to ClickHouse, bypassing Kafka (used in alpha mode).
+///
+/// Converts JSON payloads to ClickHouseRecords using the same mapper as the
+/// Kafka-to-ClickHouse sync pipeline, then inserts them in a single batch.
+async fn send_to_clickhouse(
+    client: &ClickHouseClient,
+    table_name: &str,
+    database: Option<&str>,
+    columns: &[crate::framework::core::infrastructure::table::Column],
+    records: impl Iterator<Item = Vec<u8>>,
+) -> Result<(), anyhow::Error> {
+    let column_names: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
+    let mut ch_records = Vec::new();
+
+    for payload in records {
+        let json_value: Value = serde_json::from_slice(&payload)?;
+        match mapper_json_to_clickhouse_record(columns, json_value) {
+            Ok(record) => ch_records.push(record),
+            Err(e) => {
+                warn!("Skipping record that failed ClickHouse mapping: {e}");
+            }
+        }
+    }
+
+    if !ch_records.is_empty() {
+        client
+            .insert(table_name, database, &column_names, &ch_records)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Creates a safe body summary for logging: length + SHA256 hash only.
 /// This prevents PII leaks and log injection attacks in error paths.
 ///
@@ -1784,6 +1823,160 @@ async fn ingest_route(
     }
 }
 
+/// Direct-to-ClickHouse ingestion route (alpha mode, no streaming engine).
+///
+/// Similar to `ingest_route` but writes directly to ClickHouse instead of Kafka.
+/// DLQ is not available (requires Kafka). Bad records are logged and skipped.
+#[allow(clippy::too_many_arguments)]
+async fn ingest_route_direct(
+    req: Request<hyper::body::Incoming>,
+    route: PathBuf,
+    clickhouse_client: Arc<ClickHouseClient>,
+    route_table: &RwLock<HashMap<PathBuf, RouteMeta>>,
+    is_prod: bool,
+    jwt_config: Option<JwtConfig>,
+    max_request_body_size: usize,
+    log_payloads: bool,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "POST".to_string(),
+            details: format!("{} (direct→ClickHouse)", route.display()),
+        }
+    );
+
+    debug!("Attempting to find route (direct CH): {:?}", route);
+    let route_table_read = route_table.read().await;
+
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if !check_authorization(auth_header, &MOOSE_INGEST_API_KEY, &jwt_config).await {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Full::new(Bytes::from(
+                "Unauthorized: Invalid or missing token",
+            )));
+    }
+
+    // Case-insensitive route matching
+    let route_str = route.to_str().unwrap().to_lowercase();
+    let matching_route = route_table_read
+        .iter()
+        .find(|(k, _)| k.to_str().unwrap_or("").to_lowercase().eq(&route_str));
+
+    match matching_route {
+        Some((_, route_meta)) => {
+            let table_name = match &route_meta.clickhouse_table_name {
+                Some(name) => name.clone(),
+                None => {
+                    error!("No ClickHouse table name configured for route {:?}", route);
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Full::new(Bytes::from(
+                            "No ClickHouse table configured for this route",
+                        )));
+                }
+            };
+
+            let data_model = route_meta.data_model.clone();
+            let api_name = route_meta.api_name.clone();
+            drop(route_table_read);
+
+            // Read and validate the request body
+            let jwt_claims =
+                get_claims(req.headers().get(hyper::header::AUTHORIZATION), &jwt_config);
+            let limited_body = Limited::new(req.into_body(), max_request_body_size);
+            let body = match limited_body.collect().await {
+                Ok(collected) => collected.to_bytes(),
+                Err(e) => {
+                    let error_str = e.to_string();
+                    if error_str.contains("length limit exceeded")
+                        || error_str.contains("body too large")
+                    {
+                        warn!("Request body too large for direct CH ingest {}", api_name);
+                        return Response::builder()
+                            .status(StatusCode::PAYLOAD_TOO_LARGE)
+                            .body(Full::new(Bytes::from(format!(
+                            "Request body too large. Maximum size is {max_request_body_size} bytes"
+                        ))));
+                    }
+                    error!(
+                        "Failed to read request body for direct CH ingest {}: {}",
+                        api_name, e
+                    );
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Full::new(Bytes::from("Failed to read request body")));
+                }
+            };
+
+            if log_payloads {
+                if let Ok(json_value) = serde_json::from_slice::<Value>(&body) {
+                    if let Ok(compact_json) = serde_json::to_string(&json_value) {
+                        info!("[PAYLOAD:INGEST:DIRECT] {}: {}", api_name, compact_json);
+                    }
+                }
+            }
+
+            // Validate and parse the JSON body
+            let visitor = if data_model.allow_extra_fields {
+                DataModelVisitor::new_with_extra_fields(&data_model.columns, jwt_claims.as_ref())
+            } else {
+                DataModelVisitor::new(&data_model.columns, jwt_claims.as_ref())
+            };
+            let parsed = JsonDeserializer::from_slice(&body)
+                .deserialize_any(&mut DataModelArrayVisitor { inner: visitor });
+
+            let records = match parsed {
+                Err(e) => {
+                    warn!(
+                        "Bad JSON in direct CH ingest request to {}: {}. {}",
+                        api_name,
+                        e,
+                        safe_body_summary(&body)
+                    );
+                    return Ok(bad_json_response(e));
+                }
+                Ok(records) => records,
+            };
+
+            // Insert directly to ClickHouse
+            match send_to_clickhouse(
+                &clickhouse_client,
+                &table_name,
+                None,
+                &data_model.columns,
+                records.into_iter(),
+            )
+            .await
+            {
+                Ok(()) => Ok(success_response(&data_model.name)),
+                Err(e) => {
+                    error!(
+                        "Failed to insert into ClickHouse table {}: {}",
+                        table_name, e
+                    );
+                    Ok(internal_server_error_response())
+                }
+            }
+        }
+        None => {
+            if !is_prod {
+                println!(
+                    "Ingestion route {:?} not found (direct CH). Available routes: {:?}",
+                    route,
+                    route_table_read.keys()
+                );
+            }
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Full::new(Bytes::from(
+                    "Please run `moose ls` to view your routes",
+                )))
+        }
+    }
+}
+
 fn get_path_without_prefix(path: PathBuf, path_prefix: Option<String>) -> PathBuf {
     let path_without_prefix = if let Some(prefix) = path_prefix {
         path.strip_prefix(&prefix).unwrap_or(&path).to_path_buf()
@@ -1804,6 +1997,7 @@ async fn router(
     web_apps: &RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
+    clickhouse_client: Option<Arc<ClickHouseClient>>,
     host: String,
     is_prod: bool,
     metrics: Arc<Metrics>,
@@ -1897,6 +2091,60 @@ async fn router(
                     req,
                     route,
                     configured_producer,
+                    route_table,
+                    is_prod,
+                    jwt_config,
+                    project.http_server_config.max_request_body_size,
+                    project.log_payloads,
+                )
+                .await
+            }
+        }
+        // Direct-to-ClickHouse ingestion (alpha mode, no streaming engine)
+        (None, &hyper::Method::POST, segments)
+            if segments.len() >= 2 && segments[0] == "ingest" && clickhouse_client.is_some() =>
+        {
+            let ch_client = clickhouse_client.unwrap();
+            if segments.len() == 2 {
+                let resolved_route = {
+                    let route_table_read = route_table.read().await;
+                    let base_path = route.to_str().unwrap();
+                    let mut latest_version: Option<Version> = None;
+
+                    for (path, meta) in route_table_read.iter() {
+                        let path_str = path.to_str().unwrap();
+                        if path_str.starts_with(base_path) {
+                            if let Some(version) = &meta.version {
+                                if latest_version.is_none()
+                                    || version > latest_version.as_ref().unwrap()
+                                {
+                                    latest_version = Some(version.clone());
+                                }
+                            }
+                        }
+                    }
+                    match latest_version {
+                        Some(version) => route.join(version.to_string()),
+                        None => route,
+                    }
+                };
+
+                ingest_route_direct(
+                    req,
+                    resolved_route,
+                    ch_client,
+                    route_table,
+                    is_prod,
+                    jwt_config,
+                    project.http_server_config.max_request_body_size,
+                    project.log_payloads,
+                )
+                .await
+            } else {
+                ingest_route_direct(
+                    req,
+                    route,
+                    ch_client,
                     route_table,
                     is_prod,
                     jwt_config,
@@ -2455,46 +2703,75 @@ impl Webserver {
                                 data_model,
                                 schema: _,
                             } => {
-                                // This is not namespaced
-                                let topic =
-                                    infra_map.find_topic_by_id(&target_topic_id).unwrap_or_else(
-                                        || panic!("Topic not found: {target_topic_id}"),
+                                if project.features.streaming_engine {
+                                    // Kafka-based path (normal mode)
+                                    let topic = infra_map
+                                        .find_topic_by_id(&target_topic_id)
+                                        .unwrap_or_else(|| {
+                                            panic!("Topic not found: {target_topic_id}")
+                                        });
+
+                                    let kafka_topic = KafkaStreamConfig::from_topic(
+                                        &project.redpanda_config,
+                                        topic,
                                     );
 
-                                // This is now a namespaced topic
-                                let kafka_topic =
-                                    KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
-
-                                match resolve_schema_id_for_topic(&project, topic).await {
-                                    Ok(schema_id) => {
-                                        route_table.insert(
-                                            api_endpoint.path.clone(),
-                                            RouteMeta {
-                                                // Use source_primitive.name for log correlation with infra map
-                                                api_name: api_endpoint
-                                                    .source_primitive
-                                                    .name
-                                                    .clone(),
-                                                data_model: *data_model.unwrap(),
-                                                dead_letter_queue,
-                                                kafka_topic_name: kafka_topic.name,
-                                                version: api_endpoint.version,
-                                                schema_registry_schema_id: schema_id,
-                                            },
-                                        );
+                                    match resolve_schema_id_for_topic(&project, topic).await {
+                                        Ok(schema_id) => {
+                                            route_table.insert(
+                                                api_endpoint.path.clone(),
+                                                RouteMeta {
+                                                    api_name: api_endpoint
+                                                        .source_primitive
+                                                        .name
+                                                        .clone(),
+                                                    data_model: *data_model.unwrap(),
+                                                    dead_letter_queue,
+                                                    kafka_topic_name: kafka_topic.name,
+                                                    version: api_endpoint.version,
+                                                    schema_registry_schema_id: schema_id,
+                                                    clickhouse_table_name: None,
+                                                },
+                                            );
+                                        }
+                                        Err(e) => {
+                                            show_message!(MessageType::Error, {
+                                                Message {
+                                                    action: "\nFailed".to_string(),
+                                                    details: format!(
+                                                        "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                        topic.name
+                                                    ),
+                                                }
+                                            });
+                                        }
                                     }
-                                    Err(e) => {
-                                        show_message!(MessageType::Error, {
-                                            Message {
-                                                action: "\nFailed".to_string(),
-                                                details: format!(
-                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
-                                                    topic.name
-                                                ),
-                                            }
+                                } else {
+                                    // Direct ClickHouse path (alpha mode, no streaming engine)
+                                    let dm = data_model.unwrap();
+                                    let table_name =
+                                        dm.config.storage.name.clone().unwrap_or_else(|| {
+                                            // Match the table naming logic in partial_infrastructure_map:
+                                            // only append version suffix when an explicit version is set.
+                                            api_endpoint
+                                                .version
+                                                .as_ref()
+                                                .map_or(dm.name.clone(), |v| {
+                                                    format!("{}_{}", dm.name, v.as_suffix())
+                                                })
                                         });
-                                        // Do not insert the route when schema resolution fails
-                                    }
+                                    route_table.insert(
+                                        api_endpoint.path.clone(),
+                                        RouteMeta {
+                                            api_name: api_endpoint.source_primitive.name.clone(),
+                                            data_model: *dm,
+                                            dead_letter_queue: None,
+                                            kafka_topic_name: String::new(),
+                                            clickhouse_table_name: Some(table_name),
+                                            version: api_endpoint.version,
+                                            schema_registry_schema_id: None,
+                                        },
+                                    );
                                 }
                             }
                             APIType::EGRESS { .. } => {
@@ -2528,42 +2805,72 @@ impl Webserver {
                                 schema: _,
                             } => {
                                 tracing::info!("Replacing route: {:?} with {:?}", before, after);
-
-                                let topic = infra_map
-                                    .find_topic_by_id(target_topic_id)
-                                    .expect("Topic not found");
-
-                                let kafka_topic =
-                                    KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
-
                                 route_table.remove(&before.path);
-                                match resolve_schema_id_for_topic(&project, topic).await {
-                                    Ok(schema_id) => {
-                                        route_table.insert(
-                                            after.path.clone(),
-                                            RouteMeta {
-                                                // Use source_primitive.name for log correlation with infra map
-                                                api_name: after.source_primitive.name.clone(),
-                                                data_model: *data_model.as_ref().unwrap().clone(),
-                                                dead_letter_queue: dead_letter_queue.clone(),
-                                                kafka_topic_name: kafka_topic.name,
-                                                version: after.version,
-                                                schema_registry_schema_id: schema_id,
-                                            },
-                                        );
+
+                                if project.features.streaming_engine {
+                                    // Kafka-based path (normal mode)
+                                    let topic = infra_map
+                                        .find_topic_by_id(target_topic_id)
+                                        .expect("Topic not found");
+
+                                    let kafka_topic = KafkaStreamConfig::from_topic(
+                                        &project.redpanda_config,
+                                        topic,
+                                    );
+
+                                    match resolve_schema_id_for_topic(&project, topic).await {
+                                        Ok(schema_id) => {
+                                            route_table.insert(
+                                                after.path.clone(),
+                                                RouteMeta {
+                                                    api_name: after.source_primitive.name.clone(),
+                                                    data_model: *data_model
+                                                        .as_ref()
+                                                        .unwrap()
+                                                        .clone(),
+                                                    dead_letter_queue: dead_letter_queue.clone(),
+                                                    kafka_topic_name: kafka_topic.name,
+                                                    version: after.version,
+                                                    schema_registry_schema_id: schema_id,
+                                                    clickhouse_table_name: None,
+                                                },
+                                            );
+                                        }
+                                        Err(e) => {
+                                            show_message!(MessageType::Error, {
+                                                Message {
+                                                    action: "\nFailed".to_string(),
+                                                    details: format!(
+                                                        "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                        topic.name
+                                                    ),
+                                                }
+                                            });
+                                        }
                                     }
-                                    Err(e) => {
-                                        show_message!(MessageType::Error, {
-                                            Message {
-                                                action: "\nFailed".to_string(),
-                                                details: format!(
-                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
-                                                    topic.name
-                                                ),
-                                            }
+                                } else {
+                                    // Direct ClickHouse path (alpha mode)
+                                    let dm = data_model.as_ref().unwrap();
+                                    let table_name =
+                                        dm.config.storage.name.clone().unwrap_or_else(|| {
+                                            // Match the table naming logic in partial_infrastructure_map:
+                                            // only append version suffix when an explicit version is set.
+                                            after.version.as_ref().map_or(dm.name.clone(), |v| {
+                                                format!("{}_{}", dm.name, v.as_suffix())
+                                            })
                                         });
-                                        // Do not insert the route when schema resolution fails
-                                    }
+                                    route_table.insert(
+                                        after.path.clone(),
+                                        RouteMeta {
+                                            api_name: after.source_primitive.name.clone(),
+                                            data_model: *dm.clone(),
+                                            dead_letter_queue: None,
+                                            kafka_topic_name: String::new(),
+                                            clickhouse_table_name: Some(table_name),
+                                            version: after.version,
+                                            schema_registry_schema_id: None,
+                                        },
+                                    );
                                 }
                             }
                             APIType::EGRESS { .. } => {
@@ -2750,6 +3057,19 @@ impl Webserver {
             None
         };
 
+        // Create ClickHouse client for direct ingestion when streaming engine is disabled (alpha mode)
+        let clickhouse_client = if producer.is_none() && project.features.olap {
+            match ClickHouseClient::new(&project.clickhouse_config) {
+                Ok(client) => Some(Arc::new(client)),
+                Err(e) => {
+                    error!("Failed to create ClickHouse client for direct ingestion: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let route_service = RouteService {
             host: self.host.clone(),
             path_prefix: project.http_server_config.normalized_path_prefix(),
@@ -2759,6 +3079,7 @@ impl Webserver {
             jwt_config: project.jwt.clone(),
             current_version: project.cur_version().to_string(),
             configured_producer: producer,
+            clickhouse_client,
             is_prod: project.is_production,
             http_client,
             metrics: metrics.clone(),
@@ -3068,6 +3389,22 @@ async fn shutdown(
             info!("Skipping container shutdown: load_infra is set to false for this instance");
         } else {
             info!("Skipping container shutdown due to settings configuration");
+        }
+
+        // Step 5: Kill native processes if --alpha mode was used.
+        // PID files are only present when NativeInfraProvider started processes,
+        // so this is safe to run unconditionally.
+        let native_infra_dir = project.project_location.join(".moose/native_infra");
+        let ch_pid_path = native_infra_dir.join("clickhouse.pid");
+        let temporal_pid_path = native_infra_dir.join("temporal.pid");
+        let devkafka_pid_path = native_infra_dir.join("devkafka.pid");
+        let devredis_pid_path = native_infra_dir.join("devredis.pid");
+        if native_infra_dir.exists() {
+            info!("Killing native infrastructure processes via PID files");
+            crate::utilities::native_infra::kill_pid_file(&devkafka_pid_path);
+            crate::utilities::native_infra::kill_pid_file(&devredis_pid_path);
+            crate::utilities::native_infra::kill_pid_file(&ch_pid_path);
+            crate::utilities::native_infra::kill_pid_file(&temporal_pid_path);
         }
     }
 

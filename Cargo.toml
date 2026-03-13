@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "apps/framework-cli",
     "packages/posthog514client-rs",
+    "apps/devkafka",
+    "apps/devredis",
 ]
 
 [profile.dev]

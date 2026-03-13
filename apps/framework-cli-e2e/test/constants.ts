@@ -123,4 +123,5 @@ export const APP_NAMES = {
   PYTHON_TESTS: "moose-py-tests-app",
   TYPESCRIPT_CLUSTER: "moose-ts-cluster-app",
   PYTHON_CLUSTER: "moose-py-cluster-app",
+  TYPESCRIPT_ALPHA: "moose-ts-alpha-app",
 } as const;
