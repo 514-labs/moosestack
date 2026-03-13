@@ -26,43 +26,77 @@ use super::infrastructure_map::{Change, ColumnChange, InfraChanges, OlapChange, 
 #[derive(Debug, Clone)]
 pub enum DestructiveChange {
     TableDrop {
+        database: Option<String>,
         table_name: String,
     },
     ColumnDrop {
+        database: Option<String>,
         table_name: String,
         column_name: String,
     },
     /// A table that must be dropped and recreated (ORDER BY, PARTITION BY, engine, etc.)
     TableRecreate {
+        database: Option<String>,
         table_name: String,
         reason: String,
     },
     ViewDrop {
+        database: Option<String>,
         view_name: String,
     },
     MaterializedViewDrop {
+        database: Option<String>,
         view_name: String,
     },
+}
+
+fn fmt_qualified(f: &mut fmt::Formatter<'_>, db: &Option<String>, name: &str) -> fmt::Result {
+    match db {
+        Some(db) => write!(f, "`{db}`.`{name}`"),
+        None => write!(f, "`{name}`"),
+    }
 }
 
 impl fmt::Display for DestructiveChange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DestructiveChange::TableDrop { table_name } => {
-                write!(f, "DROP TABLE `{table_name}`")
+            DestructiveChange::TableDrop {
+                database,
+                table_name,
+            } => {
+                write!(f, "DROP TABLE ")?;
+                fmt_qualified(f, database, table_name)
             }
             DestructiveChange::ColumnDrop {
+                database,
                 table_name,
                 column_name,
-            } => write!(f, "DROP COLUMN `{column_name}` FROM `{table_name}`"),
-            DestructiveChange::TableRecreate { table_name, reason } => {
-                write!(f, "DROP + RECREATE `{table_name}` ({reason})")
+            } => {
+                write!(f, "DROP COLUMN `{column_name}` FROM ")?;
+                fmt_qualified(f, database, table_name)
             }
-            DestructiveChange::ViewDrop { view_name } => {
-                write!(f, "DROP VIEW `{view_name}`")
+            DestructiveChange::TableRecreate {
+                database,
+                table_name,
+                reason,
+            } => {
+                write!(f, "DROP + RECREATE ")?;
+                fmt_qualified(f, database, table_name)?;
+                write!(f, " ({reason})")
             }
-            DestructiveChange::MaterializedViewDrop { view_name } => {
-                write!(f, "DROP MATERIALIZED VIEW `{view_name}`")
+            DestructiveChange::ViewDrop {
+                database,
+                view_name,
+            } => {
+                write!(f, "DROP VIEW ")?;
+                fmt_qualified(f, database, view_name)
+            }
+            DestructiveChange::MaterializedViewDrop {
+                database,
+                view_name,
+            } => {
+                write!(f, "DROP MATERIALIZED VIEW ")?;
+                fmt_qualified(f, database, view_name)
             }
         }
     }
@@ -128,24 +162,27 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                 let key = (table.database.as_deref(), table.name.as_str());
                 if recreated_table_keys.contains(&key) {
                     destructive_changes.push(DestructiveChange::TableRecreate {
+                        database: table.database.clone(),
                         table_name: table.name.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
                     });
                 } else {
                     destructive_changes.push(DestructiveChange::TableDrop {
+                        database: table.database.clone(),
                         table_name: table.name.clone(),
                     });
                 }
             }
             OlapChange::Table(TableChange::Updated {
-                name,
                 column_changes,
+                before,
                 ..
             }) => {
                 for col_change in column_changes {
                     if let ColumnChange::Removed(col) = col_change {
                         destructive_changes.push(DestructiveChange::ColumnDrop {
-                            table_name: name.clone(),
+                            database: before.database.clone(),
+                            table_name: before.name.clone(),
                             column_name: col.name.clone(),
                         });
                     }
@@ -153,11 +190,13 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
             }
             OlapChange::MaterializedView(Change::Removed(mv)) => {
                 destructive_changes.push(DestructiveChange::MaterializedViewDrop {
+                    database: mv.database.clone(),
                     view_name: mv.name.clone(),
                 });
             }
             OlapChange::View(Change::Removed(v)) => {
                 destructive_changes.push(DestructiveChange::ViewDrop {
+                    database: v.database.clone(),
                     view_name: v.name.clone(),
                 });
             }
@@ -528,7 +567,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableDrop { table_name } if table_name == "events"
+            DestructiveChange::TableDrop { database: None, table_name } if table_name == "events"
         ));
     }
 
@@ -556,7 +595,7 @@ mod tests {
         assert!(risk.is_destructive());
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::ColumnDrop { table_name, column_name }
+            DestructiveChange::ColumnDrop { database: None, table_name, column_name }
                 if table_name == "events" && column_name == "old_col"
         ));
     }
@@ -578,7 +617,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableRecreate { table_name, .. } if table_name == "events"
+            DestructiveChange::TableRecreate { database: None, table_name, .. } if table_name == "events"
         ));
     }
 

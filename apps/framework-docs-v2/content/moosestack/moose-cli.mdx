@@ -96,7 +96,7 @@ moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
-- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (column drops, table drops/recreates). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via the `MOOSE_ACCEPT_DESTRUCTIVE=1` environment variable.
+- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via the `MOOSE_ACCEPT_DESTRUCTIVE=1` environment variable.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 

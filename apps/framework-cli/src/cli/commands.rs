@@ -144,7 +144,7 @@ pub enum Commands {
         #[arg(long)]
         log_payloads: bool,
 
-        /// Skip the confirmation prompt for destructive operations (column/table drops)
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
         #[arg(long)]
         yes_destructive: bool,
     },
