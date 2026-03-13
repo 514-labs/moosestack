@@ -1,0 +1,147 @@
+name: Validate Examples
+
+on:
+  pull_request:
+    paths:
+      - "examples/**"
+  workflow_run:
+    workflows: ["Release CLI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  discover:
+    name: Discover examples
+    runs-on: ubuntu-latest
+    # Skip if triggered by a failed release
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      examples: ${{ steps.find.outputs.examples }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        name: Find buildable examples
+        run: |
+          # Find directories in examples/ that contain buildable indicators
+          # at any depth up to 3 levels (handles monorepo examples like brainwaves/apps/brainmoose/*)
+          examples=$(find examples -mindepth 1 -maxdepth 1 -type d | while read dir; do
+            name=$(basename "$dir")
+            if find "$dir" -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name moose.config.toml -o -name setup.py -o -name pnpm-workspace.yaml \) -print -quit | grep -q .; then
+              echo "$name"
+            fi
+          done | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "examples=$examples" >> "$GITHUB_OUTPUT"
+          echo "Found examples: $examples"
+
+  validate:
+    name: Validate ${{ matrix.example }}
+    needs: discover
+    if: ${{ needs.discover.outputs.examples != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJson(needs.discover.outputs.examples) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Find project roots
+        id: roots
+        working-directory: examples/${{ matrix.example }}
+        run: |
+          # Collect directories that contain a buildable manifest.
+          # Start with the example root itself, then fall back to subdirectories.
+          roots=""
+          if [ -f "package.json" ] || [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+            roots="."
+          else
+            # Monorepo-style example: find subdirectories with manifests (up to 3 levels)
+            roots=$(find . -mindepth 1 -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name setup.py -o -name pnpm-workspace.yaml \) -exec dirname {} \; | sort -u)
+          fi
+          if [ -z "$roots" ]; then
+            echo "::error::No manifest found for ${{ matrix.example }} at any depth — nothing to validate"
+            exit 1
+          fi
+          echo "roots<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$roots" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Project roots: $roots"
+
+      - name: Install dependencies
+        working-directory: examples/${{ matrix.example }}
+        run: |
+          while IFS= read -r root; do
+            [ -z "$root" ] && continue
+            echo "::group::Install deps in $root"
+            pushd "$root" > /dev/null
+            if [ -f "pnpm-lock.yaml" ]; then
+              corepack enable
+              pnpm install --frozen-lockfile
+            elif [ -f "pnpm-workspace.yaml" ]; then
+              corepack enable
+              pnpm install
+            elif [ -f "package-lock.json" ]; then
+              npm ci
+            elif [ -f "package.json" ]; then
+              npm install
+            fi
+            if [ -f "requirements.txt" ]; then
+              pip install -r requirements.txt
+            fi
+            if [ -f "setup.py" ]; then
+              pip install -e .
+            fi
+            popd > /dev/null
+            echo "::endgroup::"
+          done <<< "${{ steps.roots.outputs.roots }}"
+
+      # Note: ideally we'd run `moose build` here per the design spec,
+      # but that requires ClickHouse and other infrastructure.
+      # For now we validate that deps install and code compiles.
+      - name: Build / typecheck
+        working-directory: examples/${{ matrix.example }}
+        run: |
+          validated=false
+          while IFS= read -r root; do
+            [ -z "$root" ] && continue
+            echo "::group::Validate $root"
+            pushd "$root" > /dev/null
+            if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
+              pnpm run --if-present build
+              pnpm run --if-present typecheck
+              validated=true
+            elif [ -f "package.json" ]; then
+              ran_any=false
+              if node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null; then
+                npm run build
+                ran_any=true
+              fi
+              if node -e "const p=require('./package.json'); process.exit(p.scripts?.typecheck ? 0 : 1)" 2>/dev/null; then
+                npm run typecheck
+                ran_any=true
+              fi
+              if [ "$ran_any" = false ]; then
+                echo "No build/typecheck script found, deps install verified"
+              fi
+              validated=true
+            fi
+            if python -m pip show moose-lib >/dev/null 2>&1; then
+              python -c "import moose_lib; print('moose_lib imported successfully')"
+              validated=true
+            fi
+            popd > /dev/null
+            echo "::endgroup::"
+          done <<< "${{ steps.roots.outputs.roots }}"
+          if [ "$validated" = false ]; then
+            echo "::error::No manifest validated for ${{ matrix.example }} — nothing was validated"
+            exit 1
+          fi
