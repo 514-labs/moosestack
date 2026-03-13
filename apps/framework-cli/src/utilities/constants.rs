@@ -149,6 +149,10 @@ pub(crate) const SLACK_COMMUNITY_URL: &str =
 /// Support email shown when telemetry is disabled
 pub(crate) const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
 
+// Native binary versions for --alpha mode (macOS arm64)
+pub const CLICKHOUSE_BINARY_VERSION: &str = "25.8.3.1";
+pub const TEMPORAL_CLI_VERSION: &str = "1.3.0";
+
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
 

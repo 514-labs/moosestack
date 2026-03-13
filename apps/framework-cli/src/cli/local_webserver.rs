@@ -3069,6 +3069,21 @@ async fn shutdown(
         } else {
             info!("Skipping container shutdown due to settings configuration");
         }
+
+        // Step 5: Kill native processes if --alpha mode was used.
+        // PID files are only present when NativeInfraProvider started processes,
+        // so this is safe to run unconditionally.
+        let ch_pid_path = project
+            .project_location
+            .join(".moose/native_infra/clickhouse.pid");
+        let temporal_pid_path = project
+            .project_location
+            .join(".moose/native_infra/temporal.pid");
+        if ch_pid_path.exists() || temporal_pid_path.exists() {
+            info!("Killing native infrastructure processes via PID files");
+            crate::utilities::native_infra::kill_pid_file(&ch_pid_path);
+            crate::utilities::native_infra::kill_pid_file(&temporal_pid_path);
+        }
     }
 
     // Display final shutdown complete message
