@@ -263,7 +263,7 @@ pub async fn get_template_config(
         return Err(RoutineFailure::error(Message {
             action: "Template".to_string(),
             details: format!(
-                "Template '{}' not found. Available templates:\n{}",
+                "Template '{}' not found. Available templates:\n{}\n\nLooking for a full example app? Check https://github.com/514-labs/moosestack/tree/main/examples",
                 template_name,
                 available_templates.join("\n")
             ),
