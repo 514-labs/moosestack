@@ -184,6 +184,33 @@ const buildDevEnv = (
   return env;
 };
 
+const deleteStaleConsumerGroups = async (): Promise<void> => {
+  const { stdout: container } = await execAsync(
+    `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+  );
+  if (!container.trim()) return;
+
+  const { stdout: groupList } = await execAsync(
+    `docker exec ${container.trim()} rpk group list`,
+  );
+  testLogger.info(`rpk group list:\n${groupList}`);
+
+  const staleGroups = groupList
+    .split("\n")
+    .slice(1)
+    .map((l: string) => l.trim().split(/\s+/)[0])
+    .filter(
+      (g: string) =>
+        g && (g.includes("flow-") || g.includes("clickhouse_sync")),
+    );
+  for (const group of staleGroups) {
+    await execAsync(
+      `docker exec ${container.trim()} rpk group delete ${group}`,
+    ).catch(() => {});
+  }
+  testLogger.info(`Deleted ${staleGroups.length} stale consumer groups`);
+};
+
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
@@ -2995,32 +3022,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await stopDevProcess(devProcess);
 
-          // Delete stale consumer groups from the previous (non-namespaced) run
-          // so waitForStreamingFunctions doesn't block on orphaned Empty groups.
-          const { stdout: rpkContainer } = await execAsync(
-            `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
-          );
-          if (rpkContainer.trim()) {
-            const { stdout: groupList } = await execAsync(
-              `docker exec ${rpkContainer.trim()} rpk group list`,
-            );
-            const staleGroups = groupList
-              .split("\n")
-              .slice(1)
-              .map((l: string) => l.trim().split(/\s+/)[0])
-              .filter(
-                (g: string) =>
-                  g && (g.includes("flow-") || g.includes("clickhouse_sync")),
-              );
-            for (const group of staleGroups) {
-              await execAsync(
-                `docker exec ${rpkContainer.trim()} rpk group delete ${group}`,
-              ).catch(() => {});
-            }
-            testLogger.info(
-              `Deleted ${staleGroups.length} stale consumer groups`,
-            );
-          }
+          await deleteStaleConsumerGroups();
 
           const devEnv = {
             ...buildDevEnv(config.language, TEST_PROJECT_DIR),
@@ -3049,6 +3051,33 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           testLogger.info(
             "All components ready with namespace, starting DLQ tests...",
           );
+        });
+
+        after(async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+          testLogger.info(
+            "Cleaning up namespaced consumer groups for next tests...",
+          );
+          await stopDevProcess(devProcess);
+          await deleteStaleConsumerGroups();
+
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions();
+          await waitForInfrastructureReady();
+          testLogger.info("Dev server restored without namespace");
         });
 
         it(`should route failed messages to a namespace-prefixed DLQ topic (${config.language})`, async function () {
