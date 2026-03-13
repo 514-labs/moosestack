@@ -1,17 +1,17 @@
 {
   "sqltools.connections": [
     {
-      "server": "http://localhost",
+      "server": "localhost",
       "port": 18123,
+      "useHTTPS": false,
       "database": "local",
-      "useJWT": false,
-      "requestTimeout": 30000,
-      "enableTls": false,
-      "previewLimit": 50,
-      "password": "pandapass",
       "username": "panda",
+      "enableTls": false,
+      "password": "pandapass",
       "driver": "ClickHouse",
-      "name": "olapdb"
+      "name": "moose clickhouse"
     }
-  ]
+  ],
+  "python.analysis.extraPaths": [".moose/versions"],
+  "python.analysis.typeCheckingMode": "basic"
 }

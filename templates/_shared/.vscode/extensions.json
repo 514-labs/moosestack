@@ -1,5 +1,6 @@
 {
   "recommendations": [
+    "514-labs.moosestack-lsp",
     "frigus02.vscode-sql-tagged-template-literals-syntax-only",
     "mtxr.sqltools",
     "ultram4rine.sqltools-clickhouse-driver",

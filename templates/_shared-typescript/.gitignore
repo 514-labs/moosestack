@@ -3,9 +3,11 @@
 .sloan
 .cursor
 
+# Environment files with secrets
+.env.local
+
 # Node
 node_modules
 dist
 coverage
 .ts-node
-
