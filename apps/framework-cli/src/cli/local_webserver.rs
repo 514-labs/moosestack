@@ -573,10 +573,12 @@ async fn get_consumption_api_res(
 
     let mut client_req = reqwest::Request::new(req.method().clone(), url.parse()?);
 
-    // Copy headers
+    // Copy headers, except Host (let reqwest set the correct one for the downstream server)
     let headers = client_req.headers_mut();
     for (key, value) in req.headers() {
-        headers.insert(key, value.clone());
+        if key != hyper::header::HOST {
+            headers.insert(key, value.clone());
+        }
     }
 
     // Send request
@@ -919,8 +921,6 @@ async fn workflows_terminate_route(
 /// Only checks if the Consumption API process is responsive (detects Node.js deadlocks).
 /// Does NOT check external dependencies - use /health for that.
 async fn live_route(project: &Project) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    use std::time::Duration;
-
     // Only check Consumption API if enabled
     let (healthy, unhealthy) = if project.features.apis {
         let consumption_api_port = project.http_server_config.proxy_port;
@@ -929,23 +929,7 @@ async fn live_route(project: &Project) -> Result<Response<Full<Bytes>>, hyper::h
             consumption_api_port
         );
 
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("Live check: Failed to create HTTP client: {}", e);
-                return Response::builder()
-                    .status(StatusCode::SERVICE_UNAVAILABLE)
-                    .header("Content-Type", "application/json")
-                    .body(Full::new(Bytes::from(
-                        r#"{"healthy":[],"unhealthy":["Consumption API"]}"#,
-                    )));
-            }
-        };
-
-        match client.get(&health_url).send().await {
+        match HEALTH_CHECK_CLIENT.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => (vec!["Consumption API"], Vec::new()),
             Ok(response) => {
                 warn!(
@@ -986,7 +970,6 @@ async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    use std::time::Duration;
     use tokio::task::JoinSet;
 
     let mut join_set = JoinSet::new();
@@ -1035,18 +1018,7 @@ async fn health_route(
                 "http://localhost:{}/_moose_internal/health",
                 consumption_api_port
             );
-            let client = match reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    warn!("Health check: Failed to create HTTP client: {}", e);
-                    return ("Consumption API", false);
-                }
-            };
-
-            match client.get(&health_url).send().await {
+            match HEALTH_CHECK_CLIENT.get(&health_url).send().await {
                 Ok(response) if response.status().is_success() => ("Consumption API", true),
                 Ok(response) => {
                     warn!(
@@ -1685,6 +1657,15 @@ lazy_static! {
     static ref MOOSE_CONSUMPTION_API_KEY: Option<String> = get_env_var("MOOSE_CONSUMPTION_API_KEY");
     static ref MOOSE_INGEST_API_KEY: Option<String> = get_env_var("MOOSE_INGEST_API_KEY");
     static ref VERSION_PATTERN: Regex = Regex::new(r"^\d+(\.\d+)*$").unwrap();
+    /// Shared HTTP client for health check probes with a short timeout and pool
+    /// idle timeout to avoid reusing stale connections to the consumption API.
+    static ref HEALTH_CHECK_CLIENT: reqwest::Client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .pool_idle_timeout(std::time::Duration::from_secs(2))
+        .pool_max_idle_per_host(2)
+        .no_proxy()
+        .build()
+        .expect("Failed to create health check client");
 }
 
 async fn check_authorization(
@@ -2715,10 +2696,15 @@ impl Webserver {
         let mut sigint =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
 
-        // Create HTTP client with reasonable timeout for external requests
+        // Create HTTP client with reasonable timeout for external requests.
+        // pool_idle_timeout must be shorter than the downstream server's keep-alive
+        // timeout (Node.js default: 5s) to prevent "connection closed before message
+        // completed" errors from reusing stale pooled connections.
         let http_client = Arc::new(
             reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
+                .pool_idle_timeout(std::time::Duration::from_secs(4))
+                .pool_max_idle_per_host(10)
                 .build()
                 .expect("Failed to create HTTP client"),
         );
@@ -4038,5 +4024,368 @@ mod tests {
 
         // Leading slash edge case
         assert_eq!(find_api_name("/api/1", &apis), "/api/1");
+    }
+}
+
+#[cfg(test)]
+mod reqwest_pool_tests {
+    use http_body_util::Full;
+    use hyper::body::Bytes;
+    use hyper::service::service_fn;
+    use hyper::{Response, StatusCode};
+    use hyper_util::rt::TokioIo;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    /// Starts a mock HTTP server that closes idle connections after `idle_timeout`.
+    /// Simulates Node.js keepAliveTimeout behavior where the server drops
+    /// connections that have been idle too long. Returns (port, connection_counter).
+    async fn start_mock_server(idle_timeout: Duration) -> (u16, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let conn_count = Arc::new(AtomicUsize::new(0));
+        let conn_count_clone = conn_count.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                conn_count_clone.fetch_add(1, Ordering::SeqCst);
+                let io = TokioIo::new(stream);
+                let timeout = idle_timeout;
+
+                tokio::spawn(async move {
+                    let conn = hyper::server::conn::http1::Builder::new()
+                        .keep_alive(true)
+                        .serve_connection(
+                            io,
+                            service_fn(|_req| async {
+                                Ok::<_, hyper::Error>(
+                                    Response::builder()
+                                        .status(StatusCode::OK)
+                                        .body(Full::new(Bytes::from("ok")))
+                                        .unwrap(),
+                                )
+                            }),
+                        );
+
+                    // Drop connection after idle_timeout to simulate
+                    // Node.js keepAliveTimeout behavior
+                    let _ = tokio::time::timeout(timeout, conn).await;
+                });
+            }
+        });
+
+        (port, conn_count)
+    }
+
+    /// Proves the exact error string propagates through the full reqwest stack.
+    ///
+    /// A raw TCP server accepts the connection, reads the request bytes, then
+    /// immediately closes the socket without sending any HTTP response.
+    /// reqwest/hyper's parser gets EOF while waiting for the status line →
+    /// "connection closed before message completed" in the error source chain.
+    ///
+    /// No timing races: the server always closes before responding.
+    #[tokio::test]
+    async fn test_exact_error_string_through_reqwest() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Raw TCP server: read request, close without responding
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            // Read until we see the end of HTTP headers (\r\n\r\n)
+            let mut buf = vec![0u8; 4096];
+            loop {
+                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                    .await
+                    .unwrap();
+                if n == 0 {
+                    break;
+                }
+                if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            // Close connection without sending any response
+            let _ = stream.shutdown().await;
+        });
+
+        let url = format!("http://127.0.0.1:{}/health", port);
+        let client = reqwest::Client::new();
+        let result = client.get(&url).send().await;
+
+        assert!(result.is_err(), "Expected error from closed connection");
+
+        // reqwest wraps hyper's error in its own error type. Walk the
+        // source chain to find the exact hyper IncompleteMessage error.
+        let err = result.unwrap_err();
+        let mut found = false;
+        let mut current: Option<&dyn std::error::Error> = Some(&err);
+        while let Some(e) = current {
+            if e.to_string()
+                .contains("connection closed before message completed")
+            {
+                found = true;
+                break;
+            }
+            current = e.source();
+        }
+        assert!(
+            found,
+            "Expected 'connection closed before message completed' in error chain, got: {err}"
+        );
+    }
+
+    /// Verifies that configuring `pool_idle_timeout` shorter than the server's
+    /// keep-alive timeout prevents stale connection reuse entirely. The client
+    /// proactively evicts idle connections before the server closes them,
+    /// so the second request opens a fresh connection without any retry overhead.
+    #[tokio::test]
+    async fn test_pool_idle_timeout_prevents_stale_connections() {
+        let (port, conn_count) = start_mock_server(Duration::from_secs(1)).await;
+        let url = format!("http://127.0.0.1:{}/health", port);
+
+        // Client with short pool idle timeout (the fix)
+        let client = reqwest::Client::builder()
+            .pool_idle_timeout(Duration::from_millis(500))
+            .build()
+            .unwrap();
+
+        // First request succeeds
+        let res = client.get(&url).send().await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(conn_count.load(Ordering::SeqCst), 1);
+
+        // Wait for both pool eviction (500ms) and server close (1s)
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        // Second request opens a fresh connection directly — no stale
+        // connection detected, no retry overhead.
+        let res = client.get(&url).send().await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(conn_count.load(Ordering::SeqCst), 2);
+    }
+
+    /// Verifies that keep-alive connection reuse works when the pool idle
+    /// timeout is shorter than the server's keep-alive timeout and the
+    /// requests happen within the idle window. The client reuses the
+    /// existing connection without opening a new one.
+    #[tokio::test]
+    async fn test_connection_reuse_within_idle_window() {
+        let (port, conn_count) = start_mock_server(Duration::from_secs(5)).await;
+        let url = format!("http://127.0.0.1:{}/health", port);
+
+        let client = reqwest::Client::builder()
+            .pool_idle_timeout(Duration::from_secs(4))
+            .build()
+            .unwrap();
+
+        // First request
+        let res = client.get(&url).send().await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(conn_count.load(Ordering::SeqCst), 1);
+
+        // Second request within the idle window — connection reused
+        let res = client.get(&url).send().await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            conn_count.load(Ordering::SeqCst),
+            1,
+            "Should reuse the same connection"
+        );
+    }
+}
+
+/// Deterministic simulation tests using turmoil to reproduce the exact
+/// "connection closed before message completed" error at the hyper level.
+///
+/// Key insight: hyper only produces this error when EOF arrives while a
+/// request is **in-flight** (not idle). If the connection is idle when
+/// the server closes it, hyper treats it as a graceful close and the
+/// error is just "canceled" on the next send attempt.
+#[cfg(test)]
+mod turmoil_proxy_tests {
+    use http_body_util::{BodyExt, Empty, Full};
+    use hyper::body::Bytes;
+    use hyper::service::service_fn;
+    use hyper::{Request, Response, StatusCode};
+    use hyper_util::rt::TokioIo;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// Reproduces the exact "connection closed before message completed" error
+    /// deterministically by dropping the connection while a request is in-flight.
+    ///
+    /// Strategy:
+    /// 1. Server responds immediately to request 1
+    /// 2. Server delays forever on request 2 (simulates slow processing)
+    /// 3. Server has a 3s absolute connection timeout
+    /// 4. Client sends request 2 at T=1 → server receives it, starts delaying
+    /// 5. At T=3, timeout fires, connection is dropped
+    /// 6. Client's request 2 is in-flight (waiting for response) → EOF →
+    ///    "connection closed before message completed"
+    #[test]
+    fn test_connection_closed_before_message_completed() {
+        let mut sim = turmoil::Builder::new().build();
+
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let request_count_server = request_count.clone();
+
+        sim.host("server", move || {
+            let counter = request_count_server.clone();
+            async move {
+                let listener = turmoil::net::TcpListener::bind("0.0.0.0:80").await?;
+                loop {
+                    let (stream, _) = listener.accept().await?;
+                    let io = TokioIo::new(stream);
+                    let counter = counter.clone();
+
+                    tokio::spawn(async move {
+                        let conn = hyper::server::conn::http1::Builder::new()
+                            .keep_alive(true)
+                            .serve_connection(
+                                io,
+                                service_fn(move |_req| {
+                                    let n = counter.fetch_add(1, Ordering::SeqCst);
+                                    async move {
+                                        if n == 0 {
+                                            // Request 1: respond immediately
+                                            Ok::<_, hyper::Error>(
+                                                Response::builder()
+                                                    .status(StatusCode::OK)
+                                                    .body(Full::new(Bytes::from("ok")))
+                                                    .unwrap(),
+                                            )
+                                        } else {
+                                            // Request 2+: delay forever (simulates slow
+                                            // processing). The connection timeout will
+                                            // drop this before it completes.
+                                            tokio::time::sleep(Duration::from_secs(3600)).await;
+                                            Ok(Response::builder()
+                                                .status(StatusCode::OK)
+                                                .body(Full::new(Bytes::from("late")))
+                                                .unwrap())
+                                        }
+                                    }
+                                }),
+                            );
+
+                        // Absolute connection timeout: drops mid-request
+                        let _ = tokio::time::timeout(Duration::from_secs(3), conn).await;
+                    });
+                }
+            }
+        });
+
+        sim.client("client", async {
+            let stream = turmoil::net::TcpStream::connect("server:80").await?;
+            let io = TokioIo::new(stream);
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await.unwrap();
+            tokio::spawn(conn);
+
+            // Request 1: succeeds immediately
+            let req = Request::get("http://server/health")
+                .body(Empty::<Bytes>::new())
+                .unwrap();
+            let res = sender.send_request(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+            let _ = res.collect().await.unwrap();
+
+            // Brief pause, then send request 2 while still within the
+            // connection timeout window. The request will be in-flight
+            // when the 3s timeout fires.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            // Request 2: server will delay forever; connection drops at T=3
+            // while this request is in-flight → EOF mid-request → exact error
+            let req = Request::get("http://server/health")
+                .body(Empty::<Bytes>::new())
+                .unwrap();
+            let res = sender.send_request(req).await;
+            assert!(
+                res.is_err(),
+                "Expected error when server drops connection mid-request"
+            );
+
+            let err_msg = res.unwrap_err().to_string();
+            assert!(
+                err_msg.contains("connection closed before message completed"),
+                "Expected 'connection closed before message completed', got: {err_msg}"
+            );
+
+            Ok(())
+        });
+
+        sim.run().unwrap();
+    }
+
+    /// Verifies that a request succeeds when made within the keep-alive window.
+    /// This is the baseline: both requests reuse the same connection because
+    /// virtual time has NOT advanced past the server's timeout.
+    #[test]
+    fn test_request_within_keep_alive_window_succeeds() {
+        let mut sim = turmoil::Builder::new().build();
+
+        sim.host("server", || async {
+            let listener = turmoil::net::TcpListener::bind("0.0.0.0:80").await?;
+            loop {
+                let (stream, _) = listener.accept().await?;
+                let io = TokioIo::new(stream);
+
+                tokio::spawn(async move {
+                    let conn = hyper::server::conn::http1::Builder::new()
+                        .keep_alive(true)
+                        .serve_connection(
+                            io,
+                            service_fn(|_req| async {
+                                Ok::<_, hyper::Error>(
+                                    Response::builder()
+                                        .status(StatusCode::OK)
+                                        .body(Full::new(Bytes::from("ok")))
+                                        .unwrap(),
+                                )
+                            }),
+                        );
+
+                    let _ = tokio::time::timeout(Duration::from_secs(5), conn).await;
+                });
+            }
+        });
+
+        sim.client("client", async {
+            let stream = turmoil::net::TcpStream::connect("server:80").await?;
+            let io = TokioIo::new(stream);
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await.unwrap();
+            tokio::spawn(conn);
+
+            // Request 1
+            let req = Request::get("http://server/health")
+                .body(Empty::<Bytes>::new())
+                .unwrap();
+            let res = sender.send_request(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+            let _ = res.collect().await.unwrap();
+
+            // Only 2s — well within the 5s keep-alive window
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            // Request 2: connection is still alive, succeeds
+            let req = Request::get("http://server/health")
+                .body(Empty::<Bytes>::new())
+                .unwrap();
+            let res = sender.send_request(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+
+            Ok(())
+        });
+
+        sim.run().unwrap();
     }
 }
