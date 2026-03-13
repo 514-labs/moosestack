@@ -116,8 +116,10 @@ jobs:
             echo "::group::Validate $root"
             pushd "$root" > /dev/null
             if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
-              pnpm run --if-present build
-              pnpm run --if-present typecheck
+              # Build workspace packages in dependency order (generates dist/ for cross-package imports).
+              # Fall back to root-only if workspace deps need infrastructure not available in CI.
+              pnpm -r run --if-present build || pnpm run --if-present build
+              pnpm -r run --if-present typecheck || pnpm run --if-present typecheck
               validated=true
             elif [ -f "package.json" ]; then
               ran_any=false
