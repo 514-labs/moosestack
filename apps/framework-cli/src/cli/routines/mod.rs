@@ -184,7 +184,7 @@ pub mod scripts;
 pub mod seed_data;
 pub mod templates;
 pub mod truncate_table;
-mod util;
+pub(crate) mod util;
 pub mod validate;
 
 const LEADERSHIP_LOCK_RENEWAL_INTERVAL: u64 = 5; // 5 seconds
