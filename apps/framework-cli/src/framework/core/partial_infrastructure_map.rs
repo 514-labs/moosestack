@@ -1088,6 +1088,16 @@ impl PartialInfrastructureMap {
             .collect()
     }
 
+    /// Builds a name-to-topic index for O(1) lookups.
+    ///
+    /// The `topics` map is keyed by `topic.id()` (which includes a version suffix),
+    /// but callers frequently need to look up topics by their bare `name`. This
+    /// builds the reverse index. Names are unique within a single infra map
+    /// generation because the SDK topics map is keyed by name.
+    fn topic_name_index(topics: &HashMap<String, Topic>) -> HashMap<&str, &Topic> {
+        topics.values().map(|t| (t.name.as_str(), t)).collect()
+    }
+
     /// Converts partial API endpoint definitions into complete [`ApiEndpoint`] instances.
     ///
     /// Handles both ingestion and API endpoints, setting up appropriate paths,
@@ -1103,6 +1113,7 @@ impl PartialInfrastructureMap {
         topics: &HashMap<String, Topic>,
     ) -> HashMap<String, ApiEndpoint> {
         let mut api_endpoints = HashMap::new();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for partial_api in self.ingest_apis.values() {
             let target_topic_name = match &partial_api.write_to.kind {
@@ -1110,9 +1121,8 @@ impl PartialInfrastructureMap {
             };
 
             let not_found = &format!("Target topic '{target_topic_name}' not found");
-            let target_topic = topics
-                .values()
-                .find(|topic| topic.name == target_topic_name)
+            let target_topic = topic_by_name
+                .get(target_topic_name.as_str())
                 .expect(not_found);
 
             // TODO: Remove data model from api endpoints when dmv1 is removed
@@ -1283,13 +1293,13 @@ impl PartialInfrastructureMap {
         default_database: &str,
     ) -> HashMap<String, TopicToTableSyncProcess> {
         let mut sync_processes = self.topic_to_table_sync_processes.clone();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for (topic_name, partial_topic) in &self.topics {
             if let Some(target_table_name) = &partial_topic.target_table {
                 let topic_not_found = &format!("Source topic '{topic_name}' not found");
-                let source_topic = topics
-                    .values()
-                    .find(|topic| &topic.name == topic_name)
+                let source_topic = topic_by_name
+                    .get(topic_name.as_str())
                     .expect(topic_not_found);
 
                 let target_table_version: Option<Version> = partial_topic
@@ -1340,6 +1350,7 @@ impl PartialInfrastructureMap {
         topics: &HashMap<String, Topic>,
     ) -> HashMap<String, FunctionProcess> {
         let mut function_processes = self.function_processes.clone();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for (topic_name, source_partial_topic) in &self.topics {
             debug!(
@@ -1348,10 +1359,7 @@ impl PartialInfrastructureMap {
             );
 
             let not_found = &format!("Source topic '{topic_name}' not found");
-            let source_topic = topics
-                .values()
-                .find(|topic| &topic.name == topic_name)
-                .expect(not_found);
+            let source_topic = topic_by_name.get(topic_name.as_str()).expect(not_found);
 
             for transformation_target in &source_partial_topic.transformation_targets {
                 debug!("transformation_target: {:?}", transformation_target);
@@ -1360,9 +1368,8 @@ impl PartialInfrastructureMap {
                 let process_name = format!("{}__{}", topic_name, transformation_target.name);
 
                 let not_found = &format!("Target topic '{}' not found", transformation_target.name);
-                let target_topic = topics
-                    .values()
-                    .find(|topic| topic.name == transformation_target.name)
+                let target_topic = topic_by_name
+                    .get(transformation_target.name.as_str())
                     .expect(not_found);
 
                 // Build metadata with source file if available
@@ -1389,12 +1396,7 @@ impl PartialInfrastructureMap {
                 let dead_letter_queue_topic_id = transformation_target
                     .dead_letter_queue
                     .as_ref()
-                    .and_then(|dlq_name| {
-                        topics
-                            .values()
-                            .find(|t| t.name == *dlq_name)
-                            .map(|t| t.id())
-                    });
+                    .and_then(|dlq_name| topic_by_name.get(dlq_name.as_str()).map(|t| t.id()));
 
                 let function_process = FunctionProcess {
                     name: process_name.clone(),
@@ -1427,13 +1429,10 @@ impl PartialInfrastructureMap {
                     }),
                 });
 
-                let dead_letter_queue_topic_id =
-                    consumer.dead_letter_queue.as_ref().and_then(|dlq_name| {
-                        topics
-                            .values()
-                            .find(|t| t.name == *dlq_name)
-                            .map(|t| t.id())
-                    });
+                let dead_letter_queue_topic_id = consumer
+                    .dead_letter_queue
+                    .as_ref()
+                    .and_then(|dlq_name| topic_by_name.get(dlq_name.as_str()).map(|t| t.id()));
 
                 let function_process = FunctionProcess {
                     // In dmv1, consumer process has the id format!("{}_{}_{}", self.name, self.source_topic_id, self.version)
