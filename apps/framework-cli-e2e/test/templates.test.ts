@@ -166,6 +166,24 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   },
 ];
 
+const buildDevEnv = (
+  language: string,
+  projectDir: string,
+): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+    MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+    MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+  };
+  if (language === "python") {
+    env.VIRTUAL_ENV = path.join(projectDir, ".venv");
+    env.PATH = `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`;
+  }
+  return env;
+};
+
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
@@ -212,26 +230,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       // Start dev server
       testLogger.info("Starting dev server...");
-      const devEnv =
-        config.language === "python" ?
-          {
-            ...process.env,
-            VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-            PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          }
-        : {
-            ...process.env,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          };
+      const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
@@ -2996,31 +2995,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await stopDevProcess(devProcess);
 
-          const configPath = path.join(TEST_PROJECT_DIR, "moose.config.toml");
-          let mooseConfig = fs.readFileSync(configPath, "utf-8");
-          mooseConfig = mooseConfig.replace(
-            "[redpanda_config]",
-            `[redpanda_config]\nnamespace = "${NAMESPACE}"`,
-          );
-          fs.writeFileSync(configPath, mooseConfig);
-          testLogger.info(
-            `Added namespace = "${NAMESPACE}" to moose.config.toml`,
-          );
-
-          const devEnv =
-            config.language === "python" ?
-              {
-                ...process.env,
-                VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-                PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-                MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-                MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-              }
-            : {
-                ...process.env,
-                MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-                MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-              };
+          const devEnv = {
+            ...buildDevEnv(config.language, TEST_PROJECT_DIR),
+            MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
+          };
 
           devProcess = spawn(CLI_PATH, ["dev"], {
             stdio: "pipe",
@@ -3127,11 +3105,43 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               await clickhouse.close();
             }
           } else {
-            // Python template has no DLQ table in ClickHouse.
-            // Wait a bit for the DLQ message to be produced and consumed.
-            await setTimeoutAsync(10_000);
-            testLogger.info(
-              "✅ DLQ message sent without crash (Python) — verifying topics below",
+            const { stdout: containerName } = await execAsync(
+              `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+            );
+            expect(containerName.trim()).to.not.be.empty;
+
+            const { stdout: topicList } = await execAsync(
+              `docker exec ${containerName.trim()} rpk topic list`,
+            );
+            const dlqTopic = topicList
+              .split("\n")
+              .map((l: string) => l.trim().split(/\s+/)[0])
+              .find(
+                (t: string) =>
+                  t &&
+                  t.includes("FooDeadLetterQueue") &&
+                  t.startsWith(`${NAMESPACE}.`),
+              );
+            expect(dlqTopic, "Namespace-prefixed DLQ topic should exist").to.not
+              .be.undefined;
+
+            await withRetries(
+              async () => {
+                const { stdout: messages } = await execAsync(
+                  `docker exec ${containerName.trim()} rpk topic consume ${dlqTopic} --num 1 --format '%v\\n' --offset start`,
+                  { timeout: 30_000 },
+                );
+                expect(messages.trim()).to.not.be.empty;
+                const record = JSON.parse(messages.trim());
+                expect(record).to.have.nested.property(
+                  "originalRecord.primary_key",
+                  eventId,
+                );
+                testLogger.info(
+                  `✅ DLQ record verified on Redpanda topic ${dlqTopic}`,
+                );
+              },
+              { attempts: 10, delayMs: 3_000 },
             );
           }
         });
