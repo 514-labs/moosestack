@@ -2995,6 +2995,33 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await stopDevProcess(devProcess);
 
+          // Delete stale consumer groups from the previous (non-namespaced) run
+          // so waitForStreamingFunctions doesn't block on orphaned Empty groups.
+          const { stdout: rpkContainer } = await execAsync(
+            `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+          );
+          if (rpkContainer.trim()) {
+            const { stdout: groupList } = await execAsync(
+              `docker exec ${rpkContainer.trim()} rpk group list`,
+            );
+            const staleGroups = groupList
+              .split("\n")
+              .slice(1)
+              .map((l: string) => l.trim().split(/\s+/)[1])
+              .filter(
+                (g: string) =>
+                  g && (g.includes("flow-") || g.includes("clickhouse_sync")),
+              );
+            for (const group of staleGroups) {
+              await execAsync(
+                `docker exec ${rpkContainer.trim()} rpk group delete ${group}`,
+              ).catch(() => {});
+            }
+            testLogger.info(
+              `Deleted ${staleGroups.length} stale consumer groups`,
+            );
+          }
+
           const devEnv = {
             ...buildDevEnv(config.language, TEST_PROJECT_DIR),
             MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
