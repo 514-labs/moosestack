@@ -32,7 +32,7 @@
 
 use clickhouse::Client;
 
-use errors::{validate_clickhouse_identifier, ClickhouseError};
+use errors::{validate_clickhouse_cluster_name, validate_clickhouse_identifier, ClickhouseError};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::{ClickHouseColumn, ColumnPropertyRemovals, DefaultExpressionKind};
 use queries::ClickhouseEngine;
@@ -440,7 +440,7 @@ pub async fn execute_changes(
     // Validate all cluster names before executing any SQL
     for op in teardown_plan.iter().chain(setup_plan.iter()) {
         if let Some(cluster) = extract_cluster_name(op) {
-            validate_clickhouse_identifier(cluster, "Cluster name")?;
+            validate_clickhouse_cluster_name(cluster)?;
         }
     }
 

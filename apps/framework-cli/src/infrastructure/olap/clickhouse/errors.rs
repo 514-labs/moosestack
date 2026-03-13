@@ -41,6 +41,29 @@ pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
         && !name.starts_with('-')
 }
 
+/// Checks if a string is a valid ClickHouse cluster name.
+/// Allows `{` and `}` for macro patterns like `{cluster}`.
+pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '{' || c == '}')
+        && !name.chars().next().unwrap().is_ascii_digit()
+        && !name.starts_with('-')
+}
+
+/// Validates a cluster name, allowing ClickHouse macro patterns like `{cluster}`.
+pub fn validate_clickhouse_cluster_name(name: &str) -> Result<(), ClickhouseError> {
+    if is_valid_clickhouse_cluster_name(name) {
+        return Ok(());
+    }
+    Err(ClickhouseError::InvalidIdentifier {
+        identifier_type: "Cluster name".to_string(),
+        name: name.to_string(),
+        reason: "contains invalid characters (only alphanumeric, underscore, hyphen, and {} for macros allowed)".to_string(),
+    })
+}
+
 /// Validates that a string is a valid ClickHouse identifier, returning a typed error on failure.
 ///
 /// This delegates to `is_valid_clickhouse_identifier` for the boolean check and only

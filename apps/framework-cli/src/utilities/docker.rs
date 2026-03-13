@@ -392,17 +392,22 @@ impl DockerClient {
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
 
         for cluster in clusters {
-            // Validate cluster name is a safe identifier to prevent XML injection
-            if !is_valid_clickhouse_identifier(&cluster.name) {
+            // Resolve ClickHouse macro patterns like {cluster} to the inner name
+            // for the XML config (XML tags can't contain braces).
+            let resolved_name = if cluster.name.starts_with('{') && cluster.name.ends_with('}') {
+                &cluster.name[1..cluster.name.len() - 1]
+            } else {
+                &cluster.name
+            };
+
+            if !is_valid_clickhouse_identifier(resolved_name) {
                 warn!(
-                    "Skipping cluster '{}': cluster names must be alphanumeric with underscores/hyphens only and cannot start with a digit or a hyphen",
-                    cluster.name
+                    "Skipping cluster '{}': resolved name '{}' must be alphanumeric with underscores/hyphens only and cannot start with a digit or a hyphen",
+                    cluster.name, resolved_name
                 );
                 continue;
             }
 
-            // Create a multi-node cluster for dev mode to test replication
-            // Both nodes are in the same shard (replicas of each other)
             xml.push_str(&format!(
                 "    <{name}>\n\
                        <shard>\n\
@@ -420,7 +425,7 @@ impl DockerClient {
                          </replica>\n\
                        </shard>\n\
                      </{name}>\n",
-                name = cluster.name,
+                name = resolved_name,
                 user = project.clickhouse_config.user,
                 password = project.clickhouse_config.password
             ));
