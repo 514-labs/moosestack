@@ -3812,8 +3812,12 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
-                "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
+                "field_nullable": if matches!(column.column_type, ClickHouseColumnType::Nullable(_)) {
                     // if type is Nullable, do not add extra specifier
+                    "".to_string()
+                } else if matches!(&column.column_type, ClickHouseColumnType::LowCardinality(inner) if matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))) {
+                    // LowCardinality(Nullable(...)) already encodes nullability; adding NULL
+                    // would produce Nullable(LowCardinality(Nullable(...))) which is invalid.
                     "".to_string()
                 } else if column.required || column.is_array() || column.is_nested() {
                     // Clickhouse doesn't allow array/nested fields to be nullable
@@ -7596,6 +7600,66 @@ ORDER BY (`event_time`)
             primary_key_expression: None,
         };
 
+        #[test]
+        fn test_low_cardinality_nullable_no_extra_null_modifier() {
+            let table = ClickHouseTable {
+                version: Some(Version::from_string("1".to_string())),
+                name: "test_lc_nullable".to_string(),
+                columns: vec![
+                    ClickHouseColumn {
+                        name: "id".to_string(),
+                        column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
+                        required: true,
+                        primary_key: true,
+                        unique: false,
+                        default: None,
+                        comment: None,
+                        ttl: None,
+                        codec: None,
+                        materialized: None,
+                        alias: None,
+                    },
+                    ClickHouseColumn {
+                        name: "browser".to_string(),
+                        column_type: ClickHouseColumnType::LowCardinality(Box::new(
+                            ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
+                        )),
+                        required: false,
+                        primary_key: false,
+                        unique: false,
+                        default: None,
+                        comment: None,
+                        ttl: None,
+                        codec: Some("ZSTD(1)".to_string()),
+                        materialized: None,
+                        alias: None,
+                    },
+                ],
+                order_by: OrderBy::Fields(vec!["id".to_string()]),
+                partition_by: None,
+                sample_by: None,
+                engine: ClickhouseEngine::MergeTree,
+                table_settings: None,
+                indexes: vec![],
+                projections: vec![],
+                constraints: vec![],
+                table_ttl_setting: None,
+                cluster_name: None,
+                primary_key_expression: None,
+            };
+
+            let query = create_table_query("test_db", table, false).unwrap();
+            assert!(
+                query.contains("LowCardinality(Nullable(String))"),
+                "DDL should contain LowCardinality(Nullable(String)). Got: {}",
+                query
+            );
+            assert!(
+                !query.contains("LowCardinality(Nullable(String)) NULL"),
+                "DDL should NOT have extra NULL after LowCardinality(Nullable(...)). Got: {}",
+                query
+            );
+        }
         let query = create_table_query("test_db", table, false).unwrap();
         assert!(
             !query.contains("PROJECTION"),

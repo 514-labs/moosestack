@@ -901,7 +901,7 @@ const tsTypeToDataType = (
     annotations.push(["simpleAggregationFunction", simpleAggregationFunction]);
   }
 
-  const lowCardinalitySymbol = t.getProperty("_LowCardinality");
+  const lowCardinalitySymbol = nonNull.getProperty("_LowCardinality");
   if (lowCardinalitySymbol !== undefined) {
     const lowCardinalityType = checker.getNonNullableType(
       checker.getTypeOfSymbol(lowCardinalitySymbol),

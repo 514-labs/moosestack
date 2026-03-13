@@ -104,7 +104,15 @@ pub fn std_column_to_clickhouse_column(
             && !matches!(column_type, ClickHouseColumnType::Array(_))
             && !matches!(column_type, ClickHouseColumnType::Nested(_))
         {
-            column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
+            // For LowCardinality, Nullable must wrap the inner type:
+            // LowCardinality(Nullable(String)) instead of Nullable(LowCardinality(String))
+            if let ClickHouseColumnType::LowCardinality(inner) = column_type {
+                column_type = ClickHouseColumnType::LowCardinality(Box::new(
+                    ClickHouseColumnType::Nullable(inner),
+                ));
+            } else {
+                column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
+            }
         }
     }
 
