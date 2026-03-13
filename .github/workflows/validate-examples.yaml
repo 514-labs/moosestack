@@ -37,7 +37,7 @@ jobs:
   validate:
     name: Validate ${{ matrix.example }}
     needs: discover
-    if: ${{ needs.discover.outputs.examples != '[]' }}
+    if: ${{ needs.discover.result == 'success' && needs.discover.outputs.examples != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -61,11 +61,11 @@ jobs:
           # Collect directories that contain a buildable manifest.
           # Start with the example root itself, then fall back to subdirectories.
           roots=""
-          if [ -f "package.json" ] || [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+          if [ -f "package.json" ] || [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "moose.config.toml" ]; then
             roots="."
           else
             # Monorepo-style example: find subdirectories with manifests (up to 3 levels)
-            roots=$(find . -mindepth 1 -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name setup.py -o -name pnpm-workspace.yaml \) -exec dirname {} \; | sort -u)
+            roots=$(find . -mindepth 1 -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name setup.py -o -name pnpm-workspace.yaml -o -name moose.config.toml \) -exec dirname {} \; | sort -u)
           fi
           if [ -z "$roots" ]; then
             echo "::error::No manifest found for ${{ matrix.example }} at any depth — nothing to validate"
@@ -136,8 +136,10 @@ jobs:
               fi
               validated=true
             fi
-            if python -m pip show moose-lib >/dev/null 2>&1; then
-              python -c "import moose_lib; print('moose_lib imported successfully')"
+            if [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+              if python -m pip show moose-lib >/dev/null 2>&1; then
+                python -c "import moose_lib; print('moose_lib imported successfully')"
+              fi
               validated=true
             fi
             popd > /dev/null
