@@ -110,6 +110,10 @@ toon-format = "0.4.0"
 urlencoding = "2"
 open = "5"
 
+devkafka = { path = "../devkafka" }
+devredis = { path = "../devredis" }
+tokio-util = { version = "0.7", features = ["rt"] }
+
 [dev-dependencies]
 clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
