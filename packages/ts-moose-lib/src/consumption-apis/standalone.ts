@@ -1,6 +1,8 @@
 import {
   MooseClient,
   MOOSE_RLS_SETTING_PREFIX,
+  MOOSE_RLS_USER,
+  MOOSE_RLS_PASSWORD_SUFFIX,
   QueryClient,
   MooseUtils,
   RowPoliciesConfig,
@@ -11,6 +13,7 @@ import { sql } from "../sqlHelpers";
 import { getSelectRowPolicies } from "../dmv2/registry";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { ClickHouseClient } from "@clickhouse/client";
 import type { JWTPayload } from "jose";
 
 /**
@@ -72,6 +75,8 @@ function getRowPoliciesConfigFromRegistry(): RowPoliciesConfig | undefined {
 // Cached utilities and initialization promise for standalone mode
 let standaloneUtils: MooseUtils | null = null;
 let initPromise: Promise<MooseUtils> | null = null;
+let standaloneRlsClient: ClickHouseClient | null = null;
+let standaloneClickhouseConfig: RuntimeClickHouseConfig | null = null;
 
 // Convert config to client config format
 const toClientConfig = (config: {
@@ -179,6 +184,7 @@ export async function getMooseUtils(
 
         const clickhouseConfig =
           await configRegistry.getStandaloneClickhouseConfig();
+        standaloneClickhouseConfig = clickhouseConfig;
 
         const clickhouseClient = getClickhouseClient(
           toClientConfig(clickhouseConfig),
@@ -204,7 +210,6 @@ export async function getMooseUtils(
     }
   }
 
-  // If rlsContext is provided, create a scoped client using the shared connection
   if (options?.rlsContext) {
     const rowPoliciesConfig = getRowPoliciesConfigFromRegistry();
     if (!rowPoliciesConfig) {
@@ -213,15 +218,27 @@ export async function getMooseUtils(
           "Define at least one SelectRowPolicy before using rlsContext.",
       );
     }
+
+    if (!standaloneRlsClient && standaloneClickhouseConfig) {
+      standaloneRlsClient = getClickhouseClient(
+        toClientConfig({
+          ...standaloneClickhouseConfig,
+          username: MOOSE_RLS_USER,
+          password:
+            standaloneClickhouseConfig.password + MOOSE_RLS_PASSWORD_SUFFIX,
+        }),
+      );
+    }
+
     const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
       rowPoliciesConfig,
       options.rlsContext,
       "rlsContext",
     );
-    // Reuse the underlying ClickHouseClient from the cached QueryClient
-    const baseQueryClient = standaloneUtils!.client.query;
+    const rlsClient =
+      standaloneRlsClient ?? standaloneUtils!.client.query.client;
     const scopedQueryClient = new QueryClient(
-      baseQueryClient.client,
+      rlsClient,
       "rls-scoped",
       rowPolicyOpts,
     );
