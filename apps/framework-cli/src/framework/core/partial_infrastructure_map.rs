@@ -478,6 +478,9 @@ pub struct TransformationTarget {
     /// Source file path where this transform was declared
     #[serde(default)]
     pub source_file: Option<String>,
+    /// Dead letter queue stream name for failed records
+    #[serde(default)]
+    pub dead_letter_queue: Option<String>,
 }
 
 /// Configuration for a topic consumer.
@@ -491,6 +494,9 @@ pub struct Consumer {
     /// Source file path where this consumer was declared
     #[serde(default)]
     pub source_file: Option<String>,
+    /// Dead letter queue stream name for failed records
+    #[serde(default)]
+    pub dead_letter_queue: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1380,6 +1386,16 @@ impl PartialInfrastructureMap {
                     (None, None) => None,
                 };
 
+                let dead_letter_queue_topic_id = transformation_target
+                    .dead_letter_queue
+                    .as_ref()
+                    .and_then(|dlq_name| {
+                        topics
+                            .values()
+                            .find(|t| t.name == *dlq_name)
+                            .map(|t| t.id())
+                    });
+
                 let function_process = FunctionProcess {
                     name: process_name.clone(),
                     source_topic_id: source_topic.id(),
@@ -1396,6 +1412,7 @@ impl PartialInfrastructureMap {
                         primitive_type: PrimitiveTypes::Function,
                     },
                     metadata,
+                    dead_letter_queue_topic_id,
                 };
 
                 function_processes.insert(function_process.id(), function_process);
@@ -1409,6 +1426,14 @@ impl PartialInfrastructureMap {
                         file: source_file.clone(),
                     }),
                 });
+
+                let dead_letter_queue_topic_id =
+                    consumer.dead_letter_queue.as_ref().and_then(|dlq_name| {
+                        topics
+                            .values()
+                            .find(|t| t.name == *dlq_name)
+                            .map(|t| t.id())
+                    });
 
                 let function_process = FunctionProcess {
                     // In dmv1, consumer process has the id format!("{}_{}_{}", self.name, self.source_topic_id, self.version)
@@ -1424,6 +1449,7 @@ impl PartialInfrastructureMap {
                         primitive_type: PrimitiveTypes::DataModel,
                     },
                     metadata,
+                    dead_letter_queue_topic_id,
                 };
 
                 function_processes.insert(function_process.id(), function_process);

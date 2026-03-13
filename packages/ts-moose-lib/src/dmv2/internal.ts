@@ -502,6 +502,8 @@ interface Target {
   metadata?: { description?: string };
   /** Optional source file path where this transform was declared. */
   sourceFile?: string;
+  /** Optional dead letter queue stream name for this transform. */
+  deadLetterQueue?: string;
 }
 
 /**
@@ -512,6 +514,8 @@ interface Consumer {
   version?: string;
   /** Optional source file path where this consumer was declared. */
   sourceFile?: string;
+  /** Optional dead letter queue stream name for this consumer. */
+  deadLetterQueue?: string;
 }
 
 /**
@@ -1192,6 +1196,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
           version: config.version,
           metadata: config.metadata,
           sourceFile: config.sourceFile,
+          deadLetterQueue: config.deadLetterQueue?.name,
         });
       });
     });
@@ -1200,6 +1205,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       consumers.push({
         version: consumer.config.version,
         sourceFile: consumer.config.sourceFile,
+        deadLetterQueue: consumer.config.deadLetterQueue?.name,
       });
     });
 
