@@ -23,7 +23,7 @@
  * 7. No JWT returns 401 Unauthorized
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { spawn, execSync, ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as path from "path";
 import { createClient } from "@clickhouse/client";
@@ -37,6 +37,7 @@ import {
 } from "./constants";
 import {
   waitForServerStart,
+  waitForStreamingFunctions,
   createTempTestDirectory,
   setupTypeScriptProject,
   cleanupTestSuite,
@@ -159,6 +160,11 @@ describe("Row-Level Security E2E Tests", function () {
     );
 
     await waitForInfrastructureReady(TIMEOUTS.SERVER_STARTUP_MS, {
+      logger: testLogger,
+    });
+
+    testLogger.info("Waiting for streaming functions to stabilize");
+    await waitForStreamingFunctions(TIMEOUTS.SERVER_STARTUP_MS, {
       logger: testLogger,
     });
 
@@ -556,5 +562,32 @@ describe("Row-Level Security E2E Tests", function () {
       2,
       "Non-RLS table should return all rows regardless of JWT claims",
     );
+  });
+
+  it("should pass standalone getMooseUtils({ rlsContext }) tests", async function () {
+    this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+    // Run the standalone test script in a separate Node process.
+    // This exercises the standalone.ts code path where _mooseRuntimeContext
+    // is NOT set — the script connects to ClickHouse directly using
+    // moose.config.toml and creates its own moose_rls_user client.
+    try {
+      const output = execSync("node scripts/test-standalone-rls.mjs", {
+        cwd: projectDir,
+        timeout: 15000,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      testLogger.info("Standalone RLS tests passed", {
+        output: output.trim(),
+      });
+    } catch (e: any) {
+      const stderr = e.stderr?.toString().trim() || "";
+      const stdout = e.stdout?.toString().trim() || "";
+      testLogger.error("Standalone RLS tests failed", { stdout, stderr });
+      throw new Error(
+        `Standalone RLS tests failed:\n${stderr || stdout || e.message}`,
+      );
+    }
   });
 });
