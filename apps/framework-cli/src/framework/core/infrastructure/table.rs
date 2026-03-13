@@ -381,7 +381,7 @@ pub struct Table {
     /// Projections for alternative data ordering within parts.
     #[serde(default)]
     pub projections: Vec<TableProjection>,
-    /// Table constraints (e.g. CONSTRAINT a1 ASSUME length(col) <= 32)
+    /// Table constraints (e.g. CONSTRAINT a1 ASSUME length(col) <= 32).
     #[serde(default)]
     pub constraints: Vec<TableConstraint>,
     /// Optional database name for multi-database support

@@ -3816,8 +3816,8 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
                     // if type is Nullable, do not add extra specifier
                     "".to_string()
                 } else if matches!(&column.column_type, ClickHouseColumnType::LowCardinality(inner) if matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))) {
-                    // LowCardinality(Nullable(...)) already encodes nullability; adding NULL
-                    // would produce Nullable(LowCardinality(Nullable(...))) which is invalid.
+                    // LowCardinality(Nullable(...)) already encodes nullability - adding NULL
+                    // would produce Nullable(LowCardinality(Nullable(...))) which is invalid
                     "".to_string()
                 } else if column.required || column.is_array() || column.is_nested() {
                     // Clickhouse doesn't allow array/nested fields to be nullable

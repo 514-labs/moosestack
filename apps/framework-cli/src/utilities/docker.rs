@@ -393,7 +393,7 @@ impl DockerClient {
 
         for cluster in clusters {
             // Resolve ClickHouse macro patterns like {cluster} to the inner name
-            // for the XML config (XML tags can't contain braces).
+            // for the XML config - XML tags can't contain braces
             let resolved_name = if cluster.name.starts_with('{') && cluster.name.ends_with('}') {
                 &cluster.name[1..cluster.name.len() - 1]
             } else {

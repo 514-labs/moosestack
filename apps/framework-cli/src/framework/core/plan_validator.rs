@@ -27,8 +27,8 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     // Check all tables in the target infrastructure map
     for table in plan.target_infra_map.tables.values() {
         if let Some(cluster_name) = &table.cluster_name {
-            // ClickHouse macros like {cluster} are resolved at runtime by ClickHouse
-            // from system.macros — skip validation for macro references.
+            // ClickHouse macros like {cluster} are resolved at runtime
+            // from system.macros - skip validation for macro references
             let is_macro = cluster_name.starts_with('{') && cluster_name.ends_with('}');
             if is_macro {
                 continue;
