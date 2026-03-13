@@ -787,6 +787,7 @@ mod tests {
             sample_by: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             version: None,
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),

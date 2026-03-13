@@ -263,6 +263,13 @@ impl TableProjection {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableConstraint {
+    pub name: String,
+    pub expression: String,
+    pub constraint_type: String,
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -374,6 +381,9 @@ pub struct Table {
     /// Projections for alternative data ordering within parts.
     #[serde(default)]
     pub projections: Vec<TableProjection>,
+    /// Table constraints (e.g. CONSTRAINT a1 ASSUME length(col) <= 32)
+    #[serde(default)]
+    pub constraints: Vec<TableConstraint>,
     /// Optional database name for multi-database support
     /// When not specified, uses the global ClickHouse config database
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -880,6 +890,7 @@ impl Table {
                 .into_iter()
                 .map(TableProjection::from_proto)
                 .collect(),
+            constraints: vec![],
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
@@ -1979,6 +1990,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2086,6 +2098,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2113,6 +2126,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2235,6 +2249,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2309,6 +2324,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2381,6 +2397,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2460,6 +2477,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2523,6 +2541,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2594,6 +2613,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2758,6 +2778,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2811,6 +2832,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

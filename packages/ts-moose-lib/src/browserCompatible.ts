@@ -9,6 +9,7 @@ export {
   OlapTable,
   OlapConfig,
   S3QueueTableSettings,
+  TableConstraint,
   Stream,
   StreamConfig,
   DeadLetterModel,

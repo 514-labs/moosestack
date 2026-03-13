@@ -5,8 +5,9 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseConstraint,
+    ClickHouseFloat, ClickHouseIndex, ClickHouseInt, ClickHouseProjection, ClickHouseTable,
+    DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -391,6 +392,15 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             .map(|p| ClickHouseProjection {
                 name: p.name.clone(),
                 body: p.body.clone(),
+            })
+            .collect(),
+        constraints: table
+            .constraints
+            .iter()
+            .map(|c| ClickHouseConstraint {
+                name: c.name.clone(),
+                expression: c.expression.clone(),
+                constraint_type: c.constraint_type.clone(),
             })
             .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
@@ -830,6 +840,7 @@ mod tests {
                 name: "proj_by_id".to_string(),
                 body: "SELECT _part_offset ORDER BY id".to_string(),
             }],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -885,6 +896,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

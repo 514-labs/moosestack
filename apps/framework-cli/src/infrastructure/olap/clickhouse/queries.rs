@@ -123,10 +123,10 @@ pub fn create_alias_for_table(
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
-ON CLUSTER `{{cluster_name}}`{{/if}}
+ON CLUSTER '{{cluster_name}}'{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
-{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_constraints}}, {{#each constraints}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
@@ -3456,6 +3456,25 @@ pub fn create_table_query(
             (true, items)
         };
 
+    let (has_constraints, constraint_strings): (bool, Vec<String>) = if table.constraints.is_empty()
+    {
+        (false, vec![])
+    } else {
+        let items: Vec<String> = table
+            .constraints
+            .iter()
+            .map(|c| {
+                format!(
+                    "CONSTRAINT {} {} {}",
+                    c.name,
+                    c.constraint_type.to_uppercase(),
+                    c.expression
+                )
+            })
+            .collect();
+        (true, items)
+    };
+
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
     // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
@@ -3491,6 +3510,8 @@ pub fn create_table_query(
         "indexes": index_strings,
         "has_projections": has_projections,
         "projections": projection_strings,
+        "has_constraints": has_constraints,
+        "constraints": constraint_strings,
         "primary_key_string": if supports_primary_key {
             primary_key_str
         } else {
@@ -3528,7 +3549,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}` SYNC{{/if}};
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}' SYNC{{/if}};
 "#;
 
 pub fn drop_table_query(
@@ -3549,12 +3570,12 @@ pub fn drop_table_query(
 }
 
 pub static ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
 MODIFY SETTING {{settings}};
 "#;
 
 pub static ALTER_TABLE_RESET_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
 RESET SETTING {{settings}};
 "#;
 
@@ -4029,6 +4050,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4072,6 +4094,7 @@ PRIMARY KEY (`id`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4114,6 +4137,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4185,6 +4209,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4231,6 +4256,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4276,6 +4302,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4331,6 +4358,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4405,6 +4433,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4453,6 +4482,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -4625,6 +4655,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4697,6 +4728,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
@@ -4742,6 +4774,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("product_id".to_string()),
@@ -4808,6 +4841,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_settings: Some(settings),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5286,6 +5320,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5874,6 +5909,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
             primary_key_expression: None,
@@ -5883,7 +5919,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -5923,6 +5959,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5944,7 +5981,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -5996,7 +6033,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         .unwrap();
 
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "MODIFY SETTING query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
@@ -6020,7 +6057,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         };
 
         let cluster_clause = Some("test_cluster")
-            .map(|c| format!(" ON CLUSTER `{}`", c))
+            .map(|c| format!(" ON CLUSTER '{}'", c))
             .unwrap_or_default();
 
         let query = format!(
@@ -6029,7 +6066,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
 
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "ADD COLUMN query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
@@ -6950,6 +6987,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -7014,6 +7052,7 @@ ORDER BY (`id`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7082,6 +7121,7 @@ ORDER BY (`event_time`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7501,6 +7541,7 @@ ORDER BY (`event_time`)
                 name: "proj_by_user".to_string(),
                 body: "SELECT * ORDER BY user_id".to_string(),
             }],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7549,6 +7590,7 @@ ORDER BY (`event_time`)
                 name: "should_be_ignored".to_string(),
                 body: "SELECT * ORDER BY data".to_string(),
             }],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,

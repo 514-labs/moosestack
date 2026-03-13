@@ -471,7 +471,7 @@ pub async fn execute_changes(
             // Database has tables with clusters - create on each cluster
             for cluster in clusters {
                 let create_db_query = format!(
-                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER `{}`",
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER '{}'",
                     database, cluster
                 );
                 info!("Creating database {} on cluster {}", database, cluster);
@@ -753,7 +753,7 @@ pub async fn execute_atomic_operation(
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let cluster_clause = cluster_name
                 .as_ref()
-                .map(|c| format!(" ON CLUSTER `{}`", c))
+                .map(|c| format!(" ON CLUSTER '{}'", c))
                 .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
@@ -935,7 +935,7 @@ async fn execute_add_table_index(
         format!("({})", index.arguments.join(", "))
     };
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
@@ -964,7 +964,7 @@ async fn execute_drop_table_index(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
@@ -992,7 +992,7 @@ async fn execute_add_table_projection(
     validate_clickhouse_identifier(&projection.name, "Projection name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} ADD PROJECTION IF NOT EXISTS `{}` ({})",
@@ -1020,7 +1020,7 @@ async fn execute_drop_table_projection(
     validate_clickhouse_identifier(projection_name, "Projection name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP PROJECTION IF EXISTS `{}`",
@@ -1042,7 +1042,7 @@ async fn execute_modify_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY SAMPLE BY {}",
@@ -1063,7 +1063,7 @@ async fn execute_remove_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} REMOVE SAMPLE BY",
@@ -1139,7 +1139,7 @@ async fn execute_add_table_column(
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
 
     let property_clauses = build_column_property_clauses(&clickhouse_column);
@@ -1192,7 +1192,7 @@ async fn execute_drop_table_column(
         column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let drop_column_query = format!(
         "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
@@ -1423,7 +1423,7 @@ fn build_modify_column_sql(
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
 
     let mut statements = vec![];
@@ -1472,7 +1472,7 @@ fn build_modify_column_comment_sql(
     // Escape for ClickHouse SQL: backslashes first, then single quotes
     let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     Ok(format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` COMMENT '{}'",
@@ -1572,7 +1572,7 @@ async fn execute_rename_table_column(
         after_column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER `{}`", c))
+        .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
     let rename_column_query = format!(
         "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
@@ -2640,6 +2640,7 @@ impl OlapOperations for ConfiguredDBClient {
                         body: p.body,
                     })
                     .collect(),
+                constraints: vec![],
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store
@@ -4285,6 +4286,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
@@ -4358,6 +4360,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
@@ -4454,6 +4457,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: None,

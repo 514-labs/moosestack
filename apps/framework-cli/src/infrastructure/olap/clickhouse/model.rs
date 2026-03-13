@@ -723,6 +723,13 @@ pub struct ClickHouseProjection {
 }
 
 #[derive(Debug, Clone)]
+pub struct ClickHouseConstraint {
+    pub name: String,
+    pub expression: String,
+    pub constraint_type: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
     pub version: Option<Version>,
@@ -737,6 +744,7 @@ pub struct ClickHouseTable {
     pub indexes: Vec<ClickHouseIndex>,
     /// Projections for alternative data ordering within parts
     pub projections: Vec<ClickHouseProjection>,
+    pub constraints: Vec<ClickHouseConstraint>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support

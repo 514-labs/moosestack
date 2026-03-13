@@ -986,6 +986,7 @@ mod tests {
             life_cycle: LifeCycle::default_for_deserialization(),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database,
             engine_params_hash: None,
             table_settings_hash: None,

@@ -30,6 +30,12 @@ export interface TableProjection {
   body: string;
 }
 
+export interface TableConstraint {
+  name: string;
+  expression: string;
+  type: string;
+}
+
 /**
  * Represents a failed record during insertion with error details
  */
@@ -242,6 +248,7 @@ export type BaseOlapConfig<T> = (
   indexes?: TableIndex[];
   /** Optional projections for alternative data ordering within parts */
   projections?: TableProjection[];
+  constraints?: TableConstraint[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.
