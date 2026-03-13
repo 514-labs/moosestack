@@ -164,7 +164,12 @@ function verifyVersions(stagingDir, versions, templateName) {
           ["@514labs/moose-lib", versions["moose-lib"]],
           ["@514labs/moose-cli", versions["moose-cli"]],
         ]) {
-          if (deps[name] && deps[name] !== ver && deps[name] !== "latest") {
+          if (
+            ver &&
+            deps[name] &&
+            deps[name] !== ver &&
+            deps[name] !== "latest"
+          ) {
             throw new Error(
               `${templateName} ${filePath} has ${name}@${deps[name]}, expected ${ver}`,
             );
@@ -177,7 +182,7 @@ function verifyVersions(stagingDir, versions, templateName) {
         ["moose-cli", versions["moose-cli"]],
       ]) {
         const match = content.match(new RegExp(`${pkg}==([\\w.\\-]+)`));
-        if (match && match[1] !== ver) {
+        if (ver && match && match[1] !== ver) {
           throw new Error(
             `${templateName} ${filePath} has ${pkg}==${match[1]}, expected ${ver}`,
           );
