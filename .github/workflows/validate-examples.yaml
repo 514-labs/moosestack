@@ -116,10 +116,20 @@ jobs:
             echo "::group::Validate $root"
             pushd "$root" > /dev/null
             if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
-              # Build workspace packages in dependency order (generates dist/ for cross-package imports).
-              # Fall back to root-only if workspace deps need infrastructure not available in CI.
-              pnpm -r run --if-present build || pnpm run --if-present build
-              pnpm -r run --if-present typecheck || pnpm run --if-present typecheck
+              # Discover packages whose build requires moose-cli infrastructure (Docker/ClickHouse)
+              # and exclude them. Everything else is built and validated normally.
+              skip_filters=""
+              for pkg_json in $(find . -name package.json -maxdepth 3 -not -path '*/node_modules/*'); do
+                build_cmd=$(node -e "try{const p=require('./$pkg_json');console.log(p.scripts?.build||'')}catch(e){}" 2>/dev/null)
+                if echo "$build_cmd" | grep -q "moose-cli"; then
+                  pkg_name=$(node -e "const p=require('./$pkg_json');console.log(p.name)" 2>/dev/null)
+                  echo "::warning::Skipping build for $pkg_name (requires moose-cli infrastructure)"
+                  skip_filters="$skip_filters --filter=!${pkg_name}"
+                fi
+              done
+              # Build and typecheck remaining packages in dependency order
+              pnpm -r ${skip_filters} run --if-present build
+              pnpm -r ${skip_filters} run --if-present typecheck
               validated=true
             elif [ -f "package.json" ]; then
               ran_any=false
