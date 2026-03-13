@@ -1,0 +1,40 @@
+---
+title: env delete
+description: Delete an environment variable.
+order: 4
+---
+
+# 514 env delete
+
+Use `514 env delete` to remove an environment variable from a project or branch.
+
+## Usage
+
+```bash
+514 env delete [OPTIONS] <KEY>
+```
+
+## Arguments
+
+- `<KEY>`: Environment variable key to delete.
+
+## Options
+
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
+- `--branch <BRANCH>`: Branch name (infers branch scope).
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 env delete OLD_SECRET --project acme/analytics-api
+514 env delete FEATURE_FLAG --project acme/analytics-api --branch feature/new-ingest
+```
+
+## Related
+
+- [`514 env`](/hosting/cli/env)
+- [`514 env list`](/hosting/cli/env/list)
+- [`514 env get`](/hosting/cli/env/get)
+- [`514 env set`](/hosting/cli/env/set)
