@@ -718,7 +718,7 @@ async fn sync_kafka_to_clickhouse(
 /// # Returns
 /// * `Ok(ClickHouseRecord)` - Successfully mapped record
 /// * `Err` - Error if mapping fails
-fn mapper_json_to_clickhouse_record(
+pub(crate) fn mapper_json_to_clickhouse_record(
     schema_columns: &[Column],
     json_value: Value,
 ) -> anyhow::Result<ClickHouseRecord> {

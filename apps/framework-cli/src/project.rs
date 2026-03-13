@@ -410,6 +410,11 @@ pub struct Project {
     /// Development mode configuration
     #[serde(default)]
     pub dev: DevConfig,
+
+    /// Whether native infrastructure (--alpha mode) is being used instead of Docker.
+    /// Runtime-only flag, not persisted to config.
+    #[serde(skip)]
+    pub use_native_infra: bool,
 }
 
 pub fn default_source_dir() -> String {
@@ -485,6 +490,7 @@ impl Project {
             docker_config: DockerConfig::default(),
             watcher_config: WatcherConfig::default(),
             dev: DevConfig::default(),
+            use_native_infra: false,
         }
     }
 

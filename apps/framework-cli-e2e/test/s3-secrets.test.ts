@@ -66,7 +66,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: {
@@ -76,6 +76,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         },
       });
 
@@ -99,6 +100,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         APP_NAMES.TYPESCRIPT_TESTS,
         {
           logPrefix: "TypeScript S3Queue Test (With Env Vars)",
+          includeDocker: false,
         },
       );
     });
@@ -143,11 +145,12 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       const envWithoutCredentials: NodeJS.ProcessEnv = {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: envWithoutCredentials,
@@ -231,7 +234,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: {
@@ -243,6 +246,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         },
       });
 
@@ -266,6 +270,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         APP_NAMES.PYTHON_TESTS,
         {
           logPrefix: "Python S3Queue Test (With Env Vars)",
+          includeDocker: false,
         },
       );
     });
@@ -311,11 +316,12 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: envWithoutCredentials,

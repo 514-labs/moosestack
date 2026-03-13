@@ -82,7 +82,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     // Start moose dev for infrastructure
     testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       stdio: "pipe",
       cwd: testProjectDir,
       env: {
@@ -90,6 +90,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
         VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
         PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
     });
 
@@ -117,6 +118,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     await cleanupTestSuite(devProcess, testProjectDir, "py-db-pull-defaults", {
       logPrefix: "Python db-pull Defaults Test",
+      includeDocker: false,
     });
   });
 
@@ -445,12 +447,13 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     // Start moose dev for infrastructure
     testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       stdio: "pipe",
       cwd: testProjectDir,
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
     });
 
@@ -478,6 +481,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     await cleanupTestSuite(devProcess, testProjectDir, "ts-db-pull-defaults", {
       logPrefix: "TypeScript db-pull Defaults Test",
+      includeDocker: false,
     });
   });
 
