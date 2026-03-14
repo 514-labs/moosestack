@@ -892,6 +892,7 @@ mod tests {
                 crate::infrastructure::orchestration::temporal::TemporalConfig::default(),
             state_config: crate::project::StateConfig::default(),
             migration_config: crate::project::MigrationConfig::default(),
+            migration_coordinator: crate::project::MigrationCoordinatorConfig::default(),
             language_project_config: crate::project::LanguageProjectConfig::default(),
             project_location: std::path::PathBuf::new(),
             is_production: false,

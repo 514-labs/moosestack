@@ -15,6 +15,7 @@
 //!
 
 pub mod api;
+pub mod kubernetes;
 pub mod olap;
 pub mod orchestration;
 pub mod processes;

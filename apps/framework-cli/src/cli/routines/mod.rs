@@ -123,6 +123,7 @@ use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
+use crate::infrastructure::kubernetes::lease_gate::maybe_acquire_dynamic_migration_lease;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
@@ -131,6 +132,7 @@ use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
+use crate::infrastructure::{olap as olap_infra, stream as stream_infra};
 use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -159,6 +161,30 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
             let _ = probe_temporal(&manager, namespace, "warmup").await;
         }
     }
+}
+
+async fn execute_dynamic_mutation_phase(
+    project: &Project,
+    settings: &Settings,
+    plan: &InfraPlan,
+    skip_olap: bool,
+) -> anyhow::Result<()> {
+    if settings.should_bypass_infrastructure_execution() {
+        info!(
+            "Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)"
+        );
+        return Ok(());
+    }
+
+    if project.features.olap && !skip_olap {
+        olap_infra::execute_changes(project, &plan.changes.olap_changes).await?;
+    }
+
+    if project.features.streaming_engine {
+        stream_infra::execute_changes(project, &plan.changes.streaming_engine_changes).await?;
+    }
+
+    Ok(())
 }
 
 pub mod auth;
@@ -953,23 +979,8 @@ pub async fn start_production_mode(
         .build()
         .await?;
 
-    let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
-    maybe_warmup_connections(&project, &redis_client).await;
-
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
-
-    if execute_migration_yaml {
-        migrate::execute_migration_plan(
-            &project,
-            &project.clickhouse_config,
-            &current_state.tables,
-            &plan.target_infra_map,
-            &*state_storage,
-        )
-        .await?;
-    };
-
-    plan_validator::validate(&project, &plan)?;
+    let lease_guard = maybe_acquire_dynamic_migration_lease(&project).await?;
 
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
@@ -977,22 +988,107 @@ pub async fn start_production_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
+    let is_dynamic_lease_mode = lease_guard.is_some();
+    let is_lease_leader = lease_guard.as_ref().is_some_and(|guard| guard.is_leader());
+
+    let (current_state, plan) = if is_dynamic_lease_mode && !is_lease_leader {
+        // Followers should not compute runtime diffs from persisted state.
+        // They only need their local runtime graph to boot request handling.
+        let target_infra_map = InfrastructureMap::load_from_user_code(&project, true).await?;
+        (
+            InfrastructureMap::empty_from_project(&project),
+            InfraPlan {
+                target_infra_map,
+                changes: Default::default(),
+            },
+        )
+    } else {
+        plan_changes(&*state_storage, &project).await?
+    };
+    maybe_warmup_connections(&project, &redis_client).await;
+
+    if execute_migration_yaml && (!is_dynamic_lease_mode || is_lease_leader) {
+        if let Err(e) = migrate::execute_migration_plan(
+            &project,
+            &project.clickhouse_config,
+            &current_state.tables,
+            &plan.target_infra_map,
+            &*state_storage,
+        )
+        .await
+        {
+            if is_dynamic_lease_mode && is_lease_leader {
+                if let Some(guard) = &lease_guard {
+                    if let Err(status_err) = guard.mark_failed(&format!("{:#}", e)).await {
+                        warn!("Failed to mark migration lease as failed: {}", status_err);
+                    }
+                }
+            }
+            return Err(e);
+        }
+    }
+
+    plan_validator::validate(&project, &plan)?;
+
+    if is_dynamic_lease_mode && is_lease_leader {
+        let migration_result = async {
+            execute_dynamic_mutation_phase(&project, settings, &plan, execute_migration_yaml)
+                .await?;
+            state_storage
+                .store_infrastructure_map(&plan.target_infra_map)
+                .await?;
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+
+        match migration_result {
+            Ok(_) => {
+                if let Some(guard) = &lease_guard {
+                    if let Err(e) = guard.mark_completed().await {
+                        warn!(
+                            "Migration completed but failed to mark Kubernetes lease as completed: {}",
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                if let Some(guard) = &lease_guard {
+                    if let Err(status_err) = guard.mark_failed(&format!("{:#}", e)).await {
+                        warn!("Failed to mark migration lease as failed: {}", status_err);
+                    }
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    let mut execution_settings = settings.clone();
+    if is_dynamic_lease_mode {
+        // Lease-following pods must not run dynamic OLAP/streaming mutations.
+        execution_settings.dev.bypass_infrastructure_execution = true;
+    }
+
     let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
-        settings,
+        settings: &execution_settings,
         plan: &plan,
-        skip_olap: execute_migration_yaml,
+        skip_olap: execute_migration_yaml || is_dynamic_lease_mode,
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
     })
     .await?;
 
-    state_storage
-        .store_infrastructure_map(&plan.target_infra_map)
-        .await?;
+    if !is_dynamic_lease_mode {
+        state_storage
+            .store_infrastructure_map(&plan.target_infra_map)
+            .await?;
+    }
 
-    let infra_map: &'static InfrastructureMap = Box::leak(Box::new(plan.target_infra_map));
+    let target_infra_map = plan.target_infra_map;
+
+    let infra_map: &'static InfrastructureMap = Box::leak(Box::new(target_infra_map));
 
     // Create processing coordinator (unused in production but required for API consistency)
     use crate::cli::processing_coordinator::ProcessingCoordinator;

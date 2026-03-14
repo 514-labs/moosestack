@@ -165,6 +165,18 @@ fn default_state_storage() -> String {
     "redis".to_string()
 }
 
+fn default_migration_coordinator_mode() -> String {
+    "state_storage".to_string()
+}
+
+fn default_kubernetes_wait_timeout_seconds() -> u64 {
+    900
+}
+
+fn default_kubernetes_lease_name_prefix() -> String {
+    "moose-migration".to_string()
+}
+
 fn default_dockerfile_path() -> String {
     "./Dockerfile".to_string()
 }
@@ -204,6 +216,74 @@ impl Default for StateConfig {
     fn default() -> Self {
         StateConfig {
             storage: default_state_storage(),
+        }
+    }
+}
+
+/// Migration coordinator configuration
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MigrationCoordinatorConfig {
+    /// Coordination backend mode:
+    /// - "state_storage": Existing Redis/ClickHouse lock-based behavior
+    /// - "kubernetes_lease": Kubernetes Lease-based coordination (MDS-managed leases)
+    #[serde(default = "default_migration_coordinator_mode")]
+    pub mode: String,
+    /// Kubernetes-specific coordination settings
+    #[serde(default)]
+    pub kubernetes: KubernetesMigrationCoordinatorConfig,
+}
+
+impl MigrationCoordinatorConfig {
+    pub fn is_kubernetes_lease_mode(&self) -> bool {
+        self.mode.eq_ignore_ascii_case("kubernetes_lease") || self.kubernetes.enabled
+    }
+}
+
+impl Default for MigrationCoordinatorConfig {
+    fn default() -> Self {
+        Self {
+            mode: default_migration_coordinator_mode(),
+            kubernetes: KubernetesMigrationCoordinatorConfig::default(),
+        }
+    }
+}
+
+/// Kubernetes lease coordination settings.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KubernetesMigrationCoordinatorConfig {
+    /// Explicitly enable Kubernetes lease gating
+    #[serde(default)]
+    pub enabled: bool,
+    /// Namespace containing the lease object
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// Deployment identifier used to locate the lease
+    #[serde(default)]
+    pub deployment_id: Option<String>,
+    /// Optional pod identifier used as lease holder identity
+    #[serde(default)]
+    pub pod_id: Option<String>,
+    /// Time to wait for in-progress leases before failing startup
+    #[serde(default = "default_kubernetes_wait_timeout_seconds")]
+    pub wait_timeout_seconds: u64,
+    /// Fail startup if lease checks fail (recommended in production)
+    #[serde(default = "_true")]
+    pub fail_closed: bool,
+    /// Lease name prefix. Full lease name is "<prefix>-<deployment_id>"
+    #[serde(default = "default_kubernetes_lease_name_prefix")]
+    pub lease_name_prefix: String,
+}
+
+impl Default for KubernetesMigrationCoordinatorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            namespace: None,
+            deployment_id: None,
+            pod_id: None,
+            wait_timeout_seconds: default_kubernetes_wait_timeout_seconds(),
+            fail_closed: true,
+            lease_name_prefix: default_kubernetes_lease_name_prefix(),
         }
     }
 }
@@ -370,6 +450,9 @@ pub struct Project {
     /// Migration configuration
     #[serde(default)]
     pub migration_config: MigrationConfig,
+    /// Migration coordination backend and runtime gating settings
+    #[serde(default)]
+    pub migration_coordinator: MigrationCoordinatorConfig,
     /// Language-specific project configuration (not serialized)
     #[serde(skip)]
     pub language_project_config: LanguageProjectConfig,
@@ -473,6 +556,7 @@ impl Project {
             temporal_config: TemporalConfig::default(),
             state_config: StateConfig::default(),
             migration_config: MigrationConfig::default(),
+            migration_coordinator: MigrationCoordinatorConfig::default(),
             language_project_config,
             supported_old_versions: HashMap::new(),
             git_config: GitConfig::default(),
