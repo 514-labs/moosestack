@@ -26,6 +26,7 @@ Argument convention:
 - `deployment`: Manage deployments (`list`).
 - `doc`: Browse and search documentation (`list`, `show`, `search`, `browse`).
 - `cli`: Manage installed CLIs (`update`).
+- `env`: Manage environment variables (`list`, `get`, `set`, `delete`).
 - `agent`: Agent-focused read-only command surface.
 - `api-endpoint`: Manage API endpoint resources for a deployment.
 - `stream`: Manage stream resources for a deployment.
@@ -85,6 +86,8 @@ Resources following this pattern:
 514 stream list dep_abc123 --project my-org/my-project
 514 api-endpoints list dep_abc123 --project my-org/my-project
 514 agent deployment list --project my-org/my-project
+514 env list --project my-org/my-project
+514 env set API_KEY=sk-123 --project my-org/my-project
 514 doc search "deployment"
 514 cli update moose
 ```
@@ -96,4 +99,5 @@ Resources following this pattern:
 - [`514 project`](/hosting/cli/projects)
 - [`514 project link`](/hosting/cli/projects/link)
 - [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 env`](/hosting/cli/env)
 - [`514 cli update`](/hosting/cli/cli/update)
