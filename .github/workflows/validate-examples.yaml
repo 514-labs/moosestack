@@ -147,8 +147,8 @@ jobs:
                 fi
               done
               # Build and typecheck remaining packages in dependency order
-              pnpm -r ${skip_filters} run --if-present build
-              pnpm -r ${skip_filters} run --if-present typecheck
+              pnpm -r --include-workspace-root ${skip_filters} run --if-present build
+              pnpm -r --include-workspace-root ${skip_filters} run --if-present typecheck
               validated=true
             elif [ -f "package.json" ]; then
               ran_any=false
@@ -169,6 +169,10 @@ jobs:
               if python -m pip show moose-lib >/dev/null 2>&1; then
                 python -c "import moose_lib; print('moose_lib imported successfully')"
               fi
+              validated=true
+            fi
+            if [ "$validated" = false ] && [ -f "moose.config.toml" ]; then
+              echo "::warning::moose.config.toml found but no buildable manifest — requires moose-cli infrastructure, skipping build"
               validated=true
             fi
             popd > /dev/null
