@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        example: ${{ fromJson(needs.discover.outputs.examples) }}
+        example: ${{ fromJson(needs.discover.outputs.examples || '[]') }}
     steps:
       - uses: actions/checkout@v4
 
