@@ -195,10 +195,11 @@ const deleteStaleConsumerGroups = async (): Promise<void> => {
   );
   testLogger.info(`rpk group list:\n${groupList}`);
 
+  // rpk group list columns: BROKER(0)  GROUP(1)  STATE(2)
   const staleGroups = groupList
     .split("\n")
     .slice(1)
-    .map((l: string) => l.trim().split(/\s+/)[0])
+    .map((l: string) => l.trim().split(/\s+/)[1])
     .filter(
       (g: string) =>
         g && (g.includes("flow-") || g.includes("clickhouse_sync")),
