@@ -1,0 +1,17 @@
+{
+  "sqltools.connections": [
+    {
+      "server": "http://localhost",
+      "port": 18123,
+      "database": "local",
+      "useJWT": false,
+      "requestTimeout": 30000,
+      "enableTls": false,
+      "previewLimit": 50,
+      "password": "pandapass",
+      "username": "panda",
+      "driver": "ClickHouse",
+      "name": "olapdb"
+    }
+  ]
+}
