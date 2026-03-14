@@ -21,6 +21,6 @@
     "verbatimModuleSyntax": false,
     "erasableSyntaxOnly": false
   },
-  "exclude": ["node_modules", "dist", "moose"],
+  "exclude": ["node_modules", "dist"],
   "include": ["src/**/*.ts"]
 }
