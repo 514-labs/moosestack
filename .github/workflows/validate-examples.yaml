@@ -194,14 +194,14 @@ jobs:
       - name: Check final status
         shell: bash
         run: |
-          if [[ "${{ needs.discover.outputs.should_run }}" != "true" ]]; then
-            echo "No example changes detected, marking as success"
-            exit 0
-          fi
-
           if [[ "${{ needs.discover.result }}" == "failure" ]]; then
             echo "Discover job failed"
             exit 1
+          fi
+
+          if [[ "${{ needs.discover.outputs.should_run }}" != "true" ]]; then
+            echo "No example changes detected, marking as success"
+            exit 0
           fi
 
           if [[ "${{ needs.validate.result }}" == "failure" ]]; then
