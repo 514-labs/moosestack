@@ -6,6 +6,7 @@
 //! when finished successfully.
 
 use super::terminal::TerminalComponent;
+use super::terminal_lock;
 use crossterm::{
     cursor::{position, MoveTo, RestorePosition, SavePosition},
     execute, queue,
@@ -22,8 +23,6 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
-use tokio::macros::support::Future;
-
 /// Dots9 animation frames for the spinner
 const DOTS9_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -32,6 +31,35 @@ const CHECKMARK: &str = "✓";
 
 /// Frame update interval in milliseconds
 const FRAME_INTERVAL_MS: u64 = 80;
+
+/// Lightweight, cloneable handle for pausing/resuming a running spinner from
+/// outside the animation thread. Safe to send across thread and async boundaries.
+#[derive(Clone)]
+pub struct SpinnerHandle {
+    pause_signal: Arc<AtomicBool>,
+}
+
+impl SpinnerHandle {
+    /// Pause the spinner animation. The thread stays alive but skips redraws.
+    pub fn pause(&self) {
+        self.pause_signal.store(true, Ordering::Relaxed);
+    }
+
+    /// Resume spinner animation after a pause.
+    pub fn resume(&self) {
+        self.pause_signal.store(false, Ordering::Relaxed);
+    }
+
+    fn is_paused(&self) -> bool {
+        self.pause_signal.load(Ordering::Relaxed)
+    }
+
+    fn noop() -> Self {
+        Self {
+            pause_signal: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 /// An animated spinner component that reserves a specific line for display.
 ///
@@ -75,6 +103,7 @@ pub struct SpinnerComponent {
     message: String,
     handle: Option<JoinHandle<()>>,
     stop_signal: Arc<AtomicBool>,
+    pause_signal: Arc<AtomicBool>,
     started: bool,
     initial_line: Option<u16>,
     is_done: bool,
@@ -102,9 +131,17 @@ impl SpinnerComponent {
             message: message.to_string(),
             handle: None,
             stop_signal: Arc::new(AtomicBool::new(false)),
+            pause_signal: Arc::new(AtomicBool::new(false)),
             started: false,
             initial_line: None,
             is_done: false,
+        }
+    }
+
+    /// Returns a lightweight handle that can pause/resume this spinner.
+    pub fn handle(&self) -> SpinnerHandle {
+        SpinnerHandle {
+            pause_signal: self.pause_signal.clone(),
         }
     }
 
@@ -151,6 +188,7 @@ impl SpinnerComponent {
 
         // Display checkmark with completion message on the reserved line
         if let Some(initial_line) = self.initial_line {
+            let _guard = terminal_lock::acquire();
             queue!(
                 stdout(),
                 SavePosition,
@@ -223,14 +261,20 @@ impl TerminalComponent for SpinnerComponent {
 
         let message = self.message.clone();
         let stop_signal = self.stop_signal.clone();
+        let pause_signal = self.pause_signal.clone();
 
         // Capture current cursor position to reserve this line for the spinner
-        let initial_pos = position().unwrap_or((0, 0));
+        let initial_pos = {
+            let _guard = terminal_lock::acquire();
+            position().unwrap_or((0, 0))
+        };
         self.initial_line = Some(initial_pos.1);
 
-        // Display initial spinner frame and add newline to separate from subprocess output
-        execute!(stdout(), Print(&format!("{} {message}\n", DOTS9_FRAMES[0])))?;
-        stdout().flush()?;
+        {
+            let _guard = terminal_lock::acquire();
+            execute!(stdout(), Print(&format!("{} {message}\n", DOTS9_FRAMES[0])))?;
+            stdout().flush()?;
+        }
 
         let initial_line = self.initial_line.unwrap();
 
@@ -240,34 +284,38 @@ impl TerminalComponent for SpinnerComponent {
             while !stop_signal.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(FRAME_INTERVAL_MS));
 
-                if !stop_signal.load(Ordering::Relaxed) {
-                    frame_index = (frame_index + 1) % DOTS9_FRAMES.len();
+                if stop_signal.load(Ordering::Relaxed) || pause_signal.load(Ordering::Relaxed) {
+                    continue;
+                }
 
-                    // Try synchronized updates first (atomic operation)
-                    let sync_result = queue!(
+                frame_index = (frame_index + 1) % DOTS9_FRAMES.len();
+
+                let _guard = terminal_lock::acquire();
+                if stop_signal.load(Ordering::Relaxed) || pause_signal.load(Ordering::Relaxed) {
+                    continue;
+                }
+                let sync_result = queue!(
+                    stdout(),
+                    BeginSynchronizedUpdate,
+                    SavePosition,
+                    MoveTo(0, initial_line),
+                    Clear(ClearType::CurrentLine),
+                    Print(&format!("{} {message}", DOTS9_FRAMES[frame_index])),
+                    RestorePosition,
+                    EndSynchronizedUpdate
+                )
+                .and_then(|_| stdout().flush());
+
+                if sync_result.is_err() {
+                    let _ = queue!(
                         stdout(),
-                        BeginSynchronizedUpdate,
                         SavePosition,
                         MoveTo(0, initial_line),
                         Clear(ClearType::CurrentLine),
                         Print(&format!("{} {message}", DOTS9_FRAMES[frame_index])),
-                        RestorePosition,
-                        EndSynchronizedUpdate
+                        RestorePosition
                     )
                     .and_then(|_| stdout().flush());
-
-                    // If synchronized updates fail, fall back to queue-based approach
-                    if sync_result.is_err() {
-                        let _ = queue!(
-                            stdout(),
-                            SavePosition,
-                            MoveTo(0, initial_line),
-                            Clear(ClearType::CurrentLine),
-                            Print(&format!("{} {message}", DOTS9_FRAMES[frame_index])),
-                            RestorePosition
-                        )
-                        .and_then(|_| stdout().flush());
-                    }
                 }
             }
         }));
@@ -301,8 +349,8 @@ impl TerminalComponent for SpinnerComponent {
             let _ = handle.join();
         }
 
-        // Clean up the reserved spinner line if we have it
         if let Some(initial_line) = self.initial_line {
+            let _guard = terminal_lock::acquire();
             queue!(
                 stdout(),
                 SavePosition,
@@ -497,7 +545,7 @@ where
 #[cfg(test)]
 pub async fn with_spinner_async<F, R>(message: &str, f: F, activate: bool) -> R
 where
-    F: Future<Output = R>,
+    F: std::future::Future<Output = R>,
 {
     let sp = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
@@ -517,36 +565,22 @@ where
     res
 }
 
-/// Executes an asynchronous function with a spinner and completion message displayed during execution.
+/// Executes an asynchronous closure with a spinner and completion message.
 ///
-/// This is the async version of `with_spinner_completion`, providing the same completion
-/// message functionality for long-running async operations.
+/// The closure receives a [`SpinnerHandle`] that can be used to pause/resume the
+/// spinner (e.g. while showing an interactive prompt that would otherwise fight
+/// with the spinner for terminal control).
 ///
 /// # Arguments
 ///
 /// * `message` - The message to display alongside the spinner
 /// * `completion_message` - The message to display with checkmark upon successful completion
-/// * `f` - The async function to execute while the spinner is active
+/// * `f` - A closure that takes a `SpinnerHandle` and returns a future
 /// * `activate` - Whether to actually show the spinner (false or non-terminal disables spinner)
 ///
 /// # Returns
 ///
-/// The result of the async function execution, unchanged
-///
-/// # Examples
-///
-/// ```rust
-/// # use crate::cli::display::spinner::with_spinner_completion_async;
-/// # async fn example() {
-/// let result = with_spinner_completion_async("Processing async data", "Async processing complete", async {
-///     // Async operation
-///     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-///     42
-/// }, true).await;
-/// assert_eq!(result, 42);
-/// // Spinner shows: "✓ Async processing complete"
-/// # }
-/// ```
+/// The result of the future, unchanged
 pub async fn with_spinner_completion_async<F, R>(
     message: &str,
     completion_message: &str,
@@ -554,24 +588,27 @@ pub async fn with_spinner_completion_async<F, R>(
     activate: bool,
 ) -> R
 where
-    F: Future<Output = R>,
+    F: AsyncFnOnce(&SpinnerHandle) -> R,
 {
-    let sp = if activate && stdout().is_terminal() {
+    let (sp, handle) = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
+        let h = spinner.handle();
         let _ = spinner.start();
-        Some(spinner)
+        (Some(spinner), h)
     } else {
-        None
+        (None, SpinnerHandle::noop())
     };
 
-    let res = f.await;
+    let res = f(&handle).await;
 
     if let Some(mut spinner) = sp {
-        let _ = spinner.done(completion_message);
+        if handle.is_paused() {
+            let _ = spinner.stop();
+        } else {
+            let _ = spinner.done(completion_message);
+        }
         let _ = spinner.cleanup();
-    } else if activate {
-        // In non-TTY mode (e.g., CI), still print the completion message
-        // so tests can detect when operations complete
+    } else if activate && !handle.is_paused() {
         println!("✓ {completion_message}");
     }
 
@@ -710,7 +747,7 @@ mod tests {
     #[tokio::test]
     async fn test_with_spinner_completion_async() {
         let result =
-            with_spinner_completion_async("Processing", "Task completed", async { 42 }, false)
+            with_spinner_completion_async("Processing", "Task completed", async |_h| 42, false)
                 .await;
         assert_eq!(result, 42);
     }

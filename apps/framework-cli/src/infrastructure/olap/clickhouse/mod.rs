@@ -380,7 +380,8 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::AddTableProjection { table, .. }
         | AtomicOlapOperation::DropTableProjection { table, .. }
         | AtomicOlapOperation::ModifySampleBy { table, .. }
-        | AtomicOlapOperation::RemoveSampleBy { table, .. } => table.cluster_name.as_deref(),
+        | AtomicOlapOperation::RemoveSampleBy { table, .. }
+        | AtomicOlapOperation::RenameTableColumn { table, .. } => table.cluster_name.as_deref(),
         AtomicOlapOperation::PopulateMaterializedView { .. }
         | AtomicOlapOperation::CreateDmv1View { .. }
         | AtomicOlapOperation::DropDmv1View { .. }

@@ -143,6 +143,10 @@ pub enum Commands {
         /// Log payloads at ingest API and streaming functions for debugging
         #[arg(long)]
         log_payloads: bool,
+
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        #[arg(long)]
+        yes_destructive: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

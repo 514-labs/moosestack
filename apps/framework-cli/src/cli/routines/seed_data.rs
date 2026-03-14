@@ -549,17 +549,20 @@ pub async fn handle_seed_command(
             let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
                 "Initializing database seeding operation...",
                 "Database seeding completed",
-                seed_clickhouse_operation(
-                    project,
-                    &resolved_clickhouse_url,
-                    table.clone(),
-                    match (all, limit) {
-                        (true, _) => SeedLimit::All,
-                        (false, Some(n)) => SeedLimit::Count(*n),
-                        (false, None) => SeedLimit::Unspecified,
-                    },
-                    order_by.as_deref(),
-                ),
+                async |_handle| {
+                    seed_clickhouse_operation(
+                        project,
+                        &resolved_clickhouse_url,
+                        table.clone(),
+                        match (all, limit) {
+                            (true, _) => SeedLimit::All,
+                            (false, Some(n)) => SeedLimit::Count(*n),
+                            (false, None) => SeedLimit::Unspecified,
+                        },
+                        order_by.as_deref(),
+                    )
+                    .await
+                },
                 !project.is_production,
             )
             .await?;

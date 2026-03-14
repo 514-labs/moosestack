@@ -89,13 +89,14 @@ Starts a local development environment with hot reload and automatic infrastruct
 - **Python**: `pip install -r requirements.txt`
 
 ```bash
-moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
+moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes-destructive]
 ```
 - `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp) for details.
 - `--no-infra`: Skip starting docker containers for infrastructure
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
+- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via the `MOOSE_ACCEPT_DESTRUCTIVE=1` environment variable.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 

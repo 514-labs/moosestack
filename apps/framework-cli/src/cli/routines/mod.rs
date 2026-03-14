@@ -121,6 +121,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
+use crate::framework::core::plan_risk::ConfirmationPolicy;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -468,6 +469,7 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    confirmation_policy: ConfirmationPolicy,
 ) -> anyhow::Result<()> {
     // Set global flag so ensure_typescript_compiled knows to skip
     // (tspc --watch handles compilation in dev mode)
@@ -703,6 +705,16 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
+    let risk = crate::framework::core::plan_risk::classify_plan_risk(&plan.changes);
+    if !crate::framework::core::plan_risk::destructive_confirmation_gate(
+        &risk,
+        &confirmation_policy,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
@@ -767,6 +779,7 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 ts_compile_handle,
+                confirmation_policy,
             )?;
         }
         SupportedLanguages::Python => {
@@ -782,6 +795,7 @@ pub async fn start_development_mode(
                 settings.clone(),
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
+                confirmation_policy,
             )?;
         }
     }

@@ -4,7 +4,9 @@
 //! crate. It includes components for displaying styled text and managing
 //! terminal state during CLI operations.
 
+use super::terminal_lock;
 use crossterm::{
+    cursor::{RestorePosition, SavePosition},
     execute,
     style::{
         Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
@@ -276,14 +278,23 @@ pub fn write_styled_line(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> IoResult<()> {
-    // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
-    // for structured/JSON output
+    let _guard = terminal_lock::acquire();
     if quiet_stdout {
+        // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
+        // for structured/JSON output
         let mut stderr = stderr();
         write_styled_line_to(&mut stderr, styled_text, message, no_ansi, show_timestamps)
     } else {
-        let mut stdout = stdout();
-        write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+        let mut out = stdout();
+        if let Some(row) = terminal_lock::scroll_region_bottom() {
+            execute!(out, SavePosition, crossterm::cursor::MoveTo(0, row))?;
+            let write_result =
+                write_styled_line_to(&mut out, styled_text, message, no_ansi, show_timestamps);
+            let restore_result = execute!(out, RestorePosition);
+            write_result.and(restore_result)
+        } else {
+            write_styled_line_to(&mut out, styled_text, message, no_ansi, show_timestamps)
+        }
     }
 }
 

@@ -42,6 +42,7 @@ use tracing::{debug, info, warn};
 
 use settings::Settings;
 use std::collections::HashMap;
+use std::io::stdout;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -77,6 +78,7 @@ use crate::cli::routines::code_generation::{
 use crate::cli::routines::ls::ls;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::framework::core::plan_risk::ConfirmationPolicy;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -93,27 +95,8 @@ pub fn prompt_user(
 ) -> Result<String, RoutineFailure> {
     use std::io::{self, Write};
 
-    // Build the prompt with proper formatting
-    let mut full_prompt = String::new();
-
-    // Add the main prompt text
-    full_prompt.push_str(prompt_text);
-
-    // Add default value if provided
-    if let Some(default_value) = default {
-        full_prompt.push_str(&format!(" (default: {})", default_value));
-    }
-
-    // Add hint if provided
-    if let Some(hint_text) = hint {
-        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
-    }
-
-    // Add the prompt indicator
-    full_prompt.push_str("\n> ");
-
-    print!("{}", full_prompt);
-    let _ = io::stdout().flush();
+    print!("{}", format_prompt(prompt_text, default, hint));
+    let _ = stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
         RoutineFailure::new(
@@ -124,16 +107,55 @@ pub fn prompt_user(
             e,
         )
     })?;
-    let trimmed = input.trim();
+    Ok(apply_default(input.trim(), default))
+}
 
-    // Return default if input is empty, otherwise return the trimmed input
-    let result = if trimmed.is_empty() {
+/// Async version of [`prompt_user`] that doesn't block the tokio runtime.
+pub async fn prompt_user_async(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    use std::io::Write;
+    use tokio::io::AsyncBufReadExt;
+
+    print!("{}", format_prompt(prompt_text, default, hint));
+    let _ = stdout().flush();
+
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = stdin.lines();
+    let line = lines.next_line().await.map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Prompt".to_string(),
+                details: "Failed to read user input".to_string(),
+            },
+            e,
+        )
+    })?;
+    let trimmed = line.as_deref().unwrap_or("").trim();
+    Ok(apply_default(trimmed, default))
+}
+
+fn format_prompt(prompt_text: &str, default: Option<&str>, hint: Option<&str>) -> String {
+    let mut full_prompt = String::new();
+    full_prompt.push_str(prompt_text);
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+    full_prompt.push_str("\n> ");
+    full_prompt
+}
+
+fn apply_default(trimmed: &str, default: Option<&str>) -> String {
+    if trimmed.is_empty() {
         default.unwrap_or("").to_string()
     } else {
         trimmed.to_string()
-    };
-
-    Ok(result)
+    }
 }
 
 /// Prompts user for password input with masked characters (shows * instead of typed chars)
@@ -144,11 +166,11 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
         event::{read, Event, KeyCode, KeyModifiers},
         terminal::{disable_raw_mode, enable_raw_mode},
     };
-    use std::io::{self, Write};
+    use std::io::Write;
 
     // Print the prompt
     print!("{}\n> ", prompt_text);
-    let _ = io::stdout().flush();
+    let _ = stdout().flush();
 
     // Enable raw mode to capture individual key presses
     enable_raw_mode().map_err(|e| {
@@ -199,13 +221,13 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                             password.pop();
                             // Erase the last asterisk: move back, print space, move back again
                             print!("\x08 \x08");
-                            let _ = io::stdout().flush();
+                            let _ = stdout().flush();
                         }
                     }
                     KeyCode::Char(c) => {
                         password.push(c);
                         print!("*"); // Show asterisk instead of actual character
-                        let _ = io::stdout().flush();
+                        let _ = stdout().flush();
                     }
                     _ => {} // Ignore other keys
                 }
@@ -746,6 +768,7 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
+            yes_destructive,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -761,6 +784,15 @@ pub async fn top_command_handler(
             if *log_payloads {
                 info!("Payload logging enabled");
             }
+
+            let confirmation_policy = ConfirmationPolicy {
+                accept_destructive: *yes_destructive
+                    || std::env::var("MOOSE_ACCEPT_DESTRUCTIVE")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false),
+                is_dev: true,
+            };
+
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -820,6 +852,7 @@ pub async fn top_command_handler(
                 redis_client,
                 &settings,
                 *mcp,
+                confirmation_policy,
             )
             .await
             .map_err(|e| {

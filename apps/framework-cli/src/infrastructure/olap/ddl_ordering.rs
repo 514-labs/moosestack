@@ -148,6 +148,17 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Rename a column in a table
+    RenameTableColumn {
+        /// The table containing the column
+        table: Table,
+        /// Column name before rename
+        before_column_name: String,
+        /// Column name after rename
+        after_column_name: String,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
     /// Create a new DMv1 view (table alias)
     CreateDmv1View {
         /// The view to create
@@ -254,6 +265,18 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::RenameTableColumn {
+                table,
+                before_column_name,
+                after_column_name,
+                dependency_info: _,
+            } => SerializableOlapOperation::RenameTableColumn {
+                table: table.name.clone(),
+                before_column_name: before_column_name.clone(),
+                after_column_name: after_column_name.clone(),
                 database: table.database.clone(),
                 cluster_name: table.cluster_name.clone(),
             },
@@ -457,6 +480,11 @@ impl AtomicOlapOperation {
                     id: table.id(default_database),
                 }
             }
+            AtomicOlapOperation::RenameTableColumn { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
                 InfrastructureSignature::Table {
                     id: table.id(default_database),
@@ -561,6 +589,9 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropTableProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::RenameTableColumn {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifySampleBy {
@@ -1052,6 +1083,21 @@ fn process_column_changes(
             } => {
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
+            }
+            ColumnChange::Renamed {
+                before: before_col,
+                after: after_col,
+                ..
+            } => {
+                plan.setup_ops.push(AtomicOlapOperation::RenameTableColumn {
+                    table: after.clone(),
+                    before_column_name: before_col.name.clone(),
+                    after_column_name: after_col.name.clone(),
+                    dependency_info: DependencyInfo {
+                        pulls_data_from: vec![],
+                        pushes_data_to: vec![],
+                    },
+                });
             }
         }
     }
@@ -3720,6 +3766,113 @@ mod tests {
                 }
                 _ => panic!("Expected RawSql operation"),
             }
+        }
+    }
+
+    #[test]
+    fn test_column_rename_produces_rename_operation() {
+        use crate::framework::core::infrastructure_map::ColumnChange;
+
+        let before_table = Table {
+            name: "events".to_string(),
+            columns: vec![Column {
+                name: "user_name".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["user_name".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let after_table = Table {
+            name: "events".to_string(),
+            columns: vec![Column {
+                name: "username".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["username".to_string()]),
+            ..before_table.clone()
+        };
+
+        let column_changes = vec![ColumnChange::Renamed {
+            before: before_table.columns[0].clone(),
+            after: after_table.columns[0].clone(),
+            confidence: 0.9,
+        }];
+
+        let plan = process_column_changes(&before_table, &after_table, &column_changes);
+
+        assert!(plan.teardown_ops.is_empty());
+        assert_eq!(plan.setup_ops.len(), 1);
+
+        match &plan.setup_ops[0] {
+            AtomicOlapOperation::RenameTableColumn {
+                table,
+                before_column_name,
+                after_column_name,
+                ..
+            } => {
+                assert_eq!(table.name, "events");
+                assert_eq!(before_column_name, "user_name");
+                assert_eq!(after_column_name, "username");
+            }
+            other => panic!("Expected RenameTableColumn, got {:?}", other),
+        }
+
+        let serializable = plan.setup_ops[0].to_minimal();
+        match serializable {
+            SerializableOlapOperation::RenameTableColumn {
+                table,
+                before_column_name,
+                after_column_name,
+                ..
+            } => {
+                assert_eq!(table, "events");
+                assert_eq!(before_column_name, "user_name");
+                assert_eq!(after_column_name, "username");
+            }
+            other => panic!(
+                "Expected SerializableOlapOperation::RenameTableColumn, got {:?}",
+                other
+            ),
         }
     }
 }

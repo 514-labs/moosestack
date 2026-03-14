@@ -2996,7 +2996,7 @@ async fn shutdown(
         with_spinner_completion_async(
             "Stopping managed processes (functions, syncing, consumption, workers)",
             "Managed processes stopped",
-            async {
+            async |_handle| {
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },

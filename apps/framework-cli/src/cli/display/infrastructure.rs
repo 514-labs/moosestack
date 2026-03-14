@@ -28,6 +28,7 @@
 //! consistent display formatting while reducing code duplication and maintenance overhead.
 
 use super::terminal::{write_styled_line, StyledText, ACTION_WIDTH};
+use crate::framework::core::infrastructure_map::ColumnChange;
 use crate::framework::core::{
     infrastructure::table::{ColumnType, EnumValue},
     infrastructure_map::{
@@ -463,10 +464,7 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                 details.push("Column changes:".to_string());
                 for change in column_changes {
                     let change_line = match change {
-                        crate::framework::core::infrastructure_map::ColumnChange::Added {
-                            column,
-                            ..
-                        } => {
+                        ColumnChange::Added { column, .. } => {
                             let mut col_str = format!(
                                 "{}: {}",
                                 column.name,
@@ -492,17 +490,12 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                                 format!("  + {}", col_str)
                             }
                         }
-                        crate::framework::core::infrastructure_map::ColumnChange::Removed(
-                            column,
-                        ) => format!(
+                        ColumnChange::Removed(column) => format!(
                             "  - {}: {}",
                             column.name,
                             format_column_type(&column.data_type)
                         ),
-                        crate::framework::core::infrastructure_map::ColumnChange::Updated {
-                            before,
-                            after,
-                        } => {
+                        ColumnChange::Updated { before, after } => {
                             // Check if there are actual visible changes
                             let type_changed = before.data_type != after.data_type;
                             let nullable_changed = before.required != after.required;
@@ -553,6 +546,14 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                                     )
                                 }
                             }
+                        }
+                        ColumnChange::Renamed { before, after, .. } => {
+                            format!(
+                                "  ~ {}: {} -> {} (renamed)",
+                                before.name,
+                                format_column_type(&before.data_type),
+                                after.name
+                            )
                         }
                     };
                     details.push(change_line);
@@ -890,6 +891,12 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
                                     before.name,
                                     format_column_type(&before.data_type),
                                     format_column_type(&after.data_type)
+                                ));
+                            }
+                            ColumnChange::Renamed { before, after, .. } => {
+                                details.push(format!(
+                                    "    ~ {} → {} (rename blocked)",
+                                    before.name, after.name
                                 ));
                             }
                         }
