@@ -184,32 +184,15 @@ const buildDevEnv = (
   return env;
 };
 
-const deleteStaleConsumerGroups = async (): Promise<void> => {
+const resetRedpandaContainer = async (): Promise<void> => {
   const { stdout: container } = await execAsync(
-    `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+    `docker ps --all --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
   );
-  if (!container.trim()) return;
+  const name = container.trim();
+  if (!name) return;
 
-  const { stdout: groupList } = await execAsync(
-    `docker exec ${container.trim()} rpk group list`,
-  );
-  testLogger.info(`rpk group list:\n${groupList}`);
-
-  // rpk group list columns: BROKER(0)  GROUP(1)  STATE(2)
-  const staleGroups = groupList
-    .split("\n")
-    .slice(1)
-    .map((l: string) => l.trim().split(/\s+/)[1])
-    .filter(
-      (g: string) =>
-        g && (g.includes("flow-") || g.includes("clickhouse_sync")),
-    );
-  for (const group of staleGroups) {
-    await execAsync(
-      `docker exec ${container.trim()} rpk group delete ${group}`,
-    ).catch(() => {});
-  }
-  testLogger.info(`Deleted ${staleGroups.length} stale consumer groups`);
+  await execAsync(`docker rm -fv ${name}`).catch(() => {});
+  testLogger.info(`Removed Redpanda container ${name} (with volumes)`);
 };
 
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
@@ -3023,7 +3006,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await stopDevProcess(devProcess);
 
-          await deleteStaleConsumerGroups();
+          await resetRedpandaContainer();
 
           const devEnv = {
             ...buildDevEnv(config.language, TEST_PROJECT_DIR),
@@ -3060,7 +3043,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             "Cleaning up namespaced consumer groups for next tests...",
           );
           await stopDevProcess(devProcess);
-          await deleteStaleConsumerGroups();
+          await resetRedpandaContainer();
 
           const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
           devProcess = spawn(CLI_PATH, ["dev"], {
