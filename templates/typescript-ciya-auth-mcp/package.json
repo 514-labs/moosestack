@@ -1,0 +1,24 @@
+{
+  "name": "chat-in-app",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --stream -r dev",
+    "dev:moose": "pnpm --filter moosestack-service dev",
+    "dev:web": "pnpm --filter web-app dev",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  }
+}
