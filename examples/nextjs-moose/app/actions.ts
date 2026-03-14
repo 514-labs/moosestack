@@ -99,7 +99,7 @@ export async function getEventsOverTimeAction(
   const results = await getEventsTimeseries(start, end, bucketSize);
 
   return results.map((row) => ({
-    time: row.time instanceof Date ? row.time.toISOString() : String(row.time),
+    time: row.time,
     count: row.totalEvents,
   }));
 }
