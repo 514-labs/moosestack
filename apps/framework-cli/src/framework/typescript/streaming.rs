@@ -17,6 +17,7 @@ pub fn run(
     kafka_config: &KafkaConfig,
     source_topic: &StreamConfig,
     target_topic: Option<&StreamConfig>,
+    dlq_topic: Option<&StreamConfig>,
     streaming_function_file: &Path,
     project: &Project,
     project_path: &Path,
@@ -27,6 +28,7 @@ pub fn run(
 
     let source_topic_config_str = source_topic.as_json_string();
     let target_topic_config_str = target_topic.map(|t| t.as_json_string());
+    let dlq_topic_config_str = dlq_topic.map(|t| t.as_json_string());
 
     let mut args: Vec<&str> = vec![
         source_topic_config_str.as_str(),
@@ -38,6 +40,11 @@ pub fn run(
     if let Some(ref target_str) = target_topic_config_str {
         args.push("--target-topic");
         args.push(target_str.as_str());
+    }
+
+    if let Some(ref dlq_str) = dlq_topic_config_str {
+        args.push("--dlq-topic");
+        args.push(dlq_str.as_str());
     }
 
     info!(

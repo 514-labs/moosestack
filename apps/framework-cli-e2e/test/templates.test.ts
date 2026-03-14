@@ -62,6 +62,7 @@ import {
   verifyWebAppPostEndpoint,
   cleanupTestSuite,
   performGlobalCleanup,
+  stopDevProcess,
   logger,
   waitForInfrastructureChanges,
   PlanOutput,
@@ -165,6 +166,35 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   },
 ];
 
+const buildDevEnv = (
+  language: string,
+  projectDir: string,
+): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+    MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+    MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+  };
+  if (language === "python") {
+    env.VIRTUAL_ENV = path.join(projectDir, ".venv");
+    env.PATH = `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`;
+  }
+  return env;
+};
+
+const resetRedpandaContainer = async (): Promise<void> => {
+  const { stdout: container } = await execAsync(
+    `docker ps --all --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+  );
+  const name = container.trim();
+  if (!name) return;
+
+  await execAsync(`docker rm -fv ${name}`).catch(() => {});
+  testLogger.info(`Removed Redpanda container ${name} (with volumes)`);
+};
+
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
@@ -211,26 +241,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       // Start dev server
       testLogger.info("Starting dev server...");
-      const devEnv =
-        config.language === "python" ?
-          {
-            ...process.env,
-            VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-            PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          }
-        : {
-            ...process.env,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          };
+      const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
@@ -2981,6 +2992,254 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
       }
+    }
+
+    if (config.isTestsVariant) {
+      describe("DLQ with namespace prefixing", function () {
+        const NAMESPACE = "testns";
+
+        before(async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          testLogger.info(
+            "Stopping dev server to reconfigure with namespace...",
+          );
+          await stopDevProcess(devProcess);
+
+          await resetRedpandaContainer();
+
+          const devEnv = {
+            ...buildDevEnv(config.language, TEST_PROJECT_DIR),
+            MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
+          };
+
+          devProcess = spawn(CLI_PATH, ["dev"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          testLogger.info(
+            "Server restarted with namespace, waiting for Kafka...",
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await cleanupClickhouseData();
+          await waitForStreamingFunctions();
+          await waitForInfrastructureReady();
+          testLogger.info(
+            "All components ready with namespace, starting DLQ tests...",
+          );
+        });
+
+        after(async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+          testLogger.info(
+            "Cleaning up namespaced consumer groups for next tests...",
+          );
+          await stopDevProcess(devProcess);
+          await resetRedpandaContainer();
+
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions();
+          await waitForInfrastructureReady();
+          testLogger.info("Dev server restored without namespace");
+        });
+
+        it(`should route failed messages to a namespace-prefixed DLQ topic (${config.language})`, async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const eventId = randomUUID();
+
+          const fooPayload =
+            config.language === "typescript" ?
+              {
+                primaryKey: eventId,
+                timestamp: 1728000000.0,
+                optionalText: "dlq-namespace-test",
+              }
+            : {
+                primary_key: eventId,
+                baz: "QUUX",
+                timestamp: 1728000000.0,
+                optional_text: "dlq-namespace-test",
+              };
+
+          const ingestPath =
+            config.language === "typescript" ? "/ingest/Foo" : "/ingest/foo";
+
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}${ingestPath}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(fooPayload),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          if (config.language === "typescript") {
+            // TS template has an explicit FooDeadLetter OlapTable
+            await waitForDBWrite(
+              devProcess!,
+              "FooDeadLetter",
+              1,
+              60_000,
+              "local",
+            );
+
+            const clickhouse = createClient({
+              url: CLICKHOUSE_CONFIG.url,
+              username: CLICKHOUSE_CONFIG.username,
+              password: CLICKHOUSE_CONFIG.password,
+              database: CLICKHOUSE_CONFIG.database,
+            });
+
+            try {
+              const result = await clickhouse.query({
+                query: `SELECT * FROM local.FooDeadLetter WHERE originalRecord.primaryKey = '${eventId}'`,
+                format: "JSONEachRow",
+              });
+              const data: any[] = await result.json();
+
+              expect(data.length).to.be.greaterThan(
+                0,
+                `Expected DLQ record for primaryKey ${eventId}`,
+              );
+
+              const dlqRecord = data[0];
+              expect(dlqRecord.errorMessage).to.be.a("string").that.is.not
+                .empty;
+              expect(dlqRecord.source).to.equal("transform");
+
+              testLogger.info(
+                `✅ DLQ record verified in ClickHouse (TS): ${dlqRecord.errorMessage}`,
+              );
+            } finally {
+              await clickhouse.close();
+            }
+          } else {
+            const { stdout: containerName } = await execAsync(
+              `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+            );
+            expect(containerName.trim()).to.not.be.empty;
+
+            const { stdout: topicList } = await execAsync(
+              `docker exec ${containerName.trim()} rpk topic list`,
+            );
+            const dlqTopic = topicList
+              .split("\n")
+              .map((l: string) => l.trim().split(/\s+/)[0])
+              .find(
+                (t: string) =>
+                  t &&
+                  t.includes("FooDeadLetterQueue") &&
+                  t.startsWith(`${NAMESPACE}.`),
+              );
+            expect(dlqTopic, "Namespace-prefixed DLQ topic should exist").to.not
+              .be.undefined;
+
+            await withRetries(
+              async () => {
+                const { stdout: messages } = await execAsync(
+                  `docker exec ${containerName.trim()} rpk topic consume ${dlqTopic} --num 1 --format '%v\\n' --offset start`,
+                  { timeout: 30_000 },
+                );
+                expect(messages.trim()).to.not.be.empty;
+                const record = JSON.parse(messages.trim());
+                expect(record).to.have.nested.property(
+                  "originalRecord.primary_key",
+                  eventId,
+                );
+                testLogger.info(
+                  `✅ DLQ record verified on Redpanda topic ${dlqTopic}`,
+                );
+              },
+              { attempts: 10, delayMs: 3_000 },
+            );
+          }
+        });
+
+        it(`should have namespace-prefixed Kafka topics including DLQ (${config.language})`, async function () {
+          this.timeout(60_000);
+
+          const { stdout: containerName } = await execAsync(
+            `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+          );
+
+          expect(containerName.trim()).to.not.be.empty;
+
+          const { stdout: topicList } = await execAsync(
+            `docker exec ${containerName.trim()} rpk topic list`,
+          );
+
+          testLogger.info("Kafka topics:\n" + topicList);
+
+          const lines = topicList.split("\n");
+          const topicNames = lines
+            .slice(1)
+            .map((line: string) => line.trim().split(/\s+/)[0])
+            .filter(Boolean);
+
+          const appTopics = topicNames.filter(
+            (t: string) => !t.startsWith("_") && !t.startsWith("__"),
+          );
+
+          // Only check namespace-prefixed topics (ignore leftover un-namespaced topics from earlier tests)
+          const namespacedTopics = appTopics.filter((t: string) =>
+            t.startsWith(`${NAMESPACE}.`),
+          );
+
+          expect(namespacedTopics.length).to.be.greaterThan(
+            0,
+            "Expected namespace-prefixed topics to exist",
+          );
+
+          const dlqTopicPattern =
+            config.language === "typescript" ?
+              "FooDeadLetter"
+            : "FooDeadLetterQueue";
+
+          const dlqTopic = namespacedTopics.find((t: string) =>
+            t.includes(dlqTopicPattern),
+          );
+          expect(dlqTopic).to.not.be.undefined;
+          expect(dlqTopic).to.match(
+            new RegExp(`^${NAMESPACE}\\.`),
+            `DLQ topic should be prefixed with "${NAMESPACE}."`,
+          );
+
+          testLogger.info(
+            `✅ Verified ${namespacedTopics.length} namespace-prefixed topics, DLQ topic: ${dlqTopic}`,
+          );
+        });
+      });
     }
   });
 };
