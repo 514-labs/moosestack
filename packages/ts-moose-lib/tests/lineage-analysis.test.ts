@@ -9,6 +9,7 @@ import {
   WebApp,
   Workflow,
   IngestPipeline,
+  SqlResource,
 } from "../src/dmv2/index";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { ApiHelpers, sql } from "../src/index";
@@ -56,7 +57,7 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.apis.lineageApi.pullsDataFrom).to.deep.include({
-      id: "LineageApiTable",
+      id: "local_LineageApiTable",
       kind: "Table",
     });
   });
@@ -93,7 +94,7 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.apis.lineageApiHelpers.pullsDataFrom).to.deep.include({
-      id: "LineageApiHelpersTable",
+      id: "local_LineageApiHelpersTable",
       kind: "Table",
     });
   });
@@ -134,13 +135,13 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.apis.lineageCommaCallApi.pullsDataFrom).to.deep.include({
-      id: "LineageCommaCallTable",
+      id: "local_LineageCommaCallTable",
       kind: "Table",
     });
   });
 
   it("infers pulls_data_from for compiled-style sql(...) calls", () => {
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     interface ApiResponse {
       id: string;
@@ -164,13 +165,13 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.apis.lineageSqlCallApi.pullsDataFrom).to.deep.include({
-      id: "LineageSqlCallTable",
+      id: "local_LineageSqlCallTable",
       kind: "Table",
     });
   });
 
   it("infers pulls_data_from from sql table-name fragments", () => {
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     interface ApiResponse {
       id: string;
@@ -199,7 +200,69 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.apis.lineageSqlFragmentApi.pullsDataFrom).to.deep.include({
-      id: "LineageSqlFragmentTable",
+      id: "local_LineageSqlFragmentTable",
+      kind: "Table",
+    });
+  });
+
+  it("uses explicit table database in canonical lineage ids", () => {
+    type QueryParams = { _unused?: string };
+    interface ApiResponse {
+      id: string;
+    }
+    interface TableRow {
+      id: string;
+    }
+
+    const table = new OlapTable<TableRow>("LineageExplicitDbTable", {
+      database: "analytics",
+    });
+
+    const handler = async (
+      _params: QueryParams,
+      { client }: any,
+    ): Promise<ApiResponse[]> => {
+      await client.query.execute(sql`SELECT ${table.columns.id} FROM ${table}`);
+      return [];
+    };
+
+    new Api<QueryParams, ApiResponse[]>("lineageExplicitDbApi", handler);
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.apis.lineageExplicitDbApi.pullsDataFrom).to.deep.include({
+      id: "analytics_LineageExplicitDbTable",
+      kind: "Table",
+    });
+  });
+
+  it("emits canonical table lineage for SqlResource dependencies", () => {
+    interface TableRow {
+      id: string;
+    }
+
+    const table = new OlapTable<TableRow>("LineageSqlResourceTable", {
+      version: "1.0",
+    });
+
+    new SqlResource(
+      "lineageSqlResource",
+      ["CREATE VIEW lineage AS SELECT * FROM LineageSqlResourceTable"],
+      ["DROP VIEW lineage"],
+      {
+        pullsDataFrom: [table],
+        pushesDataTo: [table],
+      },
+    );
+
+    const infra = toInfraMap(getMooseInternal());
+    expect(infra.sqlResources.lineageSqlResource.pullsDataFrom).to.deep.include(
+      {
+        id: "local_LineageSqlResourceTable_1_0",
+        kind: "Table",
+      },
+    );
+    expect(infra.sqlResources.lineageSqlResource.pushesDataTo).to.deep.include({
+      id: "local_LineageSqlResourceTable_1_0",
       kind: "Table",
     });
   });
@@ -220,7 +283,7 @@ describe("Lineage Analysis", function () {
       version: "0.0",
     });
 
-    interface QueryParams {}
+    type QueryParams = { _unused?: string };
 
     const handler = async (_params: QueryParams, { client }: any) => {
       const tableName = sql`LineagePipelineSqlAlias_0_0`;
@@ -232,9 +295,9 @@ describe("Lineage Analysis", function () {
 
     const infra = toInfraMap(getMooseInternal());
     const candidateTableIds = new Set(
-      [...getMooseInternal().tables.keys()].filter((id) =>
-        id.includes("LineagePipelineSqlAlias"),
-      ),
+      [...getMooseInternal().tables.keys()]
+        .filter((id) => id.includes("LineagePipelineSqlAlias"))
+        .map((id) => `local_${id.replace(/\./g, "_")}`),
     );
     expect(candidateTableIds.size).to.be.greaterThan(0);
 
@@ -295,7 +358,7 @@ exports.LineageCommonJsApi = new Api(
       const commonJsApi =
         infra.apis.lineageCommonJsApi ?? infra.apis["lineageCommonJsApi:0.0"];
       expect(commonJsApi?.pullsDataFrom).to.deep.include({
-        id: "LineageCommonJsTable",
+        id: "local_LineageCommonJsTable",
         kind: "Table",
       });
     } finally {
@@ -372,7 +435,7 @@ new Api(
         infra.apis.lineageCompiledTemplateObjectApi ??
         infra.apis["lineageCompiledTemplateObjectApi:0.0"];
       expect(api?.pullsDataFrom).to.deep.include({
-        id: "LineageCompiledTemplateObjectTable",
+        id: "local_LineageCompiledTemplateObjectTable",
         kind: "Table",
       });
     } finally {
@@ -409,7 +472,7 @@ new Api(
 
     const firstInfra = toInfraMap(getMooseInternal());
     expect(firstInfra.apis.lineageCacheApiA.pullsDataFrom).to.deep.include({
-      id: "LineageCacheTableA",
+      id: "local_LineageCacheTableA",
       kind: "Table",
     });
 
@@ -425,12 +488,12 @@ new Api(
 
     const secondInfra = toInfraMap(getMooseInternal());
     expect(secondInfra.apis.lineageCacheApiB.pullsDataFrom).to.deep.include({
-      id: "LineageCacheTableB",
+      id: "local_LineageCacheTableB",
       kind: "Table",
     });
     expect(secondInfra.apis.lineageCacheApiB.pullsDataFrom).to.not.deep.include(
       {
-        id: "LineageCacheTableA",
+        id: "local_LineageCacheTableA",
         kind: "Table",
       },
     );
@@ -468,7 +531,7 @@ new Api(
       kind: "Topic",
     });
     expect(infra.workflows.lineageWorkflow.pushesDataTo).to.deep.include({
-      id: "LineageWorkflowTable",
+      id: "local_LineageWorkflowTable",
       kind: "Table",
     });
   });
@@ -500,7 +563,7 @@ new Api(
 
     const infra = toInfraMap(getMooseInternal());
     expect(infra.webApps.lineageWebApp.pullsDataFrom).to.deep.include({
-      id: "LineageWebAppTable",
+      id: "local_LineageWebAppTable",
       kind: "Table",
     });
     expect(infra.webApps.lineageWebApp.pushesDataTo).to.deep.include({
@@ -508,7 +571,7 @@ new Api(
       kind: "Topic",
     });
     expect(infra.webApps.lineageWebApp.pushesDataTo).to.deep.include({
-      id: "LineageWebAppTable",
+      id: "local_LineageWebAppTable",
       kind: "Table",
     });
   });

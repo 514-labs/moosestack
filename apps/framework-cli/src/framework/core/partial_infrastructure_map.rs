@@ -1711,6 +1711,92 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preserves_lineage_signatures_when_building_infra_map() {
+        let payload = json!({
+            "tables": {
+                "orders": {
+                    "name": "Orders",
+                    "columns": [],
+                    "orderBy": [],
+                    "version": "0.0"
+                }
+            },
+            "apis": {
+                "lineageApi": {
+                    "name": "lineageApi",
+                    "queryParams": [],
+                    "responseSchema": {},
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }]
+                }
+            },
+            "sqlResources": {
+                "lineageSql": {
+                    "name": "lineageSql",
+                    "setup": [],
+                    "teardown": [],
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            },
+            "workflows": {
+                "lineageWorkflow": {
+                    "name": "lineageWorkflow",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            },
+            "webApps": {
+                "lineageWebApp": {
+                    "name": "lineageWebApp",
+                    "mountPath": "/lineage",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders_0.0" }],
+                    "pushesDataTo": []
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        let infra_map = partial
+            .into_infra_map(
+                SupportedLanguages::Typescript,
+                Path::new("app/index.ts"),
+                "local",
+                Path::new("/tmp"),
+            )
+            .expect("partial map should convert");
+
+        let expected_lineage = vec![InfrastructureSignature::Table {
+            id: "Orders_0.0".to_string(),
+        }];
+
+        let api = infra_map
+            .api_endpoints
+            .values()
+            .find(|api| api.name == "lineageApi")
+            .expect("lineageApi should exist");
+        assert_eq!(api.pulls_data_from("local"), expected_lineage);
+
+        let sql_resource = infra_map
+            .sql_resources
+            .get("lineageSql")
+            .expect("lineageSql should exist");
+        assert_eq!(sql_resource.pulls_data_from("local"), expected_lineage);
+
+        let workflow = infra_map
+            .workflows
+            .get("lineageWorkflow")
+            .expect("lineageWorkflow should exist");
+        assert_eq!(workflow.pulls_data_from(), expected_lineage);
+
+        let web_app = infra_map
+            .web_apps
+            .get("lineageWebApp")
+            .expect("lineageWebApp should exist");
+        assert_eq!(web_app.pulls_data_from, expected_lineage);
+    }
+
     fn base_table_json() -> serde_json::Value {
         json!({
             "name": "t1",

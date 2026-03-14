@@ -53,6 +53,11 @@ import {
   type DependencyAnalysisResult,
   type InfrastructureSignatureJson,
 } from "./dependencyAnalysis";
+import {
+  buildCanonicalLineageTableId,
+  resolveDefaultLineageDatabase,
+  resolveLineageDatabase,
+} from "./lineageTableId";
 import { findSourceFiles } from "./utils";
 
 /**
@@ -1062,6 +1067,21 @@ function convertTableConfigToEngineConfig(
   return undefined;
 }
 
+function buildCanonicalTableLineageId(
+  table: OlapTable<any>,
+  defaultDatabase: string,
+): string {
+  const database = resolveLineageDatabase(
+    table.config.database,
+    defaultDatabase,
+  );
+  return buildCanonicalLineageTableId(
+    table.name,
+    table.config.version,
+    database,
+  );
+}
+
 export const toInfraMap = (registry: MooseInternalRegistry) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
@@ -1073,6 +1093,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
   const lineage = getCachedLineage(registry);
+  const defaultDatabaseForLineage = resolveDefaultLineageDatabase();
 
   registry.tables.forEach((table) => {
     const id =
@@ -1270,12 +1291,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       pullsDataFrom: sqlResource.pullsDataFrom.map((r) => {
         if (r.kind === "OlapTable") {
           const table = r as OlapTable<any>;
-          const id =
-            table.config.version ?
-              `${table.name}_${table.config.version}`
-            : table.name;
           return {
-            id,
+            id: buildCanonicalTableLineageId(table, defaultDatabaseForLineage),
             kind: "Table",
           };
         } else if (r.kind === "SqlResource") {
@@ -1303,12 +1320,8 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       pushesDataTo: sqlResource.pushesDataTo.map((r) => {
         if (r.kind === "OlapTable") {
           const table = r as OlapTable<any>;
-          const id =
-            table.config.version ?
-              `${table.name}_${table.config.version}`
-            : table.name;
           return {
-            id,
+            id: buildCanonicalTableLineageId(table, defaultDatabaseForLineage),
             kind: "Table",
           };
         } else if (r.kind === "SqlResource") {

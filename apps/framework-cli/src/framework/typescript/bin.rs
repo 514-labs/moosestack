@@ -100,7 +100,9 @@ pub fn run(
     // This allows mooseRuntimeEnv.get() to return markers for later resolution
     // For runtime execution (functions/workflows), it will return actual env var values
     if binary_command == "dmv2-serializer" {
-        command.env("IS_LOADING_INFRA_MAP", "true");
+        command
+            .env("IS_LOADING_INFRA_MAP", "true")
+            .env("MOOSE_DEFAULT_DATABASE", &project.clickhouse_config.db_name);
     }
 
     for arg in args {
