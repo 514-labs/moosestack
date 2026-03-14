@@ -309,14 +309,22 @@ export const waitForStreamingFunctions = async (
         line.includes("Stable"),
       );
 
-      // Wait for ALL flow- groups AND clickhouse_sync groups to be stable
+      // Wait for each group type independently: if groups of that type
+      // exist, all must be stable. At least one group type must be present.
+      const hasAnyGroups =
+        flowGroups.length > 0 || clickhouseSyncGroups.length > 0;
       const allFlowGroupsStable =
-        flowGroups.length > 0 && stableFlowGroups.length === flowGroups.length;
+        flowGroups.length === 0 ||
+        stableFlowGroups.length === flowGroups.length;
       const allClickhouseSyncGroupsStable =
         clickhouseSyncGroups.length === 0 ||
         stableClickhouseSyncGroups.length === clickhouseSyncGroups.length;
 
-      if (allFlowGroupsStable && allClickhouseSyncGroupsStable) {
+      if (
+        hasAnyGroups &&
+        allFlowGroupsStable &&
+        allClickhouseSyncGroupsStable
+      ) {
         log.debug(
           `Found ${stableFlowGroups.length} active streaming function(s) and ${stableClickhouseSyncGroups.length} clickhouse sync group(s)`,
           {

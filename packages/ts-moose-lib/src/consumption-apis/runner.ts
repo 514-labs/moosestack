@@ -1,7 +1,16 @@
 import http from "http";
 import * as path from "path";
 import { getClickhouseClient } from "../commons";
-import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
+import {
+  MooseClient,
+  QueryClient,
+  RowPolicyOptions,
+  RowPoliciesConfig,
+  buildRowPolicyOptionsFromClaims,
+  getTemporalClient,
+  MOOSE_RLS_USER,
+  MOOSE_RLS_PASSWORD_SUFFIX,
+} from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
 import { Cluster } from "../cluster-utils";
@@ -41,6 +50,7 @@ interface ApisConfig {
   enforceAuth: boolean;
   proxyPort?: number;
   workerCount?: number;
+  rowPoliciesConfig?: RowPoliciesConfig;
 }
 
 // Convert our config to Clickhouse client config
@@ -48,6 +58,25 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   ...config,
   useSSL: config.useSSL ? "true" : "false",
 });
+
+/**
+ * Extract claim values from a JWT payload to build an rlsContext map.
+ * Returns { claim_name: claim_value } for passing to getMooseUtils({ rlsContext }).
+ */
+function buildRlsContextFromJwt(
+  config: RowPoliciesConfig,
+  jwt: Record<string, unknown>,
+): Record<string, string> {
+  const opts = buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
+  const context: Record<string, string> = Object.create(null);
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = opts.clickhouse_settings[settingName];
+    if (value !== undefined) {
+      context[claimName] = value;
+    }
+  }
+  return context;
+}
 
 const createPath = (apisDir: string, path: string) => {
   // Always use compiled JavaScript
@@ -91,6 +120,8 @@ const apiHandler = async (
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   // Always use compiled JavaScript
   const sourceDir = getSourceDir();
@@ -110,6 +141,10 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
+      // Row policies implicitly require auth — a valid JWT is needed to
+      // extract claim values for ClickHouse row filtering.
+      const requireAuth = enforceAuth || !!rowPoliciesConfig;
+
       let jwtPayload: jose.JWTPayload | undefined;
       if (publicKey && jwtConfig) {
         const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
@@ -122,22 +157,39 @@ const apiHandler = async (
             jwtPayload = payload;
           } catch (error) {
             console.log("JWT verification failed");
-            if (enforceAuth) {
+            if (requireAuth) {
               res.writeHead(401, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ error: "Unauthorized" }));
               httpLogger(req, res, start);
               return;
             }
           }
-        } else if (enforceAuth) {
+        } else if (requireAuth) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
           httpLogger(req, res, start);
           return;
         }
-      } else if (enforceAuth) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
+      } else if (requireAuth) {
+        if (rowPoliciesConfig) {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Forbidden",
+              message:
+                "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+            }),
+          );
+        } else {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Unauthorized",
+              message:
+                "Authentication is enforced but no JWT configuration is available.",
+            }),
+          );
+        }
         httpLogger(req, res, start);
         return;
       }
@@ -236,7 +288,31 @@ const apiHandler = async (
         });
       }
 
-      const queryClient = new QueryClient(clickhouseClient, fileName);
+      let rowPolicyOpts: RowPolicyOptions | undefined;
+      try {
+        rowPolicyOpts =
+          rowPoliciesConfig && jwtPayload ?
+            buildRowPolicyOptionsFromClaims(
+              rowPoliciesConfig,
+              jwtPayload as Record<string, unknown>,
+              "JWT payload",
+            )
+          : undefined;
+      } catch (error) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: (error as Error).message }));
+        httpLogger(req, res, start);
+        return;
+      }
+      const queryClickhouseClient =
+        rowPolicyOpts && rlsClickhouseClient ? rlsClickhouseClient : (
+          clickhouseClient
+        );
+      const queryClient = new QueryClient(
+        queryClickhouseClient,
+        fileName,
+        rowPolicyOpts,
+      );
 
       // Use matched API name for structured logging context
       // This matches source_primitive.name in the infrastructure map
@@ -314,6 +390,8 @@ const createMainRouter = async (
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
@@ -321,6 +399,8 @@ const createMainRouter = async (
     temporalClient,
     enforceAuth,
     jwtConfig,
+    rowPoliciesConfig,
+    rlsClickhouseClient,
   );
 
   const webApps = await getWebApps();
@@ -349,6 +429,9 @@ const createMainRouter = async (
       return;
     }
 
+    // Row policies implicitly require auth for WebApp routes too
+    const requireAuth = enforceAuth || !!rowPoliciesConfig;
+
     let jwtPayload: jose.JWTPayload | undefined;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];
@@ -361,8 +444,38 @@ const createMainRouter = async (
           jwtPayload = payload;
         } catch (error) {
           console.log("JWT verification failed for WebApp route");
+          if (requireAuth) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized" }));
+            return;
+          }
         }
+      } else if (requireAuth) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
       }
+    } else if (requireAuth) {
+      if (rowPoliciesConfig) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Forbidden",
+            message:
+              "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+          }),
+        );
+      } else {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Unauthorized",
+            message:
+              "Authentication is enforced but no JWT configuration is available.",
+          }),
+        );
+      }
+      return;
     }
 
     for (const webApp of sortedWebApps) {
@@ -377,10 +490,30 @@ const createMainRouter = async (
         pathname.startsWith(normalizedMount + "/");
 
       if (matches) {
+        // Import once for both getMooseUtils and runWithRequestContext
+        const { getMooseUtils, runWithRequestContext } = await import(
+          "./standalone"
+        );
+
+        // Build per-request RLS context from JWT claims (if row policies are configured)
+        let rlsContext: Record<string, string> | undefined;
         if (webApp.config.injectMooseUtils !== false) {
-          // Import getMooseUtils dynamically to avoid circular deps
-          const { getMooseUtils } = await import("./standalone");
-          (req as any).moose = await getMooseUtils();
+          try {
+            rlsContext =
+              rowPoliciesConfig && jwtPayload ?
+                buildRlsContextFromJwt(
+                  rowPoliciesConfig,
+                  jwtPayload as Record<string, unknown>,
+                )
+              : undefined;
+          } catch (error) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: (error as Error).message }));
+            return;
+          }
+          (req as any).moose = await getMooseUtils(
+            rlsContext ? { rlsContext } : undefined,
+          );
         }
 
         let proxiedUrl = req.url;
@@ -401,7 +534,11 @@ const createMainRouter = async (
               url: proxiedUrl,
             },
           );
-          await webApp.handler(modifiedReq, res);
+          // Run the handler inside AsyncLocalStorage so getMooseUtils()
+          // auto-scopes with row policies without needing explicit rlsContext.
+          await runWithRequestContext({ rlsContext, jwt: jwtPayload }, () =>
+            webApp.handler(modifiedReq, res),
+          );
           return;
         } catch (error) {
           console.error(`Error in WebApp ${webApp.name}:`, error);
@@ -464,16 +601,44 @@ export const runApis = async (config: ApisConfig) => {
       const clickhouseClient = getClickhouseClient(
         toClientConfig(config.clickhouseConfig),
       );
+
+      // When RLS is configured, create a second client as moose_rls_user.
+      // This user has the RLS role granted and is used for all API queries
+      // so that row policies are enforced. The main client remains for DDL/ingest.
+      let rlsClickhouseClient: ClickHouseClient | undefined;
+      if (config.rowPoliciesConfig) {
+        rlsClickhouseClient = getClickhouseClient(
+          toClientConfig({
+            ...config.clickhouseConfig,
+            username: MOOSE_RLS_USER,
+            password:
+              config.clickhouseConfig.password + MOOSE_RLS_PASSWORD_SUFFIX,
+          }),
+        );
+      }
+
       let publicKey: jose.KeyLike | undefined;
       if (config.jwtConfig?.secret) {
         console.log("Importing JWT public key...");
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
+      if (config.rowPoliciesConfig && !publicKey) {
+        console.error(
+          "WARNING: Row policies are configured but no JWT public key is set. " +
+            "All consumption API requests will be rejected with 403. " +
+            "Configure jwt.secret in moose.config.toml to enable authentication.",
+        );
+      }
+
       // Set runtime context for getMooseUtils() to detect
       const runtimeQueryClient = new QueryClient(clickhouseClient, "runtime");
       (globalThis as any)._mooseRuntimeContext = {
         client: new MooseClient(runtimeQueryClient, temporalClient),
+        clickhouseClient,
+        rlsClickhouseClient,
+        temporalClient,
+        rowPoliciesConfig: config.rowPoliciesConfig,
       };
 
       const server = http.createServer(
@@ -483,6 +648,8 @@ export const runApis = async (config: ApisConfig) => {
           temporalClient,
           config.enforceAuth,
           config.jwtConfig,
+          config.rowPoliciesConfig,
+          rlsClickhouseClient,
         ),
       );
       // port is now passed via config.proxyPort or defaults to 4001

@@ -1,3 +1,4 @@
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
@@ -201,6 +202,20 @@ pub enum AtomicOlapOperation {
     DropView {
         /// The custom view to drop
         view: crate::framework::core::infrastructure::view::View,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Create a row policy on one or more tables
+    CreateRowPolicy {
+        /// The row policy to create
+        policy: SelectRowPolicy,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a row policy from one or more tables
+    DropRowPolicy {
+        /// The row policy to drop
+        policy: SelectRowPolicy,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -434,6 +449,16 @@ impl AtomicOlapOperation {
                 name: view.name.clone(),
                 database: view.database.clone(),
             },
+            AtomicOlapOperation::CreateRowPolicy { policy, .. } => {
+                SerializableOlapOperation::CreateRowPolicy {
+                    policy: policy.clone(),
+                }
+            }
+            AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                SerializableOlapOperation::DropRowPolicy {
+                    policy: policy.clone(),
+                }
+            }
         }
     }
 
@@ -524,6 +549,12 @@ impl AtomicOlapOperation {
                     id: mv.id(default_database),
                 }
             }
+            AtomicOlapOperation::CreateRowPolicy { policy, .. }
+            | AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                InfrastructureSignature::SelectRowPolicy {
+                    id: policy.name.clone(),
+                }
+            }
         }
     }
 
@@ -594,6 +625,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateRowPolicy {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropRowPolicy {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -666,7 +703,8 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::RunTeardownSql { .. }
             | AtomicOlapOperation::DropDmv1View { .. }
             | AtomicOlapOperation::DropView { .. }
-            | AtomicOlapOperation::DropMaterializedView { .. } => {
+            | AtomicOlapOperation::DropMaterializedView { .. }
+            | AtomicOlapOperation::DropRowPolicy { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -1298,6 +1336,30 @@ fn handle_view_update(before: &View, after: &View, default_database: &str) -> Op
     plan
 }
 
+/// Resolve table dependencies for a SelectRowPolicy by matching each
+/// TableReference against the known tables map.
+fn resolve_policy_table_deps(
+    policy: &SelectRowPolicy,
+    tables: &HashMap<String, Table>,
+    default_database: &str,
+) -> Vec<InfrastructureSignature> {
+    policy
+        .tables
+        .iter()
+        .filter_map(|table_ref| {
+            tables
+                .values()
+                .find(|table| {
+                    table.name == table_ref.name
+                        && table.database.as_deref() == table_ref.database.as_deref()
+                })
+                .map(|table| InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                })
+        })
+        .collect()
+}
+
 /// Orders OLAP changes based on dependencies to ensure proper execution sequence.
 ///
 /// This function takes a list of OLAP changes and orders them according to their
@@ -1459,6 +1521,46 @@ pub fn order_olap_changes(
             OlapChange::View(Change::Updated { before, after }) => {
                 handle_view_update(before, after, default_database)
             }
+            OlapChange::SelectRowPolicy(Change::Added(policy)) => {
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(policy, &tables, default_database),
+                    vec![],
+                );
+                OperationPlan::setup(vec![AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**policy).clone(),
+                    dependency_info,
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(policy, &tables, default_database),
+                    vec![],
+                );
+                OperationPlan::teardown(vec![AtomicOlapOperation::DropRowPolicy {
+                    policy: (**policy).clone(),
+                    dependency_info,
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Updated { before, after }) => {
+                let mut plan = OperationPlan::new();
+                let before_dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(before, &tables, default_database),
+                    vec![],
+                );
+                plan.teardown_ops.push(AtomicOlapOperation::DropRowPolicy {
+                    policy: (**before).clone(),
+                    dependency_info: before_dependency_info,
+                });
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(after, &tables, default_database),
+                    vec![],
+                );
+                plan.setup_ops.push(AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**after).clone(),
+                    dependency_info,
+                });
+                plan
+            }
         };
 
         plan.combine(change_plan);
@@ -1619,7 +1721,7 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy, TableReference};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -3721,5 +3823,195 @@ mod tests {
                 _ => panic!("Expected RawSql operation"),
             }
         }
+    }
+
+    fn create_test_table(name: &str) -> Table {
+        Table {
+            name: name.to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn create_test_row_policy(name: &str, tables: Vec<&str>, column: &str) -> SelectRowPolicy {
+        SelectRowPolicy {
+            name: name.to_string(),
+            tables: tables
+                .into_iter()
+                .map(|t| TableReference {
+                    name: t.to_string(),
+                    database: None,
+                })
+                .collect(),
+            column: column.to_string(),
+            claim: column.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_passes_through_to_minimal() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy: policy.clone(),
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[0].database, None);
+                assert_eq!(serialized_policy.column, "org_id");
+            }
+            _ => panic!("Expected CreateRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_multiple_tables() {
+        let policy =
+            create_test_row_policy("tenant_iso", vec!["events_1_0_0", "orders_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy,
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.tables.len(), 2);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[1].name, "orders_1_0_0");
+            }
+            _ => panic!("Expected CreateRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_drop_row_policy_passes_through_to_minimal() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::DropRowPolicy {
+            policy,
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::DropRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
+            }
+            _ => panic!("Expected DropRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_row_policy_added_produces_create_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Added(Box::new(policy)))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(teardown.is_empty());
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_removed_produces_drop_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Removed(Box::new(
+            policy,
+        )))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(setup.is_empty());
+        assert_eq!(teardown.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_updated_produces_drop_then_create() {
+        let before = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let after = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "tenant_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert_eq!(teardown.len(), 1);
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_drop_ordered_before_table_drop() {
+        let table = create_test_table("events_1_0_0");
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(table)),
+            OlapChange::SelectRowPolicy(Change::Removed(Box::new(policy))),
+        ];
+
+        let (teardown, _setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        // Row policy drop should come before table drop in teardown order
+        let policy_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropRowPolicy { .. }))
+            .expect("DropRowPolicy not found");
+        let table_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropTable { .. }))
+            .expect("DropTable not found");
+
+        assert!(
+            policy_idx < table_idx,
+            "Row policy should be dropped before its table"
+        );
     }
 }

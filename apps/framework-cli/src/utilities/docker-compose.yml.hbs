@@ -149,8 +149,6 @@ services:
       {{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-pandapass}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "${CLICKHOUSE_HOST_PORT:-18123}:8123"
@@ -193,6 +191,11 @@ services:
           <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
         </clickhouse>
         EOF
+        mkdir -p /docker-entrypoint-initdb.d
+        cat > /docker-entrypoint-initdb.d/init-user.sql << 'EOSQL'
+        CREATE USER IF NOT EXISTS `{{clickhouse_user}}` IDENTIFIED BY '{{clickhouse_password}}';
+        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}` WITH GRANT OPTION;
+        EOSQL
         exec /entrypoint.sh
 
   # ClickHouse Node 2 (for cluster replication testing)
@@ -212,8 +215,6 @@ services:
       {{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-pandapass}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "28123:8123"
@@ -254,6 +255,11 @@ services:
           </macros>
         </clickhouse>
         EOF
+        mkdir -p /docker-entrypoint-initdb.d
+        cat > /docker-entrypoint-initdb.d/init-user.sql << 'EOSQL'
+        CREATE USER IF NOT EXISTS `{{clickhouse_user}}` IDENTIFIED BY '{{clickhouse_password}}';
+        GRANT CURRENT GRANTS ON *.* TO `{{clickhouse_user}}` WITH GRANT OPTION;
+        EOSQL
         exec /entrypoint.sh
   {{/if}}
   {{/if}}

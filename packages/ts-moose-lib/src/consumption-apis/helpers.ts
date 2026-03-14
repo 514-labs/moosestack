@@ -60,12 +60,81 @@ export class MooseClient {
   }
 }
 
+/**
+ * Options for per-query ClickHouse row policy enforcement.
+ * When provided, each query activates the specified role and injects
+ * custom settings (e.g., tenant ID) that row policies evaluate via getSetting().
+ */
+export interface RowPolicyOptions {
+  role: string;
+  clickhouse_settings: Record<string, string>;
+}
+
+/**
+ * Shared ClickHouse role name used by all row policies.
+ * IMPORTANT: Must match MOOSE_RLS_ROLE in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_ROLE = "moose_rls_role";
+
+/**
+ * Dedicated ClickHouse user for RLS queries.
+ * Created at DDL time with SELECT-only permissions and the RLS role granted.
+ * IMPORTANT: Must match MOOSE_RLS_USER in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_USER = "moose_rls_user";
+
+/**
+ * Prefix for ClickHouse custom settings used by row policies.
+ * Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
+ * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_SETTING_PREFIX = "SQL_moose_rls_";
+export const MOOSE_RLS_PASSWORD_SUFFIX = "_Aa1!";
+
+/** Config mapping ClickHouse setting names to JWT claim names */
+export type RowPoliciesConfig = Record<string, string>;
+
+/**
+ * Build RowPolicyOptions from a row policies config and a claim-value source.
+ * Only sets ClickHouse settings for claims that are present in the source.
+ *
+ * Missing claims are skipped — if a table's row policy calls getSetting()
+ * for a setting that wasn't set, ClickHouse will error. This is correct:
+ * it means the JWT is missing a claim that the queried table requires.
+ * Tables whose policies don't reference the missing setting are unaffected.
+ *
+ * @param config  Maps ClickHouse setting name → claim name
+ * @param claims  Maps claim name → claim value (e.g., JWT payload or rlsContext)
+ * @returns RowPolicyOptions with the shared RLS role and populated settings
+ */
+export function buildRowPolicyOptionsFromClaims(
+  config: RowPoliciesConfig,
+  claims: Record<string, unknown>,
+  _sourceLabel: string,
+): RowPolicyOptions {
+  const clickhouse_settings: Record<string, string> = Object.create(null);
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = claims[claimName];
+    if (value !== undefined && value !== null) {
+      clickhouse_settings[settingName] = String(value);
+    }
+  }
+  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
+}
+
 export class QueryClient {
   client: ClickHouseClient;
   query_id_prefix: string;
-  constructor(client: ClickHouseClient, query_id_prefix: string) {
+  private rowPolicyOptions?: RowPolicyOptions;
+
+  constructor(
+    client: ClickHouseClient,
+    query_id_prefix: string,
+    rowPolicyOptions?: RowPolicyOptions,
+  ) {
     this.client = client;
     this.query_id_prefix = query_id_prefix;
+    this.rowPolicyOptions = rowPolicyOptions;
   }
 
   async execute<T = any>(
@@ -85,7 +154,11 @@ export class QueryClient {
       clickhouse_settings: {
         asterisk_include_materialized_columns: 1,
         asterisk_include_alias_columns: 1,
+        ...this.rowPolicyOptions?.clickhouse_settings,
       },
+      ...(this.rowPolicyOptions && {
+        role: this.rowPolicyOptions.role,
+      }),
     });
     const elapsedMs = performance.now() - start;
     console.log(
@@ -99,6 +172,9 @@ export class QueryClient {
 
     console.log(`[QueryClient] | Command: ${toQueryPreview(sql)}`);
     const start = performance.now();
+    // Row policy role/settings are intentionally NOT applied to commands
+    // (INSERT/DDL). Row policies only affect SELECT; setting a role on
+    // non-SELECT operations can strip default role permissions.
     const result = await this.client.command({
       query,
       query_params,

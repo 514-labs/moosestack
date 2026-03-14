@@ -58,10 +58,16 @@ impl ProcessRegistries {
     /// * `project` - Project configuration containing paths and settings for processes
     /// * `settings` - Global application settings
     /// * `syncing` - Syncing processes registry for Kafka to ClickHouse and topic-to-topic synchronization
+    /// * `row_policies_config` - Map of ClickHouse setting names to JWT claim names for row policy enforcement
     ///
     /// # Returns
     /// * `Self` - A new ProcessRegistries instance
-    pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {
+    pub fn new(
+        project: &Project,
+        settings: &Settings,
+        syncing: SyncingProcessesRegistry,
+        row_policies_config: std::collections::HashMap<String, String>,
+    ) -> Self {
         let functions = FunctionProcessRegistry::new(project.clone());
 
         let consumption = ConsumptionProcessRegistry::new(
@@ -71,6 +77,7 @@ impl ProcessRegistries {
             project.project_location.clone(),
             project.clone(),
             None, // proxy_port: will use project.http_server_config.proxy_port
+            row_policies_config,
         );
 
         let orchestration_workers = OrchestrationWorkersRegistry::new(project, settings);

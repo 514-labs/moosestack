@@ -25,6 +25,7 @@ pub mod consumption_webserver;
 pub mod function_process;
 pub mod materialized_view;
 pub mod orchestration_worker;
+pub mod select_row_policy;
 pub mod sql_resource;
 pub mod table;
 pub mod topic;
@@ -58,6 +59,8 @@ pub enum InfrastructureSignature {
     MaterializedView { id: String },
     /// View infrastructure component (user-defined SELECT views)
     View { id: String },
+    /// Row policy infrastructure component
+    SelectRowPolicy { id: String },
 }
 
 impl InfrastructureSignature {
@@ -71,7 +74,8 @@ impl InfrastructureSignature {
             | Self::Dmv1View { id }
             | Self::SqlResource { id }
             | Self::MaterializedView { id }
-            | Self::View { id } => id,
+            | Self::View { id }
+            | Self::SelectRowPolicy { id } => id,
         }
     }
 
@@ -117,6 +121,11 @@ impl InfrastructureSignature {
                 proto.set_view_id(id.clone());
                 proto
             }
+            InfrastructureSignature::SelectRowPolicy { id } => {
+                let mut proto = ProtoInfrastructureSignature::new();
+                proto.set_select_row_policy_id(id.clone());
+                proto
+            }
         }
     }
 
@@ -145,6 +154,9 @@ impl InfrastructureSignature {
             }
             Some(infrastructure_signature::Signature::ViewId(id)) => {
                 InfrastructureSignature::View { id }
+            }
+            Some(infrastructure_signature::Signature::SelectRowPolicyId(id)) => {
+                InfrastructureSignature::SelectRowPolicy { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");

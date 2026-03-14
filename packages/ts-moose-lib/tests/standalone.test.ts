@@ -5,7 +5,8 @@ import {
 } from "../src/consumption-apis/standalone";
 import { expressMiddleware } from "../src/consumption-apis/webAppHelpers";
 import { sql } from "../src/sqlHelpers";
-import { OlapTable } from "../src/dmv2";
+import { OlapTable, SelectRowPolicy } from "../src/dmv2";
+import { getSelectRowPolicies } from "../src/dmv2/registry";
 
 /**
  * Temporarily replaces console.warn, runs a callback, and restores the original.
@@ -163,7 +164,7 @@ describe("BYOF Standalone Functionality", function () {
     });
 
     it("should log deprecation warning when req parameter is passed", async () => {
-      const fakeReq = {};
+      const fakeReq = { method: "GET", url: "/test", headers: {} };
       const { matched } = await captureWarnings(
         () => getMooseUtils(fakeReq),
         /\[DEPRECATED\].*getMooseUtils/,
@@ -172,7 +173,7 @@ describe("BYOF Standalone Functionality", function () {
     });
 
     it("should still return valid utils when req parameter is passed (backwards compat)", async () => {
-      const fakeReq = {};
+      const fakeReq = { method: "GET", url: "/test", headers: {} };
       const { result: utils } = await captureWarnings(() =>
         getMooseUtils(fakeReq),
       );
@@ -369,6 +370,80 @@ describe("BYOF Standalone Functionality", function () {
 
       expect(client).to.exist;
       expect(query.values[0]).to.equal(42);
+    });
+  });
+
+  describe("getMooseUtils with rlsContext (standalone)", () => {
+    interface TestEvent {
+      id: string;
+      org_id: string;
+    }
+
+    let testTable: OlapTable<TestEvent>;
+
+    before(() => {
+      testTable = new OlapTable<TestEvent>("RlsTestTable");
+    });
+
+    afterEach(() => {
+      getSelectRowPolicies().clear();
+    });
+
+    it("should throw when rlsContext provided but no policies registered", async () => {
+      try {
+        await getMooseUtils({ rlsContext: { org_id: "acme" } });
+        expect.fail("Expected error for missing policies");
+      } catch (e: any) {
+        expect(e.message).to.include("no SelectRowPolicy primitives");
+      }
+    });
+
+    it("should use a different ClickHouse client than the base for RLS queries", async () => {
+      new SelectRowPolicy("test_rls_policy", {
+        tables: [testTable],
+        column: "org_id",
+        claim: "org_id",
+      });
+
+      const baseUtils = await getMooseUtils();
+      const rlsUtils = await getMooseUtils({
+        rlsContext: { org_id: "acme" },
+      });
+
+      const baseClient = baseUtils.client.query.client;
+      const rlsClient = rlsUtils.client.query.client;
+      expect(rlsClient).to.not.equal(baseClient);
+    });
+
+    it("should cache the RLS client across rlsContext calls", async () => {
+      new SelectRowPolicy("test_rls_cached", {
+        tables: [testTable],
+        column: "org_id",
+        claim: "org_id",
+      });
+
+      const rlsUtils1 = await getMooseUtils({
+        rlsContext: { org_id: "acme" },
+      });
+      const rlsUtils2 = await getMooseUtils({
+        rlsContext: { org_id: "other" },
+      });
+
+      expect(rlsUtils1.client.query.client).to.equal(
+        rlsUtils2.client.query.client,
+      );
+    });
+
+    it("should return the base client when no rlsContext even with policies registered", async () => {
+      new SelectRowPolicy("test_rls_nocontext", {
+        tables: [testTable],
+        column: "org_id",
+        claim: "org_id",
+      });
+
+      const utils1 = await getMooseUtils();
+      const utils2 = await getMooseUtils();
+      expect(utils1.client).to.equal(utils2.client);
     });
   });
 
