@@ -286,7 +286,7 @@ export * from "./apis/otlp-test";
       otlpEndpoint,
     });
 
-    mooseProcess = spawn(CLI_PATH, ["dev"], {
+    mooseProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       cwd: projectDir,
       env: {
         ...process.env,
@@ -295,6 +295,7 @@ export * from "./apis/otlp-test";
         RUST_LOG: "debug",
         // Admin API key is required for /admin/inframap access
         MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -372,6 +373,7 @@ export * from "./apis/otlp-test";
     // Stop moose first to ensure logs are flushed
     await cleanupTestSuite(mooseProcess, testDir, APP_NAME, {
       logger: testLogger,
+      includeDocker: false,
     });
 
     // Stop the OTLP server

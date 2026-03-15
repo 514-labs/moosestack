@@ -143,6 +143,10 @@ pub enum Commands {
         /// Log payloads at ingest API and streaming functions for debugging
         #[arg(long)]
         log_payloads: bool,
+
+        /// Use native binaries for ClickHouse and Temporal instead of Docker (macOS arm64)
+        #[arg(long)]
+        alpha: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

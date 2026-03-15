@@ -56,6 +56,7 @@ const DEFAULT_DEV_ENV = {
   ...process.env,
   MOOSE_LOGGER__LEVEL: "Debug",
   MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+  MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
 };
 
 describe("Unloaded Files Warning", () => {
@@ -117,7 +118,7 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         cwd: testDir,
         env: DEFAULT_DEV_ENV,
       });
@@ -192,7 +193,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         cwd: testDir,
         env: DEFAULT_DEV_ENV,
       });
@@ -272,7 +273,7 @@ export const myTable = OlapTable<MyModel>({
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         cwd: testDir,
         env: DEFAULT_DEV_ENV,
       });
@@ -347,7 +348,7 @@ declare module "some-module" {
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         cwd: testDir,
         env: DEFAULT_DEV_ENV,
       });
