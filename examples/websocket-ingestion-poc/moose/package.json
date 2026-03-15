@@ -1,0 +1,36 @@
+{
+  "name": "websocket-ingestion-poc-moose",
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev",
+    "generate-runtime": "tsc -p tsconfig.generate-runtime.json",
+    "workflow:supabase": "moose workflow run supabase-cdc-listener",
+    "workflow:coinbase": "moose workflow run coinbase-trades-listener"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "0.6.309",
+    "@supabase/supabase-js": "^2.54.0",
+    "coinbase-api": "^1.1.11",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typia": "^9.6.1"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "0.6.309",
+    "@types/node": "^20.12.12",
+    "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@514labs/kafka-javascript",
+      "@confluentinc/kafka-javascript"
+    ]
+  }
+}
