@@ -10,12 +10,13 @@
 - A validated baseline before migration steps
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Create a new branch">
+<GuideStepper.Checkpoint title="Create a new branch and push to trigger preview deploy">
 ```bash 
 git checkout -b <your-branch-name>
+git push -u origin <your-branch-name>
 ```
 
-Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
+Create a new branch in your repo to isolate your changes. Pushing the branch triggers a Boreal preview deployment that you can use to validate changes before merging.
 
 </GuideStepper.Checkpoint>
 
