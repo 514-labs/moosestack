@@ -557,9 +557,9 @@ def main():
                                             failed_at=datetime.now(timezone.utc),
                                             source="transform",
                                         )
-                                        record = dead_letter.model_dump_json().encode(
-                                            "utf-8"
-                                        )
+                                        record = dead_letter.model_dump_json(
+                                            by_alias=True
+                                        ).encode("utf-8")
                                         producer.send(dlq_topic.name, record).get()
                                         cli_log(
                                             CliLogData(

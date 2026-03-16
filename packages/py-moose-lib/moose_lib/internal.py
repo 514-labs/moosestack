@@ -52,6 +52,8 @@ class Target(BaseModel):
         dead_letter_queue: Optional dead letter queue stream name for this transform.
     """
 
+    model_config = model_config
+
     kind: Literal["stream"]
     name: str
     version: Optional[str] = None
@@ -66,6 +68,8 @@ class Consumer(BaseModel):
         version: Optional version of the consumer configuration.
         dead_letter_queue: Optional dead letter queue stream name for this consumer.
     """
+
+    model_config = model_config
 
     version: Optional[str] = None
     dead_letter_queue: Optional[str] = None

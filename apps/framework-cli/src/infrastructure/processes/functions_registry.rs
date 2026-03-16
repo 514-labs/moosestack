@@ -65,13 +65,17 @@ impl FunctionProcessRegistry {
         let dlq_topic = function_process
             .dead_letter_queue_topic_id
             .as_ref()
-            .and_then(|id| infra_map.find_topic_by_id(id))
-            .map(|topic| {
-                StreamConfig::Redpanda(KafkaStreamConfig::from_topic(
-                    &self.project.redpanda_config,
-                    topic,
+            .map(|id| {
+                let topic = infra_map.find_topic_by_id(id).ok_or_else(|| {
+                    FunctionRegistryError::TopicNotFound {
+                        topic_id: id.clone(),
+                    }
+                })?;
+                Ok::<_, FunctionRegistryError>(StreamConfig::Redpanda(
+                    KafkaStreamConfig::from_topic(&self.project.redpanda_config, topic),
                 ))
-            });
+            })
+            .transpose()?;
 
         match (
             infra_map.find_topic_by_id(&function_process.source_topic_id),
