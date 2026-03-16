@@ -3,7 +3,6 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
-  injectWorkspacePackages: true
 
 overrides:
   tar: 7.5.7
@@ -26,11 +25,11 @@ importers:
         version: 4.2.0
       typia:
         specifier: ^10.1.0
-        version: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
+        version: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20
-        version: 20.19.30
+        version: 20.19.37
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
@@ -48,20 +47,20 @@ importers:
     dependencies:
       '@514labs/moose-lib':
         specifier: 0.6.439
-        version: 0.6.439(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3))
+        version: 0.6.439(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3))
       ts-patch:
         specifier: ^3.3.0
         version: 3.3.0
       typia:
         specifier: ^10.1.0
-        version: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
+        version: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
     devDependencies:
       '@514labs/moose-cli':
         specifier: 0.6.439
         version: 0.6.439
       '@types/node':
         specifier: ^20
-        version: 20.19.30
+        version: 20.19.37
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -313,28 +312,24 @@ packages:
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-arm64-musl@1.15.5':
     resolution: {integrity: sha512-Of+wmVh5h47tTpN9ghHVjfL0CJrgn99XmaJjmzWFW7agPdVY6gTDgkk6zQ6q4hcDQ7hXb0BGw6YFpuanBzNPow==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-linux-x64-gnu@1.15.5':
     resolution: {integrity: sha512-98kuPS0lZVgjmc/2uTm39r1/OfwKM0PM13ZllOAWi5avJVjRd/j1xA9rKeUzHDWt+ocH9mTCQsAT1jjKSq45bg==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-x64-musl@1.15.5':
     resolution: {integrity: sha512-Rk+OtNQP3W/dZExL74LlaakXAQn6/vbrgatmjFqJPO4RZkq+nLo5g7eDUVjyojuERh7R2yhqNvZ/ZZQe8JQqqA==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-win32-arm64-msvc@1.15.5':
     resolution: {integrity: sha512-e3RTdJ769+PrN25iCAlxmsljEVu6iIWS7sE21zmlSiipftBQvSAOWuCDv2A8cH9lm5pSbZtwk8AUpIYCNsj2oQ==}
@@ -413,8 +408,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@20.19.30':
-    resolution: {integrity: sha512-WJtwWJu7UdlvzEAUm484QNg5eAoq5QR08KDNx7g45Usrs2NtOPiX8ugDqmKdXkyL03rBqU5dYNYVQetEpBHq2g==}
+  '@types/node@20.19.37':
+    resolution: {integrity: sha512-8kzdPJ3FsNsVIurqBs7oodNnCEVbni9yUEkaHbgptDACOPW04jimGagZ51E6+lXUwJjgnBw+hyko/lkFWCldqw==}
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -1494,7 +1489,7 @@ snapshots:
       '@514labs/moose-cli-linux-arm64': 0.6.439
       '@514labs/moose-cli-linux-x64': 0.6.439
 
-  '@514labs/moose-lib@0.6.439(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3))':
+  '@514labs/moose-lib@0.6.439(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3))':
     dependencies:
       '@514labs/kafka-javascript': 1.7.1-patch
       '@clickhouse/client': 1.8.1
@@ -1514,7 +1509,7 @@ snapshots:
       ts-patch: 3.3.0
       tsconfig-paths: 4.2.0
       typescript: 5.9.3
-      typia: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
+      typia: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
       zod: 3.25.76
     transitivePeerDependencies:
       - '@swc/helpers'
@@ -1573,12 +1568,12 @@ snapshots:
       protobufjs: 7.5.4
       yargs: 17.7.2
 
-  '@inquirer/external-editor@1.0.3(@types/node@20.19.30)':
+  '@inquirer/external-editor@1.0.3(@types/node@20.19.37)':
     dependencies:
       chardet: 2.1.1
       iconv-lite: 0.7.1
     optionalDependencies:
-      '@types/node': 20.19.30
+      '@types/node': 20.19.37
 
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
@@ -1864,7 +1859,7 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@20.19.30':
+  '@types/node@20.19.37':
     dependencies:
       undici-types: 6.21.0
 
@@ -2327,9 +2322,9 @@ snapshots:
 
   ini@4.1.3: {}
 
-  inquirer@8.2.7(@types/node@20.19.30):
+  inquirer@8.2.7(@types/node@20.19.37):
     dependencies:
-      '@inquirer/external-editor': 1.0.3(@types/node@20.19.30)
+      '@inquirer/external-editor': 1.0.3(@types/node@20.19.37)
       ansi-escapes: 4.3.2
       chalk: 4.1.2
       cli-cursor: 3.1.0
@@ -2365,7 +2360,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 20.19.30
+      '@types/node': 20.19.37
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -2546,7 +2541,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 20.19.30
+      '@types/node': 20.19.37
       long: 5.3.2
 
   punycode@2.3.1: {}
@@ -2777,13 +2772,13 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3):
+  typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3):
     dependencies:
       '@samchon/openapi': 5.1.0
       '@standard-schema/spec': 1.1.0
       commander: 10.0.1
       comment-json: 4.5.0
-      inquirer: 8.2.7(@types/node@20.19.30)
+      inquirer: 8.2.7(@types/node@20.19.37)
       package-manager-detector: 0.2.11
       randexp: 0.5.3
       typescript: 5.9.3
