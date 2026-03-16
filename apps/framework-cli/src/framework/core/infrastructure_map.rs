@@ -3758,7 +3758,7 @@ pub struct DetectedColumnRename {
 }
 
 /// Minimum confidence threshold for a rename to be considered plausible.
-const RENAME_CONFIDENCE_THRESHOLD: f64 = 0.5;
+const RENAME_CONFIDENCE_THRESHOLD: f64 = 0.7;
 
 /// Analyzes a set of column changes to detect likely renames among the
 /// added/removed pairs.
