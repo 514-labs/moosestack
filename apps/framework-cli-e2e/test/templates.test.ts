@@ -184,17 +184,6 @@ const buildDevEnv = (
   return env;
 };
 
-const resetRedpandaContainer = async (): Promise<void> => {
-  const { stdout: container } = await execAsync(
-    `docker ps --all --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
-  );
-  const name = container.trim();
-  if (!name) return;
-
-  await execAsync(`docker rm -fv ${name}`).catch(() => {});
-  testLogger.info(`Removed Redpanda container ${name} (with volumes)`);
-};
-
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
@@ -2997,39 +2986,64 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     if (config.isTestsVariant) {
       describe("DLQ with namespace prefixing", function () {
         const NAMESPACE = "testns";
+        const NS_APP_NAME = `${config.appName}-ns`;
+        let nsProjectDir: string;
+        let nsDevProcess: ChildProcess | null = null;
 
         before(async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          testLogger.info(
-            "Stopping dev server to reconfigure with namespace...",
-          );
+          // Stop the main dev server to free ports for the namespaced project
+          testLogger.info("Stopping main dev server for namespace DLQ test...");
           await stopDevProcess(devProcess);
 
-          await resetRedpandaContainer();
+          testLogger.info(
+            "Initializing fresh project with namespace for DLQ test...",
+          );
+          nsProjectDir = createTempTestDirectory(
+            `${config.projectDirSuffix}-ns`,
+          );
+
+          if (config.language === "typescript") {
+            await setupTypeScriptProject(
+              nsProjectDir,
+              config.templateName,
+              CLI_PATH,
+              MOOSE_LIB_PATH,
+              NS_APP_NAME,
+              config.packageManager as "npm" | "pnpm",
+            );
+          } else {
+            await setupPythonProject(
+              nsProjectDir,
+              config.templateName,
+              CLI_PATH,
+              MOOSE_PY_LIB_PATH,
+              NS_APP_NAME,
+            );
+          }
 
           const devEnv = {
-            ...buildDevEnv(config.language, TEST_PROJECT_DIR),
+            ...buildDevEnv(config.language, nsProjectDir),
             MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
           };
 
-          devProcess = spawn(CLI_PATH, ["dev"], {
+          nsDevProcess = spawn(CLI_PATH, ["dev"], {
             stdio: "pipe",
-            cwd: TEST_PROJECT_DIR,
+            cwd: nsProjectDir,
             env: devEnv,
           });
 
           await waitForServerStart(
-            devProcess!,
+            nsDevProcess!,
             TIMEOUTS.SERVER_STARTUP_MS,
             SERVER_CONFIG.startupMessage,
             SERVER_CONFIG.url,
           );
           testLogger.info(
-            "Server restarted with namespace, waiting for Kafka...",
+            "Server started with namespace, waiting for Kafka...",
           );
           await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-          await cleanupClickhouseData();
           await waitForStreamingFunctions();
           await waitForInfrastructureReady();
           testLogger.info(
@@ -3039,12 +3053,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         after(async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
-          testLogger.info(
-            "Cleaning up namespaced consumer groups for next tests...",
-          );
-          await stopDevProcess(devProcess);
-          await resetRedpandaContainer();
+          await cleanupTestSuite(nsDevProcess, nsProjectDir, NS_APP_NAME, {
+            logPrefix: `${config.displayName} (namespace)`,
+          });
 
+          // Restart the main dev server for any subsequent tests and the
+          // parent after() hook that expects devProcess to be running.
+          testLogger.info("Restarting main dev server after namespace test...");
           const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
           devProcess = spawn(CLI_PATH, ["dev"], {
             stdio: "pipe",
@@ -3061,7 +3076,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
           await waitForStreamingFunctions();
           await waitForInfrastructureReady();
-          testLogger.info("Dev server restored without namespace");
+          testLogger.info("Main dev server restored after namespace test");
         });
 
         it(`should route failed messages to a namespace-prefixed DLQ topic (${config.language})`, async function () {
@@ -3105,9 +3120,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
 
           if (config.language === "typescript") {
-            // TS template has an explicit FooDeadLetter OlapTable
             await waitForDBWrite(
-              devProcess!,
+              nsDevProcess!,
               "FooDeadLetter",
               1,
               60_000,
@@ -3207,12 +3221,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             .map((line: string) => line.trim().split(/\s+/)[0])
             .filter(Boolean);
 
-          const appTopics = topicNames.filter(
-            (t: string) => !t.startsWith("_") && !t.startsWith("__"),
-          );
-
-          // Only check namespace-prefixed topics (ignore leftover un-namespaced topics from earlier tests)
-          const namespacedTopics = appTopics.filter((t: string) =>
+          const namespacedTopics = topicNames.filter((t: string) =>
             t.startsWith(`${NAMESPACE}.`),
           );
 
