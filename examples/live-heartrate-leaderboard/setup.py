@@ -6,7 +6,7 @@ setup(
     install_requires=[
         "kafka-python-ng==2.2.2",
         "clickhouse_connect==0.11.0",
-        "requests==2.32.4",
+        "requests==2.32.5",
         "moose-cli==0.6.439",
         "moose-lib==0.6.439",
         "streamlit>=1.32.0",
