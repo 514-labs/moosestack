@@ -2993,9 +2993,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         before(async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          // Stop the main dev server to free ports for the namespaced project
+          // Stop the main dev server and its containers to free ports
           testLogger.info("Stopping main dev server for namespace DLQ test...");
           await stopDevProcess(devProcess);
+          await execAsync(
+            `docker compose -f .moose/docker-compose.yml -p ${config.appName} down -v`,
+            { cwd: TEST_PROJECT_DIR },
+          );
 
           testLogger.info(
             "Initializing fresh project with namespace for DLQ test...",
