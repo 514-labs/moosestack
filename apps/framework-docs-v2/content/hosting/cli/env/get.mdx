@@ -1,0 +1,41 @@
+---
+title: env get
+description: Get the value of an environment variable.
+order: 2
+---
+
+# 514 env get
+
+Use `514 env get` to retrieve the value of a single environment variable.
+
+## Usage
+
+```bash
+514 env get [OPTIONS] <KEY>
+```
+
+## Arguments
+
+- `<KEY>`: Environment variable key.
+
+## Options
+
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
+- `--branch <BRANCH>`: Branch name (infers branch scope).
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 env get DATABASE_URL --project acme/analytics-api
+514 env get API_KEY --project acme/analytics-api --branch feature/new-ingest
+514 --json env get DATABASE_URL --project acme/analytics-api
+```
+
+## Related
+
+- [`514 env`](/hosting/cli/env)
+- [`514 env list`](/hosting/cli/env/list)
+- [`514 env set`](/hosting/cli/env/set)
+- [`514 env delete`](/hosting/cli/env/delete)

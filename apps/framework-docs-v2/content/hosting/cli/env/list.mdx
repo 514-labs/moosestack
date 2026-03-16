@@ -1,0 +1,37 @@
+---
+title: env list
+description: List environment variables for a project or branch.
+order: 1
+---
+
+# 514 env list
+
+Use `514 env list` to list environment variables for a project. Optionally scope to a specific branch.
+
+## Usage
+
+```bash
+514 env list [OPTIONS]
+```
+
+## Options
+
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
+- `--branch <BRANCH>`: Branch name (infers branch scope).
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 env list --project acme/analytics-api
+514 env list --project acme/analytics-api --branch feature/new-ingest
+514 --json env list --project acme/analytics-api
+```
+
+## Related
+
+- [`514 env`](/hosting/cli/env)
+- [`514 env get`](/hosting/cli/env/get)
+- [`514 env set`](/hosting/cli/env/set)
+- [`514 env delete`](/hosting/cli/env/delete)

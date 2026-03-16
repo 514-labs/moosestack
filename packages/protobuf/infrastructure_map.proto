@@ -306,6 +306,8 @@ message FunctionProcess {
   PrimitiveSignature source_primitive = 9;
   optional int32 parallel_process_count = 10;
   optional Metadata metadata = 11;
+  // Topic ID for the dead letter queue, used to construct namespace-prefixed topic name
+  optional string dead_letter_queue_topic_id = 12;
 }
 
 message InitialDataLoad {
