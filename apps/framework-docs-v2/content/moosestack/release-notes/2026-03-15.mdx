@@ -50,7 +50,7 @@ This week the query layer gains MaterializedView support and description fields 
   Docs: [Semantic Layer](/moosestack/apis/semantic-layer)
 
 **`sql.statement` and `sql.fragment` template literal tags** ([@onelesd](https://github.com/onelesd))
-  The SQL template API now uses explicit `sql.statement` for top-level queries and `sql.fragment` for composable sub-expressions. This replaces the previous `sql` tagged template (which was ambiguous between statements and fragments), making it clear which SQL pieces are complete queries and which are building blocks for `sql.join` and dynamic composition.
+  The SQL template API now uses explicit `sql.statement` for top-level queries and `sql.fragment` for composable sub-expressions. This replaces the previous `sql` tagged template (which was ambiguous between statements and fragments), making it clear which SQL pieces are complete queries and which are building blocks for `sql.join` and dynamic composition. The MooseStack LSP will now skip SQL validation for `sql.fragment`.
 
   ```typescript
   import { Api, sql } from "@514labs/moose-lib";
