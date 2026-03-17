@@ -12,6 +12,8 @@ export interface ClickHouseConfig {
   db_name: string;
   use_ssl?: boolean;
   native_port?: number;
+  rls_user?: string;
+  rls_password?: string;
 }
 
 /**

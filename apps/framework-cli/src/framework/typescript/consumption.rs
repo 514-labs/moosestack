@@ -90,6 +90,11 @@ pub fn run(
             .expect("Failed to serialize row policies config");
         string_args.push("--row-policies".to_string());
         string_args.push(json);
+
+        string_args.push("--rls-user".to_string());
+        string_args.push(clickhouse_config.effective_rls_user().to_string());
+        string_args.push("--rls-password".to_string());
+        string_args.push(clickhouse_config.effective_rls_password().to_string());
     }
 
     let args: Vec<&str> = string_args.iter().map(|s| s.as_str()).collect();

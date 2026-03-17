@@ -10,11 +10,6 @@ pub const MOOSE_RLS_ROLE: &str = "moose_rls_role";
 /// IMPORTANT: Must match MOOSE_RLS_USER in packages/ts-moose-lib/src/consumption-apis/helpers.ts
 pub const MOOSE_RLS_USER: &str = "moose_rls_user";
 
-/// Suffix appended to the ClickHouse password when creating moose_rls_user.
-/// ClickHouse Cloud enforces password complexity on SQL-created users.
-/// IMPORTANT: Must match MOOSE_RLS_PASSWORD_SUFFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
-pub const MOOSE_RLS_PASSWORD_SUFFIX: &str = "_Aa1!";
-
 /// Prefix for ClickHouse custom settings used by row policies.
 /// Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
 /// IMPORTANT: Must match MOOSE_RLS_SETTING_PREFIX in packages/ts-moose-lib/src/consumption-apis/helpers.ts
