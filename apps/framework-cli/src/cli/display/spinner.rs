@@ -601,16 +601,18 @@ where
 
     let res = f(&handle).await;
 
+    // spinner left at paused state after future done
+    // means the action of `f` is not done, no `completion_message`
+    let completed = !handle.is_paused();
+
     if let Some(mut spinner) = sp {
-        if handle.is_paused() {
-            // spinner left at paused state after returning
-            // means the action of `f` is not done, no `completion_message`
-            let _ = spinner.stop();
-        } else {
+        if completed {
             let _ = spinner.done(completion_message);
+        } else {
+            let _ = spinner.stop();
         }
         let _ = spinner.cleanup();
-    } else if activate && !handle.is_paused() {
+    } else if activate && completed {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
