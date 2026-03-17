@@ -58,6 +58,7 @@ use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -2358,7 +2359,7 @@ impl InfrastructureMap {
                         "Filtering out column removal for deletion-protected table '{}'",
                         table.name
                     );
-                    false
+                    false // Remove destructive column removals
                 }
                 ColumnChange::Added { .. }
                 | ColumnChange::Updated { .. }
@@ -3504,12 +3505,9 @@ fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String
 fn columns_are_equivalent(
     before: &Column,
     after: &Column,
-    ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
+    ignore_ops: &[IgnorableOperation],
 ) -> bool {
-    use crate::infrastructure::olap::clickhouse::{
-        diff_strategy::{column_types_are_equivalent, normalize_column_for_low_cardinality_ignore},
-        IgnorableOperation,
-    };
+    use crate::infrastructure::olap::clickhouse::diff_strategy::normalize_column_for_low_cardinality_ignore;
 
     // Check if we should ignore LowCardinality differences
     let ignore_low_cardinality =
@@ -3855,7 +3853,7 @@ fn rename_confidence(
     after_positions: &HashMap<&str, usize>,
     max_columns: f64,
 ) -> f64 {
-    if removed.data_type != added.data_type {
+    if !column_types_are_equivalent(&removed.data_type, &added.data_type, false) {
         return 0.0;
     }
 
