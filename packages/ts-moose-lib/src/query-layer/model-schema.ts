@@ -101,6 +101,7 @@ async function fetchDistinctValues(
     const sqlObj = model.toSql({
       dimensions: [dimensionId],
       metrics: [],
+      limit: 1000,
     });
     const [query, queryParams] = toQuery(sqlObj);
     const result = await client.client.query({
