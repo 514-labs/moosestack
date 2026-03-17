@@ -56,7 +56,7 @@ use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::select_row_policy::{
-    SelectRowPolicy, TableReference, MOOSE_RLS_PASSWORD_SUFFIX, MOOSE_RLS_ROLE, MOOSE_RLS_USER,
+    SelectRowPolicy, TableReference, MOOSE_RLS_ROLE,
 };
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
@@ -1646,15 +1646,15 @@ async fn execute_create_row_policy(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let databases = policy.resolved_databases(db_name);
-    let rls_password = format!("{}{}", client.config.password, MOOSE_RLS_PASSWORD_SUFFIX);
-    let escaped_password = rls_password.replace('\'', "''");
+    let rls_user = client.config.effective_rls_user();
+    let escaped_rls_user = rls_user.replace('`', "``");
+    let escaped_password = client.config.effective_rls_password().replace('\'', "''");
 
     // Bootstrap: role + user
     let bootstrap_sqls = vec![
         format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
         format!(
-            "CREATE USER IF NOT EXISTS {MOOSE_RLS_USER} IDENTIFIED BY '{}'",
-            escaped_password
+            "CREATE USER IF NOT EXISTS `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"
         ),
     ];
     for sql in &bootstrap_sqls {
@@ -1670,7 +1670,7 @@ async fn execute_create_row_policy(
     // Grant SELECT on each relevant database
     for db in &databases {
         let escaped_db = db.replace('`', "``");
-        let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO {MOOSE_RLS_USER}");
+        let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO `{escaped_rls_user}`");
         tracing::debug!("RLS grant: {}", grant_sql);
         run_query(&grant_sql, client).await.map_err(|e| {
             ClickhouseChangesError::ClickhouseClient {
@@ -1681,7 +1681,7 @@ async fn execute_create_row_policy(
     }
 
     // Grant role to user
-    let grant_role_sql = format!("GRANT {MOOSE_RLS_ROLE} TO {MOOSE_RLS_USER}");
+    let grant_role_sql = format!("GRANT {MOOSE_RLS_ROLE} TO `{escaped_rls_user}`");
     run_query(&grant_role_sql, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,

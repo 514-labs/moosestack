@@ -2,7 +2,6 @@ import {
   MooseClient,
   MOOSE_RLS_SETTING_PREFIX,
   MOOSE_RLS_USER,
-  MOOSE_RLS_PASSWORD_SUFFIX,
   QueryClient,
   MooseUtils,
   RowPoliciesConfig,
@@ -223,9 +222,10 @@ export async function getMooseUtils(
       standaloneRlsClient = getClickhouseClient(
         toClientConfig({
           ...standaloneClickhouseConfig,
-          username: MOOSE_RLS_USER,
+          username: standaloneClickhouseConfig.rlsUser ?? MOOSE_RLS_USER,
           password:
-            standaloneClickhouseConfig.password + MOOSE_RLS_PASSWORD_SUFFIX,
+            standaloneClickhouseConfig.rlsPassword ??
+            standaloneClickhouseConfig.password,
         }),
       );
     }

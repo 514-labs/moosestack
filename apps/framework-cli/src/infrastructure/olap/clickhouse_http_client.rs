@@ -91,9 +91,7 @@ mod tests {
             user: "default".to_string(),
             password: "".to_string(),
             use_ssl: false,
-            host_data_path: None,
-            additional_databases: vec![],
-            clusters: None,
+            ..Default::default()
         };
 
         let client = create_query_client(&config);

@@ -82,6 +82,8 @@ program
     "--row-policies <json>",
     "JSON map of ClickHouse setting names to JWT claim names for row policy enforcement",
   )
+  .option("--rls-user <user>", "ClickHouse username for RLS queries")
+  .option("--rls-password <password>", "ClickHouse password for RLS queries")
   .action(
     (
       clickhouseDb,
@@ -99,6 +101,8 @@ program
           username: clickhouseUsername,
           password: clickhousePassword,
           useSSL: options.clickhouseUseSsl,
+          rlsUser: options.rlsUser,
+          rlsPassword: options.rlsPassword,
         },
         jwtConfig: {
           secret: options.jwtSecret,

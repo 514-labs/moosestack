@@ -89,7 +89,6 @@ export const MOOSE_RLS_USER = "moose_rls_user";
  * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
  */
 export const MOOSE_RLS_SETTING_PREFIX = "SQL_moose_rls_";
-export const MOOSE_RLS_PASSWORD_SUFFIX = "_Aa1!";
 
 /** Config mapping ClickHouse setting names to JWT claim names */
 export type RowPoliciesConfig = Record<string, string>;

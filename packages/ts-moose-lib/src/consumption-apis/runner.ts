@@ -9,7 +9,6 @@ import {
   buildRowPolicyOptionsFromClaims,
   getTemporalClient,
   MOOSE_RLS_USER,
-  MOOSE_RLS_PASSWORD_SUFFIX,
 } from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
@@ -27,6 +26,8 @@ interface ClickhouseConfig {
   username: string;
   password: string;
   useSSL: boolean;
+  rlsUser?: string;
+  rlsPassword?: string;
 }
 
 interface JwtConfig {
@@ -602,7 +603,7 @@ export const runApis = async (config: ApisConfig) => {
         toClientConfig(config.clickhouseConfig),
       );
 
-      // When RLS is configured, create a second client as moose_rls_user.
+      // When RLS is configured, create a second client as the RLS user.
       // This user has the RLS role granted and is used for all API queries
       // so that row policies are enforced. The main client remains for DDL/ingest.
       let rlsClickhouseClient: ClickHouseClient | undefined;
@@ -610,9 +611,10 @@ export const runApis = async (config: ApisConfig) => {
         rlsClickhouseClient = getClickhouseClient(
           toClientConfig({
             ...config.clickhouseConfig,
-            username: MOOSE_RLS_USER,
+            username: config.clickhouseConfig.rlsUser ?? MOOSE_RLS_USER,
             password:
-              config.clickhouseConfig.password + MOOSE_RLS_PASSWORD_SUFFIX,
+              config.clickhouseConfig.rlsPassword ??
+              config.clickhouseConfig.password,
           }),
         );
       }

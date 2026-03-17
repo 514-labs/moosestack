@@ -980,9 +980,7 @@ mod tests {
                 host: "localhost".to_string(),
                 host_port: 18123,
                 native_port: 9000,
-                host_data_path: None,
-                additional_databases: Vec::new(),
-                clusters: None,
+                ..Default::default()
             },
             http_server_config: LocalWebserverConfig {
                 proxy_port: crate::cli::local_webserver::default_proxy_port(),
