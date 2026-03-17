@@ -271,6 +271,7 @@ impl TerminalComponent for SpinnerComponent {
         self.initial_line = Some(initial_pos.1);
 
         {
+            // Display initial spinner frame and add newline to separate from subprocess output
             let _guard = terminal_lock::acquire();
             execute!(stdout(), Print(&format!("{} {message}\n", DOTS9_FRAMES[0])))?;
             stdout().flush()?;
@@ -284,16 +285,13 @@ impl TerminalComponent for SpinnerComponent {
             while !stop_signal.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(FRAME_INTERVAL_MS));
 
+                let _guard = terminal_lock::acquire();
                 if stop_signal.load(Ordering::Relaxed) || pause_signal.load(Ordering::Relaxed) {
                     continue;
                 }
 
                 frame_index = (frame_index + 1) % DOTS9_FRAMES.len();
-
-                let _guard = terminal_lock::acquire();
-                if stop_signal.load(Ordering::Relaxed) || pause_signal.load(Ordering::Relaxed) {
-                    continue;
-                }
+                // Try synchronized updates first (atomic operation)
                 let sync_result = queue!(
                     stdout(),
                     BeginSynchronizedUpdate,
@@ -306,6 +304,7 @@ impl TerminalComponent for SpinnerComponent {
                 )
                 .and_then(|_| stdout().flush());
 
+                // If synchronized updates fail, fall back to queue-based approach
                 if sync_result.is_err() {
                     let _ = queue!(
                         stdout(),
@@ -349,6 +348,7 @@ impl TerminalComponent for SpinnerComponent {
             let _ = handle.join();
         }
 
+        // Clean up the reserved spinner line if we have it
         if let Some(initial_line) = self.initial_line {
             let _guard = terminal_lock::acquire();
             queue!(
@@ -603,12 +603,16 @@ where
 
     if let Some(mut spinner) = sp {
         if handle.is_paused() {
+            // spinner left at paused state after returning
+            // means the action of `f` is not done, no `completion_message`
             let _ = spinner.stop();
         } else {
             let _ = spinner.done(completion_message);
         }
         let _ = spinner.cleanup();
     } else if activate && !handle.is_paused() {
+        // In non-TTY mode (e.g., CI), still print the completion message
+        // so tests can detect when operations complete
         println!("✓ {completion_message}");
     }
 
