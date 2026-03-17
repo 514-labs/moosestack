@@ -106,7 +106,7 @@ export interface ModelToolOptions {
   requiredFilters?: string[];
   /** Maximum limit for the tool. Falls back to model.defaults.maxLimit, then 1000. */
   maxLimit?: number;
-  /** Default limit for the tool. Falls back to model.defaults.limit, then 100. */
+  /** Default limit for the tool. Falls back to model.defaults.limit, then 1000. */
   defaultLimit?: number;
   /** Default values applied when params are absent. Merged with model.defaults. */
   defaults?: {
@@ -164,7 +164,7 @@ export function createModelTool(
     ...new Set([...modelRequiredFilters, ...(options.requiredFilters ?? [])]),
   ];
   const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? 1000;
-  const defaultLimit = options.defaultLimit ?? mergedDefaults.limit ?? 100;
+  const defaultLimit = options.defaultLimit ?? mergedDefaults.limit ?? 1000;
 
   const requiredSet = new Set(requiredFilters);
   const schema: Record<string, z.ZodType> = {};
@@ -339,7 +339,7 @@ export function registerModelTools(
     const toolName = model.name;
     const toolDescription = model.description ?? toolName;
     const tool = createModelTool(model);
-    const defaultLimit = model.defaults?.limit ?? 100;
+    const defaultLimit = model.defaults?.limit ?? 1000;
 
     server.tool(
       toolName,
