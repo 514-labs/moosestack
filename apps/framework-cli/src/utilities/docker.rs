@@ -498,9 +498,11 @@ impl DockerClient {
                 "clickhouse_user".to_string(),
                 json!(project.clickhouse_config.user),
             );
+            // Escape single quotes in password for SQL safety (single quote becomes two single quotes)
+            let escaped_password = project.clickhouse_config.password.replace('\'', "''");
             obj.insert(
                 "clickhouse_password".to_string(),
-                json!(project.clickhouse_config.password),
+                json!(escaped_password),
             );
         }
 
