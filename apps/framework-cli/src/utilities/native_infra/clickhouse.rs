@@ -11,8 +11,13 @@ const NATIVE_CH_DIR: &str = "native_infra/clickhouse";
 
 /// Ensure the ClickHouse binary is cached and return its path.
 pub fn ensure_binary(manager: &BinaryManager) -> Result<PathBuf, NativeInfraError> {
-    let url = clickhouse_download_url();
-    manager.ensure_binary("clickhouse", CLICKHOUSE_BINARY_VERSION, &url, None)
+    let (url, archive_path) = clickhouse_download_url();
+    manager.ensure_binary(
+        "clickhouse",
+        CLICKHOUSE_BINARY_VERSION,
+        &url,
+        archive_path.as_deref(),
+    )
 }
 
 /// Generate the ClickHouse config.xml inside the project's native data dir.
@@ -197,26 +202,37 @@ pub fn pid_file_path(project: &Project) -> PathBuf {
 }
 
 /// Construct the platform-specific download URL for ClickHouse.
-fn clickhouse_download_url() -> String {
+///
+/// Returns `(url, archive_binary_path)`. On macOS, ClickHouse provides a
+/// standalone binary so `archive_binary_path` is `None`. On Linux, only
+/// `.tgz` packages are available, so we return the path to the binary
+/// inside the archive.
+fn clickhouse_download_url() -> (String, Option<String>) {
+    let ver = CLICKHOUSE_BINARY_VERSION;
+    // Strip the "-lts" suffix for the tarball internal directory name.
+    // Release tag is e.g. "25.8.18.1-lts" but the directory inside the
+    // tarball is "clickhouse-common-static-25.8.18.1".
+    let ver_short = ver.split('-').next().unwrap_or(ver);
+
     if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
-        format!(
-            "https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-macos-aarch64",
-            ver = CLICKHOUSE_BINARY_VERSION
+        (
+            format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-macos-aarch64"),
+            None,
         )
     } else if cfg!(target_os = "macos") && cfg!(target_arch = "x86_64") {
-        format!(
-            "https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-macos",
-            ver = CLICKHOUSE_BINARY_VERSION
+        (
+            format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-macos"),
+            None,
         )
     } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
-        format!(
-            "https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-linux-aarch64",
-            ver = CLICKHOUSE_BINARY_VERSION
+        (
+            format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-common-static-{ver_short}-arm64.tgz"),
+            Some(format!("clickhouse-common-static-{ver_short}/usr/bin/clickhouse")),
         )
     } else {
-        format!(
-            "https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-linux-amd64",
-            ver = CLICKHOUSE_BINARY_VERSION
+        (
+            format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-common-static-{ver_short}-amd64.tgz"),
+            Some(format!("clickhouse-common-static-{ver_short}/usr/bin/clickhouse")),
         )
     }
 }
