@@ -1650,12 +1650,13 @@ async fn execute_create_row_policy(
     let escaped_rls_user = rls_user.replace('`', "``");
     let escaped_password = client.config.effective_rls_password().replace('\'', "''");
 
-    // Bootstrap: role + user
+    // Bootstrap: role + user (ALTER ensures password stays in sync if rotated)
     let bootstrap_sqls = vec![
         format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
         format!(
             "CREATE USER IF NOT EXISTS `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"
         ),
+        format!("ALTER USER `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"),
     ];
     for sql in &bootstrap_sqls {
         tracing::debug!("RLS bootstrap: {}", sql);
