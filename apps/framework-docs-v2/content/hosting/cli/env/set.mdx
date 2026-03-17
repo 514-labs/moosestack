@@ -1,0 +1,41 @@
+---
+title: env set
+description: Set one or more environment variables.
+order: 3
+---
+
+# 514 env set
+
+Use `514 env set` to set one or more environment variables as `KEY=VALUE` pairs.
+
+## Usage
+
+```bash
+514 env set [OPTIONS] <VARS>...
+```
+
+## Arguments
+
+- `<VARS>...`: One or more `KEY=VALUE` pairs.
+
+## Options
+
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
+- `--branch <BRANCH>`: Branch name (infers branch scope).
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 env set API_KEY=sk-123 --project acme/analytics-api
+514 env set API_KEY=sk-123 BATCH_SIZE=100 --project acme/analytics-api
+514 env set API_KEY=sk-branch-456 --project acme/analytics-api --branch feature/new-ingest
+```
+
+## Related
+
+- [`514 env`](/hosting/cli/env)
+- [`514 env list`](/hosting/cli/env/list)
+- [`514 env get`](/hosting/cli/env/get)
+- [`514 env delete`](/hosting/cli/env/delete)

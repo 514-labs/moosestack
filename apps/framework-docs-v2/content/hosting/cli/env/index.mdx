@@ -1,0 +1,81 @@
+---
+title: env
+description: Manage environment variables for a 514 hosting project.
+order: 8
+---
+
+# 514 env
+
+Use `514 env` to manage environment variables for a project. Variables can be scoped to a project or a specific branch.
+
+## Usage
+
+```bash
+514 env [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List environment variables for a project or branch.
+
+```bash
+514 env list [OPTIONS]
+```
+
+See the full command reference: [`514 env list`](/hosting/cli/env/list).
+
+### Get
+
+Get the value of a single environment variable.
+
+```bash
+514 env get [OPTIONS] <KEY>
+```
+
+See the full command reference: [`514 env get`](/hosting/cli/env/get).
+
+### Set
+
+Set one or more environment variables.
+
+```bash
+514 env set [OPTIONS] <VARS>...
+```
+
+See the full command reference: [`514 env set`](/hosting/cli/env/set).
+
+### Delete
+
+Delete an environment variable.
+
+```bash
+514 env delete [OPTIONS] <KEY>
+```
+
+See the full command reference: [`514 env delete`](/hosting/cli/env/delete).
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 env list --project acme/analytics-api
+514 env get DATABASE_URL --project acme/analytics-api
+514 env set API_KEY=sk-123 --project acme/analytics-api
+514 env set API_KEY=sk-123 BATCH_SIZE=100 --project acme/analytics-api --branch feature/new-ingest
+514 env delete OLD_SECRET --project acme/analytics-api
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 env list`](/hosting/cli/env/list)
+- [`514 env get`](/hosting/cli/env/get)
+- [`514 env set`](/hosting/cli/env/set)
+- [`514 env delete`](/hosting/cli/env/delete)
+- [`514 project`](/hosting/cli/projects)
+- [`514 deployment`](/hosting/cli/deployment)

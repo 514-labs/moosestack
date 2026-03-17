@@ -49,9 +49,10 @@ import {
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
+// Use the staged template (with shared files injected by package-templates.js pretest)
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
-  "../../../templates/typescript-tests",
+  "../../../template-packages/_staging_typescript-tests",
 );
 
 /**

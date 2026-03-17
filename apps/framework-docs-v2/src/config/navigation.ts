@@ -1245,6 +1245,38 @@ const hostingNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "hosting/cli/env",
+    title: "env",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/env/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/get",
+        title: "get",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/set",
+        title: "set",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/delete",
+        title: "delete",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
     slug: "hosting/cli/agent",
     title: "agent",
     languages: ["typescript", "python"],
@@ -1411,6 +1443,12 @@ const hostingNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "hosting/workflow/fiveonefour-to-local-setup",
     title: "Fiveonefour to Local Setup",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/workflow/environment-variables",
+    title: "Manage Environment Variables",
     languages: ["typescript", "python"],
   },
   { type: "separator" },

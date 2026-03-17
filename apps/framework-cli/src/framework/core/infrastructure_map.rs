@@ -7206,6 +7206,7 @@ mod diff_function_process_tests {
                 primitive_type: PrimitiveTypes::Function,
             },
             metadata: None,
+            dead_letter_queue_topic_id: None,
         }
     }
 

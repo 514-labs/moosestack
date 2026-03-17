@@ -1,0 +1,34 @@
+{
+  "1111": {
+    "user_id": 1,
+    "live_bt_device": "True",
+    "user_name": "David",
+    "profile_image": "https://ca.slack-edge.com/T06ETRB50-U07SBJAF0HG-24682c3e529b-512"
+  },
+
+  "12345": {
+    "user_id": 0,
+    "user_name": "Joj",
+    "profile_image": "https://ca.slack-edge.com/T062WLJGPMW-U071QSWGQAK-dc420b7ca59c-512"
+  },
+  "12346": {
+    "user_id": 2,
+    "user_name": "Tim",
+    "profile_image": "https://ca.slack-edge.com/T062WLJGPMW-U062A4HPG4C-f7dfbbfa5065-512"
+  },
+  "12347": {
+    "user_id": 3,
+    "user_name": "Alex",
+    "profile_image": "https://ca.slack-edge.com/T062WLJGPMW-U0624P1RC0M-a52dbc57c8a8-512"
+  },
+  "12348": {
+    "user_id": 4,
+    "user_name": "Arman",
+    "profile_image": "https://ca.slack-edge.com/T062WLJGPMW-U079W7WJ8MV-31c7dff99db9-512"
+  },
+  "12349": {
+    "user_id": 5,
+    "user_name": "LJ",
+    "profile_image": "https://ca.slack-edge.com/T062WLJGPMW-U082ZQ2BAMA-030e4cc0a710-512"
+  }
+}

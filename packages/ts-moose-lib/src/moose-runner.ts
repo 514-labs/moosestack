@@ -129,6 +129,10 @@ program
   )
   .argument("<max-subscriber-count>", "Maximum number of subscribers")
   .option("--target-topic <target-topic>", "Target topic configuration as JSON")
+  .option(
+    "--dlq-topic <dlq-topic>",
+    "Dead letter queue topic configuration as JSON",
+  )
   .option("--sasl-username <username>", "SASL username")
   .option("--sasl-password <password>", "SASL password")
   .option("--sasl-mechanism <mechanism>", "SASL mechanism")
@@ -140,6 +144,7 @@ program
         sourceTopic: JSON.parse(sourceTopic),
         targetTopic:
           options.targetTopic ? JSON.parse(options.targetTopic) : undefined,
+        dlqTopic: options.dlqTopic ? JSON.parse(options.dlqTopic) : undefined,
         functionFilePath,
         broker,
         maxSubscriberCount: parseInt(maxSubscriberCount),

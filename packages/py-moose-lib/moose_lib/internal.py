@@ -49,12 +49,16 @@ class Target(BaseModel):
         name: The name of the target stream.
         version: Optional version of the target stream configuration.
         metadata: Optional metadata for the target stream.
+        dead_letter_queue: Optional dead letter queue stream name for this transform.
     """
+
+    model_config = model_config
 
     kind: Literal["stream"]
     name: str
     version: Optional[str] = None
     metadata: Optional[dict] = None
+    dead_letter_queue: Optional[str] = None
 
 
 class Consumer(BaseModel):
@@ -62,9 +66,13 @@ class Consumer(BaseModel):
 
     Attributes:
         version: Optional version of the consumer configuration.
+        dead_letter_queue: Optional dead letter queue stream name for this consumer.
     """
 
+    model_config = model_config
+
     version: Optional[str] = None
+    dead_letter_queue: Optional[str] = None
 
 
 class BaseEngineConfigDict(BaseModel):
@@ -1052,13 +1060,26 @@ def to_infra_map() -> dict:
                 name=dest_name,
                 version=transform.config.version,
                 metadata=getattr(transform.config, "metadata", None),
+                dead_letter_queue=(
+                    transform.config.dead_letter_queue.name
+                    if transform.config.dead_letter_queue
+                    else None
+                ),
             )
             for dest_name, transforms in stream.transformations.items()
             for transform in transforms
         ]
 
         consumers = [
-            Consumer(version=consumer.config.version) for consumer in stream.consumers
+            Consumer(
+                version=consumer.config.version,
+                dead_letter_queue=(
+                    consumer.config.dead_letter_queue.name
+                    if consumer.config.dead_letter_queue
+                    else None
+                ),
+            )
+            for consumer in stream.consumers
         ]
 
         topics[name] = TopicConfig(
