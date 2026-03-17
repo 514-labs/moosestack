@@ -80,9 +80,9 @@ pnpm dev:moose    # Start MooseStack service only
 pnpm dev:web      # Start web app only
 ```
 
-Access the application at `http://localhost:3000`. Click the chat icon in the bottom-right corner to open the chat panel. This generates an empty template application, if you want to customize the application or chat tools, see [Chat in Your App Guide](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
+`pnpm dev:moose` loads the MooseStack Development Server and MooseDev MCP.
 
-This loads the MooseStack Development Server and MCP.
+Access the application at `http://localhost:3000`. Click the chat icon in the bottom-right corner to open the chat panel. This generates an empty template application, if you want to customize the application or chat tools, see [Chat in Your App Guide](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
 
 If you want to use MooseStack skills, bootstrap them with:
 
