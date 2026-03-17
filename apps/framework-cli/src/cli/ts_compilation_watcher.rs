@@ -430,23 +430,17 @@ async fn watch(
                                         !project.is_production
                                             && !SHOW_TIMING.load(Ordering::Relaxed)
                                     };
-                                    let project_clone = project.clone();
-                                    let state_storage = state_storage.clone();
-                                    let processing_coordinator = processing_coordinator.clone();
-                                    let project_registries = project_registries.clone();
-                                    let route_update_channel = route_update_channel.clone();
-                                    let webapp_update_channel = webapp_update_channel.clone();
-                                    let metrics = metrics.clone();
-                                    let settings = settings.clone();
 
                                     let result: anyhow::Result<bool> = with_spinner_completion_async(
                                         "Processing infrastructure changes",
                                         "Infrastructure changes processed successfully",
-                                        async move |spinner_handle| {
+                                        async |spinner_handle| {
                                             let plan_result = with_timing_async("Planning", async {
+                                                // IS_DEV_MODE is set, so ensure_typescript_compiled is a no-op
+                                                // (moose-tspc --watch already compiled)
                                                 framework::core::plan::plan_changes(
                                                     &**state_storage,
-                                                    &project_clone,
+                                                    &project,
                                                 )
                                                 .await
                                             })
@@ -456,7 +450,7 @@ async fn watch(
                                                 Ok((_, plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
-                                                            &project_clone,
+                                                            &project,
                                                             &plan_result,
                                                         )
                                                     })
@@ -471,6 +465,7 @@ async fn watch(
                                                     spinner_handle.resume();
 
                                                     display::show_changes(&plan_result);
+                                                    // Hold the mutation guard only for execution/persist steps.
                                                     let _processing_guard =
                                                         processing_coordinator.begin_processing().await;
                                                     let mut project_registries =
@@ -479,7 +474,7 @@ async fn watch(
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
                                                             framework::core::execute::execute_online_change(
-                                                                &project_clone,
+                                                                &project,
                                                                 &plan_result,
                                                                 route_update_channel.clone(),
                                                                 webapp_update_channel.clone(),
@@ -504,7 +499,7 @@ async fn watch(
 
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
-                                                                    &project_clone,
+                                                                    &project,
                                                                     &plan_result.target_infra_map,
                                                                 )
                                                                 .await
