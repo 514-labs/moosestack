@@ -791,11 +791,16 @@ export function defineQueryModel<
       rawLimit != null && maxLimit != null ?
         Math.min(rawLimit, maxLimit)
       : (rawLimit ?? maxLimit);
-    const offsetVal =
-      limitVal != null ? (spec.offset ?? (spec.page ?? 0) * limitVal) : 0;
+
+    if (limitVal == null && (spec.page != null || spec.offset != null)) {
+      throw new Error(
+        "Cannot use 'page' or 'offset' without a 'limit' — set a limit on the request or in model defaults",
+      );
+    }
+
     const pagination =
       limitVal == null ? empty
-      : spec.offset != null ? sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
+      : spec.offset != null ? sql`LIMIT ${limitVal} OFFSET ${spec.offset}`
       : paginate(limitVal, spec.page ?? 0);
 
     const selectedFields =
