@@ -3846,6 +3846,13 @@ pub fn detect_column_renames(
 }
 
 /// Computes a confidence score in [0.0, 1.0] that `removed` was renamed to `added`.
+///
+/// Name similarity is evaluated first and acts as a hard gate: if the names
+/// bear no resemblance (normalized Levenshtein similarity below
+/// [`NAME_SIMILARITY_GATE`]), the function returns 0.0 immediately. This
+/// prevents unrelated same-type columns with matching default properties
+/// (e.g. `status: String` and `email: String`) from being misclassified as
+/// renames.
 fn rename_confidence(
     removed: &Column,
     added: &Column,
@@ -3853,23 +3860,44 @@ fn rename_confidence(
     after_positions: &HashMap<&str, usize>,
     max_columns: f64,
 ) -> f64 {
+    // Type equivalence is a prerequisite — not a rename if types differ.
     if !column_types_are_equivalent(&removed.data_type, &added.data_type, false) {
         return 0.0;
     }
 
-    let mut score = 0.4;
+    // --- 1. Name similarity (primary signal, evaluated first) ---
+    let max_len = removed.name.len().max(added.name.len());
+    let name_similarity = if max_len > 0 {
+        let dist = levenshtein_distance(&removed.name, &added.name);
+        1.0 - (dist as f64 / max_len as f64)
+    } else {
+        0.0
+    };
 
-    // --- 2. Positional proximity (0.2) ---
+    // Hard gate: names must bear minimal resemblance. Without this, matching
+    // type + default column properties alone exceeds the confidence threshold
+    // for completely unrelated columns.
+    const NAME_SIMILARITY_GATE: f64 = 0.3;
+    if name_similarity < NAME_SIMILARITY_GATE {
+        return 0.0;
+    }
+
+    // --- Accumulate score ---
+    // Weights: name 0.5, type 0.15 (gate bonus), position 0.2, properties 0.15
+    let mut score = 0.15; // type-match bonus (already gated above)
+
+    score += 0.5 * name_similarity;
+
+    // --- 2. Positional proximity (up to 0.2) ---
     if let (Some(&before_pos), Some(&after_pos)) = (
         before_positions.get(removed.name.as_str()),
         after_positions.get(added.name.as_str()),
     ) {
         let distance = (before_pos as f64 - after_pos as f64).abs();
-        // Full credit when same position, linearly declining to 0 at opposite ends.
         score += 0.2 * (1.0 - distance / max_columns);
     }
 
-    // --- 3. Property similarity (0.15 total) ---
+    // --- 3. Property similarity (up to 0.15) ---
     if removed.required == added.required {
         score += 0.03;
     }
@@ -3884,14 +3912,6 @@ fn rename_confidence(
     }
     if removed.codec == added.codec {
         score += 0.03;
-    }
-
-    // --- 4. Name similarity via normalized edit distance (0.25) ---
-    let max_len = removed.name.len().max(added.name.len());
-    if max_len > 0 {
-        let dist = levenshtein_distance(&removed.name, &added.name);
-        let normalized = 1.0 - (dist as f64 / max_len as f64);
-        score += 0.25 * normalized;
     }
 
     score
@@ -4065,6 +4085,29 @@ mod rename_detection_tests {
 
         let renames = detect_column_renames(&changes, &before, &after);
         assert!(renames.is_empty());
+    }
+
+    #[test]
+    fn no_rename_when_same_type_but_unrelated_names() {
+        let old_col = make_column("status", ColumnType::String);
+        let new_col = make_column("email", ColumnType::String);
+
+        let before = make_table(vec![old_col.clone()]);
+        let after = make_table(vec![new_col.clone()]);
+
+        let changes = vec![
+            ColumnChange::Removed(old_col),
+            ColumnChange::Added {
+                column: new_col,
+                position_after: None,
+            },
+        ];
+
+        let renames = detect_column_renames(&changes, &before, &after);
+        assert!(
+            renames.is_empty(),
+            "unrelated same-type columns should not be detected as a rename"
+        );
     }
 
     #[test]
