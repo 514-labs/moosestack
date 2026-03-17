@@ -391,7 +391,7 @@ export function defineQueryModel<
     defaults = {},
   } = config;
   const table = resolveTable(tableOrMv);
-  const { maxLimit = 1000 } = defaults;
+  const { maxLimit } = defaults;
 
   const primaryTableName = table.name;
   const hasJoins = joinDefs != null && Object.keys(joinDefs).length > 0;
@@ -786,11 +786,16 @@ export function defineQueryModel<
       );
     }
 
-    const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
-    const offsetVal = spec.offset ?? (spec.page ?? 0) * limitVal;
+    const rawLimit = spec.limit ?? defaults.limit;
+    const limitVal =
+      rawLimit != null && maxLimit != null ?
+        Math.min(rawLimit, maxLimit)
+      : (rawLimit ?? maxLimit);
+    const offsetVal =
+      limitVal != null ? (spec.offset ?? (spec.page ?? 0) * limitVal) : 0;
     const pagination =
-      spec.offset != null ?
-        sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
+      limitVal == null ? empty
+      : spec.offset != null ? sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
       : paginate(limitVal, spec.page ?? 0);
 
     const selectedFields =
