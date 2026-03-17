@@ -303,13 +303,12 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log || true
 
-  test-e2e-typescript-default:
+  test-e2e-typescript-install-compat:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    # Add explicit read-only permissions
+    name: Test Install Compat (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -342,12 +341,6 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      # Login to Docker hub to get higher rate limits when moose pulls images
-      - name: Login to Docker Hub
-        uses: ./.github/actions/docker-login
-        with:
-          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
       # Update packageManager field to match matrix version for testing
       - name: Update pnpm version in package.json
         if: startsWith(matrix.package-manager, 'pnpm')
@@ -357,8 +350,6 @@ jobs:
           mv package.json.tmp package.json
 
       # Setup pnpm (uses version from package.json)
-      # For npm tests: uses monorepo's default (9.9.0)
-      # For pnpm tests: uses matrix version (9.9.0 or 10.15.0)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -372,8 +363,61 @@ jobs:
         with:
           toolchain: stable
           cache: true
-          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
-          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Run Install Compatibility Check
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "install check"
+        env:
+          TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
+
+  test-e2e-typescript-default:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }})
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
@@ -382,7 +426,7 @@ jobs:
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
-          TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
+          TEST_PACKAGE_MANAGER: pnpm
 
       - name: Inspect Logs
         if: always()
@@ -955,6 +999,7 @@ jobs:
         test-ts-moose-lib,
         test-py-moose-lib,
         test-e2e-module-compilation,
+        test-e2e-typescript-install-compat,
         test-e2e-typescript-default,
         test-e2e-typescript-tests,
         test-e2e-python-default,
@@ -988,6 +1033,7 @@ jobs:
              [[ "${{ needs.test-ts-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-py-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-module-compilation.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-typescript-install-compat.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
@@ -1006,6 +1052,7 @@ jobs:
              [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-module-compilation.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-typescript-install-compat.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
