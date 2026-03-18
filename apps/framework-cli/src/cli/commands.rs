@@ -366,6 +366,14 @@ pub enum GenerateCommand {
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,
+
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        #[arg(long)]
+        yes_destructive: bool,
+
+        /// Disable automatic backfill SQL generation for versioned tables
+        #[arg(long)]
+        no_auto_backfill_sql: bool,
     },
 }
 
