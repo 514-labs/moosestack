@@ -60,25 +60,6 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
-/**
- * Extract claim values from a JWT payload to build an rlsContext map.
- * Returns { claim_name: claim_value } for passing to getMooseUtils({ rlsContext }).
- */
-function buildRlsContextFromJwt(
-  config: RowPoliciesConfig,
-  jwt: Record<string, unknown>,
-): Record<string, string> {
-  const opts = buildRowPolicyOptionsFromClaims(config, jwt, "JWT payload");
-  const context: Record<string, string> = Object.create(null);
-  for (const [settingName, claimName] of Object.entries(config)) {
-    const value = opts.clickhouse_settings[settingName];
-    if (value !== undefined) {
-      context[claimName] = value;
-    }
-  }
-  return context;
-}
-
 const createPath = (apisDir: string, path: string) => {
   // Always use compiled JavaScript
   return `${apisDir}${path}.js`;
@@ -491,30 +472,25 @@ const createMainRouter = async (
         pathname.startsWith(normalizedMount + "/");
 
       if (matches) {
-        // Import once for both getMooseUtils and runWithRequestContext
         const { getMooseUtils, runWithRequestContext } = await import(
           "./standalone"
         );
 
-        // Build per-request RLS context from JWT claims (if row policies are configured)
-        let rlsContext: Record<string, string> | undefined;
-        if (webApp.config.injectMooseUtils !== false) {
-          try {
-            rlsContext =
-              rowPoliciesConfig && jwtPayload ?
-                buildRlsContextFromJwt(
-                  rowPoliciesConfig,
-                  jwtPayload as Record<string, unknown>,
-                )
-              : undefined;
-          } catch (error) {
-            res.writeHead(403, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: (error as Error).message }));
-            return;
-          }
-          (req as any).moose = await getMooseUtils(
-            rlsContext ? { rlsContext } : undefined,
-          );
+        // Build RowPolicyOptions once from JWT (same pattern as the API path)
+        let rowPolicyOpts: RowPolicyOptions | undefined;
+        try {
+          rowPolicyOpts =
+            rowPoliciesConfig && jwtPayload ?
+              buildRowPolicyOptionsFromClaims(
+                rowPoliciesConfig,
+                jwtPayload as Record<string, unknown>,
+                "JWT payload",
+              )
+            : undefined;
+        } catch (error) {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: (error as Error).message }));
+          return;
         }
 
         let proxiedUrl = req.url;
@@ -525,9 +501,6 @@ const createMainRouter = async (
         }
 
         try {
-          // Create a modified request preserving all properties including headers
-          // A shallow clone (like { ...req }) generally will not work since headers and other
-          // members are not cloned.
           const modifiedReq = Object.assign(
             Object.create(Object.getPrototypeOf(req)),
             req,
@@ -535,10 +508,16 @@ const createMainRouter = async (
               url: proxiedUrl,
             },
           );
-          // Run the handler inside AsyncLocalStorage so getMooseUtils()
-          // auto-scopes with row policies without needing explicit rlsContext.
-          await runWithRequestContext({ rlsContext, jwt: jwtPayload }, () =>
-            webApp.handler(modifiedReq, res),
+          // Run inside AsyncLocalStorage so getMooseUtils() picks up
+          // the pre-built RowPolicyOptions without a redundant conversion.
+          await runWithRequestContext(
+            { rowPolicyOpts, jwt: jwtPayload },
+            async () => {
+              if (webApp.config.injectMooseUtils !== false) {
+                (modifiedReq as any).moose = await getMooseUtils();
+              }
+              await webApp.handler(modifiedReq, res);
+            },
           );
           return;
         } catch (error) {

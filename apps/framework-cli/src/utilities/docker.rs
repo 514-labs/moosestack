@@ -242,6 +242,11 @@ impl DockerClient {
             .arg("up")
             .arg("-d")
             .env("DB_NAME", project.clickhouse_config.db_name.clone())
+            .env("CLICKHOUSE_USER", project.clickhouse_config.user.clone())
+            .env(
+                "CLICKHOUSE_PASSWORD",
+                project.clickhouse_config.password.clone(),
+            )
             .env(
                 "CLICKHOUSE_HOST_PORT",
                 project.clickhouse_config.host_port.to_string(),
@@ -496,11 +501,11 @@ impl DockerClient {
             );
             obj.insert(
                 "clickhouse_user".to_string(),
-                json!(project.clickhouse_config.user),
+                json!(project.clickhouse_config.user.replace('`', "``")),
             );
             obj.insert(
                 "clickhouse_password".to_string(),
-                json!(project.clickhouse_config.password),
+                json!(project.clickhouse_config.password.replace('\'', "''")),
             );
         }
 
