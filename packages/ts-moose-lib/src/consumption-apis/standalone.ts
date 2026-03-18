@@ -5,6 +5,7 @@ import {
   QueryClient,
   MooseUtils,
   RowPoliciesConfig,
+  RowPolicyOptions,
   buildRowPolicyOptionsFromClaims,
 } from "./helpers";
 import { getClickhouseClient } from "../commons";
@@ -19,16 +20,19 @@ import type { JWTPayload } from "jose";
  * Per-request context stored via AsyncLocalStorage.
  * Set by the runtime (runner.ts) before invoking WebApp handlers so that
  * getMooseUtils() can auto-scope queries with row policies from the JWT.
+ *
+ * `rowPolicyOpts` carries pre-built ClickHouse settings (setting-keyed).
+ * This avoids a redundant round-trip through claim-keyed rlsContext.
  */
 interface RequestContext {
-  rlsContext?: Record<string, string>;
+  rowPolicyOpts?: RowPolicyOptions;
   jwt?: JWTPayload;
 }
 
 const requestContextStorage = new AsyncLocalStorage<RequestContext>();
 
 /**
- * Run a callback with per-request context (rlsContext, jwt).
+ * Run a callback with per-request context (rowPolicyOpts, jwt).
  * Used by the runtime to wrap WebApp handler invocations so that
  * getMooseUtils() inside the handler auto-scopes with row policies.
  */
@@ -126,23 +130,30 @@ export async function getMooseUtils(
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
   if (runtimeContext) {
-    // Resolve rlsContext: explicit option > per-request AsyncLocalStorage
     const reqCtx = requestContextStorage.getStore();
-    const rlsContext = options?.rlsContext ?? reqCtx?.rlsContext;
     const jwt = reqCtx?.jwt ?? runtimeContext.jwt;
 
-    if (rlsContext) {
+    // Resolve row policy options:
+    //   1. Explicit rlsContext from caller (standalone users)
+    //   2. Pre-built RowPolicyOptions from runtime (WebApp path via AsyncLocalStorage)
+    let rowPolicyOpts: RowPolicyOptions | undefined;
+    if (options?.rlsContext) {
       if (!runtimeContext.rowPoliciesConfig) {
         throw new Error(
           "rlsContext was provided but no row policies are configured. " +
             "Define at least one SelectRowPolicy before using rlsContext.",
         );
       }
-      const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
+      rowPolicyOpts = buildRowPolicyOptionsFromClaims(
         runtimeContext.rowPoliciesConfig,
-        rlsContext,
+        options.rlsContext,
         "rlsContext",
       );
+    } else {
+      rowPolicyOpts = reqCtx?.rowPolicyOpts;
+    }
+
+    if (rowPolicyOpts) {
       const rlsClient =
         runtimeContext.rlsClickhouseClient ?? runtimeContext.clickhouseClient;
       const scopedQueryClient = new QueryClient(
@@ -159,7 +170,7 @@ export async function getMooseUtils(
         jwt,
       };
     }
-    // No rlsContext — return the shared singleton
+    // No RLS — return the shared singleton
     return {
       client: runtimeContext.client,
       sql: sql,

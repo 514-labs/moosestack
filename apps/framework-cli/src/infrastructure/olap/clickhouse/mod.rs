@@ -1652,7 +1652,7 @@ async fn execute_create_row_policy(
 
     // Bootstrap: role + user (ALTER ensures password stays in sync if rotated)
     let bootstrap_sqls = vec![
-        format!("CREATE ROLE IF NOT EXISTS {MOOSE_RLS_ROLE}"),
+        format!("CREATE ROLE IF NOT EXISTS `{MOOSE_RLS_ROLE}`"),
         format!(
             "CREATE USER IF NOT EXISTS `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"
         ),
@@ -1682,7 +1682,7 @@ async fn execute_create_row_policy(
     }
 
     // Grant role to user
-    let grant_role_sql = format!("GRANT {MOOSE_RLS_ROLE} TO `{escaped_rls_user}`");
+    let grant_role_sql = format!("GRANT `{MOOSE_RLS_ROLE}` TO `{escaped_rls_user}`");
     run_query(&grant_role_sql, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -1697,7 +1697,7 @@ async fn execute_create_row_policy(
         let escaped_db = db.replace('`', "``");
         let escaped_table = table_ref.name.replace('`', "``");
         let sql = format!(
-            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO {MOOSE_RLS_ROLE}",
+            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO `{MOOSE_RLS_ROLE}`",
             name = escaped_name,
             table = escaped_table,
             db = escaped_db,
