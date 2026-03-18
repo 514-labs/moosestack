@@ -3457,6 +3457,7 @@ pub fn create_table_query(
         };
 
     let (has_constraints, constraint_strings): (bool, Vec<String>) = if table.constraints.is_empty()
+        || !table.engine.is_merge_tree_family()
     {
         (false, vec![])
     } else {
@@ -3467,7 +3468,7 @@ pub fn create_table_query(
                 format!(
                     "CONSTRAINT {} {} {}",
                     c.name,
-                    c.constraint_type.to_uppercase(),
+                    c.constraint_type,
                     c.expression
                 )
             })
@@ -3703,6 +3704,10 @@ pub fn basic_field_type_to_string(
                                     // Nested and Array are not allowed to be nullable
                                     | ClickHouseColumnType::Nested(_)
                                     | ClickHouseColumnType::Array(_)
+                            ) && !matches!(
+                                &col.column_type,
+                                ClickHouseColumnType::LowCardinality(inner)
+                                    if matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))
                             ) =>
                         {
                             Ok(format!("{} Nullable({})", col.name, field_type_string))
@@ -7600,66 +7605,6 @@ ORDER BY (`event_time`)
             primary_key_expression: None,
         };
 
-        #[test]
-        fn test_low_cardinality_nullable_no_extra_null_modifier() {
-            let table = ClickHouseTable {
-                version: Some(Version::from_string("1".to_string())),
-                name: "test_lc_nullable".to_string(),
-                columns: vec![
-                    ClickHouseColumn {
-                        name: "id".to_string(),
-                        column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
-                        required: true,
-                        primary_key: true,
-                        unique: false,
-                        default: None,
-                        comment: None,
-                        ttl: None,
-                        codec: None,
-                        materialized: None,
-                        alias: None,
-                    },
-                    ClickHouseColumn {
-                        name: "browser".to_string(),
-                        column_type: ClickHouseColumnType::LowCardinality(Box::new(
-                            ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
-                        )),
-                        required: false,
-                        primary_key: false,
-                        unique: false,
-                        default: None,
-                        comment: None,
-                        ttl: None,
-                        codec: Some("ZSTD(1)".to_string()),
-                        materialized: None,
-                        alias: None,
-                    },
-                ],
-                order_by: OrderBy::Fields(vec!["id".to_string()]),
-                partition_by: None,
-                sample_by: None,
-                engine: ClickhouseEngine::MergeTree,
-                table_settings: None,
-                indexes: vec![],
-                projections: vec![],
-                constraints: vec![],
-                table_ttl_setting: None,
-                cluster_name: None,
-                primary_key_expression: None,
-            };
-
-            let query = create_table_query("test_db", table, false).unwrap();
-            assert!(
-                query.contains("LowCardinality(Nullable(String))"),
-                "DDL should contain LowCardinality(Nullable(String)). Got: {}",
-                query
-            );
-            assert!(
-                !query.contains("LowCardinality(Nullable(String)) NULL"),
-                "DDL should NOT have extra NULL after LowCardinality(Nullable(...)). Got: {}",
-                query
-            );
-        }
         let query = create_table_query("test_db", table, false).unwrap();
         assert!(
             !query.contains("PROJECTION"),
@@ -7667,4 +7612,66 @@ ORDER BY (`event_time`)
             query
         );
     }
+
+    #[test]
+    fn test_low_cardinality_nullable_no_extra_null_modifier() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_lc_nullable".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+                ClickHouseColumn {
+                    name: "browser".to_string(),
+                    column_type: ClickHouseColumnType::LowCardinality(Box::new(
+                        ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
+                    )),
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: Some("ZSTD(1)".to_string()),
+                    materialized: None,
+                    alias: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        assert!(
+            query.contains("LowCardinality(Nullable(String))"),
+            "DDL should contain LowCardinality(Nullable(String)). Got: {}",
+            query
+        );
+        assert!(
+            !query.contains("LowCardinality(Nullable(String)) NULL"),
+            "DDL should NOT have extra NULL after LowCardinality(Nullable(...)). Got: {}",
+            query
+        );
+    }
 }
+

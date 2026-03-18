@@ -183,9 +183,25 @@ message Table {
 
   // Per-table filter for `moose seed clickhouse`
   optional SeedFilter seed_filter = 22;
+
+  // Table-level constraints
+  repeated TableConstraint constraints = 23;
+}
+
+message TableProjection {
+  string name = 1;
+  string body = 2;
+}
+
+// DB-neutral representation of a table constraint
+message TableConstraint {
+  string name = 1;
+  string expression = 2;
+  string constraint_type = 3;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
+
 // or an arbitrary ClickHouse SQL expression.
 message OrderBy {
   oneof t {
@@ -217,11 +233,6 @@ message SeedFilter {
   optional string where_clause = 2;
 }
 
-// DB-neutral representation of a table projection
-message TableProjection {
-  string name = 1;
-  string body = 2;
-}
 message Dmv1View {
   string name = 1;
   string version = 2;

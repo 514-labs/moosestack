@@ -263,11 +263,38 @@ impl TableProjection {
     }
 }
 
+/// A representation of a table-level constraint in a database.
+///
+/// This struct is used to define constraints such as `CHECK` or `ASSUME` on a
+/// table. These constraints enforce data integrity rules or provide hints to
+/// the query optimizer.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct TableConstraint {
+    /// The unique identifier or name of the constraint.
     pub name: String,
+    /// The SQL or logical expression that defines the constraint condition.
     pub expression: String,
+    /// The type of the constraint (e.g., "CHECK", "ASSUME").
     pub constraint_type: String,
+}
+
+impl TableConstraint {
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableConstraint {
+        crate::proto::infrastructure_map::TableConstraint {
+            name: self.name.clone(),
+            expression: self.expression.clone(),
+            constraint_type: self.constraint_type.clone(),
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Self {
+        TableConstraint {
+            name: proto.name,
+            expression: proto.expression,
+            constraint_type: proto.constraint_type,
+        }
+    }
 }
 
 impl PartialEq for OrderBy {
@@ -382,6 +409,9 @@ pub struct Table {
     #[serde(default)]
     pub projections: Vec<TableProjection>,
     /// Table constraints (e.g. CONSTRAINT a1 ASSUME length(col) <= 32).
+    ///
+    /// Constraints ensure data validity or provide query optimization hints. They are
+    /// applied during table creation via the `CONSTRAINT` keyword.
     #[serde(default)]
     pub constraints: Vec<TableConstraint>,
     /// Optional database name for multi-database support
@@ -770,6 +800,7 @@ impl Table {
                     special_fields: Default::default(),
                 })
             }),
+            constraints: self.constraints.iter().map(|c| c.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -890,7 +921,11 @@ impl Table {
                 .into_iter()
                 .map(TableProjection::from_proto)
                 .collect(),
-            constraints: vec![],
+            constraints: proto
+                .constraints
+                .into_iter()
+                .map(TableConstraint::from_proto)
+                .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
@@ -2570,6 +2605,64 @@ mod tests {
         assert_eq!(
             table.engine, roundtrip_table.engine,
             "Engine should be identical after roundtrip"
+        );
+    }
+
+    #[test]
+    fn test_table_proto_roundtrip_with_constraints() {
+        let table = Table {
+            name: "test_table_with_constraints".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![TableConstraint {
+                name: "id_positive".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: "CHECK".to_string(),
+            }],
+            database: Some("test_db".to_string()),
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        // Serialize to proto
+        let proto = table.to_proto();
+
+        // Deserialize from proto
+        let roundtrip_table = Table::from_proto(proto);
+
+        assert_eq!(
+            table.constraints, roundtrip_table.constraints,
+            "Constraints should be identical after roundtrip"
         );
     }
 

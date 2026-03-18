@@ -2250,6 +2250,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
