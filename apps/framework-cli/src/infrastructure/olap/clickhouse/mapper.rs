@@ -409,14 +409,12 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         constraints: table
             .constraints
             .iter()
-            .map(|c| {
-                Ok(ClickHouseConstraint {
-                    name: c.name.clone(),
-                    expression: c.expression.clone(),
-                    constraint_type: c.constraint_type.clone(),
-                })
+            .map(|c| ClickHouseConstraint {
+                name: c.name.clone(),
+                expression: c.expression.clone(),
+                constraint_type: c.constraint_type.clone(),
             })
-            .collect::<Result<Vec<_>, ClickhouseError>>()?,
+            .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
         cluster_name: table.cluster_name.clone(),
         primary_key_expression: table.primary_key_expression.clone(),
