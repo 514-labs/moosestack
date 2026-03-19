@@ -7612,8 +7612,8 @@ ORDER BY (`event_time`)
 
     #[test]
     fn test_create_table_query_drops_constraint_for_non_mergetree() {
+        use crate::framework::core::infrastructure::table::ConstraintType;
         use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
-        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraintType;
 
         let table = ClickHouseTable {
             version: Some(Version::from_string("1".to_string())),
@@ -7646,7 +7646,7 @@ ORDER BY (`event_time`)
             constraints: vec![ClickHouseConstraint {
                 name: "should_be_ignored".to_string(),
                 expression: "id > 0".to_string(),
-                constraint_type: ClickHouseConstraintType::Check,
+                constraint_type: ConstraintType::Check,
             }],
             table_ttl_setting: None,
             cluster_name: None,

@@ -1181,7 +1181,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
               constraint_type: c.type,
             }),
           )
-        : undefined,
+        : [],
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,

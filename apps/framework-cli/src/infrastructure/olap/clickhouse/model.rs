@@ -36,33 +36,6 @@ pub struct AggregationFunction<T> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ClickHouseConstraintType {
-    Check,
-    Assume,
-}
-
-impl fmt::Display for ClickHouseConstraintType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Check => write!(f, "CHECK"),
-            Self::Assume => write!(f, "ASSUME"),
-        }
-    }
-}
-
-impl std::str::FromStr for ClickHouseConstraintType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
-            "CHECK" => Ok(Self::Check),
-            "ASSUME" => Ok(Self::Assume),
-            _ => Err(format!("Unsupported constraint type: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ClickHouseColumnType {
     String,
     FixedString(u64),
@@ -753,7 +726,7 @@ pub struct ClickHouseProjection {
 pub struct ClickHouseConstraint {
     pub name: String,
     pub expression: String,
-    pub constraint_type: ClickHouseConstraintType,
+    pub constraint_type: crate::framework::core::infrastructure::table::ConstraintType,
 }
 
 #[derive(Debug, Clone)]

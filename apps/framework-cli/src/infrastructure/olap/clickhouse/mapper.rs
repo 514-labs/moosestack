@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
     AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseConstraint,
-    ClickHouseConstraintType, ClickHouseFloat, ClickHouseIndex, ClickHouseInt,
-    ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
+    ClickHouseFloat, ClickHouseIndex, ClickHouseInt, ClickHouseProjection, ClickHouseTable,
+    DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -410,18 +410,10 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             .constraints
             .iter()
             .map(|c| {
-                let ct = match c.constraint_type {
-                    crate::framework::core::infrastructure::table::ConstraintType::Check => {
-                        ClickHouseConstraintType::Check
-                    }
-                    crate::framework::core::infrastructure::table::ConstraintType::Assume => {
-                        ClickHouseConstraintType::Assume
-                    }
-                };
                 Ok(ClickHouseConstraint {
                     name: c.name.clone(),
                     expression: c.expression.clone(),
-                    constraint_type: ct,
+                    constraint_type: c.constraint_type.clone(),
                 })
             })
             .collect::<Result<Vec<_>, ClickhouseError>>()?,
