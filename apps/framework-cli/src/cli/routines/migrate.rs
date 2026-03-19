@@ -335,6 +335,22 @@ fn validate_table_databases_and_clusters(
             } => {
                 validate(database, cluster_name, table);
             }
+            SerializableOlapOperation::AddTableConstraint {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
+            SerializableOlapOperation::DropTableConstraint {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
             SerializableOlapOperation::ModifySampleBy {
                 table,
                 database,

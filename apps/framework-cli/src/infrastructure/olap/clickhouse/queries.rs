@@ -5920,7 +5920,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             projections: vec![],
             constraints: vec![],
             table_ttl_setting: None,
-            cluster_name: Some("test_cluster".to_string()),
+            cluster_name: Some("{cluster}".to_string()),
             primary_key_expression: None,
         };
 
@@ -5928,7 +5928,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER 'test_cluster'"),
+            query.contains("ON CLUSTER '{cluster}'"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -5985,12 +5985,12 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
     #[test]
     fn test_drop_table_with_cluster() {
-        let cluster_name = Some("test_cluster");
+        let cluster_name = Some("{cluster}");
         let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER 'test_cluster'"),
+            query.contains("ON CLUSTER '{cluster}'"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -7647,6 +7647,33 @@ ORDER BY (`event_time`)
                     materialized: None,
                     alias: None,
                 },
+                ClickHouseColumn {
+                    name: "nested_data".to_string(),
+                    column_type: ClickHouseColumnType::Nested(vec![
+                        ClickHouseColumn {
+                            name: "nested_browser".to_string(),
+                            column_type: ClickHouseColumnType::String,
+                            required: false,
+                            primary_key: false,
+                            unique: false,
+                            default: None,
+                            comment: None,
+                            ttl: None,
+                            codec: None,
+                            materialized: None,
+                            alias: None,
+                        }
+                    ]),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                }
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -7661,15 +7688,45 @@ ORDER BY (`event_time`)
             primary_key_expression: None,
         };
 
-        let query = create_table_query("test_db", table, false).unwrap();
+        let mut table2 = table.clone();
+        table2.columns[2].column_type = ClickHouseColumnType::Nested(vec![
+            ClickHouseColumn {
+                name: "nested_browser".to_string(),
+                column_type: ClickHouseColumnType::LowCardinality(
+                    Box::new(ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)))
+                ),
+                required: false,
+                primary_key: false,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }
+        ]);
+
+        let query = create_table_query("test_db", table2, false).unwrap();
+        
         assert!(
-            query.contains("LowCardinality(Nullable(String))"),
-            "DDL should contain LowCardinality(Nullable(String)). Got: {}",
+            query.contains("`browser` LowCardinality(Nullable(String))  CODEC(ZSTD(1))"),
+            "DDL should contain exact column definition for browser. Got: {}",
             query
         );
         assert!(
-            !query.contains("LowCardinality(Nullable(String)) NULL"),
-            "DDL should NOT have extra NULL after LowCardinality(Nullable(...)). Got: {}",
+            !query.contains("`browser` LowCardinality(Nullable(String)) NULL"),
+            "DDL should NOT have extra NULL. Got: {}",
+            query
+        );
+        assert!(
+            query.contains("`nested_data` Nested(nested_browser LowCardinality(Nullable(String))) NOT NULL"),
+            "DDL should contain exact column definition for nested_data. Got: {}",
+            query
+        );
+        assert!(
+            !query.contains("Nullable(LowCardinality(Nullable(String)))"),
+            "DDL should NOT have double Nullable in Nested column. Got: {}",
             query
         );
     }

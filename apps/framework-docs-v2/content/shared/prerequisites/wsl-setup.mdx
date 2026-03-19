@@ -133,5 +133,5 @@ You now have a working Ubuntu instance on your Windows machine with Docker and N
 <Callout type="warning" title="Keep your project files inside WSL, not on /mnt/c">
   Store your MooseStack projects in your Linux home directory (e.g., `~/projects/my-moose-app`), **not** under `/mnt/c/` or any Windows-mounted path. Accessing files across the Windows/Linux boundary through `/mnt` is extremely slow—up to 30x slower than native Linux filesystem operations. This can make builds, tests, and the dev server painfully slow.
 
-  See Microsoft's [Working across file systems](https://learn.microsoft.com/en-us/windows/wsl/filesystems) documentation for more details on cross-filesystem performance degraded file access performance.
+  See Microsoft's [Working across file systems](https://learn.microsoft.com/en-us/windows/wsl/filesystems) documentation for more details on degraded cross-filesystem file access performance.
 </Callout>

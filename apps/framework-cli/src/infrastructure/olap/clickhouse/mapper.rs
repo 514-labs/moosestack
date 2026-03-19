@@ -107,9 +107,13 @@ pub fn std_column_to_clickhouse_column(
             // For LowCardinality, Nullable must wrap the inner type:
             // LowCardinality(Nullable(String)) instead of Nullable(LowCardinality(String))
             if let ClickHouseColumnType::LowCardinality(inner) = column_type {
-                column_type = ClickHouseColumnType::LowCardinality(Box::new(
-                    ClickHouseColumnType::Nullable(inner),
-                ));
+                if matches!(*inner, ClickHouseColumnType::Nullable(_)) {
+                    column_type = ClickHouseColumnType::LowCardinality(inner);
+                } else {
+                    column_type = ClickHouseColumnType::LowCardinality(Box::new(
+                        ClickHouseColumnType::Nullable(inner),
+                    ));
+                }
             } else {
                 column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
             }
@@ -405,16 +409,24 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         constraints: table
             .constraints
             .iter()
-            .map(|c| ClickHouseConstraint {
-                name: c.name.clone(),
-                expression: c.expression.clone(),
-                constraint_type: match c.constraint_type.to_uppercase().as_str() {
-                    "CHECK" => ClickHouseConstraintType::Check,
-                    "ASSUME" => ClickHouseConstraintType::Assume,
-                    _ => ClickHouseConstraintType::Check, // Default fallback
-                },
+            .map(|c| {
+                let ct = match c.constraint_type.to_string().to_uppercase().as_str() {
+                    "CHECK" => Ok(ClickHouseConstraintType::Check),
+                    "ASSUME" => Ok(ClickHouseConstraintType::Assume),
+                    other => Err(ClickhouseError::InvalidParameters {
+                        message: format!(
+                            "Unknown constraint type '{}' for constraint '{}'. Expected 'CHECK' or 'ASSUME'.",
+                            other, c.name
+                        ),
+                    }),
+                }?;
+                Ok(ClickHouseConstraint {
+                    name: c.name.clone(),
+                    expression: c.expression.clone(),
+                    constraint_type: ct,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, ClickhouseError>>()?,
         table_ttl_setting: table.table_ttl_setting.clone(),
         cluster_name: table.cluster_name.clone(),
         primary_key_expression: table.primary_key_expression.clone(),

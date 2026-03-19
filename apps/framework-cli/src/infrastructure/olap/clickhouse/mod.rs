@@ -42,6 +42,7 @@ use queries::{
 };
 use serde::{Deserialize, Serialize};
 use sql_parser::{
+    extract_constraints_from_create_table,
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_primary_key_from_create_table, extract_projections_from_create_table,
     extract_sample_by_from_create_table, extract_source_tables_from_query,
@@ -234,6 +235,22 @@ pub enum SerializableOlapOperation {
         /// Optional cluster name for ON CLUSTER support
         cluster_name: Option<String>,
     },
+    AddTableConstraint {
+        table: String,
+        constraint: crate::framework::core::infrastructure::table::TableConstraint,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
+    DropTableConstraint {
+        table: String,
+        constraint_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
     ModifySampleBy {
         table: String,
         expression: String,
@@ -379,6 +396,8 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::DropTableIndex { table, .. }
         | AtomicOlapOperation::AddTableProjection { table, .. }
         | AtomicOlapOperation::DropTableProjection { table, .. }
+        | AtomicOlapOperation::AddTableConstraint { table, .. }
+        | AtomicOlapOperation::DropTableConstraint { table, .. }
         | AtomicOlapOperation::ModifySampleBy { table, .. }
         | AtomicOlapOperation::RemoveSampleBy { table, .. } => table.cluster_name.as_deref(),
         AtomicOlapOperation::PopulateMaterializedView { .. }
@@ -588,6 +607,24 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             format!(
                 "Dropping projection '{}' from table '{}'",
                 projection_name, table
+            )
+        }
+        SerializableOlapOperation::AddTableConstraint {
+            table, constraint, ..
+        } => {
+            format!(
+                "Adding constraint '{}' to table '{}'",
+                constraint.name, table
+            )
+        }
+        SerializableOlapOperation::DropTableConstraint {
+            table,
+            constraint_name,
+            ..
+        } => {
+            format!(
+                "Dropping constraint '{}' from table '{}'",
+                constraint_name, table
             )
         }
         SerializableOlapOperation::ModifySampleBy {
@@ -831,6 +868,32 @@ pub async fn execute_atomic_operation(
             )
             .await?;
         }
+        SerializableOlapOperation::AddTableConstraint {
+            table,
+            constraint,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_add_table_constraint(target_db, table, constraint, cluster_name.as_deref(), client)
+                .await?;
+        }
+        SerializableOlapOperation::DropTableConstraint {
+            table,
+            constraint_name,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_drop_table_constraint(
+                target_db,
+                table,
+                constraint_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
         SerializableOlapOperation::ModifySampleBy {
             table,
             expression,
@@ -1026,6 +1089,68 @@ async fn execute_drop_table_projection(
         "ALTER TABLE `{}`.`{}`{} DROP PROJECTION IF EXISTS `{}`",
         db_name, table_name, cluster_clause, projection_name
     );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_add_table_constraint(
+    db_name: &str,
+    table_name: &str,
+    constraint: &crate::framework::core::infrastructure::table::TableConstraint,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    validate_clickhouse_identifier(db_name, "Database name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(table_name, "Table name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(&constraint.name, "Constraint name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER '{}'", c))
+        .unwrap_or_default();
+    
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} ADD CONSTRAINT IF NOT EXISTS `{}` {} {}",
+        db_name, table_name, cluster_clause, constraint.name, constraint.constraint_type, constraint.expression
+    );
+    
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_drop_table_constraint(
+    db_name: &str,
+    table_name: &str,
+    constraint_name: &str,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    validate_clickhouse_identifier(db_name, "Database name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(table_name, "Table name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(constraint_name, "Constraint name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+        
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER '{}'", c))
+        .unwrap_or_default();
+        
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} DROP CONSTRAINT IF EXISTS `{}`",
+        db_name, table_name, cluster_clause, constraint_name
+    );
+    
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -2640,7 +2765,17 @@ impl OlapOperations for ConfiguredDBClient {
                         body: p.body,
                     })
                     .collect(),
-                constraints: vec![],
+                constraints: extract_constraints_from_create_table(&create_query)
+                    .into_iter()
+                    .filter_map(|c| {
+                        let parsed_type = c.constraint_type.parse().ok()?;
+                        Some(crate::framework::core::infrastructure::table::TableConstraint {
+                            name: c.name,
+                            expression: c.expression,
+                            constraint_type: parsed_type,
+                        })
+                    })
+                    .collect(),
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store

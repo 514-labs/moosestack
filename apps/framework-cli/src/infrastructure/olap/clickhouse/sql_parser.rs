@@ -795,6 +795,121 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
     result
 }
 
+/// Parsed constraint from a CREATE TABLE statement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedConstraint {
+    pub name: String,
+    pub constraint_type: String,
+    pub expression: String,
+}
+
+/// Extract constraints from a CREATE TABLE statement.
+/// 
+/// Parses the column definition body between `(` and `ENGINE` to find
+/// `CONSTRAINT <name> <type> <expression>` items. Uses the same top-level comma
+/// splitting logic as [`extract_indexes_from_create_table`] to handle
+/// nested parentheses correctly.
+pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint> {
+    let mut result: Vec<ParsedConstraint> = Vec::new();
+    let upper = sql.to_uppercase();
+
+    // Find opening '(' after CREATE TABLE ...
+    let open_paren_pos = upper.find('(');
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start());
+    if open_paren_pos.is_none() || engine_pos.is_none() {
+        return result;
+    }
+    let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
+    let body = &sql[start..end];
+
+    // Split top-level comma-separated items, respecting nested parentheses
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in body.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => {
+                current.push(ch);
+                escape = true;
+            }
+            '\'' => {
+                in_string = !in_string;
+                current.push(ch);
+            }
+            '(' if !in_string => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_string => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_string && depth == 0 => {
+                items.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        items.push(current.trim().to_string());
+    }
+
+    for item in items
+        .into_iter()
+        .filter(|s| s.to_uppercase().starts_with("CONSTRAINT "))
+    {
+        let trimmed = item.trim();
+        // Strip leading "CONSTRAINT "
+        let after_keyword = match trimmed
+            .get(..11)
+            .filter(|prefix| prefix.to_uppercase() == "CONSTRAINT ")
+        {
+            Some(_) => trimmed[11..].trim_start(),
+            None => continue,
+        };
+
+        // Name is the next token until whitespace
+        let name_end = after_keyword
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after_keyword.len());
+        let name = after_keyword[..name_end].trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        let after_name = after_keyword[name_end..].trim_start();
+        
+        let type_end = after_name
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after_name.len());
+        let constraint_type = after_name[..type_end].trim().to_string();
+        if constraint_type.is_empty() {
+            continue;
+        }
+        
+        let expression = after_name[type_end..].trim().to_string();
+        if expression.is_empty() {
+            continue;
+        }
+
+        result.push(ParsedConstraint {
+            name,
+            constraint_type,
+            expression,
+        });
+    }
+
+    result
+}
+
 /// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
 /// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
 /// but the SQL parser doesn't support this syntax, so we remove it

@@ -2066,6 +2066,9 @@ impl InfrastructureMap {
                         // Detect projection changes
                         let projections_changed = table.projections != target_table.projections;
 
+                        // Detect constraint changes
+                        let constraints_changed = table.constraints != target_table.constraints;
+
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
                         if !ttl_expressions_are_equivalent(
@@ -2101,6 +2104,7 @@ impl InfrastructureMap {
                             || engine_changed
                             || indexes_changed
                             || projections_changed
+                            || constraints_changed
                             || table_settings_changed
                         {
                             // Use the strategy to determine the appropriate changes

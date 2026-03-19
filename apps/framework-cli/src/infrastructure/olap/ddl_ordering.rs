@@ -122,6 +122,18 @@ pub enum AtomicOlapOperation {
         projection_name: String,
         dependency_info: DependencyInfo,
     },
+    /// Add a constraint to a table
+    AddTableConstraint {
+        table: Table,
+        constraint: crate::framework::core::infrastructure::table::TableConstraint,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a constraint from a table
+    DropTableConstraint {
+        table: Table,
+        constraint_name: String,
+        dependency_info: DependencyInfo,
+    },
     /// Set or change SAMPLE BY expression for a table
     ModifySampleBy {
         table: Table,
@@ -315,6 +327,24 @@ impl AtomicOlapOperation {
                 database: table.database.clone(),
                 cluster_name: table.cluster_name.clone(),
             },
+            AtomicOlapOperation::AddTableConstraint {
+                table, constraint, ..
+            } => SerializableOlapOperation::AddTableConstraint {
+                table: table.name.clone(),
+                constraint: constraint.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::DropTableConstraint {
+                table,
+                constraint_name,
+                ..
+            } => SerializableOlapOperation::DropTableConstraint {
+                table: table.name.clone(),
+                constraint_name: constraint_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
             } => SerializableOlapOperation::ModifySampleBy {
@@ -481,6 +511,16 @@ impl AtomicOlapOperation {
                     id: table.id(default_database),
                 }
             }
+            AtomicOlapOperation::AddTableConstraint { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropTableConstraint { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
@@ -561,6 +601,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropTableProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddTableConstraint {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableConstraint {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifySampleBy {
@@ -958,6 +1004,55 @@ fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
     plan
 }
 
+/// Process constraint changes between two table definitions
+fn process_constraint_changes(before: &Table, after: &Table) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    let before_constraints = &before.constraints;
+    let after_constraints = &after.constraints;
+
+    for after_constraint in after_constraints {
+        if let Some(before_constraint) = before_constraints
+            .iter()
+            .find(|b| b.name == after_constraint.name)
+        {
+            if before_constraint != after_constraint {
+                plan.teardown_ops
+                    .push(AtomicOlapOperation::DropTableConstraint {
+                        table: before.clone(),
+                        constraint_name: before_constraint.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+                plan.setup_ops
+                    .push(AtomicOlapOperation::AddTableConstraint {
+                        table: after.clone(),
+                        constraint: after_constraint.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+            }
+        } else {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableConstraint {
+                    table: after.clone(),
+                    constraint: after_constraint.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+    for constraint in before_constraints {
+        if !after_constraints.iter().any(|a| a.name == constraint.name) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableConstraint {
+                    table: before.clone(),
+                    constraint_name: constraint.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+
+    plan
+}
+
 /// Handle a table update by composing column and index changes
 fn handle_table_update(
     before: &Table,
@@ -967,6 +1062,7 @@ fn handle_table_update(
     let mut plan = handle_table_column_updates(before, after, column_changes);
     plan.combine(process_index_changes(before, after));
     plan.combine(process_projection_changes(before, after));
+    plan.combine(process_constraint_changes(before, after));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {

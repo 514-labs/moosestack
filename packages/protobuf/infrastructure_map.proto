@@ -188,15 +188,21 @@ message Table {
   repeated TableConstraint constraints = 23;
 }
 
+// DB-neutral representation of a table projection
 message TableProjection {
+  // The projection identifier as it appears after `PROJECTION` in the DDL
   string name = 1;
+  // The parenthesised body (without the outer parentheses)
   string body = 2;
 }
 
 // DB-neutral representation of a table constraint
 message TableConstraint {
+  // The unique identifier or name of the constraint
   string name = 1;
+  // The SQL or logical expression enforcing the constraint condition
   string expression = 2;
+  // The category of the constraint (e.g., "CHECK", "ASSUME")
   string constraint_type = 3;
 }
 

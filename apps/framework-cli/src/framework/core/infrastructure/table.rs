@@ -263,6 +263,35 @@ impl TableProjection {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub enum ConstraintType {
+    #[serde(rename = "CHECK")]
+    Check,
+    #[serde(rename = "ASSUME")]
+    Assume,
+}
+
+impl std::fmt::Display for ConstraintType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstraintType::Check => write!(f, "CHECK"),
+            ConstraintType::Assume => write!(f, "ASSUME"),
+        }
+    }
+}
+
+impl std::str::FromStr for ConstraintType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "CHECK" => Ok(ConstraintType::Check),
+            "ASSUME" => Ok(ConstraintType::Assume),
+            _ => Err(format!("Unknown constraint type: {}", s)),
+        }
+    }
+}
+
 /// A representation of a table-level constraint in a database.
 ///
 /// This struct is used to define constraints such as `CHECK` or `ASSUME` on a
@@ -275,7 +304,7 @@ pub struct TableConstraint {
     /// The SQL or logical expression that defines the constraint condition.
     pub expression: String,
     /// The type of the constraint (e.g., "CHECK", "ASSUME").
-    pub constraint_type: String,
+    pub constraint_type: ConstraintType,
 }
 
 impl TableConstraint {
@@ -283,17 +312,17 @@ impl TableConstraint {
         crate::proto::infrastructure_map::TableConstraint {
             name: self.name.clone(),
             expression: self.expression.clone(),
-            constraint_type: self.constraint_type.clone(),
+            constraint_type: self.constraint_type.to_string(),
             special_fields: Default::default(),
         }
     }
 
-    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Self {
-        TableConstraint {
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Result<Self, String> {
+        Ok(TableConstraint {
             name: proto.name,
             expression: proto.expression,
-            constraint_type: proto.constraint_type,
-        }
+            constraint_type: proto.constraint_type.parse()?,
+        })
     }
 }
 
@@ -924,7 +953,7 @@ impl Table {
             constraints: proto
                 .constraints
                 .into_iter()
-                .map(TableConstraint::from_proto)
+                .map(|c| TableConstraint::from_proto(c).expect("Failed to parse TableConstraint"))
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
@@ -2645,7 +2674,7 @@ mod tests {
             constraints: vec![TableConstraint {
                 name: "id_positive".to_string(),
                 expression: "id > 0".to_string(),
-                constraint_type: "CHECK".to_string(),
+                constraint_type: ConstraintType::Check,
             }],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
