@@ -820,7 +820,10 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
         return result;
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
-    let body = &sql[start..end];
+    let mut body = sql[start..end].trim();
+    if body.ends_with(')') {
+        body = &body[..body.len() - 1];
+    }
 
     // Split top-level comma-separated items, respecting nested parentheses
     let mut items: Vec<String> = Vec::new();
@@ -3026,5 +3029,28 @@ ORDER BY id"#;
             "SELECT   _part_offset\n        WHERE   status = 'hello  world'\n        ORDER BY   id",
             "Raw body should be trimmed but internal whitespace preserved"
         );
+    }
+
+    #[test]
+    fn test_extract_constraints_from_create_table() {
+        let sql = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    CONSTRAINT constr_1 CHECK value > 0,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let constraints = extract_constraints_from_create_table(sql);
+        assert_eq!(constraints.len(), 2);
+        
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        assert_eq!(constraints[1].name, "constr_2");
+        assert_eq!(constraints[1].constraint_type, "ASSUME");
+        assert_eq!(constraints[1].expression, "(value < 100)");
     }
 }
