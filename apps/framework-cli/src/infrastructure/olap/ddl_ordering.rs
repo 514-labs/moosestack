@@ -10,7 +10,7 @@ use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a dependency edge between two resources
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -852,29 +852,22 @@ fn handle_table_settings_change(
     plan
 }
 
-fn handle_table_column_updates(
+/// Process index changes between two table definitions.
+/// Skips indexes already handled by column dependency logic.
+fn process_index_changes(
     before: &Table,
     after: &Table,
-    column_changes: &[ColumnChange],
+    already_handled: &HashSet<String>,
 ) -> OperationPlan {
-    // Since database-specific transformations now happen during the diff phase,
-    // we can assume that any table update that reaches this point can be handled
-    // via column-level operations. If a database requires drop+create for certain
-    // changes, those should have been converted to separate Remove+Add operations
-    // by the appropriate TableDiffStrategy.
-
-    // Process column changes as before
-    process_column_changes(before, after, column_changes)
-}
-
-/// Process index changes between two table definitions
-fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
     let before_indexes = &before.indexes;
     let after_indexes = &after.indexes;
 
     for after_idx in after_indexes {
+        if already_handled.contains(&after_idx.name) {
+            continue;
+        }
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
             if before_idx != after_idx {
                 plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
@@ -897,6 +890,9 @@ fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
         }
     }
     for idx in before_indexes {
+        if already_handled.contains(&idx.name) {
+            continue;
+        }
         if !after_indexes.iter().any(|a| a.name == idx.name) {
             plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
                 table: before.clone(),
@@ -909,14 +905,22 @@ fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
     plan
 }
 
-/// Process projection changes between two table definitions
-fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
+/// Process projection changes between two table definitions.
+/// Skips projections already handled by column dependency logic.
+fn process_projection_changes(
+    before: &Table,
+    after: &Table,
+    already_handled: &HashSet<String>,
+) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
     let before_projections = &before.projections;
     let after_projections = &after.projections;
 
     for after_proj in after_projections {
+        if already_handled.contains(&after_proj.name) {
+            continue;
+        }
         if let Some(before_proj) = before_projections
             .iter()
             .find(|b| b.name == after_proj.name)
@@ -945,6 +949,9 @@ fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
         }
     }
     for proj in before_projections {
+        if already_handled.contains(&proj.name) {
+            continue;
+        }
         if !after_projections.iter().any(|a| a.name == proj.name) {
             plan.teardown_ops
                 .push(AtomicOlapOperation::DropTableProjection {
@@ -958,15 +965,24 @@ fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
     plan
 }
 
-/// Handle a table update by composing column and index changes
+/// Handle a table update by composing column, index, and projection changes.
+///
+/// Column changes are processed first because modifying or removing a column
+/// requires dropping dependent indexes/projections beforehand. The returned
+/// `HandledDependencies` ensures `process_index_changes` / `process_projection_changes`
+/// skip anything already emitted by the column-change pass.
 fn handle_table_update(
     before: &Table,
     after: &Table,
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
-    let mut plan = handle_table_column_updates(before, after, column_changes);
-    plan.combine(process_index_changes(before, after));
-    plan.combine(process_projection_changes(before, after));
+    let (mut plan, handled) = process_column_changes(before, after, column_changes);
+    plan.combine(process_index_changes(before, after, &handled.dropped_indexes));
+    plan.combine(process_projection_changes(
+        before,
+        after,
+        &handled.dropped_projections,
+    ));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {
@@ -1022,13 +1038,138 @@ fn process_column_modification(
     }
 }
 
-/// Process the column changes that were already computed by the infrastructure map
+/// Returns indexes from the table whose expression references the given column name.
+///
+/// Tokenises the expression by splitting on non-identifier characters (anything
+/// that is not alphanumeric or `_`) and checks for a whole-word match.  This
+/// correctly handles composite expressions like `(col_a, col_b)` and function
+/// wrappers like `lower(col_a)`. It assumes expressions do not use backtick-quoted
+/// identifiers that differ from their unquoted form.
+fn indexes_referencing_column<'a>(table: &'a Table, column_name: &str) -> Vec<&'a TableIndex> {
+    table
+        .indexes
+        .iter()
+        .filter(|idx| {
+            idx.expression
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .any(|token| token == column_name)
+        })
+        .collect()
+}
+
+/// Returns projections from the table whose body references the given column name.
+///
+/// Uses the same tokenisation strategy as [`indexes_referencing_column`].
+fn projections_referencing_column<'a>(
+    table: &'a Table,
+    column_name: &str,
+) -> Vec<&'a TableProjection> {
+    table
+        .projections
+        .iter()
+        .filter(|proj| {
+            proj.body
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .any(|token| token == column_name)
+        })
+        .collect()
+}
+
+/// Names of indexes and projections already emitted by `process_column_changes`,
+/// kept in separate namespaces because ClickHouse indexes and projections can
+/// share the same name.
+///
+/// `dropped_*` tracks what has been dropped (to avoid duplicate drops).
+/// `readded_*` tracks what has been re-added (to avoid duplicate re-adds when
+/// a composite index references multiple modified columns).
+struct HandledDependencies {
+    dropped_indexes: HashSet<String>,
+    dropped_projections: HashSet<String>,
+    readded_indexes: HashSet<String>,
+    readded_projections: HashSet<String>,
+}
+
+/// Emit drop + re-add ops for every index/projection that references `column_name`.
+///
+/// Inserts into `handled` so that `process_index_changes` / `process_projection_changes`
+/// can skip these later. Deduplicates across multiple column changes that share a
+/// dependent index or projection.
+fn drop_column_dependencies(
+    plan: &mut OperationPlan,
+    before: &Table,
+    column_name: &str,
+    handled: &mut HandledDependencies,
+) {
+    for idx in indexes_referencing_column(before, column_name) {
+        if handled.dropped_indexes.insert(idx.name.clone()) {
+            plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                table: before.clone(),
+                index_name: idx.name.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    for proj in projections_referencing_column(before, column_name) {
+        if handled.dropped_projections.insert(proj.name.clone()) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableProjection {
+                    table: before.clone(),
+                    projection_name: proj.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+}
+
+fn readd_column_dependencies(
+    plan: &mut OperationPlan,
+    after: &Table,
+    column_name: &str,
+    handled: &mut HandledDependencies,
+) {
+    for idx in indexes_referencing_column(after, column_name) {
+        if handled.dropped_indexes.contains(&idx.name)
+            && handled.readded_indexes.insert(idx.name.clone())
+        {
+            plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                table: after.clone(),
+                index: idx.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    for proj in projections_referencing_column(after, column_name) {
+        if handled.dropped_projections.contains(&proj.name)
+            && handled.readded_projections.insert(proj.name.clone())
+        {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableProjection {
+                    table: after.clone(),
+                    projection: proj.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+}
+
+/// Process the column changes that were already computed by the infrastructure map.
+///
+/// When a column is modified or removed, any indexes or projections referencing that
+/// column must be dropped first (and re-added after modification), because ClickHouse
+/// forbids `ALTER TABLE MODIFY COLUMN` / `DROP COLUMN` on columns referenced by an
+/// INDEX or PROJECTION.
 fn process_column_changes(
     before: &Table,
     after: &Table,
     column_changes: &[ColumnChange],
-) -> OperationPlan {
+) -> (OperationPlan, HandledDependencies) {
     let mut plan = OperationPlan::new();
+    let mut handled = HandledDependencies {
+        dropped_indexes: HashSet::new(),
+        dropped_projections: HashSet::new(),
+        readded_indexes: HashSet::new(),
+        readded_projections: HashSet::new(),
+    };
 
     for change in column_changes {
         match change {
@@ -1043,20 +1184,39 @@ fn process_column_changes(
                 ));
             }
             ColumnChange::Removed(column) => {
+                // Drop dependent indexes/projections before dropping the column
+                drop_column_dependencies(
+                    &mut plan,
+                    before,
+                    &column.name,
+                    &mut handled,
+                );
                 plan.teardown_ops
                     .push(process_column_removal(before, &column.name));
+                // No re-add: the column (and thus its dependents) are gone
             }
             ColumnChange::Updated {
                 before: before_col,
                 after: after_col,
             } => {
+                // Drop dependent indexes/projections before modifying the column
+                drop_column_dependencies(
+                    &mut plan,
+                    before,
+                    &before_col.name,
+                    &mut handled,
+                );
+
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
+
+                // Re-add from the `after` table so we pick up any definition changes
+                readd_column_dependencies(&mut plan, after, &after_col.name, &mut handled);
             }
         }
     }
 
-    plan
+    (plan, handled)
 }
 
 /// Creates an operation to add a Dmv1 view
@@ -3721,5 +3881,477 @@ mod tests {
                 _ => panic!("Expected RawSql operation"),
             }
         }
+    }
+
+    fn make_test_table(
+        name: &str,
+        columns: Vec<Column>,
+        indexes: Vec<TableIndex>,
+        projections: Vec<TableProjection>,
+    ) -> Table {
+        Table {
+            name: name.to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes,
+            projections,
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn make_column(name: &str, data_type: ColumnType) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_modify_column_drops_dependent_index() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = make_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = make_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // teardown_ops must contain DropTableIndex for the dependent index
+        let has_drop_index = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+        });
+        assert!(
+            has_drop_index,
+            "Expected DropTableIndex for idx_src_ip in teardown_ops, got: {:?}",
+            plan.teardown_ops
+        );
+
+        // setup_ops must contain ModifyTableColumn followed by AddTableIndex
+        let modify_pos = plan
+            .setup_ops
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::ModifyTableColumn { .. }));
+        let add_index_pos = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+        });
+        assert!(
+            modify_pos.is_some(),
+            "Expected ModifyTableColumn in setup_ops"
+        );
+        assert!(
+            add_index_pos.is_some(),
+            "Expected AddTableIndex for idx_src_ip in setup_ops"
+        );
+        assert!(
+            modify_pos.unwrap() < add_index_pos.unwrap(),
+            "ModifyTableColumn must come before AddTableIndex"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_drops_dependent_projection() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let projection = TableProjection {
+            name: "proj_src_ip".to_string(),
+            body: "SELECT * ORDER BY src_endpoint_ip".to_string(),
+        };
+
+        let before = make_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+        let after = make_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let has_drop_proj = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_src_ip")
+        });
+        assert!(
+            has_drop_proj,
+            "Expected DropTableProjection for proj_src_ip in teardown_ops, got: {:?}",
+            plan.teardown_ops
+        );
+
+        let has_add_proj = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_src_ip")
+        });
+        assert!(
+            has_add_proj,
+            "Expected AddTableProjection for proj_src_ip in setup_ops"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_no_duplicate_index_ops_when_index_also_changed() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let before_index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+        let after_index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 2, // changed granularity
+        };
+
+        let before = make_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![before_index],
+            vec![],
+        );
+        let after = make_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![after_index],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // Should only have one DropTableIndex for idx_src_ip, not two
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "Expected exactly one DropTableIndex for idx_src_ip, got {}",
+            drop_count
+        );
+
+        let add_count = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+            })
+            .count();
+        assert_eq!(
+            add_count, 1,
+            "Expected exactly one AddTableIndex for idx_src_ip, got {}",
+            add_count
+        );
+
+        // Fix #1: The re-added index must use the `after` table's definition (granularity 2)
+        let readded_index = plan
+            .setup_ops
+            .iter()
+            .find_map(|op| match op {
+                AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip" => {
+                    Some(index)
+                }
+                _ => None,
+            })
+            .expect("AddTableIndex for idx_src_ip must exist");
+        assert_eq!(
+            readded_index.granularity, 2,
+            "Re-added index must use the after-table definition (granularity 2), got {}",
+            readded_index.granularity
+        );
+    }
+
+    /// Fix #8: Modifying a column that has no dependent indexes should not emit
+    /// any DropTableIndex or AddTableIndex operations.
+    #[test]
+    fn test_modify_column_without_indexes_produces_no_index_ops() {
+        let before_col = make_column("status", ColumnType::String);
+        let after_col = make_column("status", ColumnType::Nullable(Box::new(ColumnType::String)));
+
+        let before = make_test_table("t", vec![before_col.clone()], vec![], vec![]);
+        let after = make_test_table("t", vec![after_col.clone()], vec![], vec![]);
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        assert!(
+            plan.teardown_ops.is_empty(),
+            "No teardown ops expected when column has no dependent indexes, got: {:?}",
+            plan.teardown_ops
+        );
+        assert_eq!(
+            plan.setup_ops.len(),
+            1,
+            "Only ModifyTableColumn expected in setup_ops"
+        );
+        assert!(
+            matches!(
+                &plan.setup_ops[0],
+                AtomicOlapOperation::ModifyTableColumn { .. }
+            ),
+            "Expected ModifyTableColumn, got: {:?}",
+            plan.setup_ops[0]
+        );
+    }
+
+    /// Fix #7: An index whose expression references multiple columns (e.g. a
+    /// composite `(col_a, col_b)`) must be dropped when *either* column changes.
+    #[test]
+    fn test_modify_column_drops_multi_column_index() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_b_before = make_column("col_b", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b_after = col_b_before.clone(); // col_b unchanged
+
+        let index = TableIndex {
+            name: "idx_composite".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = make_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b_before.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = make_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b_after.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        // Only col_a changed
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let has_drop = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_composite")
+        });
+        assert!(
+            has_drop,
+            "Composite index must be dropped when one of its columns changes"
+        );
+
+        let has_readd = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+        });
+        assert!(
+            has_readd,
+            "Composite index must be re-added after column modification"
+        );
+    }
+
+    /// Fix #2: Removing a column that has a dependent index must drop the index
+    /// *before* dropping the column.
+    #[test]
+    fn test_remove_column_drops_dependent_index() {
+        let col = make_column("src_endpoint_ip", ColumnType::String);
+
+        let index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = make_test_table("t", vec![col.clone()], vec![index], vec![]);
+        let after = make_test_table("t", vec![], vec![], vec![]);
+
+        let column_changes = vec![ColumnChange::Removed(col)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // The index must be dropped before the column
+        let drop_index_pos = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+        });
+        let drop_col_pos = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableColumn { column_name, .. } if column_name == "src_endpoint_ip")
+        });
+
+        assert!(
+            drop_index_pos.is_some(),
+            "Expected DropTableIndex for idx_src_ip"
+        );
+        assert!(
+            drop_col_pos.is_some(),
+            "Expected DropTableColumn for src_endpoint_ip"
+        );
+        assert!(
+            drop_index_pos.unwrap() < drop_col_pos.unwrap(),
+            "DropTableIndex must precede DropTableColumn"
+        );
+
+        // The removed index must NOT be re-added
+        let has_add_index = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+        });
+        assert!(
+            !has_add_index,
+            "Removed column's index must not be re-added"
+        );
+    }
+
+    /// When both columns of a composite index are modified in the same change set,
+    /// the index must be dropped exactly once and re-added exactly once.
+    #[test]
+    fn test_modify_two_columns_of_same_index_no_duplicate_readd() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_b_before = make_column("col_b", ColumnType::String);
+        let col_a_after =
+            make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b_after =
+            make_column("col_b", ColumnType::Nullable(Box::new(ColumnType::String)));
+
+        let index = TableIndex {
+            name: "idx_composite".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = make_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b_before.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = make_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b_after.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        // Both columns changed
+        let column_changes = vec![
+            ColumnChange::Updated {
+                before: col_a_before,
+                after: col_a_after,
+            },
+            ColumnChange::Updated {
+                before: col_b_before,
+                after: col_b_after,
+            },
+        ];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_composite")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "Composite index must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_count = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+            })
+            .count();
+        assert_eq!(
+            add_count, 1,
+            "Composite index must be re-added exactly once, got {add_count}"
+        );
     }
 }
