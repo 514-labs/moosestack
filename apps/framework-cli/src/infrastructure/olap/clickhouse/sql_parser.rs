@@ -883,7 +883,10 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
         let name_end = after_keyword
             .find(|c: char| c.is_whitespace())
             .unwrap_or(after_keyword.len());
-        let name = after_keyword[..name_end].trim().to_string();
+        let name = after_keyword[..name_end]
+            .trim()
+            .trim_matches('`')
+            .to_string();
         if name.is_empty() {
             continue;
         }

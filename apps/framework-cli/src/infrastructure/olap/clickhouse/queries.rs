@@ -3465,7 +3465,7 @@ pub fn create_table_query(
                 .iter()
                 .map(|c| {
                     format!(
-                        "CONSTRAINT {} {} {}",
+                        "CONSTRAINT `{}` {} {}",
                         c.name, c.constraint_type, c.expression
                     )
                 })

@@ -410,16 +410,14 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             .constraints
             .iter()
             .map(|c| {
-                let ct = match c.constraint_type.to_string().to_uppercase().as_str() {
-                    "CHECK" => Ok(ClickHouseConstraintType::Check),
-                    "ASSUME" => Ok(ClickHouseConstraintType::Assume),
-                    other => Err(ClickhouseError::InvalidParameters {
-                        message: format!(
-                            "Unknown constraint type '{}' for constraint '{}'. Expected 'CHECK' or 'ASSUME'.",
-                            other, c.name
-                        ),
-                    }),
-                }?;
+                let ct = match c.constraint_type {
+                    crate::framework::core::infrastructure::table::ConstraintType::Check => {
+                        ClickHouseConstraintType::Check
+                    }
+                    crate::framework::core::infrastructure::table::ConstraintType::Assume => {
+                        ClickHouseConstraintType::Assume
+                    }
+                };
                 Ok(ClickHouseConstraint {
                     name: c.name.clone(),
                     expression: c.expression.clone(),

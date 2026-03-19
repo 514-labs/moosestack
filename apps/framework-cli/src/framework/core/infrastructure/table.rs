@@ -972,7 +972,16 @@ impl Table {
             constraints: proto
                 .constraints
                 .into_iter()
-                .map(|c| TableConstraint::from_proto(c).expect("Failed to parse TableConstraint"))
+                .filter_map(|c| match TableConstraint::from_proto(c) {
+                    Ok(constraint) => Some(constraint),
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse TableConstraint for table '{}': {}",
+                            table_name, e
+                        );
+                        None
+                    }
+                })
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
