@@ -582,7 +582,24 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             # Special case: dict[str, Any] should be JSON type (matches TypeScript's Record<string, any>)
             # This is useful for storing arbitrary extra fields in a JSON column
             if args[0] is str and args[1] is Any:
-                data_type = "Json"
+                ch_json = next(
+                    (md for md in mds if isinstance(md, ClickHouseJson)), None
+                )
+                if ch_json is not None and (
+                    ch_json.max_dynamic_paths is not None
+                    or ch_json.max_dynamic_types is not None
+                    or len(ch_json.skip_paths) > 0
+                    or len(ch_json.skip_regexps) > 0
+                ):
+                    data_type = JsonOptions(
+                        max_dynamic_paths=ch_json.max_dynamic_paths,
+                        max_dynamic_types=ch_json.max_dynamic_types,
+                        typed_paths=[],
+                        skip_paths=list(ch_json.skip_paths),
+                        skip_regexps=list(ch_json.skip_regexps),
+                    )
+                else:
+                    data_type = "Json"
             else:
                 key_optional, _, key_type = py_type_to_column_type(args[0], [])
                 value_optional, _, value_type = py_type_to_column_type(args[1], [])
