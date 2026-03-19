@@ -2738,6 +2738,7 @@ impl OlapOperations for ConfiguredDBClient {
             let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
                 .into_iter()
+                .filter(|i| !i.name.starts_with("auto_minmax_index_"))
                 .map(|i| TableIndex {
                     name: i.name,
                     expression: i.expression,

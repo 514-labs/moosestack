@@ -879,19 +879,48 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
             None => continue,
         };
 
-        // Name is the next token until whitespace
-        let name_end = after_keyword
-            .find(|c: char| c.is_whitespace())
-            .unwrap_or(after_keyword.len());
-        let name = after_keyword[..name_end]
-            .trim()
-            .trim_matches('`')
-            .to_string();
+        // Name is the next token, handle backtick quoting
+        let (name, after_name) = if after_keyword.starts_with('`') {
+            // Find the matching closing backtick
+            // Simplified handling: find the next backtick that isn't escaped
+            let mut end_idx = 1;
+            while end_idx < after_keyword.len() {
+                if after_keyword[end_idx..].starts_with('`') {
+                    // Check if it's an escaped backtick (``)
+                    if after_keyword[end_idx + 1..].starts_with('`') {
+                        end_idx += 2;
+                        continue;
+                    }
+                    break;
+                }
+                end_idx += 1;
+            }
+            if end_idx < after_keyword.len() {
+                let name = after_keyword[1..end_idx].to_string(); // without backticks
+                let after_name = after_keyword[end_idx + 1..].trim_start();
+                (name, after_name)
+            } else {
+                // Fallback if no closing backtick
+                let name_end = after_keyword
+                    .find(|c: char| c.is_whitespace())
+                    .unwrap_or(after_keyword.len());
+                let name = after_keyword[1..name_end].to_string();
+                let after_name = after_keyword[name_end..].trim_start();
+                (name, after_name)
+            }
+        } else {
+            let name_end = after_keyword
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(after_keyword.len());
+            let name = after_keyword[..name_end].to_string();
+            let after_name = after_keyword[name_end..].trim_start();
+            (name, after_name)
+        };
+
+        let name = name.trim().to_string();
         if name.is_empty() {
             continue;
         }
-
-        let after_name = after_keyword[name_end..].trim_start();
 
         let type_end = after_name
             .find(|c: char| c.is_whitespace())
@@ -3140,5 +3169,18 @@ ENGINE = MergeTree"#;
             constraints[0].expression,
             "(status = 'active' AND reason != 'isn\\'t it')"
         );
+
+        // Test 8: Constraint names with backticks and spaces
+        let sql_backticks_spaces = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT `not null` CHECK length(id) > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_backticks_spaces);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "length(id) > 0");
     }
 }

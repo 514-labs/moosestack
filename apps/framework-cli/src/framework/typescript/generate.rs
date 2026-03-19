@@ -1362,11 +1362,18 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
-            constraints: vec![TableConstraint {
-                name: "value_positive".to_string(),
-                expression: "value > 0".to_string(),
-                constraint_type: ConstraintType::Check,
-            }],
+            constraints: vec![
+                TableConstraint {
+                    name: "value_positive".to_string(),
+                    expression: "value > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "value_assumed".to_string(),
+                    expression: "value < 100".to_string(),
+                    constraint_type: ConstraintType::Assume,
+                },
+            ],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1380,6 +1387,9 @@ export const UserTable = new OlapTable<User>("User", {
         assert!(result.contains("name: \"value_positive\""));
         assert!(result.contains("expression: \"value > 0\""));
         assert!(result.contains("type: \"CHECK\""));
+        assert!(result.contains("name: \"value_assumed\""));
+        assert!(result.contains("expression: \"value < 100\""));
+        assert!(result.contains("type: \"ASSUME\""));
     }
 
     #[test]

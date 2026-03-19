@@ -870,6 +870,96 @@ mod tests {
     }
 
     #[test]
+    fn test_constraint_mapping_preserves_fields() {
+        use crate::framework::core::infrastructure::table::{
+            Column, ColumnType, ConstraintType, OrderBy, TableConstraint,
+        };
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let table = Table {
+            name: "test_constraint_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![
+                TableConstraint {
+                    name: "positive_id".to_string(),
+                    expression: "length(id) > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "assumed_positive".to_string(),
+                    expression: "length(id) > 0".to_string(),
+                    constraint_type: ConstraintType::Assume,
+                },
+                TableConstraint {
+                    name: "unparsed_test".to_string(),
+                    expression: "x > 0".to_string(),
+                    constraint_type: ConstraintType::Unparsed("UNKNOWN".to_string()),
+                },
+            ],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert_eq!(ch_table.constraints.len(), 3);
+
+        assert_eq!(ch_table.constraints[0].name, "positive_id");
+        assert_eq!(ch_table.constraints[0].expression, "length(id) > 0");
+        assert_eq!(
+            ch_table.constraints[0].constraint_type,
+            ConstraintType::Check
+        );
+
+        assert_eq!(ch_table.constraints[1].name, "assumed_positive");
+        assert_eq!(ch_table.constraints[1].expression, "length(id) > 0");
+        assert_eq!(
+            ch_table.constraints[1].constraint_type,
+            ConstraintType::Assume
+        );
+
+        assert_eq!(ch_table.constraints[2].name, "unparsed_test");
+        assert_eq!(ch_table.constraints[2].expression, "x > 0");
+        assert_eq!(
+            ch_table.constraints[2].constraint_type,
+            ConstraintType::Unparsed("UNKNOWN".to_string())
+        );
+    }
+
+    #[test]
     fn test_projection_mapping_empty() {
         use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy};
         use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};

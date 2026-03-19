@@ -276,6 +276,9 @@ pub enum ConstraintType {
     /// Serialized and displayed as `"ASSUME"`.
     #[serde(rename = "ASSUME")]
     Assume,
+    /// An unparsed or unknown constraint type, preserved for round-tripping.
+    #[serde(untagged)]
+    Unparsed(String),
 }
 
 impl std::fmt::Display for ConstraintType {
@@ -283,21 +286,22 @@ impl std::fmt::Display for ConstraintType {
         match self {
             ConstraintType::Check => write!(f, "CHECK"),
             ConstraintType::Assume => write!(f, "ASSUME"),
+            ConstraintType::Unparsed(s) => write!(f, "{}", s),
         }
     }
 }
 
 impl std::str::FromStr for ConstraintType {
-    type Err = String;
+    type Err = std::convert::Infallible;
 
     /// Parses a string into a ConstraintType.
     /// Expects either "CHECK" or "ASSUME" (case-insensitive).
-    /// Returns an error message string if the type is unknown.
+    /// If unknown, preserves it as Unparsed.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "CHECK" => Ok(ConstraintType::Check),
             "ASSUME" => Ok(ConstraintType::Assume),
-            _ => Err(format!("Unknown constraint type: {}", s)),
+            _ => Ok(ConstraintType::Unparsed(s.to_string())),
         }
     }
 }
@@ -330,18 +334,12 @@ impl TableConstraint {
     }
 
     /// Deserializes a `TableConstraint` from its Protobuf message representation.
-    ///
-    /// # Errors
-    /// Returns an `Err(String)` if the `constraint_type` in the Protobuf message
-    /// is not a recognized constraint type (i.e., not `"CHECK"` or `"ASSUME"`).
-    pub fn from_proto(
-        proto: crate::proto::infrastructure_map::TableConstraint,
-    ) -> Result<Self, String> {
-        Ok(TableConstraint {
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Self {
+        TableConstraint {
             name: proto.name,
             expression: proto.expression,
-            constraint_type: proto.constraint_type.parse()?,
-        })
+            constraint_type: proto.constraint_type.parse().unwrap(),
+        }
     }
 }
 
@@ -972,16 +970,7 @@ impl Table {
             constraints: proto
                 .constraints
                 .into_iter()
-                .filter_map(|c| match TableConstraint::from_proto(c) {
-                    Ok(constraint) => Some(constraint),
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse TableConstraint for table '{}': {}",
-                            table_name, e
-                        );
-                        None
-                    }
-                })
+                .map(TableConstraint::from_proto)
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,

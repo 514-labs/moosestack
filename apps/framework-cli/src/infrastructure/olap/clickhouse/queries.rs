@@ -3643,6 +3643,16 @@ pub fn alter_table_reset_settings_query(
     Ok(reg.render_template(ALTER_TABLE_RESET_SETTINGS_TEMPLATE, &context)?)
 }
 
+fn is_effectively_nullable_type(t: &ClickHouseColumnType) -> bool {
+    match t {
+        ClickHouseColumnType::Nullable(_) => true,
+        ClickHouseColumnType::LowCardinality(inner) => {
+            matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))
+        }
+        _ => false,
+    }
+}
+
 pub fn basic_field_type_to_string(
     field_type: &ClickHouseColumnType,
 ) -> Result<String, ClickhouseError> {
@@ -3694,18 +3704,13 @@ pub fn basic_field_type_to_string(
                     let field_type_string = basic_field_type_to_string(&col.column_type)?;
                     match col.required {
                         false
-                            if !matches!(
-                                col.column_type,
-                                // if type is Nullable, `field_type_string` is already wrapped in Nullable
-                                ClickHouseColumnType::Nullable(_)
+                            if !is_effectively_nullable_type(&col.column_type)
+                                && !matches!(
+                                    col.column_type,
                                     // Nested and Array are not allowed to be nullable
-                                    | ClickHouseColumnType::Nested(_)
-                                    | ClickHouseColumnType::Array(_)
-                            ) && !matches!(
-                                &col.column_type,
-                                ClickHouseColumnType::LowCardinality(inner)
-                                    if matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))
-                            ) =>
+                                    ClickHouseColumnType::Nested(_)
+                                        | ClickHouseColumnType::Array(_)
+                                ) =>
                         {
                             Ok(format!("{} Nullable({})", col.name, field_type_string))
                         }
@@ -3814,12 +3819,8 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
-                "field_nullable": if matches!(column.column_type, ClickHouseColumnType::Nullable(_)) {
-                    // if type is Nullable, do not add extra specifier
-                    "".to_string()
-                } else if matches!(&column.column_type, ClickHouseColumnType::LowCardinality(inner) if matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))) {
-                    // LowCardinality(Nullable(...)) already encodes nullability - adding NULL
-                    // would produce Nullable(LowCardinality(Nullable(...))) which is invalid
+                "field_nullable": if is_effectively_nullable_type(&column.column_type) {
+                    // if type is already nullable (e.g. Nullable or LowCardinality(Nullable)), do not add extra specifier
                     "".to_string()
                 } else if column.required || column.is_array() || column.is_nested() {
                     // Clickhouse doesn't allow array/nested fields to be nullable
@@ -7608,6 +7609,57 @@ ORDER BY (`event_time`)
             "Non-MergeTree DDL should NOT contain projections. Got: {}",
             query
         );
+    }
+
+    #[test]
+    fn test_create_table_query_keeps_constraint_for_mergetree() {
+        use crate::framework::core::infrastructure::table::ConstraintType;
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_keeps_constraints".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![ClickHouseConstraint {
+                name: "should_be_kept".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: ConstraintType::Check,
+            }],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table.clone(), false).unwrap();
+        assert!(
+            table.engine.is_merge_tree_family(),
+            "Engine must be MergeTree for this test"
+        );
+        assert!(
+            query.contains("CONSTRAINT"),
+            "MergeTree DDL should contain constraints. Got: {}",
+            query
+        );
+        assert!(query.contains("`should_be_kept` CHECK id > 0"));
     }
 
     #[test]

@@ -55,8 +55,8 @@ export interface TableConstraint {
   name: string;
   /** The SQL or logical expression that defines the constraint condition */
   expression: string;
-  /** The type of the constraint (e.g., "CHECK", "ASSUME") */
-  type: string;
+  /** The type of the constraint */
+  type: "CHECK" | "ASSUME";
 }
 
 /**
@@ -271,7 +271,6 @@ export type BaseOlapConfig<T> = (
   indexes?: TableIndex[];
   /** Optional projections for alternative data ordering within parts */
   projections?: TableProjection[];
-  constraints?: TableConstraint[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.
@@ -307,6 +306,7 @@ export type BaseOlapConfig<T> = (
  */
 export type MergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.MergeTree;
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -317,6 +317,7 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.ReplacingMergeTree;
   ver?: keyof T & string; // Optional version column
   isDeleted?: keyof T & string; // Optional is_deleted column
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -325,6 +326,7 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  */
 export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.AggregatingMergeTree;
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -334,6 +336,7 @@ export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.SummingMergeTree;
   columns?: string[];
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -343,6 +346,7 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type CollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.CollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -353,6 +357,7 @@ export type VersionedCollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.VersionedCollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
   ver: keyof T & string; // Version column for ordering state changes
+  constraints?: TableConstraint[];
 };
 
 interface ReplicatedEngineProperties {
