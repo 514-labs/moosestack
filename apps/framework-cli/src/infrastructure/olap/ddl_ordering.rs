@@ -1064,10 +1064,24 @@ fn handle_table_update(
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
     let mut plan = OperationPlan::new();
-    plan.combine(process_constraint_changes(before, after));
-    plan.combine(handle_table_column_updates(before, after, column_changes));
-    plan.combine(process_index_changes(before, after));
-    plan.combine(process_projection_changes(before, after));
+
+    let constraint_changes = process_constraint_changes(before, after);
+    let column_changes = handle_table_column_updates(before, after, column_changes);
+    let index_changes = process_index_changes(before, after);
+    let projection_changes = process_projection_changes(before, after);
+
+    // Teardowns: Constraints -> Indexes -> Projections -> Columns
+    plan.teardown_ops.extend(constraint_changes.teardown_ops);
+    plan.teardown_ops.extend(index_changes.teardown_ops);
+    plan.teardown_ops.extend(projection_changes.teardown_ops);
+    plan.teardown_ops.extend(column_changes.teardown_ops);
+
+    // Setups: Columns -> Constraints -> Indexes -> Projections
+    plan.setup_ops.extend(column_changes.setup_ops);
+    plan.setup_ops.extend(constraint_changes.setup_ops);
+    plan.setup_ops.extend(index_changes.setup_ops);
+    plan.setup_ops.extend(projection_changes.setup_ops);
+
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {
