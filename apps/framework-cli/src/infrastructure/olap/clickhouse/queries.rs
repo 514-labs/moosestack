@@ -3456,25 +3456,22 @@ pub fn create_table_query(
             (true, items)
         };
 
-    let (has_constraints, constraint_strings): (bool, Vec<String>) = if table.constraints.is_empty()
-        || !table.engine.is_merge_tree_family()
-    {
-        (false, vec![])
-    } else {
-        let items: Vec<String> = table
-            .constraints
-            .iter()
-            .map(|c| {
-                format!(
-                    "CONSTRAINT {} {} {}",
-                    c.name,
-                    c.constraint_type,
-                    c.expression
-                )
-            })
-            .collect();
-        (true, items)
-    };
+    let (has_constraints, constraint_strings): (bool, Vec<String>) =
+        if table.constraints.is_empty() || !table.engine.is_merge_tree_family() {
+            (false, vec![])
+        } else {
+            let items: Vec<String> = table
+                .constraints
+                .iter()
+                .map(|c| {
+                    format!(
+                        "CONSTRAINT {} {} {}",
+                        c.name, c.constraint_type, c.expression
+                    )
+                })
+                .collect();
+            (true, items)
+        };
 
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
@@ -7614,6 +7611,61 @@ ORDER BY (`event_time`)
     }
 
     #[test]
+    fn test_create_table_query_drops_constraint_for_non_mergetree() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraintType;
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_drops_constraints".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "localhost:9092".to_string(),
+                topic_list: "events".to_string(),
+                group_name: "grp".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![ClickHouseConstraint {
+                name: "should_be_ignored".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: ClickHouseConstraintType::Check,
+            }],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table.clone(), false).unwrap();
+        assert!(
+            !table.engine.is_merge_tree_family(),
+            "Engine must be non-MergeTree for this test"
+        );
+        assert!(
+            !query.contains("CONSTRAINT"),
+            "Non-MergeTree DDL should NOT contain constraints. Got: {}",
+            query
+        );
+    }
+
+    #[test]
     fn test_low_cardinality_nullable_no_extra_null_modifier() {
         let table = ClickHouseTable {
             version: Some(Version::from_string("1".to_string())),
@@ -7649,21 +7701,19 @@ ORDER BY (`event_time`)
                 },
                 ClickHouseColumn {
                     name: "nested_data".to_string(),
-                    column_type: ClickHouseColumnType::Nested(vec![
-                        ClickHouseColumn {
-                            name: "nested_browser".to_string(),
-                            column_type: ClickHouseColumnType::String,
-                            required: false,
-                            primary_key: false,
-                            unique: false,
-                            default: None,
-                            comment: None,
-                            ttl: None,
-                            codec: None,
-                            materialized: None,
-                            alias: None,
-                        }
-                    ]),
+                    column_type: ClickHouseColumnType::Nested(vec![ClickHouseColumn {
+                        name: "nested_browser".to_string(),
+                        column_type: ClickHouseColumnType::String,
+                        required: false,
+                        primary_key: false,
+                        unique: false,
+                        default: None,
+                        comment: None,
+                        ttl: None,
+                        codec: None,
+                        materialized: None,
+                        alias: None,
+                    }]),
                     required: true,
                     primary_key: false,
                     unique: false,
@@ -7673,7 +7723,7 @@ ORDER BY (`event_time`)
                     codec: None,
                     materialized: None,
                     alias: None,
-                }
+                },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -7689,26 +7739,24 @@ ORDER BY (`event_time`)
         };
 
         let mut table2 = table.clone();
-        table2.columns[2].column_type = ClickHouseColumnType::Nested(vec![
-            ClickHouseColumn {
-                name: "nested_browser".to_string(),
-                column_type: ClickHouseColumnType::LowCardinality(
-                    Box::new(ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)))
-                ),
-                required: false,
-                primary_key: false,
-                unique: false,
-                default: None,
-                comment: None,
-                ttl: None,
-                codec: None,
-                materialized: None,
-                alias: None,
-            }
-        ]);
+        table2.columns[2].column_type = ClickHouseColumnType::Nested(vec![ClickHouseColumn {
+            name: "nested_browser".to_string(),
+            column_type: ClickHouseColumnType::LowCardinality(Box::new(
+                ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
+            )),
+            required: false,
+            primary_key: false,
+            unique: false,
+            default: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }]);
 
         let query = create_table_query("test_db", table2, false).unwrap();
-        
+
         assert!(
             query.contains("`browser` LowCardinality(Nullable(String))  CODEC(ZSTD(1))"),
             "DDL should contain exact column definition for browser. Got: {}",
@@ -7720,7 +7768,9 @@ ORDER BY (`event_time`)
             query
         );
         assert!(
-            query.contains("`nested_data` Nested(nested_browser LowCardinality(Nullable(String))) NOT NULL"),
+            query.contains(
+                "`nested_data` Nested(nested_browser LowCardinality(Nullable(String))) NOT NULL"
+            ),
             "DDL should contain exact column definition for nested_data. Got: {}",
             query
         );
@@ -7731,4 +7781,3 @@ ORDER BY (`event_time`)
         );
     }
 }
-

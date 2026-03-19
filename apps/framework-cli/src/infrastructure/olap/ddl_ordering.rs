@@ -1008,6 +1008,10 @@ fn process_projection_changes(before: &Table, after: &Table) -> OperationPlan {
 fn process_constraint_changes(before: &Table, after: &Table) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
+    if !before.engine.is_merge_tree_family() || !after.engine.is_merge_tree_family() {
+        return plan;
+    }
+
     let before_constraints = &before.constraints;
     let after_constraints = &after.constraints;
 
@@ -1059,10 +1063,11 @@ fn handle_table_update(
     after: &Table,
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
-    let mut plan = handle_table_column_updates(before, after, column_changes);
+    let mut plan = OperationPlan::new();
+    plan.combine(process_constraint_changes(before, after));
+    plan.combine(handle_table_column_updates(before, after, column_changes));
     plan.combine(process_index_changes(before, after));
     plan.combine(process_projection_changes(before, after));
-    plan.combine(process_constraint_changes(before, after));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {

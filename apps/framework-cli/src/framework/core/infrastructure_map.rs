@@ -2306,11 +2306,14 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        let constraints_changed = table.constraints != target_table.constraints;
+
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || constraints_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2400,12 +2403,15 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        let constraints_changed = table.constraints != target_table.constraints;
+
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || constraints_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -4008,6 +4014,41 @@ mod tests {
             matches!(&diff[1], ColumnChange::Added{column, position_after: Some(pos) } if column.name == "age" && pos == "name")
         );
         assert!(matches!(&diff[2], ColumnChange::Removed(col) if col.name == "to_be_removed"));
+    }
+
+    #[test]
+    fn constraints_only_update_emitted() {
+        let before_table = super::diff_tests::create_test_table("test_table", "1.0");
+        let mut after_table = before_table.clone();
+
+        after_table.constraints = vec![
+            crate::framework::core::infrastructure::table::TableConstraint {
+                name: "test_constraint".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type:
+                    crate::framework::core::infrastructure::table::ConstraintType::Check,
+            },
+        ];
+
+        let result = super::InfrastructureMap::simple_table_diff(&before_table, &after_table);
+        assert!(
+            result.is_some(),
+            "A table update event should be produced when only constraints change."
+        );
+
+        match &result.unwrap() {
+            TableChange::Updated {
+                name,
+                before,
+                after,
+                ..
+            } => {
+                assert_eq!(name, "test_table");
+                assert_eq!(before.constraints.len(), 0);
+                assert_eq!(after.constraints.len(), 1);
+            }
+            _ => panic!("Expected TableChange::Updated for constraints change"),
+        }
     }
 
     #[test]

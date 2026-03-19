@@ -42,12 +42,11 @@ use queries::{
 };
 use serde::{Deserialize, Serialize};
 use sql_parser::{
-    extract_constraints_from_create_table,
-    extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_primary_key_from_create_table, extract_projections_from_create_table,
-    extract_sample_by_from_create_table, extract_source_tables_from_query,
-    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
-    normalize_sql_for_comparison, split_qualified_name,
+    extract_constraints_from_create_table, extract_engine_from_create_table,
+    extract_indexes_from_create_table, extract_primary_key_from_create_table,
+    extract_projections_from_create_table, extract_sample_by_from_create_table,
+    extract_source_tables_from_query, extract_source_tables_from_query_regex,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -875,8 +874,14 @@ pub async fn execute_atomic_operation(
             cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_add_table_constraint(target_db, table, constraint, cluster_name.as_deref(), client)
-                .await?;
+            execute_add_table_constraint(
+                target_db,
+                table,
+                constraint,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::DropTableConstraint {
             table,
@@ -1110,16 +1115,21 @@ async fn execute_add_table_constraint(
         .map_err(ClickhouseChangesError::Clickhouse)?;
     validate_clickhouse_identifier(&constraint.name, "Constraint name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
-    
+
     let cluster_clause = cluster_name
         .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
-    
+
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} ADD CONSTRAINT IF NOT EXISTS `{}` {} {}",
-        db_name, table_name, cluster_clause, constraint.name, constraint.constraint_type, constraint.expression
+        db_name,
+        table_name,
+        cluster_clause,
+        constraint.name,
+        constraint.constraint_type,
+        constraint.expression
     );
-    
+
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1141,16 +1151,16 @@ async fn execute_drop_table_constraint(
         .map_err(ClickhouseChangesError::Clickhouse)?;
     validate_clickhouse_identifier(constraint_name, "Constraint name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
-        
+
     let cluster_clause = cluster_name
         .map(|c| format!(" ON CLUSTER '{}'", c))
         .unwrap_or_default();
-        
+
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP CONSTRAINT IF EXISTS `{}`",
         db_name, table_name, cluster_clause, constraint_name
     );
-    
+
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -2740,7 +2750,7 @@ impl OlapOperations for ConfiguredDBClient {
 
             let table = Table {
                 // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
-                name: table_name,
+                name: table_name.clone(),
                 columns: final_columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
@@ -2767,15 +2777,22 @@ impl OlapOperations for ConfiguredDBClient {
                     .collect(),
                 constraints: extract_constraints_from_create_table(&create_query)
                     .into_iter()
-                    .filter_map(|c| {
-                        let parsed_type = c.constraint_type.parse().ok()?;
-                        Some(crate::framework::core::infrastructure::table::TableConstraint {
+                    .map(|c| {
+                        let parsed_type = c.constraint_type.parse().map_err(|e| {
+                            let msg = format!(
+                                "Failed to parse constraint type '{}' for constraint '{}' on table '{}': {}",
+                                c.constraint_type, c.name, &table_name, e
+                            );
+                            tracing::error!("{}", msg);
+                            OlapChangesError::UnsupportedFeature(msg)
+                        })?;
+                        Ok(crate::framework::core::infrastructure::table::TableConstraint {
                             name: c.name,
                             expression: c.expression,
                             constraint_type: parsed_type,
                         })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, OlapChangesError>>()?,
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store

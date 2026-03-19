@@ -804,7 +804,7 @@ pub struct ParsedConstraint {
 }
 
 /// Extract constraints from a CREATE TABLE statement.
-/// 
+///
 /// Parses the column definition body between `(` and `ENGINE` to find
 /// `CONSTRAINT <name> <type> <expression>` items. Uses the same top-level comma
 /// splitting logic as [`extract_indexes_from_create_table`] to handle
@@ -889,7 +889,7 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
         }
 
         let after_name = after_keyword[name_end..].trim_start();
-        
+
         let type_end = after_name
             .find(|c: char| c.is_whitespace())
             .unwrap_or(after_name.len());
@@ -897,7 +897,7 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
         if constraint_type.is_empty() {
             continue;
         }
-        
+
         let expression = after_name[type_end..].trim().to_string();
         if expression.is_empty() {
             continue;
@@ -3033,7 +3033,44 @@ ORDER BY id"#;
 
     #[test]
     fn test_extract_constraints_from_create_table() {
-        let sql = r#"CREATE TABLE `db`.`test_table`
+        // Test 1: No constraints -> assert empty Vec
+        let sql_no_constraints = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        assert!(extract_constraints_from_create_table(sql_no_constraints).is_empty());
+
+        // Test 2: Single CHECK constraint
+        let sql_single_check = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_1 CHECK value > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_check);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 3: Single ASSUME constraint
+        let sql_single_assume = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_assume);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_2");
+        assert_eq!(constraints[0].constraint_type, "ASSUME");
+        assert_eq!(constraints[0].expression, "(value < 100)");
+
+        // Test 4: Multiple constraints
+        let sql_multiple = r#"CREATE TABLE `db`.`test_table`
 (
     `id` String,
     `value` Int32,
@@ -3042,9 +3079,9 @@ ORDER BY id"#;
 )
 ENGINE = MergeTree
 ORDER BY (id)"#;
-        let constraints = extract_constraints_from_create_table(sql);
+        let constraints = extract_constraints_from_create_table(sql_multiple);
         assert_eq!(constraints.len(), 2);
-        
+
         assert_eq!(constraints[0].name, "constr_1");
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(constraints[0].expression, "value > 0");
@@ -3052,5 +3089,53 @@ ORDER BY (id)"#;
         assert_eq!(constraints[1].name, "constr_2");
         assert_eq!(constraints[1].constraint_type, "ASSUME");
         assert_eq!(constraints[1].expression, "(value < 100)");
+
+        // Test 5: Constraints appearing alongside indexes/projections
+        let sql_mixed = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    INDEX idx_1 value TYPE minmax GRANULARITY 1,
+    CONSTRAINT constr_1 CHECK value > 0,
+    PROJECTION proj_1 (SELECT * ORDER BY value)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_mixed);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 6: Constraint expressions with nested parentheses
+        let sql_nested_parens = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_nested CHECK (value > 0 AND (value < 100 OR value = 200))
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_nested_parens);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_nested");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "(value > 0 AND (value < 100 OR value = 200))"
+        );
+
+        // Test 7: Constraint expressions containing quoted strings and escaped quotes
+        let sql_quoted = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_quoted CHECK (status = 'active' AND reason != 'isn\'t it')
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_quoted);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_quoted");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "(status = 'active' AND reason != 'isn\\'t it')"
+        );
     }
 }

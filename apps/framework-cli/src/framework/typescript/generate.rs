@@ -1054,8 +1054,10 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             for constraint in &table.constraints {
                 writeln!(
                     output,
-                    "        {{ name: {:?}, expression: {:?}, constraintType: {:?} }},",
-                    constraint.name, constraint.expression, constraint.constraint_type.to_string()
+                    "        {{ name: {:?}, expression: {:?}, type: {:?} }},",
+                    constraint.name,
+                    constraint.expression,
+                    constraint.constraint_type.to_string()
                 )
                 .unwrap();
             }
@@ -1307,8 +1309,8 @@ export const UserTable = new OlapTable<User>("User", {
 
     #[test]
     fn test_table_with_constraints() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
         use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-        use crate::framework::core::infrastructure::table::{TableConstraint, ConstraintType};
 
         let tables = vec![Table {
             name: "ConstraintTest".to_string(),
@@ -1329,7 +1331,9 @@ export const UserTable = new OlapTable<User>("User", {
                 },
                 Column {
                     name: "value".to_string(),
-                    data_type: ColumnType::Int(crate::framework::core::infrastructure::table::IntType::Int32),
+                    data_type: ColumnType::Int(
+                        crate::framework::core::infrastructure::table::IntType::Int32,
+                    ),
                     required: true,
                     unique: false,
                     primary_key: false,
@@ -1358,13 +1362,11 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
-            constraints: vec![
-                TableConstraint {
-                    name: "value_positive".to_string(),
-                    expression: "value > 0".to_string(),
-                    constraint_type: ConstraintType::Check,
-                }
-            ],
+            constraints: vec![TableConstraint {
+                name: "value_positive".to_string(),
+                expression: "value > 0".to_string(),
+                constraint_type: ConstraintType::Check,
+            }],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1377,7 +1379,7 @@ export const UserTable = new OlapTable<User>("User", {
         assert!(result.contains("constraints: ["));
         assert!(result.contains("name: \"value_positive\""));
         assert!(result.contains("expression: \"value > 0\""));
-        assert!(result.contains("constraintType: \"CHECK\""));
+        assert!(result.contains("type: \"CHECK\""));
     }
 
     #[test]

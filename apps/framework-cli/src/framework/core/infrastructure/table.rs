@@ -263,10 +263,17 @@ impl TableProjection {
     }
 }
 
+/// The type of constraint applied to a table.
+/// This enum ensures that only valid constraint types can be constructed and serialized.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum ConstraintType {
+    /// A CHECK constraint that enforces a condition on inserted rows.
+    /// Serialized and displayed as `"CHECK"`.
     #[serde(rename = "CHECK")]
     Check,
+    /// An ASSUME constraint that provides a hint to the query optimizer
+    /// without enforcing the condition on inserts.
+    /// Serialized and displayed as `"ASSUME"`.
     #[serde(rename = "ASSUME")]
     Assume,
 }
@@ -283,6 +290,9 @@ impl std::fmt::Display for ConstraintType {
 impl std::str::FromStr for ConstraintType {
     type Err = String;
 
+    /// Parses a string into a ConstraintType.
+    /// Expects either "CHECK" or "ASSUME" (case-insensitive).
+    /// Returns an error message string if the type is unknown.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "CHECK" => Ok(ConstraintType::Check),
@@ -308,6 +318,8 @@ pub struct TableConstraint {
 }
 
 impl TableConstraint {
+    /// Serializes the `TableConstraint` into its Protobuf message representation.
+    /// The `constraint_type` is converted to its string representation (e.g., `"CHECK"`).
     pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableConstraint {
         crate::proto::infrastructure_map::TableConstraint {
             name: self.name.clone(),
@@ -317,7 +329,14 @@ impl TableConstraint {
         }
     }
 
-    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Result<Self, String> {
+    /// Deserializes a `TableConstraint` from its Protobuf message representation.
+    ///
+    /// # Errors
+    /// Returns an `Err(String)` if the `constraint_type` in the Protobuf message
+    /// is not a recognized constraint type (i.e., not `"CHECK"` or `"ASSUME"`).
+    pub fn from_proto(
+        proto: crate::proto::infrastructure_map::TableConstraint,
+    ) -> Result<Self, String> {
         Ok(TableConstraint {
             name: proto.name,
             expression: proto.expression,
