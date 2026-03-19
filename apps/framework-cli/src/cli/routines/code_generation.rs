@@ -218,7 +218,6 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     project.features.olap = true;
     project.features.streaming_engine = false;
     project.features.workflows = false;
-    project.features.ddl_plan = false;
 
     // Persist updated features to moose.config.toml
     project.write_to_disk().map_err(|e| {

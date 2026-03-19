@@ -956,7 +956,7 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
+    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
     if execute_migration_yaml {
         migrate::execute_migration_plan(
