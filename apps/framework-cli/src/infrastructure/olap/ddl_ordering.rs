@@ -854,10 +854,14 @@ fn handle_table_settings_change(
 
 /// Process index changes between two table definitions.
 /// Skips indexes already handled by column dependency logic.
+///
+/// `already_dropped` – indexes the column pass already dropped (skip duplicate drops).
+/// `already_readded` – indexes the column pass already re-added (skip duplicate adds).
 fn process_index_changes(
     before: &Table,
     after: &Table,
-    already_handled: &HashSet<String>,
+    already_dropped: &HashSet<String>,
+    already_readded: &HashSet<String>,
 ) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
@@ -865,16 +869,18 @@ fn process_index_changes(
     let after_indexes = &after.indexes;
 
     for after_idx in after_indexes {
-        if already_handled.contains(&after_idx.name) {
+        if already_readded.contains(&after_idx.name) {
             continue;
         }
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
             if before_idx != after_idx {
-                plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
-                    table: before.clone(),
-                    index_name: before_idx.name.clone(),
-                    dependency_info: create_empty_dependency_info(),
-                });
+                if !already_dropped.contains(&after_idx.name) {
+                    plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                        table: before.clone(),
+                        index_name: before_idx.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+                }
                 plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
                     table: after.clone(),
                     index: after_idx.clone(),
@@ -890,7 +896,7 @@ fn process_index_changes(
         }
     }
     for idx in before_indexes {
-        if already_handled.contains(&idx.name) {
+        if already_dropped.contains(&idx.name) {
             continue;
         }
         if !after_indexes.iter().any(|a| a.name == idx.name) {
@@ -907,10 +913,14 @@ fn process_index_changes(
 
 /// Process projection changes between two table definitions.
 /// Skips projections already handled by column dependency logic.
+///
+/// `already_dropped` – projections the column pass already dropped (skip duplicate drops).
+/// `already_readded` – projections the column pass already re-added (skip duplicate adds).
 fn process_projection_changes(
     before: &Table,
     after: &Table,
-    already_handled: &HashSet<String>,
+    already_dropped: &HashSet<String>,
+    already_readded: &HashSet<String>,
 ) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
@@ -918,7 +928,7 @@ fn process_projection_changes(
     let after_projections = &after.projections;
 
     for after_proj in after_projections {
-        if already_handled.contains(&after_proj.name) {
+        if already_readded.contains(&after_proj.name) {
             continue;
         }
         if let Some(before_proj) = before_projections
@@ -926,12 +936,14 @@ fn process_projection_changes(
             .find(|b| b.name == after_proj.name)
         {
             if before_proj != after_proj {
-                plan.teardown_ops
-                    .push(AtomicOlapOperation::DropTableProjection {
-                        table: before.clone(),
-                        projection_name: before_proj.name.clone(),
-                        dependency_info: create_empty_dependency_info(),
-                    });
+                if !already_dropped.contains(&after_proj.name) {
+                    plan.teardown_ops
+                        .push(AtomicOlapOperation::DropTableProjection {
+                            table: before.clone(),
+                            projection_name: before_proj.name.clone(),
+                            dependency_info: create_empty_dependency_info(),
+                        });
+                }
                 plan.setup_ops
                     .push(AtomicOlapOperation::AddTableProjection {
                         table: after.clone(),
@@ -949,7 +961,7 @@ fn process_projection_changes(
         }
     }
     for proj in before_projections {
-        if already_handled.contains(&proj.name) {
+        if already_dropped.contains(&proj.name) {
             continue;
         }
         if !after_projections.iter().any(|a| a.name == proj.name) {
@@ -977,11 +989,17 @@ fn handle_table_update(
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
     let (mut plan, handled) = process_column_changes(before, after, column_changes);
-    plan.combine(process_index_changes(before, after, &handled.dropped_indexes));
+    plan.combine(process_index_changes(
+        before,
+        after,
+        &handled.dropped_indexes,
+        &handled.readded_indexes,
+    ));
     plan.combine(process_projection_changes(
         before,
         after,
         &handled.dropped_projections,
+        &handled.readded_projections,
     ));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
@@ -1185,12 +1203,7 @@ fn process_column_changes(
             }
             ColumnChange::Removed(column) => {
                 // Drop dependent indexes/projections before dropping the column
-                drop_column_dependencies(
-                    &mut plan,
-                    before,
-                    &column.name,
-                    &mut handled,
-                );
+                drop_column_dependencies(&mut plan, before, &column.name, &mut handled);
                 plan.teardown_ops
                     .push(process_column_removal(before, &column.name));
                 // No re-add: the column (and thus its dependents) are gone
@@ -1200,12 +1213,7 @@ fn process_column_changes(
                 after: after_col,
             } => {
                 // Drop dependent indexes/projections before modifying the column
-                drop_column_dependencies(
-                    &mut plan,
-                    before,
-                    &before_col.name,
-                    &mut handled,
-                );
+                drop_column_dependencies(&mut plan, before, &before_col.name, &mut handled);
 
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
@@ -4290,10 +4298,8 @@ mod tests {
     fn test_modify_two_columns_of_same_index_no_duplicate_readd() {
         let col_a_before = make_column("col_a", ColumnType::String);
         let col_b_before = make_column("col_b", ColumnType::String);
-        let col_a_after =
-            make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
-        let col_b_after =
-            make_column("col_b", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b_after = make_column("col_b", ColumnType::Nullable(Box::new(ColumnType::String)));
 
         let index = TableIndex {
             name: "idx_composite".to_string(),
@@ -4353,5 +4359,134 @@ mod tests {
             add_count, 1,
             "Composite index must be re-added exactly once, got {add_count}"
         );
+    }
+
+    /// Regression: an index keeps the same name but its expression changes to
+    /// no longer reference the removed column.  The column pass drops it but
+    /// cannot re-add it (expression no longer matches the column).  The diff
+    /// pass must still emit the add for the new definition.
+    #[test]
+    fn test_remove_column_with_index_expression_change() {
+        let col_a = make_column("col_a", ColumnType::String);
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let index_before = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let index_after = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "col_b".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = make_test_table(
+            "t",
+            vec![col_a.clone(), col_b.clone()],
+            vec![index_before],
+            vec![],
+        );
+        let after = make_test_table("t", vec![col_b], vec![index_after], vec![]);
+
+        let column_changes = vec![ColumnChange::Removed(col_a)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // The index must be dropped (column pass handles this)
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "idx_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        // The index must be re-added with the new expression (diff pass handles this)
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "idx_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        // Verify the new expression is used
+        if let AtomicOlapOperation::AddTableIndex { index, .. } = add_ops[0] {
+            assert_eq!(index.expression, "col_b");
+        }
+    }
+
+    /// Same as above but for projections: a projection keeps the same name but
+    /// its body changes to no longer reference the removed column.
+    #[test]
+    fn test_remove_column_with_projection_expression_change() {
+        let col_a = make_column("col_a", ColumnType::String);
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let proj_before = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_a, col_b ORDER BY col_a)".to_string(),
+        };
+
+        let proj_after = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_b ORDER BY col_b)".to_string(),
+        };
+
+        let before = make_test_table(
+            "t",
+            vec![col_a.clone(), col_b.clone()],
+            vec![],
+            vec![proj_before],
+        );
+        let after = make_test_table("t", vec![col_b], vec![], vec![proj_after]);
+
+        let column_changes = vec![ColumnChange::Removed(col_a)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "proj_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "proj_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableProjection { projection, .. } = add_ops[0] {
+            assert_eq!(projection.body, "(col_b ORDER BY col_b)");
+        }
     }
 }
