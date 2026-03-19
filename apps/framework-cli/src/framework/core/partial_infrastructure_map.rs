@@ -342,7 +342,7 @@ struct PartialTable {
     #[serde(default)]
     pub projections: Vec<TableProjection>,
     #[serde(default)]
-    pub constraints: Option<Vec<TableConstraint>>,
+    pub constraints: Vec<TableConstraint>,
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
@@ -848,7 +848,7 @@ impl PartialInfrastructureMap {
                     table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
                     projections: partial_table.projections.clone(),
-                    constraints: partial_table.constraints.clone().unwrap_or_default(),
+                    constraints: partial_table.constraints.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),

@@ -749,7 +749,7 @@ pub struct ClickHouseProjection {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ClickHouseConstraint {
     pub name: String,
     pub expression: String,
