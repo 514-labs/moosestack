@@ -30,9 +30,32 @@ export interface TableProjection {
   body: string;
 }
 
+/**
+ * Defines a constraint on a ClickHouse table.
+ * Constraints can enforce data integrity rules or provide hints to the query optimizer.
+ *
+ * @example
+ * ```typescript
+ * constraints: [
+ *   {
+ *     name: "age_positive",
+ *     expression: "age > 0",
+ *     type: "CHECK"
+ *   },
+ *   {
+ *     name: "valid_status",
+ *     expression: "status IN ('active', 'inactive')",
+ *     type: "ASSUME"
+ *   }
+ * ]
+ * ```
+ */
 export interface TableConstraint {
+  /** The unique identifier or name of the constraint */
   name: string;
+  /** The SQL or logical expression that defines the constraint condition */
   expression: string;
+  /** The type of the constraint (e.g., "CHECK", "ASSUME") */
   type: string;
 }
 

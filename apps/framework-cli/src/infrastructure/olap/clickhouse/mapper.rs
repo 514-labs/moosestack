@@ -5,9 +5,9 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseConstraint, ClickHouseConstraintType,
-    ClickHouseFloat, ClickHouseIndex, ClickHouseInt, ClickHouseProjection, ClickHouseTable,
-    DefaultExpressionKind,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseConstraint,
+    ClickHouseConstraintType, ClickHouseFloat, ClickHouseIndex, ClickHouseInt,
+    ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;

@@ -419,6 +419,45 @@ pipeline = IngestPipeline[CompositeShared]("composite_shared", IngestPipelineCon
   </LanguageTabContent>
 </LanguageTabs>
 
+### Adding Table Constraints
+
+You can configure constraints on ClickHouse tables to enforce data integrity. 
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/datamodels/user.ts"
+import { Key } from "@514labs/moose-lib";
+
+export interface User {
+  id: Key<string>;
+  name: string;
+  age: number;
+  status: string;
+}
+
+export const UserTable = new OlapTable<User>("User", {
+  constraints: [
+    {
+      name: "valid_age",
+      expression: "age >= 0",
+      type: "CHECK"
+    },
+    {
+      name: "valid_status",
+      expression: "status IN ('active', 'inactive', 'pending')",
+      type: "ASSUME"
+    }
+  ]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+# Coming soon to Python
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
 **Key Point**: Complex types including nested objects and arrays work consistently across all infrastructure.
 
 ### ClickHouse-Specific Types (Standalone vs IngestPipeline)
