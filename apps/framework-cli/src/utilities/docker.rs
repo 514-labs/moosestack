@@ -390,15 +390,18 @@ impl DockerClient {
         }
 
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
+        let mut macros_xml = String::from("  <macros>\n");
+        let mut has_macros = false;
 
         for cluster in clusters {
             // Resolve ClickHouse macro patterns like {cluster} to the inner name
             // for the XML config - XML tags can't contain braces
-            let resolved_name = if cluster.name.starts_with('{') && cluster.name.ends_with('}') {
-                &cluster.name[1..cluster.name.len() - 1]
-            } else {
-                &cluster.name
-            };
+            let (resolved_name, is_macro) =
+                if cluster.name.starts_with('{') && cluster.name.ends_with('}') {
+                    (&cluster.name[1..cluster.name.len() - 1], true)
+                } else {
+                    (&cluster.name as &str, false)
+                };
 
             if !is_valid_clickhouse_identifier(resolved_name) {
                 warn!(
@@ -406,6 +409,14 @@ impl DockerClient {
                     cluster.name, resolved_name
                 );
                 continue;
+            }
+
+            if is_macro {
+                macros_xml.push_str(&format!(
+                    "    <{name}>{name}</{name}>\n",
+                    name = resolved_name
+                ));
+                has_macros = true;
             }
 
             xml.push_str(&format!(
@@ -431,7 +442,12 @@ impl DockerClient {
             ));
         }
 
-        xml.push_str("  </remote_servers>\n</clickhouse>\n");
+        xml.push_str("  </remote_servers>\n");
+        if has_macros {
+            macros_xml.push_str("  </macros>\n");
+            xml.push_str(&macros_xml);
+        }
+        xml.push_str("</clickhouse>\n");
         Some(xml)
     }
 
@@ -994,5 +1010,29 @@ mod tests {
         assert!(xml.contains("<clickhouse>"));
         assert!(xml.contains("<remote_servers>"));
         assert!(!xml.contains("<shard>"));
+    }
+
+    #[test]
+    fn test_generate_xml_with_braced_cluster_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "{cluster}".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Should contain the resolved name as tag
+        assert!(xml.contains("<cluster>"));
+        // Should contain macros section
+        assert!(xml.contains("<macros>"));
+        assert!(xml.contains("  <cluster>cluster</cluster>"));
+        assert!(xml.contains("</macros>"));
     }
 }
