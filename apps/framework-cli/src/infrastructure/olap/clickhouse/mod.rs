@@ -2778,22 +2778,14 @@ impl OlapOperations for ConfiguredDBClient {
                     .collect(),
                 constraints: extract_constraints_from_create_table(&create_query)
                     .into_iter()
-                    .map(|c| {
-                        let parsed_type = c.constraint_type.parse().map_err(|e| {
-                            let msg = format!(
-                                "Failed to parse constraint type '{}' for constraint '{}' on table '{}': {}",
-                                c.constraint_type, c.name, &table_name, e
-                            );
-                            tracing::error!("{}", msg);
-                            OlapChangesError::UnsupportedFeature(msg)
-                        })?;
-                        Ok(crate::framework::core::infrastructure::table::TableConstraint {
+                    .map(
+                        |c| crate::framework::core::infrastructure::table::TableConstraint {
                             name: c.name,
                             expression: c.expression,
-                            constraint_type: parsed_type,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, OlapChangesError>>()?,
+                            constraint_type: c.constraint_type.parse().unwrap(),
+                        },
+                    )
+                    .collect(),
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store

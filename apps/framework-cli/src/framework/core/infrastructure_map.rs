@@ -2307,6 +2307,7 @@ impl InfrastructureMap {
         );
 
         let constraints_changed = table.constraints != target_table.constraints;
+        let projections_changed = table.projections != target_table.projections;
 
         if !column_changes.is_empty()
             || order_by_changed
@@ -2314,6 +2315,7 @@ impl InfrastructureMap {
             || indexes_changed
             || ttl_changed
             || constraints_changed
+            || projections_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2404,6 +2406,7 @@ impl InfrastructureMap {
         );
 
         let constraints_changed = table.constraints != target_table.constraints;
+        let projections_changed = table.projections != target_table.projections;
 
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
@@ -2412,6 +2415,7 @@ impl InfrastructureMap {
             || indexes_changed
             || ttl_changed
             || constraints_changed
+            || projections_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
