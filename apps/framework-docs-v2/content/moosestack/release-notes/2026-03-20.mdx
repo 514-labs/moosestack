@@ -1,0 +1,113 @@
+---
+title: March 20, 2026
+description: Release notes for March 20, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 20, 2026
+
+
+
+## 🦌 Moose
+
+### New Features
+**Release Notes: March 15, 2026** ([@callicles](https://github.com/callicles))
+  This release adds MaterializedView support in the query layer, new CLI commands for log streaming and runtime environment management, improved SQL template API with explicit statement/fragment tags, and enhanced Python Views with multi-database support. Key highlights include the ability to use MaterializedViews as data sources in defineQueryModel, new 514 CLI commands for logs, env vars, and AI agent initialization, and clearer SQL composition with sql.statement and sql.fragment tags.
+
+  PR: [#3737](https://github.com/514-labs/moose/pull/3737) | Docs: [/moosestack/release-notes/2026-03-15](https://docs.moosejs.com/moosestack/release-notes/2026-03-15)
+
+**Add Python WebApp template for consumption APIs** ([@onelesd](https://github.com/onelesd))
+  Added a new python-webapp template that provides a complete example of building consumption APIs with FastAPI, including data models, transformations, materialized views, and WebApp integration. This template demonstrates streaming data pipelines, JWT authentication, query endpoints, and real-time data processing workflows.
+
+  **FastAPI consumption API with MooseStack integration**
+
+  ```python
+  from fastapi import FastAPI, Query, Request
+  from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
+  from moose_lib.dmv2.web_app_helpers import get_moose_utils
+  from pydantic import BaseModel
+  
+  # Create FastAPI application
+  app = FastAPI()
+  
+  # Define data models for your API
+  class QueryRequest(BaseModel):
+      start_date: str
+      end_date: str
+      limit: int = 10
+  
+  # Create API endpoints
+  @app.get("/analytics")
+  async def get_analytics(request: Request, limit: int = Query(default=10)):
+      """Query your data using MooseStack's built-in query client"""
+      # Get MooseStack utilities (query client, JWT auth, etc.)
+      moose = get_moose_utils(request)
+      
+      # Execute queries against your data tables
+      query = """
+          SELECT event_type, count(*) as total
+          FROM user_events 
+          WHERE timestamp >= now() - INTERVAL 7 DAY
+          GROUP BY event_type
+          ORDER BY total DESC
+          LIMIT {limit}
+      """
+      
+      result = moose.client.query.execute(query, {"limit": limit})
+      return {"data": result}
+  
+  @app.post("/custom-query")
+  async def custom_query(request: Request, body: QueryRequest):
+      """Handle complex queries with request body validation"""
+      moose = get_moose_utils(request)
+      
+      query = """
+          SELECT * FROM processed_data 
+          WHERE date BETWEEN {start_date} AND {end_date}
+          LIMIT {limit}
+      """
+      
+      result = moose.client.query.execute(query, body.dict())
+      return {"results": result, "count": len(result)}
+  
+  # Register as MooseStack WebApp with custom configuration
+  analytics_api = WebApp(
+      "analyticsApi", 
+      app,
+      WebAppConfig(
+          mount_path="/api/v1",
+          metadata=WebAppMetadata(
+              description="Analytics API for querying processed data"
+          )
+      )
+  )
+  ```
+
+  This example shows how to create a FastAPI consumption API using MooseStack's new python-webapp template. It demonstrates building query endpoints that integrate with MooseStack's data infrastructure, including automatic query client access and WebApp registration for seamless deployment.
+
+  PR: [#3726](https://github.com/514-labs/moose/pull/3726)
+
+**Dead Letter Queue (DLQ) support with namespace prefixing** ([@phiSgr](https://github.com/phiSgr))
+  Added Dead Letter Queue (DLQ) functionality to handle failed streaming function processing, with support for namespace prefixing in Kafka topics. When streaming functions fail to process messages, they are now automatically routed to a DLQ topic for debugging and recovery. This includes infrastructure mapping changes and CLI argument support for DLQ configuration, improving error handling and observability in streaming data pipelines.
+
+  PR: [#3732](https://github.com/514-labs/moose/pull/3732) | Docs: [/moosestack/olap](https://docs.moosejs.com/moosestack/olap)
+
+### Improvements
+- Move full application examples from templates to dedicated examples directory: Full application examples (like ads-b-frontend, brainwaves, github-dev-trends) are now organized in a dedicated examples/ directory instead of templates/, making it clearer that these are complete reference applications rather than starter templates. The CLI now also provides a helpful message directing users to examples when a template isn't found. PR: [#3725](https://github.com/514-labs/moose/pull/3725) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) ([@onelesd](https://github.com/onelesd))
+
+### Bug Fixes
+- Fix ClickHouseJson options for dict[str, Any] fields: Fixed an issue where ClickHouseJson configuration options (like max_dynamic_paths and skip_paths) were not being applied to dict[str, Any] fields in Python data models. PR: [#3812](https://github.com/514-labs/moose/pull/3812) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@hh2110](https://github.com/hh2110))
+
+## 🐻 Boreal
+
+### New Features
+**Add persistent volume support for preview branches** ([@callicles](https://github.com/callicles))
+  Preview branch deployments now support persistent volume claims (PVC) for data persistence across deployments. This enables stateful workloads and data retention in preview environments, with configurable storage options per project or branch.
+
+**New admin interface for deployment monitoring** ([@groy-514](https://github.com/groy-514))
+  Administrators now have access to a dedicated invite-only admin interface for monitoring all deployments across the platform. The admin app provides a comprehensive view of deployment statuses, detailed deployment information, and status history tracking. This enables better oversight and troubleshooting of deployment operations across all user projects.
+
+  📸 *[Screenshot needed: Administrators now have access to a dedicated invite-only admin interface for monitoring all deployments across the platform. The admin app provides a comprehensive view of deployment statuses, detailed deployment information, and status history tracking. This enables better oversight and troubleshooting of deployment operations across all user projects.]*
+
+
