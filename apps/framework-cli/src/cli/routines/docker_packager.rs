@@ -544,25 +544,21 @@ RUN echo "=== Rebuilding native modules ===" && \
                 );
 
                 // Modify the copy commands to copy from the build stage
+                let rel_path = relative_project_path.to_string_lossy();
+                let deploy_stage = generate_deploy_stage_setup(
+                    &deploy_lock_file_copy,
+                    &rel_path,
+                    &workspace_copies,
+                    &deploy_install_command,
+                );
                 let copy_from_build = format!(
                     r#"
 # Copy application files from monorepo stage
-COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/{} ./{}
-COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/package.json ./package.json
-COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/tsconfig.json ./tsconfig.json
+COPY --from=monorepo-base --chown=moose:moose /monorepo/{rel_path}/{source_dir} ./{source_dir}
+COPY --from=monorepo-base --chown=moose:moose /monorepo/{rel_path}/package.json ./package.json
+COPY --from=monorepo-base --chown=moose:moose /monorepo/{rel_path}/tsconfig.json ./tsconfig.json
 
-# Use pnpm deploy from workspace context to create clean production dependencies
-USER root:root
-WORKDIR /temp-monorepo
-COPY --from=monorepo-base /monorepo/pnpm-workspace.yaml ./
-{}
-COPY --from=monorepo-base /monorepo/{} ./{}
-# Copy all workspace directories that exist
-{}
-# Use package manager to install only production dependencies
-{}
-RUN cp -r /temp-deploy/node_modules /application/node_modules
-RUN chown -R moose:moose /application/node_modules
+{deploy_stage}
 
 TYPESCRIPT_FIX_PLACEHOLDER
 USER root:root
@@ -572,16 +568,9 @@ RUN rm -rf /temp-deploy /temp-monorepo
 RUN if [ -d "/application/node_modules/@514labs/moose-lib/dist/" ]; then ls -la /application/node_modules/@514labs/moose-lib/dist/; fi
 USER moose:moose
 WORKDIR /application"#,
-                    relative_project_path.to_string_lossy(), // 1: /monorepo/{}
-                    project.source_dir,                      // 2: source_dir
-                    project.source_dir,                      // 3: source_dir
-                    relative_project_path.to_string_lossy(), // 4: /monorepo/{}/package.json
-                    relative_project_path.to_string_lossy(), // 5: /monorepo/{}/tsconfig.json
-                    deploy_lock_file_copy,                   // 6: lock file copy or comment
-                    relative_project_path.to_string_lossy(), // 7: /monorepo/{} ./{}
-                    relative_project_path.to_string_lossy(), // 8: /monorepo/{} ./{}
-                    workspace_copies,                        // 9: {} (workspace_copies)
-                    deploy_install_command,                  // 10: package manager install command
+                    source_dir = project.source_dir,
+                    rel_path = rel_path,
+                    deploy_stage = deploy_stage,
                 );
 
                 dockerfile = dockerfile.replace("COPY_PACKAGE_FILE", &copy_from_build);
@@ -1435,6 +1424,40 @@ fn create_standard_typescript_dockerfile_content(
     Ok(format!("{ts_base_dockerfile}{install}"))
 }
 
+/// Generates the deploy stage setup commands for monorepo Docker builds.
+///
+/// This creates the `/temp-monorepo` workspace context needed for `pnpm deploy`
+/// to resolve workspace dependencies. It copies workspace config files
+/// from the monorepo-base stage.
+fn generate_deploy_stage_setup(
+    lock_file_copy: &str,
+    relative_project_path: &str,
+    workspace_copies: &str,
+    deploy_install_command: &str,
+) -> String {
+    format!(
+        r#"
+# Use pnpm deploy from workspace context to create clean production dependencies
+USER root:root
+WORKDIR /temp-monorepo
+COPY --from=monorepo-base /monorepo/pnpm-workspace.yaml ./
+{}
+COPY --from=monorepo-base /monorepo/.npmr[c] ./
+COPY --from=monorepo-base /monorepo/{} ./{}
+# Copy all workspace directories that exist
+{}
+# Use package manager to install only production dependencies
+{}
+RUN cp -r /temp-deploy/node_modules /application/node_modules
+RUN chown -R moose:moose /application/node_modules"#,
+        lock_file_copy,
+        relative_project_path,
+        relative_project_path,
+        workspace_copies,
+        deploy_install_command,
+    )
+}
+
 /// Creates standard TypeScript Dockerfile and writes it to disk
 fn create_standard_typescript_dockerfile(
     project: &Project,
@@ -1460,4 +1483,70 @@ fn create_standard_typescript_dockerfile(
         "Successfully".to_string(),
         "created dockerfile".to_string(),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deploy_stage_copies_npmrc_for_modern_pnpm_deploy() {
+        let lock_file_copy = "COPY --from=monorepo-base /monorepo/pnpm-lock.yaml ./";
+        let relative_project_path = "services/analytics";
+        let workspace_copies = "COPY --from=monorepo-base /monorepo/packages packages";
+        let deploy_install_command =
+            "RUN pnpm --filter \"./services/analytics\" deploy /temp-deploy";
+
+        let result = generate_deploy_stage_setup(
+            lock_file_copy,
+            relative_project_path,
+            workspace_copies,
+            deploy_install_command,
+        );
+
+        // The deploy stage must copy .npmrc so pnpm deploy sees inject-workspace-packages=true
+        assert!(
+            result.contains(".npmr[c]") || result.contains(".npmrc"),
+            "Deploy stage must copy .npmrc for modern pnpm deploy to work.\n\
+             Without it, pnpm v10 fails with ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE.\n\
+             Got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_deploy_stage_copies_workspace_yaml_and_lockfile() {
+        let lock_file_copy = "COPY --from=monorepo-base /monorepo/pnpm-lock.yaml ./";
+        let relative_project_path = "services/analytics";
+        let workspace_copies = "";
+        let deploy_install_command =
+            "RUN pnpm --filter \"./services/analytics\" deploy /temp-deploy";
+
+        let result = generate_deploy_stage_setup(
+            lock_file_copy,
+            relative_project_path,
+            workspace_copies,
+            deploy_install_command,
+        );
+
+        assert!(
+            result.contains("pnpm-workspace.yaml"),
+            "Deploy stage must copy pnpm-workspace.yaml"
+        );
+        assert!(
+            result.contains("pnpm-lock.yaml"),
+            "Deploy stage must copy lock file"
+        );
+    }
+
+    #[test]
+    fn test_monorepo_stage1_copies_npmrc() {
+        let dockerfile = generate_ts_monorepo_dockerfile("22", Some("pnpm-lock.yaml"));
+
+        assert!(
+            dockerfile.contains(".npmr[c]") || dockerfile.contains(".npmrc"),
+            "Stage 1 must copy .npmrc into monorepo-base.\nGot:\n{}",
+            dockerfile
+        );
+    }
 }
