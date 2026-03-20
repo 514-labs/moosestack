@@ -265,7 +265,7 @@ impl TableProjection {
 
 /// The type of constraint applied to a table.
 /// This enum ensures that only valid constraint types can be constructed and serialized.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Serialize, Eq, PartialEq, Hash)]
 pub enum ConstraintType {
     /// A CHECK constraint that enforces a condition on inserted rows.
     /// Serialized and displayed as `"CHECK"`.
@@ -279,6 +279,16 @@ pub enum ConstraintType {
     /// An unparsed or unknown constraint type, preserved for round-tripping.
     #[serde(untagged)]
     Unparsed(String),
+}
+
+impl<'de> Deserialize<'de> for ConstraintType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(s.parse().unwrap())
+    }
 }
 
 impl std::fmt::Display for ConstraintType {
@@ -318,6 +328,7 @@ pub struct TableConstraint {
     /// The SQL or logical expression that defines the constraint condition.
     pub expression: String,
     /// The type of the constraint (e.g., "CHECK", "ASSUME").
+    #[serde(rename = "type", alias = "constraint_type")]
     pub constraint_type: ConstraintType,
 }
 
@@ -2498,6 +2509,32 @@ mod tests {
         assert!(
             canonicalized.order_by.is_empty(),
             "order_by should remain empty for S3Queue engine"
+        );
+    }
+
+    #[test]
+    fn test_constraint_type_serde_case_insensitivity() {
+        // Test that lowercase "check" deserializes to ConstraintType::Check
+        let json = r#"{"type": "check", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+
+        // Test that uppercase "CHECK" deserializes to ConstraintType::Check
+        let json = r#"{"type": "CHECK", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+
+        // Test that lowercase "assume" deserializes to ConstraintType::Assume
+        let json = r#"{"type": "assume", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Assume);
+
+        // Test unknown deserializes to Unparsed
+        let json = r#"{"type": "unknown", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            constraint.constraint_type,
+            ConstraintType::Unparsed("unknown".to_string())
         );
     }
 
