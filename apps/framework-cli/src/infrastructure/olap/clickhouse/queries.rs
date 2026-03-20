@@ -3464,12 +3464,16 @@ pub fn create_table_query(
                 .constraints
                 .iter()
                 .map(|c| {
-                    format!(
+                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_expression(
+                        &c.expression,
+                        "Constraint expression",
+                    )?;
+                    Ok(format!(
                         "CONSTRAINT `{}` {} {}",
                         c.name, c.constraint_type, c.expression
-                    )
+                    ))
                 })
-                .collect();
+                .collect::<Result<Vec<String>, ClickhouseError>>()?;
             (true, items)
         };
 

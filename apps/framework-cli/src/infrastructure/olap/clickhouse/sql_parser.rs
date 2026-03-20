@@ -881,23 +881,28 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
 
         // Name is the next token, handle backtick quoting
         let (name, after_name) = if after_keyword.starts_with('`') {
-            // Find the matching closing backtick
-            // Simplified handling: find the next backtick that isn't escaped
-            let mut end_idx = 1;
-            while end_idx < after_keyword.len() {
-                if after_keyword[end_idx..].starts_with('`') {
+            // Find the matching closing backtick properly respecting UTF-8 char boundaries
+            let mut end_idx = None;
+            let mut chars = after_keyword.char_indices().skip(1);
+            while let Some((idx, ch)) = chars.next() {
+                if ch == '`' {
                     // Check if it's an escaped backtick (``)
-                    if after_keyword[end_idx + 1..].starts_with('`') {
-                        end_idx += 2;
+                    let next_is_backtick = chars
+                        .clone()
+                        .next()
+                        .is_some_and(|(_, next_ch)| next_ch == '`');
+                    if next_is_backtick {
+                        chars.next(); // skip the second backtick
                         continue;
                     }
+                    end_idx = Some(idx);
                     break;
                 }
-                end_idx += 1;
             }
-            if end_idx < after_keyword.len() {
-                let name = after_keyword[1..end_idx].to_string(); // without backticks
-                let after_name = after_keyword[end_idx + 1..].trim_start();
+
+            if let Some(idx) = end_idx {
+                let name = after_keyword[1..idx].replace("``", "`"); // extract and unescape
+                let after_name = after_keyword[idx + 1..].trim_start();
                 (name, after_name)
             } else {
                 // Fallback if no closing backtick
@@ -3182,5 +3187,18 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints[0].name, "not null");
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(constraints[0].expression, "length(id) > 0");
+
+        // Test 9: Constraint names with multibyte UTF-8 characters
+        let sql_utf8 = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `foo🔥bar` CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_utf8);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "foo🔥bar");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
     }
 }

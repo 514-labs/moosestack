@@ -93,3 +93,20 @@ pub fn validate_clickhouse_identifier(
         reason: reason.to_string(),
     })
 }
+
+/// Validates that a SQL expression does not contain potentially unsafe characters (e.g. semicolons)
+/// that could allow SQL injection when interpolating expressions.
+pub fn validate_clickhouse_expression(
+    expression: &str,
+    expression_type: &str,
+) -> Result<(), ClickhouseError> {
+    if expression.contains(';') {
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: expression_type.to_string(),
+            name: expression.to_string(),
+            reason: "contains invalid characters (semicolons are not allowed in expressions)"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
