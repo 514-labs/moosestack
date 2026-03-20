@@ -47,7 +47,7 @@ hyper-util = { version = "0.1.17", features = ["full"] }
 http-body-util = "0.1"
 lazy_static = "1.4.0"
 anyhow = "1.0"
-git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
+git2 = { version = "0.20.4", features = ["vendored-libgit2"] }
 regex = "1.10.3"
 reqwest = { version = "0.13.1", default-features = false, features = ["stream", "json", "blocking", "query", "native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -75,7 +75,7 @@ redis = { version = "0.29.1", features = [
     "tokio-native-tls-comp",
     "connection-manager",
 ] }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = "10.3.0"
 num-traits = "0.2.19"
 num-bigint = "0.4"
 async-trait = "0.1.83"
