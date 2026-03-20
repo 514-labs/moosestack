@@ -29,7 +29,7 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
         if let Some(cluster_name) = &table.cluster_name {
             // ClickHouse macros like {cluster} are resolved at runtime
             // from system.macros - skip validation for macro references
-            let is_macro = cluster_name.starts_with('{') && cluster_name.ends_with('}');
+            let is_macro = cluster_name.contains('{') && cluster_name.contains('}');
             if is_macro {
                 continue;
             }

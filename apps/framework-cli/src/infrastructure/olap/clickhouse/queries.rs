@@ -3464,6 +3464,10 @@ pub fn create_table_query(
                 .constraints
                 .iter()
                 .map(|c| {
+                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_identifier(
+                        &c.constraint_type.to_string(),
+                        "Constraint type",
+                    )?;
                     crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_expression(
                         &c.expression,
                         "Constraint expression",
