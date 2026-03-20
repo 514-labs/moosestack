@@ -27,9 +27,6 @@ pub enum OlapChangesError {
     #[error("Failed to parse ClickHouse SQL: {0}")]
     ClickhouseSqlParse(#[from] clickhouse::sql_parser::SqlParseError),
 
-    #[error("Unsupported feature: {0}")]
-    UnsupportedFeature(String),
-
     /// Lifecycle policy violations detected at execution boundary.
     /// This indicates a bug in the diff/filter pipeline - protected changes
     /// should have been blocked earlier.
