@@ -1,0 +1,599 @@
+---
+title: Optimizing ClickHouse Performance with AI
+description: Profile a slow query, validate the optimization in preview, and review the benchmark evidence plus migration plan before merge.
+languages: ["typescript"]
+---
+
+import { Callout } from "@/components/mdx";
+
+# Optimizing ClickHouse Performance with AI
+
+**Setup** points the CLI, auth, and repo link at the right Fiveonefour project. **Optimization workflow** runs the agent harness: profile, preview, PR with proof. **PR review** is where you decide if the evidence and `migrations/plan.yaml` are good enough to ship.
+
+You may approve raw `514 clickhouse query` during the run. Before merge, review benchmark artifacts and `migrations/plan.yaml`, not only the agent summary.
+
+<Callout type="info" title="What success looks like">
+  - A PR with schema changes and committed benchmark artifacts - Preview
+  deployment with the optimized path benchmarked - A reviewed
+  `migrations/plan.yaml` that matches what you intend to ship
+</Callout>
+
+This guide assumes:
+
+- Your MooseStack app is already deployed on Fiveonefour
+- The query path you want to optimize already exists in code, usually as `sql` or `defineQueryModel` / `buildQuery`
+
+### Setup
+
+**Setup** is what keeps the rest honest: real `514` commands against the right Fiveonefour project, and the agent using the same session and link. Wrong context means failed runs or the wrong deployment.
+
+You need: working `514 --version`, `514 auth whoami` for the right org, and `514 link` (or [`514 project link`](/hosting/cli/projects/link)) from the repo root to the correct `org/project`.
+
+Order: install, sign in, link.
+
+<GuideStepper id="optimize-ch-setup" persist>
+<GuideStepper.Step
+  id="install-514-cli"
+  number={1}
+  title="Install the 514 CLI"
+  summary="Install the CLI from Hosting and verify it is on your PATH."
+>
+<GuideStepper.WhatYouNeed>
+- A local clone of the MooseStack app repository
+- [Hosting](/hosting) docs if install fails
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- `514` installed and `514 --version` working
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Install and verify">
+From [Hosting](/hosting), install the `514` CLI:
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
+```
+
+Verify:
+
+```bash
+514 --version
+```
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="sign-in-514"
+  number={2}
+  title="Sign in to the 514 CLI"
+  summary="Establish a session so project and deployment commands work."
+>
+<GuideStepper.WhatYouNeed>
+- Install step complete
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A confirmed account via `514 auth whoami`
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Authenticate">
+```bash
+514 auth login
+514 auth whoami
+```
+
+Browser opens for login, then `514 auth whoami` shows your account. No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry. [`514 auth login`](/hosting/cli/auth/login), [`514 auth`](/hosting/cli/auth).
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="link-fiveonefour-project"
+  number={3}
+  title="Link your local repo to your Fiveonefour project"
+  summary="Align local workspace with your hosted org and project."
+>
+<GuideStepper.WhatYouNeed>
+- Access to the Fiveonefour project that hosts the deployment you want to optimize
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- Local configuration that points at the right `org/project` for CLI and agents
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Run link from the repo root">
+From the repo root: `514 link`, or:
+
+```bash
+514 project link <org>/<project>
+```
+
+[`514 project link`](/hosting/cli/projects/link), [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup), [Setup failures](/hosting/troubleshooting/setup-failures).
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+</GuideStepper>
+
+### Optimization workflow
+
+**This section sets up the agent harness in your copilot and gets your coding agent to run the optimization workflow.** After `514 agent init`, the workflow uses the `514` CLI to inspect ClickHouse query metrics and logs, profile the slow path, and propose optimization fixes grounded in what it finds. Part of that workflow is having the agent create a **Vitest benchmark test** for the optimized path. That test produces a real benchmark report you review at the end of the run, not just an agent summary. The same Vitest test is designed to run against the preview database and the `main` / production database so you can make a fair before-and-after comparison.
+
+Watch three things as it runs:
+
+- **The harness is active:** `514 agent init` succeeds and the skills and MCP wiring match your setup.
+- **The profiling target is clear:** name the slow query or endpoint and confirm the perf skill, not a generic refactor.
+- **The validation path is visible:** raw SQL, preview deploys, and any re-seed caused by `ORDER BY` or table layout changes should all be explicit.
+
+<GuideStepper id="optimize-ch-workflow" persist>
+<GuideStepper.Step
+  id="agent-init-harness"
+  number={1}
+  title="Run 514 agent init"
+  summary="Pull in 514 skills and scaffold the agent harness for your repo."
+>
+<GuideStepper.WhatYouNeed>
+- Setup complete: CLI installed, signed in, project linked
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- Agent skill packs (including ClickHouse and performance-related workflows where applicable)
+- MCP and harness files your coding agent uses to run `514`-backed workflows
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Initialize the harness">
+From your project root:
+
+```bash
+514 agent init
+```
+
+This pulls skills from the 514 registry. Narrow clients if needed:
+
+```bash
+514 agent init --agent claude-code --agent cursor
+```
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="ask-copilot-optimize"
+  number={2}
+  title="Ask your copilot to optimize a query"
+  summary="Prompt your coding agent and confirm the performance optimization skill."
+>
+<GuideStepper.WhatYouNeed>
+- A deployed MooseStack app on Fiveonefour (the slow query path in code)
+- Your coding agent (Cursor, Claude Code, Copilot in your editor, and so on) opened on this repo
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- The agent selects the performance optimization skill (often named `514--perf-optimize` or `perf-optimize` depending on client)
+- Explicit confirmation before it runs a long optimization workflow
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Prompt the agent">
+Ask for a ClickHouse performance optimization on your deployed app, and point it at the slow query or endpoint. Example:
+
+```text
+Optimize ClickHouse performance for this MooseStack app on Fiveonefour.
+Profile the slow query path, propose schema changes, validate on preview,
+and prepare a PR with benchmark evidence and migrations/plan.yaml review context.
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Confirm the performance optimization skill">
+When the agent proposes the perf optimization skill, confirm. It should drive profiling, schema work, benchmarks, and the PR. If the bundle name differs, accept only if it is the same harness you got from `514 agent init`.
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="optimization-workflow-runs"
+  number={3}
+  title="Let the optimization workflow run"
+  summary="The agent runs setup through ship: profile, optimize, verify on preview, then open a PR."
+>
+<GuideStepper.WhatYouNeed>
+- Patience for branch pushes and preview deployments
+- Willingness to approve raw `514 clickhouse query` when the skill prompts you
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A feature branch with data model and test changes
+- Benchmark runs against preview (when data is available)
+- A pull request draft or ready for review
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Expect five internal stages">
+The workflow follows `SETUP → PROFILE → OPTIMIZE → VERIFY → SHIP`.
+
+- **SETUP:** CLI session, project, deployment, baseline DDL.
+- **PROFILE:** Slow queries, benchmark candidates, baseline `EXPLAIN`, re-seed risk.
+- **OPTIMIZE:** Moose models, branch push, preview.
+- **VERIFY:** Schema diff, `EXPLAIN`, storage, timed runs on preview.
+- **SHIP:** PR with evidence and summary.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Approve gated ClickHouse commands">
+Guardrailed `514 agent ...` runs without extra approval. Raw `514 clickhouse query` (DDL, `EXPLAIN`, diagnostics, re-seed) should prompt you. Approve when the SQL matches intent.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Watch for preview re-seeds">
+If `ORDER BY` or similar forces a rebuild, preview may need a re-seed before benchmarks are trustworthy. The PR should say if that happened.
+
+</GuideStepper.Checkpoint>
+
+<Callout type="info" title="What good evidence looks like">
+Example: index use, fewer granules read (for example selective condition vs full scan, high `granuleSkipPct`), lower server-side latency. Your PR should show that kind of structural move in `EXPLAIN`, not only a headline number.
+</Callout>
+</GuideStepper.Step>
+</GuideStepper>
+
+### PR review
+
+**Human review of the agent's work.** You decide what ships. Check that the change is safe and the evidence matches reality.
+
+- **Performance:** Do benchmarks and `EXPLAIN` back the claim, not just the PR text?
+- **Destructive ops:** Does `ORDER BY` or ordering change imply a rebuild you accept? Read `migrations/plan.yaml` with that in mind.
+
+**Read `migrations/plan.yaml` end to end.** If `ORDER BY` or a rebuild is involved, expect a **backfill** or migration path, not only a new table. Keep the **old table** until the new one is safe. Populate and verify before drop or rename.
+
+Order: benchmarks, then plan and diff, then optional reruns.
+
+<GuideStepper id="optimize-ch-pr" persist>
+<GuideStepper.Step
+  id="review-benchmark-results"
+  number={1}
+  title="Review the benchmark results"
+  summary="Read the performance test and benchmark JSON to verify the evidence in the PR."
+>
+<GuideStepper.WhatYouNeed>
+- The PR the agent opened
+- The committed performance test and any `reports/benchmark-details-*.json` attached or generated in CI for both the preview branch and the `main` / production baseline
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- Confidence that the preview branch actually beats `main` for the same query path, and that the `EXPLAIN` output supports merging
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Identify the preview report and the main baseline report">
+Pair two artifacts: **preview** (optimization) and **`main` / production** (baseline). Tell them apart from metadata, CI artifact names, or PR notes. Look for **branch**, **database**, **target**, or **testFile**.
+
+```json
+{
+  "target": {
+    "branch": "feat/orderby-opt",
+    "database": "preview_feat_orderby_opt",
+    "testFile": "e2e-tests/tests/moose-performance.e2e.test.ts"
+  }
+}
+```
+
+Compared with a baseline report such as:
+
+```json
+{
+  "target": {
+    "branch": "main",
+    "database": "production",
+    "testFile": "e2e-tests/tests/moose-performance.e2e.test.ts"
+  }
+}
+```
+
+Both reports must use the **same benchmark file** and query path, different targets only. No clear `main` baseline means no real before/after.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Read the performance test">
+Open the committed test (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same `sql` or query model as the app. **Same test file** produced preview and `main` reports.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Check for a real index condition">
+In `reports/benchmark-details-*.json`, check `EXPLAIN`. If index use is the goal, `indexCondition` should not be only `"true"`.
+
+```json
+{
+  "explain": {
+    "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))"
+  }
+}
+```
+
+`"true"` usually means no selective index condition:
+
+```json
+{
+  "explain": {
+    "indexCondition": "true"
+  }
+}
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Compare granule reads before and after">
+Compare `selectedGranules`, `totalGranules`, `granuleSkipPct`. Optimized should read fewer granules:
+
+```json
+{
+  "explain": {
+    "selectedGranules": 120,
+    "totalGranules": 480,
+    "granuleSkipPct": 75
+  }
+}
+```
+
+Baseline:
+
+```json
+{
+  "explain": {
+    "selectedGranules": 480,
+    "totalGranules": 480,
+    "granuleSkipPct": 0
+  }
+}
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Compare server-side latency">
+Check `p95` and `profiles` samples:
+
+```json
+{
+  "profiles": {
+    "serverMs": [42, 39, 44, 41, 40],
+    "p95": 44
+  }
+}
+```
+
+Higher baseline:
+
+```json
+{
+  "profiles": {
+    "serverMs": [118, 121, 126, 119, 123],
+    "p95": 126
+  }
+}
+```
+
+Optimized should beat baseline on `p95`.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Look for filter variant regressions">
+Filter regression entries should pass unless the PR explains a failure:
+
+```json
+{
+  "filterRegressions": [
+    { "name": "country=US", "status": "pass" },
+    { "name": "country=CA", "status": "pass" },
+    { "name": "country=GB", "status": "pass" }
+  ]
+}
+```
+
+Unexplained regression:
+
+```json
+{
+  "filterRegressions": [
+    { "name": "country=US", "status": "pass" },
+    { "name": "country=CA", "status": "regressed" }
+  ]
+}
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Verify the exact SQL and samples used">
+Per-test entries show SQL, filters, and samples:
+
+```json
+{
+  "tests": [
+    {
+      "name": "aircraft stats by database",
+      "sql": "SELECT current_database, count() FROM ...",
+      "samples": [
+        { "current_database": "db_123" },
+        { "current_database": "db_456" }
+      ]
+    }
+  ]
+}
+```
+
+If the SQL in the report does not match the code path the PR claims to optimize, stop and ask why.
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="review-migration-plan-and-changes"
+  number={2}
+  title="Review the migration plan and the code changes"
+  summary="Read migrations/plan.yaml and the diff so you know exactly what will change in ClickHouse."
+>
+<GuideStepper.WhatYouNeed>
+- The same PR
+- Comfort reading `migrations/plan.yaml` and TypeScript data model diffs
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A clear picture of schema operations (and app code changes) before they hit production
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Find the new versioned table in the diff">
+In the diff, the optimized layout should appear as a new **`OlapTable` version**; leave the old version unchanged. For example:
+
+```diff
+ export const UserEventsV1 = new OlapTable("UserEvents", {
+   version: "1.0",
+   orderByFields: ["timestamp", "current_database"],
+ });
+
++export const UserEventsV2 = new OlapTable("UserEvents", {
++  version: "2.0",
++  orderByFields: ["current_database", "timestamp"],
++});
+```
+
+Validate: **bumped `version`** on the new definition, previous version unchanged. Storage change with no new `version` on `OlapTable` needs an explanation.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Confirm the benchmark reads from the new model">
+The benchmark should read the **new versioned table**, not the old one. Expect a small diff:
+
+```diff
+-import { UserEventsV1 } from "./models";
++import { UserEventsV2 } from "./models";
+
+ const query = sql`
+   SELECT count()
+-  FROM ${UserEventsV1}
++  FROM ${UserEventsV2}
+   WHERE timestamp >= ${start}
+ `;
+```
+
+Schema, benchmark, and claim should line up. If the summary promises better skipping on `current_database` but the benchmark still hits the old table or the diff is unrelated noise, ask before merge.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Open migrations/plan.yaml and match the plan shape">
+Open `migrations/plan.yaml`. Operations should match the versioned table change in code. Flag unexpected `DropTable` or `DropTableColumn`. Re-seeds need a note in the PR. See [Planned Migrations](/moosestack/migrate/planned-migrations).
+
+Staged rollout shape:
+
+```yaml
+operations:
+  - CreateTable:
+      name: UserEvents_2_0
+      columns: ...
+      orderBy: [current_database, timestamp]
+  - RawSql:
+      sql: |
+        INSERT INTO UserEvents_2_0
+        SELECT *
+        FROM UserEvents_1_0
+```
+
+Create table, then backfill. No destructive lifecycle in this PR. Code shows `version: "2.0"` but the plan has no new table plus copy? Ask why.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Validate the backfill and keep the old table">
+`ORDER BY` or a rebuild needs a **backfill** in the plan, not only `CreateTable`. Usually a late **`RawSql`** `INSERT INTO <new> SELECT ... FROM <old>`.
+
+Good shape:
+
+```yaml {5-9}
+operations:
+  - CreateTable:
+      name: UserEvents_2_0
+      orderBy: [current_database, timestamp]
+  - RawSql:
+      sql: |
+        INSERT INTO UserEvents_2_0
+        SELECT *
+        FROM UserEvents_1_0
+```
+
+New table with no backfill or `RawSql` copy? Request changes.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Look for unexpected DropTable operations">
+**Do not drop the old table in the optimization PR.** Keep it as fallback until the new layout is validated.
+
+Bad shape:
+
+```yaml {5-6}
+operations:
+  - CreateTable:
+      name: UserEvents_2_0
+      orderBy: [current_database, timestamp]
+  - DropTable:
+      name: UserEvents_1_0
+```
+
+Early `DropTable` on the old table? Fix the plan before merge.
+
+Removing `events_old` or other fallbacks belongs in a **follow-up PR**, not this one.
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="reproduce-benchmarks-preview-vs-main"
+  number={3}
+  title="Reproduce the benchmark tests yourself (optional)"
+  summary="Re-run the same tests against preview and main to validate results on your machine."
+>
+<GuideStepper.WhatYouNeed>
+- Credentials or env files for your preview deployment and for `main` / production (or whatever baseline you compare against)
+- The test commands documented in the PR
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- Independent confirmation that preview beats (or matches) your baseline for the same test code
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Point tests at preview, then at main">
+The workflow adds a **Vitest** benchmark (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same test file, different **database target** only.
+
+Run against **local** (smoke), **preview** (PR branch), **`main` / production** (baseline).
+
+Switch targets with `MOOSE_CLICKHOUSE_CONFIG__*` (for example `.env.local.preview` vs `.env.local.production`).
+
+```bash
+pnpm test:perf
+pnpm test:perf:preview
+```
+
+No wrappers? Same test file, your usual test command, different env or `MOOSE_CLICKHOUSE_CONFIG__*` for host, port, db, user, password, SSL.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Compare results">
+Same file: **before** (`main` / prod) vs **after** (preview). Match the **direction** of improvement the PR claims, not identical milliseconds.
+
+More detail: see the quick reference below.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Merge when you are satisfied">
+Merge when benchmarks, `migrations/plan.yaml`, and optional reruns match what you want to ship. Otherwise request changes.
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+</GuideStepper>
+
+## Benchmark review quick reference
+
+Fast path for PR or local reruns:
+
+1. Same benchmark file: preview vs `main`.
+2. Query result: same semantics as before you trust a faster number.
+3. Structure: `EXPLAIN`, `indexCondition`, `selectedGranules`, `totalGranules`, `granuleSkipPct`.
+4. Latency: `p95` and per-run samples in the JSON.
+
+JSON shapes: see **Review the benchmark results** above.
+
+## Related docs
+
+- [Hosting](/hosting)
+- [`514 auth`](/hosting/cli/auth)
+- [`514 project link`](/hosting/cli/projects/link)
+- [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup)
+- [Setup failures](/hosting/troubleshooting/setup-failures)
+- [Query Layer](/moosestack/reference/query-layer)
+- [Semantic Layer](/moosestack/apis/semantic-layer)
+- [Planned Migrations](/moosestack/migrate/planned-migrations)
+- [Going to Production](/guides/applications/going-to-production)
