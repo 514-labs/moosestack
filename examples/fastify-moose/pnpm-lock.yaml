@@ -24,8 +24,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0
       typia:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
+        specifier: ^12.0.1
+        version: 12.0.1(@types/node@20.19.37)(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -47,7 +47,7 @@ importers:
     dependencies:
       '@514labs/moose-lib':
         specifier: 0.6.439
-        version: 0.6.439(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3))
+        version: 0.6.439(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@12.0.1(@types/node@20.19.37)(typescript@5.9.3))
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.27.1(zod@3.25.76)
@@ -55,8 +55,8 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
       typia:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
+        specifier: ^12.0.1
+        version: 12.0.1(@types/node@20.19.37)(typescript@5.9.3)
     devDependencies:
       '@514labs/moose-cli':
         specifier: 0.6.439
@@ -386,9 +386,6 @@ packages:
     peerDependencies:
       '@redis/client': ^1.0.0
 
-  '@samchon/openapi@5.1.0':
-    resolution: {integrity: sha512-PudEhIB/YO+NJPv712+6U7H5qVGJ314QfOnabRxLWoR/A3Hw/wHuHq1Yeb1sdi1Xlx3dUWvGTKXuzE2qEfWR0w==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -415,28 +412,24 @@ packages:
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-arm64-musl@1.15.18':
     resolution: {integrity: sha512-0a+Lix+FSSHBSBOA0XznCcHo5/1nA6oLLjcnocvzXeqtdjnPb+SvchItHI+lfeiuj1sClYPDvPMLSLyXFaiIKw==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-linux-x64-gnu@1.15.18':
     resolution: {integrity: sha512-wG9J8vReUlpaHz4KOD/5UE1AUgirimU4UFT9oZmupUDEofxJKYb1mTA/DrMj0s78bkBiNI+7Fo2EgPuvOJfuAA==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-x64-musl@1.15.18':
     resolution: {integrity: sha512-4nwbVvCphKzicwNWRmvD5iBaZj8JYsRGa4xOxJmOyHlMDpsvvJ2OR2cODlvWyGFH6BYL1MfIAK3qph3hp0Az6g==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-win32-arm64-msvc@1.15.18':
     resolution: {integrity: sha512-zk0RYO+LjiBCat2RTMHzAWaMky0cra9loH4oRrLKLLNuL+jarxKLFDA8xTZWEkCPLjUTwlRN7d28eDLLMgtUcQ==}
@@ -517,6 +510,18 @@ packages:
 
   '@types/node@20.19.37':
     resolution: {integrity: sha512-8kzdPJ3FsNsVIurqBs7oodNnCEVbni9yUEkaHbgptDACOPW04jimGagZ51E6+lXUwJjgnBw+hyko/lkFWCldqw==}
+
+  '@typia/core@12.0.1':
+    resolution: {integrity: sha512-w7BZDLliZ4sJJW6WNN2cMhpLhKHghRELRZynCsfX1eFbQqsi3/lVtvpkTBSzEZXzuFJjb6VxyugB/e2gIZZeKw==}
+
+  '@typia/interface@12.0.1':
+    resolution: {integrity: sha512-HUlNN6Iqq3LXecVCzoSdwTYIZ4dq7eYRbUsNREPvtM10Ej1J2dKIH6zCEl9Ey0tQhcAwexdbubfLOSUQQYCD5A==}
+
+  '@typia/transform@12.0.1':
+    resolution: {integrity: sha512-SX4VCRPHTxRY3l99iU74yn8iqZIQ0DE4939n+XYoojKlvFVmTlg/OCMxsWq3xe6Qw19Vaa8bdcXGV4tx+TAlqw==}
+
+  '@typia/utils@12.0.1':
+    resolution: {integrity: sha512-JIKsRhY4jxLtl/obttkR3vGp8d8hPysY6g0PUsIEDZ9/OO85OU7q8lYhu2GkZOJN/7htyqP+95GhpSNt2uELBQ==}
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -1705,8 +1710,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  typia@10.1.0:
-    resolution: {integrity: sha512-lKeDr+hv9hJgZbQhXtGZ2CUtGNaG6zN9Bz+t9fPIaaFcAbYbZstoo7887eqkCfg+C19QfNGRyGtLwiALvovczA==}
+  typia@12.0.1:
+    resolution: {integrity: sha512-meL2qpo6yYFj6wC5coz7T3XpQT9+UjdHErhw46jGfmLFJUq6Za74B0/KYMDRjLxF/0Fd63oVx6X3+MUlI1ZJcQ==}
     hasBin: true
     peerDependencies:
       typescript: '>=4.8.0 <5.10.0'
@@ -1845,7 +1850,7 @@ snapshots:
       '@514labs/moose-cli-linux-arm64': 0.6.439
       '@514labs/moose-cli-linux-x64': 0.6.439
 
-  '@514labs/moose-lib@0.6.439(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3))':
+  '@514labs/moose-lib@0.6.439(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@12.0.1(@types/node@20.19.37)(typescript@5.9.3))':
     dependencies:
       '@514labs/kafka-javascript': 1.7.1-patch
       '@clickhouse/client': 1.8.1
@@ -1865,7 +1870,7 @@ snapshots:
       ts-patch: 3.3.0
       tsconfig-paths: 4.2.0
       typescript: 5.9.3
-      typia: 10.1.0(@types/node@20.19.37)(typescript@5.9.3)
+      typia: 12.0.1(@types/node@20.19.37)(typescript@5.9.3)
       zod: 3.25.76
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.27.1(zod@3.25.76)
@@ -2185,8 +2190,6 @@ snapshots:
     dependencies:
       '@redis/client': 1.6.1
 
-  '@samchon/openapi@5.1.0': {}
-
   '@standard-schema/spec@1.1.0': {}
 
   '@swc/core-darwin-arm64@1.15.18':
@@ -2336,6 +2339,23 @@ snapshots:
   '@types/node@20.19.37':
     dependencies:
       undici-types: 6.21.0
+
+  '@typia/core@12.0.1':
+    dependencies:
+      '@typia/interface': 12.0.1
+      '@typia/utils': 12.0.1
+
+  '@typia/interface@12.0.1': {}
+
+  '@typia/transform@12.0.1':
+    dependencies:
+      '@typia/core': 12.0.1
+      '@typia/interface': 12.0.1
+      '@typia/utils': 12.0.1
+
+  '@typia/utils@12.0.1':
+    dependencies:
+      '@typia/interface': 12.0.1
 
   '@webassemblyjs/ast@1.14.1':
     dependencies:
@@ -3526,10 +3546,13 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  typia@10.1.0(@types/node@20.19.37)(typescript@5.9.3):
+  typia@12.0.1(@types/node@20.19.37)(typescript@5.9.3):
     dependencies:
-      '@samchon/openapi': 5.1.0
       '@standard-schema/spec': 1.1.0
+      '@typia/core': 12.0.1
+      '@typia/interface': 12.0.1
+      '@typia/transform': 12.0.1
+      '@typia/utils': 12.0.1
       commander: 10.0.1
       comment-json: 4.6.2
       inquirer: 8.2.7(@types/node@20.19.37)
