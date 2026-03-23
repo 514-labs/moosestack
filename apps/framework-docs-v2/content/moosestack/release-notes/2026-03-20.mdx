@@ -15,9 +15,6 @@ import { Callout } from "@/components/mdx";
 
 ### New Features
 
-**Add Python WebApp template** ([@onelesd](https://github.com/onelesd))
-  Added a new python-webapp template that provides a complete example of building consumption APIs with FastAPI, including data models, transformations, materialized views, and WebApp integration. This template demonstrates streaming data pipelines, JWT authentication, query endpoints, and real-time data processing workflows.
-
 **Dead Letter Queue (DLQ) support with namespace prefixing** ([@phiSgr](https://github.com/phiSgr))
   Added Dead Letter Queue (DLQ) functionality to handle failed streaming function processing, with support for namespace prefixing in Kafka topics. When streaming functions fail to process messages, they are now automatically routed to a DLQ topic for debugging and recovery. This includes infrastructure mapping changes and CLI argument support for DLQ configuration, improving error handling and observability in streaming data pipelines.
 
