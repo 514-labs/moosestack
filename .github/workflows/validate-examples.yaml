@@ -2,8 +2,7 @@ name: Validate Examples
 
 on:
   pull_request:
-    paths:
-      - "examples/**"
+    types: [opened, synchronize, reopened]
   workflow_run:
     workflows: ["Release CLI"]
     types: [completed]
@@ -18,10 +17,30 @@ jobs:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       examples: ${{ steps.find.outputs.examples }}
+      should_run: ${{ steps.check-changes.outputs.should_run }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check-changes
+        name: Check for example changes
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            # Check if any examples/** files changed
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q '^examples/'; then
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "No changes in examples/, skipping validation"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
       - id: find
         name: Find buildable examples
+        if: steps.check-changes.outputs.should_run == 'true'
         run: |
           # Find directories in examples/ that contain buildable indicators
           # at any depth up to 3 levels (handles monorepo examples like brainwaves/apps/brainmoose/*)
@@ -37,12 +56,12 @@ jobs:
   validate:
     name: Validate ${{ matrix.example }}
     needs: discover
-    if: ${{ needs.discover.outputs.examples != '[]' }}
+    if: ${{ needs.discover.outputs.should_run == 'true' && needs.discover.outputs.examples != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        example: ${{ fromJson(needs.discover.outputs.examples) }}
+        example: ${{ fromJson(needs.discover.outputs.examples || '[]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,11 +80,11 @@ jobs:
           # Collect directories that contain a buildable manifest.
           # Start with the example root itself, then fall back to subdirectories.
           roots=""
-          if [ -f "package.json" ] || [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+          if [ -f "package.json" ] || [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "moose.config.toml" ]; then
             roots="."
           else
             # Monorepo-style example: find subdirectories with manifests (up to 3 levels)
-            roots=$(find . -mindepth 1 -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name setup.py -o -name pnpm-workspace.yaml \) -exec dirname {} \; | sort -u)
+            roots=$(find . -mindepth 1 -maxdepth 3 \( -name package.json -o -name requirements.txt -o -name setup.py -o -name pnpm-workspace.yaml -o -name moose.config.toml \) -exec dirname {} \; | sort -u)
           fi
           if [ -z "$roots" ]; then
             echo "::error::No manifest found for ${{ matrix.example }} at any depth — nothing to validate"
@@ -116,8 +135,20 @@ jobs:
             echo "::group::Validate $root"
             pushd "$root" > /dev/null
             if [ -f "pnpm-workspace.yaml" ] || [ -f "pnpm-lock.yaml" ]; then
-              pnpm run --if-present build
-              pnpm run --if-present typecheck
+              # Discover packages whose build requires moose-cli infrastructure (Docker/ClickHouse)
+              # and exclude them. Everything else is built and validated normally.
+              skip_filters=""
+              for pkg_json in $(find . -name package.json -maxdepth 3 -not -path '*/node_modules/*'); do
+                build_cmd=$(node -e "try{const p=require('./$pkg_json');console.log(p.scripts?.build||'')}catch(e){}" 2>/dev/null)
+                if echo "$build_cmd" | grep -q "moose-cli"; then
+                  pkg_name=$(node -e "const p=require('./$pkg_json');console.log(p.name)" 2>/dev/null)
+                  echo "::warning::Skipping build for $pkg_name (requires moose-cli infrastructure)"
+                  skip_filters="$skip_filters --filter=!${pkg_name}"
+                fi
+              done
+              # Build and typecheck remaining packages in dependency order
+              pnpm -r --include-workspace-root ${skip_filters} run --if-present build
+              pnpm -r --include-workspace-root ${skip_filters} run --if-present typecheck
               validated=true
             elif [ -f "package.json" ]; then
               ran_any=false
@@ -134,8 +165,14 @@ jobs:
               fi
               validated=true
             fi
-            if python -m pip show moose-lib >/dev/null 2>&1; then
-              python -c "import moose_lib; print('moose_lib imported successfully')"
+            if [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+              if python -m pip show moose-lib >/dev/null 2>&1; then
+                python -c "import moose_lib; print('moose_lib imported successfully')"
+              fi
+              validated=true
+            fi
+            if [ "$validated" = false ] && [ -f "moose.config.toml" ]; then
+              echo "::warning::moose.config.toml found but no buildable manifest — requires moose-cli infrastructure, skipping build"
               validated=true
             fi
             popd > /dev/null
@@ -145,3 +182,37 @@ jobs:
             echo "::error::No manifest validated for ${{ matrix.example }} — nothing was validated"
             exit 1
           fi
+
+  # Final status check that depends on all jobs
+  validate-examples-status:
+    runs-on: ubuntu-latest
+    needs: [discover, validate]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Check final status
+        shell: bash
+        run: |
+          if [[ "${{ needs.discover.result }}" == "failure" ]]; then
+            echo "Discover job failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.discover.outputs.should_run }}" != "true" ]]; then
+            echo "No example changes detected, marking as success"
+            exit 0
+          fi
+
+          if [[ "${{ needs.validate.result }}" == "failure" ]]; then
+            echo "One or more example validations failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.validate.result }}" == "success" ]] || [[ "${{ needs.validate.result }}" == "skipped" ]]; then
+            echo "All example validations passed"
+            exit 0
+          fi
+
+          echo "Unexpected state in dependent jobs"
+          exit 1
