@@ -1,0 +1,86 @@
+---
+title: Overview
+description: When to use the ClickHouse optimization workflow and what to expect from the review artifacts
+languages: ["typescript"]
+---
+
+import { Callout, BulletPointsCard } from "@/components/mdx";
+
+## Overview
+
+This guide is for a deployed MooseStack application that already has a slow ClickHouse query path. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, propose a schema change, validate it on preview, and hand you back a PR with evidence you can verify.
+
+## Prerequisites
+
+The workflow relies on the `514` CLI, a linked local repository, and the agent harness from `514 agent init`. In the [tutorial](/guides/optimize-clickhouse-performance/tutorial), complete **Setup** (install, sign in, link), then **Optimization workflow** (`514 agent init`, copilot prompt, run the skill), then **PR review** (benchmark results, migration plan and code diff, optional reruns on preview vs `main`). Hosting reference: [Hosting](/hosting), [`514 project link`](/hosting/cli/projects/link), [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup), and [Setup failures](/hosting/troubleshooting/setup-failures) if something blocks you.
+
+<BulletPointsCard
+  title="This guide is a good fit when"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "You already have a slow query in production",
+      description:
+        "The workflow needs a real query shape to profile and benchmark, not a hypothetical optimization target.",
+    },
+    {
+      title: "Your app already uses MooseStack query code",
+      description:
+        "The workflow starts from the `sql` query path you already run, and can also use `defineQueryModel` when present.",
+    },
+    {
+      title: "You want reviewable proof, not just an agent summary",
+      description:
+        "The output is a pull request with schema diffs, benchmark tests, correctness checks, and a migration plan.",
+    },
+  ]}
+/>
+
+## What the workflow is actually optimizing
+
+ClickHouse performance usually comes down to whether your table ordering matches the filter and grouping pattern your application actually uses.
+
+In the prototype case, the slow query path was not fixed by generic SQL cleanup. It got faster because the schema started matching the query shape, which changed the `EXPLAIN indexes = 1` output from a full scan:
+
+```text
+Condition: true
+Granules: 5921/5921
+```
+
+to a useful index condition with meaningful skipping:
+
+```text
+Condition: category in ['A3']
+Granules: 6/24
+Granule skip: 75%
+```
+
+That is the main idea behind this guide. The workflow is trying to improve structural signals first, then confirm that latency follows.
+
+## What the workflow gives back
+
+You are not expected to trust the agent on vibes. The workflow should give you:
+
+- a benchmark test that imports the real query path from your app
+- `EXPLAIN` output showing whether the query started using the primary key or another skipping mechanism
+- benchmark timing collected from server-side query data
+- a correctness check so the optimization does not silently change results
+- `migrations/plan.yaml` so you can review the schema operations before merge
+
+<Callout type="warning" title="Current limits">
+`explain()` and `profileBenchmark()` are temporary harness helpers today, not the final stable MooseStack API surface.
+
+Auto-seeding preview databases is not available yet. If the optimization changes `ORDER BY` or another destructive table attribute, preview validation may need an explicit re-seed step before benchmarking.
+
+</Callout>
+
+## What you review before merge
+
+The review has two gates:
+
+1. The benchmark evidence
+2. The migration plan
+
+The benchmark tells you whether the optimized query path is structurally better and measurably faster. The migration plan tells you whether the branch is changing the database in the way you intended.
+
+If you want the step-by-step path for running the workflow and reviewing those artifacts, continue to the tutorial.

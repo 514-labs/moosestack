@@ -1793,6 +1793,29 @@ const guidesNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
     status: "draft",
   },
+  {
+    type: "page",
+    slug: "guides/optimize-clickhouse-performance",
+    title: "Optimizing ClickHouse Performance with AI",
+    description:
+      "Profile a slow query, validate the optimization in preview, and review the benchmark evidence plus migration plan before merge.",
+    icon: IconBrain,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/optimize-clickhouse-performance/overview",
+        title: "Overview",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/optimize-clickhouse-performance/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
+      },
+    ],
+  },
 
   // ===========================================
   // Additional Draft Guides (organized by section)
