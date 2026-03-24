@@ -24,6 +24,7 @@ pub fn run(
     project_path: &Path,
     proxy_port: Option<u16>,
     is_prod: bool,
+    row_policies_config: &std::collections::HashMap<String, String>,
 ) -> Result<Child, ConsumptionError> {
     let host_port = clickhouse_config.host_port.to_string();
     let temporal_url = project.temporal_config.temporal_url();
@@ -82,6 +83,18 @@ pub fn run(
     if let Some(worker_count) = project.http_server_config.api_workers {
         string_args.push("--worker-count".to_string());
         string_args.push(worker_count.to_string());
+    }
+
+    if !row_policies_config.is_empty() {
+        let json = serde_json::to_string(row_policies_config)
+            .expect("Failed to serialize row policies config");
+        string_args.push("--row-policies".to_string());
+        string_args.push(json);
+
+        string_args.push("--rls-user".to_string());
+        string_args.push(clickhouse_config.effective_rls_user().to_string());
+        string_args.push("--rls-password".to_string());
+        string_args.push(clickhouse_config.effective_rls_password().to_string());
     }
 
     let args: Vec<&str> = string_args.iter().map(|s| s.as_str()).collect();

@@ -360,6 +360,10 @@ fn validate_table_databases_and_clusters(
             | SerializableOlapOperation::DropView { .. } => {
                 // Moose does not have cluster support for MV/View, skip validation
             }
+            SerializableOlapOperation::CreateRowPolicy { .. }
+            | SerializableOlapOperation::DropRowPolicy { .. } => {
+                // Row policies reference tables but don't need cluster validation
+            }
         }
     }
 

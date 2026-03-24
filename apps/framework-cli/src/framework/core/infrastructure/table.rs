@@ -26,6 +26,14 @@ use std::fmt::Debug;
 use std::path::Path;
 use tracing::warn;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableReference {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub database: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct SourceLocation {
     pub file: String,

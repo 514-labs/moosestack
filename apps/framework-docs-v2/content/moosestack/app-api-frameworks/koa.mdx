@@ -35,18 +35,11 @@ router.get("/health", (ctx) => {
 });
 
 router.get("/data", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.status = 500;
-    ctx.body = { error: "Moose utilities not available" };
-    return;
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt((ctx.query.limit as string) || "10");
 
   try {
-    const query = sql.statement`
+    const query = sql`
       SELECT
         ${MyTable.columns.id},
         ${MyTable.columns.name},
@@ -125,12 +118,7 @@ router.get("/health", (ctx) => {
 
 // GET with params and query
 router.get("/users/:userId/events", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.throw(500, "Moose utilities not available");
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const { userId } = ctx.params;
   const limit = parseInt((ctx.query.limit as string) || "10");
   const eventType = ctx.query.eventType as string;
@@ -160,11 +148,6 @@ router.get("/users/:userId/events", async (ctx) => {
 
 // POST endpoint
 router.post("/users/:userId/events", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.throw(500, "Moose utilities not available");
-  }
-
   const { userId } = ctx.params;
   const { eventType, data } = ctx.request.body as any;
 
@@ -185,14 +168,14 @@ router.post("/users/:userId/events", async (ctx) => {
 
 // Protected route with JWT
 router.get("/protected", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
+  const { jwt } = await getMooseUtils();
 
-  if (!moose?.jwt) {
+  if (!jwt) {
     ctx.throw(401, "Unauthorized");
   }
 
-  const userId = moose.jwt.sub;
-  const userRole = moose.jwt.role;
+  const userId = jwt.sub;
+  const userRole = jwt.role;
 
   ctx.body = {
     message: "Authenticated",
@@ -203,16 +186,15 @@ router.get("/protected", async (ctx) => {
 
 // Multiple route handlers (middleware chain)
 const checkAuth = async (ctx: Context, next: Next) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose?.jwt) {
+  const { jwt } = await getMooseUtils();
+  if (!jwt) {
     ctx.throw(401, "Unauthorized");
   }
   await next();
 };
 
 router.get("/admin/stats", checkAuth, async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  // moose.jwt is guaranteed to exist here
+  // jwt is guaranteed to exist here via checkAuth middleware
   ctx.body = { stats: "admin stats" };
 });
 
@@ -234,15 +216,18 @@ export const advancedKoaApp = new WebApp("advancedKoa", app, {
 
 ## Accessing Moose Utilities
 
-Use `ctx.req` to access the underlying Node.js request:
+Call `getMooseUtils()` with no arguments. It is async, returns `MooseUtils` directly, and throws on error (no null check needed):
 
 ```ts
-const moose = getMooseUtils(ctx.req);
-if (!moose) {
-  ctx.throw(500, "Utilities not available");
-}
+const { client, sql, jwt } = await getMooseUtils();
+```
 
-const { client, sql, jwt } = moose;
+For row-level security, pass an RLS context:
+
+```ts
+const { client, sql } = await getMooseUtils({
+  rlsContext: { org_id: orgId }
+});
 ```
 
 ## Middleware Patterns
@@ -253,16 +238,16 @@ const { client, sql, jwt } = moose;
 import compose from "koa-compose";
 
 const authMiddleware = async (ctx: Context, next: Next) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose?.jwt) {
+  const { jwt } = await getMooseUtils();
+  if (!jwt) {
     ctx.throw(401, "Unauthorized");
   }
   await next();
 };
 
 const adminMiddleware = async (ctx: Context, next: Next) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose?.jwt || moose.jwt.role !== "admin") {
+  const { jwt } = await getMooseUtils();
+  if (!jwt || jwt.role !== "admin") {
     ctx.throw(403, "Forbidden");
   }
   await next();
@@ -299,13 +284,8 @@ app.context.formatResponse = function(data: any) {
 };
 
 router.get("/data", async (ctx: CustomContext) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.throw(500, "Utilities not available");
-  }
-
-  const { client, sql } = moose;
-  const result = await client.query.execute(sql.statement`
+  const { client, sql } = await getMooseUtils();
+  const result = await client.query.execute(sql`
     SELECT
       ${MyTable.columns.id},
       ${MyTable.columns.name},
@@ -361,11 +341,7 @@ import { getMooseUtils } from "@514labs/moose-lib";
 export const usersRouter = new Router({ prefix: "/users" });
 
 usersRouter.get("/:userId", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.throw(500, "Utilities not available");
-  }
-
+  const { client, sql } = await getMooseUtils();
   const { userId } = ctx.params;
   // Query logic
   ctx.body = { userId };
@@ -410,7 +386,7 @@ interface WebAppConfig {
 
 ## Best Practices
 
-1. **Use ctx.req for utilities**: Access Moose utilities via `getMooseUtils(ctx.req)`
+1. **Await getMooseUtils()**: Call `await getMooseUtils()` with no arguments to access Moose utilities
 2. **Use ctx.throw()**: Koa's built-in error throwing for cleaner code
 3. **Leverage async/await**: Koa is designed for modern async patterns
 4. **Compose middleware**: Use `koa-compose` for reusable middleware chains
@@ -422,10 +398,9 @@ interface WebAppConfig {
 
 ### "Moose utilities not available"
 
-**Solution:** Use `ctx.req` not `ctx.request`:
+**Solution:** Ensure `getMooseUtils()` is called inside a request handler within a `WebApp`-mounted Koa app. The function detects the runtime context automatically and requires no arguments:
 ```ts
-const moose = getMooseUtils(ctx.req); // Correct
-const moose = getMooseUtils(ctx.request); // Wrong
+const { client, sql } = await getMooseUtils();
 ```
 
 ### Middleware order issues

@@ -5,6 +5,7 @@
 //! - we need to understand clickhouse configuration better before we can go deep on its configuration
 //!
 
+use crate::framework::core::infrastructure::select_row_policy::MOOSE_RLS_USER;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -45,6 +46,12 @@ pub struct ClickHouseConfig {
     /// Optional cluster configurations for ON CLUSTER support
     #[serde(default)]
     pub clusters: Option<Vec<ClusterConfig>>,
+    /// Username for the dedicated RLS ClickHouse use
+    #[serde(default)]
+    pub rls_user: Option<String>,
+    /// Password for the dedicated RLS ClickHouse user
+    #[serde(default)]
+    pub rls_password: Option<String>,
 }
 
 impl Default for ClickHouseConfig {
@@ -60,11 +67,23 @@ impl Default for ClickHouseConfig {
             host_data_path: None,
             additional_databases: Vec::new(),
             clusters: None,
+            rls_user: None,
+            rls_password: None,
         }
     }
 }
 
 impl ClickHouseConfig {
+    /// Effective RLS username: configured value or the default constant.
+    pub fn effective_rls_user(&self) -> &str {
+        self.rls_user.as_deref().unwrap_or(MOOSE_RLS_USER)
+    }
+
+    /// Effective RLS password: configured value or the main password.
+    pub fn effective_rls_password(&self) -> &str {
+        self.rls_password.as_deref().unwrap_or(&self.password)
+    }
+
     /// Returns a display-safe connection URL with the password masked for a specific database.
     pub fn display_url_for_database(&self, database: &str) -> String {
         let protocol = if self.use_ssl { "https" } else { "http" };
@@ -191,6 +210,8 @@ pub fn parse_clickhouse_connection_string_with_metadata(
         host_data_path: None,
         additional_databases: Vec::new(),
         clusters: None,
+        rls_user: None,
+        rls_password: None,
     };
 
     // Create display URL (HTTP(S) protocol with masked password)

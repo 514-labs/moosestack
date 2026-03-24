@@ -598,6 +598,9 @@ pub struct PartialInfrastructureMap {
     >,
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    #[serde(default)]
+    select_row_policies:
+        HashMap<String, crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -746,6 +749,7 @@ impl PartialInfrastructureMap {
             web_apps,
             materialized_views: self.materialized_views,
             views: self.views,
+            select_row_policies: self.select_row_policies,
             moose_version: None,
         };
 
