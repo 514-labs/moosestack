@@ -16,6 +16,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ClickHouseClient } from "@clickhouse/client";
 import type { JWTPayload } from "jose";
 
+// ---------------------------------------------------------------------------
+// Exported types & helpers for runner.ts
+// ---------------------------------------------------------------------------
+
 /**
  * Per-request context stored via AsyncLocalStorage.
  * Set by the runtime (runner.ts) before invoking WebApp handlers so that
@@ -48,6 +52,10 @@ export interface GetMooseUtilsOptions {
   rlsContext?: Record<string, string>;
 }
 
+// ---------------------------------------------------------------------------
+// RLS helpers
+// ---------------------------------------------------------------------------
+
 /**
  * Detect whether the argument is a legacy HTTP request object (old API).
  * Legacy callers passed an IncomingMessage or framework request which has
@@ -75,6 +83,10 @@ function getRowPoliciesConfigFromRegistry(): RowPoliciesConfig | undefined {
   return config;
 }
 
+// ---------------------------------------------------------------------------
+// Module-level cached state
+// ---------------------------------------------------------------------------
+
 // Cached utilities and initialization promise for standalone mode
 let standaloneUtils: MooseUtils | null = null;
 let initPromise: Promise<MooseUtils> | null = null;
@@ -93,6 +105,10 @@ const toClientConfig = (config: {
   ...config,
   useSSL: config.useSSL ? "true" : "false",
 });
+
+// ---------------------------------------------------------------------------
+// getMooseUtils — the main entry point
+// ---------------------------------------------------------------------------
 
 /**
  * Get Moose utilities for database access and SQL queries.
@@ -128,140 +144,172 @@ export async function getMooseUtils(
 
   // Check if running in Moose runtime
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
-
   if (runtimeContext) {
-    const reqCtx = requestContextStorage.getStore();
-    const jwt = reqCtx?.jwt ?? runtimeContext.jwt;
-
-    // Resolve row policy options:
-    //   1. Explicit rlsContext from caller (standalone users)
-    //   2. Pre-built RowPolicyOptions from runtime (WebApp path via AsyncLocalStorage)
-    let rowPolicyOpts: RowPolicyOptions | undefined;
-    if (options?.rlsContext) {
-      if (!runtimeContext.rowPoliciesConfig) {
-        throw new Error(
-          "rlsContext was provided but no row policies are configured. " +
-            "Define at least one SelectRowPolicy before using rlsContext.",
-        );
-      }
-      rowPolicyOpts = buildRowPolicyOptionsFromClaims(
-        runtimeContext.rowPoliciesConfig,
-        options.rlsContext,
-        "rlsContext",
-      );
-    } else {
-      rowPolicyOpts = reqCtx?.rowPolicyOpts;
-    }
-
-    if (rowPolicyOpts) {
-      const rlsClient =
-        runtimeContext.rlsClickhouseClient ?? runtimeContext.clickhouseClient;
-      const scopedQueryClient = new QueryClient(
-        rlsClient,
-        "rls-scoped",
-        rowPolicyOpts,
-      );
-      return {
-        client: new MooseClient(
-          scopedQueryClient,
-          runtimeContext.temporalClient,
-        ),
-        sql: sql,
-        jwt,
-      };
-    }
-    // No RLS — return the shared singleton
-    return {
-      client: runtimeContext.client,
-      sql: sql,
-      jwt,
-    };
+    return resolveRuntimeUtils(runtimeContext, options);
   }
 
-  // Standalone mode - initialize base client if needed
-  if (!standaloneUtils) {
-    if (!initPromise) {
-      initPromise = (async () => {
-        await import("../config/runtime");
-        const configRegistry = (globalThis as any)._mooseConfigRegistry;
-
-        if (!configRegistry) {
-          throw new Error(
-            "Moose not initialized. Ensure you're running within a Moose app " +
-              "or have proper configuration set up.",
-          );
-        }
-
-        const clickhouseConfig =
-          await configRegistry.getStandaloneClickhouseConfig();
-        standaloneClickhouseConfig = clickhouseConfig;
-
-        const clickhouseClient = getClickhouseClient(
-          toClientConfig(clickhouseConfig),
-        );
-        const queryClient = new QueryClient(clickhouseClient, "standalone");
-        const mooseClient = new MooseClient(queryClient);
-
-        standaloneUtils = {
-          client: mooseClient,
-          sql: sql,
-          jwt: undefined,
-        };
-        return standaloneUtils;
-      })();
-
-      try {
-        await initPromise;
-      } finally {
-        initPromise = null;
-      }
-    } else {
-      await initPromise;
-    }
-  }
+  // Standalone path — outside Moose (cron job, separate server, ad-hoc script)
+  await ensureStandaloneInit();
 
   if (options?.rlsContext) {
-    const rowPoliciesConfig = getRowPoliciesConfigFromRegistry();
-    if (!rowPoliciesConfig) {
+    return createStandaloneRlsUtils(options.rlsContext);
+  }
+
+  return standaloneUtils!;
+}
+
+// ---------------------------------------------------------------------------
+// Private: runtime path
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve MooseUtils when running inside the Moose runtime.
+ *
+ * RLS priority:
+ *   1. Explicit rlsContext from the caller
+ *   2. Pre-built RowPolicyOptions from the request (WebApp path via AsyncLocalStorage)
+ *   3. No RLS — return the shared singleton
+ */
+function resolveRuntimeUtils(
+  runtimeContext: any,
+  options?: GetMooseUtilsOptions,
+): MooseUtils {
+  const reqCtx = requestContextStorage.getStore();
+  const jwt = reqCtx?.jwt ?? runtimeContext.jwt;
+
+  let rowPolicyOpts: RowPolicyOptions | undefined;
+  if (options?.rlsContext) {
+    if (!runtimeContext.rowPoliciesConfig) {
       throw new Error(
-        "rlsContext was provided but no SelectRowPolicy primitives are registered. " +
+        "rlsContext was provided but no row policies are configured. " +
           "Define at least one SelectRowPolicy before using rlsContext.",
       );
     }
-
-    if (!standaloneRlsClient && standaloneClickhouseConfig) {
-      standaloneRlsClient = getClickhouseClient(
-        toClientConfig({
-          ...standaloneClickhouseConfig,
-          username: standaloneClickhouseConfig.rlsUser ?? MOOSE_RLS_USER,
-          password:
-            standaloneClickhouseConfig.rlsPassword ??
-            standaloneClickhouseConfig.password,
-        }),
-      );
-    }
-
-    const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
-      rowPoliciesConfig,
+    rowPolicyOpts = buildRowPolicyOptionsFromClaims(
+      runtimeContext.rowPoliciesConfig,
       options.rlsContext,
       "rlsContext",
     );
+  } else {
+    rowPolicyOpts = reqCtx?.rowPolicyOpts;
+  }
+
+  if (rowPolicyOpts) {
     const rlsClient =
-      standaloneRlsClient ?? standaloneUtils!.client.query.client;
+      runtimeContext.rlsClickhouseClient ?? runtimeContext.clickhouseClient;
     const scopedQueryClient = new QueryClient(
       rlsClient,
       "rls-scoped",
       rowPolicyOpts,
     );
     return {
-      client: new MooseClient(scopedQueryClient),
+      client: new MooseClient(scopedQueryClient, runtimeContext.temporalClient),
       sql: sql,
-      jwt: undefined,
+      jwt,
     };
   }
 
-  return standaloneUtils!;
+  // No RLS — return the shared singleton
+  return {
+    client: runtimeContext.client,
+    sql: sql,
+    jwt,
+  };
 }
+
+// ---------------------------------------------------------------------------
+// Private: standalone path
+// ---------------------------------------------------------------------------
+
+/** Lazy-initialize the standalone ClickHouse client (once). */
+async function ensureStandaloneInit(): Promise<void> {
+  if (standaloneUtils) return;
+
+  if (!initPromise) {
+    initPromise = (async () => {
+      await import("../config/runtime");
+      const configRegistry = (globalThis as any)._mooseConfigRegistry;
+
+      if (!configRegistry) {
+        throw new Error(
+          "Moose not initialized. Ensure you're running within a Moose app " +
+            "or have proper configuration set up.",
+        );
+      }
+
+      const clickhouseConfig =
+        await configRegistry.getStandaloneClickhouseConfig();
+      standaloneClickhouseConfig = clickhouseConfig;
+
+      const clickhouseClient = getClickhouseClient(
+        toClientConfig(clickhouseConfig),
+      );
+      const queryClient = new QueryClient(clickhouseClient, "standalone");
+      const mooseClient = new MooseClient(queryClient);
+
+      standaloneUtils = {
+        client: mooseClient,
+        sql: sql,
+        jwt: undefined,
+      };
+      return standaloneUtils;
+    })();
+
+    try {
+      await initPromise;
+    } finally {
+      initPromise = null;
+    }
+  } else {
+    await initPromise;
+  }
+}
+
+/** Build RLS-scoped MooseUtils for standalone mode. */
+function createStandaloneRlsUtils(
+  rlsContext: Record<string, string>,
+): MooseUtils {
+  const rowPoliciesConfig = getRowPoliciesConfigFromRegistry();
+  if (!rowPoliciesConfig) {
+    throw new Error(
+      "rlsContext was provided but no SelectRowPolicy primitives are registered. " +
+        "Define at least one SelectRowPolicy before using rlsContext.",
+    );
+  }
+
+  if (!standaloneRlsClient && standaloneClickhouseConfig) {
+    standaloneRlsClient = getClickhouseClient(
+      toClientConfig({
+        ...standaloneClickhouseConfig,
+        username: standaloneClickhouseConfig.rlsUser ?? MOOSE_RLS_USER,
+        password:
+          standaloneClickhouseConfig.rlsPassword ??
+          standaloneClickhouseConfig.password,
+      }),
+    );
+  }
+
+  const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
+    rowPoliciesConfig,
+    rlsContext,
+    "rlsContext",
+  );
+  const rlsClient = standaloneRlsClient ?? standaloneUtils!.client.query.client;
+  const scopedQueryClient = new QueryClient(
+    rlsClient,
+    "rls-scoped",
+    rowPolicyOpts,
+  );
+  return {
+    client: new MooseClient(scopedQueryClient),
+    sql: sql,
+    jwt: undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Deprecated
+// ---------------------------------------------------------------------------
 
 /**
  * @deprecated Use getMooseUtils() instead.

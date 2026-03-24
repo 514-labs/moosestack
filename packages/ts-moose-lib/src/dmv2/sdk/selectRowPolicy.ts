@@ -1,18 +1,26 @@
 import { OlapTable } from "./olapTable";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 
+/** Extract the row type from an OlapTable instance. */
+type RowOf<T> = T extends OlapTable<infer R> ? R : never;
+
 /**
  * Configuration for a SelectRowPolicy.
  *
  * Defines a ClickHouse row policy that filters rows based on a column value
  * matched against a JWT claim via `getSetting()`.
+ *
+ * The `column` field is type-checked against the columns shared by all
+ * tables — a typo will be caught at compile time.
  */
-export interface SelectRowPolicyConfig {
+export interface SelectRowPolicyConfig<
+  Tables extends readonly OlapTable<any>[] = readonly OlapTable<any>[],
+> {
   /** Tables the policy applies to. Policies propagate through regular Views automatically. */
-  tables: readonly OlapTable<any>[];
+  tables: readonly [...Tables];
 
-  /** Column to filter on (e.g., "org_id") */
-  column: string;
+  /** Column to filter on (e.g., "org_id"). Must exist in every table. */
+  column: keyof RowOf<Tables[number]> & string;
 
   /** JWT claim name that provides the filter value (e.g., "org_id") */
   claim: string;
@@ -33,7 +41,9 @@ export interface SelectRowPolicyConfig {
  * });
  * ```
  */
-export class SelectRowPolicy {
+export class SelectRowPolicy<
+  Tables extends readonly OlapTable<any>[] = readonly OlapTable<any>[],
+> {
   /** @internal */
   public readonly kind = "SelectRowPolicy";
 
@@ -41,9 +51,9 @@ export class SelectRowPolicy {
   readonly name: string;
 
   /** The policy configuration */
-  readonly config: Readonly<SelectRowPolicyConfig>;
+  readonly config: Readonly<SelectRowPolicyConfig<Tables>>;
 
-  constructor(name: string, config: SelectRowPolicyConfig) {
+  constructor(name: string, config: SelectRowPolicyConfig<Tables>) {
     if (!name.trim()) {
       throw new Error("SelectRowPolicy name must not be empty");
     }
@@ -60,7 +70,9 @@ export class SelectRowPolicy {
     this.name = name;
     this.config = Object.freeze({
       ...config,
-      tables: Object.freeze([...config.tables]),
+      tables: Object.freeze([...config.tables]) as unknown as readonly [
+        ...Tables,
+      ],
     });
 
     const selectRowPolicies = getMooseInternal().selectRowPolicies;

@@ -1635,22 +1635,31 @@ async fn execute_raw_sql(
     Ok(())
 }
 
-/// Execute a CREATE ROW POLICY operation with runtime RLS bootstrap.
-///
-/// Bootstraps the RLS infrastructure (role, user, grants) using the password
-/// from the client config, then creates the row policy per table.
-/// All bootstrap statements are idempotent (IF NOT EXISTS / IF EXISTS).
-async fn execute_create_row_policy(
-    db_name: &str,
-    policy: &SelectRowPolicy,
-    client: &ConfiguredDBClient,
+/// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
+/// matches the current config. Runs once per startup when any row policies are configured,
+/// regardless of whether the policies themselves changed.
+pub async fn rls_bootstrap(
+    project: &Project,
+    desired_policies: &[SelectRowPolicy],
 ) -> Result<(), ClickhouseChangesError> {
-    let databases = policy.resolved_databases(db_name);
+    let client = create_client(project.clickhouse_config.clone());
+    check_ready(&client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: None,
+        })?;
+    let db_name = &project.clickhouse_config.db_name;
     let rls_user = client.config.effective_rls_user();
     let escaped_rls_user = rls_user.replace('`', "``");
     let escaped_password = client.config.effective_rls_password().replace('\'', "''");
 
-    // Bootstrap: role + user (ALTER ensures password stays in sync if rotated)
+    tracing::info!(
+        "Running RLS bootstrap for {} policies",
+        desired_policies.len()
+    );
+
+    // 1. Role + user (ALTER ensures password stays in sync if rotated)
     let bootstrap_sqls = vec![
         format!("CREATE ROLE IF NOT EXISTS `{MOOSE_RLS_ROLE}`"),
         format!(
@@ -1660,7 +1669,7 @@ async fn execute_create_row_policy(
     ];
     for sql in &bootstrap_sqls {
         tracing::debug!("RLS bootstrap: {}", sql);
-        run_query(sql, client)
+        run_query(sql, &client)
             .await
             .map_err(|e| ClickhouseChangesError::ClickhouseClient {
                 error: e,
@@ -1668,12 +1677,18 @@ async fn execute_create_row_policy(
             })?;
     }
 
-    // Grant SELECT on each relevant database
-    for db in &databases {
+    // 2. Collect all databases that have policies and grant SELECT
+    let mut all_databases: HashSet<String> = HashSet::new();
+    for policy in desired_policies {
+        for db in policy.resolved_databases(db_name) {
+            all_databases.insert(db);
+        }
+    }
+    for db in &all_databases {
         let escaped_db = db.replace('`', "``");
         let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO `{escaped_rls_user}`");
         tracing::debug!("RLS grant: {}", grant_sql);
-        run_query(&grant_sql, client).await.map_err(|e| {
+        run_query(&grant_sql, &client).await.map_err(|e| {
             ClickhouseChangesError::ClickhouseClient {
                 error: e,
                 resource: Some(format!("rls-grant:{db}")),
@@ -1681,16 +1696,51 @@ async fn execute_create_row_policy(
         })?;
     }
 
-    // Grant role to user
+    // 3. Grant role to user
     let grant_role_sql = format!("GRANT `{MOOSE_RLS_ROLE}` TO `{escaped_rls_user}`");
-    run_query(&grant_role_sql, client).await.map_err(|e| {
+    run_query(&grant_role_sql, &client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
             resource: Some("rls-grant-role".to_string()),
         }
     })?;
 
-    // Create row policy per table
+    // 4. Re-point all policies to the current role name, in case it changed.
+    for policy in desired_policies {
+        let escaped_name = policy.name.replace('`', "``");
+        for table_ref in &policy.tables {
+            let db = table_ref.database.as_deref().unwrap_or(db_name);
+            let escaped_db = db.replace('`', "``");
+            let escaped_table = table_ref.name.replace('`', "``");
+            let sql = format!(
+                "ALTER ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}` TO `{MOOSE_RLS_ROLE}`",
+                name = escaped_name,
+                table = escaped_table,
+                db = escaped_db,
+            );
+            tracing::debug!("RLS ensure policy targeting: {}", sql);
+            run_query(&sql, &client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!(
+                        "rls-alter-policy:{}:{}",
+                        policy.name, table_ref.name
+                    )),
+                }
+            })?;
+        }
+    }
+
+    tracing::info!("RLS bootstrap complete");
+    Ok(())
+}
+
+/// Execute a CREATE ROW POLICY operation (for new or changed policies only).
+async fn execute_create_row_policy(
+    db_name: &str,
+    policy: &SelectRowPolicy,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
     let escaped_name = policy.name.replace('`', "``");
     for table_ref in &policy.tables {
         let db = table_ref.database.as_deref().unwrap_or(db_name);

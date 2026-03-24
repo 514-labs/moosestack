@@ -171,6 +171,17 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
+/// matches the current config. Separated from `execute_changes` because RLS bootstrap
+/// must run on every startup regardless of whether OLAP schema changed.
+pub async fn bootstrap_rls(
+    project: &Project,
+    desired_row_policies: &[SelectRowPolicy],
+) -> Result<(), OlapChangesError> {
+    clickhouse::rls_bootstrap(project, desired_row_policies).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     // Filtering logic is tested in:
