@@ -117,8 +117,11 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
         }
 
         for table_ref in &policy.tables {
+            let default_db = plan.target_infra_map.default_database.as_str();
             let table = plan.target_infra_map.tables.values().find(|t| {
-                t.name == table_ref.name && t.database.as_deref() == table_ref.database.as_deref()
+                t.name == table_ref.name
+                    && t.database.as_deref().unwrap_or(default_db)
+                        == table_ref.database.as_deref().unwrap_or(default_db)
             });
 
             let table_display = match &table_ref.database {
