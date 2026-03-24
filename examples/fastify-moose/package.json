@@ -15,7 +15,7 @@
     "moose": "pnpm -C moose run moose",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "node --env-file=.env src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm build:moose:types && tsc --noEmit"
   },
   "dependencies": {
     "moose": "workspace:*",
@@ -34,6 +34,10 @@
   "pnpm": {
     "overrides": {
       "tar": "7.5.7"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
   }
 }

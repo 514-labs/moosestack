@@ -298,7 +298,27 @@ class JsonTest(BaseModel):
     payload_basic: Annotated[JsonInner, ClickHouseJson()]
 
 
+# =======Dict JSON Types Test (ClickHouseJson with dict[str, Any])=========
+class DictJsonTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    # Test ClickHouseJson options with dict[str, Any] (no BaseModel wrapper needed)
+    payload: Annotated[
+        dict[str, Any],
+        ClickHouseJson(max_dynamic_paths=16, max_dynamic_types=8),
+    ]
+    # Bare dict[str, Any] should remain plain Json
+    plain_dict: dict[str, Any]
+
+
 # =======Pipeline Configurations for Test Models=========
+
+dict_json_test_model = IngestPipeline[DictJsonTest](
+    "DictJsonTest",
+    IngestPipelineConfig(
+        ingest_api=True, stream=True, table=True, dead_letter_queue=True
+    ),
+)
 
 basic_types_model = IngestPipeline[BasicTypes](
     "BasicTypes",

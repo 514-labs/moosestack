@@ -2,7 +2,7 @@
 
 This template provides a complete example of building AI-powered chat-over-data applications with MooseStack and the Model Context Protocol (MCP).
 
-This README covers the **quickstart** — getting the template running locally. For a full guided walkthrough including data modeling, loading data from S3, customizing the frontend, and deploying to production, see the [Chat in Your App Tutorial](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
+This README covers the **quickstart** — getting the template running locally. For a full guided walkthrough including data modeling, loading data from S3, customizing the frontend, and deploying to production, see the [Chat in Your App Guide](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
 
 ## Overview
 
@@ -25,6 +25,12 @@ MooseStack Service (Tools -> MCP Server -> ClickHouse)
 - [Anthropic API key](https://console.anthropic.com/)
 
 ## Getting Started
+
+Install MooseStack (and optionally the 514-hosting) CLIs:
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
+```
 
 Initiate your project:
 
@@ -74,7 +80,24 @@ pnpm dev:moose    # Start MooseStack service only
 pnpm dev:web      # Start web app only
 ```
 
-Access the application at `http://localhost:3000`. Click the chat icon in the bottom-right corner to open the chat panel.
+`pnpm dev:moose` loads the MooseStack Development Server and MooseDev MCP.
+
+Access the application at `http://localhost:3000`. Click the chat icon in the bottom-right corner to open the chat panel. This generates an empty template application, if you want to customize the application or chat tools, see [Chat in Your App Guide](https://docs.fiveonefour.com/guides/chat-in-your-app/tutorial).
+
+If you want to use MooseStack skills, bootstrap them with:
+
+```bash
+514 agent init
+```
+
+This installs the following skills:
+
+- **ClickHouse Best Practices** — Schema design, query optimization, and insert strategy rules with MooseStack-specific examples
+- **514 CLI** — Interact with the 514 platform (login, link project, check deployments, browse docs)
+- **514 Debug** — Debug 514 deployments (check status, tail logs, find slow queries, run diagnostics)
+- **514 Perf Optimize** — Guided ClickHouse performance optimization workflow with benchmarking
+
+If you start your copilot now, you will have the MooseStack Skills, LSP, and MCPs up and running.
 
 ### Local Development Ports
 
@@ -98,11 +121,7 @@ This template ships with an agent harness — a set of tools that give your AI c
 - **[Context7](https://github.com/upstash/context7)** — serves up-to-date MooseStack documentation to your copilot
 - **[ClickHouse Best Practices Skill](https://github.com/514-labs/agent-skills)** — optimized query and schema guidance for ClickHouse
 
-The MCP servers are pre-configured in `.mcp.json` and most AI copilots (Claude Code, Cursor, etc.) pick them up automatically. To install the skill:
-
-```bash
-514 agent init
-```
+The MCP servers are pre-configured in `.mcp.json` and most AI copilots (Claude Code, Cursor, etc.) pick them up automatically.
 
 ## Next Steps
 
