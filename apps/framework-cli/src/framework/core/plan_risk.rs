@@ -626,7 +626,8 @@ pub async fn rename_confirmation_gate(
         )));
     }
 
-    let mut confirmed: HashMap<String, Vec<DetectedColumnRename>> = HashMap::new();
+    let mut confirmed: HashMap<(Option<String>, String), Vec<DetectedColumnRename>> =
+        HashMap::new();
     let mut approved_drops: HashSet<ApprovedColumnDrop> = HashSet::new();
     let mut prompt_idx = 0usize;
 
@@ -651,7 +652,10 @@ pub async fn rename_confirmation_gate(
             match input.trim().to_lowercase().as_str() {
                 "y" | "yes" => {
                     confirmed
-                        .entry(table_renames.table_name.clone())
+                        .entry((
+                            table_renames.database.clone(),
+                            table_renames.table_name.clone(),
+                        ))
                         .or_default()
                         .push(rename.clone());
                 }
@@ -682,10 +686,12 @@ pub async fn rename_confirmation_gate(
         if let OlapChange::Table(TableChange::Updated {
             name,
             column_changes,
+            before,
             ..
         }) = change
         {
-            if let Some(renames) = confirmed.get(name.as_str()) {
+            let key = (before.database.clone(), name.clone());
+            if let Some(renames) = confirmed.get(&key) {
                 let taken = std::mem::take(column_changes);
                 *column_changes = apply_detected_renames(taken, renames);
             }
@@ -697,19 +703,26 @@ pub async fn rename_confirmation_gate(
 
 /// Applies all pending renames (used by the auto-approve path).
 fn apply_all_pending_renames(changes: &mut InfraChanges, pending: &[PendingTableRenames]) {
-    let by_table: HashMap<&str, Vec<&DetectedColumnRename>> = pending
+    let by_table: HashMap<(Option<&str>, &str), Vec<&DetectedColumnRename>> = pending
         .iter()
-        .map(|t| (t.table_name.as_str(), t.renames.iter().collect::<Vec<_>>()))
+        .map(|t| {
+            (
+                (t.database.as_deref(), t.table_name.as_str()),
+                t.renames.iter().collect::<Vec<_>>(),
+            )
+        })
         .collect();
 
     for change in &mut changes.olap_changes {
         if let OlapChange::Table(TableChange::Updated {
             name,
             column_changes,
+            before,
             ..
         }) = change
         {
-            if let Some(renames) = by_table.get(name.as_str()) {
+            let key = (before.database.as_deref(), name.as_str());
+            if let Some(renames) = by_table.get(&key) {
                 let owned: Vec<DetectedColumnRename> =
                     renames.iter().map(|r| (*r).clone()).collect();
                 let taken = std::mem::take(column_changes);
