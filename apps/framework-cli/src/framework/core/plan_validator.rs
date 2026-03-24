@@ -78,6 +78,8 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
     let mut column_claims: std::collections::HashMap<&str, (&str, &str)> =
         std::collections::HashMap::new();
 
+    let default_database = &plan.target_infra_map.default_database;
+
     for policy in plan.target_infra_map.select_row_policies.values() {
         if policy.tables.is_empty() {
             return Err(ValidationError::RowPolicyValidation(format!(
@@ -118,7 +120,9 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
 
         for table_ref in &policy.tables {
             let table = plan.target_infra_map.tables.values().find(|t| {
-                t.name == table_ref.name && t.database.as_deref() == table_ref.database.as_deref()
+                let table_db = t.database.as_deref().unwrap_or(default_database);
+                let ref_db = table_ref.database.as_deref().unwrap_or(default_database);
+                t.name == table_ref.name && table_db == ref_db
             });
 
             let table_display = match &table_ref.database {
