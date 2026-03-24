@@ -1668,7 +1668,6 @@ pub async fn rls_bootstrap(
         format!("ALTER USER `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"),
     ];
     for sql in &bootstrap_sqls {
-        tracing::debug!("RLS bootstrap: {}", sql);
         run_query(sql, &client)
             .await
             .map_err(|e| ClickhouseChangesError::ClickhouseClient {
