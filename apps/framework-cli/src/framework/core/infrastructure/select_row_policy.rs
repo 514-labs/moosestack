@@ -42,6 +42,11 @@ impl SelectRowPolicy {
         format!("{}{}", MOOSE_RLS_SETTING_PREFIX, self.column)
     }
 
+    /// Returns `(setting_name, claim)` for passing to the consumption runner CLI.
+    pub fn to_cli_config(&self) -> (String, String) {
+        (self.setting_name(), self.claim.clone())
+    }
+
     /// USING expression for the row policy DDL.
     /// Backtick-quotes the column identifier to handle reserved words and special characters.
     pub fn using_expr(&self) -> String {

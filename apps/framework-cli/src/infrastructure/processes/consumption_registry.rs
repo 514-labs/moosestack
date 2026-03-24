@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tracing::{info, instrument};
@@ -5,7 +6,10 @@ use tracing::{info, instrument};
 use crate::cli::logger::{context, resource_type};
 use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
-    framework::{languages::SupportedLanguages, python, typescript},
+    framework::{
+        core::infrastructure::select_row_policy::SelectRowPolicy, languages::SupportedLanguages,
+        python, typescript,
+    },
     infrastructure::olap::clickhouse::config::ClickHouseConfig,
     project::{JwtConfig, Project, ProjectFileError},
     utilities::system::KillProcessError,
@@ -32,9 +36,7 @@ pub struct ConsumptionProcessRegistry {
     jwt_config: Option<JwtConfig>,
     project: Project,
     proxy_port: Option<u16>,
-    /// Mapping of JWT claim name → ClickHouse column name for row policies.
-    /// When non-empty, passed as `--row-policies` JSON to the TS runner.
-    row_policies_config: std::collections::HashMap<String, String>,
+    row_policies: Vec<SelectRowPolicy>,
 }
 
 impl ConsumptionProcessRegistry {
@@ -45,7 +47,6 @@ impl ConsumptionProcessRegistry {
         project_path: PathBuf,
         project: Project,
         proxy_port: Option<u16>,
-        row_policies_config: std::collections::HashMap<String, String>,
     ) -> Self {
         let proxy_port = proxy_port.or(Some(project.http_server_config.proxy_port));
         Self {
@@ -56,7 +57,7 @@ impl ConsumptionProcessRegistry {
             jwt_config,
             project,
             proxy_port,
-            row_policies_config,
+            row_policies: Vec::new(),
         }
     }
 
@@ -89,7 +90,11 @@ impl ConsumptionProcessRegistry {
             }),
             SupportedLanguages::Typescript => {
                 let project_path = self.project_path.clone();
-                let row_policies_config = self.row_policies_config.clone();
+                let row_policies_config: HashMap<String, String> = self
+                    .row_policies
+                    .iter()
+                    .map(|p| p.to_cli_config())
+                    .collect();
                 Box::new(move || {
                     typescript::consumption::run(
                         &project,
@@ -111,6 +116,10 @@ impl ConsumptionProcessRegistry {
         )?);
 
         Ok(())
+    }
+
+    pub fn update_row_policies(&mut self, policies: Vec<SelectRowPolicy>) {
+        self.row_policies = policies;
     }
 
     pub async fn stop(&mut self) -> Result<(), ConsumptionError> {

@@ -52,7 +52,7 @@ Row-Level Security is currently available in TypeScript only. Python support is 
 |:----------|:-----|:------------|
 | `name` | `string` | Unique name for the policy (used in ClickHouse DDL) |
 | `tables` | `OlapTable[]` | Tables the policy applies to |
-| `column` | `string` | Column to filter on (must exist on every listed table) |
+| `column` | `keyof` table row | Column to filter on (type-checked against the listed tables) |
 | `claim` | `string` | JWT claim name whose value is compared against the column |
 
 ### Generated DDL
@@ -61,7 +61,8 @@ For the example above, Moose generates:
 
 ```sql
 CREATE ROLE IF NOT EXISTS moose_rls_role;
-GRANT moose_rls_role TO `<clickhouse_user>`;
+CREATE USER IF NOT EXISTS moose_rls_user IDENTIFIED BY '...';
+GRANT moose_rls_role TO moose_rls_user;
 
 CREATE ROW POLICY IF NOT EXISTS `tenant_isolation_on_Orders`
   ON `local`.`Orders`
@@ -107,9 +108,9 @@ export const ordersApi = new Api<QueryParams, OrderRow[]>(
 );
 ```
 
-### Standalone / Server-Side
+### Bring Your Own API Framework
 
-When using `getMooseUtils()` outside of an API handler (e.g., in a WebApp or standalone script), pass `rlsContext` to scope queries:
+When using `getMooseUtils()` outside of a Moose API handler (e.g., in a WebApp), pass `rlsContext` to scope queries.
 
 ```ts filename="app/server.ts" copy
 import { getMooseUtils } from "@514labs/moose-lib";
@@ -125,13 +126,14 @@ const result = await client.query.execute(
 );
 ```
 
+See [Bring Your Own Framework](/moosestack/app-api-frameworks) for examples.
+
 ## Build-Time Validation
 
 Moose validates row policies at build time:
 
-- **Table existence**: Every table in `tables` must be a defined Moose primitive in the default database
+- **Table existence**: Every table in `tables` must be a defined Moose primitive
 - **Column existence**: The `column` must exist on every listed table
-- **Column name validity**: Only ASCII alphanumeric characters and underscores are allowed
 - **Claim consistency**: If multiple policies filter on the same column, they must map to the same JWT claim
 
 Validation errors are reported before any DDL is executed.
