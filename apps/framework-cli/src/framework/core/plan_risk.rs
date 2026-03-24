@@ -328,8 +328,15 @@ pub async fn destructive_confirmation_gate(
     }
 
     let accepted = if stdout().is_terminal() {
-        match pinned_prompt(risk.destructive_changes.len()).await {
-            Ok(result) => result,
+        let text = format!(
+            " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
+            risk.destructive_changes.len()
+        );
+        match PinnedSession::start() {
+            Ok(mut session) => {
+                let input = session.prompt(&text).await.unwrap_or_default();
+                matches!(input.as_str(), "y" | "yes")
+            }
             Err(_) => plain_prompt().await?,
         }
     } else {
@@ -337,6 +344,16 @@ pub async fn destructive_confirmation_gate(
     };
 
     if accepted {
+        show_message!(
+            MessageType::Success,
+            Message::new(
+                "Accepted".to_string(),
+                format!(
+                    "Proceeding with {} destructive change(s).",
+                    risk.destructive_changes.len()
+                )
+            )
+        );
         Ok(true)
     } else {
         show_message!(
@@ -359,161 +376,160 @@ async fn plain_prompt() -> Result<bool, RoutineFailure> {
 // ---------------------------------------------------------------------------
 // Pinned terminal prompt (scroll-region based, no raw mode)
 // ---------------------------------------------------------------------------
+//
+// `PinnedSession` reserves the bottom 3 rows of the terminal for an
+// interactive prompt while log output scrolls above in a confined scroll
+// region. The session can issue multiple sequential prompts (e.g. one per
+// detected rename) without tearing down / rebuilding the scroll region.
 
 const PINNED_PROMPT_LINES: u16 = 3;
 const PROMPT_REDRAW_INTERVAL: Duration = Duration::from_millis(500);
 
-/// RAII guard that restores the scroll region on drop.
-struct ScrollRegionGuard {
-    original_rows: u16,
+/// Manages a scroll-region-based pinned prompt area at the terminal bottom.
+///
+/// Create via [`PinnedSession::start`], then call [`prompt`](PinnedSession::prompt)
+/// one or more times. The scroll region is restored when the session is dropped.
+struct PinnedSession {
+    current_rows: u16,
+    current_text: String,
+    lines: tokio::io::Lines<tokio::io::BufReader<tokio::io::Stdin>>,
 }
 
-impl Drop for ScrollRegionGuard {
+impl PinnedSession {
+    /// Sets up the scroll region and returns a ready session.
+    fn start() -> std::io::Result<Self> {
+        let (_cols, current_rows) = terminal::size()?;
+
+        {
+            let _lock = terminal_lock::acquire();
+            for _ in 0..PINNED_PROMPT_LINES + 1 {
+                execute!(stdout(), Print("\n"))?;
+            }
+            apply_scroll_region(current_rows)?;
+            let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+            terminal_lock::set_scroll_region_bottom(scroll_bottom);
+        }
+
+        let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+        Ok(Self {
+            current_rows,
+            current_text: String::new(),
+            lines: stdin.lines(),
+        })
+    }
+
+    /// Displays `text` in the pinned area and waits for one line of input.
+    ///
+    /// The text should be a single line (long lines will be truncated by the
+    /// terminal). Returns the trimmed, lowercased user input, or an empty
+    /// string on EOF.
+    async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
+        self.current_text = text.to_string();
+        self.draw_full()?;
+        self.park_cursor()?;
+
+        loop {
+            tokio::select! {
+                line = self.lines.next_line() => {
+                    return Ok(line
+                        .ok()
+                        .flatten()
+                        .map(|s| s.trim().to_lowercase())
+                        .unwrap_or_default());
+                }
+                _ = tokio::time::sleep(PROMPT_REDRAW_INTERVAL) => {
+                    let actual = terminal::size().map(|(_, r)| r).unwrap_or(self.current_rows);
+                    if actual != self.current_rows {
+                        self.reconcile_resize(actual)?;
+                    } else {
+                        self.draw_text()?;
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_text(&self) -> std::io::Result<()> {
+        let start = self.current_rows.saturating_sub(PINNED_PROMPT_LINES);
+        let cols = terminal::size().map(|(c, _)| c).unwrap_or(50) as usize;
+        let separator = "─".repeat(cols);
+
+        let _lock = terminal_lock::acquire();
+        execute!(
+            stdout(),
+            crossterm::terminal::BeginSynchronizedUpdate,
+            crossterm::cursor::SavePosition,
+            MoveTo(0, start),
+            Clear(ClearType::CurrentLine),
+            Print(format!("\x1b[90m{separator}\x1b[0m")),
+            MoveTo(0, start + 1),
+            Clear(ClearType::CurrentLine),
+            Print(&self.current_text),
+            crossterm::cursor::RestorePosition,
+            crossterm::terminal::EndSynchronizedUpdate,
+        )?;
+        stdout().flush()
+    }
+
+    fn draw_full(&self) -> std::io::Result<()> {
+        self.draw_text()?;
+        let input_row = self.current_rows.saturating_sub(1);
+        let _lock = terminal_lock::acquire();
+        execute!(
+            stdout(),
+            MoveTo(0, input_row),
+            Clear(ClearType::CurrentLine),
+            Print(" > "),
+        )?;
+        stdout().flush()
+    }
+
+    fn park_cursor(&self) -> std::io::Result<()> {
+        let _lock = terminal_lock::acquire();
+        let prompt_row = self.current_rows.saturating_sub(1);
+        execute!(stdout(), MoveTo(3, prompt_row))?;
+        stdout().flush()
+    }
+
+    fn reconcile_resize(&mut self, new_rows: u16) -> std::io::Result<()> {
+        let old_rows = self.current_rows;
+        self.current_rows = new_rows;
+
+        let _lock = terminal_lock::acquire();
+        let old_start = old_rows.saturating_sub(PINNED_PROMPT_LINES);
+        for row in old_start..old_rows {
+            let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
+        }
+        apply_scroll_region(new_rows)?;
+        let scroll_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
+        terminal_lock::set_scroll_region_bottom(scroll_bottom);
+        drop(_lock);
+
+        self.draw_full()?;
+        self.park_cursor()
+    }
+}
+
+impl Drop for PinnedSession {
     fn drop(&mut self) {
         let _lock = terminal_lock::acquire();
         terminal_lock::clear_scroll_region_bottom();
         let rows = terminal::size()
             .map(|(_, r)| r)
-            .unwrap_or(self.original_rows);
+            .unwrap_or(self.current_rows);
         let start = rows.saturating_sub(PINNED_PROMPT_LINES);
         for row in start..rows {
             let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
         }
-        let _ = write!(stdout(), "\x1b[1;{}r", rows); // reset scroll region to whole screen
+        let _ = write!(stdout(), "\x1b[1;{}r", rows);
         let _ = execute!(stdout(), MoveTo(0, start));
         let _ = stdout().flush();
-    }
-}
-
-/// Displays a pinned prompt at the bottom of the terminal while log output
-/// scrolls above it, and waits for line-based input (y/yes + Enter).
-///
-/// Uses an ANSI scroll region to confine normal output to the upper portion
-/// of the terminal. The bottom [`PINNED_PROMPT_LINES`] rows are reserved for
-/// the prompt and redrawn periodically to stay visible.
-async fn pinned_prompt(change_count: usize) -> std::io::Result<bool> {
-    let (_cols, mut current_rows) = terminal::size()?;
-
-    let _guard = ScrollRegionGuard {
-        original_rows: current_rows,
-    };
-
-    {
-        let _lock = terminal_lock::acquire();
-        for _ in 0..PINNED_PROMPT_LINES + 1 {
-            execute!(stdout(), Print("\n"))?;
-        }
-        apply_scroll_region(current_rows)?;
-        let scroll_bottom = current_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-        terminal_lock::set_scroll_region_bottom(scroll_bottom);
-    }
-
-    draw_pinned_prompt_full(current_rows, change_count)?;
-    park_cursor(current_rows)?;
-
-    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut lines = stdin.lines();
-
-    loop {
-        tokio::select! {
-            line = lines.next_line() => {
-                match line {
-                    Ok(Some(input)) => {
-                        return Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"));
-                    }
-                    Ok(None) | Err(_) => return Ok(false),
-                }
-            }
-            _ = tokio::time::sleep(PROMPT_REDRAW_INTERVAL) => {
-                let actual_rows = terminal::size().map(|(_, r)| r).unwrap_or(current_rows);
-                if actual_rows != current_rows {
-                    reconcile_resize(&mut current_rows, actual_rows, change_count)?;
-                } else {
-                    draw_pinned_prompt(current_rows, change_count)?;
-                }
-            }
-        }
     }
 }
 
 fn apply_scroll_region(rows: u16) -> std::io::Result<()> {
     let scroll_bottom = rows.saturating_sub(PINNED_PROMPT_LINES + 1);
     write!(stdout(), "\x1b[1;{}r", scroll_bottom + 1)?;
-    stdout().flush()
-}
-
-/// Parks the cursor at the ` > ` input line so the user's typed text
-/// echoes there. Log output is redirected into the scroll region by
-/// `write_styled_line` via the global scroll-region marker.
-fn park_cursor(rows: u16) -> std::io::Result<()> {
-    let _lock = terminal_lock::acquire();
-    let prompt_row = rows.saturating_sub(1);
-    execute!(stdout(), MoveTo(3, prompt_row))?;
-    stdout().flush()
-}
-
-fn reconcile_resize(
-    current_rows: &mut u16,
-    new_rows: u16,
-    change_count: usize,
-) -> std::io::Result<()> {
-    let old_rows = *current_rows;
-    *current_rows = new_rows;
-
-    let _lock = terminal_lock::acquire();
-    let old_start = old_rows.saturating_sub(PINNED_PROMPT_LINES);
-    for row in old_start..old_rows {
-        let _ = execute!(stdout(), MoveTo(0, row), Clear(ClearType::CurrentLine));
-    }
-    apply_scroll_region(new_rows)?;
-    let scroll_bottom = new_rows.saturating_sub(PINNED_PROMPT_LINES + 1);
-    terminal_lock::set_scroll_region_bottom(scroll_bottom);
-    drop(_lock);
-
-    draw_pinned_prompt_full(new_rows, change_count)?;
-    park_cursor(new_rows)
-}
-
-/// Redraws the separator and prompt text but NOT the ` > ` input line,
-/// so the user's in-progress typing is preserved.
-fn draw_pinned_prompt(rows: u16, change_count: usize) -> std::io::Result<()> {
-    let start = rows.saturating_sub(PINNED_PROMPT_LINES);
-    let cols = terminal::size().map(|(c, _)| c).unwrap_or(50) as usize;
-    let separator = "─".repeat(cols);
-    let prompt_text = format!(
-        " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
-        change_count
-    );
-
-    let _lock = terminal_lock::acquire();
-    execute!(
-        stdout(),
-        crossterm::terminal::BeginSynchronizedUpdate,
-        crossterm::cursor::SavePosition,
-        MoveTo(0, start),
-        Clear(ClearType::CurrentLine),
-        Print(format!("\x1b[90m{separator}\x1b[0m")),
-        MoveTo(0, start + 1),
-        Clear(ClearType::CurrentLine),
-        Print(&prompt_text),
-        crossterm::cursor::RestorePosition,
-        crossterm::terminal::EndSynchronizedUpdate,
-    )?;
-    stdout().flush()
-}
-
-/// Draws the full prompt area including the ` > ` input line.
-/// Used only on initial setup and after terminal resize.
-fn draw_pinned_prompt_full(rows: u16, change_count: usize) -> std::io::Result<()> {
-    draw_pinned_prompt(rows, change_count)?;
-    let input_row = rows.saturating_sub(1);
-    let _lock = terminal_lock::acquire();
-    execute!(
-        stdout(),
-        MoveTo(0, input_row),
-        Clear(ClearType::CurrentLine),
-        Print(" > "),
-    )?;
     stdout().flush()
 }
 
@@ -549,8 +565,7 @@ impl fmt::Display for PendingRenameDisplay<'_> {
             "`{}` → `{}` in ",
             self.rename.before.name, self.rename.after.name
         )?;
-        fmt_qualified(f, self.database, self.table_name)?;
-        write!(f, " (confidence: {:.0}%)", self.rename.confidence * 100.0)
+        fmt_qualified(f, self.database, self.table_name)
     }
 }
 
@@ -626,6 +641,13 @@ pub async fn rename_confirmation_gate(
         )));
     }
 
+    let use_pinned = stdout().is_terminal();
+    let mut session = if use_pinned {
+        PinnedSession::start().ok()
+    } else {
+        None
+    };
+
     let mut confirmed: HashMap<String, Vec<DetectedColumnRename>> = HashMap::new();
     let mut approved_drops: HashSet<ApprovedColumnDrop> = HashSet::new();
     let mut prompt_idx = 0usize;
@@ -638,24 +660,42 @@ pub async fn rename_confirmation_gate(
                 table_name: &table_renames.table_name,
                 rename,
             };
-            let prompt = format!(
-                "Rename detected ({}/{}): {}\n  \
-                 [y] Yes, rename the column\n  \
-                 [n] No, drop + recreate instead\n  \
-                 [c] Cancel this change cycle",
-                prompt_idx, total, display,
-            );
 
-            let input = prompt_user_async(&prompt, Some("y"), None).await?;
+            let input = if let Some(ref mut s) = session {
+                let text = format!(
+                    " Rename ({prompt_idx}/{total}): {display}  \x1b[1my\x1b[0m=rename  \x1b[1mn\x1b[0m=drop+create  \x1b[1mc\x1b[0m=cancel"
+                );
+                s.prompt(&text).await.unwrap_or_default()
+            } else {
+                let text = format!(
+                    "Rename detected ({}/{}): {}\n  \
+                     [y] Yes, rename the column\n  \
+                     [n] No, drop + recreate instead\n  \
+                     [c] Cancel this change cycle",
+                    prompt_idx, total, display,
+                );
+                prompt_user_async(&text, Some("y"), None).await?
+            };
 
-            match input.trim().to_lowercase().as_str() {
-                "y" | "yes" => {
+            match input.as_str() {
+                "" | "y" | "yes" => {
+                    show_message!(
+                        MessageType::Success,
+                        Message::new("Rename".to_string(), format!("Accepted: {display}"),)
+                    );
                     confirmed
                         .entry(table_renames.table_name.clone())
                         .or_default()
                         .push(rename.clone());
                 }
                 "n" | "no" => {
+                    show_message!(
+                        MessageType::Warning,
+                        Message::new(
+                            "Drop+Create".to_string(),
+                            format!("Rejected rename: {display}"),
+                        )
+                    );
                     approved_drops.insert(ApprovedColumnDrop {
                         database: table_renames.database.clone(),
                         table_name: table_renames.table_name.clone(),
@@ -663,6 +703,7 @@ pub async fn rename_confirmation_gate(
                     });
                 }
                 _ => {
+                    drop(session);
                     show_message!(
                         MessageType::Warning,
                         Message::new(
