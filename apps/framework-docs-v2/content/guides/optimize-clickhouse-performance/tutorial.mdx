@@ -1,6 +1,6 @@
 ---
 title: Optimizing ClickHouse Performance with AI
-description: Profile a slow query, validate the optimization in preview, and review the benchmark evidence plus migration plan before merge.
+description: Profile a slow query, compare optimized and baseline preview databases, and review the benchmark evidence plus migration plan before merge.
 languages: ["typescript"]
 ---
 
@@ -9,14 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 # Optimizing ClickHouse Performance with AI
 
-**Setup** points the CLI, auth, and repo link at the right Fiveonefour project. **Optimization workflow** runs the agent harness: profile, preview, PR with proof. **PR review** is where you decide if the evidence and `migrations/plan.yaml` are good enough to ship.
+Use this guide when a ClickHouse query is slow and you want the `514` agent harness to run an end to end optimization workflow. The agent does the heavy lifting: it profiles the query, creates two preview databases forked from production, applies the optimization to one of them, runs the benchmark, and prepares the PR artifacts for review. Because both preview databases start from the same production slice, you can run the same benchmark against both and make a fair comparison.
 
-You may approve raw `514 clickhouse query` during the run. Before merge, review benchmark artifacts and `migrations/plan.yaml`, not only the agent summary.
+Your role is to make sure the CLI and agent harness are set up in your environment, then review the agent's work at the end. The harness gives you the two artifacts that matter for that review: a baseline preview fork and an optimized preview fork for rerunning the benchmark, and a reviewable `migrations/plan.yaml` so you can confirm the schema change is safe to merge and will not accidentally drop data.
 
 <Callout type="info" title="What success looks like">
-  - A PR with schema changes and committed benchmark artifacts - Preview
-  deployment with the optimized path benchmarked - A reviewed
-  `migrations/plan.yaml` that matches what you intend to ship
+- A PR with schema changes and committed benchmark artifacts
+- Baseline and optimized preview databases benchmarked with the same test
+- A reviewed `migrations/plan.yaml` that matches what you intend to ship
 </Callout>
 
 This guide assumes:
@@ -26,7 +26,7 @@ This guide assumes:
 
 ### Setup
 
-**Setup** is what keeps the rest honest: real `514` commands against the right Fiveonefour project, and the agent using the same session and link. Wrong context means failed runs or the wrong deployment.
+**Setup is the control layer.** The workflow is going to run real `514` commands against a real Fiveonefour project, and the agent will inherit the same session and repo link. Get this wrong and the rest of the guide is noise.
 
 You need: working `514 --version`, `514 auth whoami` for the right org, and `514 link` (or [`514 project link`](/hosting/cli/projects/link)) from the repo root to the correct `org/project`.
 
@@ -47,14 +47,14 @@ Order: install, sign in, link.
 - `514` installed and `514 --version` working
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Install and verify">
+<GuideStepper.Checkpoint title="Install the 514 CLI">
 From [Hosting](/hosting), install the `514` CLI:
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
 ```
-
-Verify:
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Verify installation">
 
 ```bash
 514 --version
@@ -83,6 +83,10 @@ Verify:
 ```
 
 Browser opens for login, then `514 auth whoami` shows your account. No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry. [`514 auth login`](/hosting/cli/auth/login), [`514 auth`](/hosting/cli/auth).
+Related docs:
+
+- [`514 auth login`](/hosting/cli/auth/login)
+- [`514 auth`](/hosting/cli/auth)
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
@@ -100,14 +104,18 @@ Browser opens for login, then `514 auth whoami` shows your account. No browser? 
 - Local configuration that points at the right `org/project` for CLI and agents
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Run link from the repo root">
-From the repo root: `514 link`, or:
+<GuideStepper.Checkpoint title="Link your local project to your Fiveonefour project">
+Make sure you are in the root of your MooseStack project directory and run:
 
 ```bash
 514 project link <org>/<project>
 ```
 
-[`514 project link`](/hosting/cli/projects/link), [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup), [Setup failures](/hosting/troubleshooting/setup-failures).
+Related docs:
+
+- [`514 project link`](/hosting/cli/projects/link)
+- [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup)
+- [Setup failures](/hosting/troubleshooting/setup-failures)
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
@@ -115,7 +123,7 @@ From the repo root: `514 link`, or:
 
 ### Optimization workflow
 
-**This section sets up the agent harness in your copilot and gets your coding agent to run the optimization workflow.** After `514 agent init`, the workflow uses the `514` CLI to inspect ClickHouse query metrics and logs, profile the slow path, and propose optimization fixes grounded in what it finds. Part of that workflow is having the agent create a **Vitest benchmark test** for the optimized path. That test produces a real benchmark report you review at the end of the run, not just an agent summary. The same Vitest test is designed to run against the preview database and the `main` / production database so you can make a fair before-and-after comparison.
+**This section gets the 514 harness set up with your coding agent and runs the optimization workflow.** After `514 agent init`, the workflow uses the `514` CLI to inspect ClickHouse metrics and logs, profile the slow path, and propose fixes based on what it actually sees. Part of that run is creating a **Vitest benchmark test** for the optimized path. That test produces the report you review at the end, which is the part that matters. The same test is meant to run against two preview databases forked from production: one baseline fork that stays unchanged, and one preview fork where the optimization is applied.
 
 Watch three things as it runs:
 
@@ -139,18 +147,12 @@ Watch three things as it runs:
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Initialize the harness">
-From your project root:
 
 ```bash
 514 agent init
 ```
 
-This pulls skills from the 514 registry. Narrow clients if needed:
-
-```bash
-514 agent init --agent claude-code --agent cursor
-```
-
+This pulls skills from the 514 registry and sets up the agent harness for your project.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
@@ -174,7 +176,7 @@ Ask for a ClickHouse performance optimization on your deployed app, and point it
 
 ```text
 Optimize ClickHouse performance for this MooseStack app on Fiveonefour.
-Profile the slow query path, propose schema changes, validate on preview,
+Profile the slow query path, propose schema changes, validate on baseline and optimized preview databases,
 and prepare a PR with benchmark evidence and migrations/plan.yaml review context.
 ```
 
@@ -190,7 +192,7 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
   id="optimization-workflow-runs"
   number={3}
   title="Let the optimization workflow run"
-  summary="The agent runs setup through ship: profile, optimize, verify on preview, then open a PR."
+  summary="The agent runs setup through ship: profile, optimize, verify on baseline and optimized preview databases, then open a PR."
 >
 <GuideStepper.WhatYouNeed>
 - Patience for branch pushes and preview deployments
@@ -198,7 +200,7 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A feature branch with data model and test changes
-- Benchmark runs against preview (when data is available)
+- Benchmark runs against baseline and optimized preview databases
 - A pull request draft or ready for review
 </GuideStepper.WhatYouGet>
 
@@ -207,8 +209,8 @@ The workflow follows `SETUP → PROFILE → OPTIMIZE → VERIFY → SHIP`.
 
 - **SETUP:** CLI session, project, deployment, baseline DDL.
 - **PROFILE:** Slow queries, benchmark candidates, baseline `EXPLAIN`, re-seed risk.
-- **OPTIMIZE:** Moose models, branch push, preview.
-- **VERIFY:** Schema diff, `EXPLAIN`, storage, timed runs on preview.
+- **OPTIMIZE:** Moose models, branch pushes, baseline fork, optimized fork.
+- **VERIFY:** Schema diff, `EXPLAIN`, storage, timed runs on both preview databases.
 - **SHIP:** PR with evidence and summary.
 
 </GuideStepper.Checkpoint>
@@ -218,8 +220,8 @@ Guardrailed `514 agent ...` runs without extra approval. Raw `514 clickhouse que
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Watch for preview re-seeds">
-If `ORDER BY` or similar forces a rebuild, preview may need a re-seed before benchmarks are trustworthy. The PR should say if that happened.
+<GuideStepper.Checkpoint title="Watch for optimized preview re-seeds">
+If `ORDER BY` or similar forces a rebuild, the optimized preview may need a re-seed before benchmarks are trustworthy. The PR should say if that happened.
 
 </GuideStepper.Checkpoint>
 
@@ -231,7 +233,7 @@ Example: index use, fewer granules read (for example selective condition vs full
 
 ### PR review
 
-**Human review of the agent's work.** You decide what ships. Check that the change is safe and the evidence matches reality.
+**This is the part that matters.** The agent can open a PR. You still decide what ships. Your job here is to check that the change is safe and that the evidence matches reality.
 
 - **Performance:** Do benchmarks and `EXPLAIN` back the claim, not just the PR text?
 - **Destructive ops:** Does `ORDER BY` or ordering change imply a rebuild you accept? Read `migrations/plan.yaml` with that in mind.
@@ -249,49 +251,14 @@ Order: benchmarks, then plan and diff, then optional reruns.
 >
 <GuideStepper.WhatYouNeed>
 - The PR the agent opened
-- The committed performance test and any `reports/benchmark-details-*.json` attached or generated in CI for both the preview branch and the `main` / production baseline
+- The committed performance test and any `reports/benchmark-details-*.json` attached or generated in CI for both the baseline preview fork and the optimized preview fork
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - Confidence that the optimized branch actually beats the baseline for the same query path, and that the `EXPLAIN` output supports merging
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Read the report structure first">
-Before you compare anything, get oriented in the JSON. The useful keys are at the top level:
-
-```json
-{
-  "timestamp": "2026-03-23T18:12:00.000Z",
-  "target": {
-    "host": "cluster.clickhouse.boreal.cloud",
-    "database": "514-demos-planes-main-59be4"
-  },
-  "tests": {
-    "baseline": {
-      "sql": "SELECT ...",
-      "p50": 38,
-      "p95": 44,
-      "profiles": [{ "durationMs": 42 }]
-    },
-    "filterRegression": {
-      "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 }
-    },
-    "explainCategoryFilter": {
-      "sql": "SELECT ...",
-      "explain": { "indexCondition": "..." }
-    },
-    "concurrentBurst": { "concurrency": 10, "errors": 0 },
-    "clusterState": {},
-    "connectionDiagnostics": {}
-  }
-}
-```
-
-`target` tells you which database ran the test. `tests.*` holds the evidence you compare.
-
-</GuideStepper.Checkpoint>
-
 <GuideStepper.Checkpoint title="Identify the optimized report and the baseline report">
-Pair two artifacts: **optimized** (preview branch) and **baseline** (`main` / production). The report usually does not include a branch field. In practice, the **database name contains the branch slug**, so that is the field to inspect first.
+Pair two artifacts: **optimized** (preview fork with the schema change) and **baseline** (preview fork from production with no schema change). The report usually does not include a branch field. In practice, the **database name contains the branch slug**, so that is the field to inspect first.
 
 <Tabs defaultValue="optimized-report">
   <TabsList>
@@ -316,7 +283,7 @@ Pair two artifacts: **optimized** (preview branch) and **baseline** (`main` / pr
 {
   "target": {
     "host": "cluster.clickhouse.boreal.cloud",
-    "database": "514-demos-planes-main-59be4"
+    "database": "514-demos-planes-perf-base-59be4"
   }
 }
 ```
@@ -329,71 +296,26 @@ Both reports must use the **same benchmark file** and query path, different targ
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Read the performance test">
-Open the committed test (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same `sql` or query model as the app. **Same test file** produced optimized and baseline reports.
+Open the committed test, often `e2e-tests/tests/moose-performance.e2e.test.ts`, and make sure both reports came from that same file. If you want the full field map while you review, use the quick reference at the end of this page.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Use this comparison checklist">
-Open the optimized and baseline reports side by side and work down this list:
+<GuideStepper.Checkpoint title="Compare index condition and granule skipping">
+Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `indexCondition` should not be only `"true"`, and the optimized report should skip more granules than the baseline.
 
-| What to compare    | Where in the report                                  | What good looks like              |
-| ------------------ | ---------------------------------------------------- | --------------------------------- |
-| Index used?        | `tests.explainCategoryFilter.explain.indexCondition` | Not `"true"`                      |
-| Granules skipped?  | `tests.explainCategoryFilter.explain.granuleSkipPct` | Higher in optimized than baseline |
-| Server-side p95?   | `tests.baseline.p95`                                 | Lower in optimized than baseline  |
-| Rows read?         | `tests.baseline.profiles[0].readRows`                | Lower in optimized                |
-| Memory usage?      | `tests.baseline.profiles[0].memoryUsage`             | Lower in optimized                |
-| Filter regression? | `tests.filterRegression.<variant>.ratio`             | Below `2.5`                       |
-| Correctness?       | Separate correctness report                          | `match: true`                     |
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Check for a real index condition">
-In `reports/benchmark-details-*.json`, check `tests.explainCategoryFilter.explain.indexCondition`. If index use is the goal, it should not be only `"true"`.
-
-```json
-{
-  "tests": {
-    "explainCategoryFilter": {
-      "explain": {
-        "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))"
-      }
-    }
-  }
-}
-```
-
-`"true"` usually means no selective index condition:
-
-```json
-{
-  "tests": {
-    "explainCategoryFilter": {
-      "explain": {
-        "indexCondition": "true"
-      }
-    }
-  }
-}
-```
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Compare granule reads before and after">
-Compare `tests.explainCategoryFilter.explain.selectedGranules`, `totalGranules`, and `granuleSkipPct`. Optimized should skip more granules:
-
-<Tabs defaultValue="optimized-granules">
+<Tabs defaultValue="optimized-explain">
   <TabsList>
-    <TabsTrigger value="optimized-granules">Optimized</TabsTrigger>
-    <TabsTrigger value="baseline-granules">Baseline</TabsTrigger>
+    <TabsTrigger value="optimized-explain">Optimized</TabsTrigger>
+    <TabsTrigger value="baseline-explain">Baseline</TabsTrigger>
   </TabsList>
-  <TabsContent value="optimized-granules">
+  <TabsContent value="optimized-explain">
 
 ```json
 {
   "tests": {
     "explainCategoryFilter": {
       "explain": {
+        "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))",
         "selectedGranules": 120,
         "totalGranules": 480,
         "granuleSkipPct": 75
@@ -404,13 +326,14 @@ Compare `tests.explainCategoryFilter.explain.selectedGranules`, `totalGranules`,
 ```
 
   </TabsContent>
-  <TabsContent value="baseline-granules">
+  <TabsContent value="baseline-explain">
 
 ```json
 {
   "tests": {
     "explainCategoryFilter": {
       "explain": {
+        "indexCondition": "true",
         "selectedGranules": 480,
         "totalGranules": 480,
         "granuleSkipPct": 0
@@ -644,40 +567,40 @@ Removing `events_old` or other fallbacks belongs in a **follow-up PR**, not this
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="reproduce-benchmarks-preview-vs-main"
+  id="reproduce-benchmarks-baseline-vs-optimized-preview"
   number={3}
   title="Reproduce the benchmark tests yourself (optional)"
-  summary="Re-run the same tests against preview and main to validate results on your machine."
+  summary="Re-run the same tests against the baseline and optimized preview databases to validate results on your machine."
 >
 <GuideStepper.WhatYouNeed>
-- Credentials or env files for your preview deployment and for `main` / production (or whatever baseline you compare against)
+- Credentials or env files for the two preview databases the agent created: the unchanged baseline fork and the optimized fork
 - The test commands documented in the PR
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- Independent confirmation that preview beats (or matches) your baseline for the same test code
+- Independent confirmation that the optimized preview beats, or at least matches, the baseline preview for the same test code
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Point tests at preview, then at main">
-The optimization workflow should leave you with a **Vitest** benchmark and helper scripts for rerunning it. Use that same benchmark and only change the target database.
+<GuideStepper.Checkpoint title="Point tests at the baseline fork, then at the optimized fork">
+The optimization workflow should leave you with a **Vitest** benchmark and helper scripts for rerunning it. Use that same benchmark and only change the target database. The generated `pnpm test:perf` script should already load `.env.remote`.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Find the database names for baseline and optimized preview">
-Between optimized preview and baseline `main`, the ClickHouse **host**, **port**, **user**, **password**, and **SSL setting** are the same. They share one 514-hosted ClickHouse cluster. The only value that changes is the **database name**.
+<GuideStepper.Checkpoint title="Find the database names for the two preview forks">
+Between the baseline preview fork and the optimized preview fork, the ClickHouse **host**, **port**, **user**, **password**, and **SSL setting** are the same. They share one 514-hosted ClickHouse cluster. The only value that changes is the **database name**.
 
 Use `514 agent deployment list` to find the database names for each branch.
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Create a shared .env.remote file">
-The `.env.remote` file should contain the shared connection settings **plus** your default database name (here we use `main` / production):
+The `.env.remote` file should contain the shared connection settings **plus** your default database name. Use the baseline preview fork as the default so your first rerun is the unchanged comparison target:
 
 ```bash
 MOOSE_CLICKHOUSE_CONFIG__HOST=<your-cluster>.clickhouse.boreal.cloud
 MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=8443
 MOOSE_CLICKHOUSE_CONFIG__USER=default
 MOOSE_CLICKHOUSE_CONFIG__PASSWORD=<your-password>
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<main-db-name>
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<baseline-preview-db-name>
 MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
 ```
 
@@ -690,8 +613,8 @@ Then swap only the database name between runs:
 # Test against baseline (uses DB_NAME from .env.remote)
 pnpm test:perf
 
-# Test against optimized preview
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<preview-db-name> pnpm test:perf
+# Test against optimized preview fork
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<optimized-preview-db-name> pnpm test:perf
 ```
 
 </GuideStepper.Checkpoint>
@@ -718,6 +641,49 @@ Merge when benchmarks, `migrations/plan.yaml`, and optional reruns match what yo
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
+
+## Benchmark JSON quick reference
+
+Use this when you need the full field map while reviewing the benchmark step above.
+
+```json
+{
+  "timestamp": "2026-03-23T18:12:00.000Z",
+  "target": {
+    "host": "cluster.clickhouse.boreal.cloud",
+    "database": "514-demos-planes-perf-base-59be4"
+  },
+  "tests": {
+    "baseline": {
+      "sql": "SELECT ...",
+      "p50": 38,
+      "p95": 44,
+      "profiles": [{ "durationMs": 42 }]
+    },
+    "filterRegression": {
+      "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 }
+    },
+    "explainCategoryFilter": {
+      "sql": "SELECT ...",
+      "explain": { "indexCondition": "..." }
+    },
+    "concurrentBurst": { "concurrency": 10, "errors": 0 },
+    "clusterState": {},
+    "connectionDiagnostics": {}
+  }
+}
+```
+
+`target` tells you which database ran the test. `tests.*` holds the evidence you compare.
+
+| What to compare    | Where in the report                                  | What good looks like              |
+| ------------------ | ---------------------------------------------------- | --------------------------------- |
+| Index used?        | `tests.explainCategoryFilter.explain.indexCondition` | Not `"true"`                      |
+| Granules skipped?  | `tests.explainCategoryFilter.explain.granuleSkipPct` | Higher in optimized than baseline |
+| Server-side p95?   | `tests.baseline.p95`                                 | Lower in optimized than baseline  |
+| Rows read?         | `tests.baseline.profiles[0].readRows`                | Lower in optimized                |
+| Memory usage?      | `tests.baseline.profiles[0].memoryUsage`             | Lower in optimized                |
+| Filter regression? | `tests.filterRegression.<variant>.ratio`             | Below `2.5`                       |
 
 ## Related docs
 
