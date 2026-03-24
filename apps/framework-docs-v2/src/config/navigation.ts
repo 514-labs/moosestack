@@ -38,6 +38,7 @@ import {
   IconBrain,
   IconTrendingUp,
   IconSearch,
+  IconFlask,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -671,6 +672,13 @@ const moosestackNavigationConfig: NavigationConfig = [
     slug: "moosestack/reference/query-layer",
     title: "Query Layer",
     icon: IconSearch,
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/reference/testing-utilities",
+    title: "Testing Utilities",
+    icon: IconFlask,
     languages: ["typescript"],
   },
   {
