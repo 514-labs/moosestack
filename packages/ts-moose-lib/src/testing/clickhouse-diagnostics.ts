@@ -27,9 +27,6 @@ export interface BenchmarkResult {
 // Shared utilities
 // ---------------------------------------------------------------------------
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -122,19 +119,13 @@ export async function profileQuery(
  * Flush logs once and batch-resolve all query_ids from system.query_log.
  * Call this after all profileQuery() calls are complete.
  *
- * Query IDs are validated as UUIDs and parameterized to prevent injection.
+ * Query IDs are parameterized via the `sql` template tag to prevent injection.
  */
 export async function resolveProfiles(
   queryClient: QueryClient,
   queryIds: string[],
 ): Promise<ProfileResult[]> {
   if (queryIds.length === 0) return [];
-
-  for (const id of queryIds) {
-    if (!UUID_RE.test(id)) {
-      throw new Error(`Invalid query_id format (expected UUID): ${id}`);
-    }
-  }
 
   await queryClient.command(sql.raw("SYSTEM FLUSH LOGS"));
 
