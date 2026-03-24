@@ -5,6 +5,7 @@ languages: ["typescript"]
 ---
 
 import { Callout } from "@/components/mdx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 # Optimizing ClickHouse Performance with AI
 
@@ -251,50 +252,113 @@ Order: benchmarks, then plan and diff, then optional reruns.
 - The committed performance test and any `reports/benchmark-details-*.json` attached or generated in CI for both the preview branch and the `main` / production baseline
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- Confidence that the preview branch actually beats `main` for the same query path, and that the `EXPLAIN` output supports merging
+- Confidence that the optimized branch actually beats the baseline for the same query path, and that the `EXPLAIN` output supports merging
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Identify the preview report and the main baseline report">
-Pair two artifacts: **preview** (optimization) and **`main` / production** (baseline). Tell them apart from metadata, CI artifact names, or PR notes. Look for **branch**, **database**, **target**, or **testFile**.
+<GuideStepper.Checkpoint title="Read the report structure first">
+Before you compare anything, get oriented in the JSON. The useful keys are at the top level:
 
 ```json
 {
+  "timestamp": "2026-03-23T18:12:00.000Z",
   "target": {
-    "branch": "feat/orderby-opt",
-    "database": "preview_feat_orderby_opt",
-    "testFile": "e2e-tests/tests/moose-performance.e2e.test.ts"
+    "host": "cluster.clickhouse.boreal.cloud",
+    "database": "514-demos-planes-main-59be4"
+  },
+  "tests": {
+    "baseline": {
+      "sql": "SELECT ...",
+      "p50": 38,
+      "p95": 44,
+      "profiles": [{ "durationMs": 42 }]
+    },
+    "filterRegression": {
+      "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 }
+    },
+    "explainCategoryFilter": {
+      "sql": "SELECT ...",
+      "explain": { "indexCondition": "..." }
+    },
+    "concurrentBurst": { "concurrency": 10, "errors": 0 },
+    "clusterState": {},
+    "connectionDiagnostics": {}
   }
 }
 ```
 
-Compared with a baseline report such as:
+`target` tells you which database ran the test. `tests.*` holds the evidence you compare.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Identify the optimized report and the baseline report">
+Pair two artifacts: **optimized** (preview branch) and **baseline** (`main` / production). The report usually does not include a branch field. In practice, the **database name contains the branch slug**, so that is the field to inspect first.
+
+<Tabs defaultValue="optimized-report">
+  <TabsList>
+    <TabsTrigger value="optimized-report">Optimized</TabsTrigger>
+    <TabsTrigger value="baseline-report">Baseline</TabsTrigger>
+  </TabsList>
+  <TabsContent value="optimized-report">
 
 ```json
 {
   "target": {
-    "branch": "main",
-    "database": "production",
-    "testFile": "e2e-tests/tests/moose-performance.e2e.test.ts"
+    "host": "cluster.clickhouse.boreal.cloud",
+    "database": "514-demos-planes-perf-opti-1c360"
   }
 }
 ```
 
-Both reports must use the **same benchmark file** and query path, different targets only. No clear `main` baseline means no real before/after.
+  </TabsContent>
+  <TabsContent value="baseline-report">
+
+```json
+{
+  "target": {
+    "host": "cluster.clickhouse.boreal.cloud",
+    "database": "514-demos-planes-main-59be4"
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
+
+Both reports must use the **same benchmark file** and query path, different targets only. No clear baseline means no real before/after.
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Read the performance test">
-Open the committed test (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same `sql` or query model as the app. **Same test file** produced preview and `main` reports.
+Open the committed test (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same `sql` or query model as the app. **Same test file** produced optimized and baseline reports.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Use this comparison checklist">
+Open the optimized and baseline reports side by side and work down this list:
+
+| What to compare    | Where in the report                                  | What good looks like              |
+| ------------------ | ---------------------------------------------------- | --------------------------------- |
+| Index used?        | `tests.explainCategoryFilter.explain.indexCondition` | Not `"true"`                      |
+| Granules skipped?  | `tests.explainCategoryFilter.explain.granuleSkipPct` | Higher in optimized than baseline |
+| Server-side p95?   | `tests.baseline.p95`                                 | Lower in optimized than baseline  |
+| Rows read?         | `tests.baseline.profiles[0].readRows`                | Lower in optimized                |
+| Memory usage?      | `tests.baseline.profiles[0].memoryUsage`             | Lower in optimized                |
+| Filter regression? | `tests.filterRegression.<variant>.ratio`             | Below `2.5`                       |
+| Correctness?       | Separate correctness report                          | `match: true`                     |
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Check for a real index condition">
-In `reports/benchmark-details-*.json`, check `EXPLAIN`. If index use is the goal, `indexCondition` should not be only `"true"`.
+In `reports/benchmark-details-*.json`, check `tests.explainCategoryFilter.explain.indexCondition`. If index use is the goal, it should not be only `"true"`.
 
 ```json
 {
-  "explain": {
-    "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))"
+  "tests": {
+    "explainCategoryFilter": {
+      "explain": {
+        "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))"
+      }
+    }
   }
 }
 ```
@@ -303,8 +367,12 @@ In `reports/benchmark-details-*.json`, check `EXPLAIN`. If index use is the goal
 
 ```json
 {
-  "explain": {
-    "indexCondition": "true"
+  "tests": {
+    "explainCategoryFilter": {
+      "explain": {
+        "indexCondition": "true"
+      }
+    }
   }
 }
 ```
@@ -312,104 +380,148 @@ In `reports/benchmark-details-*.json`, check `EXPLAIN`. If index use is the goal
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Compare granule reads before and after">
-Compare `selectedGranules`, `totalGranules`, `granuleSkipPct`. Optimized should read fewer granules:
+Compare `tests.explainCategoryFilter.explain.selectedGranules`, `totalGranules`, and `granuleSkipPct`. Optimized should skip more granules:
+
+<Tabs defaultValue="optimized-granules">
+  <TabsList>
+    <TabsTrigger value="optimized-granules">Optimized</TabsTrigger>
+    <TabsTrigger value="baseline-granules">Baseline</TabsTrigger>
+  </TabsList>
+  <TabsContent value="optimized-granules">
 
 ```json
 {
-  "explain": {
-    "selectedGranules": 120,
-    "totalGranules": 480,
-    "granuleSkipPct": 75
+  "tests": {
+    "explainCategoryFilter": {
+      "explain": {
+        "selectedGranules": 120,
+        "totalGranules": 480,
+        "granuleSkipPct": 75
+      }
+    }
   }
 }
 ```
 
-Baseline:
+  </TabsContent>
+  <TabsContent value="baseline-granules">
 
 ```json
 {
-  "explain": {
-    "selectedGranules": 480,
-    "totalGranules": 480,
-    "granuleSkipPct": 0
+  "tests": {
+    "explainCategoryFilter": {
+      "explain": {
+        "selectedGranules": 480,
+        "totalGranules": 480,
+        "granuleSkipPct": 0
+      }
+    }
   }
 }
 ```
+
+  </TabsContent>
+</Tabs>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Compare server-side latency">
-Check `p95` and `profiles` samples:
+<GuideStepper.Checkpoint title="Compare latency and resource usage">
+Check `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `tests.baseline.profiles`. The `profiles` array is where the useful resource metrics live.
+
+<Tabs defaultValue="optimized-latency">
+  <TabsList>
+    <TabsTrigger value="optimized-latency">Optimized</TabsTrigger>
+    <TabsTrigger value="baseline-latency">Baseline</TabsTrigger>
+  </TabsList>
+  <TabsContent value="optimized-latency">
 
 ```json
 {
-  "profiles": {
-    "serverMs": [42, 39, 44, 41, 40],
-    "p95": 44
-  }
-}
-```
-
-Higher baseline:
-
-```json
-{
-  "profiles": {
-    "serverMs": [118, 121, 126, 119, 123],
-    "p95": 126
-  }
-}
-```
-
-Optimized should beat baseline on `p95`.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Look for filter variant regressions">
-Filter regression entries should pass unless the PR explains a failure:
-
-```json
-{
-  "filterRegressions": [
-    { "name": "country=US", "status": "pass" },
-    { "name": "country=CA", "status": "pass" },
-    { "name": "country=GB", "status": "pass" }
-  ]
-}
-```
-
-Unexplained regression:
-
-```json
-{
-  "filterRegressions": [
-    { "name": "country=US", "status": "pass" },
-    { "name": "country=CA", "status": "regressed" }
-  ]
-}
-```
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Verify the exact SQL and samples used">
-Per-test entries show SQL, filters, and samples:
-
-```json
-{
-  "tests": [
-    {
-      "name": "aircraft stats by database",
-      "sql": "SELECT current_database, count() FROM ...",
-      "samples": [
-        { "current_database": "db_123" },
-        { "current_database": "db_456" }
+  "tests": {
+    "baseline": {
+      "p50": 38,
+      "p95": 44,
+      "profiles": [
+        {
+          "durationMs": 42,
+          "readRows": 180000,
+          "readBytes": 12000000,
+          "memoryUsage": 6400000,
+          "diskReadUs": 1200
+        }
       ]
     }
-  ]
+  }
 }
 ```
 
-If the SQL in the report does not match the code path the PR claims to optimize, stop and ask why.
+  </TabsContent>
+  <TabsContent value="baseline-latency">
+
+```json
+{
+  "tests": {
+    "baseline": {
+      "p50": 119,
+      "p95": 126,
+      "profiles": [
+        {
+          "durationMs": 121,
+          "readRows": 920000,
+          "readBytes": 68000000,
+          "memoryUsage": 15400000,
+          "diskReadUs": 8800
+        }
+      ]
+    }
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
+
+Good sign: lower `p95`, fewer rows read, and lower memory usage in the optimized report.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Check filter regression ratios">
+Read `tests.filterRegression`. It is an object keyed by variant name, not a status array. Compare `ratio` against the `2.5` threshold yourself.
+
+```json
+{
+  "tests": {
+    "filterRegression": {
+      "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 },
+      "altitude range": {
+        "p50": 26,
+        "p95": 33,
+        "baselineP95": 28,
+        "ratio": 1.18
+      }
+    }
+  }
+}
+```
+
+Below `2.5` means the variant did not regress beyond the threshold. If a ratio is above `2.5`, the PR should explain why.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Verify the SQL matches your app code">
+Use the `sql` field in each test entry to confirm the report executed the query path the PR claims to optimize. For example:
+
+```json
+{
+  "tests": {
+    "baseline": {
+      "sql": "SELECT current_database, count() FROM ..."
+    }
+  }
+}
+```
+
+If that SQL does not match the app code or benchmark target in the PR, stop and ask why.
 
 </GuideStepper.Checkpoint>
 
@@ -546,27 +658,59 @@ Removing `events_old` or other fallbacks belongs in a **follow-up PR**, not this
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Point tests at preview, then at main">
-The workflow adds a **Vitest** benchmark (often `e2e-tests/tests/moose-performance.e2e.test.ts`). Same test file, different **database target** only.
+The optimization workflow should leave you with a **Vitest** benchmark and helper scripts for rerunning it. Use that same benchmark and only change the target database.
 
-Run against **local** (smoke), **preview** (PR branch), **`main` / production** (baseline).
+</GuideStepper.Checkpoint>
 
-Switch targets with `MOOSE_CLICKHOUSE_CONFIG__*` (for example `.env.local.preview` vs `.env.local.production`).
+<GuideStepper.Checkpoint title="Find the database names for baseline and optimized preview">
+Between optimized preview and baseline `main`, the ClickHouse **host**, **port**, **user**, **password**, and **SSL setting** are the same. They share one 514-hosted ClickHouse cluster. The only value that changes is the **database name**.
+
+Use `514 agent deployment list` to find the database names for each branch.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Create a shared .env.remote file">
+The `.env.remote` file should contain the shared connection settings **plus** your default database name (here we use `main` / production):
 
 ```bash
-pnpm test:perf
-pnpm test:perf:preview
+MOOSE_CLICKHOUSE_CONFIG__HOST=<your-cluster>.clickhouse.boreal.cloud
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=8443
+MOOSE_CLICKHOUSE_CONFIG__USER=default
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=<your-password>
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<main-db-name>
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
 ```
 
-No wrappers? Same test file, your usual test command, different env or `MOOSE_CLICKHOUSE_CONFIG__*` for host, port, db, user, password, SSL.
-
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Compare results">
-Same file: **before** (`main` / prod) vs **after** (preview). Match the **direction** of improvement the PR claims, not identical milliseconds.
+<GuideStepper.Checkpoint title="Swap only the database name between runs">
+Then swap only the database name between runs:
 
-More detail: see the quick reference below.
+```bash
+# Test against baseline (uses DB_NAME from .env.remote)
+pnpm test:perf
+
+# Test against optimized preview
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<preview-db-name> pnpm test:perf
+```
 
 </GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="decide-whether-to-merge"
+  number={4}
+  title="Decide whether to merge"
+  summary="Make the final shipping decision after review and optional reruns."
+>
+<GuideStepper.WhatYouNeed>
+- Benchmark review complete
+- Migration plan review complete
+- Optional reruns complete, if you chose to do them
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A clear merge or request-changes decision
+</GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Merge when you are satisfied">
 Merge when benchmarks, `migrations/plan.yaml`, and optional reruns match what you want to ship. Otherwise request changes.
@@ -574,17 +718,6 @@ Merge when benchmarks, `migrations/plan.yaml`, and optional reruns match what yo
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
-
-## Benchmark review quick reference
-
-Fast path for PR or local reruns:
-
-1. Same benchmark file: preview vs `main`.
-2. Query result: same semantics as before you trust a faster number.
-3. Structure: `EXPLAIN`, `indexCondition`, `selectedGranules`, `totalGranules`, `granuleSkipPct`.
-4. Latency: `p95` and per-run samples in the JSON.
-
-JSON shapes: see **Review the benchmark results** above.
 
 ## Related docs
 
@@ -596,4 +729,3 @@ JSON shapes: see **Review the benchmark results** above.
 - [Query Layer](/moosestack/reference/query-layer)
 - [Semantic Layer](/moosestack/apis/semantic-layer)
 - [Planned Migrations](/moosestack/migrate/planned-migrations)
-- [Going to Production](/guides/applications/going-to-production)
