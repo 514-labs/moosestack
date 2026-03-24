@@ -166,7 +166,6 @@ async function authenticateRequest(
     rowPolicyOpts = buildRowPolicyOptionsFromClaims(
       rowPoliciesConfig,
       jwtPayload as Record<string, unknown>,
-      "JWT payload",
     );
   }
 

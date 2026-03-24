@@ -1933,7 +1933,11 @@ impl InfrastructureMap {
     ) {
         for (id, policy) in self_policies {
             if let Some(target_policy) = target_policies.get(id) {
-                if policy != target_policy {
+                let mut a = policy.clone();
+                let mut b = target_policy.clone();
+                a.tables.sort();
+                b.tables.sort();
+                if a != b {
                     tracing::debug!("Row policy '{}' has differences", id);
                     olap_changes.push(OlapChange::SelectRowPolicy(Change::Updated {
                         before: Box::new(policy.clone()),

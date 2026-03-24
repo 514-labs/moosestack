@@ -18,12 +18,12 @@ Row-Level Security (RLS) restricts which rows a query returns based on the calle
 4. ClickHouse evaluates the row policy on every query, returning only matching rows
 
 <Callout type="warning" title="JWT configuration required">
-RLS requires a `[jwt]` section in `moose.config.toml` with `secret`, `issuer`, and `audience` configured. See [JWT Configuration](/moosestack/configuration/jwt) for details.
+RLS requires a `[jwt]` section in `moose.config.toml`. See [JWT Configuration](/moosestack/configuration/jwt) for setup options.
 </Callout>
 
 ## Defining a Row Policy
 
-Export a `SelectRowPolicy` from any file in your Moose project:
+Define a `SelectRowPolicy` in your Moose project. It must be reachable from your root entrypoint (`app/index.ts`):
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -183,3 +183,9 @@ When an API queries `OrdersSummary`, ClickHouse evaluates the row policy on the 
 <Callout type="warning" title="Materialized views">
 Row policies are not compatible with materialized views. ClickHouse evaluates row policies on the backing table during the MV insert path, which causes `getSetting()` to fail. Use a regular `View` if you need RLS on aggregated data.
 </Callout>
+
+## Limitations
+
+**Materialized views**: Not compatible with row policies. ClickHouse evaluates policies during the MV insert path, causing `getSetting()` to fail. Use a regular `View` for RLS on aggregated data.
+
+**Clustered deployments**: Row policy DDL does not yet include `ON CLUSTER`.

@@ -188,7 +188,6 @@ function resolveRuntimeUtils(
     rowPolicyOpts = buildRowPolicyOptionsFromClaims(
       runtimeContext.rowPoliciesConfig,
       options.rlsContext,
-      "rlsContext",
     );
   } else {
     rowPolicyOpts = reqCtx?.rowPolicyOpts;
@@ -292,7 +291,6 @@ function createStandaloneRlsUtils(
   const rowPolicyOpts = buildRowPolicyOptionsFromClaims(
     rowPoliciesConfig,
     rlsContext,
-    "rlsContext",
   );
   const rlsClient = standaloneRlsClient ?? standaloneUtils!.client.query.client;
   const scopedQueryClient = new QueryClient(

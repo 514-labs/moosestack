@@ -109,7 +109,6 @@ export type RowPoliciesConfig = Record<string, string>;
 export function buildRowPolicyOptionsFromClaims(
   config: RowPoliciesConfig,
   claims: Record<string, unknown>,
-  _sourceLabel: string,
 ): RowPolicyOptions {
   const clickhouse_settings: Record<string, string> = Object.create(null);
   for (const [settingName, claimName] of Object.entries(config)) {
