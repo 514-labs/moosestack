@@ -96,6 +96,83 @@ const apiContextStorage = setupStructuredConsole<{ apiName: string }>(
   "api_name",
 );
 
+interface AuthResult {
+  jwtPayload?: jose.JWTPayload;
+  rowPolicyOpts?: RowPolicyOptions;
+}
+
+/**
+ * Verifies the JWT, enforces auth requirements, and builds RowPolicyOptions
+ * from the JWT claims. Returns null if the response was already sent (auth failure).
+ */
+async function authenticateRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  publicKey: jose.KeyLike | undefined,
+  jwtConfig: JwtConfig | undefined,
+  enforceAuth: boolean,
+  rowPoliciesConfig?: RowPoliciesConfig,
+): Promise<AuthResult | null> {
+  const requireAuth = enforceAuth || !!rowPoliciesConfig;
+
+  let jwtPayload: jose.JWTPayload | undefined;
+  if (publicKey && jwtConfig) {
+    const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
+    if (jwt) {
+      try {
+        const { payload } = await jose.jwtVerify(jwt, publicKey, {
+          issuer: jwtConfig.issuer,
+          audience: jwtConfig.audience,
+        });
+        jwtPayload = payload;
+      } catch (_error) {
+        console.log("JWT verification failed");
+        if (requireAuth) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return null;
+        }
+      }
+    } else if (requireAuth) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return null;
+    }
+  } else if (requireAuth) {
+    if (rowPoliciesConfig) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "Forbidden",
+          message:
+            "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+        }),
+      );
+    } else {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "Unauthorized",
+          message:
+            "Authentication is enforced but no JWT configuration is available.",
+        }),
+      );
+    }
+    return null;
+  }
+
+  let rowPolicyOpts: RowPolicyOptions | undefined;
+  if (rowPoliciesConfig && jwtPayload) {
+    rowPolicyOpts = buildRowPolicyOptionsFromClaims(
+      rowPoliciesConfig,
+      jwtPayload as Record<string, unknown>,
+      "JWT payload",
+    );
+  }
+
+  return { jwtPayload, rowPolicyOpts };
+}
+
 const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
@@ -123,58 +200,19 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      // Row policies implicitly require auth — a valid JWT is needed to
-      // extract claim values for ClickHouse row filtering.
-      const requireAuth = enforceAuth || !!rowPoliciesConfig;
-
-      let jwtPayload: jose.JWTPayload | undefined;
-      if (publicKey && jwtConfig) {
-        const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
-        if (jwt) {
-          try {
-            const { payload } = await jose.jwtVerify(jwt, publicKey, {
-              issuer: jwtConfig.issuer,
-              audience: jwtConfig.audience,
-            });
-            jwtPayload = payload;
-          } catch (error) {
-            console.log("JWT verification failed");
-            if (requireAuth) {
-              res.writeHead(401, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "Unauthorized" }));
-              httpLogger(req, res, start);
-              return;
-            }
-          }
-        } else if (requireAuth) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Unauthorized" }));
-          httpLogger(req, res, start);
-          return;
-        }
-      } else if (requireAuth) {
-        if (rowPoliciesConfig) {
-          res.writeHead(403, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: "Forbidden",
-              message:
-                "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
-            }),
-          );
-        } else {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: "Unauthorized",
-              message:
-                "Authentication is enforced but no JWT configuration is available.",
-            }),
-          );
-        }
+      const authResult = await authenticateRequest(
+        req,
+        res,
+        publicKey,
+        jwtConfig,
+        enforceAuth,
+        rowPoliciesConfig,
+      );
+      if (!authResult) {
         httpLogger(req, res, start);
         return;
       }
+      const { jwtPayload, rowPolicyOpts } = authResult;
 
       const pathName = createPath(actualApisDir, fileName);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
@@ -270,22 +308,6 @@ const apiHandler = async (
         });
       }
 
-      let rowPolicyOpts: RowPolicyOptions | undefined;
-      try {
-        rowPolicyOpts =
-          rowPoliciesConfig && jwtPayload ?
-            buildRowPolicyOptionsFromClaims(
-              rowPoliciesConfig,
-              jwtPayload as Record<string, unknown>,
-              "JWT payload",
-            )
-          : undefined;
-      } catch (error) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: (error as Error).message }));
-        httpLogger(req, res, start);
-        return;
-      }
       const queryClickhouseClient =
         rowPolicyOpts && rlsClickhouseClient ? rlsClickhouseClient : (
           clickhouseClient
@@ -411,54 +433,16 @@ const createMainRouter = async (
       return;
     }
 
-    // Row policies implicitly require auth for WebApp routes too
-    const requireAuth = enforceAuth || !!rowPoliciesConfig;
-
-    let jwtPayload: jose.JWTPayload | undefined;
-    if (publicKey && jwtConfig) {
-      const jwt = req.headers.authorization?.split(" ")[1];
-      if (jwt) {
-        try {
-          const { payload } = await jose.jwtVerify(jwt, publicKey, {
-            issuer: jwtConfig.issuer,
-            audience: jwtConfig.audience,
-          });
-          jwtPayload = payload;
-        } catch (error) {
-          console.log("JWT verification failed for WebApp route");
-          if (requireAuth) {
-            res.writeHead(401, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Unauthorized" }));
-            return;
-          }
-        }
-      } else if (requireAuth) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-    } else if (requireAuth) {
-      if (rowPoliciesConfig) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "Forbidden",
-            message:
-              "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
-          }),
-        );
-      } else {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "Unauthorized",
-            message:
-              "Authentication is enforced but no JWT configuration is available.",
-          }),
-        );
-      }
-      return;
-    }
+    const authResult = await authenticateRequest(
+      req,
+      res,
+      publicKey,
+      jwtConfig,
+      enforceAuth,
+      rowPoliciesConfig,
+    );
+    if (!authResult) return;
+    const { jwtPayload, rowPolicyOpts } = authResult;
 
     for (const webApp of sortedWebApps) {
       const mountPath = webApp.config.mountPath || "/";
@@ -475,23 +459,6 @@ const createMainRouter = async (
         const { getMooseUtils, runWithRequestContext } = await import(
           "./standalone"
         );
-
-        // Build RowPolicyOptions once from JWT (same pattern as the API path)
-        let rowPolicyOpts: RowPolicyOptions | undefined;
-        try {
-          rowPolicyOpts =
-            rowPoliciesConfig && jwtPayload ?
-              buildRowPolicyOptionsFromClaims(
-                rowPoliciesConfig,
-                jwtPayload as Record<string, unknown>,
-                "JWT payload",
-              )
-            : undefined;
-        } catch (error) {
-          res.writeHead(403, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: (error as Error).message }));
-          return;
-        }
 
         let proxiedUrl = req.url;
         if (normalizedMount !== "/") {

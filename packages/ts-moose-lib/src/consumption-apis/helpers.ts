@@ -171,9 +171,6 @@ export class QueryClient {
 
     console.log(`[QueryClient] | Command: ${toQueryPreview(sql)}`);
     const start = performance.now();
-    // Row policy role/settings are intentionally NOT applied to commands
-    // (INSERT/DDL). Row policies only affect SELECT; setting a role on
-    // non-SELECT operations can strip default role permissions.
     const result = await this.client.command({
       query,
       query_params,
