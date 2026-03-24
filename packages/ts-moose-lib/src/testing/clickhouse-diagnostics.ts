@@ -28,7 +28,7 @@ export interface BenchmarkResult {
 // ---------------------------------------------------------------------------
 
 const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 export function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
@@ -308,8 +308,10 @@ export async function tableStats(
     .split(".")
     .map((part) => quoteIdentifier(part))
     .join(".");
-  // Extract bare table name for system.parts lookup
-  const bareTable = table.includes(".") ? table.split(".").pop()! : table;
+  // Extract bare table name and database for system.parts lookup
+  const parts = table.split(".");
+  const bareTable = parts.length > 1 ? parts[1] : parts[0];
+  const database = parts.length > 1 ? parts[0] : undefined;
 
   const [countRows, partsRows] = await Promise.all([
     queryClient
@@ -317,7 +319,11 @@ export async function tableStats(
       .then((r) => r.json() as Promise<{ rows: string }[]>),
     queryClient
       .execute(
-        sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
+        database
+          ? sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
+           FROM system.parts
+           WHERE active = 1 AND database = ${database} AND table = ${bareTable}`
+          : sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
            FROM system.parts
            WHERE active = 1 AND table = ${bareTable}`,
       )
