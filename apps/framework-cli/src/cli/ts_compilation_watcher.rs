@@ -40,7 +40,7 @@ use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
-    classify_plan_risk, destructive_confirmation_gate, ConfirmationPolicy,
+    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
@@ -447,7 +447,7 @@ async fn watch(
                                             .await;
 
                                             match plan_result {
-                                                Ok((_, plan_result)) => {
+                                                Ok((_, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
                                                             &project,
@@ -456,8 +456,14 @@ async fn watch(
                                                     })
                                                     .await?;
 
-                                                    let risk = classify_plan_risk(&plan_result.changes);
                                                     spinner_handle.pause();
+                                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy).await? {
+                                                        Some(drops) => drops,
+                                                        None => return Ok(false),
+                                                    };
+
+                                                    let mut risk = classify_plan_risk(&plan_result.changes);
+                                                    risk.exclude_approved_drops(&approved_drops);
                                                     let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
                                                     if !proceed? {
                                                         return Ok(false);

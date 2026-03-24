@@ -122,7 +122,7 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
-    classify_plan_risk, destructive_confirmation_gate, ConfirmationPolicy,
+    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
@@ -546,7 +546,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, plan) = plan_changes(&*state_storage, &project).await?;
+    let (_, mut plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -707,7 +707,14 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    let risk = classify_plan_risk(&plan.changes);
+    let approved_drops =
+        match rename_confirmation_gate(&mut plan.changes, &confirmation_policy).await? {
+            Some(drops) => drops,
+            None => return Ok(()),
+        };
+
+    let mut risk = classify_plan_risk(&plan.changes);
+    risk.exclude_approved_drops(&approved_drops);
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
         return Ok(());
     }

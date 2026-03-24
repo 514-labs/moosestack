@@ -6,6 +6,7 @@
 //! via an interactive prompt (with a pinned terminal region in TTY mode) or via
 //! the `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE` overrides.
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::{stdout, IsTerminal, Write};
 use std::time::Duration;
@@ -20,7 +21,10 @@ use crate::cli::display::{terminal_lock, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
 
-use super::infrastructure_map::{Change, ColumnChange, InfraChanges, OlapChange, TableChange};
+use super::infrastructure_map::{
+    apply_detected_renames, Change, ColumnChange, DetectedColumnRename, InfraChanges, OlapChange,
+    PendingTableRenames, TableChange,
+};
 
 /// A single destructive operation identified in a migration plan.
 #[derive(Debug, Clone)]
@@ -118,6 +122,40 @@ impl PlanRisk {
     pub fn is_destructive(&self) -> bool {
         !self.destructive_changes.is_empty()
     }
+
+    /// Removes column drops that the user already approved during the rename
+    /// confirmation step (by choosing "drop + recreate instead"), so the
+    /// destructive gate doesn't ask twice about the same column.
+    pub fn exclude_approved_drops(&mut self, approved: &HashSet<ApprovedColumnDrop>) {
+        if approved.is_empty() {
+            return;
+        }
+        self.destructive_changes.retain(|dc| {
+            if let DestructiveChange::ColumnDrop {
+                database,
+                table_name,
+                column_name,
+            } = dc
+            {
+                !approved.contains(&ApprovedColumnDrop {
+                    database: database.clone(),
+                    table_name: table_name.clone(),
+                    column_name: column_name.clone(),
+                })
+            } else {
+                true
+            }
+        });
+    }
+}
+
+/// A column drop that the user already approved during rename confirmation
+/// (by choosing "drop + recreate instead").
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ApprovedColumnDrop {
+    pub database: Option<String>,
+    pub table_name: String,
+    pub column_name: String,
 }
 
 /// Walks the OLAP changes and collects every operation that may cause data loss.
@@ -129,7 +167,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
     let mut destructive_changes = Vec::new();
 
     // Collect (database, name) pairs for tables that are both removed and added (recreates).
-    let removed_table_keys: std::collections::HashSet<(Option<&str>, &str)> = changes
+    let removed_table_keys: HashSet<(Option<&str>, &str)> = changes
         .olap_changes
         .iter()
         .filter_map(|c| match c {
@@ -140,7 +178,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         })
         .collect();
 
-    let added_table_keys: std::collections::HashSet<(Option<&str>, &str)> = changes
+    let added_table_keys: HashSet<(Option<&str>, &str)> = changes
         .olap_changes
         .iter()
         .filter_map(|c| match c {
@@ -151,7 +189,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         })
         .collect();
 
-    let recreated_table_keys: std::collections::HashSet<(Option<&str>, &str)> = removed_table_keys
+    let recreated_table_keys: HashSet<(Option<&str>, &str)> = removed_table_keys
         .intersection(&added_table_keys)
         .copied()
         .collect();
@@ -487,6 +525,200 @@ fn format_destructive_summary(risk: &PlanRisk) -> String {
         .join("\n")
 }
 
+// ---------------------------------------------------------------------------
+// Column-rename confirmation gate (forward-only)
+// ---------------------------------------------------------------------------
+//
+// The plan initially contains raw `Removed` + `Added` pairs. Detected renames
+// are stored as metadata in `InfraChanges::pending_column_renames`. This gate
+// prompts the user per rename, then applies only the confirmed ones via
+// `apply_detected_renames`, converting matched pairs to `ColumnChange::Renamed`.
+// Rejected renames stay as `Removed` + `Added` (naturally destructive).
+
+/// Displayable description of a single pending rename for prompting.
+struct PendingRenameDisplay<'a> {
+    database: &'a Option<String>,
+    table_name: &'a str,
+    rename: &'a DetectedColumnRename,
+}
+
+impl fmt::Display for PendingRenameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "`{}` → `{}` in ",
+            self.rename.before.name, self.rename.after.name
+        )?;
+        fmt_qualified(f, self.database, self.table_name)?;
+        write!(f, " (confidence: {:.0}%)", self.rename.confidence * 100.0)
+    }
+}
+
+fn format_pending_renames_summary(pending: &[PendingTableRenames]) -> String {
+    pending
+        .iter()
+        .flat_map(|t| {
+            t.renames.iter().map(move |r| {
+                format!(
+                    "  - {}",
+                    PendingRenameDisplay {
+                        database: &t.database,
+                        table_name: &t.table_name,
+                        rename: r,
+                    }
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn total_pending_rename_count(pending: &[PendingTableRenames]) -> usize {
+    pending.iter().map(|t| t.renames.len()).sum()
+}
+
+/// Prompts the user per detected column rename and applies only confirmed ones.
+///
+/// The plan's `olap_changes` contain raw `Removed` + `Added` pairs. This
+/// function reads `pending_column_renames`, asks the user for each one, and
+/// converts confirmed pairs to `ColumnChange::Renamed` via
+/// `apply_detected_renames`. Rejected renames remain as-is (destructive).
+///
+/// Returns `Ok(Some(approved_drops))` to proceed (the set should be passed to
+/// `PlanRisk::exclude_approved_drops` so the destructive gate doesn't re-ask),
+/// or `Ok(None)` if the user cancelled.
+pub async fn rename_confirmation_gate(
+    changes: &mut InfraChanges,
+    policy: &ConfirmationPolicy,
+) -> Result<Option<HashSet<ApprovedColumnDrop>>, RoutineFailure> {
+    let pending = std::mem::take(&mut changes.pending_column_renames);
+    let total = total_pending_rename_count(&pending);
+    if total == 0 {
+        return Ok(Some(HashSet::new()));
+    }
+
+    if policy.accept_destructive {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Rename".to_string(),
+                format!(
+                    "Auto-accepted {} column rename(s) via override:\n{}",
+                    total,
+                    format_pending_renames_summary(&pending),
+                )
+            )
+        );
+        apply_all_pending_renames(changes, &pending);
+        return Ok(Some(HashSet::new()));
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return Err(RoutineFailure::error(Message::new(
+            "Rename".to_string(),
+            format!(
+                "Plan contains {} detected column rename(s) but running non-interactively.\n\
+                 {}\n\n\
+                 To auto-accept, re-run with --yes-destructive or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                total,
+                format_pending_renames_summary(&pending),
+            ),
+        )));
+    }
+
+    let mut confirmed: HashMap<String, Vec<DetectedColumnRename>> = HashMap::new();
+    let mut approved_drops: HashSet<ApprovedColumnDrop> = HashSet::new();
+    let mut prompt_idx = 0usize;
+
+    for table_renames in &pending {
+        for rename in &table_renames.renames {
+            prompt_idx += 1;
+            let display = PendingRenameDisplay {
+                database: &table_renames.database,
+                table_name: &table_renames.table_name,
+                rename,
+            };
+            let prompt = format!(
+                "Rename detected ({}/{}): {}\n  \
+                 [y] Yes, rename the column\n  \
+                 [n] No, drop + recreate instead\n  \
+                 [c] Cancel this change cycle",
+                prompt_idx, total, display,
+            );
+
+            let input = prompt_user_async(&prompt, Some("y"), None).await?;
+
+            match input.trim().to_lowercase().as_str() {
+                "y" | "yes" => {
+                    confirmed
+                        .entry(table_renames.table_name.clone())
+                        .or_default()
+                        .push(rename.clone());
+                }
+                "n" | "no" => {
+                    approved_drops.insert(ApprovedColumnDrop {
+                        database: table_renames.database.clone(),
+                        table_name: table_renames.table_name.clone(),
+                        column_name: rename.before.name.clone(),
+                    });
+                }
+                _ => {
+                    show_message!(
+                        MessageType::Warning,
+                        Message::new(
+                            "Cancelled".to_string(),
+                            "Rename confirmation cancelled — skipping this change cycle."
+                                .to_string()
+                        )
+                    );
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    // Apply only the confirmed renames to the plan.
+    for change in &mut changes.olap_changes {
+        if let OlapChange::Table(TableChange::Updated {
+            name,
+            column_changes,
+            ..
+        }) = change
+        {
+            if let Some(renames) = confirmed.get(name.as_str()) {
+                let taken = std::mem::take(column_changes);
+                *column_changes = apply_detected_renames(taken, renames);
+            }
+        }
+    }
+
+    Ok(Some(approved_drops))
+}
+
+/// Applies all pending renames (used by the auto-approve path).
+fn apply_all_pending_renames(changes: &mut InfraChanges, pending: &[PendingTableRenames]) {
+    let by_table: HashMap<&str, Vec<&DetectedColumnRename>> = pending
+        .iter()
+        .map(|t| (t.table_name.as_str(), t.renames.iter().collect::<Vec<_>>()))
+        .collect();
+
+    for change in &mut changes.olap_changes {
+        if let OlapChange::Table(TableChange::Updated {
+            name,
+            column_changes,
+            ..
+        }) = change
+        {
+            if let Some(renames) = by_table.get(name.as_str()) {
+                let owned: Vec<DetectedColumnRename> =
+                    renames.iter().map(|r| (*r).clone()).collect();
+                let taken = std::mem::take(column_changes);
+                *column_changes = apply_detected_renames(taken, &owned);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -658,6 +890,192 @@ mod tests {
             ))));
 
         let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive());
+    }
+
+    #[test]
+    fn column_rename_is_not_destructive() {
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::Table(TableChange::Updated {
+                name: "events".to_string(),
+                column_changes: vec![ColumnChange::Renamed {
+                    before: make_column("old_name"),
+                    after: make_column("new_name"),
+                    confidence: 0.9,
+                }],
+                order_by_change: OrderByChange {
+                    before: OrderBy::Fields(vec![]),
+                    after: OrderBy::Fields(vec![]),
+                },
+                partition_by_change: PartitionByChange {
+                    before: None,
+                    after: None,
+                },
+                before: make_table("events"),
+                after: make_table("events"),
+            }));
+
+        let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive());
+    }
+
+    #[test]
+    fn pending_renames_counted() {
+        let mut changes = empty_changes();
+        changes.pending_column_renames.push(PendingTableRenames {
+            database: None,
+            table_name: "events".to_string(),
+            renames: vec![DetectedColumnRename {
+                before: make_column("old_name"),
+                after: make_column("new_name"),
+                confidence: 0.85,
+            }],
+        });
+
+        assert_eq!(
+            total_pending_rename_count(&changes.pending_column_renames),
+            1
+        );
+    }
+
+    #[test]
+    fn apply_all_pending_converts_to_renamed() {
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::Table(TableChange::Updated {
+                name: "events".to_string(),
+                column_changes: vec![
+                    ColumnChange::Removed(make_column("old_name")),
+                    ColumnChange::Added {
+                        column: make_column("new_name"),
+                        position_after: None,
+                    },
+                ],
+                order_by_change: OrderByChange {
+                    before: OrderBy::Fields(vec![]),
+                    after: OrderBy::Fields(vec![]),
+                },
+                partition_by_change: PartitionByChange {
+                    before: None,
+                    after: None,
+                },
+                before: make_table("events"),
+                after: make_table("events"),
+            }));
+
+        let pending = vec![PendingTableRenames {
+            database: None,
+            table_name: "events".to_string(),
+            renames: vec![DetectedColumnRename {
+                before: make_column("old_name"),
+                after: make_column("new_name"),
+                confidence: 0.9,
+            }],
+        }];
+
+        // Before applying: Removed + Added → destructive
+        let risk = classify_plan_risk(&changes);
+        assert!(risk.is_destructive());
+
+        apply_all_pending_renames(&mut changes, &pending);
+
+        // After applying: Renamed → not destructive
+        let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive());
+
+        if let OlapChange::Table(TableChange::Updated { column_changes, .. }) =
+            &changes.olap_changes[0]
+        {
+            assert_eq!(column_changes.len(), 1);
+            assert!(matches!(
+                &column_changes[0],
+                ColumnChange::Renamed { before, after, .. }
+                    if before.name == "old_name" && after.name == "new_name"
+            ));
+        } else {
+            panic!("Expected TableChange::Updated");
+        }
+    }
+
+    #[test]
+    fn unapplied_pending_rename_stays_destructive() {
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::Table(TableChange::Updated {
+                name: "events".to_string(),
+                column_changes: vec![
+                    ColumnChange::Removed(make_column("old_name")),
+                    ColumnChange::Added {
+                        column: make_column("new_name"),
+                        position_after: None,
+                    },
+                ],
+                order_by_change: OrderByChange {
+                    before: OrderBy::Fields(vec![]),
+                    after: OrderBy::Fields(vec![]),
+                },
+                partition_by_change: PartitionByChange {
+                    before: None,
+                    after: None,
+                },
+                before: make_table("events"),
+                after: make_table("events"),
+            }));
+        changes.pending_column_renames.push(PendingTableRenames {
+            database: None,
+            table_name: "events".to_string(),
+            renames: vec![DetectedColumnRename {
+                before: make_column("old_name"),
+                after: make_column("new_name"),
+                confidence: 0.9,
+            }],
+        });
+
+        // Without applying the rename, the Removed column is destructive
+        let risk = classify_plan_risk(&changes);
+        assert!(risk.is_destructive());
+    }
+
+    #[test]
+    fn exclude_approved_drops_filters_rejected_renames() {
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::Table(TableChange::Updated {
+                name: "events".to_string(),
+                column_changes: vec![
+                    ColumnChange::Removed(make_column("old_name")),
+                    ColumnChange::Added {
+                        column: make_column("new_name"),
+                        position_after: None,
+                    },
+                ],
+                order_by_change: OrderByChange {
+                    before: OrderBy::Fields(vec![]),
+                    after: OrderBy::Fields(vec![]),
+                },
+                partition_by_change: PartitionByChange {
+                    before: None,
+                    after: None,
+                },
+                before: make_table("events"),
+                after: make_table("events"),
+            }));
+
+        let mut risk = classify_plan_risk(&changes);
+        assert!(risk.is_destructive());
+        assert_eq!(risk.destructive_changes.len(), 1);
+
+        let approved = HashSet::from([ApprovedColumnDrop {
+            database: None,
+            table_name: "events".to_string(),
+            column_name: "old_name".to_string(),
+        }]);
+        risk.exclude_approved_drops(&approved);
         assert!(!risk.is_destructive());
     }
 }

@@ -504,6 +504,11 @@ pub struct InfraChanges {
     /// Changes that were filtered out due to lifecycle policies
     #[serde(default)]
     pub filtered_olap_changes: Vec<FilteredChange>,
+    /// Column renames detected by heuristic analysis, pending user confirmation.
+    /// The `olap_changes` still contain the raw `Removed` + `Added` pairs;
+    /// confirmed renames are applied by the rename confirmation gate.
+    #[serde(skip, default)]
+    pub pending_column_renames: Vec<PendingTableRenames>,
 }
 
 impl InfraChanges {
@@ -668,6 +673,7 @@ impl InfrastructureMap {
             web_app_changes: vec![],
             workflow_changes: vec![],
             filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
         }
     }
 
@@ -859,6 +865,7 @@ impl InfrastructureMap {
             &target_map.tables,
             &mut changes.olap_changes,
             &mut changes.filtered_olap_changes,
+            &mut changes.pending_column_renames,
             table_diff_strategy,
             respect_life_cycle,
             &target_map.default_database,
@@ -1932,6 +1939,7 @@ impl InfrastructureMap {
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         filtered_changes: &mut Vec<FilteredChange>,
+        pending_renames: &mut Vec<PendingTableRenames>,
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         default_database: &str,
@@ -2035,6 +2043,27 @@ impl InfrastructureMap {
                         // Compute the basic diff components
                         let column_changes =
                             compute_table_columns_diff(table, target_table, ignore_ops);
+
+                        // Detect possible column renames among the Added/Removed pairs.
+                        // Store them as pending metadata — the raw column_changes are NOT
+                        // mutated here. Renames are only applied after user confirmation.
+                        let detected_renames =
+                            detect_column_renames(&column_changes, table, target_table);
+                        if !detected_renames.is_empty() {
+                            for r in &detected_renames {
+                                tracing::info!(
+                                    "Detected possible column rename: `{}` -> `{}` (confidence {:.2})",
+                                    r.before.name,
+                                    r.after.name,
+                                    r.confidence
+                                );
+                            }
+                            pending_renames.push(PendingTableRenames {
+                                database: table.database.clone(),
+                                table_name: table.name.clone(),
+                                renames: detected_renames,
+                            });
+                        }
 
                         // Compute PARTITION BY changes from normalized tables to respect ignore_ops
                         // Using normalized tables ensures that ignored operations don't incorrectly
@@ -2249,11 +2278,13 @@ impl InfrastructureMap {
         // Dummy filtered object to call the function
         // unused, see TODO note above
         let mut filtered = Vec::new();
+        let mut pending = Vec::new();
         Self::diff_tables_with_strategy(
             self_tables,
             target_tables,
             olap_changes,
             &mut filtered,
+            &mut pending,
             &default_strategy,
             respect_life_cycle,
             default_database,
@@ -3742,6 +3773,17 @@ pub fn compute_table_columns_diff(
     }
 
     diff
+}
+
+/// Detected column renames for a single table, pending user confirmation.
+///
+/// The column changes in the plan still contain the raw `Removed` + `Added`
+/// pairs. These are only converted to `Renamed` after the user confirms.
+#[derive(Debug, Clone, Default)]
+pub struct PendingTableRenames {
+    pub database: Option<String>,
+    pub table_name: String,
+    pub renames: Vec<DetectedColumnRename>,
 }
 
 /// A column rename detected by heuristic analysis of add/remove pairs.
