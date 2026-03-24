@@ -22,6 +22,11 @@
       "import": "./dist/browserCompatible.mjs",
       "require": "./dist/browserCompatible.js"
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.mjs",
+      "require": "./dist/testing/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
