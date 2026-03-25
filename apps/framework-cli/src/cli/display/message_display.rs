@@ -252,6 +252,20 @@ mod tests {
     }
 
     #[test]
+    fn test_show_message_impl_with_logging_error() {
+        let message = Message::new("Error".to_string(), "This should log as error".to_string());
+        let result = show_message_impl(MessageType::Error, message, true, false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_show_message_impl_with_logging_warning() {
+        let message = Message::new("Warning".to_string(), "This should log as warn".to_string());
+        let result = show_message_impl(MessageType::Warning, message, true, false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_show_message_impl_multiline() {
         let message = Message::new(
             "Multi\nLine".to_string(),
