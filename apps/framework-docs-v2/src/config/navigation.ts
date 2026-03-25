@@ -38,6 +38,7 @@ import {
   IconBrain,
   IconTrendingUp,
   IconSearch,
+  IconFlask,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -675,6 +676,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/reference/testing-utilities",
+    title: "Testing Utilities",
+    icon: IconFlask,
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
     slug: "moosestack/data-types",
     title: "Data Types",
     icon: IconAtom,
@@ -924,6 +932,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "moosestack/configuration/jwt",
         title: "JWT",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/row-level-security",
+        title: "Row-Level Security",
         languages: ["typescript", "python"],
       },
       {

@@ -176,6 +176,8 @@ impl ClickHouseRemote {
             host_data_path: None,
             additional_databases: vec![],
             clusters: None,
+            rls_user: None,
+            rls_password: None,
         };
 
         let client = create_readonly_client(config);
@@ -336,9 +338,7 @@ mod tests {
             password: "secret123".to_string(),
             use_ssl: true,
             host_port: 8443,
-            host_data_path: None,
-            additional_databases: vec![],
-            clusters: None,
+            ..Default::default()
         }
     }
 

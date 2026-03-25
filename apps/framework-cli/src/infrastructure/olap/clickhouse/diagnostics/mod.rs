@@ -576,9 +576,7 @@ mod tests {
             use_ssl: false,
             user: "default".to_string(),
             password: "".to_string(),
-            host_data_path: None,
-            additional_databases: Vec::new(),
-            clusters: None,
+            ..Default::default()
         };
 
         let component = Component {
@@ -610,9 +608,7 @@ mod tests {
             use_ssl: false,
             user: "default".to_string(),
             password: "".to_string(),
-            host_data_path: None,
-            additional_databases: Vec::new(),
-            clusters: None,
+            ..Default::default()
         };
 
         let component = Component {
@@ -834,9 +830,7 @@ mod tests {
             use_ssl: false,
             user: "default".to_string(),
             password: "".to_string(),
-            host_data_path: None,
-            additional_databases: Vec::new(),
-            clusters: None,
+            ..Default::default()
         };
 
         // Note: This test demonstrates the concurrent execution pattern,

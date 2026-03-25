@@ -41,6 +41,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
+import { SelectRowPolicy } from "./sdk/selectRowPolicy";
 import {
   getSourceDir,
   getCompiledIndexPath,
@@ -165,6 +166,7 @@ type MooseInternalRegistry = {
   webApps: Map<string, WebApp>;
   materializedViews: Map<string, MaterializedView<any>>;
   views: Map<string, View>;
+  selectRowPolicies: Map<string, SelectRowPolicy>;
 };
 
 let registryMutationVersion = 0;
@@ -207,6 +209,7 @@ function createRegistryFrom(
     webApps: toTrackingMap(existing?.webApps),
     materializedViews: toTrackingMap(existing?.materializedViews),
     views: toTrackingMap(existing?.views),
+    selectRowPolicies: toTrackingMap(existing?.selectRowPolicies),
   };
 }
 
@@ -249,6 +252,10 @@ const moose_internal: MooseInternalRegistry = {
     markRegistryMutated,
   ),
   views: new MutationTrackingMap<string, View>(undefined, markRegistryMutated),
+  selectRowPolicies: new MutationTrackingMap<string, SelectRowPolicy>(
+    undefined,
+    markRegistryMutated,
+  ),
 };
 
 function getCachedLineage(
@@ -661,6 +668,20 @@ interface MaterializedViewJson {
 /**
  * JSON representation of a structured View.
  */
+/**
+ * JSON representation of a SelectRowPolicy.
+ */
+interface SelectRowPolicyJson {
+  /** Name of the row policy */
+  name: string;
+  /** Tables the policy applies to */
+  tables: { name: string; database?: string }[];
+  /** Column to filter on */
+  column: string;
+  /** JWT claim name for the filter value */
+  claim: string;
+}
+
 interface ViewJson {
   /** Name of the view */
   name: string;
@@ -1076,6 +1097,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
+  const selectRowPolicies: { [key: string]: SelectRowPolicyJson } = {};
   const lineage = getCachedLineage(registry);
 
   registry.tables.forEach((table) => {
@@ -1388,6 +1410,15 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     };
   });
 
+  registry.selectRowPolicies.forEach((policy) => {
+    selectRowPolicies[policy.name] = {
+      name: policy.name,
+      tables: policy.tableRefs,
+      column: policy.config.column,
+      claim: policy.config.claim,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -1398,6 +1429,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     webApps,
     materializedViews,
     views,
+    selectRowPolicies,
     unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
@@ -1476,6 +1508,7 @@ const loadIndex = async () => {
   registry.webApps.clear();
   registry.materializedViews.clear();
   registry.views.clear();
+  registry.selectRowPolicies.clear();
 
   // Clear require cache for compiled directory to pick up changes
   const outDir = getOutDir();

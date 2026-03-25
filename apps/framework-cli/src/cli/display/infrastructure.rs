@@ -666,6 +666,15 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         OlapChange::Dmv1View(Change::Updated { before: _, after }) => {
             infra_updated(&after.short_display());
         }
+        OlapChange::SelectRowPolicy(Change::Added(policy)) => {
+            infra_added(&format!("Row policy '{}'", policy.name));
+        }
+        OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+            infra_removed(&format!("Row policy '{}'", policy.name));
+        }
+        OlapChange::SelectRowPolicy(Change::Updated { before: _, after }) => {
+            infra_updated(&format!("Row policy '{}'", after.name));
+        }
     });
 }
 

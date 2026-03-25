@@ -37,8 +37,9 @@ use super::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
+use super::infrastructure::select_row_policy::SelectRowPolicy;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table};
+use super::infrastructure::table::{Column, OrderBy, Table, TableReference};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -398,6 +399,8 @@ pub enum OlapChange {
     MaterializedView(Change<MaterializedView>),
     /// Change to a structured view (user-defined SELECT views)
     View(Change<View>),
+    /// Change to a row policy
+    SelectRowPolicy(Change<SelectRowPolicy>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -590,6 +593,10 @@ pub struct InfrastructureMap {
     #[serde(default)]
     pub views: HashMap<String, View>,
 
+    /// Collection of row policies indexed by policy name
+    #[serde(default)]
+    pub select_row_policies: HashMap<String, SelectRowPolicy>,
+
     /// Version of Moose CLI that created or last updated this infrastructure map.
     /// Populated automatically during storage operations.
     /// None for maps created by older CLI versions (pre-version-tracking).
@@ -632,6 +639,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            select_row_policies: Default::default(),
             moose_version: None,
         }
     }
@@ -733,6 +741,11 @@ impl InfrastructureMap {
                 self.views
                     .values()
                     .map(|cv| OlapChange::View(Change::Added(Box::new(cv.clone())))),
+            )
+            .chain(
+                self.select_row_policies.values().map(|policy| {
+                    OlapChange::SelectRowPolicy(Change::Added(Box::new(policy.clone())))
+                }),
             )
             .collect()
     }
@@ -905,6 +918,17 @@ impl InfrastructureMap {
         );
         let view_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("View changes detected: {}", view_changes);
+
+        // Row Policies
+        tracing::info!("Analyzing changes in Row Policies...");
+        let olap_changes_len_before = changes.olap_changes.len();
+        Self::diff_select_row_policies(
+            &self.select_row_policies,
+            &target_map.select_row_policies,
+            &mut changes.olap_changes,
+        );
+        let row_policy_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("Row policy changes detected: {}", row_policy_changes);
 
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
@@ -1901,6 +1925,43 @@ impl InfrastructureMap {
         );
     }
 
+    /// Compare row policies between two infrastructure maps and compute differences.
+    pub fn diff_select_row_policies(
+        self_policies: &HashMap<String, SelectRowPolicy>,
+        target_policies: &HashMap<String, SelectRowPolicy>,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        for (id, policy) in self_policies {
+            if let Some(target_policy) = target_policies.get(id) {
+                let mut a = policy.clone();
+                let mut b = target_policy.clone();
+                a.tables.sort();
+                b.tables.sort();
+                if a != b {
+                    tracing::debug!("Row policy '{}' has differences", id);
+                    olap_changes.push(OlapChange::SelectRowPolicy(Change::Updated {
+                        before: Box::new(policy.clone()),
+                        after: Box::new(target_policy.clone()),
+                    }));
+                }
+            } else {
+                tracing::debug!("Row policy '{}' removed", id);
+                olap_changes.push(OlapChange::SelectRowPolicy(Change::Removed(Box::new(
+                    policy.clone(),
+                ))));
+            }
+        }
+
+        for (id, policy) in target_policies {
+            if !self_policies.contains_key(id) {
+                tracing::debug!("Row policy '{}' added", id);
+                olap_changes.push(OlapChange::SelectRowPolicy(Change::Added(Box::new(
+                    policy.clone(),
+                ))));
+            }
+        }
+    }
+
     /// Compare tables between two infrastructure maps and compute the differences
     ///
     /// This method identifies added, removed, and updated tables by comparing
@@ -2728,6 +2789,30 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            select_row_policies: self
+                .select_row_policies
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        crate::proto::infrastructure_map::SelectRowPolicy {
+                            name: v.name.clone(),
+                            tables: v
+                                .tables
+                                .iter()
+                                .map(|t| crate::proto::infrastructure_map::TableReference {
+                                    database: t.database.clone(),
+                                    table: t.name.clone(),
+                                    special_fields: Default::default(),
+                                })
+                                .collect(),
+                            column: v.column.clone(),
+                            claim: v.claim.clone(),
+                            special_fields: Default::default(),
+                        },
+                    )
+                })
+                .collect(),
             moose_version: self.moose_version.clone().unwrap_or_default(),
             special_fields: Default::default(),
         }
@@ -2878,6 +2963,28 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            select_row_policies: proto
+                .select_row_policies
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        SelectRowPolicy {
+                            name: v.name,
+                            tables: v
+                                .tables
+                                .into_iter()
+                                .map(|t| TableReference {
+                                    name: t.table,
+                                    database: t.database,
+                                })
+                                .collect(),
+                            column: v.column,
+                            claim: v.claim,
+                        },
+                    )
+                })
+                .collect(),
             moose_version: if proto.moose_version.is_empty() {
                 None // Backward compat: empty string = not set
             } else {
@@ -3765,6 +3872,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None, // Not set until storage
         }
     }
@@ -3800,6 +3908,7 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
+            select_row_policies: &'a HashMap<String, SelectRowPolicy>,
             #[serde(skip_serializing_if = "Option::is_none")]
             moose_version: &'a Option<String>,
         }
@@ -3824,6 +3933,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
+            select_row_policies: &masked_inframap.select_row_policies,
             moose_version: &masked_inframap.moose_version,
         };
 
@@ -8468,6 +8578,66 @@ mod version_tests {
     }
 
     #[test]
+    fn test_proto_roundtrip_select_row_policies() {
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
+
+        let mut map = InfrastructureMap::default();
+        map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec![
+                    TableReference {
+                        name: "events_1_0_0".to_string(),
+                        database: None,
+                    },
+                    TableReference {
+                        name: "orders_1_0_0".to_string(),
+                        database: None,
+                    },
+                ],
+                column: "org_id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+        map.select_row_policies.insert(
+            "region_filter".to_string(),
+            SelectRowPolicy {
+                name: "region_filter".to_string(),
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
+                column: "region".to_string(),
+                claim: "region".to_string(),
+            },
+        );
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.select_row_policies.len(), 2);
+
+        let tenant = decoded.select_row_policies.get("tenant_isolation").unwrap();
+        assert_eq!(tenant.name, "tenant_isolation");
+        assert_eq!(tenant.tables.len(), 2);
+        assert_eq!(tenant.tables[0].name, "events_1_0_0");
+        assert_eq!(tenant.tables[0].database, None);
+        assert_eq!(tenant.tables[1].name, "orders_1_0_0");
+        assert_eq!(tenant.column, "org_id");
+        assert_eq!(tenant.claim, "org_id");
+
+        let region = decoded.select_row_policies.get("region_filter").unwrap();
+        assert_eq!(region.name, "region_filter");
+        assert_eq!(region.tables.len(), 1);
+        assert_eq!(region.tables[0].name, "events_1_0_0");
+        assert_eq!(region.column, "region");
+        assert_eq!(region.claim, "region");
+    }
+
+    #[test]
     fn test_backward_compatibility_json() {
         let old_json = r#"{
             "default_database": "test_db",
@@ -8817,5 +8987,105 @@ mod lineage_diff_equality_tests {
             web_apps_equal_ignore_metadata(&base, &reordered),
             "Lineage ordering should not affect WebApp diff equality"
         );
+    }
+}
+
+#[cfg(test)]
+mod diff_select_row_policy_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_row_policy(
+        name: &str,
+        tables: Vec<&str>,
+        column: &str,
+        claim: &str,
+    ) -> crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy {
+        use crate::framework::core::infrastructure::table::TableReference;
+        crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy {
+            name: name.to_string(),
+            tables: tables
+                .into_iter()
+                .map(|t| TableReference {
+                    name: t.to_string(),
+                    database: None,
+                })
+                .collect(),
+            column: column.to_string(),
+            claim: claim.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_diff_select_row_policy_no_changes() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events"], "org_id", "org_id");
+        let mut policies = HashMap::new();
+        policies.insert("tenant_iso".to_string(), policy);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_select_row_policies(&policies, &policies, &mut changes);
+        assert!(
+            changes.is_empty(),
+            "Expected no changes for identical policies"
+        );
+    }
+
+    #[test]
+    fn test_diff_select_row_policy_add() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events"], "org_id", "org_id");
+        let mut target = HashMap::new();
+        target.insert("tenant_iso".to_string(), policy.clone());
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_select_row_policies(&HashMap::new(), &target, &mut changes);
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            OlapChange::SelectRowPolicy(Change::Added(p)) => {
+                assert_eq!(**p, policy);
+            }
+            _ => panic!("Expected SelectRowPolicy Added"),
+        }
+    }
+
+    #[test]
+    fn test_diff_select_row_policy_remove() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events"], "org_id", "org_id");
+        let mut current = HashMap::new();
+        current.insert("tenant_iso".to_string(), policy.clone());
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_select_row_policies(&current, &HashMap::new(), &mut changes);
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            OlapChange::SelectRowPolicy(Change::Removed(p)) => {
+                assert_eq!(**p, policy);
+            }
+            _ => panic!("Expected SelectRowPolicy Removed"),
+        }
+    }
+
+    #[test]
+    fn test_diff_select_row_policy_update() {
+        let before = create_test_row_policy("tenant_iso", vec!["events"], "org_id", "org_id");
+        let after =
+            create_test_row_policy("tenant_iso", vec!["events", "logs"], "org_id", "org_id");
+        let mut current = HashMap::new();
+        current.insert("tenant_iso".to_string(), before.clone());
+        let mut target = HashMap::new();
+        target.insert("tenant_iso".to_string(), after.clone());
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_select_row_policies(&current, &target, &mut changes);
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            OlapChange::SelectRowPolicy(Change::Updated {
+                before: b,
+                after: a,
+            }) => {
+                assert_eq!(**b, before);
+                assert_eq!(**a, after);
+            }
+            _ => panic!("Expected SelectRowPolicy Updated"),
+        }
     }
 }

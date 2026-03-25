@@ -55,6 +55,9 @@ use tracing::{debug, info, instrument, warn};
 use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
+use crate::framework::core::infrastructure::select_row_policy::{
+    SelectRowPolicy, TableReference, MOOSE_RLS_ROLE,
+};
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
@@ -290,6 +293,12 @@ pub enum SerializableOlapOperation {
         sql: Vec<String>,
         description: String,
     },
+    /// Create row policies on one or more tables.
+    /// Bootstrap SQL (role, user, grants) is generated at execution time
+    /// using the runtime password — never serialized.
+    CreateRowPolicy { policy: SelectRowPolicy },
+    /// Drop row policies from one or more tables.
+    DropRowPolicy { policy: SelectRowPolicy },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -389,7 +398,9 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::CreateMaterializedView { .. }
         | AtomicOlapOperation::DropMaterializedView { .. }
         | AtomicOlapOperation::CreateView { .. }
-        | AtomicOlapOperation::DropView { .. } => None,
+        | AtomicOlapOperation::DropView { .. }
+        | AtomicOlapOperation::CreateRowPolicy { .. }
+        | AtomicOlapOperation::DropRowPolicy { .. } => None,
     }
 }
 
@@ -626,6 +637,12 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             format!("Dropping custom view '{}'", name)
         }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
+        SerializableOlapOperation::CreateRowPolicy { policy } => {
+            format!("Creating row policy '{}'", policy.name)
+        }
+        SerializableOlapOperation::DropRowPolicy { policy } => {
+            format!("Dropping row policy '{}'", policy.name)
+        }
     }
 }
 
@@ -888,6 +905,12 @@ pub async fn execute_atomic_operation(
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
+        }
+        SerializableOlapOperation::CreateRowPolicy { policy } => {
+            execute_create_row_policy(db_name, policy, client).await?;
+        }
+        SerializableOlapOperation::DropRowPolicy { policy } => {
+            execute_drop_row_policy(db_name, policy, client).await?;
         }
     }
     Ok(())
@@ -1608,6 +1631,163 @@ async fn execute_raw_sql(
                     resource: None,
                 })?;
         }
+    }
+    Ok(())
+}
+
+/// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
+/// matches the current config. Runs once per startup when any row policies are configured,
+/// regardless of whether the policies themselves changed.
+pub async fn rls_bootstrap(
+    project: &Project,
+    desired_policies: &[SelectRowPolicy],
+) -> Result<(), ClickhouseChangesError> {
+    let client = create_client(project.clickhouse_config.clone());
+    check_ready(&client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: None,
+        })?;
+    let db_name = &project.clickhouse_config.db_name;
+    let rls_user = client.config.effective_rls_user();
+    let escaped_rls_user = rls_user.replace('`', "``");
+    let escaped_password = client.config.effective_rls_password().replace('\'', "''");
+
+    tracing::info!(
+        "Running RLS bootstrap for {} policies",
+        desired_policies.len()
+    );
+
+    // 1. Role + user (ALTER ensures password stays in sync if rotated)
+    let bootstrap_sqls = vec![
+        format!("CREATE ROLE IF NOT EXISTS `{MOOSE_RLS_ROLE}`"),
+        format!(
+            "CREATE USER IF NOT EXISTS `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"
+        ),
+        format!("ALTER USER `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"),
+    ];
+    for sql in &bootstrap_sqls {
+        run_query(sql, &client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some("rls-bootstrap".to_string()),
+            })?;
+    }
+
+    // 2. Collect all databases that have policies and grant SELECT
+    let mut all_databases: HashSet<String> = HashSet::new();
+    for policy in desired_policies {
+        for db in policy.resolved_databases(db_name) {
+            all_databases.insert(db);
+        }
+    }
+    for db in &all_databases {
+        let escaped_db = db.replace('`', "``");
+        let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO `{escaped_rls_user}`");
+        tracing::debug!("RLS grant: {}", grant_sql);
+        run_query(&grant_sql, &client).await.map_err(|e| {
+            ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("rls-grant:{db}")),
+            }
+        })?;
+    }
+
+    // 3. Grant role to user
+    let grant_role_sql = format!("GRANT `{MOOSE_RLS_ROLE}` TO `{escaped_rls_user}`");
+    run_query(&grant_role_sql, &client).await.map_err(|e| {
+        ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some("rls-grant-role".to_string()),
+        }
+    })?;
+
+    // 4. Re-point all policies to the current role name, in case it changed.
+    for policy in desired_policies {
+        let escaped_name = policy.name.replace('`', "``");
+        for table_ref in &policy.tables {
+            let db = table_ref.database.as_deref().unwrap_or(db_name);
+            let escaped_db = db.replace('`', "``");
+            let escaped_table = table_ref.name.replace('`', "``");
+            let sql = format!(
+                "ALTER ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}` TO `{MOOSE_RLS_ROLE}`",
+                name = escaped_name,
+                table = escaped_table,
+                db = escaped_db,
+            );
+            tracing::debug!("RLS ensure policy targeting: {}", sql);
+            run_query(&sql, &client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!(
+                        "rls-alter-policy:{}:{}",
+                        policy.name, table_ref.name
+                    )),
+                }
+            })?;
+        }
+    }
+
+    tracing::info!("RLS bootstrap complete");
+    Ok(())
+}
+
+/// Execute a CREATE ROW POLICY operation (for new or changed policies only).
+async fn execute_create_row_policy(
+    db_name: &str,
+    policy: &SelectRowPolicy,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let escaped_name = policy.name.replace('`', "``");
+    for table_ref in &policy.tables {
+        let db = table_ref.database.as_deref().unwrap_or(db_name);
+        let escaped_db = db.replace('`', "``");
+        let escaped_table = table_ref.name.replace('`', "``");
+        let sql = format!(
+            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO `{MOOSE_RLS_ROLE}`",
+            name = escaped_name,
+            table = escaped_table,
+            db = escaped_db,
+            using = policy.using_expr(),
+        );
+        tracing::debug!("Creating row policy: {}", sql);
+        run_query(&sql, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
+            })?;
+    }
+
+    Ok(())
+}
+
+/// Execute a DROP ROW POLICY operation.
+async fn execute_drop_row_policy(
+    db_name: &str,
+    policy: &SelectRowPolicy,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let escaped_name = policy.name.replace('`', "``");
+    for table_ref in &policy.tables {
+        let db = table_ref.database.as_deref().unwrap_or(db_name);
+        let escaped_db = db.replace('`', "``");
+        let escaped_table = table_ref.name.replace('`', "``");
+        let sql = format!(
+            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
+            name = escaped_name,
+            table = escaped_table,
+            db = escaped_db,
+        );
+        tracing::debug!("Dropping row policy: {}", sql);
+        run_query(&sql, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
+            })?;
     }
     Ok(())
 }
@@ -2754,6 +2934,113 @@ impl OlapOperations for ConfiguredDBClient {
         Ok(sql_resources)
     }
 
+    /// Retrieves row policies from ClickHouse that are assigned to moose_rls_role.
+    ///
+    /// Queries `system.row_policies` and parses the `select_filter` expression
+    /// to reconstruct `SelectRowPolicy` structs for reality checking.
+    async fn list_row_policies(
+        &self,
+        db_name: &str,
+    ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
+        use std::collections::HashMap;
+
+        debug!(
+            "Starting list_row_policies operation for database: {}",
+            db_name
+        );
+
+        // Query row policies that belong to the shared RLS role.
+        // Uses has() instead of = to match policies even if additional roles are present.
+        let query = format!(
+            r#"
+            SELECT
+                short_name,
+                `table`,
+                COALESCE(select_filter, '') AS select_filter
+            FROM system.row_policies
+            WHERE database = ?
+            AND has(apply_to_list, '{MOOSE_RLS_ROLE}')
+            ORDER BY short_name, `table`
+            "#
+        );
+        debug!("Executing row policies query for database: {}", db_name);
+
+        let mut cursor = self
+            .client
+            .query(&query)
+            .bind(db_name)
+            .fetch::<(String, String, String)>()
+            .map_err(|e| {
+                debug!("Error fetching row policies: {}", e);
+                OlapChangesError::DatabaseError(e.to_string())
+            })?;
+
+        // Group by policy name — a single SelectRowPolicy can apply to multiple tables.
+        // The short_name format is "{policy_name}_on_{table}", so we extract the base name.
+        let mut policy_map: HashMap<String, (Vec<TableReference>, String)> = HashMap::new();
+
+        while let Some((short_name, table, select_filter)) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            debug!(
+                "Found row policy: {} on table {} with filter: {}",
+                short_name, table, select_filter
+            );
+
+            // Parse the select_filter to extract the column name.
+            // Expected format: `column` = getSetting('SQL_moose_rls_column')
+            // Note: The JWT claim cannot be recovered from DDL; it is set to the column
+            // name as a placeholder. The reality checker must skip the claim field when
+            // comparing policies.
+            let column = match parse_row_policy_filter(&select_filter) {
+                Some(col) => col,
+                None => {
+                    debug!(
+                        "Skipping row policy '{}': could not parse select_filter '{}'",
+                        short_name, select_filter
+                    );
+                    continue;
+                }
+            };
+
+            // Extract the base policy name from short_name by removing "_on_{table}" suffix
+            let policy_name = if let Some(base) = short_name.strip_suffix(&format!("_on_{}", table))
+            {
+                base.to_string()
+            } else {
+                short_name.clone()
+            };
+
+            let entry = policy_map
+                .entry(policy_name)
+                .or_insert_with(|| (Vec::new(), column.clone()));
+            entry.0.push(TableReference {
+                name: table,
+                database: Some(db_name.to_string()),
+            });
+        }
+
+        let policies: Vec<SelectRowPolicy> = policy_map
+            .into_iter()
+            .map(|(name, (tables, column))| SelectRowPolicy {
+                name,
+                tables,
+                column: column.clone(),
+                // The JWT claim is not stored in ClickHouse DDL; use column as
+                // placeholder. The reality checker skips claim in comparisons.
+                claim: column,
+            })
+            .collect();
+
+        debug!(
+            "Completed list_row_policies operation, found {} policies",
+            policies.len()
+        );
+        Ok(policies)
+    }
+
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
     ///
     /// This provides accurate SQL normalization that handles:
@@ -2781,6 +3068,27 @@ impl OlapOperations for ConfiguredDBClient {
             }
         }
     }
+}
+
+/// Parse a ClickHouse row policy `select_filter` expression to extract the column name.
+///
+/// Expected format: `` `column` = getSetting('SQL_moose_rls_column') ``
+/// Returns `Some(column)` on success, `None` if the format doesn't match.
+///
+/// Note: The JWT claim name is NOT stored in ClickHouse DDL. The setting name
+/// `SQL_moose_rls_{column}` encodes the column, not the claim. The caller must
+/// resolve the claim from the desired infrastructure map.
+fn parse_row_policy_filter(filter: &str) -> Option<String> {
+    static ROW_POLICY_FILTER_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+        // Also handle unquoted column names
+        regex::Regex::new(r"^`?([^`=\s]+)`?\s*=\s*getSetting\('SQL_moose_rls_([^']+)'\)$")
+            .expect("ROW_POLICY_FILTER_PATTERN regex should compile")
+    });
+
+    let captures = ROW_POLICY_FILTER_PATTERN.captures(filter.trim())?;
+    let column = captures.get(1)?.as_str().to_string();
+
+    Some(column)
 }
 
 static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {

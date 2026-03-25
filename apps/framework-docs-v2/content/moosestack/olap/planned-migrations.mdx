@@ -46,10 +46,11 @@ Planned migrations apply only to OLAP (ClickHouse) schema changes. Streaming, AP
 
 ## Prerequisites
 
+Planned migrations are active whenever a `plan.yaml` file exists in the `migrations/` directory. No feature flag is required -- just ensure OLAP is enabled:
+
 ```toml filename="moose.config.toml" copy
 [features]
 olap = true
-ddl_plan = true
 ```
 
 ## Generating a Plan
@@ -312,5 +313,5 @@ Execution rules:
 
 - Failure to connect to remote database? Make sure you have [your admin API key setup correctly](/moosestack/apis/auth#admin-endpoints)
 - Plan rejected due to drift: Re-generate a plan against the current remote, review, and retry.
-- No execution in moose server deployments: Ensure `ddl_plan = true` and `./migrations/plan.yaml` exists.
+- No execution in moose server deployments: Ensure `./migrations/plan.yaml` exists and `olap = true` is set.
 - OLAP disabled: Ensure `[features].olap = true`.
