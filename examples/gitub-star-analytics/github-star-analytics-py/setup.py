@@ -6,7 +6,7 @@ setup(
     install_requires=[
         "kafka-python-ng==2.2.2",
         "clickhouse_connect==0.11.0",
-        "requests==2.32.4",
+        "requests==2.33.0",
         "moose-cli",
         "moose-lib",
         "python-dotenv",
