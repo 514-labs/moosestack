@@ -1,6 +1,6 @@
 import type * as vscode from "vscode";
 
-import { runProcess } from "./processRunner";
+import { runShell } from "./processRunner";
 import type { TemplateInfo, TemplateListResponse } from "./types";
 
 const SUPPORTED_TEMPLATE_LIST_SCHEMA_VERSION = 1;
@@ -25,7 +25,7 @@ export function parseTemplateListResponse(output: string): TemplateInfo[] {
 export async function getAvailableTemplates(
   outputChannel: vscode.OutputChannel,
 ): Promise<TemplateInfo[]> {
-  const result = await runProcess("moose", ["template", "list", "--json"], {
+  const result = await runShell("moose template list --json", {
     onStderr: (chunk) => outputChannel.append(chunk),
     onStdout: (chunk) => outputChannel.append(chunk),
   });

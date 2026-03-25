@@ -9,7 +9,7 @@ import {
   hasWorkspaceMarker,
   resolveActiveProject,
 } from "./discovery";
-import { runProcess } from "./processRunner";
+import { runShell } from "./processRunner";
 import {
   ensureCoreBinaries,
   installRecommendedExtensions,
@@ -296,9 +296,8 @@ async function createNewProject(
     parentDir = pickedFolder[0].fsPath;
   }
 
-  const result = await runProcess(
-    "moose",
-    ["init", projectName, templatePick.template.name],
+  const result = await runShell(
+    `moose init ${projectName} ${templatePick.template.name}`,
     {
       cwd: parentDir ?? undefined,
       onStderr: (chunk) => outputChannel.append(chunk),

@@ -31,7 +31,7 @@ function mergeSqlToolsConnections(
 ): SqlToolsConnection[] {
   const merged = new Map<string, SqlToolsConnection>();
 
-  for (const connection of [...existingConnections, ...sharedConnections]) {
+  for (const connection of [...sharedConnections, ...existingConnections]) {
     if (!connection?.name) {
       continue;
     }
@@ -49,8 +49,8 @@ export function mergeSettings(
   sharedSettings: SettingsFile = {},
 ): SettingsFile {
   return {
-    ...existingSettings,
     ...sharedSettings,
+    ...existingSettings,
     "python.analysis.extraPaths": mergeUniqueStrings(
       existingSettings["python.analysis.extraPaths"],
       sharedSettings["python.analysis.extraPaths"],
