@@ -1,0 +1,76 @@
+{
+  "name": "@514labs/vscode-extension",
+  "displayName": "MooseStack / 514",
+  "description": "MooseStack and 514 onboarding for VS Code-family editors.",
+  "version": "0.0.0",
+  "publisher": "514-labs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack",
+    "directory": "apps/vscode-extension"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:moose.config.toml",
+    "onCommand:moosestack.createNewProject",
+    "onCommand:moosestack.selectActiveProject",
+    "onCommand:moosestack.configureWorkspace",
+    "onCommand:moosestack.setupHarness",
+    "onCommand:moosestack.showSetupStatus"
+  ],
+  "main": "./dist/extension.js",
+  "extensionDependencies": [
+    "514-labs.moosestack-lsp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "moosestack.createNewProject",
+        "title": "Moose: Create New Project"
+      },
+      {
+        "command": "moosestack.selectActiveProject",
+        "title": "Moose: Select Active Moose Project"
+      },
+      {
+        "command": "moosestack.configureWorkspace",
+        "title": "Moose: Configure Workspace"
+      },
+      {
+        "command": "moosestack.setupHarness",
+        "title": "Moose: Re-run Dev Harness Setup"
+      },
+      {
+        "command": "moosestack.showSetupStatus",
+        "title": "Moose: Show Setup Status"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "pnpm run build && node --test dist/test/*.test.js",
+    "package:vsix": "pnpm run build && npx @vscode/vsce package",
+    "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
+    "publish:openvsx": "pnpm run build && npx ovsx publish"
+  },
+  "devDependencies": {
+    "@repo/ts-config": "workspace:^",
+    "@types/node": "catalog:",
+    "@types/vscode": "^1.90.0",
+    "typescript": "catalog:"
+  }
+}
