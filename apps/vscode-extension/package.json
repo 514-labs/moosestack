@@ -1,0 +1,85 @@
+{
+  "name": "@514labs/vscode-extension",
+  "displayName": "Fiveonefour",
+  "description": "Fiveonefour onboarding for MooseStack in VS Code-family editors.",
+  "version": "0.0.0",
+  "publisher": "514-labs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack",
+    "directory": "apps/vscode-extension"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Fiveonefour can discover Moose projects and show setup status in Restricted Mode. Project scaffolding, workspace configuration, CLI installation, and dev harness setup require a trusted workspace."
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:moose.config.toml",
+    "onCommand:moosestack.createNewProject",
+    "onCommand:moosestack.selectActiveProject",
+    "onCommand:moosestack.configureWorkspace",
+    "onCommand:moosestack.setupHarness",
+    "onCommand:moosestack.showSetupStatus"
+  ],
+  "main": "./dist/extension.js",
+  "extensionPack": [
+    "514-labs.moosestack-lsp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "moosestack.createNewProject",
+        "enablement": "isWorkspaceTrusted",
+        "title": "Fiveonefour: Create Moose Project"
+      },
+      {
+        "command": "moosestack.selectActiveProject",
+        "title": "Fiveonefour: Select Active Moose Project"
+      },
+      {
+        "command": "moosestack.configureWorkspace",
+        "enablement": "isWorkspaceTrusted",
+        "title": "Fiveonefour: Configure Workspace"
+      },
+      {
+        "command": "moosestack.setupHarness",
+        "enablement": "isWorkspaceTrusted",
+        "title": "Fiveonefour: Re-run Dev Harness Setup"
+      },
+      {
+        "command": "moosestack.showSetupStatus",
+        "title": "Fiveonefour: Show Setup Status"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "package:vsix": "pnpm run build && npx @vscode/vsce package",
+    "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
+    "publish:openvsx": "pnpm run build && npx ovsx publish"
+  },
+  "devDependencies": {
+    "@repo/ts-config": "workspace:^",
+    "@types/node": "catalog:",
+    "@types/vscode": "^1.90.0",
+    "typescript": "catalog:"
+  }
+}
