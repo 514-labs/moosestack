@@ -1,0 +1,74 @@
+{
+  "name": "fiveonefour",
+  "displayName": "Fiveonefour",
+  "description": "Install the Moose and 514 CLIs, keep them current, and show Moose Harness getting-started guidance for VS Code-family editors.",
+  "version": "0.0.0",
+  "publisher": "514-labs",
+  "homepage": "https://docs.fiveonefour.com/moosestack",
+  "bugs": {
+    "url": "https://github.com/514-labs/moosestack/issues"
+  },
+  "qna": "http://slack.moosestack.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack",
+    "directory": "apps/vscode-extension"
+  },
+  "license": "MIT",
+  "markdown": "github",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "fiveonefour",
+    "moose",
+    "moosestack",
+    "harness",
+    "cli",
+    "installer",
+    "wsl",
+    "vscode"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Fiveonefour can install and update the Moose and 514 CLIs, show install state, and open the Moose Harness guide without requiring a trusted workspace."
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:fiveonefour.checkInstallState"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fiveonefour.checkInstallState",
+        "title": "Fiveonefour: Check Install State"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "pnpm run build && node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "package:vsix": "pnpm run build && npx @vscode/vsce package",
+    "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
+    "publish:openvsx": "pnpm run build && npx ovsx publish"
+  },
+  "devDependencies": {
+    "@repo/ts-config": "workspace:^",
+    "@types/node": "catalog:",
+    "@types/vscode": "^1.90.0",
+    "typescript": "catalog:"
+  }
+}
