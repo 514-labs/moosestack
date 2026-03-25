@@ -54,7 +54,6 @@ pub struct TemplateInfo {
     pub name: String,
     pub language: String,
     pub description: String,
-    pub visible: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -302,14 +301,18 @@ fn collect_template_infos(templates: &toml::value::Table) -> Vec<TemplateInfo> {
     let mut template_infos: Vec<TemplateInfo> = templates
         .iter()
         .filter_map(|(name, config)| {
-            TemplateConfig::from_toml(config).map(|config| TemplateInfo {
-                name: name.clone(),
-                language: config.language,
-                description: config.description,
-                visible: config.visible,
+            TemplateConfig::from_toml(config).and_then(|config| {
+                if config.visible {
+                    Some(TemplateInfo {
+                        name: name.clone(),
+                        language: config.language,
+                        description: config.description,
+                    })
+                } else {
+                    None
+                }
             })
         })
-        .filter(|template| template.visible)
         .collect();
 
     template_infos.sort_by(|left, right| left.name.cmp(&right.name));
@@ -712,7 +715,6 @@ mod tests {
                 name: "visible_template".to_string(),
                 language: "typescript".to_string(),
                 description: "Visible template".to_string(),
-                visible: true,
             }]
         );
     }
@@ -726,7 +728,6 @@ mod tests {
                 name: "typescript".to_string(),
                 language: "typescript".to_string(),
                 description: "TypeScript project".to_string(),
-                visible: true,
             }],
         };
 
