@@ -49,12 +49,15 @@ impl TemplateConfig {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+/// Metadata for a visible project template returned by `moose template list`.
+#[derive(Debug, Serialize, PartialEq, Eq, Clone)]
 pub struct TemplateInfo {
+    /// Template identifier used with `moose init`.
     pub name: String,
+    /// Programming language used by the template, such as `typescript` or `python`.
     pub language: String,
+    /// Human-readable description shown in listings and editor pickers.
     pub description: String,
-    pub visible: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -302,14 +305,14 @@ fn collect_template_infos(templates: &toml::value::Table) -> Vec<TemplateInfo> {
     let mut template_infos: Vec<TemplateInfo> = templates
         .iter()
         .filter_map(|(name, config)| {
-            TemplateConfig::from_toml(config).map(|config| TemplateInfo {
-                name: name.clone(),
-                language: config.language,
-                description: config.description,
-                visible: config.visible,
+            TemplateConfig::from_toml(config).and_then(|config| {
+                config.visible.then_some(TemplateInfo {
+                    name: name.clone(),
+                    language: config.language,
+                    description: config.description,
+                })
             })
         })
-        .filter(|template| template.visible)
         .collect();
 
     template_infos.sort_by(|left, right| left.name.cmp(&right.name));
@@ -712,7 +715,6 @@ mod tests {
                 name: "visible_template".to_string(),
                 language: "typescript".to_string(),
                 description: "Visible template".to_string(),
-                visible: true,
             }]
         );
     }
@@ -726,7 +728,6 @@ mod tests {
                 name: "typescript".to_string(),
                 language: "typescript".to_string(),
                 description: "TypeScript project".to_string(),
-                visible: true,
             }],
         };
 
@@ -743,10 +744,15 @@ mod tests {
             .get("templates")
             .and_then(|value| value.as_array())
             .expect("templates should be present");
+        let first_template = templates
+            .first()
+            .and_then(|value| value.as_object())
+            .expect("template entry should be an object");
 
         assert_eq!(schema_version, u64::from(TEMPLATE_LIST_SCHEMA_VERSION));
         assert_eq!(template_version, "0.0.1");
         assert_eq!(templates.len(), 1);
+        assert!(!first_template.contains_key("visible"));
     }
 
     #[tokio::test]
