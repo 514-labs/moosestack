@@ -1,4 +1,5 @@
 mod compressed_map;
+pub mod proxy;
 mod server;
 mod tools;
 
@@ -6,6 +7,7 @@ pub use compressed_map::{
     build_compressed_map, ComponentNode, ComponentType, CompressedInfraMap, Connection,
     ConnectionType, MapStats,
 };
+pub use proxy::ProxyMcpHandler;
 pub use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpService,
 };

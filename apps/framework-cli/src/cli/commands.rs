@@ -233,6 +233,16 @@ pub enum Commands {
         #[arg(long)]
         rows: Option<u64>,
     },
+    /// Run a stdio MCP proxy server for AI agent integration (e.g., Claude Code)
+    Mcp {
+        /// Host of the dev server to proxy to (auto-detected from project config if omitted)
+        #[arg(long)]
+        host: Option<String>,
+
+        /// Port of the dev server to proxy to (auto-detected from project config if omitted)
+        #[arg(long)]
+        port: Option<u16>,
+    },
     /// Manage Kafka-related operations
     #[command(visible_alias = "k")]
     Kafka(KafkaArgs),
