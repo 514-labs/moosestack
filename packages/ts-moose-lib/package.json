@@ -41,7 +41,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "test": "tsup && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
+    "test": "tsup --no-dts && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
   },
   "dependencies": {
     "@514labs/kafka-javascript": "1.7.1-patch",
