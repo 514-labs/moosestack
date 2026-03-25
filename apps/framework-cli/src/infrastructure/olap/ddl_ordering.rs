@@ -1114,7 +1114,7 @@ impl ContainsSqlExpression for TableProjection {
 /// correctly handles composite expressions like `(col_a, col_b)` and function
 /// wrappers like `lower(col_a)`. It assumes expressions do not use backtick-quoted
 /// identifiers that differ from their unquoted form.
-fn filter_for_referencing_column<'a, T: ContainsSqlExpression>(
+fn items_referencing_column<'a, T: ContainsSqlExpression>(
     list: &'a Vec<T>,
     column_name: &str,
 ) -> Vec<&'a T> {
@@ -1147,13 +1147,13 @@ struct HandledDependencies {
 /// Inserts into `handled` so that `process_index_changes` / `process_projection_changes`
 /// can skip these later. Deduplicates across multiple column changes that share a
 /// dependent index or projection.
-fn drop_column_dependencies(
+fn drop_column_dependents(
     plan: &mut OperationPlan,
     before: &Table,
     column_name: &str,
     handled: &mut HandledDependencies,
 ) {
-    for idx in filter_for_referencing_column(&before.indexes, column_name) {
+    for idx in items_referencing_column(&before.indexes, column_name) {
         if handled.dropped_indexes.insert(idx.name.clone()) {
             plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
                 table: before.clone(),
@@ -1162,7 +1162,7 @@ fn drop_column_dependencies(
             });
         }
     }
-    for proj in filter_for_referencing_column(&before.projections, column_name) {
+    for proj in items_referencing_column(&before.projections, column_name) {
         if handled.dropped_projections.insert(proj.name.clone()) {
             plan.teardown_ops
                 .push(AtomicOlapOperation::DropTableProjection {
@@ -1174,13 +1174,13 @@ fn drop_column_dependencies(
     }
 }
 
-fn readd_column_dependencies(
+fn readd_column_dependents(
     plan: &mut OperationPlan,
     after: &Table,
     column_name: &str,
     handled: &mut HandledDependencies,
 ) {
-    for idx in filter_for_referencing_column(&after.indexes, column_name) {
+    for idx in items_referencing_column(&after.indexes, column_name) {
         if handled.dropped_indexes.contains(&idx.name)
             && handled.readded_indexes.insert(idx.name.clone())
         {
@@ -1191,7 +1191,7 @@ fn readd_column_dependencies(
             });
         }
     }
-    for proj in filter_for_referencing_column(&after.projections, column_name) {
+    for proj in items_referencing_column(&after.projections, column_name) {
         if handled.dropped_projections.contains(&proj.name)
             && handled.readded_projections.insert(proj.name.clone())
         {
@@ -1238,7 +1238,7 @@ fn process_column_changes(
             }
             ColumnChange::Removed(column) => {
                 // Drop dependent indexes/projections before dropping the column
-                drop_column_dependencies(&mut plan, before, &column.name, &mut handled);
+                drop_column_dependents(&mut plan, before, &column.name, &mut handled);
                 plan.teardown_ops
                     .push(process_column_removal(before, &column.name));
                 // No re-add: the column (and thus its dependents) are gone
@@ -1248,13 +1248,13 @@ fn process_column_changes(
                 after: after_col,
             } => {
                 // Drop dependent indexes/projections before modifying the column
-                drop_column_dependencies(&mut plan, before, &before_col.name, &mut handled);
+                drop_column_dependents(&mut plan, before, &before_col.name, &mut handled);
 
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
 
                 // Re-add from the `after` table so we pick up any definition changes
-                readd_column_dependencies(&mut plan, after, &after_col.name, &mut handled);
+                readd_column_dependents(&mut plan, after, &after_col.name, &mut handled);
             }
         }
     }
