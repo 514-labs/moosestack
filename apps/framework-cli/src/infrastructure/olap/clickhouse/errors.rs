@@ -94,19 +94,72 @@ pub fn validate_clickhouse_identifier(
     })
 }
 
-/// Validates that a SQL expression does not contain potentially unsafe characters (e.g. semicolons)
-/// that could allow SQL injection when interpolating expressions.
+/// Validates that a SQL expression does not contain characters that could enable SQL injection
+/// when the expression is interpolated directly into a query string.
+///
+/// Rejects semicolons (statement terminators) and comment markers (`--`, `/*`, `*/`) since
+/// these can be used to escape the intended expression context even when the expression is
+/// wrapped in parentheses by the caller.
 pub fn validate_clickhouse_expression(
     expression: &str,
     expression_type: &str,
 ) -> Result<(), ClickhouseError> {
-    if expression.contains(';') {
-        return Err(ClickhouseError::InvalidIdentifier {
-            identifier_type: expression_type.to_string(),
-            name: expression.to_string(),
-            reason: "contains invalid characters (semicolons are not allowed in expressions)"
-                .to_string(),
-        });
+    const FORBIDDEN: &[(&str, &str)] = &[
+        (";", "semicolons are not allowed in expressions"),
+        (
+            "--",
+            "SQL line comment markers (--) are not allowed in expressions",
+        ),
+        (
+            "/*",
+            "SQL block comment openers (/*) are not allowed in expressions",
+        ),
+        (
+            "*/",
+            "SQL block comment closers (*/) are not allowed in expressions",
+        ),
+    ];
+
+    for (pattern, reason) in FORBIDDEN {
+        if expression.contains(pattern) {
+            return Err(ClickhouseError::InvalidIdentifier {
+                identifier_type: expression_type.to_string(),
+                name: expression.to_string(),
+                reason: reason.to_string(),
+            });
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_expression_accepts_valid() {
+        assert!(validate_clickhouse_expression("len(col) <= 32", "test").is_ok());
+        assert!(validate_clickhouse_expression("col IN (1, 2, 3)", "test").is_ok());
+        assert!(validate_clickhouse_expression("isNotNull(col)", "test").is_ok());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_semicolon() {
+        assert!(validate_clickhouse_expression("col = 1; DROP TABLE foo", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_line_comment() {
+        assert!(validate_clickhouse_expression("col = 1 -- bypass", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_block_comment_open() {
+        assert!(validate_clickhouse_expression("col = 1 /* inject", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_block_comment_close() {
+        assert!(validate_clickhouse_expression("*/ UNION SELECT 1", "test").is_err());
+    }
 }

@@ -231,6 +231,42 @@ describe("typeConvert mappings for helper types", function () {
     expect((lastAgg as any)[1].argumentType).to.equal("DateTime");
   });
 
+  it('maps string[] & SimpleAggregated<"groupUniqArrayArray", string[]> to Array(String), not Map', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { SimpleAggregated } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        batch_ids: string[] & SimpleAggregated<"groupUniqArrayArray", string[]>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    expect(columns).to.have.length(1);
+    const col = columns[0];
+
+    expect(col.name).to.equal("batch_ids");
+    // Must be Array(String), not Map(Float64, String)
+    expect(col.data_type).to.deep.equal({
+      elementType: "String",
+      elementNullable: false,
+    });
+
+    const simpleAgg = col.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(simpleAgg).to.not.be.undefined;
+    const payload = (simpleAgg as any)[1];
+    expect(payload.functionName).to.equal("groupUniqArrayArray");
+    // argumentType must reflect the array element, not a Map key
+    expect(payload.argumentType).to.deep.equal({
+      elementType: "String",
+      elementNullable: false,
+    });
+  });
+
   it("maps FixedString with size parameter", function () {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
     const source = `

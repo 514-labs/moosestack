@@ -178,6 +178,22 @@ class OlapConfig(BaseModel):
         body: str
 
     projections: list[TableProjection] = []
+
+    class TableConstraint(BaseModel):
+        """A table-level constraint enforced by ClickHouse.
+
+        Attributes:
+            name: Unique identifier for the constraint.
+            expression: The SQL expression that must hold (e.g. ``"len(col) <= 32"``).
+            type: Constraint category. ``"ASSUME"`` hints the query optimizer;
+                  ``"CHECK"`` enforces correctness on inserts.
+        """
+
+        name: str
+        expression: str
+        type: Literal["CHECK", "ASSUME"]
+
+    constraints: list[TableConstraint] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 
     class SeedFilter(BaseModel):

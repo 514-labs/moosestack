@@ -346,6 +346,15 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     // seed_filter is a dev-time seeding directive, never part of ClickHouse schema
     normalized.seed_filter = Default::default();
 
+    // Strip auto-generated minmax indexes. These are controlled by ClickHouse table settings
+    // (add_minmax_index_for_numeric_columns / add_minmax_index_for_string_columns), not by
+    // user-defined schema. Always strip from both sides before comparison so that state
+    // captured before the introspection-side filter was introduced doesn't generate phantom
+    // DropTableIndex operations in the plan.
+    normalized
+        .indexes
+        .retain(|i| !i.name.starts_with("auto_minmax_index_"));
+
     if ignore_ops.is_empty() {
         return normalized;
     }
@@ -1125,7 +1134,7 @@ async fn execute_add_table_constraint(
         .unwrap_or_default();
 
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD CONSTRAINT IF NOT EXISTS `{}` {} {}",
+        "ALTER TABLE `{}`.`{}`{} ADD CONSTRAINT IF NOT EXISTS `{}` {} ({})",
         db_name,
         table_name,
         cluster_clause,
@@ -1704,6 +1713,14 @@ async fn execute_rename_table_column(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
+    validate_clickhouse_identifier(db_name, "Database name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(table_name, "Table name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(before_column_name, "Source column name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
+    validate_clickhouse_identifier(after_column_name, "Target column name")
+        .map_err(ClickhouseChangesError::Clickhouse)?;
     tracing::info!(
         "Executing RenameTableColumn for table: {}, column: {} → {}",
         table_name,

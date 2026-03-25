@@ -3477,7 +3477,7 @@ pub fn create_table_query(
                         "Constraint expression",
                     )?;
                     Ok(format!(
-                        "CONSTRAINT `{}` {} {}",
+                        "CONSTRAINT `{}` {} ({})",
                         c.name, c.constraint_type, c.expression
                     ))
                 })
