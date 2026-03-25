@@ -1,0 +1,16 @@
+{
+  "extends": "../../packages/ts-config/base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["es2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmitOnError": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "types": ["node", "vscode"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+}
