@@ -29,7 +29,6 @@ export interface TemplateInfo {
   description: string;
   language: string;
   name: string;
-  visible: boolean;
 }
 
 export interface TemplateListResponse {
