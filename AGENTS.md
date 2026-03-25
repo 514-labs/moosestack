@@ -62,6 +62,18 @@ rm -rf node_modules && pnpm install
 # Commit the updated pnpm-lock.yaml
 ```
 
+### Rebuilding and Testing Fork Manually
+If you are developing against a local fork of `moosestack` (e.g. `~/moosefork/moosestack`), you can test changes against an external Moose project by building the CLI locally and executing it directly:
+
+```bash
+# 1. Stop any running moose processes in your target project
+cd /path/to/your/moose/project
+./stop.sh --clean
+
+# 2. Run the newly built dev CLI from the fork directly against your project
+/home/omar_rahman/moosefork/moosestack/target/debug/moose-cli dev
+```
+
 ## Code Style Guidelines
 
 ### TypeScript/JavaScript
