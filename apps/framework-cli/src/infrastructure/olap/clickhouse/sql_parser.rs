@@ -805,6 +805,37 @@ pub struct ParsedConstraint {
 
 /// Extract constraints from a CREATE TABLE statement.
 ///
+/// Strip one balanced layer of outer parentheses from a string, if present.
+/// Returns the inner content trimmed. If the outermost `(` and `)` are not
+/// balanced (e.g. `(a > 0) AND (b < 10)`), the original string is returned.
+fn strip_outer_parens(s: &str) -> &str {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
+        return trimmed;
+    }
+    // Verify the opening paren matches the closing one (not two separate groups)
+    let mut depth = 0i32;
+    let inner = &trimmed[1..trimmed.len() - 1];
+    for ch in inner.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    // The first ')' closes the opening paren before end — not a single wrapper
+                    return trimmed;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth == 0 {
+        inner.trim()
+    } else {
+        trimmed
+    }
+}
+
 /// Parses the column definition body between `(` and `ENGINE` to find
 /// `CONSTRAINT <name> <type> <expression>` items. Uses the same top-level comma
 /// splitting logic as [`extract_indexes_from_create_table`] to handle
@@ -935,10 +966,16 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
             continue;
         }
 
-        let expression = after_name[type_end..].trim().to_string();
-        if expression.is_empty() {
+        let raw_expression = after_name[type_end..].trim();
+        if raw_expression.is_empty() {
             continue;
         }
+
+        // Strip one layer of outer parentheses if present.
+        // The DDL generator wraps expressions in (...) for SQL safety, and ClickHouse
+        // persists that wrapping. Stripping here ensures the parsed expression matches
+        // the user's original model and avoids perpetual plan diffs.
+        let expression = strip_outer_parens(raw_expression).to_string();
 
         result.push(ParsedConstraint {
             name,
@@ -3104,7 +3141,7 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].name, "constr_2");
         assert_eq!(constraints[0].constraint_type, "ASSUME");
-        assert_eq!(constraints[0].expression, "(value < 100)");
+        assert_eq!(constraints[0].expression, "value < 100");
 
         // Test 4: Multiple constraints
         let sql_multiple = r#"CREATE TABLE `db`.`test_table`
@@ -3125,7 +3162,7 @@ ORDER BY (id)"#;
 
         assert_eq!(constraints[1].name, "constr_2");
         assert_eq!(constraints[1].constraint_type, "ASSUME");
-        assert_eq!(constraints[1].expression, "(value < 100)");
+        assert_eq!(constraints[1].expression, "value < 100");
 
         // Test 5: Constraints appearing alongside indexes/projections
         let sql_mixed = r#"CREATE TABLE `db`.`test_table`
@@ -3156,7 +3193,7 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(
             constraints[0].expression,
-            "(value > 0 AND (value < 100 OR value = 200))"
+            "value > 0 AND (value < 100 OR value = 200)"
         );
 
         // Test 7: Constraint expressions containing quoted strings and escaped quotes
@@ -3172,7 +3209,7 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(
             constraints[0].expression,
-            "(status = 'active' AND reason != 'isn\\'t it')"
+            "status = 'active' AND reason != 'isn\\'t it'"
         );
 
         // Test 8: Constraint names with backticks and spaces
@@ -3200,5 +3237,29 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints[0].name, "foo🔥bar");
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(constraints[0].expression, "id > 0");
+    }
+
+    #[test]
+    fn test_strip_outer_parens() {
+        // Simple wrapper
+        assert_eq!(strip_outer_parens("(id > 0)"), "id > 0");
+        // No wrapper
+        assert_eq!(strip_outer_parens("id > 0"), "id > 0");
+        // Two separate groups — NOT a single wrapper
+        assert_eq!(
+            strip_outer_parens("(a > 0) AND (b < 10)"),
+            "(a > 0) AND (b < 10)"
+        );
+        // Nested: outer wraps inner groups
+        assert_eq!(
+            strip_outer_parens("(a > 0 AND (b < 10))"),
+            "a > 0 AND (b < 10)"
+        );
+        // Double-wrapped (user wrote parens + DDL added parens)
+        assert_eq!(strip_outer_parens("((id > 0))"), "(id > 0)");
+        // Empty parens
+        assert_eq!(strip_outer_parens("()"), "");
+        // Whitespace
+        assert_eq!(strip_outer_parens("  ( id > 0 )  "), "id > 0");
     }
 }
