@@ -5,12 +5,11 @@
  *   - EXPLAIN a query and extract index/granule stats
  *   - Profile query execution via system.query_log
  *   - Benchmark a query over N runs with p50/p95 percentiles
- *   - Inspect cluster merge activity and table part counts
  *   - Get row count, part count, and disk size for a table
  */
 
 import { type Sql, sql, toQueryPreview, quoteIdentifier } from "../sqlHelpers";
-import { type QueryClient } from "../consumption-apis/helpers";
+import { type QueryClient } from "../consumption-apis/query-client";
 import { validateRuns } from "./shared";
 
 // ---------------------------------------------------------------------------
@@ -199,81 +198,6 @@ export async function profileBenchmark(
 }
 
 // ---------------------------------------------------------------------------
-// Cluster diagnostics
-// ---------------------------------------------------------------------------
-
-export interface ClusterDiagnosticsResult {
-  readonly activeMerges: readonly {
-    readonly table: string;
-    readonly elapsed: number;
-    readonly progress: number;
-    readonly numParts: number;
-    readonly totalSizeBytes: number;
-  }[];
-  readonly tableParts: readonly {
-    readonly table: string;
-    readonly parts: number;
-    readonly rows: number;
-  }[];
-}
-
-export async function clusterDiagnostics(
-  queryClient: QueryClient,
-): Promise<ClusterDiagnosticsResult> {
-  const [mergeRows, partRows] = await Promise.all([
-    queryClient
-      .execute(
-        sql.raw(
-          `SELECT table, elapsed, progress, num_parts, total_size_bytes_compressed
-           FROM system.merges`,
-        ),
-      )
-      .then(
-        (r) =>
-          r.json() as Promise<
-            {
-              table: string;
-              elapsed: string;
-              progress: string;
-              num_parts: string;
-              total_size_bytes_compressed: string;
-            }[]
-          >,
-      ),
-    queryClient
-      .execute(
-        sql.raw(
-          `SELECT table, count() as parts, sum(rows) as rows
-           FROM system.parts
-           WHERE active = 1
-             AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
-           GROUP BY table
-           ORDER BY parts DESC`,
-        ),
-      )
-      .then(
-        (r) =>
-          r.json() as Promise<{ table: string; parts: string; rows: string }[]>,
-      ),
-  ]);
-
-  return {
-    activeMerges: mergeRows.map((m) => ({
-      table: m.table,
-      elapsed: Number(m.elapsed),
-      progress: Number(m.progress),
-      numParts: Number(m.num_parts),
-      totalSizeBytes: Number(m.total_size_bytes_compressed),
-    })),
-    tableParts: partRows.map((p) => ({
-      table: p.table,
-      parts: Number(p.parts),
-      rows: Number(p.rows),
-    })),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Table stats
 // ---------------------------------------------------------------------------
 
@@ -299,8 +223,10 @@ export async function tableStats(
     .split(".")
     .map((part) => quoteIdentifier(part))
     .join(".");
-  // Extract bare table name for system.parts lookup
-  const bareTable = table.includes(".") ? table.split(".").pop()! : table;
+  // Extract database and bare table name for system.parts lookup
+  const parts = table.split(".");
+  const bareTable = parts.length > 1 ? parts[parts.length - 1] : table;
+  const bareDatabase = parts.length > 1 ? parts[0] : null;
 
   const [countRows, partsRows] = await Promise.all([
     queryClient
@@ -308,7 +234,11 @@ export async function tableStats(
       .then((r) => r.json() as Promise<{ rows: string }[]>),
     queryClient
       .execute(
-        sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
+        bareDatabase ?
+          sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
+           FROM system.parts
+           WHERE active = 1 AND table = ${bareTable} AND database = ${bareDatabase}`
+        : sql`SELECT count() as parts, formatReadableSize(sum(bytes_on_disk)) as disk_size
            FROM system.parts
            WHERE active = 1 AND table = ${bareTable}`,
       )
