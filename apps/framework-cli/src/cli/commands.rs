@@ -471,7 +471,11 @@ pub struct TemplateCommands {
 pub enum TemplateSubCommands {
     /// List available templates
     #[command(visible_alias = "l")]
-    List {},
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]

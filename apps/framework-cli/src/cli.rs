@@ -1481,7 +1481,11 @@ pub async fn top_command_handler(
 
             let template_cmd = template_args.command.as_ref().unwrap();
             match template_cmd {
-                TemplateSubCommands::List {} => {
+                TemplateSubCommands::List { json } => {
+                    if *json {
+                        QUIET_STDOUT.store(true, Ordering::Relaxed);
+                    }
+
                     let capture_handle = crate::utilities::capture::capture_usage(
                         ActivityType::TemplateListCommand,
                         None,
@@ -1490,7 +1494,7 @@ pub async fn top_command_handler(
                         HashMap::new(),
                     );
 
-                    let result = list_available_templates(CLI_VERSION).await;
+                    let result = list_available_templates(CLI_VERSION, *json).await;
 
                     wait_for_usage_capture(capture_handle).await;
 

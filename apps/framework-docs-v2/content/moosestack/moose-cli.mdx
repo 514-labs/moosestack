@@ -30,6 +30,18 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+For editor integrations and other automation, you can request machine-readable output:
+
+```bash
+moose template list --json
+```
+
+The JSON payload is versioned for backwards-compatible tooling. It includes:
+
+- `schema_version`: version of the JSON response schema
+- `template_version`: version of the template manifest being listed
+- `templates`: visible templates available for initialization
+
 ### Component
 Lists available components you can add to your project.
 
