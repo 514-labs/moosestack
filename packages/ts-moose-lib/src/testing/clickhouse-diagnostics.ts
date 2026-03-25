@@ -201,7 +201,8 @@ export async function profileBenchmark(
 // Table stats
 // ---------------------------------------------------------------------------
 
-const TABLE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_.]*$/;
+// Matches "table" or "database.table" — no trailing/leading/consecutive dots
+const TABLE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?$/;
 
 export interface TableStats {
   readonly table: string;
