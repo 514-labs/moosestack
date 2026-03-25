@@ -8,7 +8,7 @@ use rmcp::{
 };
 use tracing::{error, info};
 
-use super::tools::{infra_issues, infra_map, logs, query_olap, sample_stream};
+use super::tools::all_tool_definitions;
 use crate::utilities::constants::CLI_VERSION;
 
 /// A lightweight MCP proxy server that runs over stdio.
@@ -97,13 +97,7 @@ impl ServerHandler for ProxyMcpHandler {
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
             meta: None,
-            tools: vec![
-                logs::tool_definition(),
-                infra_map::tool_definition(),
-                infra_issues::tool_definition(),
-                query_olap::tool_definition(),
-                sample_stream::tool_definition(),
-            ],
+            tools: all_tool_definitions(),
             next_cursor: None,
         })
     }
@@ -155,13 +149,7 @@ mod tests {
 
     #[test]
     fn test_tool_definitions_complete() {
-        let tools = [
-            logs::tool_definition(),
-            infra_map::tool_definition(),
-            infra_issues::tool_definition(),
-            query_olap::tool_definition(),
-            sample_stream::tool_definition(),
-        ];
+        let tools = all_tool_definitions();
         assert_eq!(tools.len(), 5);
 
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
