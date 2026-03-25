@@ -146,6 +146,40 @@ The development server includes:
 - Built-in MCP server for AI assistant integration
 - Health monitoring and metrics endpoints
 
+### Mcp
+
+Runs a lightweight stdio-based MCP proxy server for always-on AI agent integration. Unlike the HTTP MCP server bundled in `moose dev`, this process starts immediately without requiring the dev server to be running. When AI agents send tool calls, they are proxied to the dev server if it is available; if not, the proxy returns a clear message instructing the agent to start `moose dev`.
+
+```bash
+moose mcp [--host <HOST>] [--port <PORT>]
+```
+
+- `--host`: Host of the dev server to proxy to (default: `localhost`, auto-detected from project config if omitted)
+- `--port`: Port of the dev server to proxy to (default: `4000`, auto-detected from project config if omitted)
+
+The proxy advertises the same five tools as the dev MCP server (`get_infra_map`, `get_logs`, `query_olap`, `get_stream_sample`, `get_issues`) and communicates over stdio, which is natively supported by most AI clients.
+
+**Recommended configuration for Claude Code:**
+
+```bash
+claude mcp add moose-dev -- moose mcp
+```
+
+**Manual configuration (stdio transport):**
+
+```json filename="config.json" copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "command": "moose",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+See [MCP Server documentation](/moosestack/moosedev-mcp) for full setup instructions across AI clients.
+
 ### Prod
 Starts Moose in production mode for cloud deployments.
 ```bash

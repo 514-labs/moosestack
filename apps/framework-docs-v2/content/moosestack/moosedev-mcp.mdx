@@ -28,6 +28,29 @@ The MCP server is available at: `http://localhost:4000/mcp`
 The MCP server is enabled by default. To disable it, use `moose dev --mcp=false`.
 </Callout>
 
+## Always-On MCP with `moose mcp`
+
+AI agents (such as Claude Code) start before `moose dev` is launched, which means they can fail to connect if the MCP server isn't up yet. `moose mcp` solves this by running a lightweight stdio-based MCP proxy that **always starts successfully**, regardless of whether the dev server is running.
+
+```bash
+moose mcp [--host <HOST>] [--port <PORT>]
+```
+
+- The proxy starts immediately with no infrastructure dependencies.
+- It advertises the same five tools as the dev MCP server.
+- When `moose dev` is running, tool calls are proxied to `http://localhost:4000/mcp`.
+- When `moose dev` is not running, tool calls return a clear message asking the agent to start it.
+- `--host` and `--port` override the target dev server address (auto-detected from project config if omitted).
+
+### Why use `moose mcp` instead of the HTTP server?
+
+| | HTTP (`http://localhost:4000/mcp`) | stdio (`moose mcp`) |
+|---|---|---|
+| Starts without `moose dev` | No — dev server must be running | **Yes** |
+| Natively supported by Claude Code | Yes (with `--transport http`) | **Yes (recommended)** |
+| Supported by Cursor / Claude Desktop | Requires `mcp-remote` bridge | **Yes, directly** |
+| Supported by Windsurf / VS Code | Yes | Depends on client |
+
 ## Configure Your AI Client
 :::include /shared/prerequisites/install-mcp.mdx
 
@@ -472,6 +495,17 @@ curl -X POST http://localhost:4000/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
 ```
+
+**Avoid connection errors entirely** by switching to the `moose mcp` stdio proxy. It starts successfully even when `moose dev` is not running and will instruct the AI agent to start the dev server when needed:
+
+```bash
+# Claude Code
+claude mcp add moose-dev -- moose mcp
+
+# Cursor / Claude Desktop: set "command": "moose", "args": ["mcp"] in your MCP config
+```
+
+See [Always-On MCP with `moose mcp`](#always-on-mcp-with-moose-mcp) above for details.
 
 ### Empty Results
 

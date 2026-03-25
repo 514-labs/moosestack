@@ -10,19 +10,36 @@ Connect your AI assistant to the Moose MCP server. Most clients now support nati
 </TabsList>
 <TabsContent value="claude-code">
 
-Run this command to add the Moose MCP server to your Claude Code project-level configuration:
+**Option 1: Always-On stdio proxy (recommended)**
+
+Run `moose mcp` as a stdio MCP server. It starts immediately without requiring `moose dev` to be running first, and automatically proxies tool calls to the dev server when it is available.
+
+```bash copy
+claude mcp add moose-dev -- moose mcp
+```
+
+Manual configuration at `~/.claude/config.json`:
+
+```json filename="config.json" copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "command": "moose",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Option 2: Direct HTTP connection**
+
+Connect directly to the HTTP MCP endpoint exposed by `moose dev`. Requires the dev server to be running before adding the configuration.
 
 ```bash copy
 claude mcp add --transport http moose-dev http://localhost:4000/mcp
 ```
 
-That's it! Claude Code will automatically connect to your Moose dev server.
-
-<Callout type="info">
-Make sure `moose dev` is running before adding the server. The CLI will verify the connection.
-</Callout>
-
-**Alternative**: Manual configuration at `~/.claude/config.json`
+Manual configuration:
 
 ```json filename="config.json" copy
 {
@@ -34,6 +51,10 @@ Make sure `moose dev` is running before adding the server. The CLI will verify t
   }
 }
 ```
+
+<Callout type="info">
+With Option 2, make sure `moose dev` is running before adding the server. The CLI will verify the connection.
+</Callout>
 
 </TabsContent>
 <TabsContent value="windsurf">
@@ -96,20 +117,14 @@ Configure in Cline's MCP settings:
 
 **Location**: `.cursor/mcp.json` (project-level) or `~/.cursor/settings/mcp.json` (global)
 
-<Callout type="info">
-Cursor currently uses stdio transport. Use `mcp-remote` to bridge to HTTP servers:
-</Callout>
+Cursor uses stdio transport. Use `moose mcp` directly — no bridge required:
 
 ```json filename=".cursor/mcp.json" copy
 {
   "mcpServers": {
     "moose-dev": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://localhost:4000/mcp"
-      ]
+      "command": "moose",
+      "args": ["mcp"]
     }
   }
 }
@@ -126,24 +141,16 @@ Access via: Claude > Settings > Developer > Edit Config
 {
   "servers": {
     "moose-dev": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://localhost:4000/mcp"
-      ]
+      "command": "moose",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-<Callout type="info">
-The `-y` flag automatically installs `mcp-remote` if not already installed.
-</Callout>
-
 </TabsContent>
 </Tabs>
 
-<Callout type="warning">
-Make sure `moose dev` is running before using the MCP tools. The AI client will connect to `http://localhost:4000/mcp`.
+<Callout type="info">
+When using the `moose mcp` stdio proxy, the server starts immediately even if `moose dev` is not yet running. Tool calls will return a helpful message if the dev server is unreachable, prompting you to start it.
 </Callout>
