@@ -1,6 +1,6 @@
 ---
 title: Testing Utilities
-description: ClickHouse profiling, snapshot testing, connection diagnostics, and test reporting for MooseStack applications
+description: ClickHouse profiling, table diagnostics, and test reporting for MooseStack applications
 category: reference
 ---
 
@@ -19,8 +19,6 @@ import {
   profileBenchmark,
   explain,
   tableStats,
-  compareSnapshot,
-  diagnoseConnectionSpike,
   createTestReporter,
 } from "@514labs/moose-lib/testing";
 ```
@@ -37,7 +35,7 @@ Run a query N times and return server-side profiling data with percentile summar
 import { getMooseUtils } from "@514labs/moose-lib";
 import { profileBenchmark } from "@514labs/moose-lib/testing";
 
-const { client } = await getMooseUtils();
+const { client, sql } = await getMooseUtils();
 const query = sql`SELECT count() FROM MyTable WHERE status = 'active'`;
 
 const { profiles, p50, p95 } = await profileBenchmark(client.query, query, 12);
@@ -111,22 +109,7 @@ console.log(`Granules: ${plan.selectedGranules}/${plan.totalGranules} (skip ${pl
 | `granuleSkipPct` | `number` | Percentage of granules skipped (0–100) |
 | `rawPlan` | `string` | Full EXPLAIN output |
 
-## Cluster Diagnostics
-
-### clusterDiagnostics
-
-Inspect active merge operations and table part counts across the cluster.
-
-```typescript copy filename="cluster.test.ts"
-import { clusterDiagnostics } from "@514labs/moose-lib/testing";
-
-const state = await clusterDiagnostics(client.query);
-
-console.log(`Active merges: ${state.activeMerges.length}`);
-for (const t of state.tableParts) {
-  console.log(`  ${t.table}: ${t.parts} parts, ${t.rows} rows`);
-}
-```
+## Table Diagnostics
 
 ### tableStats
 
@@ -149,121 +132,6 @@ Supports `database.table` notation. Table names are validated and quoted to prev
 | `rows` | `number` | Total row count |
 | `parts` | `number` | Active part count |
 | `diskSize` | `string` | Human-readable disk size (e.g. `"1.23 GiB"`) |
-
-## Snapshot Testing
-
-Compare query results against a saved baseline to detect correctness regressions. Results are hashed with deterministic key and row ordering so that insertion order and query execution order do not affect the comparison.
-
-### saveSnapshot / compareSnapshot
-
-```typescript copy filename="snapshot.test.ts"
-import { saveSnapshot, compareSnapshot } from "@514labs/moose-lib/testing";
-
-const SNAPSHOTS_DIR = new URL("../snapshots", import.meta.url).pathname;
-const rows = await client.query.execute(query).then((r) => r.json());
-
-// First run: save a baseline
-await saveSnapshot("my-query-baseline", rows, SNAPSHOTS_DIR);
-
-// Subsequent runs: compare against baseline
-const comparison = await compareSnapshot("my-query-baseline", rows, SNAPSHOTS_DIR);
-if (!comparison.match) {
-  console.log(`Hash mismatch: expected ${comparison.expectedHash}, got ${comparison.actualHash}`);
-  console.log(`Row count: expected ${comparison.expectedRowCount}, got ${comparison.actualRowCount}`);
-}
-```
-
-Snapshot files are JSON containing the name, timestamp, row count, SHA-256 hash, and full row data for human inspection.
-
-### hashResultSet
-
-Compute a deterministic SHA-256 hash of a result set directly, without saving to disk.
-
-```typescript
-import { hashResultSet } from "@514labs/moose-lib/testing";
-
-const hash = hashResultSet(rows);
-```
-
-### SnapshotComparison
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `match` | `boolean` | Whether hashes are equal |
-| `expectedHash` | `string` | SHA-256 hash from the saved snapshot |
-| `actualHash` | `string` | SHA-256 hash of the current result set |
-| `expectedRowCount` | `number` | Row count from the saved snapshot |
-| `actualRowCount` | `number` | Row count of the current result set |
-
-## Connection Diagnostics
-
-Measure HTTP connection phases (DNS, TCP, TLS, time-to-first-byte) by bypassing the ClickHouse client and issuing raw HTTP requests. Useful for diagnosing latency between your application and a remote ClickHouse instance.
-
-### timedHttpQuery
-
-```typescript copy filename="connection.test.ts"
-import { timedHttpQuery } from "@514labs/moose-lib/testing";
-
-const timing = await timedHttpQuery({
-  host: "clickhouse.example.com",
-  port: 8443,
-  user: "default",
-  password: "secret",
-  database: "analytics",
-  query: "SELECT 1",
-  ssl: true,
-});
-
-console.log(`DNS: ${timing.dnsMs}ms, TCP: ${timing.tcpMs}ms, TLS: ${timing.tlsMs}ms`);
-console.log(`TTFB: ${timing.firstByteMs}ms, Total: ${timing.totalMs}ms`);
-```
-
-### diagnoseConnectionSpike
-
-Run multiple timed queries and automatically identify which phase causes any latency spike (>10x slower than the fastest).
-
-```typescript copy filename="spike.test.ts"
-import { diagnoseConnectionSpike } from "@514labs/moose-lib/testing";
-
-const result = await diagnoseConnectionSpike({
-  host: "clickhouse.example.com",
-  port: 8443,
-  user: "default",
-  password: "secret",
-  database: "analytics",
-  query: "SELECT 1",
-  ssl: true,
-}, 8);
-
-if (result.spikeDetected) {
-  console.log(`Spike in ${result.spikePhase}: ${result.slowest.totalMs}ms vs ${result.fastest.totalMs}ms`);
-}
-```
-
-### ConnectionTiming
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `dnsMs` | `number` | DNS resolution time |
-| `tcpMs` | `number` | TCP connection time |
-| `tlsMs` | `number` | TLS handshake time (0 if not SSL) |
-| `firstByteMs` | `number` | Time to first response byte |
-| `totalMs` | `number` | Total request time |
-| `statusCode` | `number` | HTTP status code |
-| `bodyLength` | `number` | Response body length in bytes |
-
-### ConnectionTimingOptions
-
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `host` | `string` | Yes | ClickHouse hostname |
-| `port` | `number` | Yes | ClickHouse HTTP port |
-| `user` | `string` | Yes | Username |
-| `password` | `string` | Yes | Password |
-| `database` | `string` | Yes | Database name |
-| `query` | `string` | Yes | SQL query to execute |
-| `ssl` | `boolean` | Yes | Use HTTPS |
-| `timeoutMs` | `number` | No | Request timeout (default: 30000) |
 
 ## Test Reporting
 
