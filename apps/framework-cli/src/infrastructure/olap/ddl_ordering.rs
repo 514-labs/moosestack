@@ -1094,37 +1094,34 @@ fn process_column_modification(
     }
 }
 
-/// Returns indexes from the table whose expression references the given column name.
-///
+trait ContainsSqlExpression {
+    fn expression(&self) -> &str;
+}
+
+impl ContainsSqlExpression for TableIndex {
+    fn expression(&self) -> &str {
+        &self.expression
+    }
+}
+impl ContainsSqlExpression for TableProjection {
+    fn expression(&self) -> &str {
+        &self.body
+    }
+}
+
 /// Tokenises the expression by splitting on non-identifier characters (anything
 /// that is not alphanumeric or `_`) and checks for a whole-word match.  This
 /// correctly handles composite expressions like `(col_a, col_b)` and function
 /// wrappers like `lower(col_a)`. It assumes expressions do not use backtick-quoted
 /// identifiers that differ from their unquoted form.
-fn indexes_referencing_column<'a>(table: &'a Table, column_name: &str) -> Vec<&'a TableIndex> {
-    table
-        .indexes
-        .iter()
-        .filter(|idx| {
-            idx.expression
-                .split(|c: char| !c.is_alphanumeric() && c != '_')
-                .any(|token| token == column_name)
-        })
-        .collect()
-}
-
-/// Returns projections from the table whose body references the given column name.
-///
-/// Uses the same tokenisation strategy as [`indexes_referencing_column`].
-fn projections_referencing_column<'a>(
-    table: &'a Table,
+fn filter_for_referencing_column<'a, T: ContainsSqlExpression>(
+    list: &'a Vec<T>,
     column_name: &str,
-) -> Vec<&'a TableProjection> {
-    table
-        .projections
-        .iter()
-        .filter(|proj| {
-            proj.body
+) -> Vec<&'a T> {
+    // TODO: consider using sqlparser::tokenizer::Tokenizer
+    list.iter()
+        .filter(|idx| {
+            idx.expression()
                 .split(|c: char| !c.is_alphanumeric() && c != '_')
                 .any(|token| token == column_name)
         })
@@ -1156,7 +1153,7 @@ fn drop_column_dependencies(
     column_name: &str,
     handled: &mut HandledDependencies,
 ) {
-    for idx in indexes_referencing_column(before, column_name) {
+    for idx in filter_for_referencing_column(&before.indexes, column_name) {
         if handled.dropped_indexes.insert(idx.name.clone()) {
             plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
                 table: before.clone(),
@@ -1165,7 +1162,7 @@ fn drop_column_dependencies(
             });
         }
     }
-    for proj in projections_referencing_column(before, column_name) {
+    for proj in filter_for_referencing_column(&before.projections, column_name) {
         if handled.dropped_projections.insert(proj.name.clone()) {
             plan.teardown_ops
                 .push(AtomicOlapOperation::DropTableProjection {
@@ -1183,7 +1180,7 @@ fn readd_column_dependencies(
     column_name: &str,
     handled: &mut HandledDependencies,
 ) {
-    for idx in indexes_referencing_column(after, column_name) {
+    for idx in filter_for_referencing_column(&after.indexes, column_name) {
         if handled.dropped_indexes.contains(&idx.name)
             && handled.readded_indexes.insert(idx.name.clone())
         {
@@ -1194,7 +1191,7 @@ fn readd_column_dependencies(
             });
         }
     }
-    for proj in projections_referencing_column(after, column_name) {
+    for proj in filter_for_referencing_column(&after.projections, column_name) {
         if handled.dropped_projections.contains(&proj.name)
             && handled.readded_projections.insert(proj.name.clone())
         {
@@ -3993,7 +3990,7 @@ mod tests {
         }
     }
 
-    fn make_test_table(
+    fn create_test_table(
         name: &str,
         columns: Vec<Column>,
         indexes: Vec<TableIndex>,
@@ -4059,13 +4056,13 @@ mod tests {
             granularity: 1,
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "test_table",
             vec![before_col.clone()],
             vec![index.clone()],
             vec![],
         );
-        let after = make_test_table(
+        let after = create_test_table(
             "test_table",
             vec![after_col.clone()],
             vec![index.clone()],
@@ -4124,13 +4121,13 @@ mod tests {
             body: "SELECT * ORDER BY src_endpoint_ip".to_string(),
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "test_table",
             vec![before_col.clone()],
             vec![],
             vec![projection.clone()],
         );
-        let after = make_test_table(
+        let after = create_test_table(
             "test_table",
             vec![after_col.clone()],
             vec![],
@@ -4185,13 +4182,13 @@ mod tests {
             granularity: 2, // changed granularity
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "test_table",
             vec![before_col.clone()],
             vec![before_index],
             vec![],
         );
-        let after = make_test_table(
+        let after = create_test_table(
             "test_table",
             vec![after_col.clone()],
             vec![after_index],
@@ -4257,8 +4254,8 @@ mod tests {
         let before_col = make_column("status", ColumnType::String);
         let after_col = make_column("status", ColumnType::Nullable(Box::new(ColumnType::String)));
 
-        let before = make_test_table("t", vec![before_col.clone()], vec![], vec![]);
-        let after = make_test_table("t", vec![after_col.clone()], vec![], vec![]);
+        let before = create_test_table("t", vec![before_col.clone()], vec![], vec![]);
+        let after = create_test_table("t", vec![after_col.clone()], vec![], vec![]);
 
         let column_changes = vec![ColumnChange::Updated {
             before: before_col,
@@ -4304,13 +4301,13 @@ mod tests {
             granularity: 1,
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "t",
             vec![col_a_before.clone(), col_b_before.clone()],
             vec![index.clone()],
             vec![],
         );
-        let after = make_test_table(
+        let after = create_test_table(
             "t",
             vec![col_a_after.clone(), col_b_after.clone()],
             vec![index.clone()],
@@ -4356,8 +4353,8 @@ mod tests {
             granularity: 1,
         };
 
-        let before = make_test_table("t", vec![col.clone()], vec![index], vec![]);
-        let after = make_test_table("t", vec![], vec![], vec![]);
+        let before = create_test_table("t", vec![col.clone()], vec![index], vec![]);
+        let after = create_test_table("t", vec![], vec![], vec![]);
 
         let column_changes = vec![ColumnChange::Removed(col)];
 
@@ -4411,13 +4408,13 @@ mod tests {
             granularity: 1,
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "t",
             vec![col_a_before.clone(), col_b_before.clone()],
             vec![index.clone()],
             vec![],
         );
-        let after = make_test_table(
+        let after = create_test_table(
             "t",
             vec![col_a_after.clone(), col_b_after.clone()],
             vec![index.clone()],
@@ -4488,13 +4485,13 @@ mod tests {
             granularity: 1,
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "t",
             vec![col_a.clone(), col_b.clone()],
             vec![index_before],
             vec![],
         );
-        let after = make_test_table("t", vec![col_b], vec![index_after], vec![]);
+        let after = create_test_table("t", vec![col_b], vec![index_after], vec![]);
 
         let column_changes = vec![ColumnChange::Removed(col_a)];
 
@@ -4550,13 +4547,13 @@ mod tests {
             body: "(col_b ORDER BY col_b)".to_string(),
         };
 
-        let before = make_test_table(
+        let before = create_test_table(
             "t",
             vec![col_a.clone(), col_b.clone()],
             vec![],
             vec![proj_before],
         );
-        let after = make_test_table("t", vec![col_b], vec![], vec![proj_after]);
+        let after = create_test_table("t", vec![col_b], vec![], vec![proj_after]);
 
         let column_changes = vec![ColumnChange::Removed(col_a)];
 
@@ -4729,7 +4726,7 @@ mod tests {
 
     #[test]
     fn test_row_policy_drop_ordered_before_table_drop() {
-        let table = make_test_table("events_1_0_0", vec![], vec![], vec![]);
+        let table = create_test_table("events_1_0_0", vec![], vec![], vec![]);
         let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
         let changes = vec![
             OlapChange::Table(TableChange::Removed(table)),
@@ -4752,5 +4749,155 @@ mod tests {
             policy_idx < table_idx,
             "Row policy should be dropped before its table"
         );
+    }
+
+    /// Regression test: when a column is modified AND the index expression changes
+    /// to no longer reference that column, the index must still be re-added.
+    ///
+    /// The column dependency pass drops the index (it references col_a in BEFORE)
+    /// but cannot re-add it (it no longer references col_a in AFTER). The index
+    /// diff pass in `process_index_changes` must pick up the re-add.
+    #[test]
+    fn test_modify_column_with_index_expression_change() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let index_before = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+        let index_after = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "col_b".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b.clone()],
+            vec![index_before],
+            vec![],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b],
+            vec![index_after],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "idx_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "idx_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableIndex { index, .. } = add_ops[0] {
+            assert_eq!(
+                index.expression, "col_b",
+                "re-added index must use the new expression"
+            );
+        }
+    }
+
+    /// Same as above but for projections: a column is modified and the projection
+    /// expression changes to no longer reference that column.
+    #[test]
+    fn test_modify_column_with_projection_expression_change() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let proj_before = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_a, col_b ORDER BY col_a)".to_string(),
+        };
+        let proj_after = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_b ORDER BY col_b)".to_string(),
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b.clone()],
+            vec![],
+            vec![proj_before],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b],
+            vec![],
+            vec![proj_after],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "proj_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "proj_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableProjection { projection, .. } = add_ops[0] {
+            assert_eq!(
+                projection.body, "(col_b ORDER BY col_b)",
+                "re-added projection must use the new body"
+            );
+        }
     }
 }
