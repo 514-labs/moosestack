@@ -9,7 +9,7 @@ use super::{
 };
 use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
 use std::sync::atomic::Ordering;
-use tracing::info;
+use tracing::{error, info, warn};
 
 /// Displays a message about a batch database insertion.
 ///
@@ -130,7 +130,11 @@ pub fn show_message_impl(
     if should_log {
         let log_action = action.replace('\n', " ");
         let log_details = details.replace('\n', " ");
-        info!("{} {}", log_action.trim(), log_details.trim());
+        match message_type {
+            MessageType::Error => error!("{} {}", log_action.trim(), log_details.trim()),
+            MessageType::Warning => warn!("{} {}", log_action.trim(), log_details.trim()),
+            _ => info!("{} {}", log_action.trim(), log_details.trim()),
+        }
     }
 
     Ok(())
