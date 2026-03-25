@@ -13,7 +13,6 @@ test("parseTemplateListResponse accepts the supported schema version", () => {
           description: "TypeScript project",
           language: "typescript",
           name: "typescript",
-          visible: true,
         },
       ],
     }),
