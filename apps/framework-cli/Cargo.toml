@@ -49,7 +49,7 @@ lazy_static = "1.4.0"
 anyhow = "1.0"
 git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
 regex = "1.10.3"
-reqwest = { version = "0.13.1", default-features = false, features = ["stream", "json", "blocking", "query", "native-tls"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["stream", "json", "blocking", "query", "native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1"
 futures = "0.3"
@@ -103,7 +103,7 @@ globset = "0.4"
 schema-registry-client = "0.4.1"
 
 keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
-rmcp = { version = "0.16", features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "0.16", features = ["server", "transport-streamable-http-server", "transport-io", "client", "transport-streamable-http-client-reqwest"] }
 percent-encoding = "2.3.2"
 dotenvy = "0.15"
 toon-format = "0.4.0"
@@ -115,7 +115,7 @@ clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
 assert_fs = "1.0.13"
 predicates = "3.0.4"
-reqwest = { version = "0.13.1", default-features = false, features = ["blocking", "json", "query", "native-tls"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "query", "native-tls"] }
 serial_test = "3.1.1"
 
 [build-dependencies]
