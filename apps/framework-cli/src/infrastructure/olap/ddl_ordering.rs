@@ -1115,7 +1115,7 @@ impl ContainsSqlExpression for TableProjection {
 /// wrappers like `lower(col_a)`. It assumes expressions do not use backtick-quoted
 /// identifiers that differ from their unquoted form.
 fn items_referencing_column<'a, T: ContainsSqlExpression>(
-    list: &'a Vec<T>,
+    list: &'a [T],
     column_name: &str,
 ) -> Vec<&'a T> {
     // TODO: consider using sqlparser::tokenizer::Tokenizer
@@ -1211,6 +1211,10 @@ fn readd_column_dependents(
 /// column must be dropped first (and re-added after modification), because ClickHouse
 /// forbids `ALTER TABLE MODIFY COLUMN` / `DROP COLUMN` on columns referenced by an
 /// INDEX or PROJECTION.
+///
+/// Re-adds are deferred until all column modifications are queued. This prevents
+/// a composite index from being re-added between two `MODIFY COLUMN` statements,
+/// which would cause the second modify to fail (the index would already reference it).
 fn process_column_changes(
     before: &Table,
     after: &Table,
@@ -1223,6 +1227,8 @@ fn process_column_changes(
         readded_indexes: HashSet::new(),
         readded_projections: HashSet::new(),
     };
+
+    let mut columns_with_dependents_to_readd: Vec<&str> = Vec::new();
 
     for change in column_changes {
         match change {
@@ -1253,10 +1259,16 @@ fn process_column_changes(
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
 
-                // Re-add from the `after` table so we pick up any definition changes
-                readd_column_dependents(&mut plan, after, &after_col.name, &mut handled);
+                // Defer re-adds so they come after ALL column modifications,
+                // preventing ClickHouse from rejecting a later MODIFY COLUMN
+                // on a column whose dependent index was already re-added.
+                columns_with_dependents_to_readd.push(&after_col.name);
             }
         }
+    }
+
+    for col_name in &columns_with_dependents_to_readd {
+        readd_column_dependents(&mut plan, after, col_name, &mut handled);
     }
 
     (plan, handled)
@@ -4457,6 +4469,24 @@ mod tests {
         assert_eq!(
             add_count, 1,
             "Composite index must be re-added exactly once, got {add_count}"
+        );
+
+        // The re-add must come AFTER both ModifyTableColumn ops so that
+        // ClickHouse doesn't reject the second MODIFY COLUMN due to the
+        // index already being present.
+        let last_modify_pos = plan
+            .setup_ops
+            .iter()
+            .rposition(|op| matches!(op, AtomicOlapOperation::ModifyTableColumn { .. }));
+        let add_index_pos = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+        });
+        assert!(
+            last_modify_pos.unwrap() < add_index_pos.unwrap(),
+            "AddTableIndex must come after all ModifyTableColumn ops, \
+             but last modify is at {} and add index is at {}",
+            last_modify_pos.unwrap(),
+            add_index_pos.unwrap()
         );
     }
 
