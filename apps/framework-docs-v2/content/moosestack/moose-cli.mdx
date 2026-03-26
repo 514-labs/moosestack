@@ -88,7 +88,7 @@ moose add benchmark --dir moose
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
 
-The `benchmark` component copies a standalone `query-benchmarks/` package into your Moose project. After `moose add benchmark`, install its dependencies inside that directory, edit `query-benchmarks/tests/benchmark-model.ts` to import your compiled query model, run `moose build` in the parent project, then run the benchmark package scripts from `query-benchmarks/`.
+The `benchmark` component copies a standalone `query-benchmarks/` package into your Moose project. After `moose add benchmark`, install its dependencies inside that directory, edit `query-benchmarks/benchmark.config.ts` to import your compiled query model, define the base query and scenarios, run `moose build` in the parent project, then run the benchmark package scripts from `query-benchmarks/`.
 
 ### Build
 Builds your Moose project.

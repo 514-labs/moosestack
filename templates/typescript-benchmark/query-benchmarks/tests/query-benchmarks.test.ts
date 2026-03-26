@@ -1,116 +1,105 @@
-import { getMooseUtils, toQueryPreview } from "@514labs/moose-lib";
-import { baseQuery, filterVariants } from "./benchmark-cases";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { toQueryPreview } from "@514labs/moose-lib";
+import { explain, profileBenchmark } from "@514labs/moose-lib/testing";
+import {
+  type BenchmarkContext,
+  createBenchmarkContext,
+} from "../benchmark/core";
+import { benchmark } from "../benchmark.config";
 
-declare const afterAll: (fn: () => void | Promise<void>) => void;
-declare const describe: (name: string, fn: () => void) => void;
-declare const expect: any;
-declare const it: (name: string, fn: () => void | Promise<void>) => void;
-
-const targetDb = process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME ?? "local";
-let benchmarkClient: Promise<any> | undefined;
-let reporter: Promise<any> | undefined;
-let testingHelpers: Promise<any> | undefined;
-
-function getBenchmarkClient() {
-  benchmarkClient ??= getMooseUtils().then(({ client }) => client);
-  return benchmarkClient;
-}
-
-function getTestingHelpers() {
-  testingHelpers ??= import(
-    "@514labs/moose-lib/dist/testing/" + "index.js"
-  ) as Promise<any>;
-  return testingHelpers;
-}
-
-function getReporter() {
-  reporter ??= getTestingHelpers().then(({ createTestReporter }) =>
-    createTestReporter({
-      prefix: `benchmark-${targetDb}`,
-      outputDir: "./reports",
-    }),
-  );
-  return reporter;
-}
-
-let baselineP95: number;
+let ctx: BenchmarkContext;
+let baselineResult: {
+  sql: string;
+  profiles: readonly unknown[];
+  p50: number;
+  p95: number;
+};
 
 describe("Query benchmarks", () => {
-  afterAll(async () => {
-    const { flush } = await getReporter();
-    await flush();
-  });
-
-  it("baseline p95 under threshold", async () => {
-    const client = await getBenchmarkClient();
-    const { profileBenchmark } = await getTestingHelpers();
-    const { results } = await getReporter();
-    const query = baseQuery();
+  beforeAll(async () => {
+    ctx = await createBenchmarkContext();
+    const sql = benchmark.baseQuery().toSql();
     const { profiles, p50, p95 } = await profileBenchmark(
-      client.query,
-      query.toSql(),
-      12,
+      ctx.client.query,
+      sql,
+      benchmark.sampling.baselineRuns,
     );
 
-    baselineP95 = p95;
-
-    results.tests["baseline"] = {
-      sql: toQueryPreview(query.toSql()),
+    baselineResult = {
+      sql: toQueryPreview(sql),
       profiles,
       p50,
       p95,
     };
 
-    expect(p95).toBeLessThanOrEqual(500);
+    ctx.reporter.results.tests["baseline"] = baselineResult;
   });
 
-  it("filter variants do not regress", async () => {
-    expect(baselineP95, "Baseline must run first").toBeDefined();
-
-    if (filterVariants.length === 0) return;
-
-    const client = await getBenchmarkClient();
-    const { profileBenchmark } = await getTestingHelpers();
-    const { results } = await getReporter();
-    const variantResults: Record<string, unknown> = {};
-
-    for (const variant of filterVariants) {
-      const query = variant.build();
-      const { p50, p95 } = await profileBenchmark(
-        client.query,
-        query.toSql(),
-        6,
-      );
-
-      variantResults[variant.name] = {
-        sql: toQueryPreview(query.toSql()),
-        p50,
-        p95,
-        baselineP95,
-        ratio: p95 / baselineP95,
-      };
-
-      expect(
-        p95,
-        `${variant.name} p95 ${p95}ms > 2.5x baseline ${baselineP95}ms`,
-      ).toBeLessThanOrEqual(baselineP95 * 2.5);
-    }
-
-    results.tests["filterRegression"] = variantResults;
+  afterAll(async () => {
+    await ctx.reporter.flush();
   });
+
+  it("baseline p95 under threshold", async () => {
+    expect(
+      baselineResult.p95,
+      `baseline p95 ${baselineResult.p95}ms > configured limit ${benchmark.thresholds.baselineP95Ms}ms`,
+    ).toBeLessThanOrEqual(benchmark.thresholds.baselineP95Ms);
+  });
+
+  (benchmark.scenarios.length > 0 ? it : it.skip)(
+    "scenarios do not regress",
+    async () => {
+      const scenarioResults: Record<
+        string,
+        {
+          sql: string;
+          p50: number;
+          p95: number;
+          baselineP95: number;
+          ratio: number;
+        }
+      > = {};
+
+      for (const scenario of benchmark.scenarios) {
+        const sql = scenario.query().toSql();
+        const { p50, p95 } = await profileBenchmark(
+          ctx.client.query,
+          sql,
+          benchmark.sampling.scenarioRuns,
+        );
+
+        scenarioResults[scenario.name] = {
+          sql: toQueryPreview(sql),
+          p50,
+          p95,
+          baselineP95: baselineResult.p95,
+          ratio: p95 / baselineResult.p95,
+        };
+      }
+
+      ctx.reporter.results.tests["scenarioRegression"] = scenarioResults;
+
+      for (const [name, result] of Object.entries(scenarioResults)) {
+        expect(
+          result.p95,
+          `${name} p95 ${result.p95}ms > configured multiplier ${benchmark.thresholds.scenarioRegressionRatio}x baseline ${baselineResult.p95}ms`,
+        ).toBeLessThanOrEqual(
+          baselineResult.p95 * benchmark.thresholds.scenarioRegressionRatio,
+        );
+      }
+    },
+  );
 
   it("EXPLAIN shows index usage", async () => {
-    const client = await getBenchmarkClient();
-    const { explain } = await getTestingHelpers();
-    const { results } = await getReporter();
-    const query = baseQuery().toSql();
-    const plan = await explain(client.query, query);
-
-    results.tests["explain"] = {
-      sql: toQueryPreview(query),
-      explain: plan,
+    const sql = benchmark.baseQuery().toSql();
+    const explainResult = await explain(ctx.client.query, sql);
+    const result = {
+      sql: toQueryPreview(sql),
+      explain: explainResult,
     };
 
-    expect(plan.indexCondition).not.toBe("true");
+    ctx.reporter.results.tests["explain"] = result;
+
+    expect(result.explain.indexCondition).not.toBe("true");
   });
 });

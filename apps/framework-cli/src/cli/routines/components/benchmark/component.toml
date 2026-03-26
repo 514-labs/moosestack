@@ -8,8 +8,8 @@ docs = """
   1. Install the benchmark package dependencies:
        cd query-benchmarks
        npm install   # or pnpm install
-  2. Edit tests/benchmark-model.ts
-     Import your compiled query model and export it as benchmarkModel.
+  2. Edit benchmark.config.ts
+     Import your compiled query model, define your base query and scenarios, and adjust thresholds.
   3. Run moose build in the parent Moose project.
   4. Run the benchmark package scripts:
        npm test
@@ -26,12 +26,12 @@ src = "query-benchmarks/package.json"
 dest = "query-benchmarks/package.json"
 
 [[files]]
-src = "query-benchmarks/tests/benchmark-model.ts"
-dest = "query-benchmarks/tests/benchmark-model.ts"
+src = "query-benchmarks/benchmark.config.ts"
+dest = "query-benchmarks/benchmark.config.ts"
 
 [[files]]
-src = "query-benchmarks/tests/benchmark-cases.ts"
-dest = "query-benchmarks/tests/benchmark-cases.ts"
+src = "query-benchmarks/benchmark/core.ts"
+dest = "query-benchmarks/benchmark/core.ts"
 
 [[files]]
 src = "query-benchmarks/tests/query-benchmarks.test.ts"
