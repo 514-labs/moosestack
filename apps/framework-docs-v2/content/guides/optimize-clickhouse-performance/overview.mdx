@@ -8,7 +8,9 @@ import { Callout, BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This guide is for a deployed MooseStack application with a production ClickHouse query pattern that can be faster. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, scaffold a benchmark package around the real query contract, propose a schema change, validate it on preview, and hand you back a PR with evidence you can verify.
+This guide is for a deployed MooseStack application with a production ClickHouse query pattern that can be faster. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, scaffold a benchmark package around the real query contract, propose candidate schema changes, validate them on preview, and hand you back a PR for the winning candidate with evidence you can verify.
+
+That workflow ends at a benchmarked winner and a reviewable migration plan. It does **not** decide the safest production rollout shape for every change. If the winning candidate needs a phased release, delayed cleanup, or stricter recovery plan, rollout planning takes over after the optimization review.
 
 ## Prerequisites
 
@@ -65,7 +67,7 @@ You are not expected to trust the agent on vibes. The workflow should give you:
 - a `benchmark.config.ts` contract that keeps the same query target, scenarios, thresholds, and sampling across baseline and candidate branches
 - `EXPLAIN` output showing whether the query started using the primary key or another skipping mechanism
 - benchmark timing collected from server-side query data
-- `migrations/plan.yaml` so you can review the schema operations before merge
+- `migrations/plan.yaml` so you can review the schema operations and decide whether the winner needs additional rollout shaping before production
 
 <Callout type="warning" title="Current limits">
 `explain()` and `profileBenchmark()` are temporary harness helpers today, not the final stable MooseStack API surface.
@@ -74,13 +76,15 @@ Auto-seeding preview databases is not available yet. If the optimization changes
 
 </Callout>
 
-## What you review before merge
+## Where optimization ends and rollout planning begins
 
-The review has two gates:
+The optimization review has two gates:
 
 1. The benchmark evidence
 2. The migration plan
 
 The benchmark tells you whether the optimized query path is structurally better and measurably faster. The migration plan tells you whether the branch is changing the database in the way you intended.
+
+If both look good, you have a believable winner. That still does not mean every candidate should ship to production unchanged. When the migration plan needs phased rollout logic, delayed cleanup, manual verification gates, or a stricter recovery path, that is the handoff point to rollout planning.
 
 If you want the step-by-step path for running the workflow and reviewing those artifacts, continue to the tutorial.
