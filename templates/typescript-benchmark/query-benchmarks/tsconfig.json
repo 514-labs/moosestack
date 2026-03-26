@@ -7,5 +7,10 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "benchmark.config.ts",
+    "benchmark/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
