@@ -1,0 +1,24 @@
+{
+  "name": "agent-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "4.0.83",
+    "@ai-sdk/anthropic": "3.0.64",
+    "@ai-sdk/mcp": "1.0.30",
+    "@ai-sdk/openai": "3.0.48",
+    "ai": "6.0.138"
+  }
+}

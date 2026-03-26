@@ -1,0 +1,32 @@
+{
+  "buildCommand": "pnpm --filter web-app build",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "packages/web-app/.next",
+  "env": {
+    "AUTH_SECRET": {
+      "description": "Auth.js session secret",
+      "required": true
+    },
+    "MCP_SERVER_URL": {
+      "description": "URL of your MCP server",
+      "required": true
+    },
+    "AI_PROVIDER": {
+      "description": "Selected LLM provider: anthropic, openai, or bedrock",
+      "required": true
+    },
+    "OIDC_ISSUER": {
+      "description": "OIDC issuer URL",
+      "required": true
+    },
+    "OIDC_CLIENT_ID": {
+      "description": "OIDC client ID",
+      "required": true
+    },
+    "OIDC_CLIENT_SECRET": {
+      "description": "OIDC client secret",
+      "required": true
+    }
+  }
+}

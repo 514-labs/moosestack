@@ -110,11 +110,11 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
 <ConditionalContent whenId="starting-point" whenValue="scratch">
 
 ```shell
-moose init <project-name> typescript-mcp
+moose init <project-name> typescript-agent
 cd <project-name>
 ```
 
-Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you. You'll need your [Anthropic API key](https://console.anthropic.com/) at this step.
+Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you. The `typescript-agent` starter includes local mock auth for development and optional production OIDC wiring.
 
 <ToggleBlock openText="Show post-init instructions" closeText="Hide post-init instructions">
 
@@ -123,18 +123,21 @@ Follow the post-init instructions printed by the CLI, or ask your AI copilot to 
 pnpm install
 ```
 
-2. Create API authentication tokens:
+2. Create environment files:
 ```shell
 cp packages/moosestack-service/.env.{example,local}
 cp packages/web-app/.env.{example,local}
-cd packages/moosestack-service
-moose generate hash-token
 ```
 
 3. Set environment variables:
-   - Set `MCP_API_KEY` in `packages/moosestack-service/.env.local` to the **ENV API Key** value
-   - Set `MCP_API_TOKEN` in `packages/web-app/.env.local` to the **Bearer Token** value
-   - Set `ANTHROPIC_API_KEY` in `packages/web-app/.env.local` to your [Anthropic API key](https://console.anthropic.com/)
+   - Keep `MOOSE_AUTH_MODE=local` in `packages/web-app/.env.local` for the built-in tenant picker during local development
+   - Set `AUTH_SECRET` in `packages/web-app/.env.local`
+   - Set `AI_PROVIDER` plus your provider credentials in `packages/web-app/.env.local`
+   - For Anthropic, set `ANTHROPIC_API_KEY` in `packages/web-app/.env.local`
+
+<Callout type="info" title="Need the leaner MCP-only starter?">
+Use `typescript-mcp` if you want the minimal chat + MCP template without auth, tenant row policies, or the query-layer dashboard.
+</Callout>
 
 </ToggleBlock>
 
@@ -153,7 +156,7 @@ moose generate hash-token
 - You are using Express for your APIs (other frameworks work, but aren't covered here)
 </Callout>
 
-**Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
+**Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-agent](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent)
 
 <Callout type="info" title="Don't have a MooseStack service yet?">
 <ToggleBlock openText="Show instructions to create one" closeText="Hide instructions">
@@ -1228,4 +1231,3 @@ Check your Fiveonefour project overview — you should see storage populated, th
 </GuideStepper.Step>
 
 </GuideStepper>
-
