@@ -1,0 +1,178 @@
+---
+title: agent init
+description: Install 514 agent skills, MCP servers, LSP, and plugins for supported coding agents.
+order: 1
+---
+
+# 514 agent init
+
+Install agent skills, configure MCP servers, set up the MooseStack LSP, and install agent-specific plugins for your coding agents. Supports 21+ agents including Claude Code, Cursor, VS Code, Windsurf, Codex, and more.
+
+## Usage
+
+```bash
+514 agent init [OPTIONS]
+514 agent init schema [--json]
+```
+
+## What gets installed
+
+When you run `514 agent init`, the following components are configured:
+
+- **Skills**: Downloaded from [`github.com/514-labs/agent-skills`](https://github.com/514-labs/agent-skills) and stored at `~/.agents/skills/`. Symlinks are created in each agent's skills directory (e.g. `~/.claude/skills/`, `~/.cursor/skills/`).
+- **MooseStack LSP**: The MooseStack language server is installed globally via npm, providing SQL intelligence in TypeScript projects.
+- **MCP servers**: Configuration for the MooseDev MCP server (`localhost:4000`) and Context7 (`mcp.context7.com`) is written to each agent's MCP config file.
+- **Plugins**: Agent-specific plugins are installed where supported (e.g. Claude Code marketplace plugin).
+
+## Interactive mode
+
+By default, `514 agent init` runs interactively. It auto-detects installed coding agents by checking for known configuration directories, fetches available skills from GitHub, and prompts for confirmation before installing.
+
+```bash
+# Auto-detect agents and install everything
+514 agent init
+
+# Target specific agents instead of auto-detecting
+514 agent init --agent claude-code --agent cursor
+
+# Install skills from a specific branch
+514 agent init --branch feature/new-skills
+```
+
+## Non-interactive mode
+
+Non-interactive mode is activated when `--json` is passed or when stdin is not a terminal (piped input). In non-interactive mode, explicit confirmation is required via the `--yes` flag or `"yes": true` in the JSON input.
+
+### Input transports
+
+There are two ways to provide structured JSON input:
+
+1. **File**: Pass `--input <path>` to read JSON from a file.
+2. **Stdin**: Pipe JSON to stdin when no `--input` flag is provided.
+
+CLI flags always take precedence over JSON fields.
+
+### Input JSON format
+
+```json
+{
+  "version": 1,
+  "agents": ["vscode", "claude-code"],
+  "branch": "main",
+  "yes": true
+}
+```
+
+| Field     | Type            | Required | Default       | Description                                               |
+| --------- | --------------- | -------- | ------------- | --------------------------------------------------------- |
+| `version` | integer         | Yes      | -             | Schema version. Must be `1`.                              |
+| `agents`  | array of string | No       | Auto-detected | Agent IDs to configure. See [supported agents](#supported-agents). |
+| `branch`  | string          | No       | `"main"`      | Git branch of the agent-skills repo to install from.      |
+| `yes`     | boolean         | No       | `false`       | Confirm installation without prompting.                   |
+
+### Examples
+
+```bash
+# Non-interactive with flags
+514 agent init --yes --json
+
+# Target a specific agent with flags
+514 agent init --agent vscode --yes --json
+
+# Read input from a file
+514 agent init --input request.json --yes --json
+
+# Pipe JSON via stdin
+echo '{"version":1,"agents":["vscode"],"yes":true}' | 514 agent init --json
+```
+
+### JSON output
+
+On success:
+
+```json
+{
+  "status": "ok",
+  "installed": [
+    {
+      "skill": "514/cli",
+      "agents": [
+        {
+          "id": "vscode",
+          "name": "VS Code",
+          "path": "~/.vscode-copilot/skills/514--cli"
+        }
+      ],
+      "canonical_path": "~/.agents/skills/514/cli"
+    }
+  ],
+  "lsp_installed": true
+}
+```
+
+On error:
+
+```json
+{
+  "status": "error",
+  "message": "514 agent init requires explicit confirmation in non-interactive mode; pass --yes or set \"yes\": true in the input JSON"
+}
+```
+
+## Schema discovery
+
+Use the `schema` subcommand to discover available input options programmatically. This is useful for IDE extensions and automation tools that need to call `514 agent init` without hardcoding the input contract.
+
+```bash
+# Human-readable summary
+514 agent init schema
+
+# Machine-readable JSON schema
+514 agent init schema --json
+```
+
+The JSON schema includes supported agent IDs, field definitions, transport options, and example inputs. Extensions can call this command to dynamically discover what options are available, so they don't need code changes when new options are added.
+
+## Options
+
+| Option            | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `--agent <AGENT>` | Target specific agents instead of auto-detecting. Repeatable.               |
+| `--yes`           | Skip confirmation prompt. Required in non-interactive mode.                 |
+| `--input <FILE>`  | Read structured JSON input from a file.                                     |
+| `--branch <NAME>` | Git branch of the agent-skills repo to install from. Defaults to `main`.    |
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Supported agents
+
+| ID             | Name              | Skills | MCP | LSP | Plugin |
+| -------------- | ----------------- | :----: | :-: | :-: | :----: |
+| `claude-code`  | Claude Code       |   Y    |  Y  |  -  |   Y    |
+| `cursor`       | Cursor            |   Y    |  -  |  -  |   -    |
+| `vscode`       | VS Code           |   Y    |  Y  |  -  |   -    |
+| `copilot-cli`  | GitHub Copilot CLI|   Y    |  Y  |  -  |   -    |
+| `kiro`         | Kiro              |   Y    |  Y  |  -  |   -    |
+| `windsurf`     | Windsurf          |   Y    |  -  |  -  |   -    |
+| `opencode`     | OpenCode          |   Y    |  Y  |  Y  |   -    |
+| `continue`     | Continue          |   Y    |  Y  |  -  |   -    |
+| `cline`        | Cline             |   Y    |  -  |  -  |   -    |
+| `codex`        | Codex             |   Y    |  Y  |  -  |   -    |
+| `amp`          | Amp               |   Y    |  -  |  -  |   -    |
+| `aider`        | Aider             |   Y    |  -  |  -  |   -    |
+| `roo-code`     | Roo Code          |   Y    |  -  |  -  |   -    |
+| `zed`          | Zed               |   Y    |  Y  |  Y  |   -    |
+| `augment-code` | Augment Code      |   Y    |  -  |  -  |   -    |
+| `trae`         | Trae              |   Y    |  -  |  -  |   -    |
+| `kilo-code`    | Kilo Code         |   Y    |  -  |  -  |   -    |
+| `void`         | Void              |   Y    |  -  |  -  |   -    |
+| `pearai`       | PearAI            |   Y    |  Y  |  -  |   -    |
+
+All agents receive skills via symlinks. **MCP** indicates that MCP server configuration is written to the agent's config file. **LSP** indicates that language server configuration is written. **Plugin** indicates that an agent-specific plugin is installed.
+
+## Related
+
+- [`514 agent`](/hosting/cli/agent)
+- [`514 agent remove`](/hosting/cli/agent/remove)
+- [MooseStack LSP](/moosestack/language-server)
+- [MooseDev MCP](/moosestack/moosedev-mcp)

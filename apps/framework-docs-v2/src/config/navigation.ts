@@ -1294,6 +1294,20 @@ const hostingNavigationConfig: NavigationConfig = [
     slug: "hosting/cli/agent",
     title: "agent",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/agent/init",
+        title: "init",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/agent/remove",
+        title: "remove",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   { type: "separator" },
   { type: "label", title: "Resource Commands" },
