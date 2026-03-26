@@ -1717,6 +1717,7 @@ pub async fn top_command_handler(
             let component_name = match &component {
                 AddComponent::McpServer(_) => "mcp-server",
                 AddComponent::Chat(_) => "chat",
+                AddComponent::Benchmark(_) => "benchmark",
             };
 
             let capture_handle = crate::utilities::capture::capture_usage(

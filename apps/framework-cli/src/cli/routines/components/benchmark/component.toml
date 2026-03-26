@@ -1,0 +1,54 @@
+name = "benchmark"
+description = "Standalone query benchmark package for a TypeScript Moose project"
+kind = "moose"
+language = "typescript"
+template = "typescript-benchmark"
+
+docs = """
+  1. Install the benchmark package dependencies:
+       cd query-benchmarks
+       npm install   # or pnpm install
+  2. Edit tests/benchmark-model.ts
+     Import your compiled query model and export it as benchmarkModel.
+  3. Run moose build in the parent Moose project.
+  4. Run the benchmark package scripts:
+       npm test
+       npm run bench
+"""
+
+npm_deps = []
+shadcn_components = []
+moose_exports = []
+env = []
+
+[[files]]
+src = "query-benchmarks/package.json"
+dest = "query-benchmarks/package.json"
+
+[[files]]
+src = "query-benchmarks/tests/benchmark-model.ts"
+dest = "query-benchmarks/tests/benchmark-model.ts"
+
+[[files]]
+src = "query-benchmarks/tests/benchmark-cases.ts"
+dest = "query-benchmarks/tests/benchmark-cases.ts"
+
+[[files]]
+src = "query-benchmarks/tests/query-benchmarks.test.ts"
+dest = "query-benchmarks/tests/query-benchmarks.test.ts"
+
+[[files]]
+src = "query-benchmarks/vitest.config.ts"
+dest = "query-benchmarks/vitest.config.ts"
+
+[[files]]
+src = "query-benchmarks/tsconfig.json"
+dest = "query-benchmarks/tsconfig.json"
+
+[[files]]
+src = "query-benchmarks/.env.preview"
+dest = "query-benchmarks/.env.preview"
+
+[[files]]
+src = "query-benchmarks/.gitignore"
+dest = "query-benchmarks/.gitignore"

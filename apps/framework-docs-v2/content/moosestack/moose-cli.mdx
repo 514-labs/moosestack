@@ -40,7 +40,7 @@ moose component list
 ```
 
 ### Add
-Adds a pre-built component to an existing project. Downloads the component files from a registry and installs dependencies.
+Adds a pre-built component to an existing project. Downloads the component files from a registry. Some components also install dependencies; others copy a self-contained package and print the manual follow-up steps.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -56,6 +56,9 @@ moose add mcp-server [--dir <moose-project-dir>]
 
 # Add a chat UI to a Next.js app
 moose add chat [--dir <nextjs-app-dir>]
+
+# Add a standalone benchmark package to a TypeScript Moose project
+moose add benchmark [--dir <moose-project-dir>]
 ```
 
 **Flags:**
@@ -68,9 +71,12 @@ moose add chat [--dir <nextjs-app-dir>]
 # From a monorepo root with moose/ and web/ packages
 moose add mcp-server --dir moose
 moose add chat --dir web
+moose add benchmark --dir moose
 ```
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
+The `benchmark` component copies a standalone `query-benchmarks/` package into your Moose project. After `moose add benchmark`, install its dependencies inside that directory, edit `query-benchmarks/tests/benchmark-model.ts` to import your compiled query model, run `moose build` in the parent project, then run the benchmark package scripts from `query-benchmarks/`.
 
 ### Build
 Builds your Moose project.

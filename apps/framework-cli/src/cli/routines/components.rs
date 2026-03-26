@@ -99,6 +99,13 @@ pub async fn add_component(component: &AddComponent) -> Result<RoutineSuccess, R
             args,
             load_manifest(include_str!("components/chat/component.toml"), "chat")?,
         ),
+        AddComponent::Benchmark(args) => (
+            args,
+            load_manifest(
+                include_str!("components/benchmark/component.toml"),
+                "benchmark",
+            )?,
+        ),
     };
 
     let target_dir = resolve_target_dir(args.dir.as_deref())?;
@@ -121,6 +128,10 @@ pub fn list_components(cli_version: &str) -> Result<RoutineSuccess, RoutineFailu
             "mcp-server",
         )?,
         load_manifest(include_str!("components/chat/component.toml"), "chat")?,
+        load_manifest(
+            include_str!("components/benchmark/component.toml"),
+            "benchmark",
+        )?,
     ];
 
     let lines: Vec<String> = components
