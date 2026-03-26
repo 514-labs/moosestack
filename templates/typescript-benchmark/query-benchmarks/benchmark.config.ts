@@ -12,10 +12,11 @@ import { defineBenchmark } from "./benchmark/core";
 // Replace `benchmarkModel` with the query model you want to benchmark.
 const benchmarkModel = undefined as any;
 
+const ALL_DIMENSIONS = Object.keys(benchmarkModel.dimensions ?? {}) as string[];
+const ALL_METRICS = Object.keys(benchmarkModel.metrics ?? {}) as string[];
+
 const baseQuery = () =>
-  buildQuery(benchmarkModel)
-    .dimensions(Object.keys(benchmarkModel.dimensions ?? {}))
-    .metrics(Object.keys(benchmarkModel.metrics ?? {}));
+  buildQuery(benchmarkModel).dimensions(ALL_DIMENSIONS).metrics(ALL_METRICS);
 
 export const benchmark = defineBenchmark({
   baseQuery,

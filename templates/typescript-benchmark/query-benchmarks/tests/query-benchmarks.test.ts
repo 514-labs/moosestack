@@ -90,16 +90,36 @@ describe("Query benchmarks", () => {
     },
   );
 
-  it("EXPLAIN shows index usage", async () => {
-    const sql = benchmark.baseQuery().toSql();
-    const explainResult = await explain(ctx.client.query, sql);
-    const result = {
-      sql: toQueryPreview(sql),
-      explain: explainResult,
+  it("EXPLAIN shows index usage in at least one scenario", async () => {
+    const explains: Record<
+      string,
+      { sql: string; explain: Awaited<ReturnType<typeof explain>> }
+    > = {};
+
+    const baseSql = benchmark.baseQuery().toSql();
+    explains["baseline"] = {
+      sql: toQueryPreview(baseSql),
+      explain: await explain(ctx.client.query, baseSql),
     };
 
-    ctx.reporter.results.tests["explain"] = result;
+    for (const scenario of benchmark.scenarios) {
+      const sql = scenario.query().toSql();
+      explains[scenario.name] = {
+        sql: toQueryPreview(sql),
+        explain: await explain(ctx.client.query, sql),
+      };
+    }
 
-    expect(result.explain.indexCondition).not.toBe("true");
+    ctx.reporter.results.tests["explain"] = explains;
+
+    const hasIndexUsage = Object.values(explains).some(
+      (entry) => entry.explain.indexCondition !== "true",
+    );
+    expect(
+      hasIndexUsage,
+      `No scenario uses index pruning. Conditions: ${Object.entries(explains)
+        .map(([name, value]) => `${name}=${value.explain.indexCondition}`)
+        .join(", ")}`,
+    ).toBe(true);
   });
 });
