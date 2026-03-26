@@ -2,14 +2,89 @@ name: Release VS Code Extension
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        description: "Publish to the VS Code Marketplace and Open VSX"
+        required: true
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  placeholder:
-    name: Placeholder
+  package-and-release:
+    name: Package and Release VS Code Extension
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Placeholder
-        run: echo "VS Code extension release workflow skeleton. Implementation lands in the stacked PR."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install extension dependencies
+        run: pnpm install --frozen-lockfile --filter @514labs/vscode-extension...
+
+      - name: Run extension test suite
+        run: pnpm --filter @514labs/vscode-extension test
+
+      - name: Package VSIX
+        run: pnpm --filter @514labs/vscode-extension package:vsix
+
+      - name: Read extension version
+        id: package-version
+        run: echo "version=$(node -p \"require('./apps/vscode-extension/package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension-vsix-${{ steps.package-version.outputs.version }}
+          path: apps/vscode-extension/*.vsix
+          if-no-files-found: error
+
+      - name: Ensure the extension has a real release version
+        if: ${{ inputs.publish }}
+        run: |
+          if [[ "${{ steps.package-version.outputs.version }}" == "0.0.0" ]]; then
+            echo "::error title=Version required::apps/vscode-extension/package.json still uses 0.0.0. Set a real extension version before publishing."
+            exit 1
+          fi
+
+      - name: Validate publish secrets
+        if: ${{ inputs.publish }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo "::error title=Missing secret::Repository secret VSCE_PAT is required to publish to the VS Code Marketplace."
+            exit 1
+          fi
+
+          if [[ -z "$OVSX_PAT" ]]; then
+            echo "::error title=Missing secret::Repository secret OVSX_PAT is required to publish to Open VSX."
+            exit 1
+          fi
+
+      - name: Publish to the VS Code Marketplace
+        if: ${{ inputs.publish }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        working-directory: apps/vscode-extension
+        run: npx @vscode/vsce publish --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ inputs.publish }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        working-directory: apps/vscode-extension
+        run: npx ovsx publish -p "$OVSX_PAT"
