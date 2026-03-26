@@ -1,21 +1,45 @@
 {
-  "name": "@514labs/vscode-extension",
-  "displayName": "Fiveonefour",
-  "description": "Fiveonefour onboarding for MooseStack in VS Code-family editors.",
+  "name": "fiveonefour",
+  "displayName": "Fiveonefour for MooseStack",
+  "description": "Onboard MooseStack projects with workspace setup, CLI bootstrap, and dev harness configuration for VS Code-family editors.",
   "version": "0.0.0",
   "publisher": "514-labs",
+  "homepage": "https://docs.fiveonefour.com/moosestack",
+  "bugs": {
+    "url": "https://github.com/514-labs/moosestack/issues"
+  },
+  "qna": "http://slack.moosestack.com/",
   "repository": {
     "type": "git",
     "url": "https://github.com/514-labs/moosestack",
     "directory": "apps/vscode-extension"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Extension Packs"
   ],
+  "keywords": [
+    "moosestack",
+    "moose",
+    "fiveonefour",
+    "vscode",
+    "cursor",
+    "kiro",
+    "mcp",
+    "onboarding",
+    "clickhouse",
+    "developer-tools"
+  ],
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "icon": "icon.png",
   "extensionKind": [
     "workspace"
   ],
@@ -27,7 +51,9 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "icon.png"
   ],
   "activationEvents": [
     "onStartupFinished",
@@ -71,15 +97,19 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "lint": "eslint src test",
     "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
     "package:vsix": "pnpm run build && npx @vscode/vsce package",
     "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
     "publish:openvsx": "pnpm run build && npx ovsx publish"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.2",
     "@repo/ts-config": "workspace:^",
     "@types/node": "catalog:",
     "@types/vscode": "^1.90.0",
+    "eslint": "catalog:",
+    "typescript-eslint": "8.55.0",
     "typescript": "catalog:"
   }
 }

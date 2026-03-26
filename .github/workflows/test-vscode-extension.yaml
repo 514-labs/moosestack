@@ -1,15 +1,51 @@
 name: Test VS Code Extension
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/test-vscode-extension.yaml"
+      - ".github/workflows/release-vscode-extension.yaml"
+      - "apps/vscode-extension/**"
+      - "templates/_shared/**"
+      - "packages/ts-config/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  placeholder:
-    name: Placeholder
+  test:
+    name: Test VS Code Extension
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Placeholder
-        run: echo "VS Code extension test workflow skeleton. Implementation lands in the stacked PR."
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install extension dependencies
+        run: pnpm install --frozen-lockfile --filter ./apps/vscode-extension...
+
+      - name: Run extension lint suite
+        run: pnpm --filter ./apps/vscode-extension lint
+
+      - name: Run extension test suite
+        run: pnpm --filter ./apps/vscode-extension test

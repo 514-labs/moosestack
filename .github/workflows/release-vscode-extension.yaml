@@ -2,14 +2,245 @@ name: Release VS Code Extension
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional extension version to inject before packaging/publishing"
+        required: false
+        type: string
+      publish:
+        description: "Publish the packaged VSIX to the VS Code Marketplace and Open VSX"
+        required: true
+        type: boolean
+        default: false
+      pre-release:
+        description: "Mark the package and publish as a pre-release build"
+        required: true
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: ""
+      publish:
+        required: false
+        type: boolean
+        default: false
+      pre-release:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      VSCE_PAT:
+        required: false
+      OVSX_PAT:
+        required: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-vscode-extension-${{ inputs.version != '' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  VSCE_VERSION: "3.7.1"
+  OVSX_VERSION: "0.10.9"
+
 jobs:
-  placeholder:
-    name: Placeholder
+  build:
+    name: Build VS Code Extension
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      pre-release: ${{ steps.publish-settings.outputs.pre-release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${INPUT_VERSION}"
+
+          if [[ -z "${VERSION}" ]]; then
+            VERSION=$(node -p "require('./apps/vscode-extension/package.json').version")
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging version: ${VERSION}"
+
+      - name: Validate version format
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! echo "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid VS Code extension version '${VERSION}'. Expected major.minor.patch."
+            exit 1
+          fi
+
+      - name: Set extension package version
+        if: ${{ inputs.version != '' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const packageJsonPath = 'apps/vscode-extension/package.json';
+            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+            packageJson.version = process.env.VERSION;
+            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+          "
+
+      - name: Resolve publish settings
+        id: publish-settings
+        env:
+          INPUT_PRE_RELEASE: ${{ inputs['pre-release'] }}
+        run: |
+          PRE_RELEASE="${INPUT_PRE_RELEASE:-false}"
+          echo "pre-release=${PRE_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Pre-release: ${PRE_RELEASE}"
+
+      - name: Validate publish secrets
+        if: ${{ inputs.publish }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [[ "${VERSION}" == "0.0.0" ]]; then
+            echo "::error title=Version required::Publishing requires a real extension version. Pass workflow input 'version' or commit a non-0.0.0 version in apps/vscode-extension/package.json."
+            exit 1
+          fi
+
+          if [[ -z "${VSCE_PAT}" ]]; then
+            echo "::error title=Missing secret::Repository secret VSCE_PAT is required to publish to the VS Code Marketplace."
+            exit 1
+          fi
+
+          if [[ -z "${OVSX_PAT}" ]]; then
+            echo "::error title=Missing secret::Repository secret OVSX_PAT is required to publish to Open VSX."
+            exit 1
+          fi
+
+      - name: Install extension dependencies
+        run: pnpm install --frozen-lockfile --filter ./apps/vscode-extension...
+
+      - name: Run extension test suite
+        run: pnpm --filter ./apps/vscode-extension test
+
+      - name: Package VSIX
+        working-directory: apps/vscode-extension
+        env:
+          PRE_RELEASE: ${{ steps.publish-settings.outputs.pre-release }}
+          VSCE_VERSION: ${{ env.VSCE_VERSION }}
+        run: |
+          pnpm run build
+
+          if [[ "${PRE_RELEASE}" == "true" ]]; then
+            npx @vscode/vsce@"${VSCE_VERSION}" package --pre-release
+          else
+            npx @vscode/vsce@"${VSCE_VERSION}" package
+          fi
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vscode-extension-vsix-${{ steps.version.outputs.version }}
+          path: apps/vscode-extension/*.vsix
+          if-no-files-found: error
+          retention-days: 3
+
+  publish-vscode:
+    name: Publish to VS Code Marketplace
+    needs: build
+    if: ${{ inputs.publish }}
     runs-on: ubuntu-latest
     steps:
-      - name: Placeholder
-        run: echo "VS Code extension release workflow skeleton. Implementation lands in the stacked PR."
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: vscode-extension-vsix-${{ needs.build.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+
+      - name: Install vsce
+        env:
+          VSCE_VERSION: ${{ env.VSCE_VERSION }}
+        run: npm install -g @vscode/vsce@"${VSCE_VERSION}"
+
+      - name: Publish to VS Code Marketplace
+        env:
+          PRE_RELEASE: ${{ needs.build.outputs.pre-release }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          shopt -s nullglob
+          vsix_files=( *.vsix )
+
+          if [[ "${#vsix_files[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one .vsix artifact, found ${#vsix_files[@]}: ${vsix_files[*]}"
+            exit 1
+          fi
+
+          if [[ "${PRE_RELEASE}" == "true" ]]; then
+            vsce publish --packagePath "${vsix_files[0]}" --pre-release --pat "${VSCE_PAT}"
+          else
+            vsce publish --packagePath "${vsix_files[0]}" --pat "${VSCE_PAT}"
+          fi
+
+  publish-openvsx:
+    name: Publish to Open VSX
+    needs: build
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: vscode-extension-vsix-${{ needs.build.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+
+      - name: Install ovsx
+        env:
+          OVSX_VERSION: ${{ env.OVSX_VERSION }}
+        run: npm install -g ovsx@"${OVSX_VERSION}"
+
+      - name: Publish to Open VSX
+        env:
+          PRE_RELEASE: ${{ needs.build.outputs.pre-release }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          shopt -s nullglob
+          vsix_files=( *.vsix )
+
+          if [[ "${#vsix_files[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one .vsix artifact, found ${#vsix_files[@]}: ${vsix_files[*]}"
+            exit 1
+          fi
+
+          if [[ "${PRE_RELEASE}" == "true" ]]; then
+            ovsx publish "${vsix_files[0]}" --pre-release -p "${OVSX_PAT}"
+          else
+            ovsx publish "${vsix_files[0]}" -p "${OVSX_PAT}"
+          fi
