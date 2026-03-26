@@ -307,7 +307,7 @@ Order: benchmarks, then plan and diff, then optional reruns.
 - The committed `query-benchmarks/` package and any `reports/benchmark-details-*.json` attached or generated in CI for both the frozen baseline branch and the winning candidate branch
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- Confidence that the winning candidate branch actually beats the baseline for the same query path, and that the `EXPLAIN` output supports merging
+- Confidence that the winning candidate branch actually beats the baseline for the same query path, without hiding a scenario-level regression
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Identify the winner report and the baseline report">
@@ -362,8 +362,29 @@ If the benchmark package changed in broader ways than that, the comparison is no
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Compare index condition and granule skipping">
-Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `indexCondition` should not be only `"true"`, and the winner report should skip more granules than the baseline.
+<GuideStepper.Checkpoint title="Check how the winner was chosen">
+The PR summary should compare the frozen baseline against each candidate branch. Read that comparison before you inspect any single JSON field.
+
+The winner should be selected because it does the best job on the same contract, not because one headline number looked better in isolation. Good winner-selection language usually includes:
+
+- lower overall `tests.baseline.p95` than baseline
+- no scenario regression ratio above the configured threshold
+- at least one selective scenario showing better pruning or fewer granules read
+- caveats called out when a scenario stays flat or the base query still full-scans
+
+If another candidate looks stronger on those same measures, ask why it was not selected.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Start with scenario regressions, not the base query">
+Open `tests.scenarioRegression` first. This is where the selective scenarios usually reveal whether the optimization helped the real filtered paths you care about.
+
+What to look for:
+
+- which scenarios improved materially
+- whether any scenario crossed the configured regression threshold
+- whether one scenario explains most of the win while the others stay flat
+- whether the PR caveats match what the scenario data actually shows
 
 <Tabs defaultValue="winner-explain">
   <TabsList>
@@ -375,12 +396,18 @@ Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `i
 ```json
 {
   "tests": {
-    "explainCategoryFilter": {
-      "explain": {
-        "indexCondition": "and((current_database in ['db_123']), (timestamp >= 1710200000))",
-        "selectedGranules": 120,
-        "totalGranules": 480,
-        "granuleSkipPct": 75
+    "scenarioRegression": {
+      "category=A3": {
+        "p50": 18,
+        "p95": 52,
+        "baselineP95": 396,
+        "ratio": 0.13
+      },
+      "altitude>10000": {
+        "p50": 126,
+        "p95": 129,
+        "baselineP95": 396,
+        "ratio": 0.33
       }
     }
   }
@@ -393,12 +420,18 @@ Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `i
 ```json
 {
   "tests": {
-    "explainCategoryFilter": {
-      "explain": {
-        "indexCondition": "true",
-        "selectedGranules": 480,
-        "totalGranules": 480,
-        "granuleSkipPct": 0
+    "scenarioRegression": {
+      "category=A3": {
+        "p50": 172,
+        "p95": 189,
+        "baselineP95": 326,
+        "ratio": 0.58
+      },
+      "altitude>10000": {
+        "p50": 188,
+        "p95": 192,
+        "baselineP95": 326,
+        "ratio": 0.59
       }
     }
   }
@@ -408,10 +441,46 @@ Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `i
   </TabsContent>
 </Tabs>
 
+The important comparison is not whether every scenario improved equally. It is whether any scenario regressed past threshold and whether the winning candidate improved the scenarios that matter.
+
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Compare latency and resource usage">
-Check `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `tests.baseline.profiles`. The `profiles` array is where the useful resource metrics live.
+<GuideStepper.Checkpoint title="Read EXPLAIN at the scenario level">
+Then look at `tests.explain`. Do not assume the unfiltered base query must stop returning `indexCondition: "true"`. In the current planes-style benchmark, the more important question is whether at least one **selective scenario** starts pruning where the baseline did not.
+
+Good shape:
+
+- baseline can still full-scan
+- one or more selective scenarios show a narrower `indexCondition`
+- selective scenarios read fewer granules in the winner than in the baseline
+
+Example:
+
+```json
+{
+  "tests": {
+    "explain": {
+      "baseline": {
+        "explain": {
+          "indexCondition": "true",
+          "granuleSkipPct": 0
+        }
+      },
+      "category=A3": {
+        "explain": {
+          "indexCondition": "category in ['A3']",
+          "granuleSkipPct": 75
+        }
+      }
+    }
+  }
+}
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Compare overall latency and resource usage">
+After the scenario checks, look at `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `tests.baseline.profiles`. The `profiles` array is where the useful resource metrics live.
 
 <Tabs defaultValue="winner-latency">
   <TabsList>
@@ -466,30 +535,7 @@ Check `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `te
   </TabsContent>
 </Tabs>
 
-Good sign: lower `p95`, fewer rows read, and lower memory usage in the winner report.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Check filter regression ratios">
-Read `tests.filterRegression`. It is an object keyed by variant name, not a status array. Compare `ratio` against the `2.5` threshold yourself.
-
-```json
-{
-  "tests": {
-    "filterRegression": {
-      "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 },
-      "altitude range": {
-        "p50": 26,
-        "p95": 33,
-        "baselineP95": 28,
-        "ratio": 1.18
-      }
-    }
-  }
-}
-```
-
-Below `2.5` means the variant did not regress beyond the threshold. If a ratio is above `2.5`, the PR should explain why.
+Good sign: lower `p95`, fewer rows read, and lower memory usage in the winner report. This is the broad query-level effect. The scenario regressions and scenario-level `EXPLAIN` tell you where that improvement came from.
 
 </GuideStepper.Checkpoint>
 
@@ -722,12 +768,18 @@ Use this when you need the full field map while reviewing the benchmark step abo
       "p95": 44,
       "profiles": [{ "durationMs": 42 }]
     },
-    "filterRegression": {
+    "scenarioRegression": {
       "category=A3": { "p50": 24, "p95": 31, "baselineP95": 29, "ratio": 1.07 }
     },
-    "explainCategoryFilter": {
-      "sql": "SELECT ...",
-      "explain": { "indexCondition": "..." }
+    "explain": {
+      "baseline": {
+        "sql": "SELECT ...",
+        "explain": { "indexCondition": "true", "granuleSkipPct": 0 }
+      },
+      "category=A3": {
+        "sql": "SELECT ... WHERE category = 'A3'",
+        "explain": { "indexCondition": "category in ['A3']", "granuleSkipPct": 75 }
+      }
     },
     "concurrentBurst": { "concurrency": 10, "errors": 0 },
     "clusterState": {},
@@ -738,14 +790,14 @@ Use this when you need the full field map while reviewing the benchmark step abo
 
 `target` tells you which database ran the test. `tests.*` holds the evidence you compare.
 
-| What to compare    | Where in the report                                  | What good looks like              |
-| ------------------ | ---------------------------------------------------- | --------------------------------- |
-| Index used?        | `tests.explainCategoryFilter.explain.indexCondition` | Not `"true"`                      |
-| Granules skipped?  | `tests.explainCategoryFilter.explain.granuleSkipPct` | Higher in optimized than baseline |
-| Server-side p95?   | `tests.baseline.p95`                                 | Lower in optimized than baseline  |
-| Rows read?         | `tests.baseline.profiles[0].readRows`                | Lower in optimized                |
-| Memory usage?      | `tests.baseline.profiles[0].memoryUsage`             | Lower in optimized                |
-| Filter regression? | `tests.filterRegression.<variant>.ratio`             | Below `2.5`                       |
+| What to compare               | Where in the report                             | What good looks like                                |
+| ----------------------------- | ----------------------------------------------- | --------------------------------------------------- |
+| Overall p95?                  | `tests.baseline.p95`                            | Lower in winner than baseline                       |
+| Scenario regressions?         | `tests.scenarioRegression.<variant>.ratio`      | No scenario above the configured threshold          |
+| Selective scenario pruning?   | `tests.explain.<scenario>.explain.indexCondition` | At least one selective scenario is not `"true"`   |
+| Granules skipped per scenario | `tests.explain.<scenario>.explain.granuleSkipPct` | Higher in winner for the selective scenario       |
+| Rows read?                    | `tests.baseline.profiles[0].readRows`           | Lower in winner when the contract is unchanged      |
+| Memory usage?                 | `tests.baseline.profiles[0].memoryUsage`        | Lower in winner when the contract is unchanged      |
 
 ## Related docs
 
