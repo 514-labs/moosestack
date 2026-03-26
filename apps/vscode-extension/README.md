@@ -2,31 +2,31 @@
 
 Fiveonefour is a narrow VS Code workspace extension for keeping the Moose and `514` CLIs installed and current, then pointing you at the next step for creating a Moose Harness project.
 
-## What the extension does
+## What It Does
 
-- Runs the Fiveonefour installer on every activation to keep `moose` and `514` current.
+- Runs the official Fiveonefour installer on every activation to keep `moose` and `514` current.
 - Detects the installed CLI versions and records the latest install state.
 - Opens a Harness splash page after the first successful install or update in a session.
 - Exposes one manual command: `Fiveonefour: Check Install State`.
 
-## Create a Moose Harness project
+## Moose Harness Workflow
 
-When the installer run succeeds, Fiveonefour opens a splash page with the current Harness init command:
+When the installer run succeeds, Fiveonefour opens a splash page focused on the current Harness init command:
 
 ```bash
 moose init
 ```
 
-Use that command from a terminal in the parent directory where you want the new project to be created.
+Use that command from a terminal in the parent directory where you want the new Harness project to be created.
 
-## Platform support
+## Platform Support
 
 - Supported: macOS, Linux, VS Code Remote - WSL
 - Unsupported: native Windows
 
 On Windows, Fiveonefour does not attempt to run the installer. It shows a message telling you to reopen the project in WSL instead.
 
-## Check install state
+## Check Install State
 
 Run `Fiveonefour: Check Install State` from the Command Palette to open the extension output and review:
 
@@ -35,7 +35,8 @@ Run `Fiveonefour: Check Install State` from the Command Palette to open the exte
 - detected `moose` and `514` versions
 - the current Harness init command
 
-## Links
+## Resources
 
-- Docs: https://docs.fiveonefour.com/moosestack
-- Support: http://slack.moosestack.com/
+- [MooseStack Docs](https://docs.fiveonefour.com/moosestack)
+- [Support Slack](http://slack.moosestack.com/)
+- [Repository](https://github.com/514-labs/moosestack/tree/main/apps/vscode-extension)
