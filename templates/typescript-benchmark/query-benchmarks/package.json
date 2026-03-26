@@ -10,13 +10,5 @@
     "test": "vitest run --config vitest.config.ts",
     "bench": "node --env-file=.env.preview ./node_modules/vitest/vitest.mjs run --config vitest.config.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@514labs/moose-lib": "latest"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.33",
-    "typescript": "^5.7.0",
-    "vitest": "^3.2.4"
   }
 }

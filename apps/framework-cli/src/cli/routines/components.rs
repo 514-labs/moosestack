@@ -54,6 +54,8 @@ enum ComponentKind {
     Moose,
     /// Installed into a Next.js app. Requires shadcn to be initialized.
     Nextjs,
+    /// Standalone package. Writes files and installs deps without requiring a Moose project.
+    Standalone,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +116,9 @@ pub async fn add_component(component: &AddComponent) -> Result<RoutineSuccess, R
     match manifest.kind {
         ComponentKind::Moose => run_add_moose(manifest, args, target_dir, pkg_manager).await,
         ComponentKind::Nextjs => run_add_nextjs(manifest, args, target_dir, pkg_manager).await,
+        ComponentKind::Standalone => {
+            run_add_standalone(manifest, args, target_dir, pkg_manager).await
+        }
     }
 }
 
@@ -203,6 +208,29 @@ async fn run_add_nextjs(
     check_nextjs_project(&target_dir)?;
     check_shadcn_initialized(&target_dir, &pkg_manager)?;
 
+    print_plan(&manifest, &target_dir, None);
+    println!();
+    confirm_plan(&manifest, &target_dir, None, args.overwrite, args.yes)?;
+    println!();
+    let file_contents = fetch_component_files(&manifest).await?;
+    write_files(&manifest, &file_contents, &target_dir, None)?;
+    update_env_files(&manifest, &target_dir)?;
+    install_dependencies(&manifest, &target_dir, &pkg_manager)?;
+    println!();
+    print_next_steps(&manifest);
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Done".to_string(),
+        format!("{} installed successfully", manifest.name),
+    )))
+}
+
+async fn run_add_standalone(
+    manifest: ComponentManifest,
+    args: &AddArgs,
+    target_dir: PathBuf,
+    pkg_manager: PackageManager,
+) -> Result<RoutineSuccess, RoutineFailure> {
     print_plan(&manifest, &target_dir, None);
     println!();
     confirm_plan(&manifest, &target_dir, None, args.overwrite, args.yes)?;
