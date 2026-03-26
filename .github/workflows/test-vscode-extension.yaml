@@ -3,6 +3,9 @@ name: Test VS Code Extension
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   placeholder:
     name: Placeholder
