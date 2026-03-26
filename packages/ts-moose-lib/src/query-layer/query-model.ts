@@ -393,7 +393,7 @@ export function defineQueryModel<
   const table = resolveTable(tableOrMv);
   const { maxLimit = 1000 } = defaults;
 
-  const primaryTableName = table.name;
+  const primaryTableName = table.generateTableName();
   const hasJoins = joinDefs != null && Object.keys(joinDefs).length > 0;
 
   // --- Normalize dimensions ---
@@ -438,7 +438,7 @@ export function defineQueryModel<
             `Column '${name}' references unknown join '${def.join}'`,
           );
         }
-        const joinTableName = resolveTable(joinDef.table).name;
+        const joinTableName = resolveTable(joinDef.table).generateTableName();
         normalizedColumns[name] = {
           expression: raw(
             `${quoteIdentifier(joinTableName)}.${quoteIdentifier(String(def.column))}`,
@@ -692,7 +692,7 @@ export function defineQueryModel<
 
       let onClause: Sql;
       if (joinDef.leftKey && joinDef.rightKey) {
-        const joinTableName = joinTable.name;
+        const joinTableName = joinTable.generateTableName();
         onClause = raw(
           `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(joinDef.leftKey)} = ${quoteIdentifier(joinTableName)}.${quoteIdentifier(joinDef.rightKey)}`,
         );

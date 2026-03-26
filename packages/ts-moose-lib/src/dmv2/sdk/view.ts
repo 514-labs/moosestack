@@ -9,10 +9,12 @@ import { getSourceFileFromStack } from "../utils/stackTrace";
 function formatTableReference(table: OlapTable<any> | View): string {
   const database =
     table instanceof OlapTable ? table.config.database : undefined;
+  const deployedName =
+    table instanceof OlapTable ? table.generateTableName() : table.name;
   if (database) {
-    return `\`${database}\`.\`${table.name}\``;
+    return `\`${database}\`.\`${deployedName}\``;
   }
-  return `\`${table.name}\``;
+  return `\`${deployedName}\``;
 }
 
 /**
