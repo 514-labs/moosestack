@@ -9,11 +9,13 @@ import { CTACards, CTACard, Callout } from "@/components/mdx";
 # Optimizing ClickHouse Performance with AI
 
 <Callout type="info" title="TL;DR">
-  * This guide is for MooseStack apps that already have a slow ClickHouse query
-  path in production. * The optimization workflow profiles that query, proposes
-  schema changes, benchmarks the result on preview, and opens a PR. * Your job
-  is to review the evidence, the migration plan, and the exact test artifacts
-  before merge.
+  - This guide is for MooseStack apps that already have a production ClickHouse
+  query path that can be faster.
+  - The optimization workflow profiles that query, proposes candidate schema
+  changes, benchmarks them, and opens a PR for the winning candidate.
+  - Your job is to review the benchmark evidence and migration plan, then decide
+  whether the winner is ready as-is or needs a safer rollout plan before
+  production.
 </Callout>
 
 You need the `514` CLI installed, signed in, and your repo linked to your Fiveonefour project (see the **Setup** section in the [tutorial](/guides/optimize-clickhouse-performance/tutorial) and [Hosting](/hosting)). The tutorial then covers **Optimization workflow** and **PR review** in separate sections.
@@ -23,14 +25,14 @@ You need the `514` CLI installed, signed in, and your repo linked to your Fiveon
 <CTACards columns={2}>
   <CTACard
     title="Overview"
-    description="Understand what the workflow optimizes, what evidence it produces, and when to use it."
+    description="Understand what the optimization workflow does, what evidence it produces, and where rollout planning takes over."
     ctaLink="/guides/optimize-clickhouse-performance/overview"
     ctaLabel="Read first"
     Icon="Eye"
   />
   <CTACard
     title="Tutorial"
-    description="Run the workflow, review the benchmark artifacts, and verify the migration plan before merge."
+    description="Run the optimization workflow, review the PR artifacts, and hand off production-shaping questions when needed."
     ctaLink="/guides/optimize-clickhouse-performance/tutorial"
     ctaLabel="Run it"
     Icon="Rocket"
