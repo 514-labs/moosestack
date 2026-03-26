@@ -3908,7 +3908,7 @@ fn rename_confidence(
     }
 
     // --- 1. Name similarity (primary signal, evaluated first) ---
-    let max_len = removed.name.len().max(added.name.len());
+    let max_len = removed.name.chars().count().max(added.name.chars().count());
     let name_similarity = if max_len > 0 {
         let dist = levenshtein_distance(&removed.name, &added.name);
         1.0 - (dist as f64 / max_len as f64)
