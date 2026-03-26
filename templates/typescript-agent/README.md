@@ -5,6 +5,7 @@ This template gives you a production-shaped TypeScript starter for building tena
 It combines:
 - a Moose service with JWT-backed RLS and MCP tools
 - a Next.js app with chat, local mock OIDC login, and dashboard views
+- a reference multi-agent chat flow with supervisor, specialist, and narrator handoffs
 - AI Elements primitives for the generic chat shell
 - Moose-owned app APIs backed by query-layer models
 - a shared agent runtime package for provider/model/tool orchestration
@@ -31,6 +32,22 @@ MooseStack Service
   ├─ tenant_knowledge
   └─ SelectRowPolicy on tenant_id
 ```
+
+## Multi-Agent Reference Flow
+
+The generated chat route now demonstrates a simple multi-agent pattern out of the box:
+
+- `supervisor` classifies the latest user request and selects one specialist
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `sql-investigator`) investigates with tenant-scoped MCP tools
+- `narrator` rewrites the specialist's working notes into the final user-facing answer
+
+The streamed response includes lightweight handoff markers such as `[AGENT:supervisor]` and `[AGENT:narrator]` so teams can see where control moved while keeping the implementation simple.
+
+Start with these files if you want to customize the pattern:
+
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
+- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
+- `packages/web-app/src/app/page.tsx` - example prompts and UI copy that explain the default handoff flow
 
 ## Quickstart
 
@@ -131,6 +148,8 @@ Then verify:
 - `http://localhost:3000` renders the landing page
 - local sign-in works for `acme` and `globex`
 - the dashboard changes by tenant
+- chat guidance mentions the supervisor -> specialist -> narrator flow
+- streamed chat responses include `[AGENT:...]` handoff markers
 - chat tool calls stay tenant-scoped
 - `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`
 
@@ -245,11 +264,11 @@ Example:
 - `packages/moosestack-service/app/apis/mcp.ts` — custom MCP tools
 - `packages/web-app/src/components/ai-elements/` — reusable AI Elements chat primitives
 - `packages/web-app/src/features/chat/` — Moose-specific wrappers, tool renderers, and chat panel wiring
-- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared runtime
+- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared multi-agent runtime
 - `packages/moosestack-service/app/apis/tool-access.ts` — allowlisted MCP catalog and SQL access policy
 - `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog and query validation
 - `packages/moosestack-service/app/query/dashboard.ts` — query-layer metrics and tenant-scoped reads
-- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and execution orchestration
+- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and reference supervisor -> specialist -> narrator execution flow
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
 - `packages/agent-contracts/` — shared contracts between frontend and service

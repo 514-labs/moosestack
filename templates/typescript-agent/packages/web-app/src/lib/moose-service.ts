@@ -4,6 +4,13 @@ import {
 } from "agent-contracts";
 import { getMooseServiceUrl } from "@/env-vars";
 
+export class DashboardSnapshotUnauthorizedError extends Error {
+  constructor() {
+    super("Dashboard snapshot request was unauthorized");
+    this.name = "DashboardSnapshotUnauthorizedError";
+  }
+}
+
 export async function getDashboardSnapshot(
   bearerToken: string,
 ): Promise<DashboardSnapshot> {
@@ -18,6 +25,10 @@ export async function getDashboardSnapshot(
       },
     },
   );
+
+  if (response.status === 401) {
+    throw new DashboardSnapshotUnauthorizedError();
+  }
 
   if (!response.ok) {
     throw new Error(

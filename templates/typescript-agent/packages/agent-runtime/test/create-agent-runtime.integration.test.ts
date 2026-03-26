@@ -19,9 +19,25 @@ const mocks = vi.hoisted(() => {
     createAnthropicMock: vi.fn(() => anthropicModelFactory),
     createAmazonBedrockMock: vi.fn(() => bedrockModelFactory),
     createOpenAiMock: vi.fn(() => openAiModelFactory),
+    createUIMessageStreamMock: vi.fn(({ execute }) => {
+      return { execute };
+    }),
+    generateTextMock: vi.fn(),
+    streamTextMock: vi.fn(),
     mcpCloseMock: vi.fn(async () => undefined),
     mcpToolsMock: vi.fn(),
     experimentalCreateMcpClientMock: vi.fn(),
+  };
+});
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+
+  return {
+    ...actual,
+    createUIMessageStream: mocks.createUIMessageStreamMock,
+    generateText: mocks.generateTextMock,
+    streamText: mocks.streamTextMock,
   };
 });
 
@@ -49,7 +65,11 @@ vi.mock("@ai-sdk/mcp", () => {
   };
 });
 
-import { createAgentRuntime, DEFAULT_AGENT_SYSTEM_PROMPT } from "../src/index";
+import {
+  createAgentRuntime,
+  createMultiAgentStream,
+  DEFAULT_AGENT_SYSTEM_PROMPT,
+} from "../src/index";
 
 const userMessages = [
   {
@@ -67,6 +87,9 @@ describe("createAgentRuntime", () => {
     mocks.anthropicModelFactory.mockClear();
     mocks.bedrockModelFactory.mockClear();
     mocks.openAiModelFactory.mockClear();
+    mocks.createUIMessageStreamMock.mockClear();
+    mocks.generateTextMock.mockReset();
+    mocks.streamTextMock.mockReset();
     mocks.mcpCloseMock.mockClear();
     mocks.mcpToolsMock.mockReset();
     mocks.experimentalCreateMcpClientMock.mockReset();
@@ -160,5 +183,126 @@ describe("createAgentRuntime", () => {
     expect(runtime.provider).toBe("bedrock");
     expect(runtime.modelId).toBe("anthropic.claude-3-5-haiku-20241022-v1:0");
     expect(runtime.system).toBe("Custom prompt");
+  });
+
+  it("orchestrates supervisor, specialist, and narrator stages", async () => {
+    const traceCollector = {
+      startTrace: vi.fn(() => "trace-1"),
+      recordStep: vi.fn(),
+      endTrace: vi.fn(async () => undefined),
+    };
+    const workerUiStream = { name: "worker-ui-stream" };
+    const narratorUiStream = { name: "narrator-ui-stream" };
+    const workerResult = {
+      toUIMessageStream: vi.fn(() => workerUiStream),
+      text: Promise.resolve("Worker notes from the sql investigator."),
+      totalUsage: Promise.resolve({
+        inputTokens: 11,
+        outputTokens: 7,
+      }),
+    };
+    const narratorResult = {
+      toUIMessageStream: vi.fn(() => narratorUiStream),
+      totalUsage: Promise.resolve({
+        inputTokens: 5,
+        outputTokens: 6,
+      }),
+    };
+
+    mocks.generateTextMock.mockResolvedValue({
+      text: "sql-investigator",
+      totalUsage: {
+        inputTokens: 2,
+        outputTokens: 1,
+      },
+    });
+    mocks.streamTextMock
+      .mockReturnValueOnce(workerResult)
+      .mockReturnValueOnce(narratorResult);
+
+    await createMultiAgentStream({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      tenantId: "acme",
+      mcpServerUrl: "http://localhost:4000",
+      providerConfig: {
+        provider: "anthropic",
+        apiKey: "anthropic-key",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+      traceCollector,
+    });
+
+    const execute = mocks.createUIMessageStreamMock.mock.calls[0][0].execute;
+    const writer = {
+      write: vi.fn(),
+      merge: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    await execute({ writer });
+
+    expect(mocks.generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: expect.stringContaining("Route the latest user request"),
+      }),
+    );
+    expect(mocks.streamTextMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        system: expect.stringContaining("sql-investigator"),
+        tools: expect.objectContaining({
+          query_clickhouse: expect.anything(),
+        }),
+      }),
+    );
+    expect(mocks.streamTextMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        system: expect.stringContaining("You are the narrator"),
+      }),
+    );
+    expect(workerResult.toUIMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sendStart: false,
+        sendFinish: false,
+      }),
+    );
+    expect(narratorResult.toUIMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sendStart: false,
+      }),
+    );
+    expect(writer.merge).toHaveBeenNthCalledWith(1, workerUiStream);
+    expect(writer.merge).toHaveBeenNthCalledWith(2, narratorUiStream);
+
+    const emittedText = writer.write.mock.calls
+      .map(([part]) => ("delta" in part ? part.delta : ""))
+      .join("");
+    expect(emittedText).toContain("[AGENT:supervisor]");
+    expect(emittedText).toContain("[AGENT:sql-investigator]");
+    expect(emittedText).toContain("[AGENT:narrator]");
+
+    expect(
+      traceCollector.recordStep.mock.calls.map(([, step]) => step.toolName),
+    ).toEqual(["supervisor", "sql-investigator", "narrator"]);
+    expect(traceCollector.endTrace).toHaveBeenCalledWith(
+      "trace-1",
+      expect.objectContaining({
+        status: "completed",
+        totalSteps: 3,
+        totalInputTokens: 18,
+        totalOutputTokens: 14,
+      }),
+    );
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,8 @@
 
 import { spawn, ChildProcess } from "child_process";
 import { expect } from "chai";
+import * as fs from "fs";
+import { createRequire } from "module";
 import * as path from "path";
 import { promisify } from "util";
 import { SignJWT, importPKCS8 } from "jose";
@@ -87,7 +89,7 @@ function getSetCookies(response: Response): string[] {
 
 function updateCookieJar(jar: Map<string, string>, response: Response) {
   for (const cookie of getSetCookies(response)) {
-    const [nameValue] = cookie.split(";");
+    const [nameValue, ...attributes] = cookie.split(";");
     const separatorIndex = nameValue.indexOf("=");
     if (separatorIndex < 0) {
       continue;
@@ -95,6 +97,28 @@ function updateCookieJar(jar: Map<string, string>, response: Response) {
 
     const name = nameValue.slice(0, separatorIndex).trim();
     const value = nameValue.slice(separatorIndex + 1).trim();
+    const shouldDelete = attributes.some((attribute) => {
+      const [rawKey, rawAttributeValue = ""] = attribute.split("=");
+      const key = rawKey.trim().toLowerCase();
+      const attributeValue = rawAttributeValue.trim();
+
+      if (key === "max-age" && attributeValue === "0") {
+        return true;
+      }
+
+      if (key === "expires") {
+        const expiresAt = Date.parse(attributeValue);
+        return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+      }
+
+      return false;
+    });
+
+    if (shouldDelete) {
+      jar.delete(name);
+      continue;
+    }
+
     jar.set(name, value);
   }
 }
@@ -105,15 +129,90 @@ function cookieHeader(jar: Map<string, string>) {
     .join("; ");
 }
 
-async function signTenantJwt(claims: Record<string, string>): Promise<string> {
+async function signTenantJwt(
+  claims: Record<string, string>,
+  expirationTime: string | number = "1h",
+): Promise<string> {
   const privateKey = await importPKCS8(TEST_RSA_PRIVATE_KEY, "RS256");
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer(JWT_ISSUER)
     .setAudience(JWT_AUDIENCE)
     .setSubject(`local-${claims.tenant_id ?? "missing-tenant"}`)
-    .setExpirationTime("1h")
+    .setExpirationTime(expirationTime)
     .sign(privateKey);
+}
+
+function getSessionCookieName(jar: Map<string, string>): string {
+  const sessionCookieName = Array.from(jar.keys()).find((name) => {
+    return name.includes("session-token");
+  });
+
+  if (!sessionCookieName) {
+    throw new Error("Expected auth session cookie to be present after sign-in");
+  }
+
+  return sessionCookieName.replace(/\.\d+$/, "");
+}
+
+function replaceSessionCookie(
+  jar: Map<string, string>,
+  sessionCookieName: string,
+  value: string,
+) {
+  for (const cookieName of Array.from(jar.keys())) {
+    if (
+      cookieName === sessionCookieName ||
+      cookieName.startsWith(`${sessionCookieName}.`)
+    ) {
+      jar.delete(cookieName);
+    }
+  }
+
+  jar.set(sessionCookieName, value);
+}
+
+function readEnvValue(filePath: string, variableName: string): string {
+  const contents = fs.readFileSync(filePath, "utf8");
+  const line = contents
+    .split("\n")
+    .find((entry) => entry.startsWith(`${variableName}=`));
+
+  if (!line) {
+    throw new Error(`Missing ${variableName} in ${filePath}`);
+  }
+
+  return line
+    .slice(variableName.length + 1)
+    .trim()
+    .replace(/^"(.*)"$/, "$1");
+}
+
+async function encodeSessionCookie(
+  projectDir: string,
+  sessionCookieName: string,
+  token: Record<string, unknown>,
+): Promise<string> {
+  const authSecret = readEnvValue(
+    path.join(projectDir, "packages", "web-app", ".env.local"),
+    "AUTH_SECRET",
+  );
+  const requireFromProject = createRequire(
+    path.join(projectDir, "package.json"),
+  );
+  const { encode } = requireFromProject("next-auth/jwt") as {
+    encode: (params: {
+      token: Record<string, unknown>;
+      secret: string;
+      salt: string;
+    }) => Promise<string>;
+  };
+
+  return await encode({
+    token,
+    secret: authSecret,
+    salt: sessionCookieName,
+  });
 }
 
 async function waitForWebAppReady() {
@@ -278,7 +377,9 @@ async function signInLocalTenant(tenantId: string) {
 
   return {
     cookie: cookieHeader(jar),
+    cookieJar: jar,
     session,
+    sessionCookieName: getSessionCookieName(jar),
   };
 }
 
@@ -596,6 +697,11 @@ describe("TypeScript Agent Template E2E", function () {
     expect(acmeHtml).to.include("Tenant-scoped agent dashboard");
     expect(acmeHtml).to.include("ACME Fleet");
     expect(acmeHtml).to.include("Brake alerts increased by 14% this week");
+    expect(acmeHtml).to.include("Multi-agent reference flow");
+    expect(acmeHtml).to.include("supervisor");
+    expect(acmeHtml).to.include("specialist");
+    expect(acmeHtml).to.include("narrator");
+    expect(acmeHtml).to.include("[AGENT:...]");
     expect(acmeHtml).to.not.include("Seattle hub utilization breached 92%");
 
     const globexAuth = await signInLocalTenant("globex");
@@ -630,9 +736,88 @@ describe("TypeScript Agent Template E2E", function () {
     expect(globexHtml).to.include("Tenant-scoped agent dashboard");
     expect(globexHtml).to.include("Globex Mobility");
     expect(globexHtml).to.include("Seattle hub utilization breached 92%");
+    expect(globexHtml).to.include(
+      "Use the multi-agent flow to inspect the data catalog, route",
+    );
     expect(globexHtml).to.not.include(
       "Brake alerts increased by 14% this week",
     );
+  });
+
+  it("should clear stale dashboard sessions instead of crashing the page", async function () {
+    const acmeAuth = await signInLocalTenant("acme");
+    const expiredToken = await signTenantJwt(
+      {
+        tenant_id: "acme",
+        email: "ops@acme.example",
+        name: "ACME Fleet",
+        scope: "agent:query",
+      },
+      Math.floor(Date.now() / 1000) - 10,
+    );
+
+    const staleSessionCookie = await encodeSessionCookie(
+      projectDir,
+      acmeAuth.sessionCookieName,
+      {
+        sub: "local-acme",
+        userId: "local-acme",
+        tenantId: "acme",
+        tenantName: "ACME Fleet",
+        providerName: "local",
+        name: "ACME Fleet",
+        email: "ops@acme.example",
+        idToken: expiredToken,
+      },
+    );
+
+    replaceSessionCookie(
+      acmeAuth.cookieJar,
+      acmeAuth.sessionCookieName,
+      staleSessionCookie,
+    );
+
+    const redirectResponse = await fetch(WEB_APP_URL, {
+      headers: {
+        Cookie: cookieHeader(acmeAuth.cookieJar),
+      },
+      redirect: "manual",
+    });
+
+    expect([302, 303, 307]).to.include(redirectResponse.status);
+    expect(redirectResponse.headers.get("location")).to.include(
+      "/auth/session-expired",
+    );
+
+    const clearSessionResponse = await fetch(
+      new URL(redirectResponse.headers.get("location") ?? "", WEB_APP_URL),
+      {
+        headers: {
+          Cookie: cookieHeader(acmeAuth.cookieJar),
+        },
+        redirect: "manual",
+      },
+    );
+
+    expect([302, 303, 307]).to.include(clearSessionResponse.status);
+    expect(clearSessionResponse.headers.get("location")).to.include(
+      "session=expired",
+    );
+
+    updateCookieJar(acmeAuth.cookieJar, clearSessionResponse);
+    expect(acmeAuth.cookieJar.has(acmeAuth.sessionCookieName)).to.equal(false);
+
+    const landingResponse = await fetch(`${WEB_APP_URL}/?session=expired`, {
+      headers: {
+        Cookie: cookieHeader(acmeAuth.cookieJar),
+      },
+    });
+
+    expect(landingResponse.status).to.equal(200);
+
+    const landingHtml = await landingResponse.text();
+    expect(landingHtml).to.include("Choose a tenant");
+    expect(landingHtml).to.include("previous session expired");
   });
 
   it("should reject JWTs that omit tenant_id", async function () {
