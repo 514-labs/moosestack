@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { findMooseProjects, resolveActiveProject } from "../discovery";
+import {
+  findMooseProjects,
+  getNoProjectsStateKey,
+  resolveActiveProject,
+  shouldSkipAutomaticBootstrap,
+} from "../src/discovery";
 
 function withTempDir(run: (tempDir: string) => void): void {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-vscode-test-"));
@@ -46,5 +51,38 @@ test("resolveActiveProject prefers the stored project when it still exists", () 
   assert.equal(
     resolveActiveProject(projects, "/repo/packages/c"),
     "/repo/packages/a",
+  );
+  assert.equal(resolveActiveProject([], "/repo/packages/a"), null);
+});
+
+test("getNoProjectsStateKey normalizes workspace paths", () => {
+  assert.equal(
+    getNoProjectsStateKey("/repo/../repo/project"),
+    getNoProjectsStateKey("/repo/project"),
+  );
+});
+
+test("shouldSkipAutomaticBootstrap only skips after every workspace was scanned without projects", () => {
+  const emptyWorkspaces = new Set(["/repo/a", "/repo/b"]);
+
+  assert.equal(
+    shouldSkipAutomaticBootstrap(
+      ["/repo/a", "/repo/b"],
+      (workspaceFolderPath) => emptyWorkspaces.has(workspaceFolderPath),
+    ),
+    true,
+  );
+  assert.equal(
+    shouldSkipAutomaticBootstrap(
+      ["/repo/a", "/repo/c"],
+      (workspaceFolderPath) => emptyWorkspaces.has(workspaceFolderPath),
+    ),
+    false,
+  );
+  assert.equal(
+    shouldSkipAutomaticBootstrap([], (workspaceFolderPath) =>
+      emptyWorkspaces.has(workspaceFolderPath),
+    ),
+    false,
   );
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSetupSummary } from "../status";
+import { buildSetupSummary } from "../src/status";
 
 test("buildSetupSummary returns a readable status block", () => {
   const summary = buildSetupSummary({

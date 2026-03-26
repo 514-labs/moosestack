@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeExtensions, mergeSettings } from "../configuration";
+import { mergeExtensions, mergeSettings } from "../src/configuration";
 
 test("mergeSettings keeps existing values and appends shared defaults", () => {
   const merged = mergeSettings(
@@ -21,7 +21,20 @@ test("mergeSettings keeps existing values and appends shared defaults", () => {
     ".moose/versions",
     "src",
   ]);
-  assert.equal(merged["sqltools.connections"]?.length, 2);
+  assert.deepEqual(merged["sqltools.connections"], [
+    { name: "custom", server: "db.internal" },
+    { name: "moose clickhouse", server: "localhost" },
+  ]);
+});
+
+test("mergeSettings preserves user values for non-special keys", () => {
+  const merged = mergeSettings(
+    { "editor.tabSize": 8 },
+    { "editor.tabSize": 2, "editor.rulers": [80] },
+  );
+
+  assert.equal(merged["editor.tabSize"], 8);
+  assert.deepEqual(merged["editor.rulers"], [80]);
 });
 
 test("mergeExtensions de-duplicates recommendations", () => {
