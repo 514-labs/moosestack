@@ -10,7 +10,7 @@ import { defineBenchmark } from "./benchmark/core";
 //   import { myQueryModel } from "../.moose/compiled/app/index.js";
 //
 // Replace `benchmarkModel` with the query model you want to benchmark.
-const benchmarkModel = undefined as any;
+const benchmarkModel = {} as any;
 
 const ALL_DIMENSIONS = Object.keys(benchmarkModel.dimensions ?? {}) as string[];
 const ALL_METRICS = Object.keys(benchmarkModel.metrics ?? {}) as string[];
