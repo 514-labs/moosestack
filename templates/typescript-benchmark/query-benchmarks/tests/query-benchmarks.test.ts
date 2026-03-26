@@ -7,7 +7,7 @@ import {
 } from "../benchmark/core";
 import { benchmark } from "../benchmark.config";
 
-let ctx: BenchmarkContext;
+let ctx: BenchmarkContext | undefined;
 let baselineResult: {
   sql: string;
   profiles: readonly unknown[];
@@ -36,7 +36,9 @@ describe("Query benchmarks", () => {
   });
 
   afterAll(async () => {
-    await ctx.reporter.flush();
+    if (ctx) {
+      await ctx.reporter.flush();
+    }
   });
 
   it("baseline p95 under threshold", async () => {
