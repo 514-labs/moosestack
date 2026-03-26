@@ -1,0 +1,56 @@
+---
+title: agent remove
+description: Remove installed 514 agent skills and clean up symlinks.
+order: 2
+---
+
+# 514 agent remove
+
+Remove installed agent skills by deleting symlinks from agent skill directories and optionally removing the canonical skill files.
+
+## Usage
+
+```bash
+514 agent remove [OPTIONS] [SKILLS...]
+```
+
+## Arguments
+
+| Argument    | Description                                                                        |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `[SKILLS...]` | Skill names to remove (e.g. `514/cli`, `clickhouse/best-practices`). Omit to remove all installed skills. |
+
+## Behavior
+
+- **Full removal** (no `--agent` filter): Removes symlinks for all agents AND deletes the canonical skill files from `~/.agents/skills/`.
+- **Filtered removal** (`--agent` specified): Removes only the symlinks for the specified agents. Canonical files and other agents' symlinks are preserved.
+
+## Options
+
+| Option            | Description                                                   |
+| ----------------- | ------------------------------------------------------------- |
+| `--agent <AGENT>` | Target specific agents instead of all. Repeatable.            |
+| `--yes`           | Skip confirmation prompt.                                     |
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+# Remove all skills from all agents
+514 agent remove --yes
+
+# Remove a specific skill
+514 agent remove clickhouse/best-practices --yes
+
+# Remove skills only from a specific agent
+514 agent remove --agent claude-code --yes
+
+# JSON output
+514 agent remove --yes --json
+```
+
+## Related
+
+- [`514 agent`](/hosting/cli/agent)
+- [`514 agent init`](/hosting/cli/agent/init)
