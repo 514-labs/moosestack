@@ -561,19 +561,21 @@ If that SQL does not match the app code or benchmark target in the PR, stop and 
 <GuideStepper.Step
   id="review-migration-plan-and-changes"
   number={2}
-  title="Review the migration plan and the code changes"
-  summary="Read migrations/plan.yaml and the diff so you know exactly what will change in ClickHouse."
+  title="Review the migration plan and rollout intent"
+  summary="Read migrations/plan.yaml as a sequence so you know what changes in ClickHouse, how data moves, and whether rollout planning should reshape the plan before production."
 >
 <GuideStepper.WhatYouNeed>
 - The same PR
 - Comfort reading `migrations/plan.yaml` and TypeScript data model diffs
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A clear picture of schema operations (and app code changes) before they hit production
+- A clear picture of schema operations, data movement, and rollout questions before anything hits production
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Find the new versioned table in the diff">
-In the diff, the optimized layout should appear as a new **`OlapTable` version**; leave the old version unchanged. For example:
+<GuideStepper.Checkpoint title="Match the schema diff, benchmark target, and plan">
+Start in the code diff. Find the schema change the PR says made the query faster, then make sure the benchmark and the migration plan both point at that same change.
+
+One common shape is a new `OlapTable` version:
 
 ```diff
  export const UserEventsV1 = new OlapTable("UserEvents", {
@@ -587,89 +589,95 @@ In the diff, the optimized layout should appear as a new **`OlapTable` version**
 +});
 ```
 
-Validate: **bumped `version`** on the new definition, previous version unchanged. Storage change with no new `version` on `OlapTable` needs an explanation.
+If the PR claims better skipping on `current_database`, the benchmark should target the new layout and `migrations/plan.yaml` should explain how the database gets there. If the diff, benchmark target, and plan all tell different stories, stop and ask why.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Confirm the benchmark reads from the new model">
-The benchmark should read the **new versioned table**, not the old one. Expect a small diff:
+<GuideStepper.Checkpoint title="Read plan.yaml as a sequence, not just a list">
+Open `migrations/plan.yaml` and read it top to bottom. You are not only checking whether the right operations appear. You are checking whether the **sequence makes sense**.
 
-```diff
--import { UserEventsV1 } from "./models";
-+import { UserEventsV2 } from "./models";
+For each operation, ask:
 
- const query = sql`
-   SELECT count()
--  FROM ${UserEventsV1}
-+  FROM ${UserEventsV2}
-   WHERE timestamp >= ${start}
- `;
-```
+- what problem is this step solving
+- what data exists before this step
+- what data exists after this step
+- does the next step depend on this one having happened first
 
-Schema, benchmark, and claim should line up. If the summary promises better skipping on `current_database` but the benchmark still hits the old table or the diff is unrelated noise, ask before merge.
+Good review language sounds like: rename the old table to preserve the current rows, create the new layout, backfill into the new layout, then clean up the old copy when the move is complete.
+
+See [Planned Migrations](/moosestack/migrate/planned-migrations) for the plan format.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Open migrations/plan.yaml and match the plan shape">
-Open `migrations/plan.yaml`. Operations should match the versioned table change in code. Flag unexpected `DropTable` or `DropTableColumn`. Re-seeds need a note in the PR. See [Planned Migrations](/moosestack/migrate/planned-migrations).
+<GuideStepper.Checkpoint title="Treat rename-create-backfill-drop as a valid reviewed shape">
+Do not use "no drop ever" as the rule. A reviewed sequence can rename the old table, create a new one, backfill it, and then drop the renamed old table after the copy.
 
-Staged rollout shape:
+One valid shape looks like this:
 
 ```yaml
 operations:
+  - RawSql:
+      sql: |
+        RENAME TABLE UserEvents TO UserEvents_old
   - CreateTable:
-      name: UserEvents_2_0
-      columns: ...
+      name: UserEvents
       orderBy: [current_database, timestamp]
   - RawSql:
       sql: |
-        INSERT INTO UserEvents_2_0
+        INSERT INTO UserEvents
         SELECT *
-        FROM UserEvents_1_0
-```
-
-Create table, then backfill. No destructive lifecycle in this PR. Code shows `version: "2.0"` but the plan has no new table plus copy? Ask why.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Validate the backfill and keep the old table">
-`ORDER BY` or a rebuild needs a **backfill** in the plan, not only `CreateTable`. Usually a late **`RawSql`** `INSERT INTO <new> SELECT ... FROM <old>`.
-
-Good shape:
-
-```yaml {5-9}
-operations:
-  - CreateTable:
-      name: UserEvents_2_0
-      orderBy: [current_database, timestamp]
+        FROM UserEvents_old
   - RawSql:
       sql: |
-        INSERT INTO UserEvents_2_0
-        SELECT *
-        FROM UserEvents_1_0
+        DROP TABLE IF EXISTS UserEvents_old
 ```
 
-New table with no backfill or `RawSql` copy? Request changes.
+That can be correct when the rename preserves the original rows long enough for the backfill and the drop only happens after the move is done.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Look for unexpected DropTable operations">
-**Do not drop the old table in the optimization PR.** Keep it as fallback until the new layout is validated.
+<GuideStepper.Checkpoint title="Check the backfill details, including casts">
+Rebuild-style optimizations need a data-preserving copy step, not just `CreateTable`. In `RawSql` backfills, check whether the selected columns line up with the new table definition.
 
-Bad shape:
+If the new layout changes data types, codecs, or `LowCardinality` usage, explicit casts in the backfill can be a good sign:
 
-```yaml {5-6}
+```yaml
 operations:
-  - CreateTable:
-      name: UserEvents_2_0
-      orderBy: [current_database, timestamp]
-  - DropTable:
-      name: UserEvents_1_0
+  - RawSql:
+      sql: |
+        INSERT INTO UserEvents
+        SELECT
+          timestamp,
+          CAST(user_id, 'LowCardinality(String)'),
+          current_database
+        FROM UserEvents_old
 ```
 
-Early `DropTable` on the old table? Fix the plan before merge.
+You are looking for a believable story: rows move from the preserved old shape into the new shape without silent type mismatch or missing columns. A new table with no backfill, or a backfill that ignores a type change the schema diff introduced, needs an explanation.
 
-Removing `events_old` or other fallbacks belongs in a **follow-up PR**, not this one.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Treat destructive operations as review points, not auto-rejects">
+`DropTable`, `DropTableColumn`, and `ModifyTableColumn` are not automatically wrong. They are operations that need intent, timing, and consequences explained. The [going-to-production migration review](/guides/applications/going-to-production) is the stricter reference for shaping these operations before a production deploy.
+
+Good signs:
+
+- a `DropTable` only removes a renamed old table after a successful backfill
+- a risky column operation is clearly tied to an intentional schema change
+- the PR calls out any re-seed, backfill, or recovery implications
+
+Stop and request changes when:
+
+- a destructive step removes an active table or column with no preservation step
+- the plan shape does not match the code diff
+- preview behavior suggests the plan did something other than what the PR describes
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Hand off to rollout planning when the plan needs reshaping">
+This optimization review is about whether the winning candidate is believable and intentional. It is **not** the final word on the safest production rollout shape.
+
+If the plan needs phased rollout logic, manual verification gates, a delayed cleanup step, or a more cautious recovery path, stop here and hand it off to rollout planning before merge. The optimization workflow found a promising winner. Rollout planning decides whether that exact migration sequence is the one you should ship to production. Use the [going-to-production guide](/guides/applications/going-to-production) when you need the stricter production rollout checklist.
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
