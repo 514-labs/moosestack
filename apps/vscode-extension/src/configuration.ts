@@ -49,8 +49,8 @@ export function mergeSettings(
   sharedSettings: SettingsFile = {},
 ): SettingsFile {
   return {
-    ...existingSettings,
     ...sharedSettings,
+    ...existingSettings,
     "python.analysis.extraPaths": mergeUniqueStrings(
       existingSettings["python.analysis.extraPaths"],
       sharedSettings["python.analysis.extraPaths"],
@@ -67,8 +67,8 @@ export function mergeExtensions(
   sharedExtensions: ExtensionsFile = {},
 ): ExtensionsFile {
   return {
-    ...existingExtensions,
     ...sharedExtensions,
+    ...existingExtensions,
     recommendations: mergeUniqueStrings(
       existingExtensions.recommendations,
       sharedExtensions.recommendations,

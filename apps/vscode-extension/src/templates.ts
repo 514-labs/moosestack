@@ -6,7 +6,17 @@ import type { TemplateInfo, TemplateListResponse } from "./types";
 const SUPPORTED_TEMPLATE_LIST_SCHEMA_VERSION = 1;
 
 export function parseTemplateListResponse(output: string): TemplateInfo[] {
-  const parsed = JSON.parse(output) as TemplateListResponse;
+  let parsed: TemplateListResponse;
+  try {
+    parsed = JSON.parse(output) as TemplateListResponse;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const preview = output.trim().slice(0, 200);
+    throw new Error(
+      `Failed to parse \`moose template list --json\` output: ${message}. Output preview: ${preview}`,
+    );
+  }
+
   if (parsed.schema_version !== SUPPORTED_TEMPLATE_LIST_SCHEMA_VERSION) {
     throw new Error(
       `Unsupported Moose template JSON schema version: ${String(parsed.schema_version)}.`,

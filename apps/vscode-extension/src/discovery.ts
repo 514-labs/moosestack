@@ -84,3 +84,19 @@ export function resolveActiveProject(
 export function getWorkspaceStateKey(workspaceFolderPath: string): string {
   return `moosestack.activeProject:${normalizePath(workspaceFolderPath)}`;
 }
+
+export function getNoProjectsStateKey(workspaceFolderPath: string): string {
+  return `moosestack.noProjects:${normalizePath(workspaceFolderPath)}`;
+}
+
+export function shouldSkipAutomaticBootstrap(
+  workspaceFolderPaths: readonly string[],
+  hasPreviouslyScannedWithoutProjects: (workspaceFolderPath: string) => boolean,
+): boolean {
+  return (
+    workspaceFolderPaths.length > 0 &&
+    workspaceFolderPaths.every((workspaceFolderPath) =>
+      hasPreviouslyScannedWithoutProjects(normalizePath(workspaceFolderPath)),
+    )
+  );
+}

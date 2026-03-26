@@ -62,7 +62,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "pnpm run build && node --test dist/test/*.test.js",
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
     "package:vsix": "pnpm run build && npx @vscode/vsce package",
     "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
     "publish:openvsx": "pnpm run build && npx ovsx publish"
