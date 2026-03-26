@@ -62,6 +62,7 @@ function inferCategory(name: string): "starter" | "framework" | "example" {
     "python-fastapi",
     "next-app-empty",
     "typescript-mcp",
+    "typescript-agent",
     "python-fastapi-client-only",
   ];
 
@@ -95,6 +96,9 @@ function inferFrameworks(name: string): string[] {
   if (name.includes("mcp")) {
     frameworks.push("MCP");
   }
+  if (name.includes("agent")) {
+    frameworks.push("Agents");
+  }
 
   return frameworks;
 }
@@ -113,6 +117,10 @@ function inferFeatures(name: string, description: string): string[] {
 
   if (lowerName.includes("mcp")) {
     features.push("MCP");
+  }
+  if (lowerName.includes("agent")) {
+    features.push("Auth");
+    features.push("Agents");
   }
   if (lowerName.includes("frontend") || lowerName.includes("next")) {
     features.push("Frontend");

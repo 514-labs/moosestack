@@ -471,16 +471,16 @@ pub async fn create_project_from_template(
                         "name".to_string(),
                         serde_json::Value::String(project_name.clone()),
                     );
-                    std::fs::write(
-                        &package_json_path,
+                    let package_json_content = format!(
+                        "{}\n",
                         serde_json::to_string_pretty(&package_json).map_err(|e| {
                             RoutineFailure::error(Message {
                                 action: "Init".to_string(),
                                 details: format!("Failed to serialize package.json: {e}"),
                             })
-                        })?,
-                    )
-                    .map_err(|e| {
+                        })?
+                    );
+                    std::fs::write(&package_json_path, package_json_content).map_err(|e| {
                         RoutineFailure::error(Message {
                             action: "Init".to_string(),
                             details: format!("Failed to write package.json: {e}"),

@@ -1,0 +1,279 @@
+# TypeScript Agent Template
+
+This template gives you a production-shaped TypeScript starter for building tenant-scoped agents on MooseStack.
+
+It combines:
+- a Moose service with JWT-backed RLS and MCP tools
+- a Next.js app with chat, local mock OIDC login, and dashboard views
+- AI Elements primitives for the generic chat shell
+- Moose-owned app APIs backed by query-layer models
+- a shared agent runtime package for provider/model/tool orchestration
+- a reusable Langfuse collector package for host-side observability sinks
+- a shared contracts package for frontend/service DTOs
+- Langfuse-compatible tracing from the web app
+- optional Bedrock provider and Guardrails wiring
+
+## Overview
+
+```text
+Next.js App
+  ├─ Auth.js session (local mock OIDC or external OIDC)
+  ├─ Server-rendered UI
+  ├─ Chat API route
+  └─ Langfuse tracing
+          │
+          │ Bearer JWT with tenant_id
+          ▼
+MooseStack Service
+  ├─ /app dashboard API
+  ├─ /tools MCP server
+  ├─ query-layer models
+  ├─ tenant_knowledge
+  └─ SelectRowPolicy on tenant_id
+```
+
+## Quickstart
+
+```bash
+moose init <project-name> typescript-agent
+cd <project-name>
+pnpm install
+cp packages/moosestack-service/.env.{example,local}
+cp packages/web-app/.env.{example,local}
+pnpm dev
+```
+
+`packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example` and a checked-in `packages/web-app/.env.development` for local development.
+
+In a second terminal, seed starter data:
+
+```bash
+pnpm seed
+```
+
+`pnpm seed` prints a short summary showing how many records were inserted and the current totals per tenant.
+
+Open `http://localhost:3000`, sign in as one of the seeded tenants, then use the dashboard and chat panel.
+
+Before committing, run:
+
+```bash
+pnpm build
+pnpm build:service
+pnpm test
+pnpm lint
+pnpm format
+```
+
+## Manual Template Testing
+
+Templates should be tested from a generated app, not in-place inside this repository.
+
+From the monorepo root:
+
+```bash
+cargo build --package moose-cli
+node scripts/package-templates.js
+```
+
+Then initialize the template in a temp directory:
+
+```bash
+TMP_DIR="$(mktemp -d /tmp/typescript-agent-XXXXXX)"
+cd "$TMP_DIR"
+/Users/nicolas/code/514/moose-0/target/debug/moose-cli init my-agent typescript-agent
+cd my-agent
+pnpm install
+```
+
+Run the generated app checks:
+
+```bash
+pnpm test
+pnpm build
+pnpm build:service
+```
+
+For a full local smoke test:
+
+```bash
+cp packages/moosestack-service/.env.{example,local}
+cp packages/web-app/.env.{example,local}
+pnpm dev
+```
+
+In a second terminal:
+
+```bash
+pnpm seed
+```
+
+Then verify:
+
+- `http://localhost:3000` renders the landing page
+- local sign-in works for `acme` and `globex`
+- the dashboard changes by tenant
+- chat tool calls stay tenant-scoped
+- `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`
+
+## Local Development
+
+Local development uses the built-in mock OIDC flow:
+
+- `MOOSE_AUTH_MODE=local` enables tenant picker sign-in in the web app
+- the web app signs a short-lived JWT carrying `tenant_id`
+- Moose verifies that JWT using the public key in `packages/moosestack-service/moose.config.toml`
+- MCP tool queries and Moose app APIs are both scoped by the same row policy
+
+Two demo tenants are included by default:
+- `acme`
+- `globex`
+
+## Environment Variables
+
+### Required
+
+In `packages/web-app/.env.local`:
+
+| Variable | Purpose |
+| --- | --- |
+| `AUTH_SECRET` | Auth.js session secret |
+| `AI_PROVIDER` | `anthropic`, `openai`, or `bedrock` |
+| `MOOSE_SERVICE_URL` | Moose service base URL, usually `http://localhost:4000` |
+
+For local work, start by copying `packages/web-app/.env.example` to `.env.local` and then set the provider-specific variables you actually want to use.
+
+### Provider-specific
+
+| Provider | Variables |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY`, optional `OPENAI_MODEL_ID` |
+| Bedrock | `AWS_REGION`, `BEDROCK_MODEL_ID` |
+
+If `AI_PROVIDER=bedrock`, local development also needs AWS credential hints such as `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Otherwise the template marks Bedrock as unavailable and the chat panel stays disabled instead of failing silently.
+
+### Optional Langfuse
+
+| Variable | Purpose |
+| --- | --- |
+| `LANGFUSE_PUBLIC_KEY` | Enable real Langfuse tracing |
+| `LANGFUSE_SECRET_KEY` | Enable real Langfuse tracing |
+| `LANGFUSE_BASE_URL` | Defaults to `https://cloud.langfuse.com` |
+
+### Optional production OIDC
+
+Set these when replacing the local mock flow with a real provider:
+
+| Variable | Purpose |
+| --- | --- |
+| `MOOSE_AUTH_MODE=oidc` | Switch the web app to external OIDC mode |
+| `OIDC_ISSUER` | OIDC issuer URL |
+| `OIDC_CLIENT_ID` | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | OIDC client secret |
+| `OIDC_TENANT_CLAIM` | Claim used for RLS, defaults to `tenant_id` |
+
+When moving to production OIDC, also update the `[jwt]` section in `packages/moosestack-service/moose.config.toml` so Moose verifies your real provider's JWTs.
+
+## Bedrock Guardrails
+
+If `AI_PROVIDER=bedrock`:
+
+- set `BEDROCK_GUARDRAIL_ID` to enable real Guardrails checks
+- set `BEDROCK_GUARDRAIL_VERSION` if you do not want `DRAFT`
+- if no guardrail is configured, the template falls back to a development-only mock adapter under `packages/web-app/src/dev/`
+
+## What Gets Seeded
+
+`pnpm seed` inserts:
+
+- tenant-scoped knowledge records in `tenant_knowledge`
+
+The dashboard reads Moose-owned app APIs over that table, and the chat UI can inspect it through MCP. Langfuse remains the observability destination for chat/model traces.
+
+By default, the MCP surface is allowlisted:
+
+- `get_data_catalog` only returns the data components declared in `packages/moosestack-service/app/apis/tool-access.ts`
+- the default exposed table set is derived from `tenantIsolation.config.tables`
+- `query_clickhouse` only allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` against those exposed components
+- `system.*` metadata and undeclared tables are blocked by default
+
+## External MCP Clients
+
+The template exposes a custom MCP server at `http://localhost:4000/tools`.
+
+Use a bearer JWT from the same auth provider that the web app uses. For local dev, sign in through the app and inspect requests, or mint an equivalent JWT carrying `tenant_id`.
+
+Example:
+
+```json
+{
+  "mcpServers": {
+    "moose-tools": {
+      "transport": "http",
+      "url": "http://localhost:4000/tools",
+      "headers": {
+        "Authorization": "Bearer <tenant_jwt>"
+      }
+    }
+  }
+}
+```
+
+## Files to Start With
+
+- `packages/moosestack-service/app/ingest/models.ts` — tenant-scoped tables and row policies
+- `packages/moosestack-service/app/apis/dashboard.ts` — app-facing dashboard API endpoints
+- `packages/moosestack-service/app/apis/mcp.ts` — custom MCP tools
+- `packages/web-app/src/components/ai-elements/` — reusable AI Elements chat primitives
+- `packages/web-app/src/features/chat/` — Moose-specific wrappers, tool renderers, and chat panel wiring
+- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared runtime
+- `packages/moosestack-service/app/apis/tool-access.ts` — allowlisted MCP catalog and SQL access policy
+- `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog and query validation
+- `packages/moosestack-service/app/query/dashboard.ts` — query-layer metrics and tenant-scoped reads
+- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and execution orchestration
+- `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
+- `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
+- `packages/agent-contracts/` — shared contracts between frontend and service
+- `packages/web-app/src/auth.ts` — production auth wiring plus optional OIDC
+- `packages/web-app/src/lib/id-token.ts` — shared ID token claim parsing
+- `packages/web-app/src/dev/` — development-only local auth and mock guardrails
+- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter that injects auth, tracing, and guardrails into the shared runtime
+- `packages/web-app/src/lib/moose-service.ts` — authenticated service client for frontend reads
+- `packages/web-app/src/features/chat/` — chat UI components
+- `packages/web-app/test/` — unit tests for frontend/server host adapters and environment-driven wiring
+- `vitest.config.ts` — root test projects and source aliases for source-first testing
+
+Each workspace package also has its own README:
+
+- `packages/agent-contracts/README.md`
+- `packages/agent-runtime/README.md`
+- `packages/agent-observability-langfuse/README.md`
+- `packages/moosestack-service/README.md`
+- `packages/web-app/README.md`
+
+## Testing
+
+The template ships with a root Vitest setup that is split into two test layers:
+
+- `pnpm test:unit` runs fast unit tests for pure helpers and host adapters
+- `pnpm test:integration` runs source-level integration tests for cross-package runtime assembly
+- `pnpm test` runs both projects
+
+The default convention is:
+
+- `packages/*/test/**/*.unit.test.ts` for isolated unit tests
+- `packages/*/test/**/*.integration.test.ts` for package-crossing integration tests
+
+The workspace aliases point package imports like `agent-runtime`, `agent-contracts`, and `@/` to source files, so tests do not require a prior build step.
+
+## Notes
+
+- `pnpm dev` starts both the Moose service and the web app.
+- `pnpm build` uses Turbo to build the shared packages plus the Next app in dependency order.
+- `pnpm build:service` builds the Moose service docker image.
+- `pnpm test` uses Vitest at the workspace root and is safe to run before `pnpm dev`.
+- `pnpm seed` requires the Moose service to be running.
+- `pnpm lint` runs Biome across the template and ESLint in the Next app.
+- `pnpm format` runs Biome formatting across the template.
+- The chat and dashboard are both tenant-scoped; if you sign in as a different tenant, visible data changes.
