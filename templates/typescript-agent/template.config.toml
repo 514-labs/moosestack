@@ -1,0 +1,68 @@
+language = "typescript" # Must be typescript or python
+description = "TypeScript agent starter with MCP tools, Moose-owned dashboard APIs, JWT RLS, Bedrock support, and Langfuse tracing."
+post_install_print = """
+Deploy on Boreal
+
+Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+Run this next:
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install all dependencies:
+    $ pnpm install
+
+🔐 Create environment files:
+    $ cp packages/moosestack-service/.env.{example,local}
+    $ cp packages/web-app/.env.{example,local}
+
+⚙️ Set environment variables:
+    1. Set your LLM provider credentials in `packages/web-app/.env.local`.
+    2. Keep `MOOSE_AUTH_MODE=local` for the built-in mock OIDC issuer during local dev.
+    3. Optionally configure Langfuse and Bedrock Guardrails in `packages/web-app/.env.local`.
+
+🌱 Seed starter data:
+    $ pnpm seed
+
+🚀 Start both services:
+    $ cd ../.. # go back to project root
+    $ pnpm dev
+
+Or start each service separately:
+    $ pnpm dev:moose    # Start MooseStack service only
+    $ pnpm dev:web      # Start web app only
+"""
+default_sloan_telemetry = "standard"
+
+# Boreal one-click deploy configuration
+[boreal]
+enabled = true
+display_name = "TypeScript Agent Starter"
+short_description = "Build tenant-scoped TypeScript agents with MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
+featured = true
+
+# Env vars user must provide
+[[boreal.env_vars]]
+name = "AI_PROVIDER"
+description = "LLM provider selection: anthropic, openai, or bedrock"
+
+[[boreal.env_vars]]
+name = "AUTH_SECRET"
+description = "Auth.js session secret"
+
+[[boreal.env_vars]]
+name = "OIDC_ISSUER"
+description = "Production OIDC issuer URL"
+
+[[boreal.env_vars]]
+name = "OIDC_CLIENT_ID"
+description = "Production OIDC client ID"
+
+[[boreal.env_vars]]
+name = "OIDC_CLIENT_SECRET"
+description = "Production OIDC client secret"
