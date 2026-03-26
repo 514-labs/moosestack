@@ -247,12 +247,16 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
     }
 }
 
-/// Controls whether the destructive confirmation gate auto-approves.
+/// Controls whether the confirmation gates auto-approve.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfirmationPolicy {
-    /// Set by `--yes-destructive` or `MOOSE_ACCEPT_DESTRUCTIVE=1`
+    /// Auto-accept destructive operations (table/column drops, recreates, view removals).
+    /// Set by `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE=1`, or implied by `--yes-all`.
     pub accept_destructive: bool,
-    /// Whether we are running in dev mode (affects messaging)
+    /// Auto-accept detected column renames as genuine renames.
+    /// Set by `--yes-rename` / `MOOSE_ACCEPT_RENAME=1`, or implied by `--yes-all`.
+    pub accept_rename: bool,
+    /// Whether we are running in dev mode (affects messaging).
     pub is_dev: bool,
 }
 
@@ -293,7 +297,7 @@ pub async fn destructive_confirmation_gate(
             format!(
                 "Plan contains {} destructive operation(s) but running non-interactively.\n\
                  {}\n\n\
-                 To proceed, re-run with --yes-destructive or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                 To proceed, re-run with --yes-destructive (or --yes-all) or set MOOSE_ACCEPT_DESTRUCTIVE=1",
                 risk.destructive_changes.len(),
                 summary
             ),
@@ -612,7 +616,7 @@ pub async fn rename_confirmation_gate(
         return Ok(Some(HashSet::new()));
     }
 
-    if policy.accept_destructive {
+    if policy.accept_rename {
         show_message!(
             MessageType::Info,
             Message::new(
@@ -634,7 +638,7 @@ pub async fn rename_confirmation_gate(
             format!(
                 "Plan contains {} detected column rename(s) but running non-interactively.\n\
                  {}\n\n\
-                 To auto-accept, re-run with --yes-destructive or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                 To auto-accept, re-run with --yes-rename (or --yes-all) or set MOOSE_ACCEPT_RENAME=1",
                 total,
                 format_pending_renames_summary(&pending),
             ),

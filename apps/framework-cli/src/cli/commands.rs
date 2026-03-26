@@ -144,9 +144,17 @@ pub enum Commands {
         #[arg(long)]
         log_payloads: bool,
 
+        /// Skip all confirmation prompts (renames and destructive operations)
+        #[arg(long)]
+        yes_all: bool,
+
         /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
         #[arg(long)]
         yes_destructive: bool,
+
+        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        #[arg(long)]
+        yes_rename: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

@@ -768,7 +768,9 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
+            yes_all,
             yes_destructive,
+            yes_rename,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -785,11 +787,17 @@ pub async fn top_command_handler(
                 info!("Payload logging enabled");
             }
 
+            let env_bool = |name: &str| -> bool {
+                std::env::var(name)
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+            };
+            let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
             let confirmation_policy = ConfirmationPolicy {
-                accept_destructive: *yes_destructive
-                    || std::env::var("MOOSE_ACCEPT_DESTRUCTIVE")
-                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                        .unwrap_or(false),
+                accept_destructive: accept_all
+                    || *yes_destructive
+                    || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+                accept_rename: accept_all || *yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
                 is_dev: true,
             };
 
