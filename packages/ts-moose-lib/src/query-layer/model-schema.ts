@@ -83,8 +83,11 @@ export interface GetModelSchemaOptions {
 function isCategoricalFilter(operators: readonly string[]): boolean {
   return (
     (operators.includes("eq") || operators.includes("in")) &&
+    !operators.includes("gt") &&
     !operators.includes("gte") &&
-    !operators.includes("lte")
+    !operators.includes("lt") &&
+    !operators.includes("lte") &&
+    !operators.includes("between")
   );
 }
 
@@ -112,7 +115,8 @@ async function fetchDistinctValues(
     const rows = (await result.json()) as Record<string, unknown>[];
     return rows
       .map((row) => {
-        const val = String(row[dimensionId] ?? "");
+        const firstKey = Object.keys(row)[0];
+        const val = firstKey ? String(row[firstKey] ?? "") : "";
         return { value: val, label: val };
       })
       .filter((v) => v.value !== "")
