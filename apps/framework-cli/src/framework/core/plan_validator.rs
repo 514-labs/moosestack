@@ -13,6 +13,9 @@ pub enum ValidationError {
 
     #[error("Cluster validation failed: {0}")]
     ClusterValidation(String),
+
+    #[error("Row policy validation failed: {0}")]
+    RowPolicyValidation(String),
 }
 
 /// Validates that all tables with cluster_name reference clusters defined in the config
@@ -66,11 +69,100 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     Ok(())
 }
 
+/// Validates that row policies reference existing tables and columns,
+/// and that no two policies map the same column to different JWT claims.
+fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> {
+    // Track column → (claim, policy_name) to detect conflicting claim mappings.
+    // Two policies on the same column produce the same ClickHouse setting name,
+    // so they must agree on which JWT claim provides the value.
+    let mut column_claims: std::collections::HashMap<&str, (&str, &str)> =
+        std::collections::HashMap::new();
+
+    for policy in plan.target_infra_map.select_row_policies.values() {
+        if policy.tables.is_empty() {
+            return Err(ValidationError::RowPolicyValidation(format!(
+                "Row policy '{}' has no tables. At least one table must be specified.",
+                policy.name
+            )));
+        }
+
+        // Validate the column name produces a legal ClickHouse custom setting name.
+        // getSetting() requires alphanumeric + underscore after the 'SQL_moose_rls_' prefix.
+        if policy.column.is_empty()
+            || !policy
+                .column
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(ValidationError::RowPolicyValidation(format!(
+                "Row policy '{}': column '{}' contains characters that are invalid in a \
+                 ClickHouse custom setting name. Only ASCII alphanumeric characters and \
+                 underscores are allowed.",
+                policy.name, policy.column
+            )));
+        }
+
+        if let Some(&(existing_claim, existing_policy)) = column_claims.get(policy.column.as_str())
+        {
+            if existing_claim != policy.claim {
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policies '{}' and '{}' both filter on column '{}' but map to \
+                     different JWT claims ('{}' vs '{}'). Policies on the same column \
+                     must use the same claim.",
+                    existing_policy, policy.name, policy.column, existing_claim, policy.claim
+                )));
+            }
+        } else {
+            column_claims.insert(&policy.column, (&policy.claim, &policy.name));
+        }
+
+        for table_ref in &policy.tables {
+            let default_db = plan.target_infra_map.default_database.as_str();
+            let table = plan.target_infra_map.tables.values().find(|t| {
+                t.name == table_ref.name
+                    && t.database.as_deref().unwrap_or(default_db)
+                        == table_ref.database.as_deref().unwrap_or(default_db)
+            });
+
+            let table_display = match &table_ref.database {
+                Some(db) => format!("{}.{}", db, table_ref.name),
+                None => table_ref.name.clone(),
+            };
+
+            let Some(table) = table else {
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policy '{}' references table '{}', which does not exist.",
+                    policy.name, table_display
+                )));
+            };
+
+            let has_column = table.columns.iter().any(|c| c.name == policy.column);
+            if !has_column {
+                let available = table
+                    .columns
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(ValidationError::RowPolicyValidation(format!(
+                    "Row policy '{}' filters on column '{}', but table '{}' \
+                     has no such column.\n\nAvailable columns: {}",
+                    policy.name, policy.column, table_display, available
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationError> {
     stream::validate_changes(project, &plan.changes.streaming_engine_changes)?;
 
     // Validate cluster references
     validate_cluster_references(project, plan)?;
+
+    // Validate row policy table/column references
+    validate_row_policy_columns(plan)?;
 
     // Check for validation errors in OLAP changes
     for change in &plan.changes.olap_changes {
@@ -112,9 +204,9 @@ mod tests {
                 host: "localhost".to_string(),
                 host_port: 18123,
                 native_port: 9000,
-                host_data_path: None,
                 additional_databases: vec![],
                 clusters,
+                ..Default::default()
             },
             http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
             redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
@@ -204,6 +296,7 @@ mod tests {
                 web_apps: HashMap::new(),
                 materialized_views: HashMap::new(),
                 views: HashMap::new(),
+                select_row_policies: HashMap::new(),
                 moose_version: None,
             },
             changes: Default::default(),
@@ -371,6 +464,118 @@ mod tests {
         let table = create_table_with_engine("test_table", None, ClickhouseEngine::MergeTree);
         let plan = create_test_plan(vec![table]);
 
+        let result = validate(&project, &plan);
+
+        assert!(result.is_ok());
+    }
+
+    fn create_test_table_with_columns(name: &str, columns: Vec<Column>) -> Table {
+        Table {
+            name: name.to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::default(),
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: name.to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn make_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_row_policy_column_with_invalid_setting_chars_rejected() {
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
+
+        let table = create_test_table_with_columns(
+            "events_1_0_0",
+            vec![make_column("id"), make_column("org-id")],
+        );
+        let mut plan = create_test_plan(vec![table]);
+        plan.target_infra_map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
+                column: "org-id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::RowPolicyValidation(msg)) => {
+                assert!(msg.contains("org-id"));
+                assert!(msg.contains("invalid"));
+            }
+            _ => panic!("Expected RowPolicyValidation error"),
+        }
+    }
+
+    #[test]
+    fn test_row_policy_column_with_valid_chars_accepted() {
+        use crate::framework::core::infrastructure::select_row_policy::{
+            SelectRowPolicy, TableReference,
+        };
+
+        let table = create_test_table_with_columns(
+            "events_1_0_0",
+            vec![make_column("id"), make_column("org_id")],
+        );
+        let mut plan = create_test_plan(vec![table]);
+        plan.target_infra_map.select_row_policies.insert(
+            "tenant_isolation".to_string(),
+            SelectRowPolicy {
+                name: "tenant_isolation".to_string(),
+                tables: vec![TableReference {
+                    name: "events_1_0_0".to_string(),
+                    database: None,
+                }],
+                column: "org_id".to_string(),
+                claim: "org_id".to_string(),
+            },
+        );
+
+        let project = create_test_project(None);
         let result = validate(&project, &plan);
 
         assert!(result.is_ok());

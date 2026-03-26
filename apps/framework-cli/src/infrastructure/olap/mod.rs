@@ -1,6 +1,7 @@
 use clickhouse::sql_parser::normalize_sql_for_comparison;
 use clickhouse::ClickhouseChangesError;
 
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::lifecycle_filter::{self, LifecycleViolation};
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
@@ -94,6 +95,18 @@ pub trait OlapOperations {
         default_database: &str,
     ) -> Result<Vec<SqlResource>, OlapChangesError>;
 
+    /// Retrieves all row policies from the database that are assigned to moose_rls_role.
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list row policies from
+    ///
+    /// # Returns
+    /// * `Result<Vec<SelectRowPolicy>, OlapChangesError>` - Row policies found in the database
+    async fn list_row_policies(
+        &self,
+        db_name: &str,
+    ) -> Result<Vec<SelectRowPolicy>, OlapChangesError>;
+
     /// Normalizes SQL using the database's native formatting.
     ///
     /// This is used to compare SQL statements for semantic equivalence,
@@ -155,6 +168,17 @@ pub async fn execute_changes(
 
     // Execute the ordered changes
     clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
+    Ok(())
+}
+
+/// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
+/// matches the current config. Separated from `execute_changes` because RLS bootstrap
+/// must run on every startup regardless of whether OLAP schema changed.
+pub async fn bootstrap_rls(
+    project: &Project,
+    desired_row_policies: &[SelectRowPolicy],
+) -> Result<(), OlapChangesError> {
+    clickhouse::rls_bootstrap(project, desired_row_policies).await?;
     Ok(())
 }
 

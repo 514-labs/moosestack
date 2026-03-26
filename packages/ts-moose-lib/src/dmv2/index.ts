@@ -76,6 +76,7 @@ export {
 } from "./sdk/materializedView";
 export { SqlResource } from "./sdk/sqlResource";
 export { View } from "./sdk/view";
+export { SelectRowPolicy, SelectRowPolicyConfig } from "./sdk/selectRowPolicy";
 export { LifeCycle } from "./sdk/lifeCycle";
 export {
   WebApp,
@@ -103,4 +104,6 @@ export {
   getMaterializedView,
   getViews,
   getView,
+  getSelectRowPolicies,
+  getSelectRowPolicy,
 } from "./registry";

@@ -35,6 +35,9 @@ message InfrastructureMap {
   map<string, View> views = 17;
   // Workflow definitions
   map<string, Workflow> workflows = 18;
+
+  // Row-level security policies
+  map<string, SelectRowPolicy> select_row_policies = 20;
 }
 
 message SourceLocation {
@@ -525,6 +528,7 @@ message InfrastructureSignature {
     string topic_to_table_sync_process_id = 6;
     string materialized_view_id = 7;
     string view_id = 8;
+    string select_row_policy_id = 9;
   }
 }
 
@@ -557,4 +561,16 @@ message Workflow {
   repeated InfrastructureSignature pulls_data_from = 6;
   // Infrastructure components this workflow writes data to.
   repeated InfrastructureSignature pushes_data_to = 7;
+}
+
+// Row-level security policy for ClickHouse
+message SelectRowPolicy {
+  // Policy name
+  string name = 1;
+  // Tables the policy applies to (with optional per-table database)
+  repeated TableReference tables = 2;
+  // Column to filter on
+  string column = 3;
+  // JWT claim name that provides the filter value
+  string claim = 4;
 }

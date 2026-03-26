@@ -94,6 +94,17 @@ pub async fn execute_initial_infra_change(
     } else {
         // Only execute OLAP changes if OLAP is enabled and not bypassed
         if ctx.project.features.olap && !ctx.skip_olap {
+            let desired_policies: Vec<_> = ctx
+                .plan
+                .target_infra_map
+                .select_row_policies
+                .values()
+                .cloned()
+                .collect();
+            if !desired_policies.is_empty() {
+                olap::bootstrap_rls(ctx.project, &desired_policies).await?;
+            }
+
             olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
@@ -180,6 +191,16 @@ pub async fn execute_online_change(
     } else {
         // Only execute OLAP changes if OLAP is enabled and not bypassed
         if project.features.olap {
+            let desired_policies: Vec<_> = plan
+                .target_infra_map
+                .select_row_policies
+                .values()
+                .cloned()
+                .collect();
+            if !desired_policies.is_empty() {
+                olap::bootstrap_rls(project, &desired_policies).await?;
+            }
+
             olap::execute_changes(project, &plan.changes.olap_changes).await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed

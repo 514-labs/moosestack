@@ -24,6 +24,8 @@ export {
   SqlResource,
   View,
   MaterializedView,
+  SelectRowPolicy,
+  SelectRowPolicyConfig,
   Task,
   Workflow,
   ETLPipeline,
@@ -52,6 +54,8 @@ export {
   getViews,
   getMaterializedView,
   getMaterializedViews,
+  getSelectRowPolicies,
+  getSelectRowPolicy,
 } from "./dmv2";
 
 export {

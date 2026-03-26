@@ -7,6 +7,8 @@ interface RuntimeClickHouseConfig {
   password: string;
   database: string;
   useSSL: boolean;
+  rlsUser?: string;
+  rlsPassword?: string;
 }
 
 interface RuntimeKafkaConfig {
@@ -80,6 +82,8 @@ class ConfigurationRegistry {
     const envUseSSL = this._parseBool(
       this._env("MOOSE_CLICKHOUSE_CONFIG__USE_SSL"),
     );
+    const envRlsUser = this._env("MOOSE_CLICKHOUSE_CONFIG__RLS_USER");
+    const envRlsPassword = this._env("MOOSE_CLICKHOUSE_CONFIG__RLS_PASSWORD");
 
     return {
       host: envHost ?? projectConfig.clickhouse_config.host,
@@ -91,6 +95,12 @@ class ConfigurationRegistry {
         envUseSSL !== undefined ? envUseSSL : (
           projectConfig.clickhouse_config.use_ssl || false
         ),
+      rlsUser:
+        envRlsUser ?? projectConfig.clickhouse_config.rls_user ?? undefined,
+      rlsPassword:
+        envRlsPassword ??
+        projectConfig.clickhouse_config.rls_password ??
+        undefined,
     };
   }
 
@@ -109,6 +119,8 @@ class ConfigurationRegistry {
     const envUseSSL = this._parseBool(
       this._env("MOOSE_CLICKHOUSE_CONFIG__USE_SSL"),
     );
+    const envRlsUser = this._env("MOOSE_CLICKHOUSE_CONFIG__RLS_USER");
+    const envRlsPassword = this._env("MOOSE_CLICKHOUSE_CONFIG__RLS_PASSWORD");
 
     let projectConfig;
     try {
@@ -157,6 +169,12 @@ class ConfigurationRegistry {
         envUseSSL ??
         projectConfig?.clickhouse_config.use_ssl ??
         defaults.useSSL,
+      rlsUser:
+        envRlsUser ?? projectConfig?.clickhouse_config.rls_user ?? undefined,
+      rlsPassword:
+        envRlsPassword ??
+        projectConfig?.clickhouse_config.rls_password ??
+        undefined,
     };
   }
 
