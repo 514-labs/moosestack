@@ -339,7 +339,7 @@ describe("OlapTable Versioning", () => {
       const queryString = toStaticQuery(query);
 
       expect(queryString).to.include("`Events_0_1`");
-      expect(queryString).to.not.include("`Events`\n");
+      expect(queryString).to.not.match(/`Events`(?!_)/);
     });
 
     it("should use base name when no version is set", () => {
