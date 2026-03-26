@@ -2,4 +2,3 @@ node_modules/
 reports/
 .env
 .env.*
-!.env.preview
