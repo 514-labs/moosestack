@@ -615,6 +615,7 @@ async function bootstrap(
     await vscode.window.showErrorMessage(
       `MooseStack bootstrap failed: ${message}`,
     );
+    throw error;
   }
 }
 
