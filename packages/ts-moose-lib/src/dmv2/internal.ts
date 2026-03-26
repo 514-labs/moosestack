@@ -1393,7 +1393,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       name: mv.name,
       selectSql: mv.selectSql,
       sourceTables: mv.sourceTables,
-      targetTable: mv.targetTable.name,
+      targetTable: mv.targetTable.generateTableName(),
       targetDatabase: mv.targetTable.config.database,
       metadata: mv.metadata,
       lifeCycle: mv.lifeCycle,
