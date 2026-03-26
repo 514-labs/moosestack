@@ -1,28 +1,28 @@
 ---
 title: Optimizing ClickHouse Performance with AI
-description: Profile a slow query, compare optimized and baseline preview databases, and review the benchmark evidence plus migration plan before merge.
+description: Profile a slow query, compare a frozen baseline against optimization candidates, and review the winning branch before merge.
 languages: ["typescript"]
 ---
 
-import { Callout } from "@/components/mdx";
+import { Callout, GuideStepper } from "@/components/mdx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 # Optimizing ClickHouse Performance with AI
 
-Use this guide when a ClickHouse query is slow and you want the `514` agent harness to run an end to end optimization workflow. The agent does the heavy lifting: it profiles the query, creates two preview databases forked from production, applies the optimization to one of them, runs the benchmark, and prepares the PR artifacts for review. Because both preview databases start from the same production slice, you can run the same benchmark against both and make a fair comparison.
+Use this guide when a ClickHouse query is slow and you want the `514` agent harness to run an end-to-end optimization workflow. The agent does not just make one guess. It profiles the production query path, proposes one or more candidate schema changes, freezes a `perf/baseline` branch, wires the same benchmark target across branches, benchmarks each candidate against that baseline, and opens a PR for the winning branch. Because the baseline and candidate branches share the same query contract and comparable preview data, you can review the result like a controlled experiment instead of a one-off claim.
 
-Your role is to make sure the CLI and agent harness are set up in your environment, then review the agent's work at the end. The harness gives you the two artifacts that matter for that review: a baseline preview fork and an optimized preview fork for rerunning the benchmark, and a reviewable `migrations/plan.yaml` so you can confirm the schema change is safe to merge and will not accidentally drop data.
+Your role is to make sure the CLI and agent harness are set up in your environment, approve raw ClickHouse queries when prompted, and review the winning branch at the end. The artifacts that matter for that review are the scaffolded `query-benchmarks/` package, the baseline benchmark report, the winning candidate benchmark report, and a reviewable `migrations/plan.yaml` so you can confirm the schema change is safe to merge and will not accidentally ship an unintended database change.
 
 <Callout type="info" title="What success looks like">
-- A PR with schema changes and committed benchmark artifacts
-- Baseline and optimized preview databases benchmarked with the same test
-- A reviewed `migrations/plan.yaml` that matches what you intend to ship
+- A scaffolded `query-benchmarks/` package that exercises the real production query path
+- A frozen baseline branch and one or more candidate branches compared with the same test
+- A PR for the winning candidate with benchmark evidence and a reviewed `migrations/plan.yaml`
 </Callout>
 
 This guide assumes:
 
 - Your MooseStack app is already deployed on Fiveonefour
-- The query path you want to optimize already exists in code, usually as `sql` or `defineQueryModel` / `buildQuery`
+- The agent can either reuse an existing query path in code or define a query model when profiling uncovers a production pattern without one
 
 ### Setup
 
@@ -82,7 +82,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
 514 auth whoami
 ```
 
-Browser opens for login, then `514 auth whoami` shows your account. No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry. [`514 auth login`](/hosting/cli/auth/login), [`514 auth`](/hosting/cli/auth).
+Browser opens for login, then `514 auth whoami` shows your account. No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry.
 Related docs:
 
 - [`514 auth login`](/hosting/cli/auth/login)
@@ -123,13 +123,13 @@ Related docs:
 
 ### Optimization workflow
 
-**This section gets the 514 harness set up with your coding agent and runs the optimization workflow.** After `514 agent init`, the workflow uses the `514` CLI to inspect ClickHouse metrics and logs, profile the slow path, and propose fixes based on what it actually sees. Part of that run is creating a **Vitest benchmark test** for the optimized path. That test produces the report you review at the end, which is the part that matters. The same test is meant to run against two preview databases forked from production: one baseline fork that stays unchanged, and one preview fork where the optimization is applied.
+**This section gets the 514 harness set up with your coding agent and runs the optimization workflow.** After `514 agent init`, the workflow uses the `514` CLI to inspect ClickHouse metrics and logs, profile the slow path, scaffold a benchmark package with `moose add benchmark`, propose candidate fixes based on what it actually sees, freeze a control branch, and benchmark candidate branches against it. Part of that run is wiring a benchmark target that stays the same across baseline and candidate branches. The point is not to prove that one preview database is faster. The point is to compare the same query path across a control and one or more candidates, then ship the winner.
 
 Watch three things as it runs:
 
 - **The harness is active:** `514 agent init` succeeds and the skills and MCP wiring match your setup.
 - **The profiling target is clear:** name the slow query or endpoint and confirm the perf skill, not a generic refactor.
-- **The validation path is visible:** raw SQL, preview deploys, and any re-seed caused by `ORDER BY` or table layout changes should all be explicit.
+- **The experiment path is visible:** proposed candidates, the frozen baseline, candidate branches, raw SQL, and any re-seed caused by `ORDER BY` or table layout changes should all be explicit.
 
 <GuideStepper id="optimize-ch-workflow" persist>
 <GuideStepper.Step
@@ -176,8 +176,8 @@ Ask for a ClickHouse performance optimization on your deployed app, and point it
 
 ```text
 Optimize ClickHouse performance for this MooseStack app on Fiveonefour.
-Profile the slow query path, propose schema changes, validate on baseline and optimized preview databases,
-and prepare a PR with benchmark evidence and migrations/plan.yaml review context.
+Profile the slow query path, propose candidate schema changes, create a frozen baseline branch,
+compare candidate branches against the same benchmark, and prepare a PR for the winner with benchmark evidence.
 ```
 
 </GuideStepper.Checkpoint>
@@ -192,36 +192,89 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
   id="optimization-workflow-runs"
   number={3}
   title="Let the optimization workflow run"
-  summary="The agent runs setup through ship: profile, optimize, verify on baseline and optimized preview databases, then open a PR."
+  summary="The agent profiles the query, proposes candidates, freezes a baseline, benchmarks candidates against it, compares results, and opens a PR for the winner."
 >
 <GuideStepper.WhatYouNeed>
 - Patience for branch pushes and preview deployments
 - Willingness to approve raw `514 clickhouse query` when the skill prompts you
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A feature branch with data model and test changes
-- Benchmark runs against baseline and optimized preview databases
-- A pull request draft or ready for review
+- A frozen `perf/baseline` branch with the benchmark target wired up
+- One or more candidate branches with data model and benchmark target changes
+- Benchmark runs against baseline and candidate deployments, and a PR for the winner
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Expect five internal stages">
-The workflow follows `SETUP → PROFILE → OPTIMIZE → VERIFY → SHIP`.
+<GuideStepper.Checkpoint title="Expect seven internal stages">
+The workflow follows `SETUP → PROFILE → PROPOSE → BASELINE → EXPERIMENT → COMPARE → SHIP`.
 
 - **SETUP:** CLI session, project, deployment, baseline DDL.
-- **PROFILE:** Slow queries, benchmark candidates, baseline `EXPLAIN`, re-seed risk.
-- **OPTIMIZE:** Moose models, branch pushes, baseline fork, optimized fork.
-- **VERIFY:** Schema diff, `EXPLAIN`, storage, timed runs on both preview databases.
-- **SHIP:** PR with evidence and summary.
+- **PROFILE:** Slow queries, `EXPLAIN`, storage diagnostics, and the benchmark query set.
+- **PROPOSE:** Candidate schema changes, risks, and re-seed categories.
+- **BASELINE:** Benchmark scaffold, target interface, frozen `perf/baseline`, and a proven control run.
+- **EXPERIMENT:** Candidate branches, preview deploys, re-seeds if needed, and benchmark runs.
+- **COMPARE:** Baseline versus candidates, regressions, and winner selection.
+- **SHIP:** PR for the winning candidate with evidence and summary.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Know what the benchmark scaffold creates">
+The workflow should run `moose add benchmark` and reuse the generated package instead of hand-writing benchmark infrastructure. In the prototype, that scaffold looks like this:
+
+```text
+query-benchmarks/
+  benchmark.config.ts
+  benchmark/core.ts
+  tests/query-benchmarks.test.ts
+  package.json
+```
+
+Treat that package as part of the review surface. `benchmark.config.ts` is where the benchmark target, scenarios, thresholds, and sampling live. `tests/query-benchmarks.test.ts` is the generated runner that executes the contract and writes the reports.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Understand the benchmark target contract">
+The benchmark target interface is the code-level representation of the production query pattern the agent discovered. It can be an existing `defineQueryModel`, an existing query builder, or a new query model the agent creates if profiling finds a real query pattern without a codified entrypoint.
+
+What should stay the same across baseline and candidate branches:
+
+- the same base query or API entrypoint
+- the same scenarios and filters
+- the same thresholds and sampling
+- the same query shape apart from the intended optimization
+
+What is allowed to change per candidate branch:
+
+- the minimal table or model reference needed to point at the optimized layout
+
+Example:
+
+```ts
+const baseQuery = () => buildQuery(benchmarkModel);
+
+export const benchmark = defineBenchmark({
+  baseQuery,
+  scenarios: [
+    {
+      name: "category=A3",
+      query: () => baseQuery().filter("category", "eq", "A3"),
+    },
+  ],
+  thresholds: {
+    baselineP95Ms: 500,
+    scenarioRegressionRatio: 2.5,
+  },
+});
+```
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Approve gated ClickHouse commands">
-Guardrailed `514 agent ...` runs without extra approval. Raw `514 clickhouse query` (DDL, `EXPLAIN`, diagnostics, re-seed) should prompt you. Approve when the SQL matches intent.
+The `514 agent ...` workflow is guardrailed, so its built-in steps run without extra approval. Raw `514 clickhouse query` (DDL, `EXPLAIN`, diagnostics, re-seed) should prompt you. Approve when the SQL matches intent.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Watch for optimized preview re-seeds">
-If `ORDER BY` or similar forces a rebuild, the optimized preview may need a re-seed before benchmarks are trustworthy. The PR should say if that happened.
+<GuideStepper.Checkpoint title="Watch for candidate re-seeds">
+If `ORDER BY` or similar forces a rebuild, each candidate branch may need a re-seed before benchmarks are trustworthy. The PR should say which candidate needed it and how the data was copied forward.
 
 </GuideStepper.Checkpoint>
 
@@ -247,25 +300,25 @@ Order: benchmarks, then plan and diff, then optional reruns.
   id="review-benchmark-results"
   number={1}
   title="Review the benchmark results"
-  summary="Read the performance test and benchmark JSON to verify the evidence in the PR."
+  summary="Read the benchmark package and benchmark JSON to verify the evidence in the PR."
 >
 <GuideStepper.WhatYouNeed>
 - The PR the agent opened
-- The committed performance test and any `reports/benchmark-details-*.json` attached or generated in CI for both the baseline preview fork and the optimized preview fork
+- The committed `query-benchmarks/` package and any `reports/benchmark-details-*.json` attached or generated in CI for both the frozen baseline branch and the winning candidate branch
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- Confidence that the optimized branch actually beats the baseline for the same query path, and that the `EXPLAIN` output supports merging
+- Confidence that the winning candidate branch actually beats the baseline for the same query path, and that the `EXPLAIN` output supports merging
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Identify the optimized report and the baseline report">
-Pair two artifacts: **optimized** (preview fork with the schema change) and **baseline** (preview fork from production with no schema change). The report usually does not include a branch field. In practice, the **database name contains the branch slug**, so that is the field to inspect first.
+<GuideStepper.Checkpoint title="Identify the winner report and the baseline report">
+Pair two artifacts: **winner** (the candidate branch the agent selected) and **baseline** (the frozen control branch with no schema change). The report usually does not include a branch field. In practice, the **database name contains the branch slug**, so that is the field to inspect first.
 
-<Tabs defaultValue="optimized-report">
+<Tabs defaultValue="winner-report">
   <TabsList>
-    <TabsTrigger value="optimized-report">Optimized</TabsTrigger>
+    <TabsTrigger value="winner-report">Winner</TabsTrigger>
     <TabsTrigger value="baseline-report">Baseline</TabsTrigger>
   </TabsList>
-  <TabsContent value="optimized-report">
+  <TabsContent value="winner-report">
 
 ```json
 {
@@ -291,24 +344,33 @@ Pair two artifacts: **optimized** (preview fork with the schema change) and **ba
   </TabsContent>
 </Tabs>
 
-Both reports must use the **same benchmark file** and query path, different targets only. No clear baseline means no real before/after.
+Both reports must use the **same benchmark package** and query path contract, different targets only. No clear baseline means no real before/after.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Read the performance test">
-Open the committed test, often `e2e-tests/tests/moose-performance.e2e.test.ts`, and make sure both reports came from that same file. If you want the full field map while you review, use the quick reference at the end of this page.
+<GuideStepper.Checkpoint title="Read the scaffolded benchmark package">
+Open the committed benchmark package, usually `query-benchmarks/`. Start with `query-benchmarks/benchmark.config.ts`, then read `query-benchmarks/tests/query-benchmarks.test.ts`.
+
+What to confirm before you trust any report:
+
+- `benchmark.config.ts` points at the real query target the PR claims to optimize
+- `baseQuery`, scenarios, thresholds, and sampling are the same between baseline and winner
+- the generated test runner is still exercising that same contract
+- only the minimal target change was introduced for the winner, usually a table or model reference
+
+If the benchmark package changed in broader ways than that, the comparison is no longer clean.
 
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Compare index condition and granule skipping">
-Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `indexCondition` should not be only `"true"`, and the optimized report should skip more granules than the baseline.
+Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `indexCondition` should not be only `"true"`, and the winner report should skip more granules than the baseline.
 
-<Tabs defaultValue="optimized-explain">
+<Tabs defaultValue="winner-explain">
   <TabsList>
-    <TabsTrigger value="optimized-explain">Optimized</TabsTrigger>
+    <TabsTrigger value="winner-explain">Winner</TabsTrigger>
     <TabsTrigger value="baseline-explain">Baseline</TabsTrigger>
   </TabsList>
-  <TabsContent value="optimized-explain">
+  <TabsContent value="winner-explain">
 
 ```json
 {
@@ -351,12 +413,12 @@ Start with `tests.explainCategoryFilter.explain`. When index use is the goal, `i
 <GuideStepper.Checkpoint title="Compare latency and resource usage">
 Check `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `tests.baseline.profiles`. The `profiles` array is where the useful resource metrics live.
 
-<Tabs defaultValue="optimized-latency">
+<Tabs defaultValue="winner-latency">
   <TabsList>
-    <TabsTrigger value="optimized-latency">Optimized</TabsTrigger>
+    <TabsTrigger value="winner-latency">Winner</TabsTrigger>
     <TabsTrigger value="baseline-latency">Baseline</TabsTrigger>
   </TabsList>
-  <TabsContent value="optimized-latency">
+  <TabsContent value="winner-latency">
 
 ```json
 {
@@ -404,7 +466,7 @@ Check `tests.baseline.p50`, `tests.baseline.p95`, and the per-run objects in `te
   </TabsContent>
 </Tabs>
 
-Good sign: lower `p95`, fewer rows read, and lower memory usage in the optimized report.
+Good sign: lower `p95`, fewer rows read, and lower memory usage in the winner report.
 
 </GuideStepper.Checkpoint>
 
@@ -567,28 +629,28 @@ Removing `events_old` or other fallbacks belongs in a **follow-up PR**, not this
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="reproduce-benchmarks-baseline-vs-optimized-preview"
+  id="reproduce-benchmarks-baseline-vs-winner-preview"
   number={3}
   title="Reproduce the benchmark tests yourself (optional)"
-  summary="Re-run the same tests against the baseline and optimized preview databases to validate results on your machine."
+  summary="Re-run the same tests against the baseline and winning candidate preview databases to validate results on your machine."
 >
 <GuideStepper.WhatYouNeed>
-- Credentials or env files for the two preview databases the agent created: the unchanged baseline fork and the optimized fork
+- Credentials or env files for the two preview databases the agent created: the frozen baseline fork and the winning candidate fork
 - The test commands documented in the PR
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- Independent confirmation that the optimized preview beats, or at least matches, the baseline preview for the same test code
+- Independent confirmation that the winning candidate preview beats, or at least matches, the baseline preview for the same test code
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Point tests at the baseline fork, then at the optimized fork">
+<GuideStepper.Checkpoint title="Point tests at the baseline fork, then at the winner">
 The optimization workflow should leave you with a **Vitest** benchmark and helper scripts for rerunning it. Use that same benchmark and only change the target database. The generated `pnpm test:perf` script should already load `.env.remote`.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Find the database names for the two preview forks">
-Between the baseline preview fork and the optimized preview fork, the ClickHouse **host**, **port**, **user**, **password**, and **SSL setting** are the same. They share one 514-hosted ClickHouse cluster. The only value that changes is the **database name**.
+<GuideStepper.Checkpoint title="Find the database names for the baseline and winning candidate forks">
+Between the baseline preview fork and the winning candidate preview fork, the ClickHouse **host**, **port**, **user**, **password**, and **SSL setting** are the same. They share one 514-hosted ClickHouse cluster. The only value that changes is the **database name**.
 
-Use `514 agent deployment list` to find the database names for each branch.
+Use `514 agent deployment list` to list the agent-visible deployments for the project and find the database names for each branch. See [`514 agent`](/hosting/cli/agent) for command context.
 
 </GuideStepper.Checkpoint>
 
@@ -613,8 +675,8 @@ Then swap only the database name between runs:
 # Test against baseline (uses DB_NAME from .env.remote)
 pnpm test:perf
 
-# Test against optimized preview fork
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<optimized-preview-db-name> pnpm test:perf
+# Test against winning candidate preview fork
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<winning-candidate-preview-db-name> pnpm test:perf
 ```
 
 </GuideStepper.Checkpoint>
