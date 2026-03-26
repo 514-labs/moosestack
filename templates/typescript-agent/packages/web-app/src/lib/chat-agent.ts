@@ -1,4 +1,7 @@
-import { type AgentProviderConfig, createAgentStream } from "agent-runtime";
+import {
+  type AgentProviderConfig,
+  createMultiAgentStream,
+} from "agent-runtime";
 import { createUIMessageStreamResponse, type UIMessage } from "ai";
 import {
   getAiProvider,
@@ -51,7 +54,7 @@ export async function getAgentResponse({
 }: AgentResponseOptions) {
   const provider = getAiProvider();
   assertProviderReady();
-  const stream = await createAgentStream({
+  const stream = await createMultiAgentStream({
     messages,
     bearerToken,
     tenantId,

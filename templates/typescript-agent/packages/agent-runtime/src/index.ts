@@ -5,9 +5,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
   createUIMessageStream,
+  generateText,
   stepCountIs,
   streamText,
   type UIMessage,
+  type UIMessageStreamWriter,
 } from "ai";
 
 type AnthropicModel = ReturnType<ReturnType<typeof createAnthropic>>;
@@ -176,6 +178,86 @@ type ToolTiming = {
   toolName: string;
 };
 
+type TokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+};
+
+type SpecialistId =
+  | "catalog-researcher"
+  | "knowledge-analyst"
+  | "sql-investigator";
+
+type SpecialistDefinition = {
+  label: string;
+  handoffSummary: string;
+  systemPrompt: string;
+};
+
+const MULTI_AGENT_SPECIALISTS: Record<SpecialistId, SpecialistDefinition> = {
+  "catalog-researcher": {
+    label: "catalog-researcher",
+    handoffSummary: "schema discovery, table selection, or catalog inspection",
+    systemPrompt: `You are the catalog-researcher specialist.
+
+Focus on schema discovery, table selection, and clarifying which tenant-scoped data components matter.
+
+Rules:
+1. Start with MCP catalog inspection before suggesting SQL.
+2. Use DESCRIBE TABLE when column details matter.
+3. Stream compact working notes for a downstream narrator.
+4. If the schema does not support the request, say so directly.`,
+  },
+  "knowledge-analyst": {
+    label: "knowledge-analyst",
+    handoffSummary:
+      "summaries, priorities, recent changes, or trend interpretation",
+    systemPrompt: `You are the knowledge-analyst specialist.
+
+Focus on tenant-scoped summaries, trend interpretation, and priority analysis over the seeded knowledge domain.
+
+Rules:
+1. Use the available tools to verify claims before summarizing.
+2. Prefer short bullet-style working notes over polished prose.
+3. Call out the strongest signals first.
+4. Mention missing evidence instead of filling gaps with guesses.`,
+  },
+  "sql-investigator": {
+    label: "sql-investigator",
+    handoffSummary:
+      "direct SQL analysis, grouped metrics, or precise comparisons",
+    systemPrompt: `You are the sql-investigator specialist.
+
+Focus on precise, read-only SQL analysis for the authenticated tenant.
+
+Rules:
+1. Use MCP tools for schema checks before writing non-trivial queries.
+2. Keep SQL read-only and scoped to the problem.
+3. Stream concise working notes that cite the relevant query outcome.
+4. If a request needs unsupported data, say exactly what is missing.`,
+  },
+};
+
+const MULTI_AGENT_SUPERVISOR_PROMPT = `You are the supervisor in a reference multi-agent MooseStack template.
+
+Route the latest user request to exactly one specialist:
+- catalog-researcher: schema discovery, tool selection, table or column lookup
+- knowledge-analyst: summaries, priorities, recent changes, trend interpretation
+- sql-investigator: precise counts, grouped metrics, comparisons, or direct SQL work
+
+Reply with only one specialist label and no extra commentary.`;
+
+const MULTI_AGENT_NARRATOR_PROMPT = `You are the narrator in a reference multi-agent MooseStack template.
+
+Turn the specialist's working notes into the final user-facing answer.
+
+Rules:
+1. Lead with the answer.
+2. Keep the response concise and concrete.
+3. Mention the most relevant tools only when they materially support the answer.
+4. Preserve uncertainty or missing data instead of smoothing it over.
+5. Do not invent rows, schema details, or tool outputs.`;
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -306,6 +388,411 @@ function createGuardrailBlockedStream(details: string[]) {
       });
     },
   });
+}
+
+function getInputTokens(usage?: TokenUsage) {
+  return usage?.inputTokens ?? 0;
+}
+
+function getOutputTokens(usage?: TokenUsage) {
+  return usage?.outputTokens ?? 0;
+}
+
+function writeAgentMarker(
+  writer: UIMessageStreamWriter<UIMessage>,
+  agentName: string,
+  text: string,
+) {
+  const textId = crypto.randomUUID();
+
+  writer.write({
+    type: "text-start",
+    id: textId,
+  });
+  writer.write({
+    type: "text-delta",
+    id: textId,
+    delta: `[AGENT:${agentName}] ${text}\n\n`,
+  });
+  writer.write({
+    type: "text-end",
+    id: textId,
+  });
+}
+
+function parseSpecialistSelection(text: string): SpecialistId {
+  const normalized = text.trim().toLowerCase();
+
+  if (normalized.includes("catalog-researcher")) {
+    return "catalog-researcher";
+  }
+
+  if (normalized.includes("knowledge-analyst")) {
+    return "knowledge-analyst";
+  }
+
+  if (normalized.includes("sql-investigator")) {
+    return "sql-investigator";
+  }
+
+  throw new Error(
+    `Supervisor returned an unknown specialist route: ${text || "<empty>"}`,
+  );
+}
+
+export async function createMultiAgentStream(
+  options: CreateAgentStreamOptions,
+): Promise<ReturnType<typeof createUIMessageStream>> {
+  const runtime = await createAgentRuntime(options);
+  const userPrompt = extractUserPrompt(options.messages);
+  const traceStartedAt = new Date().toISOString();
+  const traceStartedAtMs = Date.now();
+  const traceId = options.traceCollector.startTrace({
+    tenantId: options.tenantId,
+    provider: runtime.provider,
+    modelId: runtime.modelId,
+    prompt: userPrompt,
+  });
+
+  let stepCount = 0;
+  const toolCallTimings = new Map<string, ToolTiming>();
+  const observedSteps: AgentStepRecord[] = [];
+  let traceClosed = false;
+
+  function recordStep(step: AgentStepRecord) {
+    observedSteps.push(step);
+    options.traceCollector.recordStep(traceId, step);
+  }
+
+  async function finalizeTrace(
+    summary: Omit<
+      AgentTraceSummary,
+      | "traceId"
+      | "tenantId"
+      | "provider"
+      | "modelId"
+      | "prompt"
+      | "startedAt"
+      | "completedAt"
+      | "totalDurationMs"
+    > & { status: string; completedAt?: string },
+  ) {
+    if (traceClosed) {
+      return;
+    }
+
+    traceClosed = true;
+
+    try {
+      await options.traceCollector.endTrace(traceId, {
+        traceId,
+        tenantId: options.tenantId,
+        provider: runtime.provider,
+        modelId: runtime.modelId,
+        prompt: userPrompt,
+        startedAt: traceStartedAt,
+        completedAt: summary.completedAt ?? new Date().toISOString(),
+        totalDurationMs: Date.now() - traceStartedAtMs,
+        ...summary,
+      });
+    } finally {
+      await runtime.close();
+    }
+  }
+
+  const guardrailResult =
+    await runtime.guardrailAdapter.assessPrompt(userPrompt);
+  if (guardrailResult.action === "GUARDRAIL_INTERVENED") {
+    recordStep({
+      stepId: crypto.randomUUID(),
+      traceId,
+      tenantId: options.tenantId,
+      stepType: "guardrail",
+      toolName: "",
+      status: "blocked",
+      notes: guardrailResult.details.join("; "),
+      startedAt: traceStartedAt,
+      durationMs: guardrailResult.latencyMs,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+
+    await finalizeTrace({
+      guardrailAction: "guardrail_intervened",
+      status: "blocked",
+      totalSteps: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      completedAt: new Date().toISOString(),
+    });
+
+    return createGuardrailBlockedStream(guardrailResult.details);
+  }
+
+  return createUIMessageStream({
+    execute: async ({ writer }) => {
+      try {
+        const supervisorStartedAt = new Date().toISOString();
+        const supervisorStartedAtMs = Date.now();
+        const supervisorResult = await generateText({
+          model: runtime.model,
+          system: MULTI_AGENT_SUPERVISOR_PROMPT,
+          messages: runtime.messages,
+        });
+        const specialist =
+          MULTI_AGENT_SPECIALISTS[
+            parseSpecialistSelection(supervisorResult.text)
+          ];
+
+        recordStep({
+          stepId: crypto.randomUUID(),
+          traceId,
+          tenantId: options.tenantId,
+          stepType: "agent",
+          toolName: "supervisor",
+          status: "completed",
+          notes: `routed_to=${specialist.label}`,
+          startedAt: supervisorStartedAt,
+          durationMs: Date.now() - supervisorStartedAtMs,
+          inputTokens: getInputTokens(supervisorResult.totalUsage),
+          outputTokens: getOutputTokens(supervisorResult.totalUsage),
+        });
+
+        writeAgentMarker(
+          writer,
+          "supervisor",
+          `Routing this request to ${specialist.label} for ${specialist.handoffSummary}.`,
+        );
+        writeAgentMarker(
+          writer,
+          specialist.label,
+          "Investigating with tenant-scoped MCP tools.",
+        );
+
+        const tools =
+          Object.keys(runtime.tools).length > 0 ? wrapTools() : runtime.tools;
+        const workerStartedAt = new Date().toISOString();
+        const workerStartedAtMs = Date.now();
+        const workerResult = streamText({
+          model: runtime.model,
+          system: `${runtime.system}\n\n${specialist.systemPrompt}`,
+          messages: runtime.messages,
+          tools: tools as StreamTextTools,
+          toolChoice: runtime.toolChoice,
+          stopWhen: runtime.stopWhen,
+          onStepFinish: async (stepResult: StepResult) => {
+            stepCount += 1;
+
+            if (!stepResult.toolCalls?.length) {
+              return;
+            }
+
+            stepResult.toolCalls.forEach((toolCall) => {
+              const timing = toolCallTimings.get(toolCall.toolCallId);
+              if (!timing) {
+                return;
+              }
+
+              writer.write({
+                type: "data-tool-timing",
+                data: {
+                  toolCallId: toolCall.toolCallId,
+                  duration: timing.duration,
+                  stepNumber: timing.stepNumber,
+                  toolName: timing.toolName,
+                },
+              });
+
+              toolCallTimings.delete(toolCall.toolCallId);
+            });
+          },
+          onError: (error) => {
+            console.error("Multi-agent worker stream failed:", error);
+          },
+        });
+
+        writer.merge(
+          workerResult.toUIMessageStream({
+            sendStart: false,
+            sendFinish: false,
+            onError: (error) =>
+              error instanceof Error ?
+                error.message
+              : "An unexpected model error occurred.",
+          }),
+        );
+
+        const workerNotes = await workerResult.text;
+        const workerUsage = await workerResult.totalUsage;
+
+        recordStep({
+          stepId: crypto.randomUUID(),
+          traceId,
+          tenantId: options.tenantId,
+          stepType: "agent",
+          toolName: specialist.label,
+          status: "completed",
+          notes: workerNotes,
+          startedAt: workerStartedAt,
+          durationMs: Date.now() - workerStartedAtMs,
+          inputTokens: getInputTokens(workerUsage),
+          outputTokens: getOutputTokens(workerUsage),
+        });
+
+        writeAgentMarker(
+          writer,
+          "narrator",
+          "Turning the specialist notes into the final answer.",
+        );
+
+        const narratorStartedAt = new Date().toISOString();
+        const narratorStartedAtMs = Date.now();
+        const narratorResult = streamText({
+          model: runtime.model,
+          system: MULTI_AGENT_NARRATOR_PROMPT,
+          prompt: `Latest user request:\n${userPrompt}\n\nSupervisor route:\n${specialist.label}\n\nSpecialist notes:\n${workerNotes}`,
+          stopWhen: stepCountIs(5),
+          onError: (error) => {
+            console.error("Multi-agent narrator stream failed:", error);
+          },
+        });
+
+        writer.merge(
+          narratorResult.toUIMessageStream({
+            sendStart: false,
+            onError: (error) =>
+              error instanceof Error ?
+                error.message
+              : "An unexpected model error occurred.",
+          }),
+        );
+
+        const narratorUsage = await narratorResult.totalUsage;
+
+        recordStep({
+          stepId: crypto.randomUUID(),
+          traceId,
+          tenantId: options.tenantId,
+          stepType: "agent",
+          toolName: "narrator",
+          status: "completed",
+          notes: `worker=${specialist.label}`,
+          startedAt: narratorStartedAt,
+          durationMs: Date.now() - narratorStartedAtMs,
+          inputTokens: getInputTokens(narratorUsage),
+          outputTokens: getOutputTokens(narratorUsage),
+        });
+
+        await finalizeTrace({
+          guardrailAction: "none",
+          status: "completed",
+          totalSteps: observedSteps.length,
+          totalInputTokens:
+            getInputTokens(supervisorResult.totalUsage) +
+            getInputTokens(workerUsage) +
+            getInputTokens(narratorUsage),
+          totalOutputTokens:
+            getOutputTokens(supervisorResult.totalUsage) +
+            getOutputTokens(workerUsage) +
+            getOutputTokens(narratorUsage),
+        });
+      } catch (error) {
+        await finalizeTrace({
+          guardrailAction: "none",
+          status: "failed",
+          totalSteps: observedSteps.length,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          completedAt: new Date().toISOString(),
+        });
+
+        throw error;
+      }
+    },
+  });
+
+  function wrapTools() {
+    const wrappedTools: AgentTools = {};
+
+    for (const [toolName, tool] of Object.entries(runtime.tools)) {
+      if (!isObjectRecord(tool)) {
+        wrappedTools[toolName] = tool;
+        continue;
+      }
+
+      if (!hasExecutableTool(tool)) {
+        wrappedTools[toolName] = tool;
+        continue;
+      }
+
+      wrappedTools[toolName] = {
+        ...tool,
+        execute: async (args: unknown, context: ToolExecutionContext) => {
+          const toolCallId = getToolCallId(context);
+          const startedAt = new Date().toISOString();
+          const startTime = Date.now();
+
+          try {
+            const result = await tool.execute(args, context);
+            const duration = Date.now() - startTime;
+
+            if (toolCallId) {
+              toolCallTimings.set(toolCallId, {
+                duration,
+                toolName,
+                stepNumber: stepCount + 1,
+              });
+            }
+
+            recordStep({
+              stepId: crypto.randomUUID(),
+              traceId,
+              tenantId: options.tenantId,
+              stepType: "tool",
+              toolName,
+              status: "completed",
+              notes: JSON.stringify(args),
+              startedAt,
+              durationMs: duration,
+              inputTokens: 0,
+              outputTokens: 0,
+            });
+
+            return result;
+          } catch (error) {
+            const duration = Date.now() - startTime;
+
+            if (toolCallId) {
+              toolCallTimings.set(toolCallId, {
+                duration,
+                toolName,
+                stepNumber: stepCount + 1,
+              });
+            }
+
+            recordStep({
+              stepId: crypto.randomUUID(),
+              traceId,
+              tenantId: options.tenantId,
+              stepType: "tool",
+              toolName,
+              status: "failed",
+              notes:
+                error instanceof Error ? error.message : "Unknown tool error",
+              startedAt,
+              durationMs: duration,
+              inputTokens: 0,
+              outputTokens: 0,
+            });
+
+            throw error;
+          }
+        },
+      };
+    }
+
+    return wrappedTools;
+  }
 }
 
 export async function createAgentStream(

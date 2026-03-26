@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth, signIn, signOut } from "@/auth";
 import { LocalTenantPicker } from "@/dev/local-tenant-picker";
 import {
@@ -6,7 +7,10 @@ import {
   getLangfuseConfig,
   getOidcConfig,
 } from "@/env-vars";
-import { getDashboardSnapshot } from "@/lib/moose-service";
+import {
+  DashboardSnapshotUnauthorizedError,
+  getDashboardSnapshot,
+} from "@/lib/moose-service";
 
 function MetricCard({
   label,
@@ -26,7 +30,20 @@ function MetricCard({
   );
 }
 
-export default async function Home() {
+type HomePageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function clearStaleSession(): never {
+  redirect("/auth/session-expired");
+}
+
+export default async function Home({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const sessionNotice =
+    typeof resolvedSearchParams.session === "string" ?
+      resolvedSearchParams.session
+    : undefined;
   const session = await auth();
   const authMode = getAuthMode();
   const oidcConfig = getOidcConfig();
@@ -82,6 +99,13 @@ export default async function Home() {
                   </p>
                 </div>
 
+                {sessionNotice === "expired" && (
+                  <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
+                    Your previous session expired or is no longer valid. Sign in
+                    again to refresh the tenant-scoped token.
+                  </div>
+                )}
+
                 {authMode === "local" && <LocalTenantPicker />}
 
                 {authMode === "oidc" && oidcConfig && (
@@ -116,11 +140,18 @@ export default async function Home() {
     );
   }
 
-  if (!session.idToken) {
-    throw new Error("Authenticated session is missing an ID token");
+  const idToken = session.idToken ?? clearStaleSession();
+  let snapshot: Awaited<ReturnType<typeof getDashboardSnapshot>>;
+  try {
+    snapshot = await getDashboardSnapshot(idToken);
+  } catch (error) {
+    if (error instanceof DashboardSnapshotUnauthorizedError) {
+      clearStaleSession();
+    }
+
+    throw error;
   }
 
-  const snapshot = await getDashboardSnapshot(session.idToken);
   const aiProvider = getAiProvider();
   const langfuseEnabled = !!getLangfuseConfig();
 
@@ -233,12 +264,17 @@ export default async function Home() {
               </p>
 
               <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Multi-agent reference flow: supervisor -&gt; specialist -&gt;
+                  narrator, with streamed <code>[AGENT:...]</code> handoff
+                  markers.
+                </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   “Summarize the highest-priority signals for this tenant.”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  “Inspect the data catalog, then query tenant knowledge by
-                  category.”
+                  “Use the multi-agent flow to inspect the data catalog, route
+                  to the right specialist, then summarize the result.”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   “Which categories changed most recently for this tenant?”

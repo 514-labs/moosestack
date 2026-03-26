@@ -13,7 +13,10 @@ vi.mock("@/env-vars", () => {
   };
 });
 
-import { getDashboardSnapshot } from "../src/lib/moose-service";
+import {
+  DashboardSnapshotUnauthorizedError,
+  getDashboardSnapshot,
+} from "../src/lib/moose-service";
 
 describe("getDashboardSnapshot", () => {
   afterEach(() => {
@@ -69,6 +72,22 @@ describe("getDashboardSnapshot", () => {
 
     await expect(getDashboardSnapshot("tenant-token")).rejects.toThrow(
       "Failed to load dashboard snapshot: 503 Service Unavailable",
+    );
+  });
+
+  it("throws a specific error when the dashboard API rejects the session token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response("unauthorized", {
+          status: 401,
+          statusText: "Unauthorized",
+        });
+      }),
+    );
+
+    await expect(getDashboardSnapshot("tenant-token")).rejects.toBeInstanceOf(
+      DashboardSnapshotUnauthorizedError,
     );
   });
 });
