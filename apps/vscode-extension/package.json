@@ -14,7 +14,7 @@
     "url": "https://github.com/514-labs/moosestack",
     "directory": "apps/vscode-extension"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "markdown": "github",
   "engines": {
     "vscode": "^1.90.0"
@@ -32,6 +32,12 @@
     "wsl",
     "vscode"
   ],
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "icon": "icon.png",
   "extensionKind": [
     "workspace"
   ],
@@ -43,7 +49,9 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "icon.png"
   ],
   "activationEvents": [
     "onStartupFinished",
@@ -61,14 +69,18 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "pnpm run build && node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "lint": "eslint src test",
     "package:vsix": "pnpm run build && npx @vscode/vsce package",
     "publish:vscode": "pnpm run build && npx @vscode/vsce publish",
     "publish:openvsx": "pnpm run build && npx ovsx publish"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.2",
     "@repo/ts-config": "workspace:^",
     "@types/node": "catalog:",
     "@types/vscode": "^1.90.0",
-    "typescript": "catalog:"
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "8.55.0"
   }
 }
