@@ -1,0 +1,58 @@
+name = "benchmark"
+description = "Standalone query benchmark package for a TypeScript Moose project"
+kind = "standalone"
+language = "typescript"
+template = "typescript-benchmark"
+base_path = "query-benchmarks"
+
+docs = """
+  1. Edit benchmark.config.ts
+     Import your compiled query model from your Moose project, define your base query
+     and scenarios, and adjust thresholds.
+  2. Run moose build in your Moose project so compiled models are available.
+  3. Run the benchmark package scripts:
+       npm test
+       npm run bench
+"""
+
+npm_deps = [
+  "@514labs/moose-lib@latest",
+  "@types/node@^20.19.33",
+  "typescript@^5.7.0",
+  "vitest@^3.2.4",
+]
+shadcn_components = []
+moose_exports = []
+env = []
+
+[[files]]
+src = "package.json"
+dest = "package.json"
+
+[[files]]
+src = "benchmark.config.ts"
+dest = "benchmark.config.ts"
+
+[[files]]
+src = "benchmark/core.ts"
+dest = "benchmark/core.ts"
+
+[[files]]
+src = "tests/query-benchmarks.test.ts"
+dest = "tests/query-benchmarks.test.ts"
+
+[[files]]
+src = "vitest.config.ts"
+dest = "vitest.config.ts"
+
+[[files]]
+src = "tsconfig.json"
+dest = "tsconfig.json"
+
+[[files]]
+src = ".env.preview"
+dest = ".env.preview"
+
+[[files]]
+src = ".gitignore"
+dest = ".gitignore"
