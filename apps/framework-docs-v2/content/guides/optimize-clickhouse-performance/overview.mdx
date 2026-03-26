@@ -8,7 +8,7 @@ import { Callout, BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This guide is for a deployed MooseStack application that already has a slow ClickHouse query path. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, propose a schema change, validate it on preview, and hand you back a PR with evidence you can verify.
+This guide is for a deployed MooseStack application with a production ClickHouse query pattern that can be faster. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, scaffold a benchmark package around the real query contract, propose a schema change, validate it on preview, and hand you back a PR with evidence you can verify.
 
 ## Prerequisites
 
@@ -19,19 +19,19 @@ The workflow relies on the `514` CLI, a linked local repository, and the agent h
   bulletStyle="check"
   bullets={[
     {
-      title: "You already have a slow query in production",
+      title: "You have production apps powered by ClickHouse that can be faster",
       description:
-        "The workflow needs a real query shape to profile and benchmark, not a hypothetical optimization target.",
+        "The workflow profiles a real production query path and benchmarks changes against it, so it works best when there is already a live workload to improve.",
     },
     {
-      title: "Your app already uses MooseStack query code",
+      title: "You want your AI agent to help you get better at ClickHouse",
       description:
-        "The workflow starts from the `sql` query path you already run, and can also use `defineQueryModel` when present.",
+        "ClickHouse data modeling is tricky. The workflow lets your agent bridge that gap by profiling the real query pattern, proposing changes, and turning them into artifacts you can inspect.",
     },
     {
-      title: "You want reviewable proof, not just an agent summary",
+      title: "You want to review the agent's work before anything touches production",
       description:
-        "The output is a pull request with schema diffs, benchmark tests, correctness checks, and a migration plan.",
+        "The output is a pull request with benchmark test results and a migration plan that you review and approve.",
     },
   ]}
 />
@@ -61,10 +61,10 @@ That is the main idea behind this guide. The workflow is trying to improve struc
 
 You are not expected to trust the agent on vibes. The workflow should give you:
 
-- a benchmark test that imports the real query path from your app
+- a scaffolded `query-benchmarks/` package created by `moose add benchmark`, instead of a one-off benchmark file
+- a `benchmark.config.ts` contract that keeps the same query target, scenarios, thresholds, and sampling across baseline and candidate branches
 - `EXPLAIN` output showing whether the query started using the primary key or another skipping mechanism
 - benchmark timing collected from server-side query data
-- a correctness check so the optimization does not silently change results
 - `migrations/plan.yaml` so you can review the schema operations before merge
 
 <Callout type="warning" title="Current limits">
