@@ -30,6 +30,18 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+For editor integrations and other automation, you can request machine-readable output:
+
+```bash
+moose template list --json
+```
+
+The JSON payload is versioned for backwards-compatible tooling. It includes:
+
+- `schema_version`: version of the JSON response schema
+- `template_version`: version of the template manifest being listed
+- `templates`: visible templates available for initialization
+
 ### Component
 Lists available components you can add to your project.
 
@@ -40,7 +52,7 @@ moose component list
 ```
 
 ### Add
-Adds a pre-built component to an existing project. Downloads the component files from a registry and installs dependencies.
+Adds a pre-built component to an existing project. Downloads the component files from a registry. Some components also install dependencies; others copy a self-contained package and print the manual follow-up steps.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -56,6 +68,10 @@ moose add mcp-server [--dir <moose-project-dir>]
 
 # Add a chat UI to a Next.js app
 moose add chat [--dir <nextjs-app-dir>]
+
+# Add a standalone benchmark package to a new directory
+mkdir query-benchmarks
+moose add benchmark --dir ./query-benchmarks
 ```
 
 **Flags:**
@@ -68,9 +84,12 @@ moose add chat [--dir <nextjs-app-dir>]
 # From a monorepo root with moose/ and web/ packages
 moose add mcp-server --dir moose
 moose add chat --dir web
+mkdir query-benchmarks && moose add benchmark --dir query-benchmarks
 ```
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
+The `benchmark` component scaffolds a standalone benchmark package into the directory specified by `--dir`. Dependencies are installed automatically. After scaffolding, edit `benchmark.config.ts` to import your compiled query model from your Moose project, define the base query and scenarios, run `moose build` in your Moose project, then run the benchmark scripts (`npm test`, `npm run bench`).
 
 ### Build
 Builds your Moose project.
