@@ -468,6 +468,9 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
     devDependencies:
+      '@eslint/js':
+        specifier: 9.39.2
+        version: 9.39.2
       '@repo/ts-config':
         specifier: workspace:^
         version: link:../../packages/ts-config
@@ -477,9 +480,15 @@ importers:
       '@types/vscode':
         specifier: ^1.90.0
         version: 1.110.0
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.2(jiti@2.6.1)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      typescript-eslint:
+        specifier: 8.55.0
+        version: 8.55.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
 
   packages/design-system-base:
     dependencies:
