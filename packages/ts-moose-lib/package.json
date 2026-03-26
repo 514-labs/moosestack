@@ -22,6 +22,11 @@
       "import": "./dist/browserCompatible.mjs",
       "require": "./dist/browserCompatible.js"
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.mjs",
+      "require": "./dist/testing/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -36,7 +41,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "test": "tsup && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
+    "test": "tsup --no-dts && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
   },
   "dependencies": {
     "@514labs/kafka-javascript": "1.7.1-patch",
