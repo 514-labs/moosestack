@@ -2,7 +2,7 @@
   "name": "typescript-agent",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@10.7.1",
+  "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20 <25"
   },
@@ -23,10 +23,10 @@
     "format:check": "biome format --check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.6",
-    "typescript": "^5.9.3",
-    "turbo": "^2.6.0",
-    "vitest": "^3.2.4"
+    "@biomejs/biome": "catalog:",
+    "typescript": "catalog:",
+    "turbo": "catalog:",
+    "vitest": "catalog:"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

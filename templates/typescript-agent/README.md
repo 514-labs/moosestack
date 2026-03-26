@@ -65,6 +65,24 @@ pnpm lint
 pnpm format
 ```
 
+## Compatible Versions
+
+This template pins its external package versions centrally in `pnpm-workspace.yaml`, and the workspace `package.json` files consume them via `catalog:` references.
+
+The AI SDK v6 stack in this template is currently pinned to these compatible versions:
+
+| Package | Pinned version | Notes |
+| --- | --- | --- |
+| `pnpm` | `10.33.0` | Template `packageManager` |
+| `ai` | `6.0.138` | Core AI SDK v6 line |
+| `@ai-sdk/react` | `3.0.140` | React bindings compatible with `ai@6` |
+| `@ai-sdk/amazon-bedrock` | `4.0.83` | Bedrock provider compatible with `ai@6` |
+| `@ai-sdk/anthropic` | `3.0.64` | Anthropic provider compatible with `ai@6` |
+| `@ai-sdk/openai` | `3.0.48` | OpenAI provider compatible with `ai@6` |
+| `@ai-sdk/mcp` | `1.0.30` | MCP client bridge used by the shared runtime |
+| `zod` | `4.3.6` | Web app and shared runtime validation |
+| `zod` via `catalog:zod3` | `3.25.76` | `packages/moosestack-service` stays on the v3 line required by its MCP stack |
+
 ## Manual Template Testing
 
 Templates should be tested from a generated app, not in-place inside this repository.

@@ -16,6 +16,6 @@
   },
   "dependencies": {
     "agent-runtime": "workspace:*",
-    "langfuse": "^3.30.0"
+    "langfuse": "catalog:"
   }
 }
