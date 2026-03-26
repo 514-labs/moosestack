@@ -221,7 +221,7 @@ The Report Builder is designed to work with Moose QueryModel instances:
 │  │   table: Events,                                        │ │
 │  │   dimensions: {                                         │ │
 │  │     status: { column: "id" },          ──────────┐      │ │
-│  │     day: { expression: sql`...` },               │      │ │
+│  │     day: { expression: sql.fragment`...` },       │      │ │
 │  │   },                                             │      │ │
 │  │   metrics: {                                     │      │ │
 │  │     totalEvents: { agg: count() },     ──────────┤      │ │

@@ -45,7 +45,7 @@ export interface EmailFunnelMetrics {
  * 4. Converted - email customers with a conversion
  */
 export const emailFunnelView = new MaterializedView<EmailFunnelMetrics>({
-  selectStatement: sql`
+  selectStatement: sql.statement`
     WITH email_customers AS (
       SELECT
         c.customerId,

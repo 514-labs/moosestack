@@ -2,23 +2,14 @@
 /// <reference types="mocha" />
 /// <reference types="chai" />
 /**
- * E2E tests for db-pull with SQL function defaults (ENG-1162)
+ * E2E tests for db-pull code generation
  *
  * Tests the complete workflow for both Python and TypeScript:
- * 1. Create ClickHouse table with DEFAULT expressions using SQL functions
+ * 1. Create ClickHouse tables with various column types and modifiers
  * 2. Run `moose db-pull` to generate language-specific code
- * 3. Verify generated code has correctly formatted defaults
+ * 3. Verify generated code correctly represents defaults, enums, LowCardinality, etc.
  * 4. Run `moose migrate apply` to verify the roundtrip works
  * 5. Insert data and verify defaults are applied
- *
- * This test reproduces the bug where function defaults like:
- *   DEFAULT xxHash64(_id)
- * were incorrectly generated with extra quotes:
- *   - Python: clickhouse_default("\"xxHash64(_id)\"")  ❌
- *   - TypeScript: ClickHouseDefault<"\"xxHash64(_id)\"">  ❌
- * instead of:
- *   - Python: clickhouse_default("xxHash64(_id)")  ✅
- *   - TypeScript: ClickHouseDefault<"xxHash64(_id)">  ✅
  */
 
 import { spawn, ChildProcess } from "child_process";
@@ -55,7 +46,7 @@ const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG
 
 const testLogger = logger.scope("db-pull-defaults-test");
 
-describe("python template tests - db-pull with SQL function defaults", () => {
+describe("python template tests - db-pull code generation", () => {
   let devProcess: ChildProcess;
   let testProjectDir: string;
   let client: ReturnType<typeof createClient>;
@@ -143,7 +134,8 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       updated_at DateTime DEFAULT today(),
       literal_default String DEFAULT 'active',
       numeric_default Int32 DEFAULT 42,
-      status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK'
+      status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK',
+      category LowCardinality(String)
     ) ENGINE = MergeTree()
     ORDER BY _id
     `;
@@ -218,8 +210,15 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(generatedCode).to.include("NotFound = 404");
     expect(generatedCode).to.include("LargeValue = 1000"); // Value > 255 that previously overflowed
 
+    // Verify LowCardinality column
+    expect(generatedCode).to.include(
+      'Annotated[str, "LowCardinality"]',
+      'LowCardinality(String) should generate Annotated[str, "LowCardinality"]',
+    );
+
     testLogger.info("✓ Generated Python code has correct default syntax");
     testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
+    testLogger.info("✓ LowCardinality column correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
     testLogger.info("\n--- Moving external model to datamodels ---");
@@ -417,7 +416,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
   });
 });
 
-describe("typescript template tests - db-pull with SQL function defaults", () => {
+describe("typescript template tests - db-pull code generation", () => {
   let devProcess: ChildProcess;
   let testProjectDir: string;
   let client: ReturnType<typeof createClient>;
@@ -504,7 +503,8 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
         updated_at DateTime DEFAULT today(),
         literal_default String DEFAULT 'active',
         numeric_default Int32 DEFAULT 42,
-        status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK'
+        status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK',
+        category LowCardinality(String)
       ) ENGINE = MergeTree()
       ORDER BY _id
     `;
@@ -571,8 +571,15 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(generatedCode).to.include('"NotFound" = 404');
     expect(generatedCode).to.include('"LargeValue" = 1000'); // Value > 255 that previously overflowed
 
+    // Verify LowCardinality column
+    expect(generatedCode).to.include(
+      "string & LowCardinality",
+      "LowCardinality(String) should generate string & LowCardinality",
+    );
+
     testLogger.info("✓ Generated TypeScript code has correct default syntax");
     testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
+    testLogger.info("✓ LowCardinality column correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
     testLogger.info("\n--- Moving external model to datamodels ---");

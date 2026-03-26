@@ -434,9 +434,9 @@ export interface QueryParams {
 
 const api = new Api<QueryParams, TargetSchema>("get-aggregated-data",
   async ({ date, limit = 10 }: QueryParams, { client, sql }) => {
-    const query = sql`
-        SELECT * FROM ${materializedView.targetTable} 
-        WHERE date = ${date} 
+    const query = sql.statement`
+        SELECT * FROM ${materializedView.targetTable}
+        WHERE date = ${date}
         LIMIT ${limit}`;
 
     const result = await client.query.execute<TargetSchema>(query); // Type-safe query execution

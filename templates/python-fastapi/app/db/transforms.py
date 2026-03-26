@@ -2,7 +2,7 @@
 # Defines data transformation logic between ingestion models
 
 from app.db.models import foo_pipeline, bar_pipeline, Foo, Bar
-from moose_lib import DeadLetterQueue, DeadLetterModel, MooseCache
+from moose_lib import DeadLetterModel, MooseCache
 from datetime import datetime
 
 

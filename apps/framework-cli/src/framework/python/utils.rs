@@ -55,6 +55,7 @@ impl ColumnBuilder {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         })
     }
 }

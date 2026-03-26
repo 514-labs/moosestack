@@ -20,34 +20,28 @@ Mount Express applications within your MooseStack project using the `WebApp` cla
 
 ```ts filename="app/apis/expressApp.ts" copy
 import express from "express";
-import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 import { MyTable } from "../tables/MyTable";
 
 const app = express();
 
 app.use(express.json());
-app.use(expressMiddleware()); // Required for Express
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
 app.get("/data", async (req, res) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res.status(500).json({ error: "Moose utilities not available" });
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${MyTable.columns.id},
         ${MyTable.columns.name},
         ${MyTable.columns.createdAt}
-      FROM ${MyTable} 
+      FROM ${MyTable}
       ORDER BY ${MyTable.columns.createdAt} DESC
       LIMIT ${limit}
     `;
@@ -69,22 +63,11 @@ export const expressApp = new WebApp("expressApp", app, {
 - `GET http://localhost:4000/express/health`
 - `GET http://localhost:4000/express/data?limit=20`
 
-<Callout type="info" title="Express Middleware Required">
-Express applications must use `expressMiddleware()` to access Moose utilities:
-
-```ts
-import { expressMiddleware } from "@514labs/moose-lib";
-app.use(expressMiddleware());
-```
-
-This middleware injects MooseStack utilities into the request object.
-</Callout>
-
 ## Complete Example with Features
 
 ```ts filename="app/apis/advancedExpressApp.ts" copy
 import express, { Request, Response, NextFunction } from "express";
-import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 import { UserEvents } from "../tables/UserEvents";
 import { UserProfile } from "../tables/UserProfile";
 
@@ -92,7 +75,6 @@ const app = express();
 
 // Middleware setup
 app.use(express.json());
-app.use(expressMiddleware()); // Required!
 
 // Custom logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -115,25 +97,20 @@ app.get("/health", (req, res) => {
 
 // GET endpoint with query parameters
 app.get("/users/:userId/events", asyncHandler(async (req: Request, res: Response) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res.status(500).json({ error: "Moose utilities not available" });
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const { userId } = req.params;
   const limit = parseInt(req.query.limit as string) || 10;
   const eventType = req.query.eventType as string;
 
   const cols = UserEvents.columns;
-  const query = sql`
+  const query = sql.statement`
     SELECT
       ${cols.id},
       ${cols.event_type},
       ${cols.timestamp}
     FROM ${UserEvents}
     WHERE ${cols.user_id} = ${userId}
-      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+      ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
     ORDER BY ${cols.timestamp} DESC
     LIMIT ${limit}
   `;
@@ -150,11 +127,6 @@ app.get("/users/:userId/events", asyncHandler(async (req: Request, res: Response
 
 // POST endpoint
 app.post("/users/:userId/profile", asyncHandler(async (req: Request, res: Response) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res.status(500).json({ error: "Moose utilities not available" });
-  }
-
   const { userId } = req.params;
   const { name, email } = req.body;
 
@@ -173,9 +145,9 @@ app.post("/users/:userId/profile", asyncHandler(async (req: Request, res: Respon
 
 // Protected endpoint with JWT
 app.get("/protected", asyncHandler(async (req: Request, res: Response) => {
-  const moose = getMooseUtils(req);
+  const moose = await getMooseUtils();
 
-  if (!moose?.jwt) {
+  if (!moose.jwt) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -231,14 +203,16 @@ interface WebAppConfig {
 import { getMooseUtils } from "@514labs/moose-lib";
 
 app.get("/data", async (req, res) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res.status(500).json({ error: "Utilities not available" });
-  }
-
-  const { client, sql, jwt } = moose;
+  const { client, sql, jwt } = await getMooseUtils();
   // Use client and sql for database queries
 });
+```
+
+`getMooseUtils()` is async and automatically detects the runtime context -- no request parameter is needed. It returns a `MooseUtils` object (never undefined) and throws on error.
+
+For row-level security, pass an `rlsContext`:
+```ts
+const { client, sql } = await getMooseUtils({ rlsContext: { org_id: orgId } });
 ```
 
 **Available utilities:**
@@ -272,9 +246,6 @@ app.use(limiter);
 
 // Body parsing
 app.use(express.json());
-
-// Moose utilities (must be after body parsing)
-app.use(expressMiddleware());
 ```
 
 ## Router Pattern
@@ -289,16 +260,11 @@ import { UserProfile } from "../../tables/UserProfile";
 export const usersRouter = Router();
 
 usersRouter.get("/:userId", async (req, res) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res.status(500).json({ error: "Utilities not available" });
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const { userId } = req.params;
 
-  const query = sql`
-    SELECT 
+  const query = sql.statement`
+    SELECT
       ${UserProfile.columns.id},
       ${UserProfile.columns.name},
       ${UserProfile.columns.email},
@@ -320,13 +286,12 @@ usersRouter.get("/:userId", async (req, res) => {
 
 ```ts filename="app/apis/mainApp.ts"
 import express from "express";
-import { WebApp, expressMiddleware } from "@514labs/moose-lib";
+import { WebApp } from "@514labs/moose-lib";
 import { usersRouter } from "./routers/usersRouter";
 
 const app = express();
 
 app.use(express.json());
-app.use(expressMiddleware());
 
 // Mount routers
 app.use("/users", usersRouter);
@@ -341,9 +306,9 @@ export const mainApp = new WebApp("mainApp", app, {
 
 ```ts
 app.get("/protected", async (req, res) => {
-  const moose = getMooseUtils(req);
+  const moose = await getMooseUtils();
 
-  if (!moose?.jwt) {
+  if (!moose.jwt) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -363,33 +328,23 @@ See [Authentication documentation](/moosestack/apis/auth) for JWT configuration.
 
 ## Best Practices
 
-1. **Always use expressMiddleware()**: Required for accessing Moose utilities
-2. **Check for moose utilities**: Always verify `getMooseUtils(req)` returns a value
-3. **Use async error handling**: Wrap async routes with error handler
-4. **Organize with routers**: Split large applications into multiple routers
-5. **Apply middleware in order**: Body parsing before expressMiddleware
-6. **Use TypeScript types**: Import Request, Response types from Express
-7. **Handle errors globally**: Use Express error handling middleware
+1. **Use `await getMooseUtils()`**: It auto-detects the runtime context with no request parameter needed
+2. **Use async error handling**: Wrap async routes with error handler
+3. **Organize with routers**: Split large applications into multiple routers
+4. **Use TypeScript types**: Import Request, Response types from Express
+5. **Handle errors globally**: Use Express error handling middleware
 
 ## Troubleshooting
 
-### "Moose utilities not available"
+### `getMooseUtils()` throws an error
 
-**Solution:** Ensure `expressMiddleware()` is added after body parsing:
+**Solution:** Ensure you are calling `getMooseUtils()` inside a route handler that runs within the MooseStack runtime. The function detects its runtime context automatically, but it must be invoked during request handling. Wrap the call in a try/catch if you need custom error responses:
 ```ts
-app.use(express.json());
-app.use(expressMiddleware()); // Must come after body parsers
-```
-
-### TypeScript errors with getMooseUtils
-
-**Solution:** The utilities may be undefined, always check:
-```ts
-const moose = getMooseUtils(req);
-if (!moose) {
-  return res.status(500).json({ error: "Utilities not available" });
+try {
+  const { client, sql } = await getMooseUtils();
+} catch (error) {
+  return res.status(500).json({ error: String(error) });
 }
-// Now moose.client, moose.sql are safely accessible
 ```
 
 ### Mount path conflicts

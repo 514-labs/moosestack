@@ -58,7 +58,7 @@ use super::{
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
-use crate::framework::core::infrastructure::table::OrderBy;
+use crate::framework::core::infrastructure::table::{OrderBy, SeedFilter, TableProjection};
 use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 use crate::{
     framework::{
@@ -337,6 +337,8 @@ struct PartialTable {
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    #[serde(default)]
+    pub projections: Vec<TableProjection>,
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
@@ -349,6 +351,13 @@ struct PartialTable {
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     #[serde(default, alias = "primary_key_expression")]
     pub primary_key_expression: Option<String>,
+    /// Per-table filter for `moose seed clickhouse`
+    #[serde(
+        default,
+        alias = "seed_filter",
+        deserialize_with = "crate::framework::core::infrastructure::table::deserialize_nullable_as_default"
+    )]
+    pub seed_filter: SeedFilter,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -469,6 +478,9 @@ pub struct TransformationTarget {
     /// Source file path where this transform was declared
     #[serde(default)]
     pub source_file: Option<String>,
+    /// Dead letter queue stream name for failed records
+    #[serde(default)]
+    pub dead_letter_queue: Option<String>,
 }
 
 /// Configuration for a topic consumer.
@@ -482,6 +494,9 @@ pub struct Consumer {
     /// Source file path where this consumer was declared
     #[serde(default)]
     pub source_file: Option<String>,
+    /// Dead letter queue stream name for failed records
+    #[serde(default)]
+    pub dead_letter_queue: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -583,6 +598,9 @@ pub struct PartialInfrastructureMap {
     >,
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    #[serde(default)]
+    select_row_policies:
+        HashMap<String, crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -731,6 +749,7 @@ impl PartialInfrastructureMap {
             web_apps,
             materialized_views: self.materialized_views,
             views: self.views,
+            select_row_policies: self.select_row_policies,
             moose_version: None,
         };
 
@@ -828,10 +847,12 @@ impl PartialInfrastructureMap {
                     },
                     table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
+                    projections: partial_table.projections.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
+                    seed_filter: partial_table.seed_filter.clone(),
                 };
 
                 // Compute table_settings_hash for change detection, then canonicalize
@@ -1071,6 +1092,16 @@ impl PartialInfrastructureMap {
             .collect()
     }
 
+    /// Builds a name-to-topic index for O(1) lookups.
+    ///
+    /// The `topics` map is keyed by `topic.id()` (which includes a version suffix),
+    /// but callers frequently need to look up topics by their bare `name`. This
+    /// builds the reverse index. Names are unique within a single infra map
+    /// generation because the SDK topics map is keyed by name.
+    fn topic_name_index(topics: &HashMap<String, Topic>) -> HashMap<&str, &Topic> {
+        topics.values().map(|t| (t.name.as_str(), t)).collect()
+    }
+
     /// Converts partial API endpoint definitions into complete [`ApiEndpoint`] instances.
     ///
     /// Handles both ingestion and API endpoints, setting up appropriate paths,
@@ -1086,6 +1117,7 @@ impl PartialInfrastructureMap {
         topics: &HashMap<String, Topic>,
     ) -> HashMap<String, ApiEndpoint> {
         let mut api_endpoints = HashMap::new();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for partial_api in self.ingest_apis.values() {
             let target_topic_name = match &partial_api.write_to.kind {
@@ -1093,9 +1125,8 @@ impl PartialInfrastructureMap {
             };
 
             let not_found = &format!("Target topic '{target_topic_name}' not found");
-            let target_topic = topics
-                .values()
-                .find(|topic| topic.name == target_topic_name)
+            let target_topic = topic_by_name
+                .get(target_topic_name.as_str())
                 .expect(not_found);
 
             // TODO: Remove data model from api endpoints when dmv1 is removed
@@ -1266,13 +1297,13 @@ impl PartialInfrastructureMap {
         default_database: &str,
     ) -> HashMap<String, TopicToTableSyncProcess> {
         let mut sync_processes = self.topic_to_table_sync_processes.clone();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for (topic_name, partial_topic) in &self.topics {
             if let Some(target_table_name) = &partial_topic.target_table {
                 let topic_not_found = &format!("Source topic '{topic_name}' not found");
-                let source_topic = topics
-                    .values()
-                    .find(|topic| &topic.name == topic_name)
+                let source_topic = topic_by_name
+                    .get(topic_name.as_str())
                     .expect(topic_not_found);
 
                 let target_table_version: Option<Version> = partial_topic
@@ -1323,6 +1354,7 @@ impl PartialInfrastructureMap {
         topics: &HashMap<String, Topic>,
     ) -> HashMap<String, FunctionProcess> {
         let mut function_processes = self.function_processes.clone();
+        let topic_by_name = Self::topic_name_index(topics);
 
         for (topic_name, source_partial_topic) in &self.topics {
             debug!(
@@ -1331,10 +1363,7 @@ impl PartialInfrastructureMap {
             );
 
             let not_found = &format!("Source topic '{topic_name}' not found");
-            let source_topic = topics
-                .values()
-                .find(|topic| &topic.name == topic_name)
-                .expect(not_found);
+            let source_topic = topic_by_name.get(topic_name.as_str()).expect(not_found);
 
             for transformation_target in &source_partial_topic.transformation_targets {
                 debug!("transformation_target: {:?}", transformation_target);
@@ -1343,9 +1372,8 @@ impl PartialInfrastructureMap {
                 let process_name = format!("{}__{}", topic_name, transformation_target.name);
 
                 let not_found = &format!("Target topic '{}' not found", transformation_target.name);
-                let target_topic = topics
-                    .values()
-                    .find(|topic| topic.name == transformation_target.name)
+                let target_topic = topic_by_name
+                    .get(transformation_target.name.as_str())
                     .expect(not_found);
 
                 // Build metadata with source file if available
@@ -1369,6 +1397,11 @@ impl PartialInfrastructureMap {
                     (None, None) => None,
                 };
 
+                let dead_letter_queue_topic_id = transformation_target
+                    .dead_letter_queue
+                    .as_ref()
+                    .and_then(|dlq_name| topic_by_name.get(dlq_name.as_str()).map(|t| t.id()));
+
                 let function_process = FunctionProcess {
                     name: process_name.clone(),
                     source_topic_id: source_topic.id(),
@@ -1385,6 +1418,7 @@ impl PartialInfrastructureMap {
                         primitive_type: PrimitiveTypes::Function,
                     },
                     metadata,
+                    dead_letter_queue_topic_id,
                 };
 
                 function_processes.insert(function_process.id(), function_process);
@@ -1398,6 +1432,11 @@ impl PartialInfrastructureMap {
                         file: source_file.clone(),
                     }),
                 });
+
+                let dead_letter_queue_topic_id = consumer
+                    .dead_letter_queue
+                    .as_ref()
+                    .and_then(|dlq_name| topic_by_name.get(dlq_name.as_str()).map(|t| t.id()));
 
                 let function_process = FunctionProcess {
                     // In dmv1, consumer process has the id format!("{}_{}_{}", self.name, self.source_topic_id, self.version)
@@ -1413,6 +1452,7 @@ impl PartialInfrastructureMap {
                         primitive_type: PrimitiveTypes::DataModel,
                     },
                     metadata,
+                    dead_letter_queue_topic_id,
                 };
 
                 function_processes.insert(function_process.id(), function_process);
@@ -1698,5 +1738,65 @@ mod tests {
                 id: "OrdersEvents".to_string(),
             }]
         );
+    }
+
+    fn base_table_json() -> serde_json::Value {
+        json!({
+            "name": "t1",
+            "columns": [],
+            "orderBy": ["id"]
+        })
+    }
+
+    fn get_seed_filter(payload: serde_json::Value) -> SeedFilter {
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        partial
+            .tables
+            .get("t1")
+            .expect("table t1 should exist")
+            .seed_filter
+            .clone()
+    }
+
+    #[test]
+    fn seed_filter_missing_key_defaults() {
+        let payload = json!({ "tables": { "t1": base_table_json() } });
+        assert_eq!(get_seed_filter(payload), SeedFilter::default());
+    }
+
+    #[test]
+    fn seed_filter_null_defaults() {
+        let mut t = base_table_json();
+        t.as_object_mut()
+            .unwrap()
+            .insert("seedFilter".into(), serde_json::Value::Null);
+        let payload = json!({ "tables": { "t1": t } });
+        assert_eq!(get_seed_filter(payload), SeedFilter::default());
+    }
+
+    #[test]
+    fn seed_filter_camel_case() {
+        let mut t = base_table_json();
+        t.as_object_mut().unwrap().insert(
+            "seedFilter".into(),
+            json!({ "limit": 10, "where": "id > 0" }),
+        );
+        let payload = json!({ "tables": { "t1": t } });
+        let sf = get_seed_filter(payload);
+        assert_eq!(sf.limit, Some(10));
+        assert_eq!(sf.where_clause.as_deref(), Some("id > 0"));
+    }
+
+    #[test]
+    fn seed_filter_snake_case() {
+        let mut t = base_table_json();
+        t.as_object_mut()
+            .unwrap()
+            .insert("seed_filter".into(), json!({ "limit": 20 }));
+        let payload = json!({ "tables": { "t1": t } });
+        let sf = get_seed_filter(payload);
+        assert_eq!(sf.limit, Some(20));
+        assert_eq!(sf.where_clause, None);
     }
 }

@@ -1,0 +1,148 @@
+name = "chat"
+description = "AI chat panel for Next.js. Requires an MCP server (moose add mcp-server)"
+kind = "nextjs"
+language = "typescript"
+template = "typescript-mcp"
+base_path = "packages/web-app"
+
+docs = """
+  1. Generate auth tokens:  moose generate hash-token
+     Copy the Bearer Token into .env.local as MCP_API_TOKEN.
+  2. Get your Anthropic API key from https://console.anthropic.com
+     Copy it into .env.local as ANTHROPIC_API_KEY.
+  3. Add ChatLayoutWrapper to your layout or page:
+       import { ChatLayoutWrapper } from "@/components/layout/chat-layout-wrapper";
+       <ChatLayoutWrapper>{children}</ChatLayoutWrapper>
+  4. Start both moose and web apps
+"""
+
+npm_deps = [
+  "ai@5.0.106",
+  "@ai-sdk/anthropic@2.0.53",
+  "@ai-sdk/mcp@0.0.7",
+  "@ai-sdk/react@2.0.106",
+  "react-markdown@^10.1.0",
+  "remark-gfm@^4.0.1",
+  "react-resizable-panels@^3.0.6",
+  "lucide-react@^0.552.0",
+  "class-variance-authority@^0.7.1",
+  "next-themes@^0.2.1",
+]
+
+shadcn_components = ["badge", "button", "collapsible", "dropdown-menu", "scroll-area", "textarea"]
+moose_exports = []
+
+[[files]]
+src = "src/env-vars.ts"
+dest = "src/env-vars.ts"
+
+[[files]]
+src = "src/hooks/use-mobile.ts"
+dest = "src/hooks/use-mobile.ts"
+
+[[files]]
+src = "src/app/api/chat/route.ts"
+dest = "src/app/api/chat/route.ts"
+
+[[files]]
+src = "src/app/api/chat/status/route.ts"
+dest = "src/app/api/chat/status/route.ts"
+
+[[files]]
+src = "src/components/layout/chat-layout-wrapper.tsx"
+dest = "src/components/layout/chat-layout-wrapper.tsx"
+
+[[files]]
+src = "src/components/layout/content-header.tsx"
+dest = "src/components/layout/content-header.tsx"
+
+[[files]]
+src = "src/components/layout/resizable-chat-layout.tsx"
+dest = "src/components/layout/resizable-chat-layout.tsx"
+
+[[files]]
+src = "src/features/chat/agent-config.ts"
+dest = "src/features/chat/agent-config.ts"
+
+[[files]]
+src = "src/features/chat/chat-button.tsx"
+dest = "src/features/chat/chat-button.tsx"
+
+[[files]]
+src = "src/features/chat/chat-input.tsx"
+dest = "src/features/chat/chat-input.tsx"
+
+[[files]]
+src = "src/features/chat/chat-output-area.tsx"
+dest = "src/features/chat/chat-output-area.tsx"
+
+[[files]]
+src = "src/features/chat/chat-ui.tsx"
+dest = "src/features/chat/chat-ui.tsx"
+
+[[files]]
+src = "src/features/chat/clickhouse-tool-invocation.tsx"
+dest = "src/features/chat/clickhouse-tool-invocation.tsx"
+
+[[files]]
+src = "src/features/chat/code-block.tsx"
+dest = "src/features/chat/code-block.tsx"
+
+[[files]]
+src = "src/features/chat/get-agent-response.ts"
+dest = "src/features/chat/get-agent-response.ts"
+
+[[files]]
+src = "src/features/chat/reasoning-section.tsx"
+dest = "src/features/chat/reasoning-section.tsx"
+
+[[files]]
+src = "src/features/chat/source-section.tsx"
+dest = "src/features/chat/source-section.tsx"
+
+[[files]]
+src = "src/features/chat/suggested-prompt.tsx"
+dest = "src/features/chat/suggested-prompt.tsx"
+
+[[files]]
+src = "src/features/chat/system-prompt.ts"
+dest = "src/features/chat/system-prompt.ts"
+
+[[files]]
+src = "src/features/chat/text-formatter.tsx"
+dest = "src/features/chat/text-formatter.tsx"
+
+[[files]]
+src = "src/features/chat/tool-data-catalog.tsx"
+dest = "src/features/chat/tool-data-catalog.tsx"
+
+[[files]]
+src = "src/features/chat/tool-invocation.tsx"
+dest = "src/features/chat/tool-invocation.tsx"
+
+[[files]]
+src = "src/features/chat/use-anthropic-status.ts"
+dest = "src/features/chat/use-anthropic-status.ts"
+
+[[files]]
+src = "src/components/theme-toggle.tsx"
+dest = "src/components/theme-toggle.tsx"
+
+[[files]]
+src = "src/components/ui/resizable.tsx"
+dest = "src/components/ui/resizable.tsx"
+
+[[env]]
+file = ".env.local"
+key = "ANTHROPIC_API_KEY"
+placeholder = "# your Anthropic API key from https://console.anthropic.com"
+
+[[env]]
+file = ".env.local"
+key = "MCP_API_TOKEN"
+placeholder = "# run: moose generate hash-token, use the Bearer Token value"
+
+[[env]]
+file = ".env.development"
+key = "MCP_SERVER_URL"
+placeholder = "http://localhost:4000"

@@ -40,9 +40,10 @@ const MOOSE_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/ts-moose-lib",
 );
+// Use the staged template (with shared files injected by package-templates.js pretest)
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
-  "../../../templates/typescript-migrate-test",
+  "../../../template-packages/_staging_typescript-migrate-test",
 );
 
 const testLogger = logger.scope("migration-test");

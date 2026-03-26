@@ -790,6 +790,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -807,10 +808,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -827,6 +830,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }
     }
 

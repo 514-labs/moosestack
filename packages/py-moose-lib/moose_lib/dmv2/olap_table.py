@@ -172,7 +172,21 @@ class OlapConfig(BaseModel):
         granularity: int = 1
 
     indexes: list[TableIndex] = []
+
+    class TableProjection(BaseModel):
+        name: str
+        body: str
+
+    projections: list[TableProjection] = []
     database: Optional[str] = None  # Optional database name for multi-database support
+
+    class SeedFilter(BaseModel):
+        """Filter applied when ``moose seed clickhouse`` populates a local/testing database."""
+
+        limit: Optional[int] = None
+        where: Optional[str] = None
+
+    seed_filter: Optional[SeedFilter] = None
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)
@@ -252,6 +266,25 @@ class OlapConfig(BaseModel):
                     raise ValueError(
                         f"{engine_name} does not support PARTITION BY clause. "
                         f"Remove partition_by from your configuration."
+                    )
+
+            # Engines that don't support projections
+            engines_without_projections = (
+                S3Engine,
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                KafkaEngine,
+                IcebergS3Engine,
+                MergeEngine,
+            )
+            if isinstance(self.engine, engines_without_projections):
+                engine_name = type(self.engine).__name__
+
+                if self.projections:
+                    raise ValueError(
+                        f"{engine_name} does not support projections. "
+                        f"Remove projections from your configuration."
                     )
 
 

@@ -1379,10 +1379,40 @@ fn internal_server_error_response() -> Response<Full<Bytes>> {
         .unwrap()
 }
 
+fn root_status_response(accept_header: &str) -> hyper::http::Result<Response<Full<Bytes>>> {
+    if accept_header.contains("text/html") {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .body(Full::new(Bytes::from(
+                r#"<!DOCTYPE html>
+<html>
+<head><title>MooseStack</title></head>
+<body>
+<h1>MooseStack</h1>
+<p><strong>Status:</strong> ok</p>
+<p><strong>Docs:</strong> <a href="https://docs.fiveonefour.com/moosestack">https://docs.fiveonefour.com/moosestack</a></p>
+<p>To see available routes, run <code>moose ls</code> or view <a href="https://www.boreal.cloud">Fiveonefour dashboard</a></p>
+</body>
+</html>"#,
+            )))
+    } else {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(
+                r#"{"name":"MooseStack","status":"ok","docs":"https://docs.fiveonefour.com/moosestack","info":"To see available routes, run `moose ls` or view Fiveonefour dashboard at https://www.boreal.cloud"}"#,
+            )))
+    }
+}
+
 fn route_not_found_response() -> hyper::http::Result<Response<Full<Bytes>>> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Full::new(Bytes::from("no match")))
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Full::new(Bytes::from(
+            "MooseStack: 404 Not Found\nTo see available routes, run: `moose ls` or view Fiveonefour dashboard",
+        )))
 }
 
 async fn to_reader(
@@ -1823,6 +1853,13 @@ async fn router(
         }
     };
 
+    let accept_header = req
+        .headers()
+        .get(hyper::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
     let route_table = request.route_table;
 
     debug!(
@@ -1995,6 +2032,7 @@ async fn router(
         {
             workflows_terminate_route(req, project.clone(), name.to_string()).await
         }
+        (_, &hyper::Method::GET, [""]) => root_status_response(&accept_header),
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
             // Check if this is a WebApp route by checking mount paths
@@ -2182,6 +2220,13 @@ async fn management_router<I: InfraMapProvider>(
         );
     }
 
+    let accept_header = req
+        .headers()
+        .get(hyper::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
     let route = get_path_without_prefix(PathBuf::from(req.uri().path()), path_prefix);
     let route = route.to_str().unwrap();
     let res = match (req.method(), route) {
@@ -2191,13 +2236,6 @@ async fn management_router<I: InfraMapProvider>(
         (&hyper::Method::GET, "metrics") => metrics_route(metrics.clone()).await,
         // TODO: changes from admin/integrate-changes should apply here
         (&hyper::Method::GET, "infra-map") => {
-            let accept_header = req
-                .headers()
-                .get(hyper::header::ACCEPT)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-
             if accept_header.contains("application/protobuf") {
                 let bytes = infra_map.serialize_proto().await;
                 Ok(hyper::Response::builder()
@@ -2224,6 +2262,7 @@ async fn management_router<I: InfraMapProvider>(
         (&hyper::Method::GET, constants::OPENAPI_FILE) => {
             openapi_route(is_prod, openapi_path).await
         }
+        (&hyper::Method::GET, "") => root_status_response(&accept_header),
         _ => route_not_found_response(),
     };
 
@@ -3799,6 +3838,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -3815,10 +3855,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -3842,6 +3884,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3867,6 +3912,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3908,6 +3956,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

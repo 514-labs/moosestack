@@ -1,0 +1,88 @@
+---
+title: auth
+description: Authenticate the 514 CLI agent harness and verify control plane session state.
+order: 1
+---
+
+# 514 auth
+
+Use `514 auth` to establish the trust boundary for the CLI agent harness.
+
+Once authenticated, follow-on commands (`org`, `project`, `deployment`) can act on your cloud OLAP workloads with the correct account and project permissions.
+
+## Usage
+
+```bash
+514 auth [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### Login
+
+Start browser-based sign-in.
+
+```bash
+514 auth login
+```
+
+Expected outcome:
+- Browser sign-in flow opens.
+- CLI receives a valid session.
+
+Recovery:
+- If browser launch fails, open: `https://www.fiveonefour.boreal.cloud/login`
+- Retry command: `514 auth login`
+
+### Whoami
+
+Show the currently authenticated account.
+
+```bash
+514 auth whoami
+```
+
+Expected outcome:
+- Prints account identity and confirms active session.
+
+Recovery:
+- If unauthenticated, run: `514 auth login`
+
+### Logout
+
+Clear local auth session for the current machine.
+
+```bash
+514 auth logout
+```
+
+Expected outcome:
+- Local session is removed.
+
+Recovery:
+- To authenticate again, run: `514 auth login`
+
+## Typical Flow
+
+```bash
+514 auth login
+514 auth whoami
+```
+
+## Options
+
+- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--json`: Output as JSON.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 org`](/hosting/cli/orgs)
+- [`514 project`](/hosting/cli/projects)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 project link`](/hosting/cli/projects/link)
+- [`514 cli update`](/hosting/cli/cli/update)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

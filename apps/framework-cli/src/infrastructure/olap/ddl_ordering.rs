@@ -1,5 +1,6 @@
+use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
+use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
@@ -10,7 +11,7 @@ use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a dependency edge between two resources
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +111,18 @@ pub enum AtomicOlapOperation {
         index_name: String,
         dependency_info: DependencyInfo,
     },
+    /// Add a projection to a table
+    AddTableProjection {
+        table: Table,
+        projection: TableProjection,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a projection from a table
+    DropTableProjection {
+        table: Table,
+        projection_name: String,
+        dependency_info: DependencyInfo,
+    },
     /// Set or change SAMPLE BY expression for a table
     ModifySampleBy {
         table: Table,
@@ -189,6 +202,20 @@ pub enum AtomicOlapOperation {
     DropView {
         /// The custom view to drop
         view: crate::framework::core::infrastructure::view::View,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Create a row policy on one or more tables
+    CreateRowPolicy {
+        /// The row policy to create
+        policy: SelectRowPolicy,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a row policy from one or more tables
+    DropRowPolicy {
+        /// The row policy to drop
+        policy: SelectRowPolicy,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -282,6 +309,24 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTableIndex {
                 table: table.name.clone(),
                 index_name: index_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::AddTableProjection {
+                table, projection, ..
+            } => SerializableOlapOperation::AddTableProjection {
+                table: table.name.clone(),
+                projection: projection.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::DropTableProjection {
+                table,
+                projection_name,
+                ..
+            } => SerializableOlapOperation::DropTableProjection {
+                table: table.name.clone(),
+                projection_name: projection_name.clone(),
                 database: table.database.clone(),
                 cluster_name: table.cluster_name.clone(),
             },
@@ -404,6 +449,16 @@ impl AtomicOlapOperation {
                 name: view.name.clone(),
                 database: view.database.clone(),
             },
+            AtomicOlapOperation::CreateRowPolicy { policy, .. } => {
+                SerializableOlapOperation::CreateRowPolicy {
+                    policy: policy.clone(),
+                }
+            }
+            AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                SerializableOlapOperation::DropRowPolicy {
+                    policy: policy.clone(),
+                }
+            }
         }
     }
 
@@ -441,6 +496,16 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::DropTableIndex { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
+            AtomicOlapOperation::AddTableProjection { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropTableProjection { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
@@ -484,6 +549,12 @@ impl AtomicOlapOperation {
                     id: mv.id(default_database),
                 }
             }
+            AtomicOlapOperation::CreateRowPolicy { policy, .. }
+            | AtomicOlapOperation::DropRowPolicy { policy, .. } => {
+                InfrastructureSignature::SelectRowPolicy {
+                    id: policy.name.clone(),
+                }
+            }
         }
     }
 
@@ -517,6 +588,12 @@ impl AtomicOlapOperation {
             | AtomicOlapOperation::DropTableIndex {
                 dependency_info, ..
             }
+            | AtomicOlapOperation::AddTableProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableProjection {
+                dependency_info, ..
+            }
             | AtomicOlapOperation::ModifySampleBy {
                 dependency_info, ..
             }
@@ -548,6 +625,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateRowPolicy {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropRowPolicy {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -620,7 +703,8 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::RunTeardownSql { .. }
             | AtomicOlapOperation::DropDmv1View { .. }
             | AtomicOlapOperation::DropView { .. }
-            | AtomicOlapOperation::DropMaterializedView { .. } => {
+            | AtomicOlapOperation::DropMaterializedView { .. }
+            | AtomicOlapOperation::DropRowPolicy { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -806,36 +890,35 @@ fn handle_table_settings_change(
     plan
 }
 
-fn handle_table_column_updates(
+/// Process index changes between two table definitions.
+/// Skips indexes already handled by column dependency logic.
+///
+/// `already_dropped` – indexes the column pass already dropped (skip duplicate drops).
+/// `already_readded` – indexes the column pass already re-added (skip duplicate adds).
+fn process_index_changes(
     before: &Table,
     after: &Table,
-    column_changes: &[ColumnChange],
+    already_dropped: &HashSet<String>,
+    already_readded: &HashSet<String>,
 ) -> OperationPlan {
-    // Since database-specific transformations now happen during the diff phase,
-    // we can assume that any table update that reaches this point can be handled
-    // via column-level operations. If a database requires drop+create for certain
-    // changes, those should have been converted to separate Remove+Add operations
-    // by the appropriate TableDiffStrategy.
-
-    // Process column changes as before
-    process_column_changes(before, after, column_changes)
-}
-
-/// Process index changes between two table definitions
-fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
     let mut plan = OperationPlan::new();
 
     let before_indexes = &before.indexes;
     let after_indexes = &after.indexes;
 
     for after_idx in after_indexes {
+        if already_readded.contains(&after_idx.name) {
+            continue;
+        }
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
             if before_idx != after_idx {
-                plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
-                    table: before.clone(),
-                    index_name: before_idx.name.clone(),
-                    dependency_info: create_empty_dependency_info(),
-                });
+                if !already_dropped.contains(&after_idx.name) {
+                    plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                        table: before.clone(),
+                        index_name: before_idx.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+                }
                 plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
                     table: after.clone(),
                     index: after_idx.clone(),
@@ -851,6 +934,9 @@ fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
         }
     }
     for idx in before_indexes {
+        if already_dropped.contains(&idx.name) {
+            continue;
+        }
         if !after_indexes.iter().any(|a| a.name == idx.name) {
             plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
                 table: before.clone(),
@@ -863,14 +949,96 @@ fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
     plan
 }
 
-/// Handle a table update by composing column and index changes
+/// Process projection changes between two table definitions.
+/// Skips projections already handled by column dependency logic.
+///
+/// `already_dropped` – projections the column pass already dropped (skip duplicate drops).
+/// `already_readded` – projections the column pass already re-added (skip duplicate adds).
+fn process_projection_changes(
+    before: &Table,
+    after: &Table,
+    already_dropped: &HashSet<String>,
+    already_readded: &HashSet<String>,
+) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    let before_projections = &before.projections;
+    let after_projections = &after.projections;
+
+    for after_proj in after_projections {
+        if already_readded.contains(&after_proj.name) {
+            continue;
+        }
+        if let Some(before_proj) = before_projections
+            .iter()
+            .find(|b| b.name == after_proj.name)
+        {
+            if before_proj != after_proj {
+                if !already_dropped.contains(&after_proj.name) {
+                    plan.teardown_ops
+                        .push(AtomicOlapOperation::DropTableProjection {
+                            table: before.clone(),
+                            projection_name: before_proj.name.clone(),
+                            dependency_info: create_empty_dependency_info(),
+                        });
+                }
+                plan.setup_ops
+                    .push(AtomicOlapOperation::AddTableProjection {
+                        table: after.clone(),
+                        projection: after_proj.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+            }
+        } else {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableProjection {
+                    table: after.clone(),
+                    projection: after_proj.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+    for proj in before_projections {
+        if already_dropped.contains(&proj.name) {
+            continue;
+        }
+        if !after_projections.iter().any(|a| a.name == proj.name) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableProjection {
+                    table: before.clone(),
+                    projection_name: proj.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+
+    plan
+}
+
+/// Handle a table update by composing column, index, and projection changes.
+///
+/// Column changes are processed first because modifying or removing a column
+/// requires dropping dependent indexes/projections beforehand. The returned
+/// `HandledDependencies` ensures `process_index_changes` / `process_projection_changes`
+/// skip anything already emitted by the column-change pass.
 fn handle_table_update(
     before: &Table,
     after: &Table,
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
-    let mut plan = handle_table_column_updates(before, after, column_changes);
-    plan.combine(process_index_changes(before, after));
+    let (mut plan, handled) = process_column_changes(before, after, column_changes);
+    plan.combine(process_index_changes(
+        before,
+        after,
+        &handled.dropped_indexes,
+        &handled.readded_indexes,
+    ));
+    plan.combine(process_projection_changes(
+        before,
+        after,
+        &handled.dropped_projections,
+        &handled.readded_projections,
+    ));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {
@@ -926,13 +1094,141 @@ fn process_column_modification(
     }
 }
 
-/// Process the column changes that were already computed by the infrastructure map
+trait ContainsSqlExpression {
+    fn expression(&self) -> &str;
+}
+
+impl ContainsSqlExpression for TableIndex {
+    fn expression(&self) -> &str {
+        &self.expression
+    }
+}
+impl ContainsSqlExpression for TableProjection {
+    fn expression(&self) -> &str {
+        &self.body
+    }
+}
+
+/// Tokenises the expression by splitting on non-identifier characters (anything
+/// that is not alphanumeric or `_`) and checks for a whole-word match.  This
+/// correctly handles composite expressions like `(col_a, col_b)` and function
+/// wrappers like `lower(col_a)`. It assumes expressions do not use backtick-quoted
+/// identifiers that differ from their unquoted form.
+fn items_referencing_column<'a, T: ContainsSqlExpression>(
+    list: &'a [T],
+    column_name: &str,
+) -> Vec<&'a T> {
+    // TODO: consider using sqlparser::tokenizer::Tokenizer
+    list.iter()
+        .filter(|idx| {
+            idx.expression()
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .any(|token| token == column_name)
+        })
+        .collect()
+}
+
+/// Names of indexes and projections already emitted by `process_column_changes`,
+/// kept in separate namespaces because ClickHouse indexes and projections can
+/// share the same name.
+///
+/// `dropped_*` tracks what has been dropped (to avoid duplicate drops).
+/// `readded_*` tracks what has been re-added (to avoid duplicate re-adds when
+/// a composite index references multiple modified columns).
+struct HandledDependencies {
+    dropped_indexes: HashSet<String>,
+    dropped_projections: HashSet<String>,
+    readded_indexes: HashSet<String>,
+    readded_projections: HashSet<String>,
+}
+
+/// Emit drop + re-add ops for every index/projection that references `column_name`.
+///
+/// Inserts into `handled` so that `process_index_changes` / `process_projection_changes`
+/// can skip these later. Deduplicates across multiple column changes that share a
+/// dependent index or projection.
+fn drop_column_dependents(
+    plan: &mut OperationPlan,
+    before: &Table,
+    column_name: &str,
+    handled: &mut HandledDependencies,
+) {
+    for idx in items_referencing_column(&before.indexes, column_name) {
+        if handled.dropped_indexes.insert(idx.name.clone()) {
+            plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                table: before.clone(),
+                index_name: idx.name.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    for proj in items_referencing_column(&before.projections, column_name) {
+        if handled.dropped_projections.insert(proj.name.clone()) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableProjection {
+                    table: before.clone(),
+                    projection_name: proj.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+}
+
+fn readd_column_dependents(
+    plan: &mut OperationPlan,
+    after: &Table,
+    column_name: &str,
+    handled: &mut HandledDependencies,
+) {
+    for idx in items_referencing_column(&after.indexes, column_name) {
+        if handled.dropped_indexes.contains(&idx.name)
+            && handled.readded_indexes.insert(idx.name.clone())
+        {
+            plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                table: after.clone(),
+                index: idx.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    for proj in items_referencing_column(&after.projections, column_name) {
+        if handled.dropped_projections.contains(&proj.name)
+            && handled.readded_projections.insert(proj.name.clone())
+        {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableProjection {
+                    table: after.clone(),
+                    projection: proj.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+}
+
+/// Process the column changes that were already computed by the infrastructure map.
+///
+/// When a column is modified or removed, any indexes or projections referencing that
+/// column must be dropped first (and re-added after modification), because ClickHouse
+/// forbids `ALTER TABLE MODIFY COLUMN` / `DROP COLUMN` on columns referenced by an
+/// INDEX or PROJECTION.
+///
+/// Re-adds are deferred until all column modifications are queued. This prevents
+/// a composite index from being re-added between two `MODIFY COLUMN` statements,
+/// which would cause the second modify to fail (the index would already reference it).
 fn process_column_changes(
     before: &Table,
     after: &Table,
     column_changes: &[ColumnChange],
-) -> OperationPlan {
+) -> (OperationPlan, HandledDependencies) {
     let mut plan = OperationPlan::new();
+    let mut handled = HandledDependencies {
+        dropped_indexes: HashSet::new(),
+        dropped_projections: HashSet::new(),
+        readded_indexes: HashSet::new(),
+        readded_projections: HashSet::new(),
+    };
+
+    let mut columns_with_dependents_to_readd: Vec<&str> = Vec::new();
 
     for change in column_changes {
         match change {
@@ -947,20 +1243,35 @@ fn process_column_changes(
                 ));
             }
             ColumnChange::Removed(column) => {
+                // Drop dependent indexes/projections before dropping the column
+                drop_column_dependents(&mut plan, before, &column.name, &mut handled);
                 plan.teardown_ops
                     .push(process_column_removal(before, &column.name));
+                // No re-add: the column (and thus its dependents) are gone
             }
             ColumnChange::Updated {
                 before: before_col,
                 after: after_col,
             } => {
+                // Drop dependent indexes/projections before modifying the column
+                drop_column_dependents(&mut plan, before, &before_col.name, &mut handled);
+
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
+
+                // Defer re-adds so they come after ALL column modifications,
+                // preventing ClickHouse from rejecting a later MODIFY COLUMN
+                // on a column whose dependent index was already re-added.
+                columns_with_dependents_to_readd.push(&after_col.name);
             }
         }
     }
 
-    plan
+    for col_name in &columns_with_dependents_to_readd {
+        readd_column_dependents(&mut plan, after, col_name, &mut handled);
+    }
+
+    (plan, handled)
 }
 
 /// Creates an operation to add a Dmv1 view
@@ -1202,6 +1513,30 @@ fn handle_view_update(before: &View, after: &View, default_database: &str) -> Op
     plan
 }
 
+/// Resolve table dependencies for a SelectRowPolicy by matching each
+/// TableReference against the known tables map.
+fn resolve_policy_table_deps(
+    policy: &SelectRowPolicy,
+    tables: &HashMap<String, Table>,
+    default_database: &str,
+) -> Vec<InfrastructureSignature> {
+    policy
+        .tables
+        .iter()
+        .filter_map(|table_ref| {
+            tables
+                .values()
+                .find(|table| {
+                    table.name == table_ref.name
+                        && table.database.as_deref() == table_ref.database.as_deref()
+                })
+                .map(|table| InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                })
+        })
+        .collect()
+}
+
 /// Orders OLAP changes based on dependencies to ensure proper execution sequence.
 ///
 /// This function takes a list of OLAP changes and orders them according to their
@@ -1363,6 +1698,46 @@ pub fn order_olap_changes(
             OlapChange::View(Change::Updated { before, after }) => {
                 handle_view_update(before, after, default_database)
             }
+            OlapChange::SelectRowPolicy(Change::Added(policy)) => {
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(policy, &tables, default_database),
+                    vec![],
+                );
+                OperationPlan::setup(vec![AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**policy).clone(),
+                    dependency_info,
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(policy, &tables, default_database),
+                    vec![],
+                );
+                OperationPlan::teardown(vec![AtomicOlapOperation::DropRowPolicy {
+                    policy: (**policy).clone(),
+                    dependency_info,
+                }])
+            }
+            OlapChange::SelectRowPolicy(Change::Updated { before, after }) => {
+                let mut plan = OperationPlan::new();
+                let before_dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(before, &tables, default_database),
+                    vec![],
+                );
+                plan.teardown_ops.push(AtomicOlapOperation::DropRowPolicy {
+                    policy: (**before).clone(),
+                    dependency_info: before_dependency_info,
+                });
+                let dependency_info = create_dependency_info(
+                    resolve_policy_table_deps(after, &tables, default_database),
+                    vec![],
+                );
+                plan.setup_ops.push(AtomicOlapOperation::CreateRowPolicy {
+                    policy: (**after).clone(),
+                    dependency_info,
+                });
+                plan
+            }
         };
 
         plan.combine(change_plan);
@@ -1523,7 +1898,7 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy, TableReference};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -1555,10 +1930,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create some atomic operations
@@ -1590,6 +1967,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1634,10 +2012,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create table B - depends on table A
@@ -1659,10 +2039,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create view C - depends on table B
@@ -1756,10 +2138,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create table B - target for materialized view
@@ -1781,10 +2165,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create view C - depends on table B
@@ -1898,10 +2284,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let view = Dmv1View {
@@ -1924,6 +2312,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // Create operations with correct dependencies
@@ -2059,10 +2448,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_b = Table {
@@ -2083,10 +2474,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_c = Table {
@@ -2107,10 +2500,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Test operations
@@ -2200,10 +2595,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_b = Table {
@@ -2224,10 +2621,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_c = Table {
@@ -2248,10 +2647,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_d = Table {
@@ -2272,10 +2673,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_e = Table {
@@ -2296,10 +2699,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2452,10 +2857,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create table B - target for materialized view
@@ -2477,10 +2884,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create SQL resource for a materialized view
@@ -2605,10 +3014,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create table B - target for materialized view
@@ -2630,10 +3041,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create SQL resource for a materialized view
@@ -2763,10 +3176,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let table_b = Table {
@@ -2787,10 +3202,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create SQL resource for materialized view
@@ -3000,10 +3417,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create a column
@@ -3019,6 +3438,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -3114,10 +3534,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create operations with signatures that work with the current implementation
@@ -3210,6 +3632,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -3223,6 +3646,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3240,10 +3664,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let after_table = Table {
@@ -3261,6 +3687,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -3274,6 +3701,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3291,10 +3719,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Create column changes (remove old_column, add new_column)
@@ -3311,6 +3741,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -3325,6 +3756,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 position_after: Some("id".to_string()),
             },
@@ -3381,6 +3813,160 @@ mod tests {
     }
 
     #[test]
+    fn test_process_projection_add() {
+        let before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let mut after = before.clone();
+        after.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert!(
+            plan.teardown_ops.is_empty(),
+            "Adding a projection should not produce teardown ops"
+        );
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableProjection { projection, .. }
+            if projection.name == "proj_by_user"
+        ));
+    }
+
+    #[test]
+    fn test_process_projection_remove() {
+        let mut before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+        before.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let after = Table {
+            projections: vec![],
+            ..before.clone()
+        };
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert!(
+            plan.setup_ops.is_empty(),
+            "Removing a projection should not produce setup ops"
+        );
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableProjection { projection_name, .. }
+            if projection_name == "proj_by_user"
+        ));
+    }
+
+    #[test]
+    fn test_process_projection_modify() {
+        let mut before = Table {
+            name: "test_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            seed_filter: Default::default(),
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+        before.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.projections = vec![TableProjection {
+            name: "proj_by_user".to_string(),
+            body: "SELECT _part_offset ORDER BY user_id, timestamp".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        // Modified projection = drop old + add new
+        assert_eq!(plan.teardown_ops.len(), 1, "Should drop the old projection");
+        assert_eq!(plan.setup_ops.len(), 1, "Should add the new projection");
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableProjection { projection_name, .. }
+            if projection_name == "proj_by_user"
+        ));
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableProjection { projection, .. }
+            if projection.name == "proj_by_user" && projection.body.contains("timestamp")
+        ));
+    }
+
+    #[test]
     fn test_populate_materialized_view_includes_truncate() {
         let test_cases = vec![
             (
@@ -3413,6 +3999,935 @@ mod tests {
                 }
                 _ => panic!("Expected RawSql operation"),
             }
+        }
+    }
+
+    fn create_test_table(
+        name: &str,
+        columns: Vec<Column>,
+        indexes: Vec<TableIndex>,
+        projections: Vec<TableProjection>,
+    ) -> Table {
+        Table {
+            name: name.to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes,
+            projections,
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    fn make_column(name: &str, data_type: ColumnType) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_modify_column_drops_dependent_index() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = create_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // teardown_ops must contain DropTableIndex for the dependent index
+        let has_drop_index = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+        });
+        assert!(
+            has_drop_index,
+            "Expected DropTableIndex for idx_src_ip in teardown_ops, got: {:?}",
+            plan.teardown_ops
+        );
+
+        // setup_ops must contain ModifyTableColumn followed by AddTableIndex
+        let modify_pos = plan
+            .setup_ops
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::ModifyTableColumn { .. }));
+        let add_index_pos = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+        });
+        assert!(
+            modify_pos.is_some(),
+            "Expected ModifyTableColumn in setup_ops"
+        );
+        assert!(
+            add_index_pos.is_some(),
+            "Expected AddTableIndex for idx_src_ip in setup_ops"
+        );
+        assert!(
+            modify_pos.unwrap() < add_index_pos.unwrap(),
+            "ModifyTableColumn must come before AddTableIndex"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_drops_dependent_projection() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let projection = TableProjection {
+            name: "proj_src_ip".to_string(),
+            body: "SELECT * ORDER BY src_endpoint_ip".to_string(),
+        };
+
+        let before = create_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+        let after = create_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let has_drop_proj = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_src_ip")
+        });
+        assert!(
+            has_drop_proj,
+            "Expected DropTableProjection for proj_src_ip in teardown_ops, got: {:?}",
+            plan.teardown_ops
+        );
+
+        let has_add_proj = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_src_ip")
+        });
+        assert!(
+            has_add_proj,
+            "Expected AddTableProjection for proj_src_ip in setup_ops"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_no_duplicate_index_ops_when_index_also_changed() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let after_col = make_column(
+            "src_endpoint_ip",
+            ColumnType::Nullable(Box::new(ColumnType::String)),
+        );
+
+        let before_index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+        let after_index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 2, // changed granularity
+        };
+
+        let before = create_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![before_index],
+            vec![],
+        );
+        let after = create_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![after_index],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // Should only have one DropTableIndex for idx_src_ip, not two
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "Expected exactly one DropTableIndex for idx_src_ip, got {}",
+            drop_count
+        );
+
+        let add_count = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+            })
+            .count();
+        assert_eq!(
+            add_count, 1,
+            "Expected exactly one AddTableIndex for idx_src_ip, got {}",
+            add_count
+        );
+
+        // Fix #1: The re-added index must use the `after` table's definition (granularity 2)
+        let readded_index = plan
+            .setup_ops
+            .iter()
+            .find_map(|op| match op {
+                AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip" => {
+                    Some(index)
+                }
+                _ => None,
+            })
+            .expect("AddTableIndex for idx_src_ip must exist");
+        assert_eq!(
+            readded_index.granularity, 2,
+            "Re-added index must use the after-table definition (granularity 2), got {}",
+            readded_index.granularity
+        );
+    }
+
+    /// Fix #8: Modifying a column that has no dependent indexes should not emit
+    /// any DropTableIndex or AddTableIndex operations.
+    #[test]
+    fn test_modify_column_without_indexes_produces_no_index_ops() {
+        let before_col = make_column("status", ColumnType::String);
+        let after_col = make_column("status", ColumnType::Nullable(Box::new(ColumnType::String)));
+
+        let before = create_test_table("t", vec![before_col.clone()], vec![], vec![]);
+        let after = create_test_table("t", vec![after_col.clone()], vec![], vec![]);
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        assert!(
+            plan.teardown_ops.is_empty(),
+            "No teardown ops expected when column has no dependent indexes, got: {:?}",
+            plan.teardown_ops
+        );
+        assert_eq!(
+            plan.setup_ops.len(),
+            1,
+            "Only ModifyTableColumn expected in setup_ops"
+        );
+        assert!(
+            matches!(
+                &plan.setup_ops[0],
+                AtomicOlapOperation::ModifyTableColumn { .. }
+            ),
+            "Expected ModifyTableColumn, got: {:?}",
+            plan.setup_ops[0]
+        );
+    }
+
+    /// Fix #7: An index whose expression references multiple columns (e.g. a
+    /// composite `(col_a, col_b)`) must be dropped when *either* column changes.
+    #[test]
+    fn test_modify_column_drops_multi_column_index() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_b_before = make_column("col_b", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b_after = col_b_before.clone(); // col_b unchanged
+
+        let index = TableIndex {
+            name: "idx_composite".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b_before.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b_after.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        // Only col_a changed
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let has_drop = plan.teardown_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_composite")
+        });
+        assert!(
+            has_drop,
+            "Composite index must be dropped when one of its columns changes"
+        );
+
+        let has_readd = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+        });
+        assert!(
+            has_readd,
+            "Composite index must be re-added after column modification"
+        );
+    }
+
+    /// Fix #2: Removing a column that has a dependent index must drop the index
+    /// *before* dropping the column.
+    #[test]
+    fn test_remove_column_drops_dependent_index() {
+        let col = make_column("src_endpoint_ip", ColumnType::String);
+
+        let index = TableIndex {
+            name: "idx_src_ip".to_string(),
+            expression: "src_endpoint_ip".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table("t", vec![col.clone()], vec![index], vec![]);
+        let after = create_test_table("t", vec![], vec![], vec![]);
+
+        let column_changes = vec![ColumnChange::Removed(col)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // The index must be dropped before the column
+        let drop_index_pos = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_src_ip")
+        });
+        let drop_col_pos = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableColumn { column_name, .. } if column_name == "src_endpoint_ip")
+        });
+
+        assert!(
+            drop_index_pos.is_some(),
+            "Expected DropTableIndex for idx_src_ip"
+        );
+        assert!(
+            drop_col_pos.is_some(),
+            "Expected DropTableColumn for src_endpoint_ip"
+        );
+        assert!(
+            drop_index_pos.unwrap() < drop_col_pos.unwrap(),
+            "DropTableIndex must precede DropTableColumn"
+        );
+
+        // The removed index must NOT be re-added
+        let has_add_index = plan.setup_ops.iter().any(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_src_ip")
+        });
+        assert!(
+            !has_add_index,
+            "Removed column's index must not be re-added"
+        );
+    }
+
+    /// When both columns of a composite index are modified in the same change set,
+    /// the index must be dropped exactly once and re-added exactly once.
+    #[test]
+    fn test_modify_two_columns_of_same_index_no_duplicate_readd() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_b_before = make_column("col_b", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b_after = make_column("col_b", ColumnType::Nullable(Box::new(ColumnType::String)));
+
+        let index = TableIndex {
+            name: "idx_composite".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b_before.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b_after.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        // Both columns changed
+        let column_changes = vec![
+            ColumnChange::Updated {
+                before: col_a_before,
+                after: col_a_after,
+            },
+            ColumnChange::Updated {
+                before: col_b_before,
+                after: col_b_after,
+            },
+        ];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_composite")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "Composite index must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_count = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+            })
+            .count();
+        assert_eq!(
+            add_count, 1,
+            "Composite index must be re-added exactly once, got {add_count}"
+        );
+
+        // The re-add must come AFTER both ModifyTableColumn ops so that
+        // ClickHouse doesn't reject the second MODIFY COLUMN due to the
+        // index already being present.
+        let last_modify_pos = plan
+            .setup_ops
+            .iter()
+            .rposition(|op| matches!(op, AtomicOlapOperation::ModifyTableColumn { .. }));
+        let add_index_pos = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_composite")
+        });
+        assert!(
+            last_modify_pos.unwrap() < add_index_pos.unwrap(),
+            "AddTableIndex must come after all ModifyTableColumn ops, \
+             but last modify is at {} and add index is at {}",
+            last_modify_pos.unwrap(),
+            add_index_pos.unwrap()
+        );
+    }
+
+    /// Regression: an index keeps the same name but its expression changes to
+    /// no longer reference the removed column.  The column pass drops it but
+    /// cannot re-add it (expression no longer matches the column).  The diff
+    /// pass must still emit the add for the new definition.
+    #[test]
+    fn test_remove_column_with_index_expression_change() {
+        let col_a = make_column("col_a", ColumnType::String);
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let index_before = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let index_after = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "col_b".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a.clone(), col_b.clone()],
+            vec![index_before],
+            vec![],
+        );
+        let after = create_test_table("t", vec![col_b], vec![index_after], vec![]);
+
+        let column_changes = vec![ColumnChange::Removed(col_a)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        // The index must be dropped (column pass handles this)
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "idx_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        // The index must be re-added with the new expression (diff pass handles this)
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "idx_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        // Verify the new expression is used
+        if let AtomicOlapOperation::AddTableIndex { index, .. } = add_ops[0] {
+            assert_eq!(index.expression, "col_b");
+        }
+    }
+
+    /// Same as above but for projections: a projection keeps the same name but
+    /// its body changes to no longer reference the removed column.
+    #[test]
+    fn test_remove_column_with_projection_expression_change() {
+        let col_a = make_column("col_a", ColumnType::String);
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let proj_before = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_a, col_b ORDER BY col_a)".to_string(),
+        };
+
+        let proj_after = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_b ORDER BY col_b)".to_string(),
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a.clone(), col_b.clone()],
+            vec![],
+            vec![proj_before],
+        );
+        let after = create_test_table("t", vec![col_b], vec![], vec![proj_after]);
+
+        let column_changes = vec![ColumnChange::Removed(col_a)];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "proj_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "proj_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableProjection { projection, .. } = add_ops[0] {
+            assert_eq!(projection.body, "(col_b ORDER BY col_b)");
+        }
+    }
+
+    fn create_test_row_policy(name: &str, tables: Vec<&str>, column: &str) -> SelectRowPolicy {
+        SelectRowPolicy {
+            name: name.to_string(),
+            tables: tables
+                .into_iter()
+                .map(|t| TableReference {
+                    name: t.to_string(),
+                    database: None,
+                })
+                .collect(),
+            column: column.to_string(),
+            claim: column.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_passes_through_to_minimal() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy: policy.clone(),
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[0].database, None);
+                assert_eq!(serialized_policy.column, "org_id");
+            }
+            _ => panic!("Expected CreateRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_create_row_policy_multiple_tables() {
+        let policy =
+            create_test_row_policy("tenant_iso", vec!["events_1_0_0", "orders_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::CreateRowPolicy {
+            policy,
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::CreateRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.tables.len(), 2);
+                assert_eq!(serialized_policy.tables[0].name, "events_1_0_0");
+                assert_eq!(serialized_policy.tables[1].name, "orders_1_0_0");
+            }
+            _ => panic!("Expected CreateRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_drop_row_policy_passes_through_to_minimal() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let op = AtomicOlapOperation::DropRowPolicy {
+            policy,
+            dependency_info: create_empty_dependency_info(),
+        };
+
+        let serialized = op.to_minimal();
+        match serialized {
+            SerializableOlapOperation::DropRowPolicy {
+                policy: serialized_policy,
+            } => {
+                assert_eq!(serialized_policy.name, "tenant_iso");
+                assert_eq!(serialized_policy.tables.len(), 1);
+            }
+            _ => panic!("Expected DropRowPolicy operation"),
+        }
+    }
+
+    #[test]
+    fn test_row_policy_added_produces_create_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Added(Box::new(policy)))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(teardown.is_empty());
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_removed_produces_drop_op() {
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Removed(Box::new(
+            policy,
+        )))];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert!(setup.is_empty());
+        assert_eq!(teardown.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_updated_produces_drop_then_create() {
+        let before = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let after = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "tenant_id");
+        let changes = vec![OlapChange::SelectRowPolicy(Change::Updated {
+            before: Box::new(before),
+            after: Box::new(after),
+        })];
+
+        let (teardown, setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert_eq!(teardown.len(), 1);
+        assert_eq!(setup.len(), 1);
+        assert!(matches!(
+            &teardown[0],
+            AtomicOlapOperation::DropRowPolicy { .. }
+        ));
+        assert!(matches!(
+            &setup[0],
+            AtomicOlapOperation::CreateRowPolicy { .. }
+        ));
+    }
+
+    #[test]
+    fn test_row_policy_drop_ordered_before_table_drop() {
+        let table = create_test_table("events_1_0_0", vec![], vec![], vec![]);
+        let policy = create_test_row_policy("tenant_iso", vec!["events_1_0_0"], "org_id");
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(table)),
+            OlapChange::SelectRowPolicy(Change::Removed(Box::new(policy))),
+        ];
+
+        let (teardown, _setup) = order_olap_changes(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        // Row policy drop should come before table drop in teardown order
+        let policy_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropRowPolicy { .. }))
+            .expect("DropRowPolicy not found");
+        let table_idx = teardown
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropTable { .. }))
+            .expect("DropTable not found");
+
+        assert!(
+            policy_idx < table_idx,
+            "Row policy should be dropped before its table"
+        );
+    }
+
+    /// Regression test: when a column is modified AND the index expression changes
+    /// to no longer reference that column, the index must still be re-added.
+    ///
+    /// The column dependency pass drops the index (it references col_a in BEFORE)
+    /// but cannot re-add it (it no longer references col_a in AFTER). The index
+    /// diff pass in `process_index_changes` must pick up the re-add.
+    #[test]
+    fn test_modify_column_with_index_expression_change() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let index_before = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "(col_a, col_b)".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+        let index_after = TableIndex {
+            name: "idx_ab".to_string(),
+            expression: "col_b".to_string(),
+            index_type: "set".to_string(),
+            arguments: vec!["0".to_string()],
+            granularity: 1,
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b.clone()],
+            vec![index_before],
+            vec![],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b],
+            vec![index_after],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableIndex { index_name, .. } if index_name == "idx_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "idx_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableIndex { index, .. } if index.name == "idx_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "idx_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableIndex { index, .. } = add_ops[0] {
+            assert_eq!(
+                index.expression, "col_b",
+                "re-added index must use the new expression"
+            );
+        }
+    }
+
+    /// Same as above but for projections: a column is modified and the projection
+    /// expression changes to no longer reference that column.
+    #[test]
+    fn test_modify_column_with_projection_expression_change() {
+        let col_a_before = make_column("col_a", ColumnType::String);
+        let col_a_after = make_column("col_a", ColumnType::Nullable(Box::new(ColumnType::String)));
+        let col_b = make_column("col_b", ColumnType::String);
+
+        let proj_before = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_a, col_b ORDER BY col_a)".to_string(),
+        };
+        let proj_after = TableProjection {
+            name: "proj_ab".to_string(),
+            body: "(col_b ORDER BY col_b)".to_string(),
+        };
+
+        let before = create_test_table(
+            "t",
+            vec![col_a_before.clone(), col_b.clone()],
+            vec![],
+            vec![proj_before],
+        );
+        let after = create_test_table(
+            "t",
+            vec![col_a_after.clone(), col_b],
+            vec![],
+            vec![proj_after],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: col_a_before,
+            after: col_a_after,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let drop_count = plan
+            .teardown_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::DropTableProjection { projection_name, .. } if projection_name == "proj_ab")
+            })
+            .count();
+        assert_eq!(
+            drop_count, 1,
+            "proj_ab must be dropped exactly once, got {drop_count}"
+        );
+
+        let add_ops: Vec<_> = plan
+            .setup_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, AtomicOlapOperation::AddTableProjection { projection, .. } if projection.name == "proj_ab")
+            })
+            .collect();
+        assert_eq!(
+            add_ops.len(),
+            1,
+            "proj_ab must be re-added exactly once, got {}",
+            add_ops.len()
+        );
+        if let AtomicOlapOperation::AddTableProjection { projection, .. } = add_ops[0] {
+            assert_eq!(
+                projection.body, "(col_b ORDER BY col_b)",
+                "re-added projection must use the new body"
+            );
         }
     }
 }

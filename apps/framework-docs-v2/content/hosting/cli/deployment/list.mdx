@@ -1,0 +1,47 @@
+---
+title: deployment list
+description: List deployments for a project.
+order: 1
+---
+
+# 514 deployment list
+
+Use `514 deployment list` to list deployments for a project.
+
+Plural alias also works: `514 deployments list`.
+
+## Usage
+
+```bash
+514 deployment list [OPTIONS] [--project <PROJECT_REF>]
+```
+
+## Options
+
+- `--project <PROJECT_REF>`: Project context to list deployments for. If omitted, the CLI uses linked repository context.
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--branch-id <BRANCH_ID>`: Filter by branch ID.
+- `-o, --org <ORG>`: Organization name or ID.
+- `--status <STATUSES>`: Filter by deployment status (repeatable).
+- `--json`: Output as JSON.
+- `--limit <LIMIT>`: Number of results to return (default: `20`).
+- `--page-token <PAGE_TOKEN>`: Pagination token from a previous response.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Notes
+
+- Positional project arguments are no longer accepted for `deployment list`; use `--project`.
+
+## Examples
+
+```bash
+514 deployment list --project my-org/my-project
+514 deployment list --project my-org/my-project --status running --status failed
+514 deployments list --project my-org/my-project --limit 50
+```
+
+## Related
+
+- [`514 deployment`](/hosting/cli/deployment)
+- [`514 project list`](/hosting/cli/projects/list)

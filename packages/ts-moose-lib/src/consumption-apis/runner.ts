@@ -1,7 +1,15 @@
 import http from "http";
 import * as path from "path";
 import { getClickhouseClient } from "../commons";
-import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
+import {
+  MooseClient,
+  QueryClient,
+  RowPolicyOptions,
+  RowPoliciesConfig,
+  buildRowPolicyOptionsFromClaims,
+  getTemporalClient,
+  MOOSE_RLS_USER,
+} from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
 import { Cluster } from "../cluster-utils";
@@ -18,6 +26,8 @@ interface ClickhouseConfig {
   username: string;
   password: string;
   useSSL: boolean;
+  rlsUser?: string;
+  rlsPassword?: string;
 }
 
 interface JwtConfig {
@@ -41,6 +51,7 @@ interface ApisConfig {
   enforceAuth: boolean;
   proxyPort?: number;
   workerCount?: number;
+  rowPoliciesConfig?: RowPoliciesConfig;
 }
 
 // Convert our config to Clickhouse client config
@@ -85,12 +96,90 @@ const apiContextStorage = setupStructuredConsole<{ apiName: string }>(
   "api_name",
 );
 
+interface AuthResult {
+  jwtPayload?: jose.JWTPayload;
+  rowPolicyOpts?: RowPolicyOptions;
+}
+
+/**
+ * Verifies the JWT, enforces auth requirements, and builds RowPolicyOptions
+ * from the JWT claims. Returns null if the response was already sent (auth failure).
+ */
+async function authenticateRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  publicKey: jose.KeyLike | undefined,
+  jwtConfig: JwtConfig | undefined,
+  enforceAuth: boolean,
+  rowPoliciesConfig?: RowPoliciesConfig,
+): Promise<AuthResult | null> {
+  const requireAuth = enforceAuth || !!rowPoliciesConfig;
+
+  let jwtPayload: jose.JWTPayload | undefined;
+  if (publicKey && jwtConfig) {
+    const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
+    if (jwt) {
+      try {
+        const { payload } = await jose.jwtVerify(jwt, publicKey, {
+          issuer: jwtConfig.issuer,
+          audience: jwtConfig.audience,
+        });
+        jwtPayload = payload;
+      } catch (_error) {
+        console.log("JWT verification failed");
+        if (requireAuth) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return null;
+        }
+      }
+    } else if (requireAuth) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return null;
+    }
+  } else if (requireAuth) {
+    if (rowPoliciesConfig) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "Forbidden",
+          message:
+            "Row policies require JWT authentication. Configure jwt.secret in moose.config.toml.",
+        }),
+      );
+    } else {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "Unauthorized",
+          message:
+            "Authentication is enforced but no JWT configuration is available.",
+        }),
+      );
+    }
+    return null;
+  }
+
+  let rowPolicyOpts: RowPolicyOptions | undefined;
+  if (rowPoliciesConfig && jwtPayload) {
+    rowPolicyOpts = buildRowPolicyOptionsFromClaims(
+      rowPoliciesConfig,
+      jwtPayload as Record<string, unknown>,
+    );
+  }
+
+  return { jwtPayload, rowPolicyOpts };
+}
+
 const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   // Always use compiled JavaScript
   const sourceDir = getSourceDir();
@@ -110,37 +199,19 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      let jwtPayload: jose.JWTPayload | undefined;
-      if (publicKey && jwtConfig) {
-        const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
-        if (jwt) {
-          try {
-            const { payload } = await jose.jwtVerify(jwt, publicKey, {
-              issuer: jwtConfig.issuer,
-              audience: jwtConfig.audience,
-            });
-            jwtPayload = payload;
-          } catch (error) {
-            console.log("JWT verification failed");
-            if (enforceAuth) {
-              res.writeHead(401, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "Unauthorized" }));
-              httpLogger(req, res, start);
-              return;
-            }
-          }
-        } else if (enforceAuth) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Unauthorized" }));
-          httpLogger(req, res, start);
-          return;
-        }
-      } else if (enforceAuth) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
+      const authResult = await authenticateRequest(
+        req,
+        res,
+        publicKey,
+        jwtConfig,
+        enforceAuth,
+        rowPoliciesConfig,
+      );
+      if (!authResult) {
         httpLogger(req, res, start);
         return;
       }
+      const { jwtPayload, rowPolicyOpts } = authResult;
 
       const pathName = createPath(actualApisDir, fileName);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
@@ -236,7 +307,15 @@ const apiHandler = async (
         });
       }
 
-      const queryClient = new QueryClient(clickhouseClient, fileName);
+      const queryClickhouseClient =
+        rowPolicyOpts && rlsClickhouseClient ? rlsClickhouseClient : (
+          clickhouseClient
+        );
+      const queryClient = new QueryClient(
+        queryClickhouseClient,
+        fileName,
+        rowPolicyOpts,
+      );
 
       // Use matched API name for structured logging context
       // This matches source_primitive.name in the infrastructure map
@@ -291,8 +370,11 @@ const apiHandler = async (
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
         httpLogger(req, res, start, matchedApiName);
-      }
-      if (error instanceof Error) {
+      } else if (error?.name === "BadRequestError") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(error.toJSON?.() ?? { error: error.message }));
+        httpLogger(req, res, start, matchedApiName);
+      } else if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
         httpLogger(req, res, start, matchedApiName);
@@ -311,6 +393,8 @@ const createMainRouter = async (
   temporalClient: TemporalClient | undefined,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
+  rowPoliciesConfig?: RowPoliciesConfig,
+  rlsClickhouseClient?: ClickHouseClient,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
@@ -318,6 +402,8 @@ const createMainRouter = async (
     temporalClient,
     enforceAuth,
     jwtConfig,
+    rowPoliciesConfig,
+    rlsClickhouseClient,
   );
 
   const webApps = await getWebApps();
@@ -346,21 +432,16 @@ const createMainRouter = async (
       return;
     }
 
-    let jwtPayload: jose.JWTPayload | undefined;
-    if (publicKey && jwtConfig) {
-      const jwt = req.headers.authorization?.split(" ")[1];
-      if (jwt) {
-        try {
-          const { payload } = await jose.jwtVerify(jwt, publicKey, {
-            issuer: jwtConfig.issuer,
-            audience: jwtConfig.audience,
-          });
-          jwtPayload = payload;
-        } catch (error) {
-          console.log("JWT verification failed for WebApp route");
-        }
-      }
-    }
+    const authResult = await authenticateRequest(
+      req,
+      res,
+      publicKey,
+      jwtConfig,
+      enforceAuth,
+      rowPoliciesConfig,
+    );
+    if (!authResult) return;
+    const { jwtPayload, rowPolicyOpts } = authResult;
 
     for (const webApp of sortedWebApps) {
       const mountPath = webApp.config.mountPath || "/";
@@ -374,11 +455,9 @@ const createMainRouter = async (
         pathname.startsWith(normalizedMount + "/");
 
       if (matches) {
-        if (webApp.config.injectMooseUtils !== false) {
-          // Import getMooseUtils dynamically to avoid circular deps
-          const { getMooseUtils } = await import("./standalone");
-          (req as any).moose = await getMooseUtils();
-        }
+        const { getMooseUtils, runWithRequestContext } = await import(
+          "./standalone"
+        );
 
         let proxiedUrl = req.url;
         if (normalizedMount !== "/") {
@@ -388,9 +467,6 @@ const createMainRouter = async (
         }
 
         try {
-          // Create a modified request preserving all properties including headers
-          // A shallow clone (like { ...req }) generally will not work since headers and other
-          // members are not cloned.
           const modifiedReq = Object.assign(
             Object.create(Object.getPrototypeOf(req)),
             req,
@@ -398,7 +474,17 @@ const createMainRouter = async (
               url: proxiedUrl,
             },
           );
-          await webApp.handler(modifiedReq, res);
+          // Run inside AsyncLocalStorage so getMooseUtils() picks up
+          // the pre-built RowPolicyOptions without a redundant conversion.
+          await runWithRequestContext(
+            { rowPolicyOpts, jwt: jwtPayload },
+            async () => {
+              if (webApp.config.injectMooseUtils !== false) {
+                (modifiedReq as any).moose = await getMooseUtils();
+              }
+              await webApp.handler(modifiedReq, res);
+            },
+          );
           return;
         } catch (error) {
           console.error(`Error in WebApp ${webApp.name}:`, error);
@@ -461,16 +547,45 @@ export const runApis = async (config: ApisConfig) => {
       const clickhouseClient = getClickhouseClient(
         toClientConfig(config.clickhouseConfig),
       );
+
+      // When RLS is configured, create a second client as the RLS user.
+      // This user has the RLS role granted and is used for all API queries
+      // so that row policies are enforced. The main client remains for DDL/ingest.
+      let rlsClickhouseClient: ClickHouseClient | undefined;
+      if (config.rowPoliciesConfig) {
+        rlsClickhouseClient = getClickhouseClient(
+          toClientConfig({
+            ...config.clickhouseConfig,
+            username: config.clickhouseConfig.rlsUser ?? MOOSE_RLS_USER,
+            password:
+              config.clickhouseConfig.rlsPassword ??
+              config.clickhouseConfig.password,
+          }),
+        );
+      }
+
       let publicKey: jose.KeyLike | undefined;
       if (config.jwtConfig?.secret) {
         console.log("Importing JWT public key...");
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
+      if (config.rowPoliciesConfig && !publicKey) {
+        console.error(
+          "WARNING: Row policies are configured but no JWT public key is set. " +
+            "All consumption API requests will be rejected with 403. " +
+            "Configure jwt.secret in moose.config.toml to enable authentication.",
+        );
+      }
+
       // Set runtime context for getMooseUtils() to detect
       const runtimeQueryClient = new QueryClient(clickhouseClient, "runtime");
       (globalThis as any)._mooseRuntimeContext = {
         client: new MooseClient(runtimeQueryClient, temporalClient),
+        clickhouseClient,
+        rlsClickhouseClient,
+        temporalClient,
+        rowPoliciesConfig: config.rowPoliciesConfig,
       };
 
       const server = http.createServer(
@@ -480,6 +595,8 @@ export const runApis = async (config: ApisConfig) => {
           temporalClient,
           config.enforceAuth,
           config.jwtConfig,
+          config.rowPoliciesConfig,
+          rlsClickhouseClient,
         ),
       );
       // port is now passed via config.proxyPort or defaults to 4001

@@ -223,7 +223,7 @@ export const Events = new OlapTable<EventModel>("events", {
 
 export async function getEvents(limit: number = 10): Promise<EventModel[]> {
   return await executeQuery<EventModel>(
-    sql`SELECT * FROM ${Events} ORDER BY ${Events.columns.event_time} DESC LIMIT ${limit}`,
+    sql.statement`SELECT * FROM ${Events} ORDER BY ${Events.columns.event_time} DESC LIMIT ${limit}`,
   );
 
 }
@@ -269,15 +269,6 @@ There's no separate production Moose Runtime to deploy. You just need to:
 
 1. Apply your schema to production ClickHouse
 2. Configure your production environment with production credentials
-
-#### Enable planned migrations
-
-Make sure `ddl_plan = true` is set in `[features]` in `moose/moose.config.toml`:
-
-```toml title="moose/moose.config.toml"
-[features]
-ddl_plan = true
-```
 
 #### Generate a migration plan
 

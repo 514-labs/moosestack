@@ -111,4 +111,4 @@ When working with MooseStack data models, ClickHouse schemas, queries, or config
 
 Each rule includes MooseStack TypeScript/Python examples. When reviewing or implementing ClickHouse-related code, read relevant rule files and cite specific rules in your guidance.
 
-To install the skill: `npx skills add 514-labs/agent-skills`
+To install the skill: `514 agent init`

@@ -1,0 +1,32 @@
+---
+title: auth whoami
+description: Show the currently authenticated account.
+order: 2
+---
+
+# 514 auth whoami
+
+Use `514 auth whoami` to show the currently authenticated account.
+
+## Usage
+
+```bash
+514 auth whoami [OPTIONS]
+```
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Expected outcome
+
+- Prints account identity and confirms active session.
+
+## Recovery
+
+- If unauthenticated, run: `514 auth login`
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 auth login`](/hosting/cli/auth/login)

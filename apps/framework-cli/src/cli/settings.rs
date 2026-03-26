@@ -192,23 +192,28 @@ fn default_release_channel() -> String {
 }
 
 /// Returns the path to the config file in the user's home directory
-fn config_path() -> PathBuf {
-    let mut path: PathBuf = user_directory();
+fn config_path() -> Result<PathBuf, std::io::Error> {
+    let mut path: PathBuf = user_directory()?;
     path.push(CLI_CONFIG_FILE);
-    path
+    Ok(path)
 }
 
 /// Returns the path to the Moose user directory
-pub fn user_directory() -> PathBuf {
-    let mut path: PathBuf = home_dir().unwrap();
+pub fn user_directory() -> Result<PathBuf, std::io::Error> {
+    let mut path: PathBuf = home_dir().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine home directory. Ensure HOME is set.",
+        )
+    })?;
     path.push(CLI_USER_DIRECTORY);
-    path
+    Ok(path)
 }
 
 /// Creates the Moose user directory if it doesn't exist
 pub fn setup_user_directory() -> Result<(), std::io::Error> {
-    let path = user_directory();
-    std::fs::create_dir_all(path.clone())?;
+    let path = user_directory()?;
+    std::fs::create_dir_all(path)?;
     Ok(())
 }
 
@@ -222,7 +227,8 @@ pub fn setup_user_directory() -> Result<(), std::io::Error> {
 ///
 /// Returns a Result containing the parsed Settings or a ConfigError
 pub fn read_settings() -> Result<Settings, ConfigError> {
-    let config_file_location: PathBuf = config_path();
+    let config_file_location: PathBuf =
+        config_path().map_err(|e| ConfigError::Message(e.to_string()))?;
 
     let s = Config::builder()
         .add_source(File::from(config_file_location).required(false))
@@ -263,7 +269,7 @@ pub fn read_settings() -> Result<Settings, ConfigError> {
 ///
 /// Returns a Result indicating success or an IO error
 pub fn init_config_file() -> Result<(), std::io::Error> {
-    let path = config_path();
+    let path = config_path()?;
     if !path.exists() {
         let contents_toml = r#"
 # Helps gather insights, identify issues, & improve the user experience
@@ -273,7 +279,16 @@ pub fn init_config_file() -> Result<(), std::io::Error> {
 enabled=true
 is_moose_developer=false
 "#;
-        std::fs::write(path, contents_toml)?;
+        if let Err(e) = std::fs::write(&path, contents_toml) {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                eprintln!(
+                    "Config file {} could not be created (read-only or externally managed); using defaults",
+                    path.display()
+                );
+                return Ok(());
+            }
+            return Err(e);
+        }
     } else {
         let data = std::fs::read_to_string(&path)?;
         match data.parse::<DocumentMut>() {
@@ -420,7 +435,7 @@ pub fn set_suppress_dev_setup_prompt(value_to_set: bool) -> Result<(), std::io::
     //     .entry("suppress_dev_setup_prompt")
     //     .or_insert(value(false));
 
-    let path = config_path();
+    let path = config_path()?;
     let contents = std::fs::read_to_string(&path)?;
     let mut doc: DocumentMut = contents
         .parse()
@@ -461,7 +476,7 @@ pub fn set_suppress_dev_setup_prompt(value_to_set: bool) -> Result<(), std::io::
 /// docs.default_language value using toml_edit. Creates the
 /// [docs] table if missing.
 pub fn set_docs_default_language(language: &str) -> Result<(), std::io::Error> {
-    let path = config_path();
+    let path = config_path()?;
     let contents = std::fs::read_to_string(&path)?;
     let mut doc: DocumentMut = contents
         .parse()

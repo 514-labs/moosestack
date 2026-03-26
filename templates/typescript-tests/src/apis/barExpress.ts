@@ -40,8 +40,8 @@ app.get("/query", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns.totalRows}
       FROM ${BarAggregatedMV.targetTable}
@@ -86,13 +86,13 @@ app.post("/data", async (req, res) => {
   } = req.body;
 
   try {
-    const query = sql`
-      SELECT 
+    const query = sql.statement`
+      SELECT
         ${BarAggregatedMV.targetTable.columns.dayOfMonth},
         ${BarAggregatedMV.targetTable.columns[orderBy]}
       FROM ${BarAggregatedMV.targetTable}
-      WHERE 
-        dayOfMonth >= ${startDay} 
+      WHERE
+        dayOfMonth >= ${startDay}
         AND dayOfMonth <= ${endDay}
       ORDER BY ${BarAggregatedMV.targetTable.columns[orderBy]} DESC
       LIMIT ${limit}

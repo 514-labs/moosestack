@@ -78,6 +78,12 @@ program
     "Number of worker processes for the consumption API cluster",
     parseInt,
   )
+  .option(
+    "--row-policies <json>",
+    "JSON map of ClickHouse setting names to JWT claim names for row policy enforcement",
+  )
+  .option("--rls-user <user>", "ClickHouse username for RLS queries")
+  .option("--rls-password <password>", "ClickHouse password for RLS queries")
   .action(
     (
       clickhouseDb,
@@ -95,6 +101,8 @@ program
           username: clickhouseUsername,
           password: clickhousePassword,
           useSSL: options.clickhouseUseSsl,
+          rlsUser: options.rlsUser,
+          rlsPassword: options.rlsPassword,
         },
         jwtConfig: {
           secret: options.jwtSecret,
@@ -114,6 +122,34 @@ program
         enforceAuth: options.enforceAuth,
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
+        rowPoliciesConfig:
+          options.rowPolicies ?
+            (() => {
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(options.rowPolicies);
+              } catch (e) {
+                console.error(
+                  `Failed to parse --row-policies JSON: ${(e as Error).message}`,
+                );
+                process.exit(1);
+              }
+              if (
+                typeof parsed !== "object" ||
+                parsed === null ||
+                Array.isArray(parsed) ||
+                !Object.values(parsed as Record<string, unknown>).every(
+                  (v) => typeof v === "string",
+                )
+              ) {
+                console.error(
+                  `Invalid --row-policies JSON: expected a flat object with string values`,
+                );
+                process.exit(1);
+              }
+              return parsed as Record<string, string>;
+            })()
+          : undefined,
       });
     },
   );
@@ -129,6 +165,10 @@ program
   )
   .argument("<max-subscriber-count>", "Maximum number of subscribers")
   .option("--target-topic <target-topic>", "Target topic configuration as JSON")
+  .option(
+    "--dlq-topic <dlq-topic>",
+    "Dead letter queue topic configuration as JSON",
+  )
   .option("--sasl-username <username>", "SASL username")
   .option("--sasl-password <password>", "SASL password")
   .option("--sasl-mechanism <mechanism>", "SASL mechanism")
@@ -140,6 +180,7 @@ program
         sourceTopic: JSON.parse(sourceTopic),
         targetTopic:
           options.targetTopic ? JSON.parse(options.targetTopic) : undefined,
+        dlqTopic: options.dlqTopic ? JSON.parse(options.dlqTopic) : undefined,
         functionFilePath,
         broker,
         maxSubscriberCount: parseInt(maxSubscriberCount),

@@ -1,0 +1,35 @@
+---
+title: function list
+description: List function resources for a deployment.
+order: 1
+---
+
+# 514 function list
+
+Use `514 function list` to list function resources in a deployment.
+
+## Usage
+
+```bash
+514 function list [OPTIONS] <DEPLOY_ID>
+```
+
+## Arguments
+
+- `<DEPLOY_ID>`: Deployment ID.
+
+## Options
+
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 function list dep_abc123 --project my-org/my-project
+514 functions list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 function`](/hosting/cli/function)
+- [`514 deployment list`](/hosting/cli/deployment/list)

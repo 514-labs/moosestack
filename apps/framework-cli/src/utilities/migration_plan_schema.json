@@ -254,6 +254,65 @@
           "additionalProperties": false
         },
         {
+          "description": "Add a projection to a table",
+          "type": "object",
+          "properties": {
+            "AddTableProjection": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "Name of the table",
+                  "type": "string"
+                },
+                "projection": {
+                  "$ref": "#/$defs/TableProjection"
+                },
+                "database": {
+                  "description": "Database name (null for default)",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table", "projection"]
+            }
+          },
+          "required": ["AddTableProjection"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Drop a projection from a table",
+          "type": "object",
+          "properties": {
+            "DropTableProjection": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "Name of the table",
+                  "type": "string"
+                },
+                "projection_name": {
+                  "description": "Name of the projection to drop",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Database name (null for default)",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table", "projection_name"]
+            }
+          },
+          "required": ["DropTableProjection"],
+          "additionalProperties": false
+        },
+        {
           "description": "Modify SAMPLE BY expression for a table",
           "type": "object",
           "properties": {
@@ -502,6 +561,21 @@
       },
       "required": ["name", "expression", "index_type", "granularity"]
     },
+    "TableProjection": {
+      "description": "Represents a table projection for alternative data ordering within parts",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the projection",
+          "type": "string"
+        },
+        "body": {
+          "description": "The SELECT statement body for the projection",
+          "type": "string"
+        }
+      },
+      "required": ["name", "body"]
+    },
     "Table": {
       "type": "object",
       "properties": {
@@ -555,6 +629,14 @@
         "life_cycle": {
           "$ref": "#/$defs/LifeCycle",
           "default": "FULLY_MANAGED"
+        },
+        "projections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TableProjection"
+          },
+          "default": [],
+          "description": "Projections for alternative data ordering within parts"
         }
       },
       "required": ["name", "columns", "order_by", "source_primitive"]

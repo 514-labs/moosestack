@@ -499,6 +499,14 @@ impl DockerClient {
                 "database_name".to_string(),
                 json!(project.clickhouse_config.db_name),
             );
+            obj.insert(
+                "clickhouse_user".to_string(),
+                json!(project.clickhouse_config.user.replace('`', "``")),
+            );
+            obj.insert(
+                "clickhouse_password".to_string(),
+                json!(project.clickhouse_config.password.replace('\'', "''")),
+            );
         }
 
         // Generate and write ClickHouse clusters config if clusters are defined

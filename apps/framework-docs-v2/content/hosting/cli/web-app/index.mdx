@@ -1,0 +1,43 @@
+---
+title: web-app
+description: List web-app resources for a deployment.
+order: 18
+---
+
+# 514 web-app
+
+Use `514 web-app` to list web-app resources in a deployment.
+
+Plural alias also works: `514 web-apps`.
+
+## Usage
+
+```bash
+514 web-app [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 web-app list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 web-app list dep_abc123 --project my-org/my-project
+514 web-apps list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

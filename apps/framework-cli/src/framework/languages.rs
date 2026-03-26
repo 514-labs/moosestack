@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 #[derive(ValueEnum, Copy, Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SupportedLanguages {
     #[value(name = "typescript", alias = "ts")]
+    #[serde(alias = "typescript", alias = "ts")]
     Typescript,
     #[value(name = "python", alias = "py")]
+    #[serde(alias = "python", alias = "py")]
     Python,
 }
 

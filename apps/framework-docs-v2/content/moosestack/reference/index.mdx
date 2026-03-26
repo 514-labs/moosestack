@@ -168,8 +168,17 @@ interface BaseOlapConfig<T> {
   // Optional settings for table configuration
   settings?: { [key: string]: string };
 
+  // Optional secondary/data-skipping indexes
+  indexes?: TableIndex[];
+
+  // Optional projections for alternative data ordering within parts
+  projections?: TableProjection[];
+
   // Optional lifecycle mode (defaults to MOOSE_MANAGED)
   lifeCycle?: LifeCycle;
+
+  // Per-table filter applied during `moose seed clickhouse`
+  seedFilter?: { limit?: number; where?: string };
 
   // Additional engine-specific fields (ver, isDeleted, keeperPath, etc.)
   // depend on the engine type
@@ -187,6 +196,13 @@ class OlapConfig(BaseModel):
     database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
     order_by_fields: list[str] = []  # Fields to order by
     engine: Optional[EngineConfig] = None  # Table engine configuration
+    class SeedFilter(BaseModel):
+        limit: Optional[int] = None
+        where: Optional[str] = None
+
+    seed_filter: Optional[SeedFilter] = None  # Per-table filter for `moose seed clickhouse`
+    indexes: list[OlapConfig.TableIndex] = []  # Secondary indexes
+    projections: list[OlapConfig.TableProjection] = []  # Projections for alternative ordering
 ```
   </LanguageTabContent>
 </LanguageTabs>
@@ -340,7 +356,7 @@ export const myApi = new Api<UserQuery, UserProfile[]>(
   "getUserProfiles",
   async (params, { client, sql }) => {
     const result = await client.query.execute(
-      sql`SELECT * FROM user_profiles WHERE age > ${params.minAge} LIMIT 10`
+      sql.statement`SELECT * FROM user_profiles WHERE age > ${params.minAge} LIMIT 10`
     );
     return result;
   }
@@ -456,7 +472,7 @@ Creates a standard SQL view in ClickHouse. Views are read-time projections defin
 // Basic usage
 export const activeUserEvents = new View(
   "active_user_events",
-  sql`
+  sql.statement`
     SELECT
       ${events.columns.id}    AS event_id,
       ${users.columns.id}     AS user_id,
@@ -493,7 +509,25 @@ active_user_events = View(
     """,
     [events, users]
 )
+
+# With a specific database (multi-database support)
+analytics_view = View(
+    "analytics_events",
+    "SELECT * FROM {events}",
+    [events],
+    database="analytics",
+)
 ```
+
+**Constructor:** `View(name, select_statement, base_tables, database=None, metadata=None)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Name of the view |
+| `select_statement` | `str` | SELECT SQL defining the view |
+| `base_tables` | `list[OlapTable \| View]` | Source tables/views for dependency tracking |
+| `database` | `str` (optional) | ClickHouse database to create the view in. When set, the view is created as `` `database`.`view_name` `` |
+| `metadata` | `dict` (optional) | Optional metadata |
 
 **Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
   </LanguageTabContent>
@@ -505,20 +539,42 @@ active_user_events = View(
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
-Template tag for creating type-safe SQL queries with parameters.
+Template tag for creating type-safe SQL queries with parameters. Use `sql.statement` for complete SQL statements and `sql.fragment` for partial SQL (expressions, conditions, clauses).
 
 ```ts
-// Basic usage
-const query = sql`SELECT * FROM users WHERE id = ${userId}`;
+import { sql } from "@514labs/moose-lib";
 
-// With multiple parameters
-const query = sql`
-  SELECT * FROM users 
-  WHERE age > ${minAge} 
+// sql.statement — for complete SQL queries
+const query = sql.statement`
+  SELECT * FROM users
+  WHERE age > ${minAge}
   AND country = ${country}
   LIMIT ${limit}
 `;
+
+// sql.fragment — for partial SQL (conditions, expressions, clauses)
+const condition = sql.fragment`age > ${minAge} AND country = ${country}`;
+const fullQuery = sql.statement`SELECT * FROM users WHERE ${condition}`;
+
+// sql.join — join an array of Sql fragments with a separator
+const conditions = [
+  sql.fragment`age > ${minAge}`,
+  sql.fragment`country = ${country}`,
+];
+const joined = sql.statement`SELECT * FROM users WHERE ${sql.join(conditions, "AND")}`;
+
+// sql.raw — inject raw SQL strings (⚠️ SQL injection risk with untrusted input)
+const tableName = sql.raw("users");
+const rawQuery = sql.statement`SELECT * FROM ${tableName}`;
 ```
+
+| Tag | `isFragment` | Use for |
+|-----|-------------|---------|
+| `sql.statement` | `false` | Complete queries (SELECT, INSERT, CREATE, etc.) |
+| `sql.fragment` | `true` | Partial SQL (expressions, conditions, clauses) |
+| `sql` *(deprecated)* | `undefined` | Legacy usage — migrate to `sql.statement` or `sql.fragment` |
+
+All three produce the same `Sql` object. The `isFragment` property is metadata that enables the [Moose Language Server](/moosestack/language-server) to validate statements while skipping fragments.
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
 Python uses formatted strings with parameter substitution for SQL queries.
@@ -526,8 +582,8 @@ Python uses formatted strings with parameter substitution for SQL queries.
 ```python
 # Python uses formatted strings with execute method
 query = """
-  SELECT * FROM users 
-  WHERE age > {min_age} 
+  SELECT * FROM users
+  WHERE age > {min_age}
   AND country = {country}
   LIMIT {limit}
 """

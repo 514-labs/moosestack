@@ -17,7 +17,7 @@ export const BarAggregatedMV = new MaterializedView<BarAggregated>({
   tableName: "BarAggregated",
   materializedViewName: "BarAggregated_MV",
   orderByFields: ["dayOfMonth"],
-  selectStatement: sql`SELECT
+  selectStatement: sql.statement`SELECT
     toDayOfMonth(${barColumns.utcTimestamp}) as dayOfMonth,
     count(${barColumns.primaryKey}) as totalRows,
     countIf(${barColumns.hasText}) as rowsWithText,

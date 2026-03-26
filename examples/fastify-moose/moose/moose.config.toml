@@ -20,4 +20,3 @@ on_reload_complete_script = "pnpm build"
  
 [features]
 streaming_engine = false
-ddl_plan = true

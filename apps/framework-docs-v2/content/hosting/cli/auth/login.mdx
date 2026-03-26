@@ -1,0 +1,35 @@
+---
+title: auth login
+description: Start browser-based sign-in for the 514 CLI.
+order: 1
+---
+
+# 514 auth login
+
+Use `514 auth login` to start browser-based sign-in.
+
+## Usage
+
+```bash
+514 auth login [OPTIONS]
+```
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Expected outcome
+
+- Browser sign-in flow opens.
+- CLI receives a valid session.
+
+## Recovery
+
+- If browser launch fails, open: `https://www.fiveonefour.boreal.cloud/login`
+- Retry command: `514 auth login`
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 auth whoami`](/hosting/cli/auth/whoami)
+- [`514 auth logout`](/hosting/cli/auth/logout)

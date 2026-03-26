@@ -62,6 +62,21 @@ impl FunctionProcessRegistry {
         let executable = function_process.executable.clone();
         let parallel_process_count = function_process.parallel_process_count;
 
+        let dlq_topic = function_process
+            .dead_letter_queue_topic_id
+            .as_ref()
+            .map(|id| {
+                let topic = infra_map.find_topic_by_id(id).ok_or_else(|| {
+                    FunctionRegistryError::TopicNotFound {
+                        topic_id: id.clone(),
+                    }
+                })?;
+                Ok::<_, FunctionRegistryError>(StreamConfig::Redpanda(
+                    KafkaStreamConfig::from_topic(&self.project.redpanda_config, topic),
+                ))
+            })
+            .transpose()?;
+
         match (
             infra_map.find_topic_by_id(&function_process.source_topic_id),
             function_process
@@ -91,6 +106,7 @@ impl FunctionProcessRegistry {
                                 &redpanda_config,
                                 &source_topic,
                                 Some(&target_topic),
+                                dlq_topic.as_ref(),
                                 &executable,
                                 project.is_production,
                             )?)
@@ -101,6 +117,7 @@ impl FunctionProcessRegistry {
                                 &redpanda_config,
                                 &source_topic,
                                 Some(&target_topic),
+                                dlq_topic.as_ref(),
                                 &executable,
                                 &project,
                                 &project_location,
@@ -146,6 +163,7 @@ impl FunctionProcessRegistry {
                                 &redpanda_config,
                                 &source_topic,
                                 None,
+                                dlq_topic.as_ref(),
                                 &executable,
                                 project.is_production,
                             )?)
@@ -156,6 +174,7 @@ impl FunctionProcessRegistry {
                                 &redpanda_config,
                                 &source_topic,
                                 None,
+                                dlq_topic.as_ref(),
                                 &executable,
                                 &project,
                                 &project_location,

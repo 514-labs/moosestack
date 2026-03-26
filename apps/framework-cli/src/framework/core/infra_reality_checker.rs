@@ -19,8 +19,9 @@
 use crate::{
     framework::core::{
         infrastructure::materialized_view::MaterializedView,
+        infrastructure::select_row_policy::SelectRowPolicy,
         infrastructure::sql_resource::SqlResource,
-        infrastructure::table::Table,
+        infrastructure::table::{Table, TableReference},
         infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
@@ -79,6 +80,12 @@ pub struct InfraDiscrepancies {
     pub missing_views: Vec<String>,
     /// Views that exist in both but have differences
     pub mismatched_views: Vec<OlapChange>,
+    /// Row policies that exist in reality but are not in the map
+    pub unmapped_row_policies: Vec<SelectRowPolicy>,
+    /// Row policies that are in the map but don't exist in reality
+    pub missing_row_policies: Vec<String>,
+    /// Row policies that exist in both but have differences
+    pub mismatched_row_policies: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -96,6 +103,9 @@ impl InfraDiscrepancies {
             && self.unmapped_views.is_empty()
             && self.missing_views.is_empty()
             && self.mismatched_views.is_empty()
+            && self.unmapped_row_policies.is_empty()
+            && self.missing_row_policies.is_empty()
+            && self.mismatched_row_policies.is_empty()
     }
 }
 
@@ -777,6 +787,83 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 
         debug!("Found {} mismatched views", mismatched_views.len());
 
+        // Fetch and compare row policies
+        debug!("Fetching actual row policies from OLAP databases");
+
+        let default_database = &project.clickhouse_config.db_name;
+        // A single SelectRowPolicy can span multiple databases.
+        // We query each database separately, so the same policy name may appear in
+        // multiple results. Merge them by extending the tables vec.
+        let mut actual_policy_map: HashMap<String, SelectRowPolicy> = HashMap::new();
+        for database in &all_databases {
+            debug!("Fetching row policies from database: {}", database);
+            let db_policies = self.olap_client.list_row_policies(database).await?;
+            for policy in db_policies {
+                actual_policy_map
+                    .entry(policy.name.clone())
+                    .and_modify(|existing| existing.tables.extend(policy.tables.clone()))
+                    .or_insert(policy);
+            }
+        }
+
+        debug!(
+            "Found {} row policies across all databases",
+            actual_policy_map.len()
+        );
+
+        let unmapped_row_policies: Vec<SelectRowPolicy> = actual_policy_map
+            .values()
+            .filter(|p| !infra_map.select_row_policies.contains_key(&p.name))
+            .cloned()
+            .collect();
+
+        let missing_row_policies: Vec<String> = infra_map
+            .select_row_policies
+            .keys()
+            .filter(|name| !actual_policy_map.contains_key(*name))
+            .cloned()
+            .collect();
+
+        let mut mismatched_row_policies: Vec<OlapChange> = Vec::new();
+        for (name, desired) in &infra_map.select_row_policies {
+            if let Some(actual) = actual_policy_map.get(name) {
+                // Compare only the fields observable from ClickHouse: name, tables, column.
+                // The claim field cannot be recovered from DDL (the setting name encodes the
+                // column, not the claim), so we skip it to avoid permanent false mismatches
+                // when claim != column.
+                let to_qualified_name = |t: &TableReference| {
+                    format!(
+                        "{}.{}",
+                        normalize_database(&t.database, default_database),
+                        t.name
+                    )
+                };
+                let tables_match = {
+                    let mut actual_tables: Vec<_> =
+                        actual.tables.iter().map(&to_qualified_name).collect();
+                    let mut desired_tables: Vec<_> =
+                        desired.tables.iter().map(&to_qualified_name).collect();
+                    actual_tables.sort();
+                    desired_tables.sort();
+                    actual_tables == desired_tables
+                };
+                if actual.column != desired.column || !tables_match {
+                    debug!("Found mismatch in row policy: {}", name);
+                    mismatched_row_policies.push(OlapChange::SelectRowPolicy(Change::Updated {
+                        before: Box::new(actual.clone()),
+                        after: Box::new(desired.clone()),
+                    }));
+                }
+            }
+        }
+
+        debug!(
+            "Found {} unmapped, {} missing, {} mismatched row policies",
+            unmapped_row_policies.len(),
+            missing_row_policies.len(),
+            mismatched_row_policies.len()
+        );
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
@@ -790,13 +877,17 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             unmapped_views,
             missing_views,
             mismatched_views,
+            unmapped_row_policies,
+            missing_row_policies,
+            mismatched_row_policies,
         };
 
         debug!(
             "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, \
             {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources, \
             {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
-            {} unmapped views, {} missing views, {} mismatched views",
+            {} unmapped views, {} missing views, {} mismatched views, \
+            {} unmapped row policies, {} missing row policies, {} mismatched row policies",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),
@@ -808,7 +899,10 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             discrepancies.mismatched_materialized_views.len(),
             discrepancies.unmapped_views.len(),
             discrepancies.missing_views.len(),
-            discrepancies.mismatched_views.len()
+            discrepancies.mismatched_views.len(),
+            discrepancies.unmapped_row_policies.len(),
+            discrepancies.missing_row_policies.len(),
+            discrepancies.mismatched_row_policies.len()
         );
 
         if discrepancies.is_empty() {
@@ -841,6 +935,7 @@ mod tests {
     struct MockOlapClient {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
+        row_policies: Vec<SelectRowPolicy>,
     }
 
     #[async_trait]
@@ -863,6 +958,13 @@ mod tests {
         > {
             Ok(self.sql_resources.clone())
         }
+
+        async fn list_row_policies(
+            &self,
+            _db_name: &str,
+        ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
+            Ok(self.row_policies.clone())
+        }
     }
 
     // Helper function to create a test project
@@ -878,9 +980,7 @@ mod tests {
                 host: "localhost".to_string(),
                 host_port: 18123,
                 native_port: 9000,
-                host_data_path: None,
-                additional_databases: Vec::new(),
-                clusters: None,
+                ..Default::default()
             },
             http_server_config: LocalWebserverConfig {
                 proxy_port: crate::cli::local_webserver::default_proxy_port(),
@@ -926,6 +1026,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -942,10 +1043,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -961,6 +1064,7 @@ mod tests {
                 ..table.clone()
             }],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         // Create empty infrastructure map
@@ -980,6 +1084,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1027,6 +1132,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         let mock_client = MockOlapClient {
@@ -1035,6 +1141,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1053,6 +1160,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1100,6 +1208,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);
@@ -1114,6 +1223,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1132,6 +1242,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1184,6 +1295,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1202,6 +1314,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1256,6 +1369,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1274,6 +1388,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1344,6 +1459,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![actual_resource.clone()],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1362,6 +1478,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1549,6 +1666,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![actual_table.clone()],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1567,6 +1685,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 
@@ -1616,6 +1735,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![actual_table.clone()],
             sql_resources: vec![],
+            row_policies: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1634,6 +1754,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            select_row_policies: HashMap::new(),
             moose_version: None,
         };
 

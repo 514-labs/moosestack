@@ -298,7 +298,27 @@ class JsonTest(BaseModel):
     payload_basic: Annotated[JsonInner, ClickHouseJson()]
 
 
+# =======Dict JSON Types Test (ClickHouseJson with dict[str, Any])=========
+class DictJsonTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    # Test ClickHouseJson options with dict[str, Any] (no BaseModel wrapper needed)
+    payload: Annotated[
+        dict[str, Any],
+        ClickHouseJson(max_dynamic_paths=16, max_dynamic_types=8),
+    ]
+    # Bare dict[str, Any] should remain plain Json
+    plain_dict: dict[str, Any]
+
+
 # =======Pipeline Configurations for Test Models=========
+
+dict_json_test_model = IngestPipeline[DictJsonTest](
+    "DictJsonTest",
+    IngestPipelineConfig(
+        ingest_api=True, stream=True, table=True, dead_letter_queue=True
+    ),
+)
 
 basic_types_model = IngestPipeline[BasicTypes](
     "BasicTypes",
@@ -535,6 +555,37 @@ index_test_table = OlapTable[IndexTest](
                 type="nGraMbf_v1",
                 arguments=["3", "256", "1", "123"],
                 granularity=1,
+            ),
+        ],
+    ),
+)
+
+
+# =======Projection Extraction Test Table=======
+class ProjectionTest(BaseModel):
+    id: Key[str]
+    user_id: str
+    timestamp: datetime
+    value: float
+
+
+projection_test_table = OlapTable[ProjectionTest](
+    "ProjectionTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id"],
+        projections=[
+            OlapConfig.TableProjection(
+                name="proj_by_user",
+                body="SELECT _part_offset ORDER BY user_id",
+            ),
+            OlapConfig.TableProjection(
+                name="proj_by_ts",
+                body="SELECT _part_offset ORDER BY timestamp",
+            ),
+            OlapConfig.TableProjection(
+                name="proj_fields",
+                body="SELECT id, user_id, timestamp ORDER BY user_id",
             ),
         ],
     ),
@@ -865,6 +916,28 @@ class MaterializedTest(BaseModel):
 
 materialized_test_model = IngestPipeline[MaterializedTest](
     "MaterializedTest",
+    IngestPipelineConfig(
+        ingest_api=True, stream=True, table=True, dead_letter_queue=True
+    ),
+)
+
+
+# =======Alias Columns Test=======
+from moose_lib import ClickHouseAlias
+
+
+class AliasTest(BaseModel):
+    """Test model for alias column support."""
+
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    event_date: Annotated[date, ClickHouseAlias("toDate(timestamp)")]
+    user_hash: Annotated[UInt64, ClickHouseAlias("cityHash64(user_id)")]
+
+
+alias_test_model = IngestPipeline[AliasTest](
+    "AliasTest",
     IngestPipelineConfig(
         ingest_api=True, stream=True, table=True, dead_letter_queue=True
     ),

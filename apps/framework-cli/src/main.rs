@@ -53,8 +53,32 @@ fn main() -> ExitCode {
         std::process::exit(1);
     }
 
-    cli::settings::init_config_file().expect("Failed to init config file");
-    let config = cli::settings::read_settings().expect("Failed to read settings");
+    if let Err(e) = cli::settings::init_config_file() {
+        show_message!(
+            MessageType::Error,
+            Message {
+                action: "Init".to_string(),
+                details: format!("Failed to initialize config file (~/.moose/config.toml): {e:?}"),
+            }
+        );
+        ensure_terminal_cleanup();
+        return ExitCode::from(1);
+    }
+
+    let config = match cli::settings::read_settings() {
+        Ok(config) => config,
+        Err(e) => {
+            show_message!(
+                MessageType::Error,
+                Message {
+                    action: "Init".to_string(),
+                    details: format!("Failed to read settings: {e:?}"),
+                }
+            );
+            ensure_terminal_cleanup();
+            return ExitCode::from(1);
+        }
+    };
 
     // Parse CLI arguments
     let cli_result = match cli::Cli::try_parse() {

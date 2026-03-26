@@ -62,6 +62,7 @@ import {
   verifyWebAppPostEndpoint,
   cleanupTestSuite,
   performGlobalCleanup,
+  stopDevProcess,
   logger,
   waitForInfrastructureChanges,
   PlanOutput,
@@ -70,7 +71,11 @@ import {
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
-import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
+import {
+  verifyTableIndexes,
+  verifyTableProjections,
+  getTableDDL,
+} from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
 
 const testLogger = logger.scope("templates-test");
@@ -161,6 +166,24 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   },
 ];
 
+const buildDevEnv = (
+  language: string,
+  projectDir: string,
+): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+    MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+    MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+  };
+  if (language === "python") {
+    env.VIRTUAL_ENV = path.join(projectDir, ".venv");
+    env.PATH = `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`;
+  }
+  return env;
+};
+
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
@@ -207,26 +230,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       // Start dev server
       testLogger.info("Starting dev server...");
-      const devEnv =
-        config.language === "python" ?
-          {
-            ...process.env,
-            VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-            PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          }
-        : {
-            ...process.env,
-            // Add test credentials for S3Queue tests
-            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-          };
+      const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
@@ -777,6 +781,62 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             const ddl = await getTableDDL("IndexTest", "local");
             if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
               throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
+
+      it("should create projections defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // TypeScript and Python tests both define a ProjectionTest table
+        // Verify that both test projections are present in the DDL
+        await verifyTableProjections(
+          "ProjectionTest",
+          ["proj_by_user", "proj_by_ts", "proj_fields"],
+          "local",
+        );
+      });
+
+      it("should plan/apply projection modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Modify a template file in place to change a projection definition
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+
+        // Change the body of proj_by_user to use a different ORDER BY
+        contents = contents.replace(
+          "SELECT _part_offset ORDER BY userId",
+          "SELECT _part_offset ORDER BY userId, value",
+        );
+        contents = contents.replace(
+          "SELECT _part_offset ORDER BY user_id",
+          "SELECT _part_offset ORDER BY user_id, value",
+        );
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        // Verify DDL reflects updated projection
+        // ClickHouse may reformat ORDER BY across multiple lines, so
+        // normalise whitespace before asserting.
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("ProjectionTest", "local");
+            const normalizedDdl = ddl.replace(/\s+/g, " ");
+            if (
+              !normalizedDdl.includes("PROJECTION proj_by_user") ||
+              (!normalizedDdl.includes("ORDER BY user_id, value") &&
+                !normalizedDdl.includes("ORDER BY userId, value"))
+            ) {
+              throw new Error(
+                `proj_by_user not updated with value column. DDL: ${ddl}`,
+              );
             }
           },
           { attempts: 10, delayMs: 1000 },
@@ -1339,6 +1399,84 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ) {
               throw new Error(
                 `extra column should have both codec and comment from ADD COLUMN. Match: ${extraCol?.[0]}. DDL: ${ddl}`,
+              );
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
+
+      it("should plan/apply switching ALIAS to DEFAULT on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        testLogger.info(
+          "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
+        );
+        await waitForStreamingFunctions(180_000);
+
+        // Verify initial state: AliasTest has ALIAS columns
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("AliasTest");
+            if (!ddl.includes("ALIAS toDate(timestamp)")) {
+              throw new Error(`Initial eventDate ALIAS not found. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+
+        // Modify the template file to switch eventDate from ALIAS to DEFAULT
+        const modelsPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelsPath, "utf8");
+
+        if (config.language === "typescript") {
+          contents = contents.replace(
+            'ClickHouseAlias<"toDate(timestamp)">',
+            'ClickHouseDefault<"toDate(timestamp)">',
+          );
+        } else {
+          contents = contents.replace(
+            'ClickHouseAlias("toDate(timestamp)")',
+            'clickhouse_default("toDate(timestamp)")',
+          );
+        }
+
+        const infrastructureChangesPromise = waitForInfrastructureChanges(
+          devProcess!,
+          60_000,
+        );
+
+        await fs.promises.writeFile(modelsPath, contents, "utf8");
+
+        testLogger.info(
+          "Waiting for infrastructure changes after ALIAS→DEFAULT switch...",
+        );
+        await infrastructureChangesPromise;
+        testLogger.info("Infrastructure changes completed");
+
+        testLogger.info("Waiting for streaming functions to stabilize...");
+        await waitForStreamingFunctions(180_000);
+        testLogger.info("Streaming functions stabilized");
+
+        // Verify DDL reflects the switch from ALIAS to DEFAULT
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("AliasTest");
+            if (ddl.includes("ALIAS toDate(timestamp)")) {
+              throw new Error(`ALIAS not removed from eventDate. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("DEFAULT toDate(timestamp)")) {
+              throw new Error(`DEFAULT not applied to eventDate. DDL: ${ddl}`);
+            }
+            // userHash should still be ALIAS (unchanged)
+            if (!ddl.includes("ALIAS cityHash64(user")) {
+              throw new Error(
+                `userHash ALIAS should be unchanged. DDL: ${ddl}`,
               );
             }
           },
@@ -2843,6 +2981,278 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
       }
+    }
+
+    if (config.isTestsVariant) {
+      describe("DLQ with namespace prefixing", function () {
+        const NAMESPACE = "testns";
+        const NS_APP_NAME = `${config.appName}-ns`;
+        let nsProjectDir: string;
+        let nsDevProcess: ChildProcess | null = null;
+
+        before(async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Stop the main dev server and its containers to free ports
+          testLogger.info("Stopping main dev server for namespace DLQ test...");
+          await stopDevProcess(devProcess);
+          await execAsync(
+            `docker compose -f .moose/docker-compose.yml -p ${config.appName} down -v`,
+            { cwd: TEST_PROJECT_DIR },
+          );
+
+          testLogger.info(
+            "Initializing fresh project with namespace for DLQ test...",
+          );
+          nsProjectDir = createTempTestDirectory(
+            `${config.projectDirSuffix}-ns`,
+          );
+
+          if (config.language === "typescript") {
+            await setupTypeScriptProject(
+              nsProjectDir,
+              config.templateName,
+              CLI_PATH,
+              MOOSE_LIB_PATH,
+              NS_APP_NAME,
+              config.packageManager as "npm" | "pnpm",
+            );
+          } else {
+            await setupPythonProject(
+              nsProjectDir,
+              config.templateName,
+              CLI_PATH,
+              MOOSE_PY_LIB_PATH,
+              NS_APP_NAME,
+            );
+          }
+
+          const devEnv = {
+            ...buildDevEnv(config.language, nsProjectDir),
+            MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
+          };
+
+          nsDevProcess = spawn(CLI_PATH, ["dev"], {
+            stdio: "pipe",
+            cwd: nsProjectDir,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            nsDevProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          testLogger.info(
+            "Server started with namespace, waiting for Kafka...",
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions();
+          await waitForInfrastructureReady();
+          testLogger.info(
+            "All components ready with namespace, starting DLQ tests...",
+          );
+        });
+
+        after(async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+          await cleanupTestSuite(nsDevProcess, nsProjectDir, NS_APP_NAME, {
+            logPrefix: `${config.displayName} (namespace)`,
+          });
+
+          // Restart the main dev server for any subsequent tests and the
+          // parent after() hook that expects devProcess to be running.
+          testLogger.info("Restarting main dev server after namespace test...");
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions();
+          await waitForInfrastructureReady();
+          testLogger.info("Main dev server restored after namespace test");
+        });
+
+        it(`should route failed messages to a namespace-prefixed DLQ topic (${config.language})`, async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const eventId = randomUUID();
+
+          const fooPayload =
+            config.language === "typescript" ?
+              {
+                primaryKey: eventId,
+                timestamp: 1728000000.0,
+                optionalText: "dlq-namespace-test",
+              }
+            : {
+                primary_key: eventId,
+                baz: "QUUX",
+                timestamp: 1728000000.0,
+                optional_text: "dlq-namespace-test",
+              };
+
+          const ingestPath =
+            config.language === "typescript" ? "/ingest/Foo" : "/ingest/foo";
+
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}${ingestPath}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(fooPayload),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          if (config.language === "typescript") {
+            await waitForDBWrite(
+              nsDevProcess!,
+              "FooDeadLetter",
+              1,
+              60_000,
+              "local",
+            );
+
+            const clickhouse = createClient({
+              url: CLICKHOUSE_CONFIG.url,
+              username: CLICKHOUSE_CONFIG.username,
+              password: CLICKHOUSE_CONFIG.password,
+              database: CLICKHOUSE_CONFIG.database,
+            });
+
+            try {
+              const result = await clickhouse.query({
+                query: `SELECT * FROM local.FooDeadLetter WHERE originalRecord.primaryKey = '${eventId}'`,
+                format: "JSONEachRow",
+              });
+              const data: any[] = await result.json();
+
+              expect(data.length).to.be.greaterThan(
+                0,
+                `Expected DLQ record for primaryKey ${eventId}`,
+              );
+
+              const dlqRecord = data[0];
+              expect(dlqRecord.errorMessage).to.be.a("string").that.is.not
+                .empty;
+              expect(dlqRecord.source).to.equal("transform");
+
+              testLogger.info(
+                `✅ DLQ record verified in ClickHouse (TS): ${dlqRecord.errorMessage}`,
+              );
+            } finally {
+              await clickhouse.close();
+            }
+          } else {
+            const { stdout: containerName } = await execAsync(
+              `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+            );
+            expect(containerName.trim()).to.not.be.empty;
+
+            const { stdout: topicList } = await execAsync(
+              `docker exec ${containerName.trim()} rpk topic list`,
+            );
+            const dlqTopic = topicList
+              .split("\n")
+              .map((l: string) => l.trim().split(/\s+/)[0])
+              .find(
+                (t: string) =>
+                  t &&
+                  t.includes("FooDeadLetterQueue") &&
+                  t.startsWith(`${NAMESPACE}.`),
+              );
+            expect(dlqTopic, "Namespace-prefixed DLQ topic should exist").to.not
+              .be.undefined;
+
+            await withRetries(
+              async () => {
+                const { stdout: messages } = await execAsync(
+                  `docker exec ${containerName.trim()} rpk topic consume ${dlqTopic} --num 1 --format '%v\\n' --offset start`,
+                  { timeout: 30_000 },
+                );
+                expect(messages.trim()).to.not.be.empty;
+                const record = JSON.parse(messages.trim());
+                expect(record).to.have.nested.property(
+                  "originalRecord.primary_key",
+                  eventId,
+                );
+                testLogger.info(
+                  `✅ DLQ record verified on Redpanda topic ${dlqTopic}`,
+                );
+              },
+              { attempts: 10, delayMs: 3_000 },
+            );
+          }
+        });
+
+        it(`should have namespace-prefixed Kafka topics including DLQ (${config.language})`, async function () {
+          this.timeout(60_000);
+
+          const { stdout: containerName } = await execAsync(
+            `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+          );
+
+          expect(containerName.trim()).to.not.be.empty;
+
+          const { stdout: topicList } = await execAsync(
+            `docker exec ${containerName.trim()} rpk topic list`,
+          );
+
+          testLogger.info("Kafka topics:\n" + topicList);
+
+          const lines = topicList.split("\n");
+          const topicNames = lines
+            .slice(1)
+            .map((line: string) => line.trim().split(/\s+/)[0])
+            .filter(Boolean);
+
+          const namespacedTopics = topicNames.filter((t: string) =>
+            t.startsWith(`${NAMESPACE}.`),
+          );
+
+          expect(namespacedTopics.length).to.be.greaterThan(
+            0,
+            "Expected namespace-prefixed topics to exist",
+          );
+
+          const dlqTopicPattern =
+            config.language === "typescript" ?
+              "FooDeadLetter"
+            : "FooDeadLetterQueue";
+
+          const dlqTopic = namespacedTopics.find((t: string) =>
+            t.includes(dlqTopicPattern),
+          );
+          expect(dlqTopic).to.not.be.undefined;
+          expect(dlqTopic).to.match(
+            new RegExp(`^${NAMESPACE}\\.`),
+            `DLQ topic should be prefixed with "${NAMESPACE}."`,
+          );
+
+          testLogger.info(
+            `✅ Verified ${namespacedTopics.length} namespace-prefixed topics, DLQ topic: ${dlqTopic}`,
+          );
+        });
+      });
     }
   });
 };

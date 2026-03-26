@@ -1,0 +1,3 @@
+# Python Template
+
+@AGENTS.md

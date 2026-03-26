@@ -1,0 +1,63 @@
+---
+title: project setup
+description: Bootstrap a local workspace from an existing cloud project.
+order: 2
+---
+
+# 514 project setup
+
+Use `514 project setup <PROJECT_REF>` to bootstrap a local workspace from an existing Fiveonefour project.
+
+## Syntax
+
+```bash
+514 project setup [OPTIONS] <PROJECT_REF>
+```
+
+## Arguments
+
+- `<PROJECT_REF>`: Project reference as `<org>/<project>`, project name, project ID, or 514 URL.
+
+## Options
+
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `--path <PATH>`: Parent directory for clone.
+- `--dir-name <DIR_NAME>`: Local folder name override.
+- `-o, --org <ORG>`: Organization name or ID.
+- `--branch <BRANCH>`: Feature branch name to create.
+- `--json`: Output as JSON.
+- `--no-branch`: Skip branch creation.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `--push`: Push branch after creation.
+- `--run <RUN>`: Local setup action (`install`, `both`, or `skip`).
+- `--yes`: Skip confirmations when safe.
+- `--no-input`: Disable prompts; fail fast if input is needed (implies `--yes`).
+- `-h, --help`: Print help.
+
+## Interactive example
+
+```bash
+514 project setup acme/analytics-api
+```
+
+## Non-interactive example
+
+```bash
+514 project setup acme/analytics-api \
+  --path ~/dev \
+  --dir-name analytics-api \
+  --branch feature/add-orders-rollup \
+  --push \
+  --run both \
+  --yes \
+  --no-input
+```
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 org`](/hosting/cli/orgs)
+- [`514 project`](/hosting/cli/projects)
+- [`514 project link`](/hosting/cli/projects/link)
+- [`514 cli update`](/hosting/cli/cli/update)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

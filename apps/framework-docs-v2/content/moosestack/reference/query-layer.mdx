@@ -1,0 +1,468 @@
+---
+title: Query Layer
+description: Type-safe semantic query models for ClickHouse with automatic SQL generation, fluent builder API, and MCP tool integration
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Query Layer API
+
+<Callout type="info">
+The Query Layer is currently available for TypeScript only.
+</Callout>
+
+The Query Layer provides a type-safe abstraction for building SQL queries against ClickHouse. Define **semantic query models** with dimensions, metrics, filters, and sorting — and the Query Layer generates optimized SQL automatically.
+
+```typescript
+import { defineQueryModel, buildQuery, count, sum, timeDimensions } from "@514labs/moose-lib";
+```
+
+## defineQueryModel
+
+Creates a reusable, type-safe query model that maps semantic concepts to ClickHouse SQL.
+
+```typescript
+const visitsModel = defineQueryModel({
+  name: "query_visits",
+  description: "Analyze visit data by status and time",
+  table: VisitsTable,
+
+  dimensions: {
+    status: { column: "status", description: "Visit status category" },
+    ...timeDimensions(VisitsTable.columns.timestamp),
+  },
+
+  metrics: {
+    totalVisits: { agg: count(), as: "total_visits", description: "Total number of visits" },
+    totalRevenue: { agg: sum(VisitsTable.columns.amount), as: "total_revenue", description: "Sum of visit revenue" },
+  },
+
+  filters: {
+    status: { column: "status", operators: ["eq", "in"] as const, description: "Filter by visit status" },
+    amount: { column: "amount", operators: ["gte", "lte"] as const, description: "Filter by amount range" },
+    totalRevenue: { metric: "totalRevenue", operators: ["gte"] as const, description: "Filter by minimum total revenue" },
+  },
+
+  columns: {
+    visitId: { column: "id" },
+    userName: { join: "user", column: "first_name" },
+  },
+
+  joins: {
+    user: {
+      table: UsersTable,
+      leftKey: "user_id",
+      rightKey: "id",
+      type: "LEFT",
+    },
+  },
+
+  sortable: ["day", "totalVisits", "totalRevenue"] as const,
+
+  defaults: { limit: 100, maxLimit: 1000, orderBy: [["day", "DESC"]] },
+});
+```
+
+### QueryModelConfig
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | `string` | No | Tool name for MCP registration |
+| `description` | `string` | No | Tool description for MCP |
+| `table` | `OlapTable<T> \| MaterializedView<T>` | Yes | The ClickHouse table or [materialized view](/moosestack/olap/model-materialized-view) to query. If a `MaterializedView` is passed, its target table is used automatically. |
+| `dimensions` | `Record<string, DimensionDef>` | No | Grouping fields (GROUP BY) |
+| `metrics` | `Record<string, MetricDef>` | No | Aggregate functions |
+| `columns` | `Record<string, ColumnDef>` | No | Detail mode fields (non-aggregated) |
+| `joins` | `Record<string, JoinDef>` | No | JOIN definitions |
+| `filters` | `Record<string, ModelFilterDef>` | Yes | Filterable fields with allowed operators |
+| `sortable` | `readonly string[]` | Yes | Fields that can be sorted |
+| `defaults` | `object` | No | Default `limit`, `maxLimit`, `orderBy`, `dimensions`, `metrics`, `columns` |
+
+### DimensionDef
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `column` | `keyof TModel` | Column name for simple fields |
+| `expression` | `Sql` | Custom SQL expression (alternative to `column`) |
+| `as` | `string` | Output alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
+
+### MetricDef
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agg` | `Sql` | Aggregation expression (e.g., `count()`, `sum(col)`) |
+| `as` | `string` | Output column alias |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
+
+#### Conditional metrics
+
+To define a metric that only aggregates rows matching a condition, use ClickHouse's
+[`-If` aggregate combinators](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators#-if)
+directly in the `agg` expression. This makes the metric self-contained — callers don't
+need to remember to add a filter.
+
+```typescript
+metrics: {
+  // Total revenue — only from completed events
+  revenue: {
+    agg: sql.fragment`sumIf(${Events.columns.amount}, ${Events.columns.status} = 'completed')`,
+    description: "Total revenue from completed events",
+  },
+  // Completion rate
+  completionRate: {
+    agg: sql.fragment`countIf(${Events.columns.status} = 'completed') / count(*)`,
+    description: "Fraction of events that completed",
+  },
+}
+```
+
+Common `-If` combinators: `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`, `uniqIf`, `uniqExactIf`.
+Every ClickHouse aggregate function supports the `-If` suffix.
+
+### ColumnDef
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `column` | `keyof TModel \| string` | Column name |
+| `join` | `string` | Join key (references a key in `joins`) |
+| `as` | `string` | Output alias |
+
+### JoinDef
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `table` | `OlapTable<any> \| MaterializedView<any>` | The table or materialized view to join. If a `MaterializedView` is passed, its target table is used automatically. |
+| `on` | `Sql` | Custom ON clause (alternative to `leftKey`/`rightKey`) |
+| `leftKey` | `string` | Left table column name |
+| `rightKey` | `string` | Right table column name |
+| `type` | `"LEFT" \| "INNER"` | Join type (default: `"LEFT"`) |
+
+### ModelFilterDef
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `column` | `keyof TModel` | Table column to filter (WHERE) |
+| `metric` | `string` | Metric name to filter (HAVING) — mutually exclusive with `column` |
+| `operators` | `readonly FilterOperator[]` | Allowed operators |
+| `transform` | `(value) => SqlValue` | Optional value transformer |
+| `inputType` | `FilterInputTypeHint` | UI hint: `"text"`, `"number"`, `"date"`, `"select"`, `"multiselect"` |
+| `description` | `string` | Human-readable description (used for MCP tool generation and documentation) |
+| `required` | `true` | Make the `eq` parameter required for MCP |
+
+### Filter Operators
+
+| Operator | Value Type | SQL Output |
+|----------|-----------|------------|
+| `"eq"` | `T` | `col = value` |
+| `"ne"` | `T` | `col != value` |
+| `"gt"`, `"gte"`, `"lt"`, `"lte"` | `T` | `col > value`, `col >= value`, etc. |
+| `"like"`, `"ilike"` | `string` | `col LIKE pattern`, `col ILIKE pattern` |
+| `"in"`, `"notIn"` | `T[]` | `col IN (...)`, `col NOT IN (...)` |
+| `"between"` | `[T, T]` | `col BETWEEN low AND high` |
+| `"isNull"`, `"isNotNull"` | `boolean` | `col IS NULL`, `col IS NOT NULL` |
+
+## QueryModel
+
+The object returned by `defineQueryModel()`.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `string \| undefined` | Model name |
+| `description` | `string \| undefined` | Model description |
+| `defaults` | `object` | Default query behavior |
+| `filters` | `TFilters` | Filter definitions |
+| `sortable` | `readonly TSortable[]` | Sortable field names |
+| `dimensions` | `TDimensions \| undefined` | Dimension definitions record (derive names via `Object.keys(model.dimensions)`) |
+| `metrics` | `TMetrics \| undefined` | Metric definitions record (derive names via `Object.keys(model.metrics)`) |
+| `columnNames` | `readonly string[]` | Column key names |
+
+### Type Inference Helpers
+
+```typescript
+type DimNames = typeof model.$inferDimensions;   // "status" | "day" | ...
+type MetNames = typeof model.$inferMetrics;       // "totalVisits" | "totalRevenue" | ...
+type ColNames = typeof model.$inferColumns;       // "visitId" | "userName" | ...
+type Filters  = typeof model.$inferFilters;       // Full FilterParams type
+type Request  = typeof model.$inferRequest;       // Full QueryRequest type
+type Result   = typeof model.$inferResult;        // Expected row type
+```
+
+### Methods
+
+**`query(request, client)`** — Execute a query and return typed results.
+
+```typescript
+const results = await model.query(
+  {
+    dimensions: ["status", "day"],
+    metrics: ["totalVisits"],
+    filters: { status: { eq: "active" } },
+    orderBy: [["day", "DESC"]],
+    limit: 10,
+  },
+  queryClient,
+);
+```
+
+**`toSql(request)`** — Generate SQL without executing.
+
+**`toParts(request)`** — Get individual SQL clause parts (`select`, `from`, `where`, `groupBy`, `having`, `orderBy`, `pagination`, `conditions[]`) for custom assembly.
+
+```typescript
+const parts = model.toParts(request);
+const customSql = sql.statement`
+  ${parts.select}
+  ${parts.from}
+  WHERE ${parts.conditions[0]} OR ${parts.conditions[1]}
+  ${parts.groupBy}
+  ${parts.orderBy}
+  LIMIT 50
+`;
+```
+
+### QueryRequest
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `filters` | `FilterParams<TFilters>` | Nested filter conditions |
+| `dimensions` | `TDimensions[]` | Dimension fields to group by |
+| `metrics` | `TMetrics[]` | Aggregate metrics to compute |
+| `columns` | `TColumns[]` | Detail mode columns (no GROUP BY) |
+| `orderBy` | `Array<[TSortable, SortDir]>` | Multi-column sort |
+| `limit` | `number` | Maximum rows to return |
+| `page` | `number` | 0-indexed page number |
+| `offset` | `number` | Explicit offset (mutually exclusive with `page`) |
+
+## buildQuery
+
+Fluent, chainable API for constructing queries against a model.
+
+```typescript
+import { buildQuery } from "@514labs/moose-lib";
+
+const results = await buildQuery(visitsModel)
+  .dimensions(["day", "status"])
+  .metrics(["totalVisits", "totalRevenue"])
+  .filter("status", "eq", "active")
+  .filter("amount", "gte", 50)
+  .orderBy(["totalRevenue", "DESC"])
+  .limit(50)
+  .execute(queryClient);
+```
+
+### Chainable Methods
+
+| Method | Description |
+|--------|-------------|
+| `.dimensions(fields)` | Set dimension fields to group by |
+| `.metrics(fields)` | Set aggregate metrics to compute |
+| `.columns(fields)` | Set detail mode columns (no GROUP BY) |
+| `.filter(name, op, value)` | Add a filter condition (skipped if value is `undefined`) |
+| `.orderBy(...[field, dir])` | Set sort order |
+| `.limit(n)` | Set maximum rows |
+| `.page(n)` | Set page number (0-indexed) |
+| `.offset(n)` | Set explicit offset |
+
+### Terminal Methods
+
+| Method | Description |
+|--------|-------------|
+| `.build()` | Return the `QueryRequest` object |
+| `.toSql()` | Generate SQL without executing |
+| `.toParts()` | Get individual SQL clause parts |
+| `.assemble(fn)` | Get parts and apply a custom assembly function |
+| `.execute(client)` | Execute and return typed results |
+
+## SQL Utilities
+
+Low-level building blocks for constructing parameterized SQL. All values are safely parameterized.
+
+```typescript
+import { eq, gte, and, where, count, sum, raw, empty } from "@514labs/moose-lib";
+```
+
+### Comparison Operators
+
+| Function | SQL Output |
+|----------|-----------|
+| `eq(col, value)` | `col = value` |
+| `ne(col, value)` | `col != value` |
+| `gt(col, value)`, `gte(col, value)`, `lt(col, value)`, `lte(col, value)` | `col > value`, etc. |
+| `like(col, pattern)`, `ilike(col, pattern)` | `col LIKE pattern`, `col ILIKE pattern` |
+| `inList(col, values)`, `notIn(col, values)` | `col IN (...)`, `col NOT IN (...)` |
+| `between(col, low, high)` | `col BETWEEN low AND high` |
+| `isNull(col)`, `isNotNull(col)` | `col IS NULL`, `col IS NOT NULL` |
+| `filter(col, op, value)` | Polymorphic — returns `empty` if value is `undefined` |
+
+### Logical Combinators
+
+| Function | Description |
+|----------|-------------|
+| `and(...conditions)` | Combine with AND (empty fragments filtered out) |
+| `or(...conditions)` | Combine with OR |
+| `not(condition)` | Negate a condition |
+
+### SQL Clauses
+
+| Function | Description |
+|----------|-------------|
+| `where(...conditions)` | WHERE clause (conditions combined with AND) |
+| `groupBy(...cols)` | GROUP BY clause |
+| `having(...conditions)` | HAVING clause |
+| `orderBy(...[col, dir])` | ORDER BY clause |
+| `limit(n)` | LIMIT clause |
+| `offset(n)` | OFFSET clause |
+| `paginate(pageSize, page?)` | LIMIT + OFFSET |
+| `select(...cols)` | SELECT clause |
+| `as(expr, alias)` | Alias an expression |
+
+### Aggregation Functions
+
+All return an `Expr` with a fluent `.as(alias)` method.
+
+| Function | SQL Output |
+|----------|-----------|
+| `count()` / `count(col)` | `count(*)` / `count(col)` |
+| `countDistinct(col)` | `count(DISTINCT col)` |
+| `sum(col)` | `sum(col)` |
+| `avg(col)` | `avg(col)` |
+| `min(col)` / `max(col)` | `min(col)` / `max(col)` |
+
+```typescript
+sum(MyTable.columns.amount).as("total_amount");
+countDistinct(MyTable.columns.user_id).as("unique_users");
+```
+
+### Core Utilities
+
+| Function | Description |
+|----------|-------------|
+| `raw(text)` | Raw SQL fragment (no parameterization — use only for trusted input) |
+| `empty` | Empty SQL fragment (no-op) |
+| `join(fragments, sep?)` | Join fragments with separator (default: `", "`) |
+| `isEmpty(fragment)` | Check if a fragment is empty |
+
+## Helper Functions
+
+### timeDimensions
+
+Auto-generate `day`, `week`, and `month` dimension definitions from a date column.
+
+```typescript
+import { timeDimensions } from "@514labs/moose-lib";
+
+dimensions: {
+  ...timeDimensions(MyTable.columns.timestamp),
+  // Generates: day (toDate), week (toStartOfWeek), month (toStartOfMonth)
+}
+```
+
+### columnsFromTable
+
+Generate `ColumnDef` records from a table's schema.
+
+```typescript
+import { columnsFromTable } from "@514labs/moose-lib";
+
+columns: {
+  ...columnsFromTable(UsersTable, { exclude: ["password_hash"], camelCase: true }),
+}
+```
+
+### filtersFromTable
+
+Generate `ModelFilterDef` records from a table's schema. Each filter defaults to `["eq"]` operator with input type hints derived from the ClickHouse data type.
+
+```typescript
+import { filtersFromTable } from "@514labs/moose-lib";
+
+filters: {
+  ...filtersFromTable(EventsTable, { include: ["status", "created_at"] }),
+  status: { column: "status", operators: ["eq", "in"] as const }, // Override
+}
+```
+
+### TableFieldOptions
+
+All three helpers above accept:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `include` | `string[]` | Only include these columns |
+| `exclude` | `string[]` | Exclude these columns |
+| `camelCase` | `boolean` | Convert snake_case keys to camelCase |
+
+### deriveInputTypeFromDataType
+
+Map a ClickHouse data type to a UI input type hint (`"date"`, `"number"`, `"select"`, or `"text"`).
+
+```typescript
+import { deriveInputTypeFromDataType } from "@514labs/moose-lib";
+
+deriveInputTypeFromDataType("DateTime"); // "date"
+```
+
+## MCP Tool Integration
+
+Auto-generate Claude MCP tools from query models.
+
+### registerModelTools
+
+Register all named models as MCP tools on a server.
+
+```typescript
+import { registerModelTools } from "@514labs/moose-lib";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+const server = new McpServer({ name: "analytics", version: "1.0.0" });
+registerModelTools(server, [visitsModel, usersModel], queryClient);
+```
+
+This automatically generates Zod schemas from model metadata, converts flat MCP parameters to nested `QueryRequest` objects, and executes queries with `readonly: 2` and `max_result_rows` enforcement. Only models with a `name` are registered.
+
+### createModelTool
+
+Generate the Zod schema and request builder for a single model when you need more control.
+
+```typescript
+import { createModelTool } from "@514labs/moose-lib";
+
+const tool = createModelTool(visitsModel, {
+  requiredFilters: ["status"],
+  maxLimit: 5000,
+  defaultLimit: 100,
+  defaults: { dimensions: ["day"], metrics: ["totalVisits"] },
+});
+
+// tool.schema — Zod shape for server.tool()
+// tool.buildRequest — Convert flat MCP params to nested QueryRequest
+```
+
+### ModelToolOptions
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `requiredFilters` | `string[]` | Filter names whose `eq` parameter should be required |
+| `maxLimit` | `number` | Override the model's max limit |
+| `defaultLimit` | `number` | Override the model's default limit |
+| `defaults` | `object` | Default `dimensions`, `metrics`, `columns`, `limit` |
+
+## Validation Utilities
+
+### createQueryHandler
+
+```typescript
+const handler = createQueryHandler({
+  fromUrl: typia.http.createValidateQuery<Params>(),
+  fromObject: typia.createValidate<Params>(),
+  queryFn: async (params) => { /* custom query logic */ },
+});
+
+await handler.run(params);
+await handler.fromUrl(urlString);
+await handler.fromObject(plainObject);
+```

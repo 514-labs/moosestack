@@ -38,7 +38,7 @@ export const eventsMV = new MaterializedView<KafkaEvent>({
   tableName: "events_dest",
   materializedViewName: "events_mv",
   orderByFields: ["eventId"],
-  selectStatement: sql`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
+  selectStatement: sql.statement`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
   selectTables: [kafkaSource],
 });
 ```

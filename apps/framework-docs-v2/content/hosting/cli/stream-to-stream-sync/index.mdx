@@ -1,0 +1,43 @@
+---
+title: stream-to-stream-sync
+description: List stream-to-stream sync resources for a deployment.
+order: 15
+---
+
+# 514 stream-to-stream-sync
+
+Use `514 stream-to-stream-sync` to list stream-to-stream sync resources in a deployment.
+
+Plural alias also works: `514 stream-to-stream-syncs`.
+
+## Usage
+
+```bash
+514 stream-to-stream-sync [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 stream-to-stream-sync list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 stream-to-stream-sync list dep_abc123 --project my-org/my-project
+514 stream-to-stream-syncs list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

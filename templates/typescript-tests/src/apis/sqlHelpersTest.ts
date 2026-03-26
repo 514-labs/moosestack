@@ -23,33 +23,37 @@ export const SqlHelpersTestApi = new Api<QueryParams, ResponseData[]>(
     const BA = BarAggregatedMV.targetTable;
     // Test sql.join() - join column names
     const selectColumns: Sql[] = [
-      sql`${BA.columns.dayOfMonth}`,
-      sql`${BA.columns.totalRows}`,
+      sql.fragment`${BA.columns.dayOfMonth}`,
+      sql.fragment`${BA.columns.totalRows}`,
     ];
     const selectClause = sql.join(selectColumns, ",");
 
     // Test sql.raw() - add a raw SQL function
     const timestampCol =
-      includeTimestamp ? sql`, ${sql.raw("NOW()")} as query_time` : sql``;
+      includeTimestamp ?
+        sql.fragment`, ${sql.raw("NOW()")} as query_time`
+      : sql.fragment``;
 
     // Test conditional WHERE clauses
     const conditions: Sql[] = [];
     if (minDay !== undefined) {
-      conditions.push(sql`${BA.columns.dayOfMonth} >= ${minDay}`);
+      conditions.push(sql.fragment`${BA.columns.dayOfMonth} >= ${minDay}`);
     }
     if (maxDay !== undefined) {
-      conditions.push(sql`${BA.columns.dayOfMonth} <= ${maxDay}`);
+      conditions.push(sql.fragment`${BA.columns.dayOfMonth} <= ${maxDay}`);
     }
 
     const whereClause =
-      conditions.length > 0 ? sql`WHERE ${sql.join(conditions, "AND")}` : sql``;
+      conditions.length > 0 ?
+        sql.fragment`WHERE ${sql.join(conditions, "AND")}`
+      : sql.fragment``;
 
     // Test Sql.append() - build query incrementally
-    const baseQuery = sql`SELECT ${selectClause}${timestampCol} FROM ${BA}`;
-    const queryWithWhere = baseQuery.append(sql` ${whereClause}`);
+    const baseQuery = sql.statement`SELECT ${selectClause}${timestampCol} FROM ${BA}`;
+    const queryWithWhere = baseQuery.append(sql.fragment` ${whereClause}`);
     const finalQuery = queryWithWhere
-      .append(sql` ORDER BY ${BA.columns.totalRows} DESC`)
-      .append(sql` LIMIT 10`);
+      .append(sql.fragment` ORDER BY ${BA.columns.totalRows} DESC`)
+      .append(sql.fragment` LIMIT 10`);
 
     const data = await client.query.execute<ResponseData>(finalQuery);
     return data.json();

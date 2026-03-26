@@ -520,7 +520,7 @@ fn check_unterminated_string(input: &str) -> Result<(), TokenizerError> {
     let mut escape = false;
     let mut quote_char = ' ';
 
-    for (i, c) in input.chars().enumerate() {
+    for (i, c) in input.char_indices() {
         if !in_string {
             if c == '\'' || c == '"' {
                 in_string = true;
@@ -1680,6 +1680,7 @@ pub fn convert_ast_to_column_type(
                             ttl: None,
                             codec: None,
                             materialized: None,
+                            alias: None,
                         });
                     }
                     TupleElement::Unnamed(_) => {

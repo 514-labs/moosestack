@@ -130,7 +130,7 @@ import { eventsV1, EventV1 } from "../tables/events_v01";  // new versioned tabl
 export const migrateEventsToV01 = new MaterializedView<EventV1>({
   materializedViewName: "mv_events_to_0_1",
   selectTables: [events],
-  selectStatement: sql`
+  selectStatement: sql.statement`
     SELECT * FROM ${events}
   `,
   targetTable: eventsV1,

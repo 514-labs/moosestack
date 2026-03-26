@@ -1,0 +1,536 @@
+---
+title: Semantic Layer
+description: Define metrics, dimensions, and filters once — expose them as REST APIs, AI tool calls, and MCP tools.
+order: 2
+category: apis
+---
+
+import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, ToggleBlock, CTACards, CTACard, Tabs, TabsList, TabsTrigger, TabsContent, IconBadge } from "@/components/mdx";
+
+# Semantic Layer
+
+<div className="flex items-center gap-4 my-8 flex-wrap">
+<IconBadge Icon="ChartBar" label="Query models" variant="moose" />
+<IconBadge Icon="Api" label="REST + AI + MCP" variant="moose" />
+<IconBadge Icon="Check" label="Type-safe" variant="moose" />
+</div>
+
+## Overview
+
+A query model declares the metrics, dimensions, filters, and defaults for a ClickHouse table, view, or materialized view. Once defined, the same model can be projected into three interfaces:
+
+- **`buildQuery`** — type-safe fluent builder for REST endpoints and server-side code
+- **`createModelTool`** — generates a Zod schema and request builder for Vercel AI SDK tool calls
+- **`registerModelTools`** — registers query models as MCP tools on an MCP server
+
+Adding or changing a metric in the query model updates all three interfaces without touching any other file.
+
+## Define a query model
+
+A query model wraps an [OlapTable](/moosestack/olap/model-table), [view](/moosestack/olap/model-view), or [materialized view](/moosestack/olap/model-materialized-view) and constrains how consumers can query it. Use `defineQueryModel` to declare dimensions, metrics, filters, sort fields, and defaults.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="query-layer/visits-model.ts" copy
+import {
+  defineQueryModel, sql, count, countDistinct, sum, timeDimensions,
+} from "@514labs/moose-lib";
+import { VisitsTable } from "../datamodels/visits";
+
+export const visitMetrics = defineQueryModel({
+  // Name becomes the tool name in MCP and AI SDK registrations
+  name: "query_visits",
+  // Description becomes the tool description LLMs read to decide when to call it
+  description:
+    "Visit and attendance metrics: bookings, check-ins, no-shows, " +
+    "cancellations. Always requires a studio_id.",
+
+  table: VisitsTable,
+
+  // Columns consumers can GROUP BY
+  dimensions: {
+    status:     { column: "status" },
+    locationId: { column: "location_id" },
+    // timeDimensions generates day, month, week from a date column
+    ...timeDimensions(VisitsTable.columns.start_date),
+  },
+
+  // Aggregate computations
+  metrics: {
+    totalVisits:   { agg: count(),                                           as: "totalVisits" },
+    uniqueClients: { agg: countDistinct(VisitsTable.columns.user_id),        as: "uniqueClients" },
+    attended:      { agg: sum(sql.fragment`CASE WHEN status = 1 THEN 1 ELSE 0 END`), as: "attended" },
+    noShows:       { agg: sum(sql.fragment`CASE WHEN status = 2 THEN 1 ELSE 0 END`), as: "noShows" },
+    lateCancels:   { agg: sum(sql.fragment`CASE WHEN status = 3 THEN 1 ELSE 0 END`), as: "lateCancels" },
+  },
+
+  // Which columns can be filtered and with which operators
+  filters: {
+    studioId:  { column: "studio_id",  operators: ["eq"] as const, required: true },
+    startDate: { column: "start_date", operators: ["gte", "lte"] as const },
+    status:    { column: "status",     operators: ["eq", "in"] as const },
+  },
+
+  // Whitelist of fields that can appear in ORDER BY
+  sortable: ["totalVisits", "uniqueClients", "day", "month", "week"] as const,
+
+  // What happens when a consumer doesn't specify something
+  defaults: {
+    dimensions: ["day"],
+    metrics: ["totalVisits"],
+    orderBy: [["day", "DESC"]],
+    limit: 100,
+    maxLimit: 1000,
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="query_layer/visits_model.py" copy
+from moose_lib import (
+    define_query_model, sql, count, count_distinct, sum_agg, time_dimensions,
+)
+from app.datamodels.visits import VisitsTable
+
+visit_metrics = define_query_model(
+    # Name becomes the tool name in MCP and AI SDK registrations
+    name="query_visits",
+    # Description becomes the tool description LLMs read to decide when to call it
+    description=(
+        "Visit and attendance metrics: bookings, check-ins, no-shows, "
+        "cancellations. Always requires a studio_id."
+    ),
+
+    table=VisitsTable,
+
+    # Columns consumers can GROUP BY
+    dimensions={
+        "status":     {"column": "status"},
+        "locationId": {"column": "location_id"},
+        # time_dimensions generates day, month, week from a date column
+        **time_dimensions(VisitsTable.columns.start_date),
+    },
+
+    # Aggregate computations
+    metrics={
+        "totalVisits":   {"agg": count(),                                                "as": "totalVisits"},
+        "uniqueClients": {"agg": count_distinct(VisitsTable.columns.user_id),            "as": "uniqueClients"},
+        "attended":      {"agg": sum_agg(sql("CASE WHEN status = 1 THEN 1 ELSE 0 END")), "as": "attended"},
+        "noShows":       {"agg": sum_agg(sql("CASE WHEN status = 2 THEN 1 ELSE 0 END")), "as": "noShows"},
+        "lateCancels":   {"agg": sum_agg(sql("CASE WHEN status = 3 THEN 1 ELSE 0 END")), "as": "lateCancels"},
+    },
+
+    # Which columns can be filtered and with which operators
+    filters={
+        "studioId":  {"column": "studio_id",  "operators": ["eq"], "required": True},
+        "startDate": {"column": "start_date", "operators": ["gte", "lte"]},
+        "status":    {"column": "status",     "operators": ["eq", "in"]},
+    },
+
+    # Whitelist of fields that can appear in ORDER BY
+    sortable=["totalVisits", "uniqueClients", "day", "month", "week"],
+
+    # What happens when a consumer doesn't specify something
+    defaults={
+        "dimensions": ["day"],
+        "metrics": ["totalVisits"],
+        "orderBy": [["day", "DESC"]],
+        "limit": 100,
+        "maxLimit": 1000,
+    },
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<ToggleBlock openText="Show the data model" closeText="Hide the data model">
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="datamodels/visits.ts" copy
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+/** A booking or attendance record for a class at a fitness studio. */
+interface Visit {
+  id: Key<number>;
+  /** Tenant identifier. Every query must filter on this. */
+  studio_id: number;
+  /** The client who booked the visit. */
+  user_id: number;
+  /** 1 = attended, 2 = no-show, 3 = late cancel, 4 = early cancel */
+  status: number;
+  /** Scheduled start time of the class. Primary time dimension for queries. */
+  start_date: Date;
+  created_at: Date;
+}
+
+export const VisitsTable = new OlapTable<Visit>("visits", {
+  orderByFields: ["studio_id", "start_date", "id"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="datamodels/visits.py" copy
+from pydantic import BaseModel, Field
+from moose_lib import Key, OlapTable, OlapConfig
+from datetime import datetime
+
+class Visit(BaseModel):
+    id: Key[int]
+    studio_id: int = Field(description="Tenant identifier. Every query must filter on this.")
+    user_id: int = Field(description="The client who booked the visit.")
+    status: int = Field(description="1 = attended, 2 = no-show, 3 = late cancel, 4 = early cancel")
+    start_date: datetime = Field(description="Scheduled start time of the class.")
+    created_at: datetime
+
+VisitsTable = OlapTable[Visit]("visits", OlapConfig(
+    order_by_fields=["studio_id", "start_date", "id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+[Column comments](/moosestack/olap/model-table#column-comments) (TSDoc in TypeScript, `Field(description=...)` in Python) become ClickHouse `COMMENT` clauses. These comments also surface in Moose's MCP tools — AI agents read them to understand what each column means before writing queries.
+</ToggleBlock>
+
+### Query model reference
+
+| Field | Purpose | Effect |
+|---|---|---|
+| **`name`** | Identifier | Becomes the tool name in MCP and AI SDK registrations |
+| **`description`** | What this model queries | Used as the tool description for LLMs |
+| **`table`** | Source `OlapTable` or `MaterializedView` | The ClickHouse [table](/moosestack/olap/model-table) or [materialized view](/moosestack/olap/model-materialized-view) to query. If a `MaterializedView` is passed, its target table is used automatically. |
+| **`dimensions`** | Allowed `GROUP BY` columns | `timeDimensions()` generates `day`, `month`, `week` from a date column |
+| **`metrics`** | Aggregate computations | Appear in `SELECT` alongside requested dimensions |
+| **`filters`** | Allowed `WHERE` clauses with operators | `required: true` enforces mandatory filtering (e.g., tenant isolation) |
+| **`sortable`** | Allowed `ORDER BY` fields | Consumers can only sort by fields in this list |
+| **`defaults`** | Fallback values | Applied when a consumer omits dimensions, metrics, limit, or ordering |
+
+---
+
+## REST APIs
+
+`buildQuery` takes a query model and returns a type-safe fluent builder. It validates dimensions, metrics, and filter operators at compile time and generates ClickHouse SQL at runtime. `.filter()` skips `undefined` values, so optional query params don't require branching.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="apis/visits.ts" copy
+import { Api, buildQuery } from "@514labs/moose-lib";
+import { visitMetrics } from "../query-layer/visits-model";
+
+interface VisitQueryParams {
+  studio_id: number;
+  dimensions?: string;
+  metrics?: string;
+  start_date_gte?: string;
+  start_date_lte?: string;
+  limit?: number;
+}
+
+export default new Api<VisitQueryParams, any>("visits",
+  async ({ studio_id, dimensions, metrics, start_date_gte, start_date_lte, limit }, { client }) => {
+    const results = await buildQuery(visitMetrics)
+      .dimensions(dimensions ? dimensions.split(",") : ["day"])
+      .metrics(metrics ? metrics.split(",") : ["totalVisits"])
+      .filter("studioId", "eq", studio_id)
+      .filter("startDate", "gte", start_date_gte)
+      .filter("startDate", "lte", start_date_lte)
+      .limit(limit || 100)
+      .execute(client.query);
+
+    return results;
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="apis/visits.py" copy
+from moose_lib import Api, MooseClient, build_query
+from pydantic import BaseModel
+from typing import Optional
+from app.query_layer.visits_model import visit_metrics
+
+class VisitQueryParams(BaseModel):
+    studio_id: int
+    dimensions: Optional[str] = None
+    metrics: Optional[str] = None
+    start_date_gte: Optional[str] = None
+    start_date_lte: Optional[str] = None
+    limit: Optional[int] = None
+
+def run(client: MooseClient, params: VisitQueryParams) -> list[dict]:
+    results = (
+        build_query(visit_metrics)
+        .dimensions(params.dimensions.split(",") if params.dimensions else ["day"])
+        .metrics(params.metrics.split(",") if params.metrics else ["totalVisits"])
+        .filter("studioId", "eq", params.studio_id)
+        .filter("startDate", "gte", params.start_date_gte)
+        .filter("startDate", "lte", params.start_date_lte)
+        .limit(params.limit or 100)
+        .execute(client.query)
+    )
+    return results
+
+visits_api = Api[VisitQueryParams, dict](name="visits", query_function=run)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+A request like:
+
+```
+GET /api/visits?studio_id=5&dimensions=day&metrics=noShows&start_date_gte=2025-01-01
+```
+
+Produces:
+
+```sql
+SELECT
+  toDate(visits.start_date) AS day,
+  sum(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS noShows
+FROM visits
+WHERE visits.studio_id = 5
+  AND visits.start_date >= '2025-01-01'
+GROUP BY toDate(visits.start_date)
+ORDER BY day DESC
+LIMIT 100
+```
+
+---
+
+## `createModelTool`: AI SDK tool calls
+
+`createModelTool` reads a query model and returns:
+- A flat **Zod schema** — filters are flattened to `start_date_gte`, `status_in`; dimensions and metrics become enum arrays
+- A **`buildRequest`** function that converts flat params back into a nested query request
+
+This plugs directly into the Vercel AI SDK's `tool()`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ai/tools.ts" copy
+import { createModelTool } from "@514labs/moose-lib";
+import { tool } from "ai";
+import { visitMetrics } from "../query-layer/visits-model";
+import { client } from "../db"; // your ClickHouse client instance
+
+const { schema, buildRequest } = createModelTool(visitMetrics);
+
+export const queryVisitsTool = tool({
+  description: visitMetrics.description,
+  parameters: schema,
+  execute: async (params) => {
+    const request = buildRequest(params);
+    const sql = visitMetrics.toSql(request);
+    const results = await client.query(sql);
+    return results;
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ai/tools.py" copy
+from moose_lib import create_model_tool
+from app.query_layer.visits_model import visit_metrics
+from app.db import client  # your ClickHouse client instance
+
+model_tool = create_model_tool(visit_metrics)
+
+schema = model_tool.schema
+build_request = model_tool.build_request
+
+async def execute_query(params: dict) -> list[dict]:
+    request = build_request(params)
+    query = visit_metrics.to_sql(request)
+    results = await client.query(query)
+    return results
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Wire the tool into a chat route. The query model handles parameter validation and SQL generation; the route handles system prompt, model selection, and streaming:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="api/chat/route.ts" copy
+import { streamText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { queryVisitsTool } from "../ai/tools";
+
+export async function POST(req) {
+  const { messages } = await req.json();
+
+  const result = streamText({
+    model: anthropic("claude-sonnet-4-5-20250514"),
+    system:
+      "You are an analytics assistant for a fitness studio platform. " +
+      "Status codes: 1=attended, 2=no-show, 3=late-cancel, 4=early-cancel. " +
+      "Always ask for a studio ID before querying.",
+    messages,
+    tools: { query_visits: queryVisitsTool },
+    toolChoice: "auto",
+  });
+
+  return result.toDataStreamResponse();
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="api/chat/route.py" copy
+from ai.tools import execute_query, schema
+
+tools = {
+    "query_visits": {
+        "description": visit_metrics.description,
+        "schema": schema,
+        "execute": execute_query,
+    }
+}
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+The query model's `required: true` filters (e.g., `studioId`) carry through to the generated Zod schema, so the LLM must provide them. The `description` from the query model becomes the tool description the LLM uses to decide when to call it.
+
+---
+
+## MCP server
+
+`registerModelTools` calls `createModelTool` internally for each query model and registers the resulting tools on an MCP server. You provide the models and a callback that executes the query. Tool names, descriptions, and parameter schemas are derived from the model definitions.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="apis/mcp.ts" copy
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { registerModelTools } from "@514labs/moose-lib";
+import { visitMetrics } from "../query-layer/visits-model";
+import { revenueMetrics } from "../query-layer/revenue-model";
+import { clientMetrics } from "../query-layer/client-model";
+import { client } from "../db"; // your ClickHouse client instance
+
+export default async function handler(req, res) {
+  const server = new McpServer({
+    name: "my-analytics",
+    version: "1.0.0",
+  });
+
+  registerModelTools(
+    server,
+    [visitMetrics, revenueMetrics, clientMetrics],
+    async (model, request, limit) => {
+      const sql = model.toSql({ ...request, limit });
+      const rows = await client.query(sql);
+      return {
+        content: [{ type: "text", text: JSON.stringify(rows) }],
+      };
+    },
+  );
+
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="apis/mcp.py" copy
+from moose_lib import register_model_tools
+from mcp.server import Server
+from app.query_layer.visits_model import visit_metrics
+from app.query_layer.revenue_model import revenue_metrics
+from app.query_layer.client_model import client_metrics
+from app.db import client  # your ClickHouse client instance
+
+server = Server("my-analytics")
+
+register_model_tools(
+    server,
+    [visit_metrics, revenue_metrics, client_metrics],
+    execute_callback=lambda model, request, limit: {
+        "content": [{"type": "text", "text": str(
+            client.query(model.to_sql({**request, "limit": limit}))
+        )}]
+    },
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Any MCP client (Claude Desktop, Cursor, Claude Code) connects to the endpoint and discovers the registered tools:
+
+```bash copy
+claude mcp add --transport http analytics https://my-app.com/mcp
+```
+
+---
+
+## Choosing an interface
+
+| Interface | Function | Use when |
+|---|---|---|
+| REST API | `buildQuery` | Consumer is code — dashboards, reports, cron jobs, integrations |
+| AI SDK | `createModelTool` | You need control over system prompt, rendering, and error handling |
+| MCP | `registerModelTools` | You want to expose tools to any MCP-compatible client without building a UI |
+
+All three can be used together. They read from the same query model.
+
+---
+
+## Adding a metric
+
+Add `earlyCancels` to the query model:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="query-layer/visits-model.ts" copy
+metrics: {
+  // ...existing metrics...
+  earlyCancels: {
+    agg: sum(sql.fragment`CASE WHEN status = 4 THEN 1 ELSE 0 END`),
+    as: "earlyCancels",
+  },
+},
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="query_layer/visits_model.py" copy
+metrics={
+    # ...existing metrics...
+    "earlyCancels": {
+        "agg": sum_agg(sql("CASE WHEN status = 4 THEN 1 ELSE 0 END")),
+        "as": "earlyCancels",
+    },
+}
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+The new metric is available as a `metrics` parameter in the REST API, an enum option in the AI tool's Zod schema, and a discoverable parameter in MCP. No other files change.
+
+## Next steps
+
+<CTACards>
+  <CTACard
+    title="Tables"
+    description="Define the ClickHouse schema that your query model reads from."
+    ctaLink="/moosestack/olap/model-table"
+    ctaLabel="Tables docs"
+    badge={{ variant: "moose", text: "OLAP" }}
+  />
+  <CTACard
+    title="Analytics API"
+    description="Use the Api class for endpoints that need custom SQL beyond the query model."
+    ctaLink="/moosestack/apis/analytics-api"
+    ctaLabel="Analytics API docs"
+    badge={{ variant: "moose", text: "APIs" }}
+  />
+  <CTACard
+    title="Web frameworks"
+    description="Run Express, Fastify, or FastAPI inside the Moose runtime."
+    ctaLink="/moosestack/app-api-frameworks"
+    ctaLabel="Framework docs"
+    badge={{ variant: "moose", text: "WebApp" }}
+  />
+</CTACards>

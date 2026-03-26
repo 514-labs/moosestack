@@ -5,7 +5,7 @@ import {
   isArrayNestedType,
   isNestedType,
 } from "../../dataModels/dataModelTypes";
-import { ClickHouseEngines } from "../../dataModels/types";
+import { ClickHouseEngines, Insertable } from "../../dataModels/types";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
@@ -23,6 +23,11 @@ export interface TableIndex {
   type: string;
   arguments?: string[];
   granularity?: number;
+}
+
+export interface TableProjection {
+  name: string;
+  body: string;
 }
 
 /**
@@ -235,6 +240,8 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /** Optional projections for alternative data ordering within parts */
+  projections?: TableProjection[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.
@@ -247,6 +254,21 @@ export type BaseOlapConfig<T> = (
    * Example: cluster: "prod_cluster"
    */
   cluster?: string;
+  /**
+   * Optional seed filter applied when `moose seed clickhouse` populates a
+   * local/testing database from a remote source.
+   *
+   * Example:
+   * ```typescript
+   * seedFilter: { limit: 100, where: "user_id = 10" }
+   * ```
+   */
+  seedFilter?: {
+    /** Maximum number of rows to seed for this table. */
+    limit?: number;
+    /** ClickHouse SQL WHERE expression to filter seeded rows. */
+    where?: string;
+  };
 };
 
 /**
@@ -409,7 +431,11 @@ export type ReplicatedVersionedCollapsingMergeTreeConfig<T> = Omit<
  */
 export type S3QueueConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "settings" | "orderByFields" | "partitionBy" | "sampleByExpression"
+  | "settings"
+  | "orderByFields"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.S3Queue;
   /** S3 bucket path with wildcards (e.g., 's3://bucket/data/*.json') */
@@ -436,7 +462,10 @@ export type S3QueueConfig<T> = Omit<
  * Note: S3 engine supports ORDER BY clause, unlike S3Queue, Buffer, and Distributed engines
  * @template T The data type of the records stored in the table.
  */
-export type S3Config<T> = Omit<BaseOlapConfig<T>, "sampleByExpression"> & {
+export type S3Config<T> = Omit<
+  BaseOlapConfig<T>,
+  "sampleByExpression" | "projections"
+> & {
   engine: ClickHouseEngines.S3;
   /** S3 path (e.g., 's3://bucket/path/file.json') */
   path: string;
@@ -460,7 +489,11 @@ export type S3Config<T> = Omit<BaseOlapConfig<T>, "sampleByExpression"> & {
  */
 export type BufferConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Buffer;
   /** Target database name for the destination table */
@@ -495,7 +528,11 @@ export type BufferConfig<T> = Omit<
  */
 export type DistributedConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Distributed;
   /** Cluster name from the ClickHouse configuration */
@@ -542,7 +579,11 @@ export interface KafkaTableSettings {
 /** Kafka engine for streaming data from Kafka topics. Additional settings go in `settings`. */
 export type KafkaConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Kafka;
   brokerList: string;
@@ -578,7 +619,11 @@ export type KafkaConfig<T> = Omit<
  */
 export type IcebergS3Config<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.IcebergS3;
   /** S3 path to Iceberg table root (e.g., 's3://bucket/warehouse/events/') */
@@ -614,7 +659,11 @@ export type IcebergS3Config<T> = Omit<
  */
 export type MergeConfig<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+  | "projections"
 > & {
   engine: ClickHouseEngines.Merge;
   /** Database to scan for source tables (literal name, currentDatabase(), or REGEXP(...)) */
@@ -668,6 +717,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
   /** @internal */
   public readonly kind = "OlapTable";
 
+  /** @internal Typia validators for Insertable<T> — used during insert validation */
+  private insertValidators?: TypiaValidators<Insertable<T>>;
+
   /** @internal Memoized ClickHouse client for reusing connections across insert calls */
   private _memoizedClient?: any;
   /** @internal Hash of the configuration used to create the memoized client */
@@ -689,6 +741,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
     validators?: TypiaValidators<T>,
+    insertValidators?: TypiaValidators<Insertable<T>>,
   );
 
   constructor(
@@ -697,6 +750,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    insertValidators?: TypiaValidators<Insertable<T>>,
   ) {
     // Handle legacy configuration by defaulting to MergeTree when no engine is specified
     const resolvedConfig =
@@ -734,6 +788,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     super(name, resolvedConfig, schema, columns, validators);
+    this.insertValidators = insertValidators;
     this.name = name;
 
     const tables = getMooseInternal().tables;
@@ -749,11 +804,8 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     tables.set(registryKey, this);
   }
 
-  /**
-   * Generates the versioned table name following Moose's naming convention
-   * Format: {tableName}_{version_with_dots_replaced_by_underscores}
-   */
-  private generateTableName(): string {
+  /** @internal Returns the versioned ClickHouse table name (e.g., "events_1_0_0") */
+  generateTableName(): string {
     // Cache the table name since version rarely changes
     if (this._cachedTableName) {
       return this._cachedTableName;
@@ -919,6 +971,62 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     throw new Error("No typia validator found");
+  }
+
+  /**
+   * Validates records for insert using Insertable<T> validators when available.
+   * Falls back to the full T validators if insert validators weren't generated.
+   * @private
+   */
+  private async validateInsertRecords(
+    data: unknown[],
+  ): Promise<ValidationResult<T>> {
+    const iv = this.insertValidators;
+    if (!iv?.is) {
+      return this.validateRecords(data);
+    }
+
+    const valid: T[] = [];
+    const invalid: ValidationError[] = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const record = data[i];
+      try {
+        if (iv.is(record)) {
+          valid.push(this.mapToClickhouseRecord(record as T));
+        } else if (iv.validate) {
+          const result = iv.validate(record);
+          if (result.success) {
+            valid.push(this.mapToClickhouseRecord(record as T));
+          } else {
+            invalid.push({
+              record,
+              error:
+                result.errors?.map((e: any) => String(e)).join(", ") ||
+                "Validation failed",
+              index: i,
+              path: "root",
+            });
+          }
+        } else {
+          invalid.push({
+            record,
+            error: "Validation failed",
+            index: i,
+            path: "root",
+          });
+        }
+      } catch (error) {
+        invalid.push({
+          record,
+          error: error instanceof Error ? error.message : String(error),
+          index: i,
+          path: "root",
+        });
+      }
+    }
+
+    return { valid, invalid, total: data.length };
   }
 
   /**
@@ -1110,7 +1218,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     try {
-      const validationResult = await this.validateRecords(data as unknown[]);
+      const validationResult = await this.validateInsertRecords(
+        data as unknown[],
+      );
       const validatedData = validationResult.valid;
       const validationErrors = validationResult.invalid;
 
@@ -1534,15 +1644,17 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    * ```
    */
   async insert(
-    data: T[] | Readable,
+    data: Insertable<T>[] | Readable,
     options?: InsertOptions,
   ): Promise<InsertResult<T>> {
+    const rawData = data as T[] | Readable;
+
     // Validate input parameters and strategy compatibility
     const { isStream, strategy, shouldValidate } =
-      this.validateInsertParameters(data, options);
+      this.validateInsertParameters(rawData, options);
 
     // Handle early return cases for empty data
-    const emptyResult = this.handleEmptyData(data, isStream);
+    const emptyResult = this.handleEmptyData(rawData, isStream);
     if (emptyResult) {
       return emptyResult;
     }
@@ -1553,7 +1665,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
     if (!isStream && shouldValidate) {
       const validationResult = await this.performPreInsertionValidation(
-        data as T[],
+        rawData as T[],
         shouldValidate,
         strategy,
         options,
@@ -1562,7 +1674,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       validationErrors = validationResult.validationErrors;
     } else {
       // No validation or stream input
-      validatedData = isStream ? [] : (data as T[]);
+      validatedData = isStream ? [] : (rawData as T[]);
     }
 
     // Get memoized client and generate cached table name
@@ -1573,7 +1685,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       // Prepare and execute insertion with optimized settings
       const insertOptions = this.prepareInsertOptions(
         tableName,
-        data,
+        rawData,
         validatedData,
         isStream,
         strategy,
@@ -1584,7 +1696,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
 
       // Return success result
       return this.createSuccessResult(
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,
@@ -1597,7 +1709,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
         batchError,
         strategy,
         tableName,
-        data,
+        rawData,
         validatedData,
         validationErrors,
         isStream,

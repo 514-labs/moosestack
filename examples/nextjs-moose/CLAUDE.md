@@ -67,11 +67,11 @@ export const eventsModel = defineQueryModel({
   table: Events,
   dimensions: {
     status: { column: "status" },
-    day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
+    day: { expression: sql.fragment`toDate(${Events.columns.event_time})`, as: "time" },
   },
   metrics: {
-    totalEvents: { agg: sql`count(*)` },
-    totalAmount: { agg: sql`sum(${Events.columns.amount})` },
+    totalEvents: { agg: sql.fragment`count(*)` },
+    totalAmount: { agg: sql.fragment`sum(${Events.columns.amount})` },
   },
   filters: {
     timestamp: { column: "event_time", operators: ["gte", "lte"] as const },
@@ -181,7 +181,7 @@ const model = prepareModel(eventsModel, {
 1. Add to model definition in `moose/src/query-examples/model.ts`:
 ```typescript
 metrics: {
-  newMetric: { agg: sql`avg(${Events.columns.amount})` },
+  newMetric: { agg: sql.fragment`avg(${Events.columns.amount})` },
 }
 ```
 
@@ -213,7 +213,7 @@ filters: {
 1. Add to model definition:
 ```typescript
 dimensions: {
-  week: { expression: sql`toStartOfWeek(${Events.columns.event_time})`, as: "time" },
+  week: { expression: sql.fragment`toStartOfWeek(${Events.columns.event_time})`, as: "time" },
 }
 ```
 

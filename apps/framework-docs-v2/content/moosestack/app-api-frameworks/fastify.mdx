@@ -30,18 +30,12 @@ app.get("/health", async (request, reply) => {
 });
 
 app.get("/data", async (request, reply) => {
-  const moose = getMooseUtils(request.raw);
-  if (!moose) {
-    reply.code(500);
-    return { error: "Moose utilities not available" };
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt((request.query as any).limit || "10");
 
   try {
     const query = sql`
-      SELECT 
+      SELECT
         ${MyTable.columns.id},
         ${MyTable.columns.name},
         ${MyTable.columns.createdAt}
@@ -120,25 +114,19 @@ app.get<{
 }>("/users/:userId/events", {
   schema: getUserEventsSchema
 }, async (request, reply) => {
-  const moose = getMooseUtils(request.raw);
-  if (!moose) {
-    reply.code(500);
-    return { error: "Moose utilities not available" };
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const { userId } = request.params;
   const { limit = 10, eventType } = request.query;
 
   const cols = UserEvents.columns;
-  const query = sql`
+  const query = sql.statement`
     SELECT
       ${cols.id},
       ${cols.event_type},
       ${cols.timestamp}
     FROM ${UserEvents}
     WHERE ${cols.user_id} = ${userId}
-      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+      ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
     ORDER BY ${cols.timestamp} DESC
     LIMIT ${limit}
   `;
@@ -185,9 +173,9 @@ app.post<{
 
 // Protected route with JWT
 app.get("/protected", async (request, reply) => {
-  const moose = getMooseUtils(request.raw);
+  const moose = await getMooseUtils();
 
-  if (!moose?.jwt) {
+  if (!moose.jwt) {
     reply.code(401);
     return { error: "Unauthorized" };
   }
@@ -219,16 +207,18 @@ export const advancedFastifyApp = new WebApp("advancedFastify", app, {
 
 ## Accessing Moose Utilities
 
-Use `request.raw` to access the underlying Node.js request:
+Call `getMooseUtils()` to get the Moose utilities. The function is async and detects the runtime context automatically — no request parameter is needed:
 
 ```ts
-const moose = getMooseUtils(request.raw);
-if (!moose) {
-  reply.code(500);
-  return { error: "Utilities not available" };
-}
+const { client, sql, jwt } = await getMooseUtils();
+```
 
-const { client, sql, jwt } = moose;
+For row-level security, pass an RLS context:
+
+```ts
+const { client, sql } = await getMooseUtils({
+  rlsContext: { org_id: orgId },
+});
 ```
 
 ## Plugins and Decorators
@@ -269,15 +259,9 @@ app.decorate("utility", {
 });
 
 app.get("/data", async (request, reply) => {
-  const moose = getMooseUtils(request.raw);
-  if (!moose) {
-    reply.code(500);
-    return { error: "Utilities not available" };
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const result = await client.query.execute(sql`
-    SELECT 
+    SELECT
       ${MyTable.columns.id},
       ${MyTable.columns.name},
       ${MyTable.columns.status}
@@ -317,7 +301,7 @@ app.get<{
   const { limit = 10, offset = 0, status } = request.query;
 
   // TypeScript knows the shape of query params
-  const moose = getMooseUtils(request.raw);
+  const { client, sql } = await getMooseUtils();
   // ... query logic
 
   // Return type is checked
@@ -346,7 +330,7 @@ interface WebAppConfig {
 ## Best Practices
 
 1. **Call .ready() before WebApp**: Always await `app.ready()` before creating WebApp
-2. **Use request.raw for utilities**: Access Moose utilities via `getMooseUtils(request.raw)`
+2. **Await getMooseUtils()**: Access Moose utilities via `await getMooseUtils()` — no request parameter needed
 3. **Define schemas**: Use Fastify's JSON Schema validation for request/response
 4. **Type your routes**: Use TypeScript generics for type-safe route handlers
 5. **Leverage plugins**: Use Fastify's rich plugin ecosystem
@@ -357,10 +341,10 @@ interface WebAppConfig {
 
 ### "Moose utilities not available"
 
-**Solution:** Use `request.raw` to access the underlying request:
+**Solution:** Ensure you are calling `getMooseUtils()` inside a route handler within a MooseStack-mounted `WebApp`. The function detects the runtime context automatically:
 
 ```ts
-const moose = getMooseUtils(request.raw); // Not request!
+const { client, sql } = await getMooseUtils();
 ```
 
 ### App not responding after mounting

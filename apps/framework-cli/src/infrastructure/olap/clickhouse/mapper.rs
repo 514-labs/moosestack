@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
     AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseTable,
+    ClickHouseInt, ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -54,25 +54,37 @@ fn generate_column_comment(column: &Column) -> Result<Option<String>, Clickhouse
 pub fn std_column_to_clickhouse_column(
     column: Column,
 ) -> Result<ClickHouseColumn, ClickhouseError> {
-    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
-    if column.default.is_some() && column.materialized.is_some() {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot have both DEFAULT and MATERIALIZED. Use one or the other.",
-                column.name
-            ),
-        });
-    }
+    // Extract the default expression kind (validates mutual exclusivity)
+    let default_expr_kind = match (&column.default, &column.materialized, &column.alias) {
+        (Some(_), None, None) => Some(DefaultExpressionKind::Default),
+        (None, Some(_), None) => Some(DefaultExpressionKind::Materialized),
+        (None, None, Some(_)) => Some(DefaultExpressionKind::Alias),
+        (None, None, None) => None,
+        _ => {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' can only have one of DEFAULT, MATERIALIZED, or ALIAS.",
+                    column.name
+                ),
+            });
+        }
+    };
 
-    // Validate that MATERIALIZED columns are not primary keys
-    if column.materialized.is_some() && column.primary_key {
-        return Err(ClickhouseError::InvalidParameters {
-            message: format!(
-                "Column '{}' cannot be both MATERIALIZED and a primary key. \
-                 MATERIALIZED columns are computed and cannot be used as primary keys.",
-                column.name
-            ),
-        });
+    if let Some(kind) = default_expr_kind {
+        if column.primary_key
+            && matches!(
+                kind,
+                DefaultExpressionKind::Materialized | DefaultExpressionKind::Alias
+            )
+        {
+            return Err(ClickhouseError::InvalidParameters {
+                message: format!(
+                    "Column '{}' cannot be both {kind} and a primary key. \
+                     {kind} columns cannot be used as primary keys.",
+                    column.name,
+                ),
+            });
+        }
     }
 
     let comment = generate_column_comment(&column)?;
@@ -106,6 +118,7 @@ pub fn std_column_to_clickhouse_column(
         ttl: column.ttl.clone(),
         codec: column.codec.clone(),
         materialized: column.materialized.clone(),
+        alias: column.alias.clone(),
     };
 
     Ok(clickhouse_column)
@@ -372,6 +385,14 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
                 granularity: i.granularity,
             })
             .collect(),
+        projections: table
+            .projections
+            .iter()
+            .map(|p| ClickHouseProjection {
+                name: p.name.clone(),
+                body: p.body.clone(),
+            })
+            .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
         cluster_name: table.cluster_name.clone(),
         primary_key_expression: table.primary_key_expression.clone(),
@@ -452,6 +473,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -478,6 +500,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -506,6 +529,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -550,6 +574,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -563,6 +588,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             jwt: false,
@@ -640,6 +666,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_comment).unwrap();
@@ -666,6 +693,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_without_comment).unwrap();
@@ -691,6 +719,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -717,6 +746,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -744,6 +774,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -753,5 +784,214 @@ mod tests {
             clickhouse_column.comment,
             Some(r"Regex: \d+'\w+ matches digits then quote".to_string())
         );
+    }
+
+    #[test]
+    fn test_projection_mapping_preserves_name_and_body() {
+        use crate::framework::core::infrastructure::table::{
+            Column, ColumnType, OrderBy, TableProjection,
+        };
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let table = Table {
+            name: "test_proj_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![TableProjection {
+                name: "proj_by_id".to_string(),
+                body: "SELECT _part_offset ORDER BY id".to_string(),
+            }],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert_eq!(ch_table.projections.len(), 1);
+        assert_eq!(ch_table.projections[0].name, "proj_by_id");
+        assert_eq!(
+            ch_table.projections[0].body,
+            "SELECT _part_offset ORDER BY id"
+        );
+    }
+
+    #[test]
+    fn test_projection_mapping_empty() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let table = Table {
+            name: "no_proj_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert!(ch_table.projections.is_empty());
+    }
+
+    fn make_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn test_validation_default_and_materialized_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            materialized: Some("cityHash64(name)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_default_and_alias_mutually_exclusive() {
+        let col = Column {
+            default: Some("42".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_and_alias_mutually_exclusive() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("bad")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("can only have one of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_materialized_cannot_be_primary_key() {
+        let col = Column {
+            materialized: Some("cityHash64(name)".to_string()),
+            primary_key: true,
+            ..make_column("pk_mat")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both MATERIALIZED"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validation_alias_cannot_be_primary_key() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            primary_key: true,
+            ..make_column("pk_alias")
+        };
+        let err = std_column_to_clickhouse_column(col).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be both ALIAS"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_alias_column_converts_successfully() {
+        let col = Column {
+            alias: Some("toDate(ts)".to_string()),
+            ..make_column("event_date")
+        };
+        let ch_col = std_column_to_clickhouse_column(col).unwrap();
+        assert_eq!(ch_col.alias, Some("toDate(ts)".to_string()));
+        assert_eq!(ch_col.default, None);
+        assert_eq!(ch_col.materialized, None);
     }
 }

@@ -1,17 +1,23 @@
 // Minimal data model for MCP template demonstration
 // This DataEvent model provides a simple table for testing MCP queries
 
-import { IngestPipeline, Key } from "@514labs/moose-lib";
+import { OlapTable, Stream, IngestApi } from "@514labs/moose-lib";
 
 export interface DataEvent {
-  eventId: Key<string>; // Primary key for ClickHouse table
+  eventId: string;
   timestamp: Date;
   eventType: string;
   data: string;
 }
 
-export const DataEventPipeline = new IngestPipeline<DataEvent>("DataEvent", {
-  table: true, // Create ClickHouse table
-  stream: true, // Enable streaming
-  ingestApi: true, // POST /ingest/DataEvent
+export const DataEventTable = new OlapTable<DataEvent>("DataEvent", {
+  orderByFields: ["eventId", "timestamp"],
+});
+
+export const DataEventStream = new Stream<DataEvent>("DataEvent", {
+  destination: DataEventTable,
+});
+
+export const DataEventIngestApi = new IngestApi<DataEvent>("DataEvent", {
+  destination: DataEventStream,
 });

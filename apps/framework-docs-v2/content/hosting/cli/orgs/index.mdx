@@ -1,0 +1,56 @@
+---
+title: org
+description: Manage organizations in the 514 hosting control plane.
+order: 4
+---
+
+# 514 org
+
+Use `514 org` to inspect available organizations and switch your active organization context.
+The docs route remains `/hosting/cli/orgs` for URL compatibility.
+
+## Usage
+
+```bash
+514 org [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+List organizations available to the current authenticated user.
+
+```bash
+514 org list
+```
+
+### Switch
+
+Switch the active organization context.
+
+```bash
+514 org switch [ORG_REF]
+```
+
+- `[ORG_REF]`: Organization ID, slug, or name. Omit to choose interactively.
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 org list
+514 org switch acme
+514 org switch
+514 --json org list
+```
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 project`](/hosting/cli/projects)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 project link`](/hosting/cli/projects/link)

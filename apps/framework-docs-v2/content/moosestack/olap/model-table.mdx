@@ -142,7 +142,7 @@ example_table = OlapTable[ExampleSchema]("example_table", OlapConfig(
 
 ### Creating Tables in Ingestion Pipelines
 
-For end-to-end data flows, create tables as part of an ingestion pipeline:
+For end-to-end data flows, create tables as part of an ingestion pipeline. Setting `table` creates it automatically — a separate `OlapTable` with the same name will cause a conflict.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -159,7 +159,7 @@ interface UserEvent {
 
 // Create a complete ingestion pipeline with a table
 const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
-  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingestApi: true, // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
     orderByFields: ["id", "timestamp"]
@@ -426,6 +426,10 @@ ORDER BY (id, timestamp)
 
 <Callout type="info" title="Viewing comments in ClickHouse">
 Query column comments using `SELECT name, comment FROM system.columns WHERE table = 'user_events'` or `DESCRIBE TABLE user_events FORMAT Vertical`.
+</Callout>
+
+<Callout type="info" title="Column comments power AI tools">
+These comments also surface in Moose's MCP tools and [semantic layer](/moosestack/apis/semantic-layer). When an AI agent calls `get_data_catalog` in `detailed` mode, it sees each column's name, ClickHouse type, nullability, **and comment** — so when it encounters `status: Float64` it also reads "1 = attended, 2 = no-show, 3 = late cancel, 4 = early cancel" and knows how to filter correctly. The comments you write in your data model are the documentation AI reads at query time.
 </Callout>
 
 ### Database Selection
@@ -1487,7 +1491,7 @@ export const eventsMV = new MaterializedView<KafkaEvent>({
   tableName: "events_dest",
   materializedViewName: "events_mv",
   orderByFields: ["eventId"],
-  selectStatement: sql`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
+  selectStatement: sql.statement`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
   selectTables: [kafkaSource],
 });
 ```
@@ -1584,6 +1588,68 @@ external_table = OlapTable[UserData]("external_users", OlapConfig(
 
 <Callout type="info" title="Learn More About LifeCycle Management">
 Learn more about the different lifecycle options and how to use them in the [LifeCycle Management](/moosestack/olap/lifecycle) documentation.
+</Callout>
+
+### Seed Filter
+
+Configure per-table filtering for `moose seed clickhouse` to control which rows are
+copied from a remote ClickHouse instance into your local development database.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="SeedFilter.ts" copy
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: Key<string>;
+  user_id: number;
+  timestamp: Date;
+  event_type: string;
+}
+
+// Seed only recent rows for a specific user
+const events = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "timestamp"],
+  seedFilter: {
+    limit: 100,
+    where: "user_id = 10",
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="SeedFilter.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str]
+    user_id: int
+    timestamp: datetime
+    event_type: str
+
+# Seed only recent rows for a specific user
+events = OlapTable[UserEvent]("user_events", OlapConfig(
+    order_by_fields=["id", "timestamp"],
+    seed_filter=OlapConfig.SeedFilter(
+        limit=100,
+        where="user_id = 10",
+    ),
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `limit` | `number` / `int` | Default maximum rows to seed for this table. The CLI `--limit` flag overrides it. If neither is set, Moose falls back to the global default of 1000. |
+| `where` | `string` / `str` | ClickHouse SQL `WHERE` expression appended to the seed query. |
+
+<Callout type="info" title="CLI flags still apply">
+The CLI `--limit` and `--all` flags work alongside `seedFilter`. When `--limit` is
+provided it overrides the per-table `seedFilter.limit`; otherwise the code-defined limit is
+used as the default. The `--all` flag bypasses limits entirely.
 </Callout>
 
 ## Invalid Configurations

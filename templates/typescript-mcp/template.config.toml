@@ -26,7 +26,7 @@ Run this next:
 ⚙️ Set environment variables:
     1. Set `MCP_API_KEY` in packages/moosestack-service/.env.local to the `ENV API Key` value.
     2. Set `MCP_API_TOKEN` in packages/web-app/.env.local to the `Bearer Token` value.
-    3. Set your Anthropic API key in packages/web-app/.env.local.
+    3. Set `ANTHROPIC_API_KEY` in packages/web-app/.env.local to your Anthropic API key.
 
 🚀 Start both services:
     $ cd ../.. # go back to project root

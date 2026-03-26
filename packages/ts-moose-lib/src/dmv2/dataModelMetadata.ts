@@ -1,11 +1,16 @@
 import ts, { factory } from "typescript";
 import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
+import type { Column } from "../dataModels/dataModelTypes";
 import {
   generateValidateFunction,
   generateIsFunction,
   generateAssertFunction,
   generateJsonSchemas,
+  generateInsertValidateFunction,
+  generateInsertIsFunction,
+  generateInsertAssertFunction,
+  type InsertColumnSets,
 } from "../typiaDirectIntegration";
 
 const typesToArgsLength = new Map([
@@ -136,21 +141,19 @@ export const transformNewMooseResource = (
   const typiaCtx = ctx.typiaContext;
 
   let internalArguments: ts.Expression[];
+  let columns: Column[] | undefined;
 
   if (typeName === "DeadLetterQueue") {
     // DeadLetterQueue uses type guard (assert)
     internalArguments = [generateAssertFunction(typiaCtx, typeAtLocation)];
   } else {
+    columns = toColumns(typeAtLocation, checker, {
+      allowIndexSignatures,
+    });
     // Other resources use JSON schemas + columns
     internalArguments = [
       generateJsonSchemas(typiaCtx, typeAtLocation),
-      parseAsAny(
-        JSON.stringify(
-          toColumns(typeAtLocation, checker, {
-            allowIndexSignatures,
-          }),
-        ),
-      ),
+      parseAsAny(JSON.stringify(columns)),
     ];
   }
 
@@ -192,6 +195,56 @@ export const transformNewMooseResource = (
     );
 
     updatedArgs = [...updatedArgs, validatorsObject];
+
+    // For OlapTable, also generate insert validators with Insertable<T> semantics
+    // (excludes ALIAS/MATERIALIZED fields, makes DEFAULT fields optional).
+    // Uses metadata-patching: typia analyzes the original type T, but
+    // MetadataFactory.analyze is intercepted to strip computed columns.
+    if (resourceName === "OlapTable" && columns) {
+      const insertColumnSets: InsertColumnSets = {
+        computed: new Set(
+          columns
+            .filter((c) => c.alias != null || c.materialized != null)
+            .map((c) => c.name),
+        ),
+        defaults: new Set(
+          columns.filter((c) => c.default != null).map((c) => c.name),
+        ),
+      };
+
+      const insertValidatorsObject = factory.createObjectLiteralExpression(
+        [
+          factory.createPropertyAssignment(
+            factory.createIdentifier("validate"),
+            wrapValidateFunction(
+              generateInsertValidateFunction(
+                typiaCtx,
+                typeAtLocation,
+                insertColumnSets,
+              ),
+            ),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("assert"),
+            generateInsertAssertFunction(
+              typiaCtx,
+              typeAtLocation,
+              insertColumnSets,
+            ),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("is"),
+            generateInsertIsFunction(
+              typiaCtx,
+              typeAtLocation,
+              insertColumnSets,
+            ),
+          ),
+        ],
+        true,
+      );
+      updatedArgs = [...updatedArgs, insertValidatorsObject];
+    }
 
     // For IngestPipeline, also pass allowExtraFields so it can propagate to internal Stream/IngestApi
     if (resourceName === "IngestPipeline") {

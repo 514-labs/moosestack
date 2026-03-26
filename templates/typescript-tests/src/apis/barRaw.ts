@@ -38,7 +38,7 @@ const router = async (req: IncomingMessage, res: ServerResponse) => {
     const limit = parseInt((url.query.limit as string) || "10");
 
     try {
-      const query = sql`
+      const query = sql.statement`
         SELECT
           ${BarAggregatedMV.targetTable.columns.dayOfMonth},
           ${BarAggregatedMV.targetTable.columns.totalRows}
@@ -89,7 +89,7 @@ const router = async (req: IncomingMessage, res: ServerResponse) => {
           endDay = 31,
         } = JSON.parse(body || "{}");
 
-        const query = sql`
+        const query = sql.statement`
           SELECT
             ${BarAggregatedMV.targetTable.columns.dayOfMonth},
             ${BarAggregatedMV.targetTable.columns[orderBy]}

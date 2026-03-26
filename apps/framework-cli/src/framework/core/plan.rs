@@ -45,6 +45,7 @@ pub struct ReconciliationFilter {
     pub sql_resource_ids: HashSet<String>,
     pub materialized_view_ids: HashSet<String>,
     pub view_ids: HashSet<String>,
+    pub select_row_policy_ids: HashSet<String>,
 }
 
 impl ReconciliationFilter {
@@ -59,6 +60,7 @@ impl ReconciliationFilter {
             sql_resource_ids: infra_map.sql_resources.keys().cloned().collect(),
             materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
             view_ids: infra_map.views.keys().cloned().collect(),
+            select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
         }
     }
 }
@@ -87,7 +89,8 @@ pub enum PlanningError {
     Other(#[from] anyhow::Error),
 }
 
-/// Creates a copy of an infrastructure map with normalized SQL in all materialized views and views.
+/// Creates a copy of an infrastructure map with normalized SQL in all materialized views, views,
+/// and table projection bodies.
 /// Uses ClickHouse's native `formatQuerySingleLine()` for accurate normalization.
 ///
 /// This returns a NEW map for comparison purposes only - the original map should be
@@ -95,7 +98,7 @@ pub enum PlanningError {
 /// changes its `formatQuerySingleLine` behavior in future versions.
 ///
 /// IMPORTANT: This function must be called on both maps before using `diff_with_table_strategy`
-/// to ensure correct comparison of MV/View SQL.
+/// to ensure correct comparison of MV/View SQL and projection bodies.
 pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
     infra_map: &InfrastructureMap,
     olap_client: &T,
@@ -138,6 +141,22 @@ pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
                     name, e
                 );
             }
+        }
+    }
+
+    // Normalize projection bodies by collapsing whitespace for comparison.
+    // We cannot use formatQuerySingleLine here because:
+    // - Bare body: ClickHouse adds explicit ASC/DESC which projection syntax rejects
+    // - Wrapped in CREATE TABLE: sqlparser mangles the body on re-serialization
+    // Simple whitespace collapsing handles the main case (ClickHouse multi-line DDL
+    // vs user-defined single-line bodies) without producing invalid output.
+    for (_table_name, table) in normalized_map.tables.iter_mut() {
+        for projection in table.projections.iter_mut() {
+            projection.body = projection
+                .body
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
         }
     }
 
@@ -497,6 +516,54 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
 
+    // Handle SelectRowPolicy reconciliation
+    debug!("Reconciling SelectRowPolicies");
+
+    for missing_policy_id in discrepancies.missing_row_policies {
+        debug!(
+            "Removing missing row policy from infrastructure map: {}",
+            missing_policy_id
+        );
+        reconciled_map
+            .select_row_policies
+            .remove(&missing_policy_id);
+    }
+
+    for unmapped_policy in discrepancies.unmapped_row_policies {
+        let name = &unmapped_policy.name;
+
+        if filter.select_row_policy_ids.contains(name) {
+            debug!(
+                "Adding unmapped row policy found in reality to infrastructure map: {}",
+                name
+            );
+            reconciled_map
+                .select_row_policies
+                .insert(name.clone(), unmapped_policy);
+        }
+    }
+
+    for change in discrepancies.mismatched_row_policies {
+        match change {
+            OlapChange::SelectRowPolicy(Change::Updated { before, .. }) => {
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched row policy in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map
+                    .select_row_policies
+                    .insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!(
+                    "Unexpected change type in mismatched_row_policies: {:?}",
+                    change
+                );
+            }
+        }
+    }
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -805,6 +872,16 @@ mod tests {
         ) -> Result<Vec<SqlResource>, OlapChangesError> {
             Ok(self.sql_resources.clone())
         }
+
+        async fn list_row_policies(
+            &self,
+            _db_name: &str,
+        ) -> Result<
+            Vec<crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
+            OlapChangesError,
+        > {
+            Ok(vec![])
+        }
     }
 
     // Helper function to create a test table
@@ -823,6 +900,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -839,10 +917,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -859,9 +939,7 @@ mod tests {
                 host: "localhost".to_string(),
                 host_port: 18123,
                 native_port: 9000,
-                host_data_path: None,
-                additional_databases: Vec::new(),
-                clusters: None,
+                ..Default::default()
             },
             http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
             redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
@@ -924,6 +1002,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
@@ -950,6 +1029,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         // Test 2: Non-empty filter = only include if in set
@@ -1014,6 +1094,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         // Reconcile the infrastructure map
@@ -1045,6 +1126,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         });
 
         // Create test project first to get the database name
@@ -1096,6 +1178,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1156,6 +1239,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1219,6 +1303,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1280,6 +1365,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1386,6 +1472,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1425,6 +1512,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             });
 
         // Create mock OLAP client with the reality table
@@ -1448,6 +1536,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1501,6 +1590,7 @@ mod tests {
             sql_resource_ids: HashSet::new(),
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1553,6 +1643,7 @@ mod tests {
             sql_resource_ids,
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1612,6 +1703,7 @@ mod tests {
             sql_resource_ids,
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)

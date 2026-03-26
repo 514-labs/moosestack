@@ -328,6 +328,20 @@ const handleMaterialized = (
   return materializedType.value;
 };
 
+/** Detect ClickHouse alias annotation on a type and return raw sql */
+const handleAlias = (t: ts.Type, checker: TypeChecker): string | null => {
+  const aliasType = getTaggedType(t, checker, "_clickhouse_alias");
+  if (aliasType === null) {
+    return null;
+  }
+  if (!aliasType.isStringLiteral()) {
+    throw new UnsupportedFeature(
+      'ClickHouseAlias must use a string literal, e.g. ClickHouseAlias<"toDate(timestamp)">',
+    );
+  }
+  return aliasType.value;
+};
+
 /** Detect ClickHouse TTL annotation on a type and return raw sql */
 const handleTtl = (t: ts.Type, checker: TypeChecker): string | null => {
   const ttlType = getTaggedType(t, checker, "_clickhouse_ttl");
@@ -1012,11 +1026,20 @@ export const toColumns = (
 
     const defaultValue = defaultExpression ?? handleDefault(type, checker);
     const materializedValue = handleMaterialized(type, checker);
+    const aliasValue = handleAlias(type, checker);
 
-    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
-    if (defaultValue && materializedValue) {
+    // Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
+    const setCount = [defaultValue, materializedValue, aliasValue].filter(
+      (v) => v != null,
+    ).length;
+    if (setCount > 1) {
       throw new UnsupportedFeature(
-        `Column '${prop.name}' cannot have both ClickHouseDefault and ClickHouseMaterialized. Use one or the other.`,
+        `Column '${prop.name}' can only have one of ClickHouseDefault, ClickHouseMaterialized, or ClickHouseAlias.`,
+      );
+    }
+    if (aliasValue != null && isKey) {
+      throw new UnsupportedFeature(
+        `Column '${prop.name}' cannot be a primary key when using ClickHouseAlias.`,
       );
     }
 
@@ -1033,6 +1056,7 @@ export const toColumns = (
       unique: false,
       default: defaultValue,
       materialized: materializedValue,
+      alias: aliasValue,
       ttl: handleTtl(type, checker),
       codec: handleCodec(type, checker),
       annotations,

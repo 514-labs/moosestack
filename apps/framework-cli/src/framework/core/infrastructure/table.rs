@@ -26,6 +26,14 @@ use std::fmt::Debug;
 use std::path::Path;
 use tracing::warn;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableReference {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub database: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct SourceLocation {
     pub file: String,
@@ -232,6 +240,37 @@ impl TableIndex {
     }
 }
 
+/// Represents a table projection for alternative data ordering within parts.
+///
+/// Projections store data in an alternative order (or pre-aggregated) within each
+/// data part, allowing queries on non-primary-key columns to avoid full scans.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableProjection {
+    /// The projection identifier used in DDL statements.
+    pub name: String,
+    /// The SELECT body of the projection, e.g. `SELECT * ORDER BY some_col`.
+    pub body: String,
+}
+
+impl TableProjection {
+    /// Converts this projection into its protobuf representation.
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableProjection {
+        crate::proto::infrastructure_map::TableProjection {
+            name: self.name.clone(),
+            body: self.body.clone(),
+            special_fields: Default::default(),
+        }
+    }
+
+    /// Constructs a [`TableProjection`] from its protobuf representation.
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableProjection) -> Self {
+        TableProjection {
+            name: proto.name,
+            body: proto.body,
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -273,6 +312,37 @@ impl std::fmt::Display for OrderBy {
     }
 }
 
+/// Deserializes a field that may be present as `null` in JSON, falling back to `T::default()`.
+///
+/// A plain `#[serde(default)]` only applies when the key is *absent*; when it's present
+/// as `null`, serde would attempt to deserialize `null` as the target type and fail.
+/// This deserializer treats `null` the same as a missing field.
+pub(crate) fn deserialize_nullable_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(|opt| opt.unwrap_or_default())
+}
+
+/// Per-table filter applied during `moose seed clickhouse` to control which rows
+/// are copied from a remote ClickHouse instance into the local database.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeedFilter {
+    /// Maximum number of rows to seed for this table.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub limit: Option<usize>,
+    /// ClickHouse SQL WHERE expression to filter seeded rows.
+    #[serde(skip_serializing_if = "Option::is_none", default, rename = "where")]
+    pub where_clause: Option<String>,
+}
+
+/// Returns `true` when no seed filtering is configured.
+fn seed_filter_is_default(sf: &SeedFilter) -> bool {
+    sf.limit.is_none() && sf.where_clause.is_none()
+}
+
 /// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
 /// The inclusion of ClickHouse-specific engine types makes this leaky.
 /// This needs to be fixed in a subsequent PR to properly separate database-specific
@@ -309,6 +379,9 @@ pub struct Table {
     /// Secondary indexes.
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    /// Projections for alternative data ordering within parts.
+    #[serde(default)]
+    pub projections: Vec<TableProjection>,
     /// Optional database name for multi-database support
     /// When not specified, uses the global ClickHouse config database
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -323,6 +396,13 @@ pub struct Table {
     /// Allows for complex primary keys using functions or different column ordering
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub primary_key_expression: Option<String>,
+    /// Per-table filter for `moose seed clickhouse`
+    #[serde(
+        skip_serializing_if = "seed_filter_is_default",
+        default,
+        deserialize_with = "deserialize_nullable_as_default"
+    )]
+    pub seed_filter: SeedFilter,
 }
 
 impl Table {
@@ -677,7 +757,17 @@ impl Table {
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
+            projections: self.projections.iter().map(|p| p.to_proto()).collect(),
             database: self.database.clone(),
+            seed_filter: MessageField::from_option(if seed_filter_is_default(&self.seed_filter) {
+                None
+            } else {
+                Some(crate::proto::infrastructure_map::SeedFilter {
+                    limit: self.seed_filter.limit.map(|l| l as u64),
+                    where_clause: self.seed_filter.where_clause.clone(),
+                    special_fields: Default::default(),
+                })
+            }),
             special_fields: Default::default(),
         }
     }
@@ -793,10 +883,23 @@ impl Table {
                 .into_iter()
                 .map(TableIndex::from_proto)
                 .collect(),
+            projections: proto
+                .projections
+                .into_iter()
+                .map(TableProjection::from_proto)
+                .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
             primary_key_expression: proto.primary_key_expression,
+            seed_filter: proto
+                .seed_filter
+                .into_option()
+                .map(|sf| SeedFilter {
+                    limit: sf.limit.map(|l| l as usize),
+                    where_clause: sf.where_clause,
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -819,7 +922,9 @@ pub struct Column {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub materialized: Option<String>, // MATERIALIZED column expression
+    pub materialized: Option<String>, // MATERIALIZED column expression (computed and stored at insert time)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub alias: Option<String>, // ALIAS column expression (computed on read, not stored)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1336,6 +1441,7 @@ impl Column {
             ttl: self.ttl.clone(),
             codec: self.codec.clone(),
             materialized: self.materialized.clone(),
+            alias: self.alias.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1360,6 +1466,7 @@ impl Column {
             ttl: proto.ttl,
             codec: proto.codec,
             materialized: proto.materialized,
+            alias: proto.alias,
         }
     }
 }
@@ -1742,6 +1849,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1764,6 +1872,7 @@ mod tests {
             ttl: None,
             codec: None,
                 materialized: None,
+            alias: None,
         };
 
         // Convert to proto and back
@@ -1789,6 +1898,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -1876,10 +1986,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
@@ -1944,6 +2056,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
             Column {
                 name: "name".to_string(),
@@ -1957,6 +2070,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             },
         ];
 
@@ -1979,10 +2093,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Target table from code: explicit order_by that matches primary key
@@ -2004,10 +2120,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // These should be equal because:
@@ -2092,6 +2210,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "ts".to_string(),
@@ -2105,6 +2224,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]), // Empty - should be filled by canonicalize
@@ -2122,10 +2242,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2159,6 +2281,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "tags".to_string(),
@@ -2175,6 +2298,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2192,10 +2316,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2238,6 +2364,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2261,10 +2388,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let canonicalized = table.canonicalize();
@@ -2303,6 +2432,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "tags".to_string(),
@@ -2319,6 +2449,7 @@ mod tests {
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]), // Already set
@@ -2336,10 +2467,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         let first_canonicalize = table.clone().canonicalize();
@@ -2375,6 +2508,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2396,10 +2530,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Serialize to proto
@@ -2443,6 +2579,7 @@ mod tests {
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2464,10 +2601,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Serialize to proto
@@ -2591,5 +2730,122 @@ mod tests {
 
         metadata_no_source.normalize_source_path(&project_root);
         assert!(metadata_no_source.source.is_none());
+    }
+
+    #[test]
+    fn test_seed_filter_proto_roundtrip() {
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: SeedFilter {
+                limit: Some(100),
+                where_clause: Some("user_id = 10".to_string()),
+            },
+        };
+
+        let proto = table.to_proto();
+        let sf = proto.seed_filter.as_ref().unwrap();
+        assert_eq!(sf.limit, Some(100));
+        assert_eq!(sf.where_clause.as_deref(), Some("user_id = 10"));
+
+        let roundtrip = Table::from_proto(proto);
+        assert_eq!(roundtrip.seed_filter, table.seed_filter);
+    }
+
+    #[test]
+    fn test_seed_filter_proto_roundtrip_empty() {
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let proto = table.to_proto();
+        assert!(proto.seed_filter.is_none());
+
+        let roundtrip = Table::from_proto(proto);
+        assert_eq!(roundtrip.seed_filter, SeedFilter::default());
+    }
+
+    #[test]
+    fn test_seed_filter_json_null_deserializes_to_default() {
+        let json = serde_json::json!({
+            "name": "t1",
+            "columns": [],
+            "order_by": ["id"],
+            "engine": "MergeTree",
+            "seed_filter": null,
+            "source_primitive": { "name": "t1", "primitive_type": "DataModel" },
+            "life_cycle": "FULLY_MANAGED"
+        });
+        let table: Table =
+            serde_json::from_value(json).expect("should deserialize with null seed_filter");
+        assert_eq!(table.seed_filter, SeedFilter::default());
     }
 }

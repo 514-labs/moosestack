@@ -8,6 +8,7 @@ from datetime import datetime, date
 
 from typing import (
     Literal,
+    Optional,
     Tuple,
     Union,
     Any,
@@ -111,6 +112,49 @@ class ClickHouseMaterialized:
     """
 
     expression: str
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class ClickHouseAlias:
+    """
+    ClickHouse ALIAS column annotation.
+    The column value is computed on-the-fly at SELECT time and NOT physically stored.
+    Cannot be explicitly inserted by users.
+
+    Args:
+        expression: ClickHouse SQL expression using column names (snake_case)
+
+    Examples:
+        # Computed at query time, not stored on disk
+        event_date: Annotated[date, ClickHouseAlias("toDate(event_time)")]
+
+        # Virtual computed column
+        full_name: Annotated[str, ClickHouseAlias("concat(first_name, ' ', last_name)")]
+
+    Notes:
+        - Expression uses ClickHouse column names, not Python field names
+        - ALIAS, MATERIALIZED, and DEFAULT are mutually exclusive
+        - ALIAS columns are NOT stored on disk (saves storage, costs CPU at query time)
+        - Cannot be used in ORDER BY, PRIMARY KEY, or PARTITION BY
+    """
+
+    expression: str
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        base = handler(source_type)
+        return core_schema.with_default_schema(
+            core_schema.nullable_schema(base), default=None
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -275,6 +319,35 @@ type DataType = (
 )
 
 
+def json_annotation_to_type(
+    ch_json: Optional[ClickHouseJson],
+    typed_paths: list[tuple[str, "DataType"]],
+) -> DataType:
+    """Convert a ClickHouseJson annotation (if any) into a DataType.
+
+    Returns ``"Json"`` when there's nothing to parameterise, or a
+    ``JsonOptions`` when at least one option / typed path is set.
+    """
+    has_any_option = ch_json is not None and (
+        ch_json.max_dynamic_paths is not None
+        or ch_json.max_dynamic_types is not None
+        or len(typed_paths) > 0
+        or len(ch_json.skip_paths) > 0
+        or len(ch_json.skip_regexps) > 0
+    )
+
+    if not has_any_option:
+        return "Json"
+
+    return JsonOptions(
+        max_dynamic_paths=ch_json.max_dynamic_paths,
+        max_dynamic_types=ch_json.max_dynamic_types,
+        typed_paths=typed_paths,
+        skip_paths=list(ch_json.skip_paths),
+        skip_regexps=list(ch_json.skip_regexps),
+    )
+
+
 def handle_jwt(field_type: type) -> Tuple[bool, type]:
     if hasattr(field_type, "__origin__") and field_type.__origin__ is JWT:
         return True, field_type.__args__[0]  # type: ignore
@@ -314,6 +387,7 @@ class Column(BaseModel):
     ttl: str | None = None
     codec: str | None = None
     materialized: str | None = None
+    alias: str | None = None
     comment: str | None = None
 
     def to_expr(self):
@@ -538,7 +612,10 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             # Special case: dict[str, Any] should be JSON type (matches TypeScript's Record<string, any>)
             # This is useful for storing arbitrary extra fields in a JSON column
             if args[0] is str and args[1] is Any:
-                data_type = "Json"
+                ch_json = next(
+                    (md for md in mds if isinstance(md, ClickHouseJson)), None
+                )
+                data_type = json_annotation_to_type(ch_json, typed_paths=[])
             else:
                 key_optional, _, key_type = py_type_to_column_type(args[0], [])
                 value_optional, _, value_type = py_type_to_column_type(args[1], [])
@@ -567,30 +644,8 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                 "Add: model_config = ConfigDict(extra='allow')"
             )
         opts = next(md for md in mds if isinstance(md, ClickHouseJson))
-
-        # Build typed_paths from fields as tuples of (name, type)
-        typed_paths: list[tuple[str, DataType]] = []
-        for c in columns:
-            typed_paths.append((c.name, c.data_type))
-
-        has_any_option = (
-            opts.max_dynamic_paths is not None
-            or opts.max_dynamic_types is not None
-            or len(typed_paths) > 0
-            or len(opts.skip_paths) > 0
-            or len(opts.skip_regexps) > 0
-        )
-
-        if not has_any_option:
-            data_type = "Json"
-        else:
-            data_type = JsonOptions(
-                max_dynamic_paths=opts.max_dynamic_paths,
-                max_dynamic_types=opts.max_dynamic_types,
-                typed_paths=typed_paths,
-                skip_paths=list(opts.skip_paths),
-                skip_regexps=list(opts.skip_regexps),
-            )
+        typed_paths = [(c.name, c.data_type) for c in columns]
+        data_type = json_annotation_to_type(opts, typed_paths)
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")
@@ -668,11 +723,24 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
-        # Validate mutual exclusivity of DEFAULT and MATERIALIZED
-        if default_expr and materialized_expr:
+        # Extract ALIAS expression from metadata, if provided
+        alias_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseAlias)),
+            None,
+        )
+
+        # Validate mutual exclusivity of DEFAULT, MATERIALIZED, and ALIAS
+        modifier_count = sum(
+            1 for v in [default_expr, materialized_expr, alias_expr] if v is not None
+        )
+        if modifier_count > 1:
             raise ValueError(
-                f"Column '{column_name}' cannot have both DEFAULT and MATERIALIZED. "
-                f"Use one or the other."
+                f"Column '{column_name}' can only have one of DEFAULT, MATERIALIZED, or ALIAS."
+            )
+
+        if alias_expr is not None and primary_key:
+            raise ValueError(
+                f"Column '{column_name}' with ALIAS cannot be a primary key."
             )
 
         # Extract TTL expression from metadata, if provided
@@ -700,6 +768,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 primary_key=primary_key,
                 default=default_expr,
                 materialized=materialized_expr,
+                alias=alias_expr,
                 annotations=annotations,
                 ttl=ttl_expr,
                 codec=codec_expr,

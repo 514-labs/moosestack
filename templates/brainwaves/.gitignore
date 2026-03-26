@@ -1,6 +1,0 @@
-*.csv
-.DS_Store
-.env.local
-*.log
-.vscode/
-data/

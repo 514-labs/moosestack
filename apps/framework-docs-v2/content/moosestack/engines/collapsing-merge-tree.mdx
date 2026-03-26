@@ -85,7 +85,7 @@ By default, collapsing happens during ClickHouse background merges. To return fu
 import { sql } from "@514labs/moose-lib";
 
 // Example: compute fully-collapsed metrics via sign-aware aggregation
-const collapsed = sql`
+const collapsed = sql.statement`
   SELECT
     userId,
     sum(pageViews * sign) AS pageViews,

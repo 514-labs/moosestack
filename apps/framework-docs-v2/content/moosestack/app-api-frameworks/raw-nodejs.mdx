@@ -35,19 +35,12 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
   }
 
   if (pathname === "/data" && req.method === "GET") {
-    const moose = getMooseUtils(req);
-    if (!moose) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Moose utilities not available" }));
-      return;
-    }
-
-    const { client, sql } = moose;
+    const { client, sql } = await getMooseUtils();
     const limit = parseInt((url.query.limit as string) || "10");
 
     try {
-      const query = sql`
-        SELECT 
+      const query = sql.statement`
+        SELECT
           ${MyTable.columns.id},
           ${MyTable.columns.name},
           ${MyTable.columns.createdAt}
@@ -133,25 +126,20 @@ const handleGetUserEvents = async (
   userId: string,
   query: any
 ) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return sendError(res, 500, "Moose utilities not available");
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt(query.limit || "10");
   const eventType = query.eventType;
 
   try {
     const cols = UserEvents.columns;
-    const querySQL = sql`
+    const querySQL = sql.statement`
       SELECT
         ${cols.id},
         ${cols.event_type},
         ${cols.timestamp}
       FROM ${UserEvents}
       WHERE ${cols.user_id} = ${userId}
-        ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+        ${eventType ? sql.fragment`AND ${cols.event_type} = ${eventType}` : sql.fragment``}
       ORDER BY ${cols.timestamp} DESC
       LIMIT ${limit}
     `;
@@ -194,10 +182,10 @@ const handleCreateEvent = async (
   }
 };
 
-const handleProtected = (req: IncomingMessage, res: ServerResponse) => {
-  const moose = getMooseUtils(req);
+const handleProtected = async (req: IncomingMessage, res: ServerResponse) => {
+  const moose = await getMooseUtils();
 
-  if (!moose?.jwt) {
+  if (!moose.jwt) {
     return sendError(res, 401, "Unauthorized");
   }
 
@@ -314,20 +302,15 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
 
 ```ts
 const handleStreamData = async (req: IncomingMessage, res: ServerResponse) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return sendError(res, 500, "Utilities not available");
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
 
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson",
     "Transfer-Encoding": "chunked"
   });
 
-  const query = sql`
-    SELECT 
+  const query = sql.statement`
+    SELECT
       ${MyTable.columns.id},
       ${MyTable.columns.name},
       ${MyTable.columns.data}
@@ -365,15 +348,16 @@ interface WebAppConfig {
 
 ## Accessing Moose Utilities
 
-```ts
-const moose = getMooseUtils(req);
-if (!moose) {
-  res.writeHead(500, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "Utilities not available" }));
-  return;
-}
+`getMooseUtils()` is async and automatically detects the runtime context. It returns a `MooseUtils` object directly (never `undefined`), throwing an error if utilities cannot be initialized.
 
-const { client, sql, jwt } = moose;
+```ts
+// Basic usage — no request parameter needed
+const { client, sql, jwt } = await getMooseUtils();
+
+// With row-level security context
+const { client, sql } = await getMooseUtils({
+  rlsContext: { org_id: orgId },
+});
 ```
 
 ## Best Practices
@@ -419,8 +403,8 @@ const loggerMiddleware: Middleware = async (req, res, next) => {
 };
 
 const authMiddleware: Middleware = async (req, res, next) => {
-  const moose = getMooseUtils(req);
-  if (!moose?.jwt) {
+  const moose = await getMooseUtils();
+  if (!moose.jwt) {
     sendError(res, 401, "Unauthorized");
     return;
   }

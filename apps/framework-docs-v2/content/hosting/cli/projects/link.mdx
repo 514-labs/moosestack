@@ -1,0 +1,53 @@
+---
+title: project link
+description: Link an existing local repository to a cloud project.
+order: 3
+---
+
+# 514 project link
+
+Use `514 project link` when your repository already exists locally and you need to associate it with a Fiveonefour project.
+
+## Syntax
+
+```bash
+514 project link [PROJECT_REF] [OPTIONS]
+```
+
+## Options
+
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
+- `-o, --org <ORG>`: Organization name or ID.
+- `--yes`: Skip confirmations when safe.
+- `--json`: Output as JSON.
+- `--no-input`: Disable prompts; fail fast if input is needed (implies `--yes`).
+- `--force-relink`: Replace an existing link to a different project.
+- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
+- `-h, --help`: Print help.
+
+## Arguments
+
+- `[PROJECT_REF]`: Project reference to link (for example `<org>/<project>`). Omit to choose interactively.
+
+## Example
+
+```bash
+514 project link acme/analytics-api
+```
+
+Expected outcome:
+- Validates auth and local git repo context.
+- Resolves the selected project.
+- Writes/updates repo-level link metadata.
+
+Note:
+- `--project` is no longer accepted for `project link`; pass the project as `[PROJECT_REF]`.
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 orgs`](/hosting/cli/orgs)
+- [`514 projects`](/hosting/cli/projects)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 cli update`](/hosting/cli/cli/update)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

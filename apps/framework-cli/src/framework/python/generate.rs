@@ -584,7 +584,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL"
+        "from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, ClickHouseAlias, LifeCycle, ClickHouseTTL"
     )
     .unwrap();
     writeln!(
@@ -672,6 +672,16 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 &json_types,
             );
 
+            let type_str = if column
+                .annotations
+                .iter()
+                .any(|(k, v)| k == "LowCardinality" && v == &serde_json::json!(true))
+            {
+                format!("Annotated[{type_str}, \"LowCardinality\"]")
+            } else {
+                type_str
+            };
+
             let mut type_str = if !column.required {
                 format!("Optional[{type_str}]")
             } else {
@@ -696,26 +706,27 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             if let Some(ref codec_expr) = column.codec {
                 type_str = format!("Annotated[{}, ClickHouseCodec({:?})]", type_str, codec_expr);
             }
-            // Handle DEFAULT and MATERIALIZED (mutually exclusive)
-            match (&column.default, &column.materialized) {
-                (Some(default_expr), None) => {
+            // Handle DEFAULT, MATERIALIZED, and ALIAS (mutually exclusive)
+            match (&column.default, &column.materialized, &column.alias) {
+                (Some(default_expr), None, None) => {
                     type_str = format!(
                         "Annotated[{}, clickhouse_default({:?})]",
                         type_str, default_expr
                     );
                 }
-                (None, Some(materialized_expr)) => {
+                (None, Some(materialized_expr), None) => {
                     type_str = format!(
                         "Annotated[{}, ClickHouseMaterialized({:?})]",
                         type_str, materialized_expr
                     );
                 }
-                (None, None) => {
-                    // No default or materialized, do nothing
+                (None, None, Some(alias_expr)) => {
+                    type_str =
+                        format!("Annotated[{}, ClickHouseAlias({:?})]", type_str, alias_expr);
                 }
-                (Some(_), Some(_)) => {
-                    // This should never happen due to validation
-                    panic!("Column '{}' has both DEFAULT and MATERIALIZED - this should be caught by validation", column.name)
+                (None, None, None) => {}
+                _ => {
+                    panic!("Column '{}' has multiple of DEFAULT/MATERIALIZED/ALIAS - this should be caught by validation", column.name)
                 }
             }
 
@@ -1130,6 +1141,30 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
             writeln!(output, "    ],").unwrap();
         }
+        let sf = &table.seed_filter;
+        if sf.limit.is_some() || sf.where_clause.is_some() {
+            write!(output, "    seed_filter=OlapConfig.SeedFilter(").unwrap();
+            let mut args = Vec::new();
+            if let Some(limit) = sf.limit {
+                args.push(format!("limit={}", limit));
+            }
+            if let Some(ref wc) = sf.where_clause {
+                args.push(format!("where={:?}", wc));
+            }
+            writeln!(output, "{}),", args.join(", ")).unwrap();
+        }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections=[").unwrap();
+            for proj in &table.projections {
+                writeln!(
+                    output,
+                    "        OlapConfig.TableProjection(name={:?}, body={:?}),",
+                    proj.name, proj.body
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }
@@ -1161,6 +1196,7 @@ mod tests {
             ttl: None,
             codec: None,
             materialized: None,
+            alias: None,
         }
     }
 
@@ -1184,10 +1220,12 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }
     }
 
@@ -1221,7 +1259,7 @@ from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
-from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL
+from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, ClickHouseAlias, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine, MergeEngine
 
 class Foo(BaseModel):
@@ -1253,6 +1291,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "numbers".to_string(),
@@ -1269,6 +1308,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "nested_numbers".to_string(),
@@ -1288,6 +1328,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1305,10 +1346,12 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1346,6 +1389,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -1359,6 +1403,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "zipCode".to_string(),
@@ -1372,6 +1417,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             jwt: false,
@@ -1392,6 +1438,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -1405,6 +1452,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -1421,6 +1469,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1438,10 +1487,12 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1727,6 +1778,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1740,6 +1792,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1753,6 +1806,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1770,10 +1824,12 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1803,6 +1859,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1839,10 +1896,12 @@ user_table = OlapTable[User]("User", OlapConfig(
                     granularity: 1,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1872,6 +1931,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1894,6 +1954,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1911,9 +1972,11 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1952,6 +2015,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1968,10 +2032,12 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1995,6 +2061,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -2008,6 +2075,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -2021,6 +2089,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     ttl: None,
                     codec: None,
                     materialized: None,
+                    alias: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2038,10 +2107,12 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -2084,6 +2155,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 ttl: None,
                 codec: None,
                 materialized: None,
+                alias: None,
             }],
             order_by: OrderBy::Fields(vec!["_private_field".to_string()]),
             partition_by: None,
@@ -2100,10 +2172,12 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         }];
 
         let result = tables_to_python(&tables, None);
@@ -2118,6 +2192,129 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(
             result.contains("description=\"A private field that needs aliasing\""),
             "Expected description for _private_field. Result: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_projection_emission() {
+        use crate::framework::core::infrastructure::table::TableProjection;
+
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                test_column("user_id", ColumnType::String),
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            projections: vec![TableProjection {
+                name: "proj_by_user".to_string(),
+                body: "SELECT _part_offset ORDER BY user_id".to_string(),
+            }],
+            ..test_table("WithProjection", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+        assert!(
+            result.contains("projections=["),
+            "Expected projections list. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("OlapConfig.TableProjection(name=\"proj_by_user\", body=\"SELECT _part_offset ORDER BY user_id\")"),
+            "Expected projection entry. Result: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_emission() {
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                Column {
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    ..test_column("status", ColumnType::String)
+                },
+                test_column("plain", ColumnType::String),
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            ..test_table("LcTest", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(
+            result.contains("status: Annotated[str, \"LowCardinality\"]"),
+            "LowCardinality column should have Annotated wrapper. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("plain: str"),
+            "Plain column should remain unmodified. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_optional() {
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                Column {
+                    required: false,
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    ..test_column("tag", ColumnType::String)
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            ..test_table("LcOptional", vec![], ClickhouseEngine::MergeTree)
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(
+            result.contains("tag: Optional[Annotated[str, \"LowCardinality\"]]"),
+            "Optional LowCardinality should wrap correctly. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_alias_column_emission() {
+        let table = test_table(
+            "AliasTest",
+            vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("id", ColumnType::String)
+                },
+                test_column("timestamp", ColumnType::DateTime { precision: None }),
+                Column {
+                    alias: Some("toDate(timestamp)".to_string()),
+                    ..test_column("event_date", ColumnType::Date)
+                },
+            ],
+            ClickhouseEngine::MergeTree,
+        );
+
+        let result = tables_to_python(&[table], None);
+        assert!(
+            result.contains("ClickHouseAlias(\"toDate(timestamp)\")"),
+            "Expected ClickHouseAlias annotation. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("Annotated[datetime.date, ClickHouseAlias(\"toDate(timestamp)\")]"),
+            "Expected Annotated wrapper with ClickHouseAlias. Result: {}",
             result
         );
     }

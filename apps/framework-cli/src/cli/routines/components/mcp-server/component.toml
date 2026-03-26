@@ -1,0 +1,36 @@
+name = "mcp-server"
+description = "MCP server with ClickHouse query tools at /tools"
+kind = "moose"
+language = "typescript"
+template = "typescript-mcp"
+base_path = "packages/moosestack-service"
+
+moose_exports = [
+  'export * from "./apis/mcp";',
+]
+
+docs = """
+  1. Generate auth tokens:  moose generate hash-token
+     Copy the ENV API Key into .env.local as MCP_API_KEY.
+  2. Start moose dev — your MCP server will be at http://localhost:4000/tools
+  3. Add the chat UI:  moose add chat --dir <web-app-dir>
+"""
+
+npm_deps = [
+  "@514labs/express-pbkdf2-api-key-auth@^1.0.4",
+  "@modelcontextprotocol/sdk@1.26.0",
+  "express@^5.1.0",
+  "@types/express@^5.0.3",
+  "zod@3.25.76",
+]
+
+shadcn_components = []
+
+[[files]]
+src = "app/apis/mcp.ts"
+dest = "{{source_dir}}/apis/mcp.ts"
+
+[[env]]
+file = ".env.local"
+key = "MCP_API_KEY"
+placeholder = "# run: moose generate hash-token, use the ENV API Key value"

@@ -49,12 +49,16 @@ class Target(BaseModel):
         name: The name of the target stream.
         version: Optional version of the target stream configuration.
         metadata: Optional metadata for the target stream.
+        dead_letter_queue: Optional dead letter queue stream name for this transform.
     """
+
+    model_config = model_config
 
     kind: Literal["stream"]
     name: str
     version: Optional[str] = None
     metadata: Optional[dict] = None
+    dead_letter_queue: Optional[str] = None
 
 
 class Consumer(BaseModel):
@@ -62,9 +66,13 @@ class Consumer(BaseModel):
 
     Attributes:
         version: Optional version of the consumer configuration.
+        dead_letter_queue: Optional dead letter queue stream name for this consumer.
     """
 
+    model_config = model_config
+
     version: Optional[str] = None
+    dead_letter_queue: Optional[str] = None
 
 
 class BaseEngineConfigDict(BaseModel):
@@ -317,9 +325,11 @@ class TableConfig(BaseModel):
     life_cycle: Optional[str] = None
     table_settings: Optional[dict[str, str]] = None
     indexes: list[OlapConfig.TableIndex] = []
+    projections: list[OlapConfig.TableProjection] = []
     ttl: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
+    seed_filter: Optional[OlapConfig.SeedFilter] = None
 
 
 class TopicConfig(BaseModel):
@@ -1036,9 +1046,11 @@ def to_infra_map() -> dict:
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
             indexes=table.config.indexes,
+            projections=table.config.projections,
             ttl=table.config.ttl,
             database=table.config.database,
             cluster=table.config.cluster,
+            seed_filter=table.config.seed_filter,
         )
 
     for name, stream in get_streams().items():
@@ -1048,13 +1060,26 @@ def to_infra_map() -> dict:
                 name=dest_name,
                 version=transform.config.version,
                 metadata=getattr(transform.config, "metadata", None),
+                dead_letter_queue=(
+                    transform.config.dead_letter_queue.name
+                    if transform.config.dead_letter_queue
+                    else None
+                ),
             )
             for dest_name, transforms in stream.transformations.items()
             for transform in transforms
         ]
 
         consumers = [
-            Consumer(version=consumer.config.version) for consumer in stream.consumers
+            Consumer(
+                version=consumer.config.version,
+                dead_letter_queue=(
+                    consumer.config.dead_letter_queue.name
+                    if consumer.config.dead_letter_queue
+                    else None
+                ),
+            )
+            for consumer in stream.consumers
         ]
 
         topics[name] = TopicConfig(
@@ -1166,6 +1191,7 @@ def to_infra_map() -> dict:
     for name, view in get_views().items():
         views[name] = ViewJson(
             name=view.name,
+            database=getattr(view, "database", None),
             select_sql=view.select_sql,
             source_tables=view.source_tables,
             metadata=getattr(view, "metadata", None),

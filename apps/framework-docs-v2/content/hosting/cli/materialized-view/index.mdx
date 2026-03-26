@@ -1,0 +1,43 @@
+---
+title: materialized-view
+description: List materialized view resources for a deployment.
+order: 21
+---
+
+# 514 materialized-view
+
+Use `514 materialized-view` to list materialized view resources in a deployment.
+
+Plural alias also works: `514 materialized-views`.
+
+## Usage
+
+```bash
+514 materialized-view [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### List
+
+```bash
+514 materialized-view list [OPTIONS] <DEPLOY_ID>
+```
+
+Arguments:
+- `<DEPLOY_ID>`: Deployment ID.
+
+Options:
+:::include /shared/hosting/cli/resource-list-options.mdx
+
+## Examples
+
+```bash
+514 materialized-view list dep_abc123 --project my-org/my-project
+514 materialized-views list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 deployment`](/hosting/cli/deployment)

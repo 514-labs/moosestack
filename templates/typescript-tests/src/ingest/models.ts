@@ -13,6 +13,7 @@ import {
   ClickHouseRing,
   ClickHouseLineString,
   ClickHouseMaterialized,
+  ClickHouseAlias,
   ClickHouseMultiLineString,
   ClickHousePolygon,
   ClickHouseMultiPolygon,
@@ -469,6 +470,30 @@ export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
   ],
 });
 
+// =======Projection Extraction Test Table=======
+export interface ProjectionTest {
+  id: Key<string>;
+  userId: string;
+  timestamp: DateTime;
+  value: number;
+}
+
+export const ProjectionTestTable = new OlapTable<ProjectionTest>(
+  "ProjectionTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
+    projections: [
+      { name: "proj_by_user", body: "SELECT _part_offset ORDER BY userId" },
+      { name: "proj_by_ts", body: "SELECT _part_offset ORDER BY timestamp" },
+      {
+        name: "proj_fields",
+        body: "SELECT id, userId, timestamp ORDER BY userId",
+      },
+    ],
+  },
+);
+
 /** =======Real-World Production Patterns (District Cannabis Inspired)========= */
 
 /** Test 8: Complex discount structure with mixed nullability */
@@ -776,6 +801,23 @@ export const MaterializedTestPipeline = new IngestPipeline<MaterializedTest>(
     ingestApi: true,
   },
 );
+
+// =======Alias Columns Test=======
+export interface AliasTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  eventDate: string &
+    typia.tags.Format<"date"> &
+    ClickHouseAlias<"toDate(timestamp)">;
+  userHash: UInt64 & ClickHouseAlias<"cityHash64(userId)">;
+}
+
+export const AliasTestPipeline = new IngestPipeline<AliasTest>("AliasTest", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
 
 /** =======Non-Default Database Insert Test (Issue #3101)========= */
 // Tests that OlapTable.insert() respects the database field in OlapConfig

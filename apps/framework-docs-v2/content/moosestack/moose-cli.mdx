@@ -30,6 +30,67 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+For editor integrations and other automation, you can request machine-readable output:
+
+```bash
+moose template list --json
+```
+
+The JSON payload is versioned for backwards-compatible tooling. It includes:
+
+- `schema_version`: version of the JSON response schema
+- `template_version`: version of the template manifest being listed
+- `templates`: visible templates available for initialization
+
+### Component
+Lists available components you can add to your project.
+
+> **Note:** This command is experimental. Component APIs and available components may change in future releases.
+
+```bash
+moose component list
+```
+
+### Add
+Adds a pre-built component to an existing project. Downloads the component files from a registry. Some components also install dependencies; others copy a self-contained package and print the manual follow-up steps.
+
+> **Note:** This command is experimental. Component APIs and available components may change in future releases.
+
+```bash
+moose add <component> [--dir <path>] [--overwrite] [--yes]
+```
+
+**Components:**
+
+```bash
+# Add an MCP server to a Moose project
+moose add mcp-server [--dir <moose-project-dir>]
+
+# Add a chat UI to a Next.js app
+moose add chat [--dir <nextjs-app-dir>]
+
+# Add a standalone benchmark package to a new directory
+mkdir query-benchmarks
+moose add benchmark --dir ./query-benchmarks
+```
+
+**Flags:**
+- `--dir, -d`: Target directory (defaults to current directory)
+- `--overwrite`: Replace files that already exist
+- `--yes, -y`: Skip confirmation prompt (useful for scripting or LLM-driven workflows)
+
+**Example:**
+```bash
+# From a monorepo root with moose/ and web/ packages
+moose add mcp-server --dir moose
+moose add chat --dir web
+mkdir query-benchmarks && moose add benchmark --dir query-benchmarks
+```
+
+After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
+The `benchmark` component scaffolds a standalone benchmark package into the directory specified by `--dir`. Dependencies are installed automatically. After scaffolding, edit `benchmark.config.ts` to import your compiled query model from your Moose project, define the base query and scenarios, run `moose build` in your Moose project, then run the benchmark scripts (`npm test`, `npm run bench`).
+
 ### Build
 Builds your Moose project.
 ```bash
@@ -129,8 +190,8 @@ moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>]
 ```
 - `--connection-string`: Remote ClickHouse connection string. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
 - `--table`: Seed only the specified table (default: all Moose tables).
-- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
-- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Overrides per-table `seedFilter.limit`; when omitted falls back to `seedFilter.limit`, then 1000. Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches, ignoring all limits (mutually exclusive with `--limit`).
 - `--order-by`: ORDER BY clause for the query (e.g., `--order-by 'timestamp DESC'`).
 - `--report`: Report row counts after seeding (default: `true`). Counts shown for default database only; use `--report=false` to skip.
 
@@ -151,6 +212,8 @@ clickhouse://username:password@host:9440/database
 - Tables that don't exist on remote are automatically skipped with clear warnings
 - Final summary shows successful and skipped tables
 - Clean, streamlined output focused on results
+
+**Per-table seed filters:** Tables can declare a `seedFilter` in their `OlapTable` config to set a default limit and/or WHERE clause when seeding. See [Seed Filter](/moosestack/olap/model-table#seed-filter) for details.
 
 Notes:
 - Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.
@@ -323,11 +386,10 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
 - Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
 - Omit `--save` to output to stdout without writing files
-- Requires these feature flags in `moose.config.toml`:
+- Requires OLAP to be enabled in `moose.config.toml`:
   ```toml filename="moose.config.toml" copy
   [features]
   olap = true
-  ddl_plan = true
   ```
 
 ### DB Pull (External Tables)

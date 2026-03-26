@@ -70,5 +70,7 @@ def test_materialized_mutually_exclusive_with_default():
             ClickHouseMaterialized("'materialized_value'"),
         ]
 
-    with pytest.raises(ValueError, match="cannot have both DEFAULT and MATERIALIZED"):
+    with pytest.raises(
+        ValueError, match="can only have one of DEFAULT, MATERIALIZED, or ALIAS"
+    ):
         _to_columns(BadModel)

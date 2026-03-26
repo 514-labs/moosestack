@@ -16,7 +16,7 @@ export async function getEventsByStatus(startDate?: Date, endDate?: Date) {
     },
   });
 
-  const query = sql`
+  const query = sql.statement`
     SELECT ${parts.dimensions}, ${parts.metrics}
     ${parts.from}
     ${parts.where}
@@ -51,7 +51,7 @@ export async function getEventsByStatusOld(
   );
 
   const results = await executeQuery<{ status: string; count: number }>(
-    sql`SELECT lower(${Events.columns.status}) as status, COUNT(*) as count FROM ${Events} ${whereClause} GROUP BY status`,
+    sql.statement`SELECT lower(${Events.columns.status}) as status, COUNT(*) as count FROM ${Events} ${whereClause} GROUP BY status`,
   );
 
   return results.map((row) => ({

@@ -88,7 +88,7 @@ interface QueryParams {
 
 export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route", 
   async ({limit = 10}: QueryParams, {client, sql}) => {
-    const result = await client.query.execute(sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`);
+    const result = await client.query.execute(sql.statement`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`);
     return await result.json();
   }
 );
@@ -226,7 +226,7 @@ analytics_api = Api[QueryParams, DataModel]("get-api-route", query_function=hand
   "const table = new OlapTable<Event>(\"events\");",
   "",
   "const mv = new MaterializedView<AggregatedEvent>({",
-  "  selectStatement: sql`",
+  "  selectStatement: sql.statement`",
   "    SELECT count(*) as count, name",
   "    FROM ${table}",
   "    GROUP BY name",
@@ -326,7 +326,7 @@ analytics_api = Api[QueryParams, DataModel]("get-api-route", query_function=hand
   "const getEvents = new Api<Params, Event>(\"get-events\", {",
   "  async handler({limit = 10}, {client, sql}) {",
   "    // query database and return results",
-  "    return await client.query.execute(sql`",
+  "    return await client.query.execute(sql.statement`",
   "      SELECT * FROM events LIMIT ${limit}",
   "    `);",
   "  }",
@@ -419,6 +419,6 @@ analytics_api = Api[QueryParams, DataModel]("get-api-route", query_function=hand
 - [Temporal](https://temporal.io/) (Workflow Orchestration)
 - [Redis](https://redis.io/) (Internal State Management) 
 
-<Callout type="info" title="Managed Moose in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Fiveonefour hosting" compact>
-  Want this managed in production for you? Check out Fiveonefour hosting (from the makers of the Moose Stack).
+<Callout type="info" title="Managed MooseStack in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Fiveonefour hosting" compact>
+  Want this managed in production for you? Check out Fiveonefour hosting (from the makers of MooseStack).
 </Callout>

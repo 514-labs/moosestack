@@ -83,6 +83,7 @@ pub mod timing;
 
 // Re-export commonly used types and functions for convenience
 pub use infrastructure::show_changes;
+pub(crate) use infrastructure::write_detail_lines;
 pub use message::{Message, MessageType};
 pub use message_display::{batch_inserted, show_message_wrapper};
 pub use spinner::{with_spinner_completion, with_spinner_completion_async};

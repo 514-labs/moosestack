@@ -46,7 +46,7 @@ export const KafkaTestMV = new MaterializedView<KafkaTestEvent>({
   tableName: "KafkaTestDest",
   materializedViewName: "KafkaTestDest_MV",
   orderByFields: ["eventId", "timestamp"],
-  selectStatement: sql`
+  selectStatement: sql.statement`
     SELECT
       ${kafkaSourceColumns.eventId} as eventId,
       ${kafkaSourceColumns.userId} as userId,

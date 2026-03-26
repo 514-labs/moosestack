@@ -30,6 +30,7 @@ import {
   ReplicatedVersionedCollapsingMergeTreeConfig,
   S3QueueConfig,
 } from "./sdk/olapTable";
+import type { TableProjection } from "./sdk/olapTable";
 import {
   ConsumerConfig,
   KafkaSchemaConfig,
@@ -40,6 +41,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
+import { SelectRowPolicy } from "./sdk/selectRowPolicy";
 import {
   getSourceDir,
   getCompiledIndexPath,
@@ -164,6 +166,7 @@ type MooseInternalRegistry = {
   webApps: Map<string, WebApp>;
   materializedViews: Map<string, MaterializedView<any>>;
   views: Map<string, View>;
+  selectRowPolicies: Map<string, SelectRowPolicy>;
 };
 
 let registryMutationVersion = 0;
@@ -206,6 +209,7 @@ function createRegistryFrom(
     webApps: toTrackingMap(existing?.webApps),
     materializedViews: toTrackingMap(existing?.materializedViews),
     views: toTrackingMap(existing?.views),
+    selectRowPolicies: toTrackingMap(existing?.selectRowPolicies),
   };
 }
 
@@ -248,6 +252,10 @@ const moose_internal: MooseInternalRegistry = {
     markRegistryMutated,
   ),
   views: new MutationTrackingMap<string, View>(undefined, markRegistryMutated),
+  selectRowPolicies: new MutationTrackingMap<string, SelectRowPolicy>(
+    undefined,
+    markRegistryMutated,
+  ),
 };
 
 function getCachedLineage(
@@ -476,12 +484,16 @@ interface TableJson {
     arguments: string[];
     granularity: number;
   }[];
+  /** Optional table projections */
+  projections?: TableProjection[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
   /** Optional database name for multi-database support. */
   database?: string;
   /** Optional cluster name for ON CLUSTER support. */
   cluster?: string;
+  /** Optional seed filter for `moose seed clickhouse`. */
+  seedFilter?: { limit?: number; where?: string };
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -497,6 +509,8 @@ interface Target {
   metadata?: { description?: string };
   /** Optional source file path where this transform was declared. */
   sourceFile?: string;
+  /** Optional dead letter queue stream name for this transform. */
+  deadLetterQueue?: string;
 }
 
 /**
@@ -507,6 +521,8 @@ interface Consumer {
   version?: string;
   /** Optional source file path where this consumer was declared. */
   sourceFile?: string;
+  /** Optional dead letter queue stream name for this consumer. */
+  deadLetterQueue?: string;
 }
 
 /**
@@ -652,6 +668,20 @@ interface MaterializedViewJson {
 /**
  * JSON representation of a structured View.
  */
+/**
+ * JSON representation of a SelectRowPolicy.
+ */
+interface SelectRowPolicyJson {
+  /** Name of the row policy */
+  name: string;
+  /** Tables the policy applies to */
+  tables: { name: string; database?: string }[];
+  /** Column to filter on */
+  column: string;
+  /** JWT claim name for the filter value */
+  claim: string;
+}
+
 interface ViewJson {
   /** Name of the view */
   name: string;
@@ -1067,6 +1097,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
+  const selectRowPolicies: { [key: string]: SelectRowPolicyJson } = {};
   const lineage = getCachedLineage(registry);
 
   registry.tables.forEach((table) => {
@@ -1160,9 +1191,13 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
           granularity: i.granularity === undefined ? 1 : i.granularity,
           arguments: i.arguments === undefined ? [] : i.arguments,
         })) || [],
+      projections:
+        ("projections" in table.config && table.config.projections) || [],
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,
+      seedFilter:
+        "seedFilter" in table.config ? table.config.seedFilter : undefined,
     };
   });
 
@@ -1183,6 +1218,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
           version: config.version,
           metadata: config.metadata,
           sourceFile: config.sourceFile,
+          deadLetterQueue: config.deadLetterQueue?.name,
         });
       });
     });
@@ -1191,6 +1227,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
       consumers.push({
         version: consumer.config.version,
         sourceFile: consumer.config.sourceFile,
+        deadLetterQueue: consumer.config.deadLetterQueue?.name,
       });
     });
 
@@ -1373,6 +1410,15 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     };
   });
 
+  registry.selectRowPolicies.forEach((policy) => {
+    selectRowPolicies[policy.name] = {
+      name: policy.name,
+      tables: policy.tableRefs,
+      column: policy.config.column,
+      claim: policy.config.claim,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -1383,6 +1429,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     webApps,
     materializedViews,
     views,
+    selectRowPolicies,
     unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
@@ -1461,6 +1508,7 @@ const loadIndex = async () => {
   registry.webApps.clear();
   registry.materializedViews.clear();
   registry.views.clear();
+  registry.selectRowPolicies.clear();
 
   // Clear require cache for compiled directory to pick up changes
   const outDir = getOutDir();
@@ -1684,6 +1732,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1697,6 +1746,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1710,6 +1760,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1723,6 +1774,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
   {
@@ -1736,6 +1788,7 @@ export const dlqColumns: Column[] = [
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     comment: null,
   },
 ];

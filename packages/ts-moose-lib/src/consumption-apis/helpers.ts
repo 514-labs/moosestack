@@ -1,33 +1,16 @@
-import { ClickHouseClient, CommandResult, ResultSet } from "@clickhouse/client";
 import {
   Client as TemporalClient,
   Connection,
   ConnectionOptions,
 } from "@temporalio/client";
 import { StringValue } from "@temporalio/common";
-import { createHash, randomUUID } from "node:crypto";
-import { performance } from "perf_hooks";
+import { createHash } from "node:crypto";
 import * as fs from "fs";
 import { getWorkflows } from "../dmv2/internal";
 import { JWTPayload } from "jose";
-import { Sql, sql, RawValue, toQuery, toQueryPreview } from "../sqlHelpers";
-
-/**
- * Format elapsed milliseconds into a human-readable string.
- * Matches Python's format_timespan behavior.
- */
-function formatElapsedTime(ms: number): string {
-  if (ms < 1000) {
-    return `${Math.round(ms)} ms`;
-  }
-  const seconds = ms / 1000;
-  if (seconds < 60) {
-    return `${seconds.toFixed(2)} seconds`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes} minutes and ${remainingSeconds.toFixed(2)} seconds`;
-}
+import { Sql, sql, RawValue } from "../sqlHelpers";
+import { QueryClient, type RowPolicyOptions } from "./query-client";
+export { QueryClient, type RowPolicyOptions } from "./query-client";
 
 /**
  * Utilities provided by getMooseUtils() for database access and SQL queries.
@@ -60,52 +43,54 @@ export class MooseClient {
   }
 }
 
-export class QueryClient {
-  client: ClickHouseClient;
-  query_id_prefix: string;
-  constructor(client: ClickHouseClient, query_id_prefix: string) {
-    this.client = client;
-    this.query_id_prefix = query_id_prefix;
+/**
+ * Shared ClickHouse role name used by all row policies.
+ * IMPORTANT: Must match MOOSE_RLS_ROLE in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_ROLE = "moose_rls_role";
+
+/**
+ * Dedicated ClickHouse user for RLS queries.
+ * Created at DDL time with SELECT-only permissions and the RLS role granted.
+ * IMPORTANT: Must match MOOSE_RLS_USER in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_USER = "moose_rls_user";
+
+/**
+ * Prefix for ClickHouse custom settings used by row policies.
+ * Setting names are `{MOOSE_RLS_SETTING_PREFIX}{column}`.
+ * IMPORTANT: Must match the format in setting_name() in apps/framework-cli/src/framework/core/infrastructure/select_row_policy.rs
+ */
+export const MOOSE_RLS_SETTING_PREFIX = "SQL_moose_rls_";
+
+/** Config mapping ClickHouse setting names to JWT claim names */
+export type RowPoliciesConfig = Record<string, string>;
+
+/**
+ * Build RowPolicyOptions from a row policies config and a claim-value source.
+ * Only sets ClickHouse settings for claims that are present in the source.
+ *
+ * Missing claims are skipped — if a table's row policy calls getSetting()
+ * for a setting that wasn't set, ClickHouse will error. This is correct:
+ * it means the JWT is missing a claim that the queried table requires.
+ * Tables whose policies don't reference the missing setting are unaffected.
+ *
+ * @param config  Maps ClickHouse setting name → claim name
+ * @param claims  Maps claim name → claim value (e.g., JWT payload or rlsContext)
+ * @returns RowPolicyOptions with the shared RLS role and populated settings
+ */
+export function buildRowPolicyOptionsFromClaims(
+  config: RowPoliciesConfig,
+  claims: Record<string, unknown>,
+): RowPolicyOptions {
+  const clickhouse_settings: Record<string, string> = Object.create(null);
+  for (const [settingName, claimName] of Object.entries(config)) {
+    const value = claims[claimName];
+    if (value !== undefined && value !== null) {
+      clickhouse_settings[settingName] = String(value);
+    }
   }
-
-  async execute<T = any>(
-    sql: Sql,
-  ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {
-    const [query, query_params] = toQuery(sql);
-
-    console.log(`[QueryClient] | Query: ${toQueryPreview(sql)}`);
-    const start = performance.now();
-    const result = await this.client.query({
-      query,
-      query_params,
-      format: "JSONEachRow",
-      query_id: this.query_id_prefix + randomUUID(),
-      // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
-      // where response buffering would harm streaming performance and concurrency
-    });
-    const elapsedMs = performance.now() - start;
-    console.log(
-      `[QueryClient] | Query completed: ${formatElapsedTime(elapsedMs)}`,
-    );
-    return result;
-  }
-
-  async command(sql: Sql): Promise<CommandResult> {
-    const [query, query_params] = toQuery(sql);
-
-    console.log(`[QueryClient] | Command: ${toQueryPreview(sql)}`);
-    const start = performance.now();
-    const result = await this.client.command({
-      query,
-      query_params,
-      query_id: this.query_id_prefix + randomUUID(),
-    });
-    const elapsedMs = performance.now() - start;
-    console.log(
-      `[QueryClient] | Command completed: ${formatElapsedTime(elapsedMs)}`,
-    );
-    return result;
-  }
+  return { role: MOOSE_RLS_ROLE, clickhouse_settings };
 }
 
 export class WorkflowClient {

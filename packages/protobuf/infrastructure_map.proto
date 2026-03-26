@@ -35,6 +35,9 @@ message InfrastructureMap {
   map<string, View> views = 17;
   // Workflow definitions
   map<string, Workflow> workflows = 18;
+
+  // Row-level security policies
+  map<string, SelectRowPolicy> select_row_policies = 20;
 }
 
 message SourceLocation {
@@ -177,6 +180,12 @@ message Table {
   // Hash of table settings for change detection (including sensitive settings)
   // Used to detect settings changes without storing plaintext sensitive values
   optional string table_settings_hash = 20;
+
+  // Optional table projections for alternative data ordering within parts
+  repeated TableProjection projections = 21;
+
+  // Per-table filter for `moose seed clickhouse`
+  optional SeedFilter seed_filter = 22;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -203,6 +212,19 @@ message TableIndex {
   uint64 granularity = 5;
 }
 
+// Per-table filtering for `moose seed clickhouse`
+message SeedFilter {
+  // Maximum rows to seed (falls back to CLI --limit, then global default)
+  optional uint64 limit = 1;
+  // ClickHouse SQL WHERE expression appended to the seed query
+  optional string where_clause = 2;
+}
+
+// DB-neutral representation of a table projection
+message TableProjection {
+  string name = 1;
+  string body = 2;
+}
 message Dmv1View {
   string name = 1;
   string version = 2;
@@ -287,6 +309,8 @@ message FunctionProcess {
   PrimitiveSignature source_primitive = 9;
   optional int32 parallel_process_count = 10;
   optional Metadata metadata = 11;
+  // Topic ID for the dead letter queue, used to construct namespace-prefixed topic name
+  optional string dead_letter_queue_topic_id = 12;
 }
 
 message InitialDataLoad {
@@ -314,6 +338,8 @@ message Column {
   optional string codec = 11;
   // Materialized expression
   optional string materialized = 12;
+  // Alias expression (computed at query time, not stored)
+  optional string alias = 13;
 }
 
 enum SimpleColumnType {
@@ -502,6 +528,7 @@ message InfrastructureSignature {
     string topic_to_table_sync_process_id = 6;
     string materialized_view_id = 7;
     string view_id = 8;
+    string select_row_policy_id = 9;
   }
 }
 
@@ -534,4 +561,16 @@ message Workflow {
   repeated InfrastructureSignature pulls_data_from = 6;
   // Infrastructure components this workflow writes data to.
   repeated InfrastructureSignature pushes_data_to = 7;
+}
+
+// Row-level security policy for ClickHouse
+message SelectRowPolicy {
+  // Policy name
+  string name = 1;
+  // Tables the policy applies to (with optional per-table database)
+  repeated TableReference tables = 2;
+  // Column to filter on
+  string column = 3;
+  // JWT claim name that provides the filter value
+  string claim = 4;
 }

@@ -1,0 +1,33 @@
+---
+title: March 20, 2026
+description: Release notes for March 20, 2026
+commits:
+  moosestack: b969f09e800975a5f6c465c484a385d405cae126
+  commercial: 691aad874e389c564560e1e90be622dda4117051
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 20, 2026
+
+## Moose
+
+### New Features
+
+**Dead Letter Queue (DLQ) support with namespace prefixing** ([@phiSgr](https://github.com/phiSgr))
+  Added Dead Letter Queue (DLQ) functionality to handle failed streaming function processing, with support for namespace prefixing in Kafka topics. When streaming functions fail to process messages, they are now automatically routed to a DLQ topic for debugging and recovery. This includes infrastructure mapping changes and CLI argument support for DLQ configuration, improving error handling and observability in streaming data pipelines.
+
+  Docs: [Dead Letter Queues](/moosestack/streaming/dead-letter-queues)
+
+### Improvements
+- Move full application examples from templates to dedicated examples directory: Full application examples (like ads-b-frontend, brainwaves, github-dev-trends) are now organized in a dedicated examples/ directory instead of templates/, making it clearer that these are complete reference applications rather than starter templates. The CLI now also provides a helpful message directing users to examples when a template isn't found. ([@onelesd](https://github.com/onelesd))
+
+### Bug Fixes
+- Fix ClickHouseJson options for dict[str, Any] fields: Fixed an issue where ClickHouseJson configuration options (like max_dynamic_paths and skip_paths) were not being applied to dict[str, Any] fields in Python data models. ([@hh2110](https://github.com/hh2110)) Docs: [JSON Type](/moosestack/data-types/json)
+
+## Fiveonefour Hosting
+
+### New Features
+**Add persistent volume support for preview branches** ([@callicles](https://github.com/callicles))
+  Preview branch deployments now support persistent volume claims (PVC) for data persistence across deployments. This enables stateful workloads and data retention in preview environments, with configurable storage options per project or branch.

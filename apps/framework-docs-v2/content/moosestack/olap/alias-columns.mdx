@@ -1,0 +1,197 @@
+---
+title: Alias Columns
+description: Define virtual computed columns that are calculated at query time
+order: 17
+category: olap
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Alias Columns
+
+ALIAS columns define virtual computed values that are calculated at **query time**, not stored on disk. They behave like SQL views at the column level — the expression is re-evaluated every time the column is read.
+
+## When to use
+
+- Derive values without storing them (zero disk cost)
+- Expose computed fields in SELECT queries without materializing data
+- Prototype computed columns before committing to MATERIALIZED
+
+<Callout type="info" title="Computed at Query Time">
+ALIAS columns are not physically stored. They are calculated on the fly when queried, so they add no insert overhead or disk usage, but do add query-time CPU cost.
+</Callout>
+
+## Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="AliasExample.ts" copy
+import { OlapTable, Key, DateTime, ClickHouseAlias, UInt64 } from "@514labs/moose-lib";
+
+interface UserEvents {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+
+  // Virtual date column — computed when queried
+  eventDate: Date & ClickHouseAlias<"toDate(timestamp)">;
+
+  // Virtual hash — no storage cost
+  userHash: UInt64 & ClickHouseAlias<"cityHash64(userId)">;
+}
+
+export const UserEventsTable = new OlapTable<UserEvents>("UserEvents", {
+  orderByFields: ["id"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="alias_example.py" copy
+from typing import Annotated
+from datetime import datetime, date
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseAlias, UInt64
+from pydantic import BaseModel
+
+class UserEvents(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+
+    # Virtual date column — computed when queried
+    event_date: Annotated[date, ClickHouseAlias("toDate(timestamp)")]
+
+    # Virtual hash — no storage cost
+    user_hash: Annotated[UInt64, ClickHouseAlias("cityHash64(user_id)")]
+
+user_events_table = OlapTable[UserEvents](
+    "UserEvents",
+    OlapConfig(order_by_fields=["id"])
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## ALIAS vs MATERIALIZED
+
+| | ALIAS | MATERIALIZED |
+|---|---|---|
+| **Stored on disk** | No | Yes |
+| **Computed when** | Query time | Insert time |
+| **Disk cost** | None | Same as a regular column |
+| **Query cost** | Expression re-evaluated per query | Zero (pre-computed) |
+| **Best for** | Lightweight derivations, prototyping | Expensive computations, indexed lookups |
+
+Use ALIAS when storage matters more than query speed. Use MATERIALIZED when the expression is expensive and queried often.
+
+## Common Patterns
+
+**Human-Readable Formatting:**
+- `formatReadableSize(size_bytes)` — Display `4678899` as `4.46 MiB`
+- `formatReadableQuantity(count)` — Display `1234567` as `1.23 million`
+- `formatReadableTimeDelta(elapsed_seconds)` — Display `3661` as `1 hour and 1 second`
+
+**Date/Time Derivations:**
+- `toDate(timestamp)` — Extract date without storing it
+- `toHour(timestamp)` — Derive hour on the fly
+- `toStartOfMonth(timestamp)` — Monthly bucketing
+
+**String Transformations:**
+- `lower(email)` — Case-normalized view
+- `concat(first_name, ' ', last_name)` — Computed full name
+- `extractURLParameter(url, 'utm_source')` — Parse URL parameters on read
+
+<Callout type="tip" title="ALIAS vs MATERIALIZED">
+If you find yourself querying an ALIAS column frequently or using it in WHERE/ORDER BY clauses, consider promoting it to a [MATERIALIZED column](/moosestack/olap/materialized-columns) so the value is pre-computed and stored.
+</Callout>
+
+## Insert Behavior
+
+ALIAS columns are computed by ClickHouse — you should not supply values for them when inserting data.
+Moose handles this automatically across all ingest paths (streams, HTTP ingest, and direct `OlapTable.insert()`).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+`OlapTable.insert()` accepts `Insertable<T>[]` — a type that omits ALIAS/MATERIALIZED fields and
+    makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself; the method signature handles it.
+
+```ts filename="InsertableExample.ts" copy
+import { OlapTable, Key, DateTime, ClickHouseAlias, ClickHouseDefault } from "@514labs/moose-lib";
+
+interface UserEvents {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  eventDate: Date & ClickHouseAlias<"toDate(timestamp)">;
+  createdAt: Date & ClickHouseDefault<"now()">;
+}
+
+const table = new OlapTable<UserEvents>("UserEvents");
+// eventDate is omitted, createdAt is optional — enforced by the method signature
+await table.insert([{ id: "1", timestamp: new Date(), userId: "u1" }]);
+```
+
+<Callout type="info" title="WithDefault and Insertable">
+`Insertable<T>` detects `ClickHouseDefault<E>` (branded intersection) but not `WithDefault<T, E>`, which erases to the base type at the type level. If you use `WithDefault`, mark the field as optional (`field?: Type & WithDefault<...>`) yourself.
+</Callout>
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+In Python, fields annotated with `ClickHouseAlias` are automatically optional at construction time — Pydantic will accept `None` (or omission) and default the field to `None`. ClickHouse computes the real value at query time.
+
+```python filename="alias_insert.py" copy
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseAlias
+from pydantic import BaseModel
+from typing import Annotated
+from datetime import datetime, date
+
+class UserEvents(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    event_date: Annotated[date, ClickHouseAlias("toDate(timestamp)")]
+
+# event_date can be omitted — Pydantic defaults it to None
+event = UserEvents(id="1", timestamp=datetime.now(), user_id="u1")
+
+table = OlapTable[UserEvents]("UserEvents", OlapConfig(order_by_fields=["id"]))
+table.insert([{"id": "1", "timestamp": datetime.now(), "user_id": "u1"}])
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Query Behavior
+
+By default, ClickHouse excludes ALIAS columns from `SELECT *` results. When you query through `MooseClient.query.execute`, Moose sets `asterisk_include_alias_columns` per-query so that `SELECT *` includes ALIAS values. If you have complex SQL where extra columns could affect column ordering, name your columns explicitly instead of using `*`.
+
+## Important Notes
+
+<Callout type="info" title="Column Names in Expressions">
+Use the exact field names from your data model. Moose preserves your naming convention (camelCase in TypeScript, snake_case in Python) in ClickHouse columns.
+</Callout>
+
+**Restrictions:**
+- Cannot combine ALIAS with DEFAULT or MATERIALIZED (mutually exclusive)
+- Cannot be primary keys (ALIAS columns are virtual — they don't exist in storage)
+- Cannot INSERT values into ALIAS columns
+
+**Schema Changes:**
+- **Add:** `ALTER TABLE ADD COLUMN ... ALIAS expr`
+- **Modify:** `ALTER TABLE MODIFY COLUMN ... ALIAS new_expr`
+- **Remove:** `ALTER TABLE MODIFY COLUMN ... REMOVE ALIAS`
+
+## Syncing from Remote
+
+When using `moose init --from-remote`, ALIAS column definitions are automatically preserved:
+
+```bash filename="Terminal" copy
+moose init my-app --from-remote --language typescript
+# Generated models include ClickHouseAlias annotations
+```
+
+## Related
+
+- [Materialized Columns](/moosestack/olap/materialized-columns) — Pre-compute and store values at insert time
+- [Data Types](/moosestack/data-types) — All supported column types
+- [Schema Optimization](/moosestack/olap/schema-optimization) — Optimize storage
+- [TTL (Time-to-Live)](/moosestack/olap/ttl) — Auto-expire data
+- [ClickHouse Docs](https://clickhouse.com/docs/en/sql-reference/statements/create/table#alias) — Detailed reference

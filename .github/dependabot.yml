@@ -53,3 +53,44 @@ updates:
         patterns:
           - "moose-cli"
           - "moose-lib"
+
+  # =============================================================================
+  # Examples - Monitor dependencies (these manage their own versions)
+  # =============================================================================
+
+  # TypeScript examples (any package.json in examples/)
+  - package-ecosystem: "npm"
+    directories:
+      - "/examples/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "typescript"
+      - "examples"
+      - "dependencies"
+    groups:
+      moose:
+        patterns:
+          - "@514labs/moose-cli"
+          - "@514labs/moose-lib"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  # Python examples (any requirements.txt in examples/)
+  - package-ecosystem: "pip"
+    directories:
+      - "/examples/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "python"
+      - "examples"
+      - "dependencies"
+    groups:
+      moose:
+        patterns:
+          - "moose-cli"
+          - "moose-lib"

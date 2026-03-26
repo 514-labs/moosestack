@@ -194,6 +194,11 @@ pub enum Commands {
     /// Manage templates
     #[command(visible_alias = "t")]
     Template(TemplateCommands),
+    #[command(
+        about = "[EXPERIMENTAL] Manage components",
+        long_about = "Manage components\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases."
+    )]
+    Component(ComponentCommands),
     /// Manage database schema import
     Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
@@ -275,6 +280,49 @@ pub enum Commands {
     /// Fetch and display LLM-optimized documentation for AI agents
     #[command(visible_alias = "do")]
     Docs(DocsArgs),
+    #[command(
+        visible_alias = "a",
+        about = "[EXPERIMENTAL] Add a component to your project",
+        long_about = "Add a component to your project\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases.",
+        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app\n  moose add benchmark --dir moose"
+    )]
+    Add {
+        #[command(subcommand)]
+        component: AddComponent,
+    },
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum AddComponent {
+    /// MCP server with ClickHouse query tools at /tools
+    #[command(
+        name = "mcp-server",
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Moose project\n\nExample:\n  moose add mcp-server --dir packages/moosestack-service"
+    )]
+    McpServer(AddArgs),
+    /// AI chat panel for Next.js. Requires an MCP server (moose add mcp-server)
+    #[command(
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - Project must use App Router\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
+    )]
+    Chat(AddArgs),
+    /// Query benchmark package for a TypeScript Moose project
+    #[command(
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a TypeScript Moose project\n\nExample:\n  moose add benchmark --dir moose"
+    )]
+    Benchmark(AddArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AddArgs {
+    /// Target directory
+    #[arg(long, short = 'd')]
+    pub dir: Option<String>,
+    /// Overwrite existing files
+    #[arg(long)]
+    pub overwrite: bool,
+    /// Skip confirmation prompts
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Debug, Args)]
@@ -428,6 +476,24 @@ pub struct TemplateCommands {
 pub enum TemplateSubCommands {
     /// List available templates
     #[command(visible_alias = "l")]
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct ComponentCommands {
+    #[command(subcommand)]
+    pub command: Option<ComponentSubCommands>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ComponentSubCommands {
+    /// List available components
+    #[command(visible_alias = "l")]
     List {},
 }
 
@@ -446,14 +512,10 @@ pub enum SeedSubcommands {
         /// ClickHouse connection URL (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
-        /// Limit the number of rows to copy per table (default: 1000)
-        #[arg(
-            long,
-            value_name = "LIMIT",
-            default_value_t = 1000,
-            conflicts_with = "all"
-        )]
-        limit: usize,
+        /// Limit the number of rows to copy per table.
+        /// When omitted, falls back to per-table seedFilter.limit, then to 1000.
+        #[arg(long, value_name = "LIMIT", conflicts_with = "all")]
+        limit: Option<usize>,
         /// Copy all rows (ignore limit). If set for a table, copies entire table.
         #[arg(long, default_value = "false", conflicts_with = "limit")]
         all: bool,

@@ -8,49 +8,96 @@ order: 0
 
 Use `514 --help` to view the complete top-level command surface and global flags.
 
+Argument convention:
+- Primary command object: positional argument.
+- Filter/context for another object: optional flag.
+
 ## Usage
 
 ```bash
 514 [OPTIONS] [COMMAND]
 ```
 
-## Commands
+## Top-level commands
 
 - `auth`: Manage authentication.
-- `orgs`: Manage organizations.
-- `link`: Link local repository to an existing Boreal project.
-- `projects`: Manage projects.
-- `setup`: Set up a hosting project locally (clone, branch, dev environment).
-- `update`: Update installed CLIs (`514` and/or `moose`).
+- `org`: Manage organizations.
+- `project`: Manage projects (`list`, `link`, `setup`).
+- `deployment`: Manage deployments (`list`).
+- `doc`: Browse and search documentation (`list`, `show`, `search`, `browse`).
+- `cli`: Manage installed CLIs (`update`).
+- `env`: Manage environment variables (`list`, `get`, `set`, `delete`).
+- `agent`: Agent-focused read-only command surface.
+- `api-endpoint`: Manage API endpoint resources for a deployment.
+- `stream`: Manage stream resources for a deployment.
+- `function`: Manage function resources for a deployment.
+- `stream-to-table-sync`: Manage stream-to-table sync resources for a deployment.
+- `stream-to-stream-sync`: Manage stream-to-stream sync resources for a deployment.
+- `table`: Manage table resources for a deployment.
+- `view`: Manage view resources for a deployment.
+- `web-app`: Manage web-app resources for a deployment.
+- `workflow`: Manage workflow resources for a deployment.
+- `sql-resource`: Manage SQL resources for a deployment.
+- `materialized-view`: Manage materialized view resources for a deployment.
 - `help`: Print help for the given command.
+
+## Aliases
+
+Plural command aliases work for resource commands.
+Example: `514 api-endpoints list` works the same as `514 api-endpoint list`.
 
 ## Global Options
 
-- `--api-url <API_URL>`: Override the hosting control plane API URL (`HOSTING_CLI_API_URL`).
+- `--api-url <API_URL>`: API base URL override (`HOSTING_CLI_API_URL`).
 - `-o, --org <ORG>`: Organization name or ID.
 - `--json`: Output as JSON.
 - `-v, --verbose...`: Enable verbose logging (`-v` debug, `-vv` trace).
 - `-h, --help`: Print help.
 - `-V, --version`: Print version.
 
+## Resource command pattern
+
+Deployment-scoped resources use `list` with a deployment ID:
+
+```bash
+514 <resource> list <DEPLOY_ID> [--project <org>/<project>]
+```
+
+Resources following this pattern:
+- `api-endpoint`
+- `stream`
+- `function`
+- `stream-to-table-sync`
+- `stream-to-stream-sync`
+- `table`
+- `view`
+- `web-app`
+- `workflow`
+- `sql-resource`
+- `materialized-view`
+
 ## Examples
 
 ```bash
-# Show top-level help
-514 --help
-
-# Show help for a specific command
-514 help setup
-
-# Use JSON output for automation
-514 --json projects list
+514 project list
+514 project setup my-org/my-project
+514 project link my-org/my-project
+514 deployment list --project my-org/my-project
+514 stream list dep_abc123 --project my-org/my-project
+514 api-endpoints list dep_abc123 --project my-org/my-project
+514 agent deployment list --project my-org/my-project
+514 env list --project my-org/my-project
+514 env set API_KEY=sk-123 --project my-org/my-project
+514 doc search "deployment"
+514 cli update moose
 ```
 
 ## Related
 
 - [`514 auth`](/hosting/cli/auth)
-- [`514 orgs`](/hosting/cli/orgs)
-- [`514 projects`](/hosting/cli/projects)
-- [`514 setup`](/hosting/cli/setup)
-- [`514 link`](/hosting/cli/link)
-- [`514 update`](/hosting/cli/update)
+- [`514 org`](/hosting/cli/orgs)
+- [`514 project`](/hosting/cli/projects)
+- [`514 project link`](/hosting/cli/projects/link)
+- [`514 project setup`](/hosting/cli/projects/setup)
+- [`514 env`](/hosting/cli/env)
+- [`514 cli update`](/hosting/cli/cli/update)

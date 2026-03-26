@@ -290,6 +290,7 @@ export interface ExpectedColumn {
   comment?: string;
   codec?: string | RegExp;
   materialized?: string | RegExp;
+  alias?: string | RegExp;
 }
 
 /**
@@ -365,6 +366,33 @@ export const verifyTableIndexes = async (
       if (missing.length > 0) {
         throw new Error(
           `Missing indexes on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
+        );
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
+};
+
+/**
+ * Verifies that the given table has projections with the specified names present in its DDL
+ */
+export const verifyTableProjections = async (
+  tableName: string,
+  expectedProjectionNames: string[],
+  database?: string,
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const ddl = await getTableDDL(tableName, database);
+      const missing = expectedProjectionNames.filter(
+        (name) => !ddl.includes(`PROJECTION ${name}`),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing projections on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
         );
       }
     },
@@ -491,26 +519,42 @@ export const validateTableSchema = async (
 
       // Materialized validation (if specified)
       if (expectedCol.materialized !== undefined) {
-        const actualMaterialized = actualCol.default_expression;
+        const actualExpression = actualCol.default_expression;
         const actualDefaultType = actualCol.default_type;
-        let materializedMatches = false;
+        let matches = false;
 
-        // Check that it's actually a MATERIALIZED column
         if (actualDefaultType === "MATERIALIZED") {
           if (typeof expectedCol.materialized === "string") {
-            // Exact string match
-            materializedMatches =
-              actualMaterialized === expectedCol.materialized;
+            matches = actualExpression === expectedCol.materialized;
           } else if (expectedCol.materialized instanceof RegExp) {
-            // Regex match for complex expressions
-            materializedMatches =
-              expectedCol.materialized.test(actualMaterialized);
+            matches = expectedCol.materialized.test(actualExpression);
           }
         }
 
-        if (!materializedMatches) {
+        if (!matches) {
           errors.push(
-            `Column '${expectedCol.name}' materialized mismatch: expected '${expectedCol.materialized}', got '${actualDefaultType === "MATERIALIZED" ? actualMaterialized : "(not materialized)"}'`,
+            `Column '${expectedCol.name}' materialized mismatch: expected '${expectedCol.materialized}', got '${actualDefaultType === "MATERIALIZED" ? actualExpression : "(not materialized)"}'`,
+          );
+        }
+      }
+
+      // Alias validation (if specified)
+      if (expectedCol.alias !== undefined) {
+        const actualExpression = actualCol.default_expression;
+        const actualDefaultType = actualCol.default_type;
+        let matches = false;
+
+        if (actualDefaultType === "ALIAS") {
+          if (typeof expectedCol.alias === "string") {
+            matches = actualExpression === expectedCol.alias;
+          } else if (expectedCol.alias instanceof RegExp) {
+            matches = expectedCol.alias.test(actualExpression);
+          }
+        }
+
+        if (!matches) {
+          errors.push(
+            `Column '${expectedCol.name}' alias mismatch: expected '${expectedCol.alias}', got '${actualDefaultType === "ALIAS" ? actualExpression : "(not alias)"}'`,
           );
         }
       }

@@ -73,10 +73,12 @@ impl DataModel {
             table_settings: None,     // TODO: Parse table_settings from data model config
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             database: None, // Database defaults to global config
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            seed_filter: Default::default(),
         };
 
         // Compute hash that includes both engine params and database

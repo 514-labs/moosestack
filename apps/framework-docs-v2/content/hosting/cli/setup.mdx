@@ -1,78 +1,11 @@
 ---
-title: setup
-description: Bootstrap a local agent workspace from an existing cloud OLAP project with 514 setup.
-order: 2
+title: project setup
+description: Legacy route for the project setup command docs.
+order: 99
 ---
 
-# 514 setup
+# 514 project setup
 
-Use `514 setup <PROJECT_REF>` to bootstrap a local workspace from an existing Fiveonefour project.
+This page has moved.
 
-This command is the main provisioning step in the CLI agent harness: it verifies cloud access, prepares local git state, and creates a runnable workspace that stays aligned with the hosted project lifecycle.
-
-## Syntax
-
-```bash
-514 setup [OPTIONS] <PROJECT_REF>
-```
-
-## Arguments
-
-- `<PROJECT_REF>`: Project reference as `<org>/<project>`, project name, project ID, or Boreal URL.
-
-## Options
-
-- `--api-url <API_URL>`: Override API base URL (`HOSTING_CLI_API_URL`).
-- `--path <dir>`: Parent directory for clone destination.
-- `--dir-name <name>`: Local directory name override.
-- `-o, --org <ORG>`: Organization name or ID.
-- `--branch <name>`: Branch name to create.
-- `--no-branch`: Skip branch creation.
-- `--push`: Push created branch.
-- `--json`: Output as JSON.
-- `-v, --verbose...`: Enable verbose output (`-v` debug, `-vv` trace).
-- `--run <install|dev|both|skip>`: Choose local follow-up action.
-- `--yes`: Auto-confirm safe prompts.
-- `--no-input`: Disable prompts and fail fast if required input is missing.
-
-## Interactive Example
-
-```bash
-514 setup acme/analytics-api
-```
-
-Expected flow:
-- Checks auth, git, project access, and remote readiness.
-- Prompts for destination path and folder name.
-- Shows planned git commands before mutating actions.
-- Optionally creates and pushes branch.
-- Optionally runs local setup actions so you can execute workloads immediately.
-
-## Non-Interactive Example
-
-```bash
-514 setup acme/analytics-api \
-  --path ~/dev \
-  --dir-name analytics-api \
-  --branch feature/add-orders-rollup \
-  --push \
-  --run both \
-  --yes \
-  --no-input
-```
-
-## Output Model
-
-- Check-only output: preflight validations with no mutation.
-- Planned commands: explicit command preview before running.
-- Mutating commands: clone, branch creation, and push actions.
-- Post-action verification: final paths, branch, and cloud preview route checks.
-
-## Related
-
-- [`514 auth`](/hosting/cli/auth)
-- [`514 orgs`](/hosting/cli/orgs)
-- [`514 projects`](/hosting/cli/projects)
-- [`514 link`](/hosting/cli/link)
-- [`514 update`](/hosting/cli/update)
-- [Setup failures](/hosting/troubleshooting/setup-failures)
+Use [`514 project setup`](/hosting/cli/projects/setup).

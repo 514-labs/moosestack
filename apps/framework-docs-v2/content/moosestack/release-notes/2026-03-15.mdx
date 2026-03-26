@@ -1,0 +1,187 @@
+---
+title: March 15, 2026
+description: Release notes for March 15, 2026
+commits:
+  moosestack: 0ca7779d8c66dbe93c4509d1fb8caf9a98f00185
+  commercial: 71fce3a49c8f9fd58ead1c7f5f51a03cb246c1e8
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 15, 2026
+
+This week the query layer gains MaterializedView support and description fields for MCP tool generation, the SQL template API is refined with `sql.statement` and `sql.fragment` tags, and the 514 CLI adds log streaming, agent initialization, and runtime environment variable management.
+
+<Callout type="info" title="Highlights">
+* **New:** Query layer supports MaterializedView as a data source
+* **New:** CLI commands for runtime logs, env vars, and agent initialization
+* **Improved:** SQL template tags renamed to `sql.statement` and `sql.fragment` for clarity
+* **Improved:** Python Views support multi-database targeting
+</Callout>
+
+## Moose
+
+### New Features
+
+**MaterializedView support in query layer** ([@georgevanderson](https://github.com/georgevanderson))
+  `defineQueryModel` now accepts a `MaterializedView` in addition to `OlapTable` as the `table` parameter. When a `MaterializedView` is passed, its target table is used automatically for queries. This also works for joins, letting you build semantic query models on top of pre-aggregated data without manually referencing the underlying target table.
+
+  ```typescript
+  import { defineQueryModel, count, sum, timeDimensions } from "@514labs/moose-lib";
+  import { HourlyStatsView } from "./materialized-views/HourlyStatsView";
+
+  const statsModel = defineQueryModel({
+    name: "hourly_stats",
+    description: "Pre-aggregated hourly statistics",
+    table: HourlyStatsView, // MaterializedView — target table resolved automatically
+
+    dimensions: {
+      ...timeDimensions(HourlyStatsView.targetTable.columns.timestamp),
+    },
+
+    metrics: {
+      totalRequests: { agg: count(), as: "total_requests" },
+      totalBytes: { agg: sum(HourlyStatsView.targetTable.columns.bytes), as: "total_bytes" },
+    },
+  });
+  ```
+
+  Docs: [Semantic Layer](/moosestack/apis/semantic-layer)
+
+**`sql.statement` and `sql.fragment` template literal tags** ([@onelesd](https://github.com/onelesd))
+  The SQL template API now uses explicit `sql.statement` for top-level queries and `sql.fragment` for composable sub-expressions. This replaces the previous `sql` tagged template (which was ambiguous between statements and fragments), making it clear which SQL pieces are complete queries and which are building blocks for `sql.join` and dynamic composition. The MooseStack LSP will now skip SQL validation for `sql.fragment`.
+
+  ```typescript
+  import { Api, sql } from "@514labs/moose-lib";
+  import { UserTable } from "./UserTable";
+
+  const cols = UserTable.columns;
+
+  // sql.fragment for composable parts
+  const selectColumns = sql.join([
+    sql.fragment`${cols.id}`,
+    sql.fragment`${cols.name}`,
+    sql.fragment`${cols.email}`,
+  ], ",");
+
+  // sql.statement for complete queries
+  const query = sql.statement`
+    SELECT ${selectColumns}
+    FROM ${UserTable}
+    WHERE ${cols.age} >= ${18}
+  `;
+  ```
+
+  Docs: [Analytics API](/moosestack/apis/analytics-api)
+
+**Description fields for query layer definitions** ([@onelesd](https://github.com/onelesd))
+  Dimensions, metrics, and filters in `defineQueryModel` now accept an optional `description` field. These descriptions are used for MCP tool generation and documentation, giving LLMs richer context about what each field represents when the model is registered as an AI tool.
+
+  ```typescript
+  const visitsModel = defineQueryModel({
+    name: "visits",
+    table: VisitsTable,
+    dimensions: {
+      status: { column: "status", description: "Visit status category" },
+    },
+    metrics: {
+      totalVisits: { agg: count(), as: "total_visits", description: "Total number of visits" },
+    },
+    filters: {
+      status: { column: "status", operators: ["eq", "in"] as const, description: "Filter by visit status" },
+    },
+  });
+  ```
+
+  Docs: [Query Layer Reference](/moosestack/reference/query-layer)
+
+**Multi-database support for Python Views** ([@514Ben](https://github.com/514Ben))
+  The Python `View` class now accepts a `database` parameter, letting you create views in a specific ClickHouse database rather than the default. When set, Moose creates the view as `` `database`.`view_name` `` and automatically qualifies source table references.
+
+  ```python
+  from moose_lib import View
+  from tables import events
+
+  raw_events = View(
+      "raw_events",
+      "SELECT * FROM {events}",
+      [events],
+      database="analytics",
+  )
+  ```
+
+  Docs: [Views](/moosestack/olap/model-view)
+
+### Improvements
+
+- `.mcp.json` configuration files added to all visible templates, pre-configuring the MooseDev MCP server and Context7 for instant AI-assisted development on project init. ([@onelesd](https://github.com/onelesd))
+- `moose build` now fails on TypeScript compile errors, matching the behavior of `moose dev` watch mode. Previously, single-compilation mode set `noEmitOnError: false`, allowing broken builds to succeed silently. ([@onelesd](https://github.com/onelesd))
+
+### Bug Fixes
+
+- Fix `LowCardinality` columns not being generated in `db-pull` code generation for both Python and TypeScript. ([@phiSgr](https://github.com/phiSgr)) Docs: [DB Pull](/moosestack/olap/db-pull)
+- Fix computed columns (MATERIALIZED and ALIAS) incorrectly being required in ingestion payloads and included in Kafka-to-ClickHouse sync insert column lists. These columns are now properly excluded from validation and data insertion. ([@phiSgr](https://github.com/phiSgr))
+- Improve 404 error responses with a helpful message including available route discovery commands, and add proper `Content-Type` headers. Root path now returns a status page with docs links. ([@03cranec](https://github.com/03cranec))
+
+## Fiveonefour Hosting
+
+### New Features
+
+**CLI `logs` command** ([@LucioFranco](https://github.com/LucioFranco))
+  New `514 logs query` command streams runtime logs from deployed Moose applications directly in the terminal. Supports filtering by branch, time range, search text, and severity level, with a `--watch` flag for continuous tail-style monitoring.
+
+  ```bash
+  # View recent logs for a project
+  514 logs query --project my-org/my-project
+
+  # Filter by severity and search text
+  514 logs query --project my-org/my-project --severity ERROR --search "timeout"
+
+  # Watch mode — polls for new logs every 5 seconds
+  514 logs query --project my-org/my-project --watch 5
+  ```
+
+**CLI `agent init` command** ([@LucioFranco](https://github.com/LucioFranco))
+  New `514 agent init` scaffolds AI coding agent configurations for your project. Supports 19 agents including Claude Code, Cursor, Windsurf, Continue, Cline, Codex, Aider, GitHub Copilot, and more. Downloads and installs ClickHouse best practices skills from the 514 agent skills registry, MCP server configurations for MooseStack and Context7, and the MooseStack LSP server.
+
+  ```bash
+  # Initialize agent configs (auto-detects installed agents)
+  514 agent init
+
+  # Initialize for specific agents
+  514 agent init --agent claude-code --agent cursor
+  ```
+
+  Docs: [Agent Init](/hosting/cli/agent)
+
+**CLI `env` commands for runtime environment variables** ([@onelesd](https://github.com/onelesd))
+  New `514 env` subcommands (`list`, `get`, `set`, `delete`) manage runtime environment variables at org, project, and branch scope. Auto-detects project context from linked repos, with support for setting multiple variables at once.
+
+  ```bash
+  # List env vars for the linked project
+  514 env list
+
+  # Set variables at project scope
+  514 env set API_KEY=secret DB_HOST=db.example.com
+
+  # Set a branch-scoped override
+  514 env set --branch staging DEBUG=true
+
+  # Delete a variable
+  514 env delete API_KEY
+  ```
+
+  Docs: [Env CLI](/hosting/cli/env)
+
+### Improvements
+
+- Fix deployment URL resolution in the 514 CLI to correctly resolve project deployment endpoints. ([@LucioFranco](https://github.com/LucioFranco))
+- Fix `514 link` to properly support monorepo projects with path-scoped configuration. ([@LucioFranco](https://github.com/LucioFranco))
+- Fix branch auto-detection for CLI commands when working with linked repositories. ([@LucioFranco](https://github.com/LucioFranco))
+- Support for connecting multiple 514 organizations to a single Vercel team. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Support for Continue and PearAI agent configuration in `514 agent init`. ([@onelesd](https://github.com/onelesd))
+
+### Bug Fixes
+
+- Fix Vercel installation upsert to handle edge cases in the integration flow. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))

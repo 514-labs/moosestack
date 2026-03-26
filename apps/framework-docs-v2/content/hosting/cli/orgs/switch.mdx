@@ -1,0 +1,36 @@
+---
+title: org switch
+description: Switch the active organization context.
+order: 2
+---
+
+# 514 org switch
+
+Use `514 org switch` to change the active organization context.
+
+## Usage
+
+```bash
+514 org switch [ORG_REF] [OPTIONS]
+```
+
+## Arguments
+
+- `[ORG_REF]`: Organization ID, slug, or name. Omit to choose interactively.
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 org switch acme
+514 org switch
+```
+
+## Related
+
+- [`514 org`](/hosting/cli/orgs)
+- [`514 org list`](/hosting/cli/orgs/list)
+- [`514 project list`](/hosting/cli/projects/list)

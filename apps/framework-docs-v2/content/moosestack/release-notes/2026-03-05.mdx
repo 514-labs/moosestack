@@ -1,0 +1,98 @@
+---
+title: March 5, 2026
+description: Release notes for March 5, 2026
+commits:
+  moosestack: cb3ed381ad4c072e0db8b2192fc227a8e19366dd
+  commercial: a641de86dabe8fe7570a5cd5e5697c2f015d32d2
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 5, 2026
+
+This week Moose adds ALIAS column support for computed-on-read fields in ClickHouse, and the 514 CLI gains direct ClickHouse query execution and query performance metrics commands with automatic project context detection.
+
+<Callout type="info" title="Highlights">
+* **New:** ALIAS column support for ClickHouse tables
+* **New:** CLI commands for ClickHouse queries and metrics
+* **Improved:** CLI auto-detects org, project, and branch from local git context
+</Callout>
+
+## Moose
+
+### New Features
+
+**ALIAS column support for OLAP tables** ([@phiSgr](https://github.com/phiSgr))
+  OLAP tables can now define ALIAS columns — virtual columns that are computed on read rather than stored on disk. Unlike MATERIALIZED columns which compute and store values at insert time, ALIAS columns evaluate their expression every time the column is queried, making them ideal for derived fields that should always reflect the latest expression logic.
+
+  ```typescript
+  import { OlapTable, Key, DateTime, ClickHouseAlias, UInt64 } from "@514labs/moose-lib";
+
+  interface UserEvents {
+    id: Key<string>;
+    timestamp: DateTime;
+    userId: string;
+
+    // Virtual date column — computed when queried
+    eventDate: Date & ClickHouseAlias<"toDate(timestamp)">;
+
+    // Virtual hash — no storage cost
+    userHash: UInt64 & ClickHouseAlias<"cityHash64(userId)">;
+  }
+
+  export const UserEventsTable = new OlapTable<UserEvents>("UserEvents", {
+    orderByFields: ["id"],
+  });
+  ```
+
+  Docs: [Alias Columns](/moosestack/olap/alias-columns)
+
+### Improvements
+
+- Updated TypeScript MCP template with agent harness documentation, MCP server configuration, and ClickHouse best practices skill integration for improved developer onboarding. ([@oatsandsugar](https://github.com/oatsandsugar))
+- `moose docs search` now matches page headings (H1/H2/H3) in addition to TOC title/description, with `slug#anchor` deep links and hyphen/underscore-insensitive matching for better discoverability. ([@oatsandsugar](https://github.com/oatsandsugar)) Docs: [Moose CLI](/moosestack/moose-cli)
+- Python dependency migration from `sqlglot[rs]` to `sqlglot[c]` across moose-lib and Python templates, with improved CLI infra-map loading to handle non-fatal stderr output. ([@phiSgr](https://github.com/phiSgr))
+
+### Bug Fixes
+
+- Fix `moose add` command to validate App Router directory structure and properly resolve target paths, preventing errors when pointing at non-existent directories or Pages Router projects. ([@DatGuyJonathan](https://github.com/DatGuyJonathan)) Docs: [Moose CLI](/moosestack/moose-cli)
+- Fix CLI startup and config handling when `~/.moose/config.toml` or shell configuration files are read-only or externally managed (e.g. Nix environments). The CLI now warns and continues with defaults instead of panicking, and surfaces init/read failures cleanly. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Configuration](/moosestack/configuration)
+- Fix absolute paths leaking into `/admin/inframap` output by normalizing source paths for function processes, materialized views, and views. ([@phiSgr](https://github.com/phiSgr))
+
+## Fiveonefour Hosting
+
+### New Features
+
+**CLI `metrics query` command** ([@LucioFranco](https://github.com/LucioFranco))
+  New `514 metrics query` command fetches ClickHouse query performance metrics directly from the terminal. Supports filtering by time range, query kind, duration, data volume, and memory usage with formatted table output.
+
+  ```bash
+  # View recent query metrics for the current project
+  514 metrics query
+
+  # Filter by time range and duration
+  514 metrics query --start 2026-03-01 --end 2026-03-05 --duration-min 1s
+
+  # Output as JSON for scripting
+  514 metrics query --json
+  ```
+
+**CLI `clickhouse query` command** ([@LucioFranco](https://github.com/LucioFranco))
+  Run arbitrary ClickHouse SQL queries against deployed databases from the CLI. Accepts queries as positional arguments, from a file, or piped via stdin. Automatically resolves the target project and branch from local git context.
+
+  ```bash
+  # Run a query directly
+  514 clickhouse query "SELECT count() FROM events"
+
+  # From a file
+  514 clickhouse query --file analysis.sql
+
+  # Piped input
+  echo "SELECT count() FROM events" | 514 clickhouse query
+  ```
+
+### Improvements
+
+- CLI auto-detects organization, project, branch, and deployment from local git context and linked project configuration, removing the need to pass `--project` and `--branch` flags for most commands. ([@LucioFranco](https://github.com/LucioFranco))
+- CLI `link` command now supports monorepo projects with path-scoped configuration, allowing multiple projects to be linked within the same repository using `git config` subsections. ([@LucioFranco](https://github.com/LucioFranco))

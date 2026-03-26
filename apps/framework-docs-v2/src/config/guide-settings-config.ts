@@ -119,6 +119,26 @@ export const GUIDE_SETTINGS_CONFIG = [
     visible: false, // Hidden from customizer modal
     showInSummary: false, // Hidden from bottom-left panel
   },
+  {
+    id: "startingPoint",
+    label: "Project Setup",
+    options: [
+      {
+        value: "scratch",
+        label: "New MooseStack project",
+        chipLabel: "New Project",
+      },
+      {
+        value: "existing-nextjs",
+        label: "Add to existing Next.js app",
+        chipLabel: "Existing App",
+      },
+    ],
+    defaultValue: "scratch",
+    description: "Create a new MooseStack project or add to an existing one",
+    visible: true,
+    syncToUrl: true,
+  },
 ] as const satisfies readonly SettingConfig[];
 
 // Auto-generate TypeScript types from config

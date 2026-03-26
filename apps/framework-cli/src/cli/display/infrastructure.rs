@@ -58,7 +58,7 @@ const DETAIL_INDENT: &str = {
 
 /// Helper function to write detail lines with proper indentation
 /// Respects QUIET_STDOUT flag to redirect to stderr when set
-fn write_detail_lines(details: &[String]) {
+pub(crate) fn write_detail_lines(details: &[String]) {
     let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
     if quiet_stdout {
         let mut stderr = std::io::stderr();
@@ -665,6 +665,15 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         }
         OlapChange::Dmv1View(Change::Updated { before: _, after }) => {
             infra_updated(&after.short_display());
+        }
+        OlapChange::SelectRowPolicy(Change::Added(policy)) => {
+            infra_added(&format!("Row policy '{}'", policy.name));
+        }
+        OlapChange::SelectRowPolicy(Change::Removed(policy)) => {
+            infra_removed(&format!("Row policy '{}'", policy.name));
+        }
+        OlapChange::SelectRowPolicy(Change::Updated { before: _, after }) => {
+            infra_updated(&format!("Row policy '{}'", after.name));
         }
     });
 }

@@ -14,7 +14,10 @@ from ._source_capture import get_source_file_from_stack
 
 def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
     """Helper function to format a table reference as `database`.`table` or just `table`"""
-    database = table.config.database if isinstance(table, OlapTable) else None
+    if isinstance(table, OlapTable):
+        database = table.config.database
+    else:
+        database = getattr(table, "database", None)
     if database:
         return f"`{database}`.`{table.name}`"
     return f"`{table.name}`"
@@ -30,10 +33,13 @@ class View:
         select_statement: The SQL SELECT statement defining the view.
         base_tables: A list of objects with a `name` attribute (OlapTable, View)
                      that this view depends on. Used for dependency tracking.
+        database: Optional database name where the view is created. When set,
+                  the view is created as `database`.`name` in ClickHouse.
         metadata: Optional metadata for the view.
 
     Attributes:
         name (str): The name of the view.
+        database (Optional[str]): The database where the view is created.
         select_sql (str): The SELECT SQL statement.
         source_tables (list[str]): Names of source tables the SELECT reads from.
         source_file (Optional[str]): Path to source file where defined.
@@ -41,6 +47,7 @@ class View:
 
     kind: str = "View"
     name: str
+    database: Optional[str]
     select_sql: str
     source_tables: list[str]
     metadata: Optional[dict] = None
@@ -50,9 +57,11 @@ class View:
         name: str,
         select_statement: str,
         base_tables: list[Union[OlapTable, "View"]],
+        database: Optional[str] = None,
         metadata: Optional[dict] = None,
     ):
         self.name = name
+        self.database = database
         self.select_sql = select_statement
         self.source_tables = [_format_table_reference(t) for t in base_tables]
 
