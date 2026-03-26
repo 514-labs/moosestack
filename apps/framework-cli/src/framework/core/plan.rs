@@ -1729,6 +1729,7 @@ mod tests {
             streaming_engine_changes: vec![],
             workflow_changes: vec![],
             filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
         };
 
         let ops1 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
@@ -1750,6 +1751,7 @@ mod tests {
             streaming_engine_changes: vec![],
             workflow_changes: vec![],
             filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
         };
 
         let ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
@@ -1769,6 +1771,7 @@ mod tests {
             streaming_engine_changes: vec![],
             workflow_changes: vec![],
             filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
         };
 
         // Get operations directly from the conversion function

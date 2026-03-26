@@ -79,6 +79,7 @@ pub mod spinner;
 pub mod status;
 pub mod table;
 pub mod terminal;
+pub mod terminal_lock;
 pub mod timing;
 
 // Re-export commonly used types and functions for convenience
