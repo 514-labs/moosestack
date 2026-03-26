@@ -112,8 +112,18 @@ describe("Query benchmarks", () => {
 
     ctx.reporter.results.tests["explain"] = explains;
 
+    const parseFailures = Object.entries(explains).filter(
+      ([, entry]) => entry.explain.indexCondition === "unknown",
+    );
+    expect(
+      parseFailures.length,
+      `EXPLAIN parsing failed for: ${parseFailures.map(([name]) => name).join(", ")}`,
+    ).toBe(0);
+
     const hasIndexUsage = Object.values(explains).some(
-      (entry) => entry.explain.indexCondition !== "true",
+      (entry) =>
+        entry.explain.indexCondition !== "true" &&
+        entry.explain.indexCondition !== "unknown",
     );
     expect(
       hasIndexUsage,
