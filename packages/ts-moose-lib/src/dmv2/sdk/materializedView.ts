@@ -1,26 +1,12 @@
 import { ClickHouseEngines } from "../../dataModels/types";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
-import { View } from "./view";
+import { View, formatTableReference } from "./view";
 import { LifeCycle } from "./lifeCycle";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
-
-/**
- * Helper function to format a table reference as `database`.`table` or just `table`
- */
-function formatTableReference(table: OlapTable<any> | View): string {
-  const database =
-    table instanceof OlapTable ? table.config.database : undefined;
-  const deployedName =
-    table instanceof OlapTable ? table.generateTableName() : table.name;
-  if (database) {
-    return `\`${database}\`.\`${deployedName}\``;
-  }
-  return `\`${deployedName}\``;
-}
 
 /**
  * Configuration options for creating a Materialized View.

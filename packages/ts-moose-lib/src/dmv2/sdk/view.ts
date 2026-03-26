@@ -6,7 +6,7 @@ import { getSourceFileFromStack } from "../utils/stackTrace";
 /**
  * Helper function to format a table reference as `database`.`table` or just `table`
  */
-function formatTableReference(table: OlapTable<any> | View): string {
+export function formatTableReference(table: OlapTable<any> | View): string {
   const database =
     table instanceof OlapTable ? table.config.database : undefined;
   const deployedName =
