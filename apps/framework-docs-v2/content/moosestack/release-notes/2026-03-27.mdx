@@ -1,0 +1,108 @@
+---
+title: March 27, 2026
+description: Release notes for March 27, 2026
+commits:
+  moosestack: 9513fffe494ff0e245af919d76c40a85a60d107b
+  commercial: 5336534cf11785c357ca3a1d5853299b3d994c44
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# March 27, 2026
+
+Row-level security lands in Moose with the new `SelectRowPolicy` primitive, plus a new testing utilities package for profiling and benchmarking ClickHouse queries. The CLI now prompts before executing destructive schema changes during development.
+
+<Callout type="info" title="Highlights">
+* **New:** Row-level security via `SelectRowPolicy` — enforce tenant isolation with JWT claims
+* **New:** Testing utilities for ClickHouse query profiling, EXPLAIN analysis, and benchmarking
+* **New:** Destructive operation confirmation prompts in `moose dev`
+* **Improved:** `514 logs` dynamically truncates output to fit your terminal
+</Callout>
+
+## Moose
+
+### New Features
+
+**Row-level security with `SelectRowPolicy`** ([@DatGuyJonathan](https://github.com/DatGuyJonathan), [@cjus](https://github.com/cjus))
+  Moose now supports row-level security (RLS) through a new `SelectRowPolicy` primitive. Define restrictive policies on any table that filter rows based on JWT claims — perfect for multi-tenant applications where each customer should only see their own data. Policies use ClickHouse's native row policy mechanism with `getSetting()`, support AND semantics when multiple policies are applied to the same table, propagate through views automatically, and work across multiple databases.
+
+  ```typescript
+  import { SelectRowPolicy, OlapTable, sql } from "@514labs/moose-lib";
+
+  interface TenantEvent {
+    eventId: string;
+    timestamp: Date;
+    org_id: string;
+    data: string;
+  }
+
+  const TenantEvents = new OlapTable<TenantEvent>("TenantEvent");
+
+  // Only return rows where org_id matches the JWT claim
+  const tenantIsolation = new SelectRowPolicy({
+    table: TenantEvents,
+    name: "tenant_isolation",
+    filter: (table) => sql`${table.columns.org_id} = getSetting('org_id')`,
+  });
+  ```
+
+**Testing utilities for ClickHouse profiling and benchmarking** ([@georgevanderson](https://github.com/georgevanderson))
+  A new `@514labs/moose-lib/testing` subpath export ships purpose-built tools for benchmarking, validating, and diagnosing MooseStack applications against ClickHouse. Profile query execution with percentile summaries, run `EXPLAIN` analysis to inspect index pruning, check table statistics, and generate structured test reports — all without bundling test code into production.
+
+  ```typescript
+  import { getMooseUtils } from "@514labs/moose-lib";
+  import { profileBenchmark, explain, tableStats } from "@514labs/moose-lib/testing";
+
+  const { client, sql } = await getMooseUtils();
+  const query = sql`SELECT count() FROM MyTable WHERE status = 'active'`;
+
+  // Profile query execution over 12 runs
+  const { p50, p95 } = await profileBenchmark(client.query, query, 12);
+  console.log(`p50: ${p50}ms, p95: ${p95}ms`);
+
+  // Inspect index usage
+  const plan = await explain(client.query, query);
+  console.log(`Granules: ${plan.selectedGranules}/${plan.totalGranules} (skip ${plan.granuleSkipPct}%)`);
+  ```
+
+  Docs: [Testing Utilities](/moosestack/reference/testing-utilities)
+
+**Destructive operation confirmation prompts** ([@phiSgr](https://github.com/phiSgr))
+  `moose dev` now detects destructive schema changes — table, column, view, and materialized view removals — and prompts for confirmation before applying them. Column renames are also detected and confirmed separately. Use `--yes-all`, `--yes-destructive`, or `--yes-rename` flags (or the `MOOSE_ACCEPT_ALL`, `MOOSE_ACCEPT_DESTRUCTIVE`, `MOOSE_ACCEPT_RENAME` environment variables) to skip prompts in CI or automated workflows.
+
+  ```
+  Destructive Plan contains 1 destructive operation(s) that may cause data loss:
+    - DROP + RECREATE `Bar` (schema change requires drop + recreate)
+              Tip For production, consider a versioned-table migration instead:
+    1. Create a *_v2 table with the new schema
+    2. Cut readers/writers over
+    3. Validate parity
+    4. Retire the old table later
+
+  ⚠  1 destructive change(s) — type y to accept, n to reject
+  >
+  ```
+
+### Improvements
+- Versioned JSON output for `moose template list`: The new `--json` flag outputs structured JSON with a schema version, enabling programmatic consumption by tools and agents. ([@callicles](https://github.com/callicles))
+- Updated typescript-mcp template to use `OlapTable`, `Stream`, and `IngestApi` instead of the deprecated `Key<>` and `IngestPipeline` patterns, with improved agent skills documentation. ([@oatsandsugar](https://github.com/oatsandsugar))
+
+### Bug Fixes
+- Fix schema migration failures when modifying or removing columns with dependent indexes or projections: The migration planner now correctly drops dependent indexes and projections before altering columns, then re-creates them afterward. ([@hh2110](https://github.com/hh2110))
+- Fix Docker deployment failures with private registries by copying `.npmrc` to the pnpm deploy stage. ([@onelesd](https://github.com/onelesd))
+- Fix table name resolution in query layer. ([@georgevanderson](https://github.com/georgevanderson))
+
+## Fiveonefour Hosting
+
+### Improvements
+- Dynamic log line truncation in `514 logs`: The body column now sizes to your terminal width, with `--no-truncate` for full output. ([@onelesd](https://github.com/onelesd))
+- Non-interactive mode for `514 agent init`: Accepts input via stdin or `--input` file for automated agent setup in CI/CD. ([@callicles](https://github.com/callicles))
+- Improved UI/UX of the env vars pages. ([@groy-514](https://github.com/groy-514))
+- Simplified deployment list UI: Removed the `is_production` flag in favor of a clearer "live" deployment concept, with updated deployment lists and detail views. ([@groy-514](https://github.com/groy-514))
+- Improved `514 agent --help` output for better discoverability of subcommands. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Expanded 514 agent CLI documentation with dedicated pages for `init` and `remove` subcommands. ([@callicles](https://github.com/callicles))
+
+### Bug Fixes
+- Failed deployments now transition to a terminal error state sooner, preventing stale in-progress states in the UI. ([@onelesd](https://github.com/onelesd))
+- Fix empty response from `514 query` commands. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
