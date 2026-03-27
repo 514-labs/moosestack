@@ -7,7 +7,6 @@ WEB_APP_DIR="${ROOT_DIR}/packages/web-app"
 SERVICE_DIR="${ROOT_DIR}/packages/moosestack-service"
 WEB_ENV_EXAMPLE="${WEB_APP_DIR}/.env.example"
 WEB_ENV_LOCAL="${WEB_APP_DIR}/.env.local"
-WEB_ENV_DEVELOPMENT="${WEB_APP_DIR}/.env.development"
 SERVICE_ENV_EXAMPLE="${SERVICE_DIR}/.env.example"
 SERVICE_ENV_LOCAL="${SERVICE_DIR}/.env.local"
 
@@ -85,6 +84,10 @@ generate_auth_secret() {
   node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'
 }
 
+generate_local_jwt_keypair() {
+  node -e 'const { generateKeyPairSync } = require("node:crypto"); const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }); console.log(JSON.stringify({ privateKey: privateKey.replace(/\n/g, "\\n"), publicKey: publicKey.replace(/\n/g, "\\n") }));'
+}
+
 copy_if_missing() {
   local source_path="$1"
   local target_path="$2"
@@ -98,6 +101,31 @@ copy_if_missing() {
   log "Created ${target_path#"${ROOT_DIR}/"} from ${source_path#"${ROOT_DIR}/"}"
 }
 
+set_env_value() {
+  local file_path="$1"
+  local variable_name="$2"
+  local variable_value="$3"
+  local temp_file
+  temp_file="$(mktemp)"
+
+  awk -v name="${variable_name}" -v value="${variable_value}" '
+    BEGIN { updated = 0 }
+    index($0, name "=") == 1 {
+      print name "=" value
+      updated = 1
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print name "=" value
+      }
+    }
+  ' "${file_path}" > "${temp_file}"
+
+  mv "${temp_file}" "${file_path}"
+}
+
 seed_web_auth_secret() {
   if ! grep -q '^AUTH_SECRET=replace-me-with-a-random-secret$' "${WEB_ENV_LOCAL}"; then
     return
@@ -105,25 +133,38 @@ seed_web_auth_secret() {
 
   local secret
   secret="$(generate_auth_secret)"
-  local temp_file
-  temp_file="$(mktemp)"
-
-  awk -v secret="${secret}" '
-    /^AUTH_SECRET=replace-me-with-a-random-secret$/ {
-      print "AUTH_SECRET=" secret
-      next
-    }
-    { print }
-  ' "${WEB_ENV_LOCAL}" > "${temp_file}"
-
-  mv "${temp_file}" "${WEB_ENV_LOCAL}"
+  set_env_value "${WEB_ENV_LOCAL}" "AUTH_SECRET" "${secret}"
   log "Generated AUTH_SECRET in packages/web-app/.env.local"
+}
+
+seed_local_jwt_keys() {
+  local existing_private_key=""
+  local existing_public_key=""
+
+  existing_private_key="$(read_env_value "${WEB_ENV_LOCAL}" "LOCAL_DEV_JWT_PRIVATE_KEY" || true)"
+  existing_public_key="$(read_env_value "${SERVICE_ENV_LOCAL}" "MOOSE_JWT__SECRET" || true)"
+
+  if [[ -n "${existing_private_key}" && -n "${existing_public_key}" ]]; then
+    return
+  fi
+
+  local keypair_json
+  keypair_json="$(generate_local_jwt_keypair)"
+  local private_key
+  local public_key
+  private_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.privateKey);' "${keypair_json}")"
+  public_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.publicKey);' "${keypair_json}")"
+
+  set_env_value "${WEB_ENV_LOCAL}" "LOCAL_DEV_JWT_PRIVATE_KEY" "\"${private_key}\""
+  set_env_value "${SERVICE_ENV_LOCAL}" "MOOSE_JWT__SECRET" "\"${public_key}\""
+  log "Generated a local RSA keypair for tenant JWTs"
 }
 
 ensure_env_files() {
   copy_if_missing "${SERVICE_ENV_EXAMPLE}" "${SERVICE_ENV_LOCAL}"
   copy_if_missing "${WEB_ENV_EXAMPLE}" "${WEB_ENV_LOCAL}"
   seed_web_auth_secret
+  seed_local_jwt_keys
 }
 
 read_env_value() {
@@ -161,11 +202,6 @@ resolve_web_env_value() {
   fi
 
   if value="$(read_env_value "${WEB_ENV_LOCAL}" "${variable_name}")"; then
-    printf '%s\n' "${value}"
-    return
-  fi
-
-  if value="$(read_env_value "${WEB_ENV_DEVELOPMENT}" "${variable_name}")"; then
     printf '%s\n' "${value}"
     return
   fi

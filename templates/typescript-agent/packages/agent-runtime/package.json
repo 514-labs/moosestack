@@ -20,5 +20,8 @@
     "@ai-sdk/mcp": "catalog:",
     "@ai-sdk/openai": "catalog:",
     "ai": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
   }
 }

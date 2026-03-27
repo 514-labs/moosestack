@@ -17,6 +17,7 @@ declare module "next-auth" {
     tenantName?: string;
     provider?: string;
     idToken?: string;
+    idTokenExpiresAt?: number;
   }
 }
 
@@ -25,7 +26,8 @@ declare module "next-auth/jwt" {
     userId?: string;
     tenantId?: string;
     tenantName?: string;
-    providerName?: string;
+    provider?: string;
     idToken?: string;
+    idTokenExpiresAt?: number;
   }
 }

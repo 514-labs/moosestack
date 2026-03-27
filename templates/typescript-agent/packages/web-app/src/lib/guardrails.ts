@@ -73,10 +73,11 @@ class BedrockGuardrailAdapter implements GuardrailAdapter {
         latencyMs: Date.now() - start,
       };
     } catch (error) {
+      console.error("Bedrock guardrail request failed", error);
       return {
-        action: "NONE",
+        action: "GUARDRAIL_INTERVENED",
         details: [
-          `Guardrail adapter error: ${error instanceof Error ? error.message : String(error)}`,
+          "Guardrail assessment failed. Review the request and the Bedrock guardrail configuration before continuing.",
         ],
         latencyMs: Date.now() - start,
       };
@@ -91,7 +92,11 @@ export function createGuardrailAdapter(provider: AIProvider): GuardrailAdapter {
 
   const config = getBedrockGuardrailConfig();
   if (!config) {
-    return createDevelopmentMockGuardrailAdapter();
+    if (process.env.NODE_ENV !== "production") {
+      return createDevelopmentMockGuardrailAdapter();
+    }
+
+    return new NoopGuardrailAdapter();
   }
 
   return new BedrockGuardrailAdapter(config.id, config.version, config.region);

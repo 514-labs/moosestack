@@ -2,7 +2,24 @@ import {
   DASHBOARD_SNAPSHOT_PATH,
   type DashboardSnapshot,
 } from "agent-contracts";
+import { z } from "zod";
 import { getMooseServiceUrl } from "@/env-vars";
+
+const DashboardSnapshotSchema = z.object({
+  knowledgeMetrics: z.object({
+    totalRecords: z.number(),
+    highPriorityRecords: z.number(),
+  }),
+  recentKnowledge: z.array(
+    z.object({
+      headline: z.string(),
+      category: z.string(),
+      priority: z.string(),
+      source: z.string(),
+      timestamp: z.string(),
+    }),
+  ),
+}) satisfies z.ZodType<DashboardSnapshot>;
 
 export class DashboardSnapshotUnauthorizedError extends Error {
   constructor() {
@@ -36,5 +53,5 @@ export async function getDashboardSnapshot(
     );
   }
 
-  return (await response.json()) as DashboardSnapshot;
+  return DashboardSnapshotSchema.parse(await response.json());
 }

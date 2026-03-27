@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { JSX, ReactNode } from "react";
 import "./globals.css";
 import { auth } from "@/auth";
 import { ChatLayoutWrapper } from "@/components/layout/chat-layout-wrapper";
@@ -14,8 +15,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
-}>) {
+  children: ReactNode;
+}>): Promise<JSX.Element> {
   const session = await auth();
 
   return (

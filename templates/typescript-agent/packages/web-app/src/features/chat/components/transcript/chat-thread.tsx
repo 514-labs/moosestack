@@ -35,13 +35,14 @@ import {
   isToolPart,
   type ReasoningPart,
   type SourcePart,
+  type ToolTimingPayload,
 } from "../../types/message-parts";
 
 type ChatThreadProps = {
   messages: UIMessage[];
   status?: ChatStatus;
   errorMessage?: string | null;
-  toolTimings?: Record<string, number>;
+  toolTimings?: Record<string, ToolTimingPayload>;
 };
 
 function getReasoningText(part: ReasoningPart) {
@@ -70,7 +71,15 @@ function MessageSources({ parts }: { parts: SourcePart[] }) {
             return null;
           }
 
-          const title = part.source?.title || new URL(href).hostname;
+          let title = part.source?.title;
+          if (!title) {
+            try {
+              title = new URL(href).hostname;
+            } catch {
+              title = "Source";
+            }
+          }
+
           return <Source key={`${href}:${title}`} href={href} title={title} />;
         })}
       </SourcesContent>
@@ -110,7 +119,7 @@ function AssistantBubble({
   toolTimings = {},
 }: {
   message: UIMessage;
-  toolTimings?: Record<string, number>;
+  toolTimings?: Record<string, ToolTimingPayload>;
 }) {
   const parts = message.parts ?? [];
   const text = extractTextFromParts(parts);
@@ -143,7 +152,9 @@ function AssistantBubble({
         : null}
         {toolParts.map((part) => {
           const timing =
-            part.toolCallId ? toolTimings[part.toolCallId] : undefined;
+            part.toolCallId ?
+              toolTimings[part.toolCallId]?.duration
+            : undefined;
           return (
             <ToolInvocation
               key={getPartKey(part)}

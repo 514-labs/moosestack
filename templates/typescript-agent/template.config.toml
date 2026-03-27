@@ -51,8 +51,72 @@ name = "AI_PROVIDER"
 description = "LLM provider selection: anthropic, openai, or bedrock"
 
 [[boreal.env_vars]]
+name = "ANTHROPIC_API_KEY"
+description = "Required when AI_PROVIDER=anthropic"
+
+[[boreal.env_vars]]
+name = "ANTHROPIC_MODEL_ID"
+description = "Optional Anthropic model override"
+
+[[boreal.env_vars]]
 name = "AUTH_SECRET"
 description = "Auth.js session secret"
+
+[[boreal.env_vars]]
+name = "AWS_ACCESS_KEY_ID"
+description = "Optional AWS access key when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_PROFILE"
+description = "Optional AWS profile when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_REGION"
+description = "AWS region when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_SECRET_ACCESS_KEY"
+description = "Optional AWS secret access key when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_SESSION_TOKEN"
+description = "Optional AWS session token when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "BEDROCK_GUARDRAIL_ID"
+description = "Optional Bedrock guardrail ID"
+
+[[boreal.env_vars]]
+name = "BEDROCK_GUARDRAIL_VERSION"
+description = "Optional Bedrock guardrail version"
+
+[[boreal.env_vars]]
+name = "BEDROCK_MODEL_ID"
+description = "Required when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_BASE_URL"
+description = "Optional Langfuse base URL"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_PUBLIC_KEY"
+description = "Optional Langfuse public key"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_SECRET_KEY"
+description = "Optional Langfuse secret key"
+
+[[boreal.env_vars]]
+name = "MCP_SERVER_URL"
+description = "Optional override for the custom MCP tools endpoint"
+
+[[boreal.env_vars]]
+name = "MOOSE_AUTH_MODE"
+description = "Auth mode: local for development, oidc for production"
+
+[[boreal.env_vars]]
+name = "MOOSE_SERVICE_URL"
+description = "Base URL for Moose dashboard APIs and, by default, the MCP tools endpoint"
 
 [[boreal.env_vars]]
 name = "OIDC_ISSUER"
@@ -65,3 +129,15 @@ description = "Production OIDC client ID"
 [[boreal.env_vars]]
 name = "OIDC_CLIENT_SECRET"
 description = "Production OIDC client secret"
+
+[[boreal.env_vars]]
+name = "OIDC_TENANT_CLAIM"
+description = "OIDC claim name that carries tenant_id"
+
+[[boreal.env_vars]]
+name = "OPENAI_API_KEY"
+description = "Required when AI_PROVIDER=openai"
+
+[[boreal.env_vars]]
+name = "OPENAI_MODEL_ID"
+description = "Optional OpenAI model override"

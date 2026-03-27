@@ -1,6 +1,9 @@
 {
   "files": [],
   "references": [
+    { "path": "packages/agent-contracts" },
+    { "path": "packages/agent-observability-langfuse" },
+    { "path": "packages/agent-runtime" },
     { "path": "packages/moosestack-service" },
     { "path": "packages/web-app" }
   ]

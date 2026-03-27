@@ -89,9 +89,9 @@ pnpm env:prepare
 pnpm dev:start
 ```
 
-`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` for the web app the first time you run it.
+`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` plus a local RSA keypair used for the built-in tenant JWT flow.
 
-`packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example` and a checked-in `packages/web-app/.env.development` for local development.
+`packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
 `pnpm dev:start` checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
 
@@ -132,6 +132,8 @@ The AI SDK v6 stack in this template is currently pinned to these compatible ver
 | `@ai-sdk/mcp` | `1.0.30` | MCP client bridge used by the shared runtime |
 | `zod` | `4.3.6` | Web app and shared runtime validation |
 | `zod` via `catalog:zod3` | `3.25.76` | `packages/moosestack-service` stays on the v3 line required by its MCP stack |
+
+The workspace also overrides transitive `tar` to `7.5.7` so generated apps stay on a patched archive dependency across the full workspace.
 
 ## Manual Template Testing
 
@@ -194,7 +196,7 @@ Local development uses the built-in mock OIDC flow:
 
 - `MOOSE_AUTH_MODE=local` enables tenant picker sign-in in the web app
 - the web app signs a short-lived JWT carrying `tenant_id`
-- Moose verifies that JWT using the public key in `packages/moosestack-service/moose.config.toml`
+- Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
 - MCP tool queries and Moose app APIs are both scoped by the same row policy
 
 Two demo tenants are included by default:
@@ -264,7 +266,7 @@ Set these when replacing the local mock flow with a real provider:
 | `OIDC_CLIENT_SECRET` | OIDC client secret |
 | `OIDC_TENANT_CLAIM` | Claim used for RLS, defaults to `tenant_id` |
 
-When moving to production OIDC, also update the `[jwt]` section in `packages/moosestack-service/moose.config.toml` so Moose verifies your real provider's JWTs.
+When moving to production OIDC, update the `[jwt]` issuer/audience in `packages/moosestack-service/moose.config.toml` and replace `MOOSE_JWT__SECRET` in `packages/moosestack-service/.env.local` with your real provider's PEM public key.
 
 ## Bedrock Guardrails
 
@@ -332,7 +334,6 @@ Example:
 - `packages/web-app/src/auth.ts` — production auth wiring plus optional OIDC
 - `packages/web-app/src/lib/id-token.ts` — shared ID token claim parsing
 - `packages/web-app/src/dev/` — development-only local auth and mock guardrails
-- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter that injects auth, tracing, and guardrails into the shared runtime
 - `packages/web-app/src/lib/moose-service.ts` — authenticated service client for frontend reads
 - `packages/web-app/src/features/chat/` — chat UI components
 - `packages/web-app/test/` — unit tests for frontend/server host adapters and environment-driven wiring

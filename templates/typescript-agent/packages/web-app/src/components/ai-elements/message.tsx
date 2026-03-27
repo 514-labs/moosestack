@@ -76,21 +76,28 @@ export const MessageActions = ({
 
 export type MessageActionProps = ComponentProps<typeof Button> & {
   tooltip?: string;
-  label?: string;
+  label: string;
 };
 
 export const MessageAction = ({
   tooltip,
   children,
   label,
+  "aria-label": ariaLabel,
   variant = "ghost",
   size = "icon-sm",
   ...props
 }: MessageActionProps) => {
   const button = (
-    <Button size={size} type="button" variant={variant} {...props}>
+    <Button
+      aria-label={ariaLabel ?? label}
+      size={size}
+      type="button"
+      variant={variant}
+      {...props}
+    >
       {children}
-      <span className="sr-only">{label || tooltip}</span>
+      <span className="sr-only">{label}</span>
     </Button>
   );
 
@@ -148,6 +155,8 @@ export const MessageBranch = ({
 }: MessageBranchProps) => {
   const [currentBranch, setCurrentBranch] = useState(defaultBranch);
   const [branches, setBranches] = useState<ReactElement[]>([]);
+  const safeCurrentBranch =
+    branches.length === 0 ? 0 : Math.min(currentBranch, branches.length - 1);
 
   const handleBranchChange = useCallback(
     (newBranch: number) => {
@@ -159,26 +168,26 @@ export const MessageBranch = ({
 
   const goToPrevious = useCallback(() => {
     const newBranch =
-      currentBranch > 0 ? currentBranch - 1 : branches.length - 1;
+      safeCurrentBranch > 0 ? safeCurrentBranch - 1 : branches.length - 1;
     handleBranchChange(newBranch);
-  }, [currentBranch, branches.length, handleBranchChange]);
+  }, [safeCurrentBranch, branches.length, handleBranchChange]);
 
   const goToNext = useCallback(() => {
     const newBranch =
-      currentBranch < branches.length - 1 ? currentBranch + 1 : 0;
+      safeCurrentBranch < branches.length - 1 ? safeCurrentBranch + 1 : 0;
     handleBranchChange(newBranch);
-  }, [currentBranch, branches.length, handleBranchChange]);
+  }, [safeCurrentBranch, branches.length, handleBranchChange]);
 
   const contextValue = useMemo<MessageBranchContextType>(
     () => ({
       branches,
-      currentBranch,
+      currentBranch: safeCurrentBranch,
       goToNext,
       goToPrevious,
       setBranches,
       totalBranches: branches.length,
     }),
-    [branches, currentBranch, goToNext, goToPrevious],
+    [branches, safeCurrentBranch, goToNext, goToPrevious],
   );
 
   return (
@@ -197,18 +206,15 @@ export const MessageBranchContent = ({
   children,
   ...props
 }: MessageBranchContentProps) => {
-  const { currentBranch, setBranches, branches } = useMessageBranch();
+  const { currentBranch, setBranches } = useMessageBranch();
   const childrenArray = useMemo(
     () => (Array.isArray(children) ? children : [children]),
     [children],
   );
 
-  // Use useEffect to update branches when they change
   useEffect(() => {
-    if (branches.length !== childrenArray.length) {
-      setBranches(childrenArray);
-    }
-  }, [childrenArray, branches, setBranches]);
+    setBranches(childrenArray);
+  }, [childrenArray, setBranches]);
 
   return childrenArray.map((branch, index) => (
     <div
@@ -216,7 +222,7 @@ export const MessageBranchContent = ({
         "grid gap-2 overflow-hidden [&>div]:pb-0",
         index === currentBranch ? "block" : "hidden",
       )}
-      key={branch.key}
+      key={branch.key ?? `branch-${index}`}
       {...props}
     >
       {branch}
@@ -331,9 +337,6 @@ export const MessageResponse = memo(
       {...props}
     />
   ),
-  (prevProps, nextProps) =>
-    prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating,
 );
 
 MessageResponse.displayName = "MessageResponse";

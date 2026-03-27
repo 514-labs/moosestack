@@ -34,6 +34,18 @@ describe("tenant-context", () => {
     ).toBeUndefined();
   });
 
+  it("returns undefined for non-string tenant identifiers", () => {
+    expect(
+      getTenantMooseContext({
+        moose: {
+          jwt: {
+            tenant_id: 123,
+          },
+        },
+      } as never),
+    ).toBeUndefined();
+  });
+
   it("responds with 401 when a tenant context is missing", () => {
     const next = vi.fn();
     let response: {
