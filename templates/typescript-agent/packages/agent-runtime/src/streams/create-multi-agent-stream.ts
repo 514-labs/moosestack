@@ -31,8 +31,14 @@ export async function createMultiAgentStream(
   const userPrompt = extractUserPrompt(options.messages);
   const traceSession = createTraceSession(options, runtime, userPrompt);
 
-  const guardrailResult =
-    await runtime.guardrailAdapter.assessPrompt(userPrompt);
+  let guardrailResult;
+  try {
+    guardrailResult = await runtime.guardrailAdapter.assessPrompt(userPrompt);
+  } catch (error) {
+    await runtime.close();
+    throw error;
+  }
+
   if (guardrailResult.action === "GUARDRAIL_INTERVENED") {
     traceSession.recordStep({
       stepId: crypto.randomUUID(),
