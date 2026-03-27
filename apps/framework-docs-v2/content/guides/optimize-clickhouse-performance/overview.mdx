@@ -4,7 +4,7 @@ description: When to use the ClickHouse optimization workflow and what to expect
 languages: ["typescript"]
 ---
 
-import { Callout, BulletPointsCard } from "@/components/mdx";
+import { BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
@@ -68,13 +68,6 @@ You are not expected to trust the agent on vibes. The workflow should give you:
 - `EXPLAIN` output showing whether the query started using the primary key or another skipping mechanism
 - benchmark timing collected from server-side query data
 - `migrations/plan.yaml` so you can review the schema operations and decide whether the winner needs additional rollout shaping before production
-
-<Callout type="warning" title="Current limits">
-`explain()` and `profileBenchmark()` are temporary harness helpers today, not the final stable MooseStack API surface.
-
-Auto-seeding preview databases is not available yet. If the optimization changes `ORDER BY` or another destructive table attribute, preview validation may need an explicit re-seed step before benchmarking.
-
-</Callout>
 
 ## Where optimization ends and rollout planning begins
 
