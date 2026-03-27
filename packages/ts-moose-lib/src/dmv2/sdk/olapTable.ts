@@ -580,6 +580,9 @@ export type DistributedConfig<T> = Omit<
   shardingKey?: string;
   /** Optional: Policy name for data distribution */
   policyName?: string;
+  /** Optional table-level constraints (passed through for type compatibility, but
+   *  constraints are only meaningful on the underlying _local MergeTree tables) */
+  constraints?: TableConstraint[];
 };
 
 /** Kafka table settings. See: https://clickhouse.com/docs/engines/table-engines/integrations/kafka */
@@ -815,12 +818,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     const hasReplicaName =
       typeof (resolvedConfig as any).replicaName === "string";
 
-    if (hasCluster && (hasKeeperPath || hasReplicaName)) {
-      throw new Error(
-        `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
-          `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
-      );
-    }
+    // When cluster is specified alongside keeperPath/replicaName, cluster is used
+    // only for ON CLUSTER DDL generation while keeperPath/replicaName remain explicit.
+    // This supports tables with existing ZooKeeper paths that need ON CLUSTER for ALTER.
 
     super(name, resolvedConfig, schema, columns, validators);
     this.insertValidators = insertValidators;
