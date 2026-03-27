@@ -67,6 +67,7 @@ vi.mock("@ai-sdk/mcp", () => {
 
 import {
   createAgentRuntime,
+  createAgentStream,
   createMultiAgentStream,
   DEFAULT_AGENT_SYSTEM_PROMPT,
   McpServerUnavailableError,
@@ -386,6 +387,82 @@ describe("createAgentRuntime", () => {
         totalSteps: 3,
         totalInputTokens: 18,
         totalOutputTokens: 14,
+      }),
+    );
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("streams a single-agent response and finalizes the trace on finish", async () => {
+    const traceCollector = {
+      startTrace: vi.fn(() => "trace-1"),
+      recordStep: vi.fn(),
+      endTrace: vi.fn(async () => undefined),
+    };
+    const agentUiStream = { name: "single-agent-ui-stream" };
+    const agentResult = {
+      toUIMessageStream: vi.fn(() => agentUiStream),
+    };
+
+    mocks.streamTextMock.mockReturnValue(agentResult);
+
+    await createAgentStream({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      tenantId: "acme",
+      mcpServerUrl: "http://localhost:4000",
+      providerConfig: {
+        provider: "anthropic",
+        apiKey: "anthropic-key",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+      traceCollector,
+    });
+
+    const execute = mocks.createUIMessageStreamMock.mock.calls[0][0].execute;
+    const writer = {
+      write: vi.fn(),
+      merge: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    await execute({ writer });
+
+    expect(mocks.streamTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: DEFAULT_AGENT_SYSTEM_PROMPT,
+        tools: expect.objectContaining({
+          query_clickhouse: expect.anything(),
+        }),
+      }),
+    );
+    expect(agentResult.toUIMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onError: expect.any(Function),
+      }),
+    );
+    expect(writer.merge).toHaveBeenCalledWith(agentUiStream);
+
+    await mocks.streamTextMock.mock.calls[0][0].onFinish({
+      totalUsage: {
+        inputTokens: 9,
+        outputTokens: 4,
+      },
+    });
+
+    expect(traceCollector.endTrace).toHaveBeenCalledWith(
+      "trace-1",
+      expect.objectContaining({
+        status: "completed",
+        totalInputTokens: 9,
+        totalOutputTokens: 4,
       }),
     );
     expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);

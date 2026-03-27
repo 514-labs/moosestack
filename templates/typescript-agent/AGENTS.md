@@ -65,7 +65,11 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 | File | Purpose |
 | --- | --- |
-| `src/index.ts` | Shared agent runtime, system prompt, tool/model orchestration, and trace/guardrail interfaces |
+| `AGENTS.md` | Package-local ownership rules and source layout |
+| `src/index.ts` | Public barrel for the runtime package |
+| `src/runtime/` | Runtime contracts and provider/MCP assembly |
+| `src/streams/` | Single-agent and multi-agent orchestration, trace lifecycle, and tool timing helpers |
+| `src/observability-contract.ts` | Shared trace collector contract used by host-side sinks |
 | `test/` | Integration tests for runtime assembly, provider selection, and MCP client wiring |
 
 ### `packages/agent-observability-langfuse/`
@@ -83,6 +87,7 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 | `src/components/ai-elements/` | Generic chat UI primitives imported from AI Elements |
 | `src/lib/id-token.ts` | Shared ID token claim parsing for OIDC/local auth |
 | `src/lib/chat-agent.ts` | Next-hosted adapter that injects env/config into the shared agent runtime |
+| `src/lib/in-memory-trace-collector.ts` | Host-side fallback `TraceCollector` used when Langfuse is not configured |
 | `src/lib/moose-service.ts` | Authenticated client for Moose-owned dashboard APIs |
 | `src/app/api/chat/route.ts` | Chat API endpoint |
 | `src/features/chat/` | Moose-specific chat wrappers, tool renderers, and provider-status UI |

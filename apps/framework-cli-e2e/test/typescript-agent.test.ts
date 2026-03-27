@@ -2,10 +2,11 @@
 /// <reference types="mocha" />
 /// <reference types="chai" />
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import { createRequire } from "module";
+import { AddressInfo, createServer } from "net";
 import * as path from "path";
 import { promisify } from "util";
 import { SignJWT, importPKCS8 } from "jose";
@@ -34,7 +35,7 @@ const MOOSE_LIB_PATH = path.resolve(
 
 const TEST_SUITE = "typescript-agent";
 const APP_NAME = "moose-ts-agent-app";
-const WEB_APP_URL = "http://localhost:3000";
+let webAppUrl = "http://localhost:3000";
 const DASHBOARD_SNAPSHOT_PATH = "/app/dashboard/snapshot";
 const JWT_ISSUER = "typescript-agent-local";
 const JWT_AUDIENCE = "typescript-agent";
@@ -239,10 +240,37 @@ async function encodeSessionCookie(
   });
 }
 
+async function reserveWebAppPort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const server = createServer();
+
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => {
+          reject(new Error("Failed to reserve a web app port"));
+        });
+        return;
+      }
+
+      const { port } = address as AddressInfo;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(port);
+      });
+    });
+  });
+}
+
 async function waitForWebAppReady() {
   await withRetries(
     async () => {
-      const response = await fetch(`${WEB_APP_URL}/api/chat/status`);
+      const response = await fetch(`${webAppUrl}/api/chat/status`);
       if (!response.ok) {
         throw new Error(`Web app not ready yet: ${response.status}`);
       }
@@ -363,7 +391,7 @@ async function callMcpToolText(
 async function signInLocalTenant(tenantId: string) {
   const jar = new Map<string, string>();
 
-  const csrfResponse = await fetch(`${WEB_APP_URL}/api/auth/csrf`, {
+  const csrfResponse = await fetch(`${webAppUrl}/api/auth/csrf`, {
     redirect: "manual",
   });
   expect(csrfResponse.status).to.equal(200);
@@ -371,7 +399,7 @@ async function signInLocalTenant(tenantId: string) {
   const { csrfToken } = (await csrfResponse.json()) as { csrfToken: string };
 
   const callbackResponse = await fetch(
-    `${WEB_APP_URL}/api/auth/callback/local-tenant`,
+    `${webAppUrl}/api/auth/callback/local-tenant`,
     {
       method: "POST",
       redirect: "manual",
@@ -382,7 +410,7 @@ async function signInLocalTenant(tenantId: string) {
       body: new URLSearchParams({
         csrfToken,
         tenantId,
-        callbackUrl: `${WEB_APP_URL}/`,
+        callbackUrl: `${webAppUrl}/`,
         json: "true",
       }),
     },
@@ -391,7 +419,7 @@ async function signInLocalTenant(tenantId: string) {
   expect([200, 302]).to.include(callbackResponse.status);
   updateCookieJar(jar, callbackResponse);
 
-  const sessionResponse = await fetch(`${WEB_APP_URL}/api/auth/session`, {
+  const sessionResponse = await fetch(`${webAppUrl}/api/auth/session`, {
     headers: {
       Cookie: cookieHeader(jar),
     },
@@ -412,6 +440,9 @@ describe("TypeScript Agent Template E2E", function () {
 
   let projectDir: string;
   let serviceDir: string;
+  let serviceEnvPath: string;
+  let webAppEnvPath: string;
+  let webAppPort: number;
   let webProcess: ChildProcess | null = null;
   let mooseProcess: ChildProcess | null = null;
 
@@ -420,6 +451,10 @@ describe("TypeScript Agent Template E2E", function () {
 
     projectDir = createTempTestDirectory(TEST_SUITE);
     serviceDir = path.join(projectDir, "packages", "moosestack-service");
+    serviceEnvPath = path.join(serviceDir, ".env.local");
+    webAppEnvPath = path.join(projectDir, "packages", "web-app", ".env.local");
+    webAppPort = await reserveWebAppPort();
+    webAppUrl = `http://127.0.0.1:${webAppPort}`;
 
     await setupTypeScriptProject(
       projectDir,
@@ -431,12 +466,17 @@ describe("TypeScript Agent Template E2E", function () {
       { logger: testLogger },
     );
 
-    const webAppEnvPath = path.join(
-      projectDir,
-      "packages",
-      "web-app",
-      ".env.local",
+    testLogger.info("Preparing local env files with root pnpm env:prepare");
+    await execAsync("pnpm env:prepare", {
+      cwd: projectDir,
+    });
+
+    expect(fs.existsSync(serviceEnvPath)).to.equal(true);
+    expect(fs.existsSync(webAppEnvPath)).to.equal(true);
+    expect(readEnvValue(webAppEnvPath, "AUTH_SECRET")).to.not.equal(
+      "replace-me-with-a-random-secret",
     );
+
     replaceEnvValue(webAppEnvPath, "MOOSE_SERVICE_URL");
     replaceEnvValue(
       webAppEnvPath,
@@ -522,6 +562,7 @@ describe("TypeScript Agent Template E2E", function () {
         ...process.env,
         AI_PROVIDER: "anthropic",
         ANTHROPIC_API_KEY: "test-anthropic-key",
+        PORT: String(webAppPort),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -548,8 +589,16 @@ describe("TypeScript Agent Template E2E", function () {
     });
   });
 
+  it("should bootstrap local env files with pnpm env:prepare", async function () {
+    expect(fs.existsSync(serviceEnvPath)).to.equal(true);
+    expect(fs.existsSync(webAppEnvPath)).to.equal(true);
+    expect(readEnvValue(webAppEnvPath, "AUTH_SECRET")).to.not.equal(
+      "replace-me-with-a-random-secret",
+    );
+  });
+
   it("should render the unauthenticated landing page and provider status", async function () {
-    const pageResponse = await fetch(WEB_APP_URL);
+    const pageResponse = await fetch(webAppUrl);
     expect(pageResponse.status).to.equal(200);
 
     const html = await pageResponse.text();
@@ -557,7 +606,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(html).to.include("Choose a tenant");
     expect(html).to.include("Production-shaped agent starter");
 
-    const statusResponse = await fetch(`${WEB_APP_URL}/api/chat/status`);
+    const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
 
     const status = await statusResponse.json();
@@ -583,7 +632,7 @@ describe("TypeScript Agent Template E2E", function () {
     );
     expect(dashboardResponse.status).to.equal(401);
 
-    const chatResponse = await fetch(`${WEB_APP_URL}/api/chat`, {
+    const chatResponse = await fetch(`${webAppUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -738,7 +787,7 @@ describe("TypeScript Agent Template E2E", function () {
       ),
     ).to.equal(true);
 
-    const acmeDashboardResponse = await fetch(WEB_APP_URL, {
+    const acmeDashboardResponse = await fetch(webAppUrl, {
       headers: {
         Cookie: acmeAuth.cookie,
       },
@@ -777,7 +826,7 @@ describe("TypeScript Agent Template E2E", function () {
       ),
     ).to.equal(true);
 
-    const globexDashboardResponse = await fetch(WEB_APP_URL, {
+    const globexDashboardResponse = await fetch(webAppUrl, {
       headers: {
         Cookie: globexAuth.cookie,
       },
@@ -829,7 +878,7 @@ describe("TypeScript Agent Template E2E", function () {
       staleSessionCookie,
     );
 
-    const redirectResponse = await fetch(WEB_APP_URL, {
+    const redirectResponse = await fetch(webAppUrl, {
       headers: {
         Cookie: cookieHeader(acmeAuth.cookieJar),
       },
@@ -842,7 +891,7 @@ describe("TypeScript Agent Template E2E", function () {
     );
 
     const clearSessionResponse = await fetch(
-      new URL(redirectResponse.headers.get("location") ?? "", WEB_APP_URL),
+      new URL(redirectResponse.headers.get("location") ?? "", webAppUrl),
       {
         headers: {
           Cookie: cookieHeader(acmeAuth.cookieJar),
@@ -859,7 +908,7 @@ describe("TypeScript Agent Template E2E", function () {
     updateCookieJar(acmeAuth.cookieJar, clearSessionResponse);
     expect(acmeAuth.cookieJar.has(acmeAuth.sessionCookieName)).to.equal(false);
 
-    const landingResponse = await fetch(`${WEB_APP_URL}/?session=expired`, {
+    const landingResponse = await fetch(`${webAppUrl}/?session=expired`, {
       headers: {
         Cookie: cookieHeader(acmeAuth.cookieJar),
       },
@@ -895,7 +944,7 @@ describe("TypeScript Agent Template E2E", function () {
     await stopChildProcess(mooseProcess, "moose service");
     mooseProcess = null;
 
-    const statusResponse = await fetch(`${WEB_APP_URL}/api/chat/status`);
+    const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
 
     const status = await statusResponse.json();
@@ -904,7 +953,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(status.mcpDetails).to.include("http://localhost:4000/tools");
     expect(status.mcpDetails).to.include("pnpm dev:moose");
 
-    const chatResponse = await fetch(`${WEB_APP_URL}/api/chat`, {
+    const chatResponse = await fetch(`${webAppUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

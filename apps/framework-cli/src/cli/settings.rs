@@ -515,7 +515,14 @@ pub fn set_docs_default_language(language: &str) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DevSettings, Settings};
+    use super::{read_settings, DevSettings, Settings};
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_default_timeout_configuration() {
@@ -543,5 +550,27 @@ skip_container_shutdown = true
 
         let settings: Settings = toml::from_str(toml_content).expect("Failed to parse TOML");
         assert_eq!(settings.dev.infrastructure_timeout_seconds, 120);
+    }
+
+    #[test]
+    fn test_container_cli_path_environment_variable_parsing() {
+        let _guard = env_lock().lock().unwrap();
+        let temp_home = TempDir::new().expect("Failed to create temp home directory");
+
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+            std::env::set_var("MOOSE_DEV__CONTAINER_CLI_PATH", "finch");
+        }
+
+        let settings = read_settings().expect("Failed to load settings");
+        assert_eq!(
+            settings.dev.container_cli_path.as_deref(),
+            Some(std::path::Path::new("finch"))
+        );
+
+        unsafe {
+            std::env::remove_var("MOOSE_DEV__CONTAINER_CLI_PATH");
+            std::env::remove_var("HOME");
+        }
     }
 }
