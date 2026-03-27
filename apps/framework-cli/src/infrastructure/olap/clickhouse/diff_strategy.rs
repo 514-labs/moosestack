@@ -792,6 +792,31 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })
             .collect();
 
+        // Detect column renames among the Added/Removed pairs and rewrite them
+        // as ColumnChange::Renamed so they produce ALTER TABLE RENAME COLUMN
+        // instead of DROP + ADD.
+        let renames = crate::framework::core::infrastructure_map::detect_column_renames(
+            &column_changes,
+            before,
+            after,
+        );
+        let column_changes = if renames.is_empty() {
+            column_changes
+        } else {
+            for r in &renames {
+                tracing::info!(
+                    "Detected column rename: `{}` -> `{}` (confidence {:.2})",
+                    r.before.name,
+                    r.after.name,
+                    r.confidence
+                );
+            }
+            crate::framework::core::infrastructure_map::apply_detected_renames(
+                column_changes,
+                &renames,
+            )
+        };
+
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;

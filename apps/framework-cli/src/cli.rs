@@ -78,7 +78,10 @@ use crate::cli::routines::code_generation::{
 use crate::cli::routines::ls::ls;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
-use crate::framework::core::plan_risk::ConfirmationPolicy;
+use crate::framework::core::plan_risk::{
+    confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
+    ConfirmationPolicy, MigrationGateOutcome,
+};
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -955,6 +958,10 @@ pub async fn top_command_handler(
                 clickhouse_url,
                 redis_url,
                 save,
+                yes_all,
+                yes_destructive,
+                yes_rename,
+                no_auto_backfill_sql,
             }) => {
                 info!("Running generate migration command");
 
@@ -1010,7 +1017,7 @@ pub async fn top_command_handler(
                     }));
                 };
 
-                let result = result.map_err(|e| {
+                let mut result = result.map_err(|e| {
                     RoutineFailure::new(
                         Message {
                             action: "Plan".to_string(),
@@ -1020,7 +1027,168 @@ pub async fn top_command_handler(
                     )
                 })?;
 
-                let plan_yaml = result.db_migration.to_yaml().map_err(|e| {
+                // --- rename + destructive confirmation gates ---
+                let env_bool = |name: &str| -> bool {
+                    std::env::var(name)
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false)
+                };
+                let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
+                let migration_policy = ConfirmationPolicy {
+                    accept_destructive: accept_all
+                        || *yes_destructive
+                        || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+                    accept_rename: accept_all || *yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
+                    is_dev: false,
+                };
+
+                let risk =
+                    match confirm_renames_and_classify(&mut result.changes, &migration_policy)
+                        .await?
+                    {
+                        Some(risk) => risk,
+                        None => {
+                            return Ok(RoutineSuccess::success(Message::new(
+                                "Migration".to_string(),
+                                "generation cancelled during rename confirmation".to_string(),
+                            )));
+                        }
+                    };
+
+                match migration_destructive_gate(&risk, &migration_policy).await? {
+                    MigrationGateOutcome::Rejected { tables } => {
+                        print_migration_rejected_guidance(&tables, &project.language);
+                        return Ok(RoutineSuccess::success(Message::new(
+                            "Migration".to_string(),
+                            "generation aborted".to_string(),
+                        )));
+                    }
+                    MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {
+                    }
+                }
+
+                // --- convert confirmed changes to ordered operations ---
+                let mut db_migration = result.to_migration_plan().map_err(|e| {
+                    RoutineFailure::new(
+                        Message {
+                            action: "Plan".to_string(),
+                            details: "Failed to order migration operations".to_string(),
+                        },
+                        e,
+                    )
+                })?;
+
+                // --- auto-backfill for versioned tables ---
+                if *no_auto_backfill_sql {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Auto-backfill".to_string(),
+                            details: "disabled by --no-auto-backfill-sql".to_string(),
+                        },
+                    );
+                } else {
+                    use crate::framework::core::migration_plan::BackfillCheckResult;
+
+                    let candidates = db_migration.detect_backfill_candidates(
+                        &result.remote_state.tables,
+                        &project.clickhouse_config.db_name,
+                    );
+
+                    if !candidates.is_empty() {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message {
+                                action: "Backfill".to_string(),
+                                details: "Checking versioned table backfill opportunities..."
+                                    .to_string(),
+                            },
+                        );
+                    }
+
+                    for check in &candidates {
+                        match check {
+                            BackfillCheckResult::Candidate(c) => {
+                                display::show_message_wrapper(
+                                    MessageType::Success,
+                                    Message {
+                                        action: "Equivalent".to_string(),
+                                        details: format!(
+                                            "`{}` <- `{}`",
+                                            c.target_table_name, c.source_table_name
+                                        ),
+                                    },
+                                );
+
+                                let should_append = {
+                                    use std::io::IsTerminal;
+                                    if std::io::stdin().is_terminal() && stdout().is_terminal() {
+                                        let answer = prompt_user(
+                                            "Append RawSql backfill operation to plan.yaml? [Y/n]",
+                                            Some("Y"),
+                                            None,
+                                        )?;
+                                        !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                                    } else {
+                                        true
+                                    }
+                                };
+
+                                if should_append {
+                                    db_migration.append_backfill(c);
+                                    display::show_message_wrapper(
+                                        MessageType::Success,
+                                        Message {
+                                            action: "Appended".to_string(),
+                                            details: format!(
+                                                "RawSql backfill: `{}` <- `{}`",
+                                                c.target_table_name, c.source_table_name
+                                            ),
+                                        },
+                                    );
+                                } else {
+                                    display::show_message_wrapper(
+                                        MessageType::Info,
+                                        Message {
+                                            action: "Skipped".to_string(),
+                                            details: "auto-backfill by user choice".to_string(),
+                                        },
+                                    );
+                                }
+                            }
+                            BackfillCheckResult::NonEquivalent {
+                                target,
+                                source,
+                                reason,
+                            } => {
+                                display::show_message_wrapper(
+                                    MessageType::Warning,
+                                    Message {
+                                        action: "Skipped".to_string(),
+                                        details: format!(
+                                            "auto-backfill for `{target}`: schema is not \
+                                             equivalent to `{source}`\n  - Mismatch: {reason}"
+                                        ),
+                                    },
+                                );
+                            }
+                            BackfillCheckResult::Duplicate { target, source } => {
+                                display::show_message_wrapper(
+                                    MessageType::Success,
+                                    Message {
+                                        action: "Exists".to_string(),
+                                        details: format!(
+                                            "Backfill SQL already exists for `{target}` <- \
+                                             `{source}`; no duplicate appended"
+                                        ),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+
+                let plan_yaml = db_migration.to_yaml().map_err(|e| {
                     RoutineFailure::new(
                         Message {
                             action: "Plan".to_string(),
