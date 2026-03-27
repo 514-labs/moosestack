@@ -5,27 +5,39 @@ import { DefaultChatTransport } from "ai";
 import { AlertTriangle, MessageSquare, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useChatProviderStatus } from "../hooks/use-chat-provider-status";
+import {
+  type ChatProviderStatus,
+  useChatProviderStatus,
+} from "../hooks/use-chat-provider-status";
 import { useToolTimings } from "../hooks/use-tool-timings";
 import { isToolTimingEvent } from "../types/message-parts";
 import { ChatComposer } from "./composer/chat-composer";
 import { SuggestedPrompts } from "./composer/suggested-prompts";
 import { ChatThread } from "./transcript/chat-thread";
 
-function MissingProviderMessage() {
-  const { data: status } = useChatProviderStatus();
+function ChatUnavailableMessage({
+  status,
+}: {
+  status: ChatProviderStatus | null;
+}) {
+  const providerUnavailable = !!status && !status.providerReady;
+  const title =
+    providerUnavailable ?
+      `${status?.providerLabel ?? "LLM Provider"} Configuration Missing`
+    : "Moose MCP Server Unavailable";
+  const description =
+    providerUnavailable ?
+      (status?.details ??
+      "Configure the selected provider environment variables before using the chat feature.")
+    : (status?.mcpDetails ??
+      "Start the Moose service with `pnpm dev:moose` before using the chat feature.");
 
   return (
     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background border rounded-lg p-6 max-w-md mx-4 text-center shadow-lg">
         <AlertTriangle className="w-8 h-8 text-yellow-500 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold mb-2">
-          {status?.providerLabel ?? "LLM Provider"} Configuration Missing
-        </h3>
-        <p className="text-muted-foreground mb-4">
-          {status?.details ??
-            "Configure the selected provider environment variables before using the chat feature."}
-        </p>
+        <h3 className="text-lg font-semibold mb-2">{title}</h3>
+        <p className="text-muted-foreground mb-4">{description}</p>
       </div>
     </div>
   );
@@ -73,8 +85,10 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   };
 
   const isEmptyState = messages.length === 0;
-  const showProviderMissingOverlay =
-    !isStatusLoading && providerStatus && !providerStatus.providerReady;
+  const showUnavailableOverlay =
+    !isStatusLoading &&
+    providerStatus &&
+    (!providerStatus.providerReady || !providerStatus.mcpReady);
 
   return (
     <div className="w-full h-full flex flex-col bg-sidebar text-foreground overflow-hidden relative">
@@ -120,7 +134,9 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         />
       </div>
 
-      {showProviderMissingOverlay && <MissingProviderMessage />}
+      {showUnavailableOverlay && (
+        <ChatUnavailableMessage status={providerStatus} />
+      )}
     </div>
   );
 }

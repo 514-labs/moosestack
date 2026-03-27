@@ -8,8 +8,8 @@
       "description": "Auth.js session secret",
       "required": true
     },
-    "MCP_SERVER_URL": {
-      "description": "URL of your MCP server",
+    "MOOSE_SERVICE_URL": {
+      "description": "Base URL of your Moose service",
       "required": true
     },
     "AI_PROVIDER": {

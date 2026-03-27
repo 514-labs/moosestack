@@ -30,6 +30,45 @@ import {
   validateExposedReadonlyQuery,
 } from "./tool-access";
 
+// Bedrock tool schemas are stricter than Anthropic/OpenAI. Keep these as
+// string inputs with manual validation instead of z.enum() so the MCP tool
+// schemas stay portable across providers.
+const CATALOG_COMPONENT_TYPES = ["tables", "materialized_views"] as const;
+const CATALOG_FORMATS = ["summary", "detailed"] as const;
+
+type CatalogComponentType = (typeof CATALOG_COMPONENT_TYPES)[number];
+type CatalogFormat = (typeof CATALOG_FORMATS)[number];
+
+function parseCatalogComponentType(
+  value: string | undefined,
+): CatalogComponentType | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  if (CATALOG_COMPONENT_TYPES.includes(value as CatalogComponentType)) {
+    return value as CatalogComponentType;
+  }
+
+  throw new Error(
+    `Invalid component_type: ${value}. Allowed values: ${CATALOG_COMPONENT_TYPES.join(", ")}.`,
+  );
+}
+
+function parseCatalogFormat(value: string | undefined): CatalogFormat {
+  if (!value) {
+    return "summary";
+  }
+
+  if (CATALOG_FORMATS.includes(value as CatalogFormat)) {
+    return value as CatalogFormat;
+  }
+
+  throw new Error(
+    `Invalid format: ${value}. Allowed values: ${CATALOG_FORMATS.join(", ")}.`,
+  );
+}
+
 // Create Express application
 const app = express();
 app.use(express.json());
@@ -126,34 +165,35 @@ const serverFactory = (mooseUtils: MooseUtils) => {
         "Discover the explicitly exposed tables and materialized views available to the agent, together with their schema information. Use this before writing queries instead of inspecting system metadata.",
       inputSchema: {
         component_type: z
-          .enum(["tables", "materialized_views"])
+          .string()
           .optional()
           .describe(
-            "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
+            "Optional component type filter. Allowed values: tables or materialized_views.",
           ),
         search: z
           .string()
           .optional()
           .describe("Regex pattern to search for in component names"),
         format: z
-          .enum(["summary", "detailed"])
-          .default("summary")
+          .string()
           .optional()
           .describe(
-            "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
+            "Optional output format. Allowed values: summary or detailed.",
           ),
       },
     },
     async ({ component_type, search, format = "summary" }) => {
       try {
+        const resolvedComponentType = parseCatalogComponentType(component_type);
+        const resolvedFormat = parseCatalogFormat(format);
         const { tables, materializedViews } = getExposedDataCatalog(
-          component_type,
+          resolvedComponentType,
           search,
         );
 
         // Format output based on requested format
         let output: string;
-        if (format === "detailed") {
+        if (resolvedFormat === "detailed") {
           output = formatExposedCatalogDetailed(tables, materializedViews);
         } else {
           output = formatExposedCatalogSummary(tables, materializedViews);

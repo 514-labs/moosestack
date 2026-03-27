@@ -1,15 +1,83 @@
-export function getMooseServiceUrl(): string {
-  const value = process.env.MOOSE_SERVICE_URL ?? process.env.MCP_SERVER_URL;
+const MCP_ENDPOINT_PATH = "/tools";
 
-  if (!value) {
+function normalizePathname(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, "");
+  return normalized.length > 0 ? normalized : "/";
+}
+
+function formatUrl(url: URL): string {
+  if (url.pathname === "/" && !url.search && !url.hash) {
+    return url.origin;
+  }
+
+  return url.toString().replace(/\/$/, "");
+}
+
+function parseUrl(value: string, envVarName: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error(`${envVarName} must be a valid URL`);
+  }
+}
+
+function stripMcpEndpointPath(pathname: string): string {
+  if (pathname === MCP_ENDPOINT_PATH) {
+    return "/";
+  }
+
+  if (pathname.endsWith(MCP_ENDPOINT_PATH)) {
+    const basePath = pathname.slice(0, -MCP_ENDPOINT_PATH.length);
+    return basePath.length > 0 ? basePath : "/";
+  }
+
+  return pathname;
+}
+
+function normalizeMooseServiceUrl(value: string, envVarName: string): string {
+  const url = parseUrl(value, envVarName);
+  const pathname = normalizePathname(url.pathname);
+  url.pathname = stripMcpEndpointPath(pathname);
+  return formatUrl(url);
+}
+
+function normalizeMcpServerUrl(value: string, envVarName: string): string {
+  const url = parseUrl(value, envVarName);
+  const pathname = normalizePathname(url.pathname);
+
+  url.pathname =
+    pathname === "/" ? MCP_ENDPOINT_PATH
+    : pathname.endsWith(MCP_ENDPOINT_PATH) ? pathname
+    : `${pathname}${MCP_ENDPOINT_PATH}`;
+
+  return formatUrl(url);
+}
+
+export function getMooseServiceUrl(): string {
+  const primaryValue = process.env.MOOSE_SERVICE_URL;
+  if (primaryValue) {
+    return normalizeMooseServiceUrl(primaryValue, "MOOSE_SERVICE_URL");
+  }
+
+  const legacyValue = process.env.MCP_SERVER_URL;
+  if (legacyValue) {
+    return normalizeMooseServiceUrl(legacyValue, "MCP_SERVER_URL");
+  }
+
+  if (!primaryValue && !legacyValue) {
     throw new Error("MOOSE_SERVICE_URL environment variable is not set");
   }
 
-  return value;
+  throw new Error("MOOSE_SERVICE_URL environment variable is not set");
 }
 
 export function getMcpServerUrl(): string {
-  return getMooseServiceUrl();
+  const override = process.env.MCP_SERVER_URL;
+  if (override) {
+    return normalizeMcpServerUrl(override, "MCP_SERVER_URL");
+  }
+
+  return normalizeMcpServerUrl(getMooseServiceUrl(), "MOOSE_SERVICE_URL");
 }
 
 export function getAiProvider(): "anthropic" | "openai" | "bedrock" {

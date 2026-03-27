@@ -1,14 +1,19 @@
-import { getProviderStatus } from "@/lib/provider-status";
+import { getChatProviderStatus } from "@/lib/provider-status";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const status = getProviderStatus();
+  const status = await getChatProviderStatus();
   return new Response(
     JSON.stringify({
       ...status,
     }),
     {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
     },
   );
 }

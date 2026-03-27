@@ -9,6 +9,10 @@ export interface ChatProviderStatus {
   guardrailsConfigured: boolean;
   status: "ready" | "missing_key";
   details?: string;
+  mcpReady: boolean;
+  mcpStatus: "ready" | "unavailable";
+  mcpUrl: string | null;
+  mcpDetails?: string;
 }
 
 export function useChatProviderStatus() {
@@ -31,10 +35,15 @@ export function useChatProviderStatus() {
         console.error("Failed to fetch chat status:", error);
         setData({
           provider: "anthropic",
-          providerLabel: "Anthropic",
-          providerReady: false,
+          providerLabel: "Chat",
+          providerReady: true,
           guardrailsConfigured: false,
-          status: "missing_key",
+          status: "ready",
+          mcpReady: false,
+          mcpStatus: "unavailable",
+          mcpUrl: null,
+          mcpDetails:
+            "Failed to load chat status. Check the web app and Moose service logs.",
         });
       } finally {
         setIsLoading(false);

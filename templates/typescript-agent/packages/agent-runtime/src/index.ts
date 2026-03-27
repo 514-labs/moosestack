@@ -29,6 +29,8 @@ type ExecutableTool = Record<string, unknown> & {
   execute: (args: unknown, context: unknown) => Promise<unknown> | unknown;
 };
 
+const MCP_ENDPOINT_PATH = "/tools";
+
 export const DEFAULT_AGENT_SYSTEM_PROMPT = `You are the analytics copilot inside a multi-tenant MooseStack application.
 
 Rules:
@@ -91,6 +93,23 @@ export interface TraceCollector {
   }): string;
   recordStep(traceId: string, step: AgentStepRecord): void;
   endTrace(traceId: string, summary: AgentTraceSummary): Promise<void>;
+}
+
+export class McpServerUnavailableError extends Error {
+  readonly endpointUrl: string;
+
+  constructor(endpointUrl: string, cause?: unknown) {
+    const causeMessage =
+      cause instanceof Error && cause.message.trim().length > 0 ?
+        ` (${cause.message.trim()})`
+      : "";
+
+    super(
+      `Cannot connect to MCP server at ${endpointUrl}. Start the Moose service with \`pnpm dev:moose\` and verify the custom MCP tools endpoint is reachable.${causeMessage}`,
+    );
+    this.name = "McpServerUnavailableError";
+    this.endpointUrl = endpointUrl;
+  }
 }
 
 class InMemoryTraceCollector implements TraceCollector {
@@ -330,6 +349,52 @@ function extractUserPrompt(messages: UIMessage[]): string {
   );
 }
 
+function normalizePathname(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, "");
+  return normalized.length > 0 ? normalized : "/";
+}
+
+function formatUrl(url: URL): string {
+  if (url.pathname === "/" && !url.search && !url.hash) {
+    return url.origin;
+  }
+
+  return url.toString().replace(/\/$/, "");
+}
+
+export function resolveMcpServerUrl(value: string): string {
+  const url = new URL(value);
+  const pathname = normalizePathname(url.pathname);
+
+  if (pathname === "/") {
+    url.pathname = MCP_ENDPOINT_PATH;
+    return formatUrl(url);
+  }
+
+  url.pathname =
+    pathname.endsWith(MCP_ENDPOINT_PATH) ? pathname : (
+      `${pathname}${MCP_ENDPOINT_PATH}`
+    );
+
+  return formatUrl(url);
+}
+
+function shouldWrapMcpConnectionError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error);
+
+  if (
+    message.includes("401") ||
+    message.includes("403") ||
+    message.includes("unauthorized") ||
+    message.includes("forbidden")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 async function closeMcpClient(client: MCPClient) {
   if (typeof client.close !== "function") {
     return;
@@ -342,15 +407,38 @@ export async function createAgentRuntime(
   options: AgentRuntimeOptions,
 ): Promise<AgentRuntime> {
   const modelSelection = selectModel(options.providerConfig);
-  const mcpClient = await experimental_createMCPClient({
-    name: "moose-mcp-server",
-    transport: {
-      type: "http",
-      url: `${options.mcpServerUrl}/tools`,
-      headers: { Authorization: `Bearer ${options.bearerToken}` },
-    },
-  });
-  const tools = await mcpClient.tools();
+  const resolvedMcpServerUrl = resolveMcpServerUrl(options.mcpServerUrl);
+
+  let mcpClient: MCPClient;
+  try {
+    mcpClient = await experimental_createMCPClient({
+      name: "moose-mcp-server",
+      transport: {
+        type: "http",
+        url: resolvedMcpServerUrl,
+        headers: { Authorization: `Bearer ${options.bearerToken}` },
+      },
+    });
+  } catch (error) {
+    if (shouldWrapMcpConnectionError(error)) {
+      throw new McpServerUnavailableError(resolvedMcpServerUrl, error);
+    }
+
+    throw error;
+  }
+
+  let tools: AgentTools;
+  try {
+    tools = await mcpClient.tools();
+  } catch (error) {
+    await closeMcpClient(mcpClient);
+
+    if (shouldWrapMcpConnectionError(error)) {
+      throw new McpServerUnavailableError(resolvedMcpServerUrl, error);
+    }
+
+    throw error;
+  }
 
   return {
     provider: modelSelection.provider,
@@ -362,7 +450,7 @@ export async function createAgentRuntime(
     tools,
     toolChoice: "auto",
     stopWhen: stepCountIs(options.maxSteps ?? 25),
-    mcpServerUrl: options.mcpServerUrl,
+    mcpServerUrl: resolvedMcpServerUrl,
     close: () => closeMcpClient(mcpClient),
   };
 }

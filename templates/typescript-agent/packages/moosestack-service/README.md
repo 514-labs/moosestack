@@ -39,4 +39,5 @@ pnpm test:unit -- packages/moosestack-service/test
 
 - Keep tenant boundaries enforced here, not in the web app.
 - Keep the MCP schema surface allowlisted by default.
+- Use `packages/moosestack-service/.env.local` with `MOOSE_CLICKHOUSE_CONFIG__*` overrides when you want this template to connect to an existing ClickHouse instance instead of the local Docker defaults.
 - Prefer pure helper logic in `app/apis/tool-access-core.ts` when adding testable policy code.
