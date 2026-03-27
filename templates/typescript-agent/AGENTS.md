@@ -176,7 +176,7 @@ app.get("/top-pages", async (req, res) => {
   try {
     const query = sql.statement`
       SELECT url, count() as totalViews
-      FROM PageView
+      FROM page_views
       WHERE userId = ${userId}
       GROUP BY url
       ORDER BY totalViews DESC
@@ -202,7 +202,7 @@ Key patterns:
 
 - Use `getMooseUtils()` to get the ClickHouse `client` and type-safe `sql` template literal
 - Use `sql.statement` for complete SQL queries and `sql.fragment` for reusable SQL expressions (prevents injection)
-- Export the `WebApp` from the file — MooseStack discovers it automatically
+- Export the `WebApp` from the file and re-export it from `packages/moosestack-service/app/index.ts` so MooseStack discovers it automatically
 - This template uses Express, but MooseStack also supports Fastify and FastAPI. See `moose docs moosestack/app-api-frameworks` for all options
 
 ### Adding an MCP tool

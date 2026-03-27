@@ -26,7 +26,8 @@ export function formatQueryToolError(
   const errorMessage = error instanceof Error ? error.message : String(error);
 
   if (/not exposed by default/i.test(errorMessage)) {
-    return `${errorMessage} Use get_data_catalog before writing queries.`;
+    const tableName = extractTableName(errorMessage) ?? "requested table";
+    return `Table '${tableName}' is not exposed to this tool. Available tables: ${formatAvailableTableList(availableTables)}. Use get_data_catalog before writing queries.`;
   }
 
   if (/Unknown table|doesn't exist/i.test(errorMessage)) {
@@ -34,5 +35,29 @@ export function formatQueryToolError(
     return `Table '${tableName}' not found. Available tables: ${formatAvailableTableList(availableTables)}. Use get_data_catalog before writing queries.`;
   }
 
-  return `Error executing query: ${errorMessage}`;
+  if (/System metadata is not exposed by default/i.test(errorMessage)) {
+    return "System metadata is not available to this tool. Use get_data_catalog to discover the exposed tables and columns.";
+  }
+
+  if (
+    /Only SELECT, DESCRIBE, and EXPLAIN SELECT queries against exposed data components are allowed by default/i.test(
+      errorMessage,
+    )
+  ) {
+    return "Only SELECT, DESCRIBE, and EXPLAIN SELECT queries against exposed data components are allowed.";
+  }
+
+  if (/Qualified table names are not allowed/i.test(errorMessage)) {
+    return "Qualified table names are not allowed. Query exposed tables without a database prefix.";
+  }
+
+  if (
+    /Comma-separated FROM and JOIN target lists are not allowed/i.test(
+      errorMessage,
+    )
+  ) {
+    return "Comma-separated FROM and JOIN target lists are not allowed. Use explicit JOIN syntax against exposed tables.";
+  }
+
+  return "Unable to execute the query. Verify that it is a read-only statement against exposed tables and try again.";
 }

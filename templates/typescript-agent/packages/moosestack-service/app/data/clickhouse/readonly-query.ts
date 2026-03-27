@@ -8,7 +8,7 @@ import {
 type QueryClient = MooseUtils["client"]["query"];
 
 function formatClickHouseDateTime(value: Date): string {
-  return value.toISOString().slice(0, 19).replace("T", " ");
+  return value.toISOString();
 }
 
 function isRowPolicyOptions(value: unknown): value is RowPolicyOptions {
@@ -51,14 +51,14 @@ async function executeReadonlyQuery<T>(
     ),
     format: "JSONEachRow",
     clickhouse_settings: {
-      readonly: "2",
+      ...rowPolicyOptions?.clickhouse_settings,
       ...(typeof limit === "number" ?
         {
           max_result_rows: limit.toString(),
           result_overflow_mode: "break",
         }
       : {}),
-      ...rowPolicyOptions?.clickhouse_settings,
+      readonly: "2",
     },
     ...(rowPolicyOptions && {
       role: rowPolicyOptions.role,

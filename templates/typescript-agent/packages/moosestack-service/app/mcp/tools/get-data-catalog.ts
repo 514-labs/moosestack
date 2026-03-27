@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v3";
+import { formatCatalogToolError } from "../errors/catalog-tool-errors";
 import {
   parseCatalogComponentType,
   parseCatalogFormat,
@@ -10,7 +11,7 @@ import {
   getExposedDataCatalog,
 } from "../tool-access/exposed-surface";
 
-export function registerGetDataCatalogTool(server: McpServer) {
+export function registerGetDataCatalogTool(server: McpServer): void {
   server.registerTool(
     "get_data_catalog",
     {
@@ -59,13 +60,12 @@ export function registerGetDataCatalogTool(server: McpServer) {
           ],
         };
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        console.error("get_data_catalog failed:", error);
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error retrieving data catalog: ${errorMessage}`,
+              text: formatCatalogToolError(error),
             },
           ],
           isError: true,

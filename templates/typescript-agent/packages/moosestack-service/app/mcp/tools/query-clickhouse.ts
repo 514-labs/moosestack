@@ -11,7 +11,7 @@ import {
 export function registerQueryClickhouseTool(
   server: McpServer,
   mooseUtils: MooseUtils,
-) {
+): void {
   server.registerTool(
     "query_clickhouse",
     {
@@ -25,7 +25,6 @@ export function registerQueryClickhouseTool(
           .min(1)
           .max(1000)
           .default(100)
-          .optional()
           .describe(
             "Maximum number of rows to return (default: 100, max: 1000)",
           ),
@@ -62,6 +61,7 @@ export function registerQueryClickhouseTool(
           })
           .sort();
 
+        console.error("query_clickhouse failed:", error);
         return {
           content: [
             {

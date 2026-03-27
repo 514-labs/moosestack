@@ -467,4 +467,76 @@ describe("createAgentRuntime", () => {
     );
     expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
   });
+
+  it("finalizes and closes the runtime when single-agent guardrail assessment fails", async () => {
+    const traceCollector = {
+      startTrace: vi.fn(() => "trace-1"),
+      recordStep: vi.fn(),
+      endTrace: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      createAgentStream({
+        messages: userMessages,
+        bearerToken: "tenant-token",
+        tenantId: "acme",
+        mcpServerUrl: "http://localhost:4000",
+        providerConfig: {
+          provider: "anthropic",
+          apiKey: "anthropic-key",
+        },
+        guardrailAdapter: {
+          assessPrompt: async () => {
+            throw new Error("Guardrail unavailable");
+          },
+        },
+        traceCollector,
+      }),
+    ).rejects.toThrow("Guardrail unavailable");
+
+    expect(traceCollector.endTrace).toHaveBeenCalledWith(
+      "trace-1",
+      expect.objectContaining({
+        status: "failed",
+      }),
+    );
+    expect(mocks.createUIMessageStreamMock).not.toHaveBeenCalled();
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("finalizes and closes the runtime when multi-agent guardrail assessment fails", async () => {
+    const traceCollector = {
+      startTrace: vi.fn(() => "trace-1"),
+      recordStep: vi.fn(),
+      endTrace: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      createMultiAgentStream({
+        messages: userMessages,
+        bearerToken: "tenant-token",
+        tenantId: "acme",
+        mcpServerUrl: "http://localhost:4000",
+        providerConfig: {
+          provider: "anthropic",
+          apiKey: "anthropic-key",
+        },
+        guardrailAdapter: {
+          assessPrompt: async () => {
+            throw new Error("Guardrail unavailable");
+          },
+        },
+        traceCollector,
+      }),
+    ).rejects.toThrow("Guardrail unavailable");
+
+    expect(traceCollector.endTrace).toHaveBeenCalledWith(
+      "trace-1",
+      expect.objectContaining({
+        status: "failed",
+      }),
+    );
+    expect(mocks.createUIMessageStreamMock).not.toHaveBeenCalled();
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
+  });
 });

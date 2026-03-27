@@ -26,14 +26,14 @@ export interface RuntimeTable {
   generateTableName(): string;
 }
 
-interface ColumnInfo {
+export interface ColumnInfo {
   name: string;
   type: string;
   nullable: boolean;
   comment?: string;
 }
 
-interface TableInfo {
+export interface TableInfo {
   name: string;
   engine: string;
   columns: ColumnInfo[];
@@ -42,6 +42,27 @@ interface TableInfo {
 export interface DataCatalogResponse {
   tables?: Record<string, TableInfo>;
   materialized_views?: Record<string, TableInfo>;
+}
+
+export interface ToolAccessCatalog {
+  tables: TableInfo[];
+  materializedViews: TableInfo[];
+}
+
+export interface ToolAccessPolicy {
+  getExposedDataCatalog(
+    componentType?: "tables" | "materialized_views",
+    searchPattern?: string,
+  ): ToolAccessCatalog;
+  formatExposedCatalogSummary(
+    tables: TableInfo[],
+    materializedViews: TableInfo[],
+  ): string;
+  formatExposedCatalogDetailed(
+    tables: TableInfo[],
+    materializedViews: TableInfo[],
+  ): string;
+  validateExposedReadonlyQuery(rawQuery: string): string;
 }
 
 function isNullableType(
@@ -237,23 +258,27 @@ function stripSqlComments(query: string): string {
 }
 
 function normalizeIdentifier(identifier: string): string {
-  const normalizedSegment = identifier
-    .trim()
-    .replace(/;+$/, "")
-    .split(".")
-    .pop();
+  const normalizedIdentifier = identifier.trim().replace(/;+$/, "");
+  const unquotedIdentifier = normalizedIdentifier
+    .replace(/^["`]/, "")
+    .replace(/["`]$/, "");
 
-  if (!normalizedSegment) {
+  if (unquotedIdentifier.includes(".")) {
+    throw new Error(
+      "Qualified table names are not allowed. Query exposed components without a database prefix.",
+    );
+  }
+
+  if (!unquotedIdentifier) {
     throw new Error("Query references an empty table identifier.");
   }
 
-  return normalizedSegment
-    .replace(/^["`]/, "")
-    .replace(/["`]$/, "")
-    .toLowerCase();
+  return unquotedIdentifier.toLowerCase();
 }
 
-export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]) {
+export function createToolAccessPolicy(
+  exposedTables: readonly RuntimeTable[],
+): ToolAccessPolicy {
   const exposedComponentNames = new Set(
     exposedTables.map((table) => table.generateTableName().toLowerCase()),
   );
@@ -284,9 +309,19 @@ export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]) {
   }
 
   function validateSelectLikeQuery(query: string) {
-    const identifiers = Array.from(
-      query.matchAll(/\b(?:from|join)\s+([`"\w.]+)/gi),
-    ).map((match) => normalizeIdentifier(match[1]));
+    const identifiers: string[] = [];
+    const tableReferencePattern =
+      /\b(?:from|join)\s+([`"\w.]+)(?:\s+(?:as\s+)?[A-Za-z_]\w*)?\s*(,?)/gi;
+
+    for (const match of query.matchAll(tableReferencePattern)) {
+      identifiers.push(normalizeIdentifier(match[1]));
+
+      if (match[2] === ",") {
+        throw new Error(
+          "Comma-separated FROM and JOIN target lists are not allowed. Use explicit JOIN syntax against exposed data components.",
+        );
+      }
+    }
 
     if (identifiers.length === 0) {
       throw new Error(
@@ -384,7 +419,7 @@ export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]) {
       }
 
       if (
-        /\b(show|exists|insert|update|delete|alter|create|drop|optimize|grant|revoke|attach|detach|rename|truncate|use|kill)\b/i.test(
+        /\b(show|insert|update|delete|alter|create|drop|optimize|grant|revoke|attach|detach|rename|truncate|use|kill)\b/i.test(
           query,
         )
       ) {

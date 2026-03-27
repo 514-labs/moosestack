@@ -17,13 +17,18 @@ export function getTenantMooseContext(
     return undefined;
   }
 
+  const tenantId = moose.jwt.tenant_id.trim();
+  if (!tenantId) {
+    return undefined;
+  }
+
   return {
     moose,
-    tenantId: moose.jwt.tenant_id,
+    tenantId,
   };
 }
 
-export function respondUnauthorized(res: express.Response) {
+export function respondUnauthorized(res: express.Response): express.Response {
   return res.status(401).json({
     error: "Unauthorized",
     details: "A valid OIDC-issued JWT with a tenant_id claim is required.",
@@ -34,7 +39,7 @@ export function requireTenantMoose(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction,
-) {
+): express.Response | undefined {
   if (!getTenantMooseContext(req)) {
     return respondUnauthorized(res);
   }
