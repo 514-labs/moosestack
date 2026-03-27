@@ -320,7 +320,7 @@ export function createToolAccessPolicy(
   function validateSelectLikeQuery(query: string) {
     const identifiers: string[] = [];
     const tableReferencePattern =
-      /\b(?:from|join)\s+([`"\w.]+)(?:\s+(?:as\s+)?[A-Za-z_]\w*)?\s*(,?)/gi;
+      /\b(?:from|join)\s+([`"\w.]+)(?:\s+(?:as\s+)?(?!(?:join|left|right|inner|outer|cross|full|where|group|order|having|limit|union|except|intersect)\b)[A-Za-z_]\w*)?\s*(,?)/gi;
 
     for (const match of query.matchAll(tableReferencePattern)) {
       identifiers.push(normalizeIdentifier(match[1]));

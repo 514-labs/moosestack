@@ -151,4 +151,24 @@ describe("tool-access", () => {
       ),
     ).toThrow(/Comma-separated FROM and JOIN target lists are not allowed/);
   });
+
+  it("validates JOIN targets and rejects undeclared tables", () => {
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge JOIN secret_table ON tenant_knowledge.id = secret_table.id",
+      ),
+    ).toThrow(/Available tables: tenant_knowledge/);
+
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge LEFT JOIN secret_table ON tenant_knowledge.id = secret_table.id",
+      ),
+    ).toThrow(/Available tables: tenant_knowledge/);
+
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge INNER JOIN secret_table ON tenant_knowledge.id = secret_table.id",
+      ),
+    ).toThrow(/Available tables: tenant_knowledge/);
+  });
 });
