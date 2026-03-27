@@ -147,12 +147,15 @@ node scripts/package-templates.js
 Then initialize the template in a temp directory:
 
 ```bash
+MOOSE_CLI="${MOOSE_CLI:-$(pwd)/target/debug/moose-cli}"
 TMP_DIR="$(mktemp -d /tmp/typescript-agent-XXXXXX)"
 cd "$TMP_DIR"
-/Users/nicolas/code/514/moose-0/target/debug/moose-cli init my-agent typescript-agent
+"$MOOSE_CLI" init my-agent typescript-agent
 cd my-agent
 pnpm install
 ```
+
+If you prefer to use a CLI from your `PATH` instead of the just-built local binary, set `MOOSE_CLI=moose-cli` before running the snippet.
 
 Run the generated app checks:
 

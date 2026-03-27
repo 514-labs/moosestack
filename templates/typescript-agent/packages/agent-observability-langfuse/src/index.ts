@@ -70,20 +70,24 @@ class LangfuseTraceCollector implements TraceCollector {
       return;
     }
 
-    trace.update({
-      output: {
-        status: summary.status,
-        totalSteps: summary.totalSteps,
-        totalDurationMs: summary.totalDurationMs,
-      },
-      metadata: {
-        guardrailAction: summary.guardrailAction,
-        totalInputTokens: summary.totalInputTokens,
-        totalOutputTokens: summary.totalOutputTokens,
-      },
-    });
+    try {
+      trace.update({
+        output: {
+          status: summary.status,
+          totalSteps: summary.totalSteps,
+          totalDurationMs: summary.totalDurationMs,
+        },
+        metadata: {
+          guardrailAction: summary.guardrailAction,
+          totalInputTokens: summary.totalInputTokens,
+          totalOutputTokens: summary.totalOutputTokens,
+        },
+      });
 
-    await this.langfuse.flushAsync().catch(() => undefined);
+      await this.langfuse.flushAsync().catch(() => undefined);
+    } finally {
+      this.traces.delete(traceId);
+    }
   }
 }
 

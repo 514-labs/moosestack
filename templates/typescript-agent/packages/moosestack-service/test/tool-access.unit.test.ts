@@ -125,4 +125,30 @@ describe("tool-access", () => {
       validateExposedReadonlyQuery("SELECT headline FROM secret_table"),
     ).toThrow(/Available tables: tenant_knowledge/);
   });
+
+  it("allows EXISTS subqueries against exposed tables", () => {
+    expect(
+      validateExposedReadonlyQuery(
+        "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'acme')",
+      ),
+    ).toBe(
+      "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'acme')",
+    );
+  });
+
+  it("rejects qualified table names", () => {
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT headline FROM other_db.tenant_knowledge",
+      ),
+    ).toThrow(/Qualified table names are not allowed/);
+  });
+
+  it("rejects comma-separated FROM lists", () => {
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge AS tk, tenant_knowledge AS other_tk",
+      ),
+    ).toThrow(/Comma-separated FROM and JOIN target lists are not allowed/);
+  });
 });

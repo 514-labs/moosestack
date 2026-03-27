@@ -13,6 +13,7 @@ import {
 } from "../prompts/multi-agent.js";
 import { createAgentRuntime } from "../runtime/create-agent-runtime.js";
 import type { CreateAgentStreamOptions } from "../runtime/types.js";
+import type { GuardrailResult } from "../shared-types.js";
 import { extractUserPrompt } from "../utils/message-parts.js";
 import type { StreamTextTools, ToolTiming } from "../utils/sdk-types.js";
 import { createGuardrailBlockedStream } from "./create-guardrail-blocked-stream.js";
@@ -31,8 +32,21 @@ export async function createMultiAgentStream(
   const userPrompt = extractUserPrompt(options.messages);
   const traceSession = createTraceSession(options, runtime, userPrompt);
 
-  const guardrailResult =
-    await runtime.guardrailAdapter.assessPrompt(userPrompt);
+  let guardrailResult: GuardrailResult;
+  try {
+    guardrailResult = await runtime.guardrailAdapter.assessPrompt(userPrompt);
+  } catch (error) {
+    await traceSession.finalizeTrace({
+      guardrailAction: "none",
+      status: "failed",
+      totalSteps: traceSession.observedSteps.length,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      completedAt: new Date().toISOString(),
+    });
+    throw error;
+  }
+
   if (guardrailResult.action === "GUARDRAIL_INTERVENED") {
     traceSession.recordStep({
       stepId: crypto.randomUUID(),
