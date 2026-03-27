@@ -49,7 +49,26 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 4. **ClickHouse Best Practices Skill** (optional) — Install with `514 agent init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
+## Package Guides
+
+Every workspace package has a package-local `AGENTS.md`. Start with the guide for the package you are changing:
+
+| Package | Guide | Purpose |
+| --- | --- | --- |
+| `agent-contracts` | `packages/agent-contracts/AGENTS.md` | Shared DTOs and constants across package boundaries |
+| `agent-observability-langfuse` | `packages/agent-observability-langfuse/AGENTS.md` | Langfuse trace collector implementation |
+| `agent-runtime` | `packages/agent-runtime/AGENTS.md` | Shared agent runtime assembly and orchestration |
+| `moosestack-service` | `packages/moosestack-service/AGENTS.md` | Moose backend, semantic layer, HTTP APIs, and MCP tools |
+| `web-app` | `packages/web-app/AGENTS.md` | Next.js host app, auth, chat UI, and host-side runtime wiring |
+
 ## Key Files
+
+### `packages/agent-contracts/`
+
+| File | Purpose |
+| --- | --- |
+| `AGENTS.md` | Package-local ownership rules and source layout |
+| `src/index.ts` | Shared DTOs and constants used by the web app and Moose service |
 
 ### `packages/moosestack-service/`
 
@@ -79,12 +98,14 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 | File | Purpose |
 | --- | --- |
+| `AGENTS.md` | Package-local ownership rules and source layout |
 | `src/index.ts` | Reusable Langfuse trace collector that implements the shared `TraceCollector` contract |
 
 ### `packages/web-app/`
 
 | File | Purpose |
 | --- | --- |
+| `AGENTS.md` | Package-local ownership rules and source layout |
 | `src/auth.ts` | Production auth wiring and provider/session setup |
 | `src/dev/` | Development-only local tenant auth and mock guardrails |
 | `src/components/ai-elements/` | Generic chat UI primitives imported from AI Elements |

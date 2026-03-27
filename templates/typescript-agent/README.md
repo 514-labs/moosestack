@@ -14,6 +14,23 @@ It combines:
 - Langfuse-compatible tracing from the web app
 - optional Bedrock provider and Guardrails wiring
 
+## Why Moose + Next.js
+
+This template is intentionally not "just Next.js with a few route handlers."
+
+- Next.js is the app host. It owns auth/session handling, the UI, server-rendered pages, and the chat route that talks to the shared agent runtime.
+- Moose is the data-service runtime. It owns the typed data model, tenant isolation, semantic/query models, app-facing service APIs, and MCP tools over the same data surface.
+
+That split matters once your app needs more than a thin UI over an existing API:
+
+- you want typed ingest models that become real tables and services instead of hand-written backend glue
+- you want row-level security and tenant scoping enforced close to the data
+- you want a semantic layer for metrics, filters, and read models instead of burying analytics logic inside route handlers
+- you want the same backend surface to power dashboards, chat tools, and external MCP clients
+- you want the data plane to stay usable even if the frontend changes
+
+If you only need a simple UI over an existing backend, plain Next.js is often enough. This template is for the case where the application also needs a real data service: modeled data, tenant-aware reads, analytics-style queries, and tool-accessible APIs.
+
 ## Overview
 
 ```text
