@@ -5,6 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { AlertTriangle, MessageSquare, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { formatChatUiErrorMessage } from "@/lib/chat-ui-errors";
 import {
   type ChatProviderStatus,
   useChatProviderStatus,
@@ -30,7 +31,7 @@ function ChatUnavailableMessage({
       (status?.details ??
       "Configure the selected provider environment variables before using the chat feature.")
     : (status?.mcpDetails ??
-      "Start the Moose service with `pnpm dev:moose` before using the chat feature.");
+      "Start the local stack with `pnpm dev:start`, or start just the Moose service with `pnpm dev:moose`, before using the chat feature.");
 
   return (
     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -64,7 +65,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
       }
     },
     onError: (error) => {
-      setErrorMessage(error.message);
+      setErrorMessage(formatChatUiErrorMessage(error.message));
     },
   });
 

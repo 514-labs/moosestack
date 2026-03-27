@@ -1,4 +1,7 @@
-import { McpServerUnavailableError } from "agent-runtime";
+import {
+  formatAgentRuntimeErrorMessage,
+  McpServerUnavailableError,
+} from "agent-runtime";
 import type { UIMessage } from "ai";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
@@ -6,6 +9,32 @@ import { getAgentResponse } from "@/lib/chat-agent";
 
 interface ChatBody {
   messages: UIMessage[];
+}
+
+function getChatErrorResponse(error: unknown) {
+  if (error instanceof McpServerUnavailableError) {
+    return {
+      status: 503,
+      body: {
+        error: "MCP server unavailable",
+        details: error.message,
+      },
+    };
+  }
+
+  const details = formatAgentRuntimeErrorMessage(error);
+  const errorLabel =
+    details.startsWith("Model access denied.") ?
+      "Bedrock model access denied"
+    : "Internal server error";
+
+  return {
+    status: 500,
+    body: {
+      error: errorLabel,
+      details,
+    },
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -46,29 +75,12 @@ export async function POST(request: NextRequest) {
       tenantId: session.user.tenantId,
     });
   } catch (error) {
-    if (error instanceof McpServerUnavailableError) {
-      return new Response(
-        JSON.stringify({
-          error: "MCP server unavailable",
-          details: error.message,
-        }),
-        {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
+    const response = getChatErrorResponse(error);
 
     console.error("Chat error:", error);
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify(response.body), {
+      status: response.status,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

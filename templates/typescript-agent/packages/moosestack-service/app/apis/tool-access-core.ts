@@ -257,11 +257,14 @@ export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]) {
   const exposedComponentNames = new Set(
     exposedTables.map((table) => table.generateTableName().toLowerCase()),
   );
+  const availableComponentList = Array.from(exposedComponentNames)
+    .sort()
+    .join(", ");
 
   function assertExposedIdentifier(identifier: string) {
     if (!exposedComponentNames.has(identifier)) {
       throw new Error(
-        `Query references a data component that is not exposed by default: ${identifier}. Update app/apis/tool-access.ts if you want to allow it.`,
+        `Table '${identifier}' is not exposed by default. Available tables: ${availableComponentList}. Update app/apis/tool-access.ts if you want to allow it.`,
       );
     }
   }

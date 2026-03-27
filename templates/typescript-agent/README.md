@@ -49,24 +49,34 @@ Start with these files if you want to customize the pattern:
 - `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
 - `packages/web-app/src/app/page.tsx` - example prompts and UI copy that explain the default handoff flow
 
+## Prerequisites
+
+- Moose CLI installed and available on your `PATH`
+- Node.js `>=20 <25`
+- `pnpm` `10.33+`
+- `curl` for startup readiness checks
+- One local container runtime: Docker Desktop / Docker Engine, or Finch
+- Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials plus `BEDROCK_MODEL_ID`
+
+`pnpm dev:start` auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
+
+If you run `pnpm dev:moose` or `moose dev` directly with Finch, set `MOOSE_DEV__CONTAINER_CLI_PATH=finch` or add `[dev] container_cli_path = "finch"` to `~/.moose/config.toml`.
+
 ## Quickstart
 
 ```bash
 moose init <project-name> typescript-agent
 cd <project-name>
 pnpm install
-cp packages/moosestack-service/.env.{example,local}
-cp packages/web-app/.env.{example,local}
-pnpm dev:moose
+pnpm env:prepare
+pnpm dev:start
 ```
 
-Then, in a second terminal:
-
-```bash
-pnpm dev:web
-```
+`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` for the web app the first time you run it.
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example` and a checked-in `packages/web-app/.env.development` for local development.
+
+`pnpm dev:start` checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
 
 In a third terminal, seed starter data:
 
@@ -138,15 +148,8 @@ pnpm build:service
 For a full local smoke test:
 
 ```bash
-cp packages/moosestack-service/.env.{example,local}
-cp packages/web-app/.env.{example,local}
-pnpm dev:moose
-```
-
-In a second terminal:
-
-```bash
-pnpm dev:web
+pnpm env:prepare
+pnpm dev:start
 ```
 
 In a third terminal:
@@ -182,13 +185,15 @@ Two demo tenants are included by default:
 
 ### Required
 
-In `packages/web-app/.env.local`:
+Run `pnpm env:prepare` first, then update `packages/web-app/.env.local` as needed:
 
 | Variable | Purpose |
 | --- | --- |
 | `AUTH_SECRET` | Auth.js session secret |
 | `AI_PROVIDER` | `anthropic`, `openai`, or `bedrock` |
+| `ANTHROPIC_MODEL_ID` | Optional Anthropic model override |
 | `MOOSE_SERVICE_URL` | Moose service base URL, usually `http://localhost:4000` |
+| `OPENAI_MODEL_ID` | Optional OpenAI model override |
 
 `MOOSE_SERVICE_URL` is the canonical setting. If you already have `MCP_SERVER_URL=http://.../tools`, the template still accepts it as a legacy alias and MCP-specific override.
 
@@ -196,6 +201,7 @@ In `packages/moosestack-service/.env.local`, you can also override the local Cli
 
 | Variable | Purpose |
 | --- | --- |
+| `MOOSE_CLICKHOUSE_CONFIG__URL` | Existing ClickHouse connection URL |
 | `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` | Existing ClickHouse database name |
 | `MOOSE_CLICKHOUSE_CONFIG__HOST` | Existing ClickHouse host |
 | `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | Existing ClickHouse HTTP port |
@@ -210,9 +216,9 @@ For local work, start by copying `packages/web-app/.env.example` to `.env.local`
 
 | Provider | Variables |
 | --- | --- |
-| Anthropic | `ANTHROPIC_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL_ID` |
 | OpenAI | `OPENAI_API_KEY`, optional `OPENAI_MODEL_ID` |
-| Bedrock | `AWS_REGION`, `BEDROCK_MODEL_ID` |
+| Bedrock | `AWS_REGION`, `BEDROCK_MODEL_ID`, optional `AWS_PROFILE` |
 
 If `AI_PROVIDER=bedrock`, local development also needs AWS credential hints such as `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Otherwise the template marks Bedrock as unavailable and the chat panel stays disabled instead of failing silently.
 
@@ -336,7 +342,9 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 
 ## Notes
 
-- `pnpm dev` starts both the Moose service and the web app.
+- `pnpm env:prepare` creates local env files from the checked-in examples.
+- `pnpm dev:start` validates Docker or Finch, waits for readiness, and starts both services.
+- `pnpm dev` starts both the Moose service and the web app without the extra readiness checks.
 - `pnpm build` uses Turbo to build the shared packages plus the Next app in dependency order.
 - `pnpm build:service` builds the Moose service docker image.
 - `pnpm test` uses Vitest at the workspace root and is safe to run before `pnpm dev`.

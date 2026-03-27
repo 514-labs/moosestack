@@ -30,6 +30,32 @@ type ExecutableTool = Record<string, unknown> & {
 };
 
 const MCP_ENDPOINT_PATH = "/tools";
+const BEDROCK_MODEL_ACCESS_PATTERNS = [
+  /AccessDeniedException/i,
+  /not authorized to invoke/i,
+  /model access denied/i,
+  /access to the model/i,
+  /invoke model/i,
+] as const;
+
+export function formatAgentRuntimeErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message.trim() : String(error).trim();
+
+  if (message.length === 0) {
+    return "An unexpected model error occurred.";
+  }
+
+  if (
+    BEDROCK_MODEL_ACCESS_PATTERNS.some((pattern) => {
+      return pattern.test(message);
+    })
+  ) {
+    return "Model access denied. Enable model access in the AWS Bedrock console for the selected model, or change `BEDROCK_MODEL_ID` / `AI_PROVIDER`.";
+  }
+
+  return message;
+}
 
 export const DEFAULT_AGENT_SYSTEM_PROMPT = `You are the analytics copilot inside a multi-tenant MooseStack application.
 
@@ -105,7 +131,7 @@ export class McpServerUnavailableError extends Error {
       : "";
 
     super(
-      `Cannot connect to MCP server at ${endpointUrl}. Start the Moose service with \`pnpm dev:moose\` and verify the custom MCP tools endpoint is reachable.${causeMessage}`,
+      `Cannot connect to MCP server at ${endpointUrl}. Start the local stack with \`pnpm dev:start\`, or start just the Moose service with \`pnpm dev:moose\`, and verify the custom MCP tools endpoint is reachable.${causeMessage}`,
     );
     this.name = "McpServerUnavailableError";
     this.endpointUrl = endpointUrl;
@@ -703,10 +729,7 @@ export async function createMultiAgentStream(
           workerResult.toUIMessageStream({
             sendStart: false,
             sendFinish: false,
-            onError: (error) =>
-              error instanceof Error ?
-                error.message
-              : "An unexpected model error occurred.",
+            onError: formatAgentRuntimeErrorMessage,
           }),
         );
 
@@ -748,10 +771,7 @@ export async function createMultiAgentStream(
         writer.merge(
           narratorResult.toUIMessageStream({
             sendStart: false,
-            onError: (error) =>
-              error instanceof Error ?
-                error.message
-              : "An unexpected model error occurred.",
+            onError: formatAgentRuntimeErrorMessage,
           }),
         );
 
@@ -794,7 +814,7 @@ export async function createMultiAgentStream(
           completedAt: new Date().toISOString(),
         });
 
-        throw error;
+        throw new Error(formatAgentRuntimeErrorMessage(error));
       }
     },
   });
@@ -1029,10 +1049,7 @@ export async function createAgentStream(
 
       writer.merge(
         result.toUIMessageStream({
-          onError: (error) =>
-            error instanceof Error ?
-              error.message
-            : "An unexpected model error occurred.",
+          onError: formatAgentRuntimeErrorMessage,
         }),
       );
     },

@@ -129,7 +129,8 @@ export default async function Home({ searchParams }: HomePageProps) {
                   <span className="font-medium text-foreground">
                     {getAiProvider()}
                   </span>
-                  . Set `.env.local` values to switch LLMs, enable Langfuse, or
+                  . Run `pnpm env:prepare` to create local env files, then edit
+                  `.env.local` values to switch LLMs, enable Langfuse, or
                   connect Bedrock Guardrails.
                 </div>
               </div>
@@ -204,7 +205,7 @@ export default async function Home({ searchParams }: HomePageProps) {
           <MetricCard
             label="AI Provider"
             value={aiProvider}
-            helper="Switch providers with `AI_PROVIDER` in `.env.local`"
+            helper="Switch providers with `AI_PROVIDER` in `.env.local` after running `pnpm env:prepare`"
           />
           <MetricCard
             label="Langfuse"

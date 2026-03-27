@@ -12,6 +12,8 @@ describe("env-vars", () => {
     process.env = { ...ORIGINAL_ENV };
     delete process.env.MOOSE_SERVICE_URL;
     delete process.env.MCP_SERVER_URL;
+    delete process.env.ANTHROPIC_MODEL_ID;
+    delete process.env.OPENAI_MODEL_ID;
   });
 
   afterEach(() => {
@@ -44,5 +46,21 @@ describe("env-vars", () => {
 
     expect(getMooseServiceUrl()).toBe("http://localhost:4000");
     expect(getMcpServerUrl()).toBe("http://localhost:4000/tools");
+  });
+
+  it("returns actionable guidance when MOOSE_SERVICE_URL is missing", async () => {
+    const { getMooseServiceUrl } = await loadEnvVarsModule();
+
+    expect(() => getMooseServiceUrl()).toThrow(/pnpm env:prepare/);
+  });
+
+  it("exposes configurable provider model IDs with safe defaults", async () => {
+    process.env.ANTHROPIC_MODEL_ID = "claude-custom";
+    process.env.OPENAI_MODEL_ID = "gpt-custom";
+
+    const { getAnthropicModelId, getOpenAiModelId } = await loadEnvVarsModule();
+
+    expect(getAnthropicModelId()).toBe("claude-custom");
+    expect(getOpenAiModelId()).toBe("gpt-custom");
   });
 });
