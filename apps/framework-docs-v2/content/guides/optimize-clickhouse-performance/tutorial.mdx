@@ -9,26 +9,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 # Optimizing ClickHouse Performance with AI
 
-Use this guide when a production ClickHouse query in your MooseStack app is slower than it should be. This guide will help you use the `514` agent harness to fix it by running a controlled experiment.
+Use this guide when a production ClickHouse query in your MooseStack app is slower than it should be.
 
-Use this guide when a production ClickHouse query in your MooseStack app is slower than it should be. It shows you how to set up the `514` agent harness and let it run the optimization workflow as a controlled experiment.
+You will set up your AI coding agent with the `514` harness to benchmark the slow query against one or more optimized candidates. By the end you will have a reviewable PR with the winning schema changes, benchmark evidence, and a migration plan.
 
-The harness profiles the real query, creates one baseline branch and one or more candidate branches, and gives each branch a matching preview environment in 514 hosting. The harness also creates a single bechmark test package that it will locally run against the baseline and candidate branches to determine which optimization applies has the best performance. Once all branches are benchmarked, the harness opens a PR for the winning candidate with benchmark evidence and a reviewed `migrations/plan.yaml`.
-
-Your job is to get the repo linked, let the agent run the workflow, approve gated ClickHouse queries when prompted, and review the PR before merge. The two review gates are the benchmark evidence and `migrations/plan.yaml`.
-
-<Callout type="info" title="What success looks like">
-- A linked repo and initialized `514` agent harness
-- A baseline branch and candidate branches, each with its own matching preview branch and preview database in 514 hosting
-- A scaffolded `query-benchmarks/` package that exercises the real production query path
-- A PR for the winning candidate with benchmark evidence and a reviewed `migrations/plan.yaml`
-</Callout>
+The experiment:
+1. Profiles the slow query and proposes optimization candidates
+2. Creates isolated preview databases on 514 hosting for the baseline and each candidate
+3. Benchmarks every preview with the same test to pick the best performer
+4. Opens a PR for the winner
 
 This guide assumes:
 
 - Your MooseStack app is already deployed on Fiveonefour
 - Your coding agent is open on this repository
-- The agent can either reuse an existing query path in code or define a query model when profiling uncovers a production pattern without one
+- The agent can reuse an existing query path or define a query model when profiling finds a pattern without one
 
 ### Setup
 
