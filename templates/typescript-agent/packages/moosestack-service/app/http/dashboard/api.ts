@@ -1,11 +1,11 @@
 import { WebApp } from "@514labs/moose-lib";
 import express from "express";
-import { getDashboardSnapshot } from "../query/dashboard";
+import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
 import {
   getTenantMooseContext,
   requireTenantMoose,
   respondUnauthorized,
-} from "./request-context";
+} from "../context/tenant-context";
 
 const app = express();
 

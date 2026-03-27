@@ -55,9 +55,12 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 | File | Purpose | Docs |
 | --- | --- | --- |
-| `app/apis/mcp.ts` | Custom MCP server (tools, auth middleware, `/tools` endpoint) | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
-| `app/apis/tool-access.ts` | Allowlisted schema surface and SQL access policy for MCP tools. The default exposed table set is derived from `tenantIsolation.config.tables`. | |
+| `AGENTS.md` | Package-local ownership rules and source layout | |
 | `app/ingest/models.ts` | Data models (interfaces + IngestPipeline declarations) | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
+| `app/semantic/` | Moose semantic/query models and tenant-scoped dashboard read composition | |
+| `app/http/dashboard/api.ts` | Frontend-facing HTTP endpoint for dashboard reads | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
+| `app/mcp/server.ts` | Custom MCP server transport and tool wiring for `/tools` | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
+| `app/mcp/tool-access/exposed-surface.ts` | Allowlisted schema surface and SQL access policy for MCP tools. The default exposed table set is derived from `tenantIsolation.config.tables`. | |
 | `test/` | Unit tests for service-local helpers like MCP query validation and catalog exposure | |
 | `moose.config.toml` | Port and service configuration | |
 
@@ -134,10 +137,10 @@ For advanced table configuration (engines, indexes, projections), see `moose doc
 
 ### Adding an API endpoint
 
-This template uses Express (already set up in `app/apis/mcp.ts`). Add new endpoints to the existing Express app, or create a new `WebApp` for a separate mount path:
+This template uses Express. Add new frontend-facing endpoints under `app/http/` and create or extend `WebApp` instances from there:
 
 ```typescript
-// app/apis/analytics.ts
+// app/http/analytics/api.ts
 import express from "express";
 import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 
@@ -183,10 +186,10 @@ Key patterns:
 
 ### Adding an MCP tool
 
-Register tools in `app/apis/mcp.ts` inside the `serverFactory` function. Tools get access to `mooseUtils` (ClickHouse client) via closure:
+Register tools under `app/mcp/tools/` and wire them into `app/mcp/server.ts`. Tools get access to `mooseUtils` (ClickHouse client) via closure:
 
 ```typescript
-// Inside serverFactory(mooseUtils)
+// app/mcp/tools/example-tool.ts
 server.registerTool(
   "tool_name",
   {
@@ -209,7 +212,7 @@ server.registerTool(
 Key patterns from this template:
 
 - Use `executeReadonlyStatement()` or `executeReadonlySql()` for DB access so readonly mode and row-policy settings are preserved
-- Keep the MCP schema surface explicit in `app/apis/tool-access.ts`; do not expose `system.*` metadata by default
+- Keep the MCP schema surface explicit in `app/mcp/tool-access/exposed-surface.ts`; do not expose `system.*` metadata by default
 - Validate and constrain user-supplied SQL before execution
 - Expect `moose.jwt.tenant_id` to exist before serving custom tool requests
 - Return errors via `{ content: [...], isError: true }`, not by throwing
@@ -217,7 +220,7 @@ Key patterns from this template:
 ### Do / Don't
 
 - **DO** specify `orderByFields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
-- **DO** keep the MCP catalog and SQL surface allowlisted in `app/apis/tool-access.ts`. **DON'T** expose `system.tables`, `system.columns`, or undeclared tables by default.
+- **DO** keep the MCP catalog and SQL surface allowlisted in `app/mcp/tool-access/exposed-surface.ts`. **DON'T** expose `system.tables`, `system.columns`, or undeclared tables by default.
 - **DO** use `executeReadonlyStatement()` / `executeReadonlySql()` for MCP tool DB access. **DON'T** use `client.query.client.query()` directly without readonly settings and row-policy propagation.
 - **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
 - **DO** keep tenant-scoped tables consistent on a shared `tenant_id` column. **DON'T** mix tenant claim names across auth, tables, and row policies.
@@ -246,12 +249,12 @@ Prefer these over CLI commands — they return structured, token-optimized outpu
 
 ### Custom MCP tools (template's `/tools` endpoint)
 
-These are the tools exposed to the chat UI and external MCP clients. Edit them in `app/apis/mcp.ts`.
+These are the tools exposed to the chat UI and external MCP clients. Edit them under `app/mcp/tools/` and wire them in `app/mcp/server.ts`.
 
 | Tool | What it does | Parameters |
 | --- | --- | --- |
-| `query_clickhouse` | Read-only SQL against the explicit allowlist in `app/apis/tool-access.ts`. Allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` only. Blocks writes, DDL, `SHOW`, `system.*`, and undeclared tables by default. | `query` (required), `limit` (optional, default 100, max 1000) |
-| `get_data_catalog` | Discover only the tables and materialized views explicitly exposed in `app/apis/tool-access.ts`. | `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed) |
+| `query_clickhouse` | Read-only SQL against the explicit allowlist in `app/mcp/tool-access/exposed-surface.ts`. Allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` only. Blocks writes, DDL, `SHOW`, `system.*`, and undeclared tables by default. | `query` (required), `limit` (optional, default 100, max 1000) |
+| `get_data_catalog` | Discover only the tables and materialized views explicitly exposed in `app/mcp/tool-access/exposed-surface.ts`. | `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed) |
 
 ### ClickHouse Best Practices Skill (optional)
 

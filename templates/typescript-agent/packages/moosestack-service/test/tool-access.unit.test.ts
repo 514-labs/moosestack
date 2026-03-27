@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createToolAccessPolicy,
   type RuntimeTable,
-} from "../app/apis/tool-access-core";
+} from "../app/mcp/tool-access/policy";
 
 const mockTables = [
   {

@@ -1,6 +1,5 @@
-// Export all data models
-
-// Export all APIs (including MCP server and app-facing dashboard APIs)
-export * from "./apis/dashboard";
-export * from "./apis/mcp";
+export * from "./http/dashboard/api";
 export * from "./ingest/models";
+export * from "./mcp/server";
+export * from "./semantic/dashboard-snapshot";
+export * from "./semantic/knowledge";

@@ -264,7 +264,7 @@ export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]) {
   function assertExposedIdentifier(identifier: string) {
     if (!exposedComponentNames.has(identifier)) {
       throw new Error(
-        `Table '${identifier}' is not exposed by default. Available tables: ${availableComponentList}. Update app/apis/tool-access.ts if you want to allow it.`,
+        `Table '${identifier}' is not exposed by default. Available tables: ${availableComponentList}. Update app/mcp/tool-access/exposed-surface.ts if you want to allow it.`,
       );
     }
   }

@@ -6,21 +6,24 @@ This package owns:
 
 - tenant-scoped data models
 - JWT-backed row-level security
-- query-layer reads
-- app-facing dashboard APIs
-- custom MCP tools
+- Moose semantic/query models
+- app-facing HTTP APIs
+- custom MCP tools and the MCP allowlist policy
+- readonly ClickHouse helpers for semantic reads and tool execution
 - seed data
 
-## Key Areas
+## Source Layout
 
-- `app/ingest/models.ts` — table definitions and row policies
-- `app/apis/dashboard.ts` — app-facing HTTP endpoints for frontend reads
-- `app/apis/mcp.ts` — custom MCP tool registration
-- `app/apis/tool-access.ts` — tool allowlist wiring
-- `app/apis/tool-access-core.ts` — pure schema/catalog/query validation logic
-- `app/query/` — Moose-owned query helpers
-- `seed/` — starter SQL seed files
-- `test/` — service-local unit tests
+| Path | Purpose |
+| --- | --- |
+| `app/index.ts` | Public entrypoint. Export Moose-discovered primitives here. |
+| `app/ingest/` | `IngestPipeline` declarations, tables, and row policies. |
+| `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
+| `app/data/clickhouse/` | Low-level readonly ClickHouse helpers. |
+| `app/http/` | Frontend-facing Express APIs and shared request auth/context. |
+| `app/mcp/` | MCP transport, tool registration, allowlist policy, and tool-specific parsers/errors. |
+| `seed/` | Starter SQL seed files. |
+| `test/` | Service-local unit tests. |
 
 ## Commands
 
@@ -38,6 +41,7 @@ pnpm test:unit -- packages/moosestack-service/test
 ## Notes
 
 - Keep tenant boundaries enforced here, not in the web app.
-- Keep the MCP schema surface allowlisted by default.
+- Keep Moose semantic models in `app/semantic/` so the read layer is visible.
+- Keep the MCP schema surface allowlisted by default in `app/mcp/tool-access/`.
 - Use `packages/moosestack-service/.env.local` with `MOOSE_CLICKHOUSE_CONFIG__*` overrides when you want this template to connect to an existing ClickHouse instance instead of the local Docker defaults.
-- Prefer pure helper logic in `app/apis/tool-access-core.ts` when adding testable policy code.
+- Prefer pure helper logic in `app/mcp/tool-access/`, `app/mcp/parsers/`, and `app/mcp/errors/` when adding testable MCP behavior.
