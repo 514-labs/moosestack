@@ -50,5 +50,3 @@ pnpm build
 pnpm build:service
 pnpm lint
 ```
-
-If the change affects template behavior, rerun the TypeScript template E2E suite from `apps/framework-cli-e2e`.
