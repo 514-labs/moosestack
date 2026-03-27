@@ -1,9 +1,9 @@
-import { tenantIsolation } from "../ingest/models";
+import { tenantIsolation } from "../../ingest/models";
 import {
   createToolAccessPolicy,
   type DataCatalogResponse,
   type RuntimeTable,
-} from "./tool-access-core";
+} from "./policy";
 
 const EXPOSED_TABLES = tenantIsolation.config.tables as readonly RuntimeTable[];
 

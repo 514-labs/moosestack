@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { executeReadonlyStatement } from "../app/query/clickhouse";
+import { executeReadonlyStatement } from "../app/data/clickhouse/readonly-query";
 
 describe("executeReadonlyStatement", () => {
   it("uses max_result_rows instead of the legacy limit setting", async () => {

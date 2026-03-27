@@ -264,7 +264,7 @@ The dashboard reads Moose-owned app APIs over that table, and the chat UI can in
 
 By default, the MCP surface is allowlisted:
 
-- `get_data_catalog` only returns the data components declared in `packages/moosestack-service/app/apis/tool-access.ts`
+- `get_data_catalog` only returns the data components declared in `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts`
 - the default exposed table set is derived from `tenantIsolation.config.tables`
 - `query_clickhouse` only allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` against those exposed components
 - `system.*` metadata and undeclared tables are blocked by default
@@ -296,14 +296,15 @@ Example:
 ## Files to Start With
 
 - `packages/moosestack-service/app/ingest/models.ts` — tenant-scoped tables and row policies
-- `packages/moosestack-service/app/apis/dashboard.ts` — app-facing dashboard API endpoints
-- `packages/moosestack-service/app/apis/mcp.ts` — custom MCP tools
+- `packages/moosestack-service/app/semantic/` — Moose semantic models and dashboard read composition
+- `packages/moosestack-service/app/http/dashboard/api.ts` — app-facing dashboard API endpoint
+- `packages/moosestack-service/app/mcp/server.ts` — custom MCP transport and tool wiring
 - `packages/web-app/src/components/ai-elements/` — reusable AI Elements chat primitives
 - `packages/web-app/src/features/chat/` — Moose-specific wrappers, tool renderers, and chat panel wiring
 - `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared multi-agent runtime
-- `packages/moosestack-service/app/apis/tool-access.ts` — allowlisted MCP catalog and SQL access policy
+- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog and SQL access policy
 - `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog and query validation
-- `packages/moosestack-service/app/query/dashboard.ts` — query-layer metrics and tenant-scoped reads
+- `packages/moosestack-service/app/data/clickhouse/readonly-query.ts` — readonly ClickHouse access shared by semantic reads and MCP tools
 - `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and reference supervisor -> specialist -> narrator execution flow
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
