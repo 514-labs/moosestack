@@ -10,6 +10,10 @@ import { Callout } from "@/components/mdx";
 
 When you push a feature branch, 514 Hosting creates an isolated ClickHouse database for that branch's preview environment. Branch data seeding automatically populates this database with a sample of data from the parent branch, so you can validate queries, views, and APIs against realistic data without waiting for ingestion.
 
+## Zero Configuration Required
+
+Branch seeding runs automatically — no setup needed. Every table discovered in the parent branch's infrastructure map is seeded into the new branch's database with a default limit of **10,000 rows per table**. You only need to add configuration if you want to customize the row limit or filter rows for specific tables.
+
 ## How It Works
 
 1. **Merge base detection** — when a branch deploys for the first time, the platform identifies the merge base (common ancestor commit) between your branch and the deployed parent.
@@ -18,9 +22,9 @@ When you push a feature branch, 514 Hosting creates an isolated ClickHouse datab
 
 Seeding runs automatically during the `INITIALIZE_BRANCH_SCHEMA` phase of the first deployment. Subsequent pushes to the same branch do not re-seed.
 
-## Configuring Seed Filters
+## Configuring Seed Filters (Optional)
 
-You can control how much data is seeded per table by declaring a `seedFilter` on your `OlapTable` configuration. The same seed filters used by [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) apply to hosted branch seeding.
+By default, each table is seeded with up to 10,000 rows and no row filtering. To customize this behavior, declare a `seedFilter` on your `OlapTable` configuration. The same seed filters used by [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) apply to hosted branch seeding.
 
 ```ts filename="app/tables/events.ts" copy
 import { OlapTable, Key } from "@514labs/moose-lib";
