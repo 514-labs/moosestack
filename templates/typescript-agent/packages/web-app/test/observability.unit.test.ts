@@ -12,7 +12,7 @@ const {
   };
 });
 
-vi.mock("agent-runtime", () => {
+vi.mock("@/lib/in-memory-trace-collector", () => {
   return {
     createInMemoryTraceCollector: createInMemoryTraceCollectorMock,
   };
