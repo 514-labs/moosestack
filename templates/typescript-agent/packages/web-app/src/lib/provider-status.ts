@@ -126,7 +126,7 @@ function formatMcpUnavailableMessage(
     : "";
 
   return (
-    `Cannot connect to MCP server${locationSuffix}. Start the Moose service with \`pnpm dev:moose\` and verify the custom MCP tools endpoint is reachable.` +
+    `Cannot connect to MCP server${locationSuffix}. Start the local stack with \`pnpm dev:start\`, or start just the Moose service with \`pnpm dev:moose\`, and verify the custom MCP tools endpoint is reachable.` +
     causeMessage
   );
 }

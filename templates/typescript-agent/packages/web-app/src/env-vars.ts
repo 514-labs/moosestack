@@ -1,5 +1,9 @@
 const MCP_ENDPOINT_PATH = "/tools";
 
+function missingEnvError(envVarName: string, guidance: string): Error {
+  return new Error(`${envVarName} is not set. ${guidance}`);
+}
+
 function normalizePathname(pathname: string): string {
   const normalized = pathname.replace(/\/+$/, "");
   return normalized.length > 0 ? normalized : "/";
@@ -65,10 +69,16 @@ export function getMooseServiceUrl(): string {
   }
 
   if (!primaryValue && !legacyValue) {
-    throw new Error("MOOSE_SERVICE_URL environment variable is not set");
+    throw missingEnvError(
+      "MOOSE_SERVICE_URL",
+      "Run `pnpm env:prepare` to create local env files, or set it in `packages/web-app/.env.local`.",
+    );
   }
 
-  throw new Error("MOOSE_SERVICE_URL environment variable is not set");
+  throw missingEnvError(
+    "MOOSE_SERVICE_URL",
+    "Run `pnpm env:prepare` to create local env files, or set it in `packages/web-app/.env.local`.",
+  );
 }
 
 export function getMcpServerUrl(): string {
@@ -94,20 +104,34 @@ export function getAnthropicApiKey(): string {
   const value = process.env.ANTHROPIC_API_KEY;
 
   if (!value) {
-    throw new Error("ANTHROPIC_API_KEY environment variable is not set");
+    throw missingEnvError(
+      "ANTHROPIC_API_KEY",
+      "Add it to `packages/web-app/.env.local`, or switch `AI_PROVIDER` to `openai` or `bedrock`.",
+    );
   }
 
   return value;
+}
+
+export function getAnthropicModelId(): string {
+  return process.env.ANTHROPIC_MODEL_ID ?? "claude-haiku-4-5";
 }
 
 export function getOpenAiApiKey(): string {
   const value = process.env.OPENAI_API_KEY;
 
   if (!value) {
-    throw new Error("OPENAI_API_KEY environment variable is not set");
+    throw missingEnvError(
+      "OPENAI_API_KEY",
+      "Add it to `packages/web-app/.env.local`, or switch `AI_PROVIDER` to `anthropic` or `bedrock`.",
+    );
   }
 
   return value;
+}
+
+export function getOpenAiModelId(): string {
+  return process.env.OPENAI_MODEL_ID ?? "gpt-4o-mini";
 }
 
 export function getAwsRegion(): string {
@@ -118,7 +142,10 @@ export function getBedrockModelId(): string {
   const value = process.env.BEDROCK_MODEL_ID;
 
   if (!value) {
-    throw new Error("BEDROCK_MODEL_ID environment variable is not set");
+    throw missingEnvError(
+      "BEDROCK_MODEL_ID",
+      "Add it to `packages/web-app/.env.local` when `AI_PROVIDER=bedrock`.",
+    );
   }
 
   return value;

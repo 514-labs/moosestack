@@ -123,6 +123,6 @@ describe("tool-access", () => {
   it("rejects undeclared tables", () => {
     expect(() =>
       validateExposedReadonlyQuery("SELECT headline FROM secret_table"),
-    ).toThrow(/not exposed by default/);
+    ).toThrow(/Available tables: tenant_knowledge/);
   });
 });

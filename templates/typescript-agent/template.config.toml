@@ -18,8 +18,7 @@ Run this next:
     $ pnpm install
 
 🔐 Create environment files:
-    $ cp packages/moosestack-service/.env.{example,local}
-    $ cp packages/web-app/.env.{example,local}
+    $ pnpm env:prepare
 
 ⚙️ Set environment variables:
     1. Set your LLM provider credentials in `packages/web-app/.env.local`.
@@ -31,8 +30,7 @@ Run this next:
     $ pnpm seed
 
 🚀 Start both services:
-    $ cd ../.. # go back to project root
-    $ pnpm dev
+    $ pnpm dev:start
 
 Or start each service separately:
     $ pnpm dev:moose    # Start MooseStack service first

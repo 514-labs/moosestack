@@ -6,10 +6,12 @@ import { createUIMessageStreamResponse, type UIMessage } from "ai";
 import {
   getAiProvider,
   getAnthropicApiKey,
+  getAnthropicModelId,
   getAwsRegion,
   getBedrockModelId,
   getMcpServerUrl,
   getOpenAiApiKey,
+  getOpenAiModelId,
 } from "@/env-vars";
 import { createGuardrailAdapter } from "@/lib/guardrails";
 import { createTraceCollector } from "@/lib/observability";
@@ -28,7 +30,7 @@ function getProviderConfig(): AgentProviderConfig {
     return {
       provider,
       apiKey: getOpenAiApiKey(),
-      modelId: process.env.OPENAI_MODEL_ID ?? "gpt-4o-mini",
+      modelId: getOpenAiModelId(),
     };
   }
 
@@ -43,7 +45,7 @@ function getProviderConfig(): AgentProviderConfig {
   return {
     provider,
     apiKey: getAnthropicApiKey(),
-    modelId: "claude-haiku-4-5",
+    modelId: getAnthropicModelId(),
   };
 }
 

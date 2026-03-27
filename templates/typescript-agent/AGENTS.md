@@ -41,7 +41,7 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 ### 3. Agent tools available
 
-1. **Dev server** — Start with `pnpm dev:moose`. This powers ClickHouse, the data pipeline, and the MooseDev MCP server.
+1. **Dev server** — Prefer `pnpm dev:start` from the template root. It prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
 
 2. **MooseDev MCP** — Pre-configured in `.mcp.json`. Primary tool for inspecting the project (see Available Tools below).
 
@@ -223,7 +223,7 @@ Key patterns from this template:
 - **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
 - **DO** keep reusable chat shell pieces in `packages/web-app/src/components/ai-elements/`. **DON'T** re-build generic conversation/message/input primitives inside `src/features/chat/`.
 - **DO** keep Moose-specific behavior in `packages/web-app/src/features/chat/`. **DON'T** put tenant-aware tool rendering into the shared AI Elements layer.
-- **DO** copy `packages/web-app/.env.example` to `.env.local` for local overrides. **DON'T** commit `.env.local`.
+- **DO** run `pnpm env:prepare` before local development so package env files exist. **DON'T** commit `.env.local`.
 
 ## Available Tools
 
