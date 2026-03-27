@@ -1,19 +1,37 @@
 "use client";
 
 import { useState } from "react";
+import type { ToolTimingPayload } from "../types/message-parts";
 
-interface ToolTimingData {
-  toolCallId: string;
-  duration: number;
+interface UseToolTimingsResult {
+  toolTimings: Record<string, ToolTimingPayload>;
+  handleToolTimingData: (data: ToolTimingPayload) => void;
+  resetToolTimings: () => void;
 }
 
-export function useToolTimings() {
-  const [toolTimings, setToolTimings] = useState<Record<string, number>>({});
+export function useToolTimings(): UseToolTimingsResult {
+  const [toolTimings, setToolTimings] = useState<
+    Record<string, ToolTimingPayload>
+  >({});
 
-  const handleToolTimingData = ({ toolCallId, duration }: ToolTimingData) => {
+  const handleToolTimingData = ({
+    toolCallId,
+    duration,
+    stepNumber,
+    toolName,
+  }: ToolTimingPayload) => {
+    if (!Number.isFinite(duration) || duration < 0) {
+      return;
+    }
+
     setToolTimings((previousTimings) => ({
       ...previousTimings,
-      [toolCallId]: duration,
+      [toolCallId]: {
+        toolCallId,
+        duration,
+        stepNumber,
+        toolName,
+      },
     }));
   };
 

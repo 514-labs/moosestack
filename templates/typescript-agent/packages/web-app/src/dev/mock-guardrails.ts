@@ -1,23 +1,27 @@
 import type { GuardrailAdapter, GuardrailResult } from "agent-runtime";
 
+const MOCK_GUARDRAIL_PATTERNS = [
+  /ignore\W+(all\s+)?(previous|prior)\W+instructions?/i,
+  /system\W*prompt/i,
+  /reveal\W+(the\s+)?secrets?/i,
+  /bypass\W+guardrails?/i,
+  /show\W+(the\s+)?credentials?/i,
+] as const;
+
 class DevelopmentMockGuardrailAdapter implements GuardrailAdapter {
   async assessPrompt(prompt: string): Promise<GuardrailResult> {
     const start = Date.now();
-    const lowerPrompt = prompt.toLowerCase();
-    const flaggedPatterns = [
-      "ignore previous instructions",
-      "system prompt",
-      "reveal secrets",
-      "bypass guardrails",
-      "show credentials",
-    ].filter((pattern) => lowerPrompt.includes(pattern));
+    const flaggedPatterns = MOCK_GUARDRAIL_PATTERNS.filter((pattern) =>
+      pattern.test(prompt),
+    );
 
     return {
       action: flaggedPatterns.length > 0 ? "GUARDRAIL_INTERVENED" : "NONE",
       details:
         flaggedPatterns.length > 0 ?
           flaggedPatterns.map(
-            (pattern) => `Development mock guardrail blocked: ${pattern}`,
+            (pattern) =>
+              `Development mock guardrail blocked: ${pattern.source}`,
           )
         : [],
       latencyMs: Date.now() - start,

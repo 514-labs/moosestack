@@ -3,7 +3,10 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+function Spinner({
+  className,
+  ...props
+}: React.ComponentProps<"svg">): React.JSX.Element {
   return (
     <Loader2Icon
       role="status"

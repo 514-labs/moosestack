@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  type JSX,
   type ReactNode,
   useContext,
   useEffect,
@@ -62,7 +63,7 @@ export default function ResizableChatLayout({
   maxChatWidthPercent = 40,
   defaultChatWidthPercent = 40,
   className = "h-full",
-}: ResizableChatLayoutProps) {
+}: ResizableChatLayoutProps): JSX.Element {
   // Chat state management
   const [isChatOpen, setIsChatOpen] = useState(false);
 
@@ -80,22 +81,20 @@ export default function ResizableChatLayout({
   const [isDragging, setIsDragging] = useState(false);
   const [lastChatSize, setLastChatSize] = useState<number | null>(null);
 
-  // Always use defaultChatWidthPercent (30%) when opening
-  // Only use lastChatSize if user has manually resized
-  const targetChatSize = lastChatSize ?? defaultChatWidthPercent;
-
-  const initialDefaultSize =
-    isChatOpen ? (lastChatSize ?? defaultChatWidthPercent) : 0;
-
-  const mainPanelDefaultSize = isChatOpen ? 100 - initialDefaultSize : 100;
-
   const viewportWidth = useSyncExternalStore(
     subscribeToViewportWidth,
     getViewportWidth,
     () => 0,
   );
-  const minChatPercent =
+  const computedMinChatPercent =
     viewportWidth > 0 ? Math.max(0, (minChatWidthPX / viewportWidth) * 100) : 0;
+  const minChatPercent = Math.min(maxChatWidthPercent, computedMinChatPercent);
+  const targetChatSize = Math.min(
+    maxChatWidthPercent,
+    Math.max(minChatPercent, lastChatSize ?? defaultChatWidthPercent),
+  );
+  const initialDefaultSize = isChatOpen ? targetChatSize : 0;
+  const mainPanelDefaultSize = isChatOpen ? 100 - initialDefaultSize : 100;
 
   useEffect(() => {
     if (chatPanelRef.current) {

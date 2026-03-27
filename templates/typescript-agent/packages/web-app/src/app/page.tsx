@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { JSX } from "react";
 import { auth, signIn, signOut } from "@/auth";
 import { LocalTenantPicker } from "@/dev/local-tenant-picker";
 import {
@@ -12,15 +13,13 @@ import {
   getDashboardSnapshot,
 } from "@/lib/moose-service";
 
-function MetricCard({
-  label,
-  value,
-  helper,
-}: {
+interface MetricCardProps {
   label: string;
   value: string;
   helper: string;
-}) {
+}
+
+function MetricCard({ label, value, helper }: MetricCardProps): JSX.Element {
   return (
     <div className="rounded-2xl border bg-card/80 p-5 shadow-sm">
       <div className="text-sm text-muted-foreground">{label}</div>
@@ -30,15 +29,17 @@ function MetricCard({
   );
 }
 
-type HomePageProps = {
+interface HomePageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
+}
 
 function clearStaleSession(): never {
   redirect("/auth/session-expired");
 }
 
-export default async function Home({ searchParams }: HomePageProps) {
+export default async function Home({
+  searchParams,
+}: HomePageProps): Promise<JSX.Element> {
   const resolvedSearchParams = (await searchParams) ?? {};
   const sessionNotice =
     typeof resolvedSearchParams.session === "string" ?

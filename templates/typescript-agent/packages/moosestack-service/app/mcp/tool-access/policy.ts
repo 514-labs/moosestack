@@ -21,7 +21,7 @@ interface RuntimeColumn {
 }
 
 export interface RuntimeTable {
-  config: { engine: string };
+  config: unknown;
   columnArray: RuntimeColumn[];
   generateTableName(): string;
 }
@@ -63,6 +63,15 @@ export interface ToolAccessPolicy {
     materializedViews: TableInfo[],
   ): string;
   validateExposedReadonlyQuery(rawQuery: string): string;
+}
+
+function getTableEngine(table: RuntimeTable): string {
+  if (typeof table.config !== "object" || table.config === null) {
+    return "MergeTree";
+  }
+
+  const engine = Reflect.get(table.config, "engine");
+  return typeof engine === "string" ? engine : "MergeTree";
 }
 
 function isNullableType(
@@ -236,7 +245,7 @@ function toColumnInfo(column: RuntimeColumn): ColumnInfo {
 function toTableInfo(table: RuntimeTable): TableInfo {
   return {
     name: table.generateTableName(),
-    engine: table.config.engine,
+    engine: getTableEngine(table),
     columns: table.columnArray.map(toColumnInfo),
   };
 }

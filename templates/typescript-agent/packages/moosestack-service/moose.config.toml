@@ -3,7 +3,7 @@ language = "Typescript"
 [typescript_config]
 # Package manager to use for installing dependencies
 # Options: "npm" (default), "pnpm", "yarn"
-package_manager = "npm"
+package_manager = "pnpm"
 
 [redpanda_config]
 broker = "localhost:19092"
@@ -60,6 +60,9 @@ workflows = true
 apis = true
 
 [jwt]
+# moose-cli build requires this field to exist in config.
+# MOOSE_JWT__SECRET in packages/moosestack-service/.env.local overrides this
+# placeholder during local development and deployment.
 secret = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs9YIgmT7aKDP+eY2OYkE\nGQ83cMiFsfc5ZZLCi5TeDGo8TeFryzBM+tfh2l4wQvlznx4n/MxJ99vPPjruu46F\nf4NctMxvad+JmoyL9cjaeBYjCwCugh5lnkGpazc5uyRotpzKEYfl/zamOZ6TeREa\n8U9qnP1RQr4TmCiQDbrjD9vqnO2dt7+JOqlS8HEv+MkngdWZueKrw/JmqL2nI7EO\ndYj3yULMioXuxykrk9DPoYA78sryTFqIYo1/9skkzNnnU416pS+Lt4aaK4ERPeih\nV81r+h2np7j1elAJN1ZTdJJq+fnmGvtWWgiH2X3JmX0/AHGFghrCe70G05TVe5lZ\ngQIDAQAB\n-----END PUBLIC KEY-----"
 issuer = "typescript-agent-local"
 audience = "typescript-agent"

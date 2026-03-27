@@ -4,6 +4,7 @@ import { getAuthMode, getOidcConfig, getOidcTenantClaim } from "@/env-vars";
 import { extractTenantIdFromIdToken } from "@/lib/id-token";
 
 type AuthProvider = NonNullable<NextAuthConfig["providers"]>[number];
+const SESSION_MAX_AGE_SECONDS = 60 * 60;
 
 const providers: AuthProvider[] = [];
 
@@ -27,7 +28,13 @@ if (oidcConfig) {
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  },
+  jwt: {
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  },
   providers,
   callbacks: {
     async signIn({ account, user }) {
@@ -54,14 +61,19 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.userId = user.id;
         token.tenantId = user.tenantId;
         token.tenantName = user.tenantName ?? user.name ?? "";
-        token.providerName = user.provider ?? account?.provider;
+        token.provider = user.provider ?? account?.provider;
         token.idToken = user.idToken;
+        token.idTokenExpiresAt = user.idTokenExpiresAt;
       }
 
       if (account?.id_token) {
         token.idToken = account.id_token;
-        token.providerName = account.provider;
+        token.provider = account.provider;
         token.tenantId = extractTenantIdFromIdToken(account.id_token);
+        token.idTokenExpiresAt =
+          typeof account.expires_at === "number" ?
+            account.expires_at * 1000
+          : Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
       }
 
       return token;
@@ -73,11 +85,16 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.tenantName = String(
           token.tenantName ?? session.user.name ?? "",
         );
-        session.user.provider = String(token.providerName ?? "unknown");
+        session.user.provider = String(token.provider ?? "unknown");
       }
 
       session.idToken =
-        typeof token.idToken === "string" ? token.idToken : undefined;
+        (
+          typeof token.idToken === "string" &&
+          (!token.idTokenExpiresAt || token.idTokenExpiresAt > Date.now())
+        ) ?
+          token.idToken
+        : undefined;
 
       return session;
     },

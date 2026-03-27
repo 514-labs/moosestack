@@ -24,14 +24,12 @@ import { ClickHouseToolInvocation } from "./clickhouse-tool-invocation";
 import { DataCatalogToolInvocation } from "./data-catalog-tool-invocation";
 import { formatDuration } from "./format-duration";
 
-type ToolInvocationProps = {
+interface ToolInvocationProps {
   part: ToolPart;
-};
+  timing?: number;
+}
 
-export function ToolInvocation({
-  part,
-  timing,
-}: ToolInvocationProps & { timing?: number }) {
+export function ToolInvocation({ part, timing }: ToolInvocationProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const toolName = getToolName(part);

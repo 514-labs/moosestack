@@ -15,6 +15,29 @@ export interface ChatProviderStatus {
   mcpDetails?: string;
 }
 
+function isChatProviderStatus(value: unknown): value is ChatProviderStatus {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "provider" in value &&
+    typeof value.provider === "string" &&
+    "providerLabel" in value &&
+    typeof value.providerLabel === "string" &&
+    "providerReady" in value &&
+    typeof value.providerReady === "boolean" &&
+    "guardrailsConfigured" in value &&
+    typeof value.guardrailsConfigured === "boolean" &&
+    "status" in value &&
+    typeof value.status === "string" &&
+    "mcpReady" in value &&
+    typeof value.mcpReady === "boolean" &&
+    "mcpStatus" in value &&
+    typeof value.mcpStatus === "string" &&
+    "mcpUrl" in value &&
+    (typeof value.mcpUrl === "string" || value.mcpUrl === null)
+  );
+}
+
 export function useChatProviderStatus() {
   const [data, setData] = useState<ChatProviderStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +53,12 @@ export function useChatProviderStatus() {
         }
 
         const status = await response.json();
+        if (!isChatProviderStatus(status)) {
+          throw new Error(
+            "Chat status response did not match the expected shape.",
+          );
+        }
+
         setData(status);
       } catch (error) {
         console.error("Failed to fetch chat status:", error);

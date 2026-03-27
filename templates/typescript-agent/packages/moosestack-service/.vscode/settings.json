@@ -7,7 +7,6 @@
       "database": "local",
       "username": "panda",
       "enableTls": false,
-      "password": "pandapass",
       "driver": "ClickHouse",
       "name": "moose clickhouse"
     }

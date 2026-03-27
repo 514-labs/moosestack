@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
-export type SourcesProps = ComponentProps<"div">;
+export type SourcesProps = ComponentProps<typeof Collapsible>;
 
 export const Sources = ({ className, ...props }: SourcesProps) => (
   <Collapsible
@@ -34,7 +34,9 @@ export const SourcesTrigger = ({
   >
     {children ?? (
       <>
-        <p className="font-medium">Used {count} sources</p>
+        <span className="font-medium">
+          Used {count} source{count === 1 ? "" : "s"}
+        </span>
         <ChevronDownIcon className="h-4 w-4" />
       </>
     )}
@@ -62,10 +64,10 @@ export type SourceProps = ComponentProps<"a">;
 export const Source = ({ href, title, children, ...props }: SourceProps) => (
   <a
     className="flex items-center gap-2"
-    href={href}
-    rel="noreferrer"
-    target="_blank"
     {...props}
+    href={href}
+    rel="noopener noreferrer"
+    target="_blank"
   >
     {children ?? (
       <>

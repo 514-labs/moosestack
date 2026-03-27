@@ -2,7 +2,7 @@
 
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useCallback } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export const ConversationContent = ({
 export type ConversationEmptyStateProps = ComponentProps<"div"> & {
   title?: string;
   description?: string;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
 };
 
 export const ConversationEmptyState = ({
@@ -73,6 +73,7 @@ export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
 
 export const ConversationScrollButton = ({
   className,
+  "aria-label": ariaLabel,
   ...props
 }: ConversationScrollButtonProps) => {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext();
@@ -84,6 +85,7 @@ export const ConversationScrollButton = ({
   return (
     !isAtBottom && (
       <Button
+        aria-label={ariaLabel ?? "Scroll to the latest messages"}
         className={cn(
           "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted",
           className,
@@ -100,9 +102,15 @@ export const ConversationScrollButton = ({
   );
 };
 
+function isTextMessagePart(
+  part: NonNullable<UIMessage["parts"]>[number],
+): part is Extract<NonNullable<UIMessage["parts"]>[number], { type: "text" }> {
+  return part.type === "text";
+}
+
 const getMessageText = (message: UIMessage): string =>
   message.parts
-    .filter((part) => part.type === "text")
+    .filter(isTextMessagePart)
     .map((part) => part.text)
     .join("");
 
@@ -135,6 +143,7 @@ export const ConversationDownload = ({
   formatMessage = defaultFormatMessage,
   className,
   children,
+  "aria-label": ariaLabel,
   ...props
 }: ConversationDownloadProps) => {
   const handleDownload = useCallback(() => {
@@ -152,6 +161,7 @@ export const ConversationDownload = ({
 
   return (
     <Button
+      aria-label={ariaLabel ?? "Download this conversation"}
       className={cn(
         "absolute top-4 right-4 rounded-full dark:bg-background dark:hover:bg-muted",
         className,

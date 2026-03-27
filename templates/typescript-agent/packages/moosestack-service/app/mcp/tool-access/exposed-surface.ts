@@ -17,7 +17,6 @@ function isRuntimeTable(value: unknown): value is RuntimeTable {
   return (
     typeof config === "object" &&
     config !== null &&
-    typeof Reflect.get(config, "engine") === "string" &&
     typeof generateTableName === "function" &&
     Array.isArray(columnArray)
   );
@@ -28,7 +27,7 @@ const EXPOSED_TABLES = configuredTables.filter(isRuntimeTable);
 
 if (EXPOSED_TABLES.length !== configuredTables.length) {
   throw new Error(
-    "All exposed tables must define a runtime engine, columnArray, and generateTableName().",
+    "All exposed tables must define columnArray and generateTableName().",
   );
 }
 

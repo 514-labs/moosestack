@@ -11,13 +11,23 @@ interface ChatBody {
   messages: UIMessage[];
 }
 
+function createJsonResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 function getChatErrorResponse(error: unknown) {
   if (error instanceof McpServerUnavailableError) {
     return {
       status: 503,
       body: {
         error: "MCP server unavailable",
-        details: error.message,
+        details:
+          process.env.NODE_ENV === "production" ?
+            "Start the Moose service and verify the custom MCP tools endpoint is reachable."
+          : error.message,
       },
     };
   }
@@ -32,40 +42,52 @@ function getChatErrorResponse(error: unknown) {
     status: 500,
     body: {
       error: errorLabel,
-      details,
+      details:
+        (
+          process.env.NODE_ENV !== "production" ||
+          errorLabel === "Bedrock model access denied"
+        ) ?
+          details
+        : "Check the web app logs for details.",
     },
   };
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
   try {
     const session = await auth();
     if (!session?.idToken || !session.user?.tenantId) {
-      return new Response(
-        JSON.stringify({
+      return createJsonResponse(
+        {
           error: "Unauthorized",
           details: "Sign in before using the agent chat.",
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
         },
+        401,
       );
     }
 
-    const body: ChatBody = await request.json();
+    let body: ChatBody;
+    try {
+      body = (await request.json()) as ChatBody;
+    } catch {
+      return createJsonResponse(
+        {
+          error: "Invalid request body",
+          details: "Request body must be valid JSON.",
+        },
+        400,
+      );
+    }
+
     const { messages } = body;
 
     if (!messages || !Array.isArray(messages)) {
-      return new Response(
-        JSON.stringify({
+      return createJsonResponse(
+        {
           error: "Invalid request body",
           details: "messages must be an array",
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
         },
+        400,
       );
     }
 
@@ -78,9 +100,6 @@ export async function POST(request: NextRequest) {
     const response = getChatErrorResponse(error);
 
     console.error("Chat error:", error);
-    return new Response(JSON.stringify(response.body), {
-      status: response.status,
-      headers: { "Content-Type": "application/json" },
-    });
+    return createJsonResponse(response.body, response.status);
   }
 }

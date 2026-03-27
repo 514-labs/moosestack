@@ -5,8 +5,12 @@ export function extractTenantIdFromIdToken(
   idToken: string,
 ): string | undefined {
   const claim = getOidcTenantClaim();
-  const claims = decodeJwt(idToken);
-  const value = claims[claim];
+  try {
+    const claims = decodeJwt(idToken);
+    const value = claims[claim];
 
-  return typeof value === "string" ? value : undefined;
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }

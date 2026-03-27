@@ -53,7 +53,7 @@ export async function getAgentResponse({
   messages,
   bearerToken,
   tenantId,
-}: AgentResponseOptions) {
+}: AgentResponseOptions): Promise<Response> {
   const provider = getAiProvider();
   assertProviderReady();
   const stream = await createMultiAgentStream({
