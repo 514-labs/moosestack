@@ -57,12 +57,18 @@ cd <project-name>
 pnpm install
 cp packages/moosestack-service/.env.{example,local}
 cp packages/web-app/.env.{example,local}
-pnpm dev
+pnpm dev:moose
+```
+
+Then, in a second terminal:
+
+```bash
+pnpm dev:web
 ```
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example` and a checked-in `packages/web-app/.env.development` for local development.
 
-In a second terminal, seed starter data:
+In a third terminal, seed starter data:
 
 ```bash
 pnpm seed
@@ -134,10 +140,16 @@ For a full local smoke test:
 ```bash
 cp packages/moosestack-service/.env.{example,local}
 cp packages/web-app/.env.{example,local}
-pnpm dev
+pnpm dev:moose
 ```
 
 In a second terminal:
+
+```bash
+pnpm dev:web
+```
+
+In a third terminal:
 
 ```bash
 pnpm seed
@@ -178,6 +190,20 @@ In `packages/web-app/.env.local`:
 | `AI_PROVIDER` | `anthropic`, `openai`, or `bedrock` |
 | `MOOSE_SERVICE_URL` | Moose service base URL, usually `http://localhost:4000` |
 
+`MOOSE_SERVICE_URL` is the canonical setting. If you already have `MCP_SERVER_URL=http://.../tools`, the template still accepts it as a legacy alias and MCP-specific override.
+
+In `packages/moosestack-service/.env.local`, you can also override the local ClickHouse defaults with:
+
+| Variable | Purpose |
+| --- | --- |
+| `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` | Existing ClickHouse database name |
+| `MOOSE_CLICKHOUSE_CONFIG__HOST` | Existing ClickHouse host |
+| `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | Existing ClickHouse HTTP port |
+| `MOOSE_CLICKHOUSE_CONFIG__USER` | Existing ClickHouse username |
+| `MOOSE_CLICKHOUSE_CONFIG__PASSWORD` | Existing ClickHouse password |
+| `MOOSE_CLICKHOUSE_CONFIG__USE_SSL` | `true` / `false` for the HTTP connection |
+| `MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT` | Existing ClickHouse native TCP port |
+
 For local work, start by copying `packages/web-app/.env.example` to `.env.local` and then set the provider-specific variables you actually want to use.
 
 ### Provider-specific
@@ -189,6 +215,8 @@ For local work, start by copying `packages/web-app/.env.example` to `.env.local`
 | Bedrock | `AWS_REGION`, `BEDROCK_MODEL_ID` |
 
 If `AI_PROVIDER=bedrock`, local development also needs AWS credential hints such as `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Otherwise the template marks Bedrock as unavailable and the chat panel stays disabled instead of failing silently.
+
+When authoring custom MCP tools for Bedrock-backed chats, prefer `z.string()` plus explicit allowed-value descriptions over `z.enum()` in tool input schemas. Bedrock tool-schema compatibility is stricter than Anthropic/OpenAI, and this template keeps its built-in MCP tools on the safer string-based path.
 
 ### Optional Langfuse
 
@@ -238,6 +266,8 @@ By default, the MCP surface is allowlisted:
 ## External MCP Clients
 
 The template exposes a custom MCP server at `http://localhost:4000/tools`.
+
+The custom MCP endpoint is derived from `MOOSE_SERVICE_URL` by default. Only set `MCP_SERVER_URL` when the MCP tools endpoint lives on a different URL or you need to point directly at a full `/tools` endpoint.
 
 Use a bearer JWT from the same auth provider that the web app uses. For local dev, sign in through the app and inspect requests, or mint an equivalent JWT carrying `tenant_id`.
 

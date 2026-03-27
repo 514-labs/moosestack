@@ -54,8 +54,8 @@ async function executeReadonlyQuery<T>(
       readonly: "2",
       ...(typeof limit === "number" ?
         {
-          limit: limit.toString(),
           max_result_rows: limit.toString(),
+          result_overflow_mode: "break",
         }
       : {}),
       ...rowPolicyOptions?.clickhouse_settings,

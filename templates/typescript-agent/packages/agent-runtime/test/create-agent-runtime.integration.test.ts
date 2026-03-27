@@ -69,6 +69,8 @@ import {
   createAgentRuntime,
   createMultiAgentStream,
   DEFAULT_AGENT_SYSTEM_PROMPT,
+  McpServerUnavailableError,
+  resolveMcpServerUrl,
 } from "../src/index";
 
 const userMessages = [
@@ -151,6 +153,74 @@ describe("createAgentRuntime", () => {
     expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts a full MCP endpoint URL without double-appending /tools", async () => {
+    await createAgentRuntime({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      mcpServerUrl: "http://localhost:4000/tools/",
+      providerConfig: {
+        provider: "anthropic",
+        apiKey: "anthropic-key",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+    });
+
+    expect(mocks.experimentalCreateMcpClientMock).toHaveBeenCalledWith({
+      name: "moose-mcp-server",
+      transport: {
+        type: "http",
+        url: "http://localhost:4000/tools",
+        headers: {
+          Authorization: "Bearer tenant-token",
+        },
+      },
+    });
+  });
+
+  it("wraps MCP connection failures with startup guidance", async () => {
+    mocks.experimentalCreateMcpClientMock.mockRejectedValueOnce(
+      new Error("fetch failed"),
+    );
+
+    const runtimePromise = createAgentRuntime({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      mcpServerUrl: "http://localhost:4000",
+      providerConfig: {
+        provider: "anthropic",
+        apiKey: "anthropic-key",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+    });
+
+    await expect(runtimePromise).rejects.toEqual(
+      expect.objectContaining({
+        name: "McpServerUnavailableError",
+        endpointUrl: "http://localhost:4000/tools",
+      }),
+    );
+
+    await expect(runtimePromise).rejects.toBeInstanceOf(
+      McpServerUnavailableError,
+    );
+  });
+
   it("supports explicit Bedrock model selection", async () => {
     const runtime = await createAgentRuntime({
       messages: userMessages,
@@ -183,6 +253,21 @@ describe("createAgentRuntime", () => {
     expect(runtime.provider).toBe("bedrock");
     expect(runtime.modelId).toBe("anthropic.claude-3-5-haiku-20241022-v1:0");
     expect(runtime.system).toBe("Custom prompt");
+  });
+
+  it("normalizes MCP URLs from either a base service URL or a full endpoint", () => {
+    expect(resolveMcpServerUrl("http://localhost:4000")).toBe(
+      "http://localhost:4000/tools",
+    );
+    expect(resolveMcpServerUrl("http://localhost:4000/")).toBe(
+      "http://localhost:4000/tools",
+    );
+    expect(resolveMcpServerUrl("http://localhost:4000/tools")).toBe(
+      "http://localhost:4000/tools",
+    );
+    expect(resolveMcpServerUrl("http://localhost:4000/custom")).toBe(
+      "http://localhost:4000/custom/tools",
+    );
   });
 
   it("orchestrates supervisor, specialist, and narrator stages", async () => {

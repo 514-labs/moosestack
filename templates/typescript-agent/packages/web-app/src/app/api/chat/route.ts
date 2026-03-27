@@ -1,3 +1,4 @@
+import { McpServerUnavailableError } from "agent-runtime";
 import type { UIMessage } from "ai";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
@@ -45,6 +46,19 @@ export async function POST(request: NextRequest) {
       tenantId: session.user.tenantId,
     });
   } catch (error) {
+    if (error instanceof McpServerUnavailableError) {
+      return new Response(
+        JSON.stringify({
+          error: "MCP server unavailable",
+          details: error.message,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     console.error("Chat error:", error);
     return new Response(
       JSON.stringify({

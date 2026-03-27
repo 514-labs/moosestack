@@ -12,6 +12,9 @@ retention_ms = 30000
 replication_factor = 1
 
 [clickhouse_config]
+# Local development defaults.
+# Set MOOSE_CLICKHOUSE_CONFIG__* in packages/moosestack-service/.env.local
+# to override these values when connecting to an existing ClickHouse instance.
 db_name = "local"
 user = "panda"
 password = "pandapass"

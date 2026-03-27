@@ -438,12 +438,20 @@ export interface AmazonReview {
  * Filter columns (marketplace, product_category, review_date) are placed first
  * per `schema-pk-prioritize-filters` so WHERE clauses hit the sparse index.
  */
-export const AmazonReviewTable = new OlapTable<AmazonReview>("AmazonReview", {
-  orderByFields: ["marketplace", "product_category", "review_date", "review_id"],
-});
+export const AmazonReviewTable = new OlapTable<AmazonReview>(
+  "amazon_reviews",
+  {
+    orderByFields: [
+      "marketplace",
+      "product_category",
+      "review_date",
+      "review_id",
+    ],
+  },
+);
 ```
 
-Note how `LowCardinality` is used for `marketplace` (~5 values) and `product_category` (~40 values), tight unsigned integer types match the data range, and the `orderBy` puts common filter columns first for efficient sparse index pruning.
+Note how `LowCardinality` is used for `marketplace` (~5 values) and `product_category` (~40 values), tight unsigned integer types match the data range, and the `orderBy` puts common filter columns first for efficient sparse index pruning. The first string you pass to `OlapTable` is the actual ClickHouse table name, so prefer explicit snake_case names like `amazon_reviews`.
 
 </ToggleBlock>
 

@@ -24,7 +24,8 @@ Run this next:
 ⚙️ Set environment variables:
     1. Set your LLM provider credentials in `packages/web-app/.env.local`.
     2. Keep `MOOSE_AUTH_MODE=local` for the built-in mock OIDC issuer during local dev.
-    3. Optionally configure Langfuse and Bedrock Guardrails in `packages/web-app/.env.local`.
+    3. If you are using an existing ClickHouse instance, fill in the `MOOSE_CLICKHOUSE_CONFIG__*` overrides in `packages/moosestack-service/.env.local`.
+    4. Optionally configure Langfuse and Bedrock Guardrails in `packages/web-app/.env.local`.
 
 🌱 Seed starter data:
     $ pnpm seed
@@ -34,8 +35,8 @@ Run this next:
     $ pnpm dev
 
 Or start each service separately:
-    $ pnpm dev:moose    # Start MooseStack service only
-    $ pnpm dev:web      # Start web app only
+    $ pnpm dev:moose    # Start MooseStack service first
+    $ pnpm dev:web      # Start the web app after the Moose service is ready
 """
 default_sloan_telemetry = "standard"
 

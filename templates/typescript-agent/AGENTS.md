@@ -114,11 +114,12 @@ export interface PageView {
   durationMs: number;
 }
 
-// IngestPipeline configures table, stream, and API in one declaration
-export const PageViewPipeline = new IngestPipeline<PageView>("PageView", {
+// IngestPipeline configures table, stream, and API in one declaration.
+// The first argument is the actual ClickHouse table name, so prefer snake_case.
+export const PageViewPipeline = new IngestPipeline<PageView>("page_views", {
   table: { orderByFields: ["userId", "timestamp"] },
   stream: true,
-  ingestApi: true, // POST /ingest/PageView
+  ingestApi: true, // POST /ingest/page_views
 });
 ```
 
@@ -273,7 +274,8 @@ This template uses JWT auth, not static API tokens.
 | `AUTH_SECRET` | `packages/web-app/.env.local` | Auth.js session secret |
 | `MOOSE_AUTH_MODE` | `packages/web-app/.env.local` | `local` for the built-in tenant picker, `oidc` for external OIDC |
 | `AI_PROVIDER` | `packages/web-app/.env.local` | `anthropic`, `openai`, or `bedrock` |
-| `MCP_SERVER_URL` | `packages/web-app/.env.local` or `.env.development` | Moose service base URL |
+| `MOOSE_SERVICE_URL` | `packages/web-app/.env.local` or `.env.development` | Base Moose service URL for dashboard APIs and, by default, the custom MCP tools endpoint |
+| `MCP_SERVER_URL` | `packages/web-app/.env.local` | Optional override for the custom MCP tools endpoint (`/tools`) when it differs from `MOOSE_SERVICE_URL` |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | `packages/web-app/.env.local` | Optional Langfuse tracing |
 | `OIDC_*` | `packages/web-app/.env.local` | External OIDC configuration |
 

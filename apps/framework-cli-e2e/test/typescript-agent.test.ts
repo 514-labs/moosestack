@@ -188,6 +188,30 @@ function readEnvValue(filePath: string, variableName: string): string {
     .replace(/^"(.*)"$/, "$1");
 }
 
+function replaceEnvValue(
+  filePath: string,
+  variableName: string,
+  nextValue?: string,
+) {
+  const contents = fs.readFileSync(filePath, "utf8");
+  const linePattern = new RegExp(`^${variableName}=.*(?:\\r?\\n)?`, "m");
+
+  let nextContents = contents;
+  if (linePattern.test(nextContents)) {
+    nextContents = nextContents.replace(linePattern, "");
+  }
+
+  nextContents = nextContents.replace(/\n{3,}/g, "\n\n").trimEnd();
+
+  if (nextValue !== undefined) {
+    nextContents = `${nextContents}\n${variableName}=${nextValue}\n`;
+  } else {
+    nextContents = `${nextContents}\n`;
+  }
+
+  fs.writeFileSync(filePath, nextContents, "utf8");
+}
+
 async function encodeSessionCookie(
   projectDir: string,
   sessionCookieName: string,
@@ -198,7 +222,7 @@ async function encodeSessionCookie(
     "AUTH_SECRET",
   );
   const requireFromProject = createRequire(
-    path.join(projectDir, "package.json"),
+    path.join(projectDir, "packages", "web-app", "package.json"),
   );
   const { encode } = requireFromProject("next-auth/jwt") as {
     encode: (params: {
@@ -407,6 +431,19 @@ describe("TypeScript Agent Template E2E", function () {
       { logger: testLogger },
     );
 
+    const webAppEnvPath = path.join(
+      projectDir,
+      "packages",
+      "web-app",
+      ".env.local",
+    );
+    replaceEnvValue(webAppEnvPath, "MOOSE_SERVICE_URL");
+    replaceEnvValue(
+      webAppEnvPath,
+      "MCP_SERVER_URL",
+      "http://localhost:4000/tools",
+    );
+
     testLogger.info("Verifying generated app lint with root pnpm lint");
     await execAsync("pnpm lint", {
       cwd: projectDir,
@@ -484,6 +521,7 @@ describe("TypeScript Agent Template E2E", function () {
       env: {
         ...process.env,
         AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "test-anthropic-key",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -524,8 +562,10 @@ describe("TypeScript Agent Template E2E", function () {
 
     const status = await statusResponse.json();
     expect(status.provider).to.equal("anthropic");
-    expect(status.status).to.equal("missing_key");
+    expect(status.status).to.equal("ready");
     expect(status.guardrailsConfigured).to.equal(false);
+    expect(status.mcpReady).to.equal(true);
+    expect(status.mcpStatus).to.equal("ready");
   });
 
   it("should reject unauthenticated tool and chat requests", async function () {
@@ -594,6 +634,18 @@ describe("TypeScript Agent Template E2E", function () {
     expect(acmeRows.rows.map((row) => row.headline).join(" ")).to.include(
       "Brake alerts increased by 14% this week",
     );
+
+    const preLimitedRows = await callMcpTool<{
+      rows: Array<{ tenant_id: string; headline: string }>;
+      rowCount: number;
+    }>(acmeToken, "query_clickhouse", {
+      query:
+        "SELECT tenant_id, headline FROM tenant_knowledge ORDER BY timestamp DESC LIMIT 1",
+      limit: 100,
+    });
+
+    expect(preLimitedRows.rowCount).to.equal(1);
+    expect(preLimitedRows.rows[0]?.tenant_id).to.equal("acme");
 
     const globexRows = await callMcpTool<{
       rows: Array<{ tenant_id: string; headline: string }>;
@@ -835,5 +887,47 @@ describe("TypeScript Agent Template E2E", function () {
     });
 
     expect(response.status).to.equal(401);
+  });
+
+  it("should surface MCP outages through status and chat errors", async function () {
+    const acmeAuth = await signInLocalTenant("acme");
+
+    await stopChildProcess(mooseProcess, "moose service");
+    mooseProcess = null;
+
+    const statusResponse = await fetch(`${WEB_APP_URL}/api/chat/status`);
+    expect(statusResponse.status).to.equal(200);
+
+    const status = await statusResponse.json();
+    expect(status.mcpReady).to.equal(false);
+    expect(status.mcpStatus).to.equal("unavailable");
+    expect(status.mcpDetails).to.include("http://localhost:4000/tools");
+    expect(status.mcpDetails).to.include("pnpm dev:moose");
+
+    const chatResponse = await fetch(`${WEB_APP_URL}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: acmeAuth.cookie,
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            id: "user-1",
+            role: "user",
+            parts: [
+              { type: "text", text: "Summarize the latest tenant notes." },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(chatResponse.status).to.equal(503);
+
+    const payload = await chatResponse.json();
+    expect(payload.error).to.equal("MCP server unavailable");
+    expect(payload.details).to.include("http://localhost:4000/tools");
+    expect(payload.details).to.include("pnpm dev:moose");
   });
 });
