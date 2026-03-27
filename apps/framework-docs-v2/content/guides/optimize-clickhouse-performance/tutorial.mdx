@@ -17,7 +17,7 @@ The experiment:
 1. Profiles the slow query and proposes optimization candidates
 2. Creates isolated preview databases on 514 hosting for the baseline and each candidate
 3. Benchmarks every preview with the same test to pick the best performer
-4. Opens a PR for the winner
+4. Opens a PR for the winner for your review
 
 This guide assumes:
 
@@ -27,7 +27,7 @@ This guide assumes:
 
 ### Setup
 
-**Setup only has one job:** point the CLI and your coding agent at the right Fiveonefour project before the experiment starts creating branches and preview branches in 514 hosting.
+Set up the `514` harness with your coding agent and link your local MooseStack project to its Fiveonefour counterpart.
 
 <GuideStepper id="optimize-ch-setup" persist>
 <GuideStepper.Step
@@ -111,15 +111,15 @@ Related docs:
 
 ### Optimization workflow
 
-**This section runs the experiment.** The agent should turn the slow production query path into a baseline-versus-candidate comparison instead of making one unverified guess.
+In this section the agent profiles the slow query, proposes optimizations, benchmarks each one against the unmodified baseline, and picks the winner with evidence.
 
 <Callout type="info" title="What to expect from the run">
 1. `SETUP`: confirm the linked repo, the deployment target, and the query path in scope.
-2. `PROFILE`: inspect the slow path and run diagnostics. You may need to approve raw `514 clickhouse query`.
+2. `PROFILE`: inspect the slow query and run diagnostics.
 3. `PROPOSE`: show candidate schema changes and the query pattern they are meant to improve.
-4. `BASELINE`: scaffold `query-benchmarks/`, freeze `perf/baseline`, and prove the control run.
-5. `EXPERIMENT`: deploy candidates, help wire preview benchmarking if needed, and re-seed when a layout change requires it.
-6. `COMPARE`: choose the winner by comparing the same benchmark contract across branches.
+4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
+5. `EXPERIMENT`: deploy and seed each candidate branches, apply the schema optimizations, and run the same benchmark tests against each candidate.
+6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
 7. `SHIP`: open a PR with the comparison summary, JSON evidence, and `migrations/plan.yaml`.
 </Callout>
 
