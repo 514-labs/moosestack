@@ -516,12 +516,44 @@ pub fn set_docs_default_language(language: &str) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::{read_settings, DevSettings, Settings};
+    use std::ffi::OsString;
     use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous_value: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: impl Into<OsString>) -> Self {
+            let previous_value = std::env::var_os(key);
+
+            unsafe {
+                std::env::set_var(key, value.into());
+            }
+
+            Self {
+                key,
+                previous_value,
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous_value {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
     }
 
     #[test]
@@ -556,21 +588,13 @@ skip_container_shutdown = true
     fn test_container_cli_path_environment_variable_parsing() {
         let _guard = env_lock().lock().unwrap();
         let temp_home = TempDir::new().expect("Failed to create temp home directory");
-
-        unsafe {
-            std::env::set_var("HOME", temp_home.path());
-            std::env::set_var("MOOSE_DEV__CONTAINER_CLI_PATH", "finch");
-        }
+        let _home_guard = EnvVarGuard::set("HOME", temp_home.path().as_os_str());
+        let _container_cli_guard = EnvVarGuard::set("MOOSE_DEV__CONTAINER_CLI_PATH", "finch");
 
         let settings = read_settings().expect("Failed to load settings");
         assert_eq!(
             settings.dev.container_cli_path.as_deref(),
             Some(std::path::Path::new("finch"))
         );
-
-        unsafe {
-            std::env::remove_var("MOOSE_DEV__CONTAINER_CLI_PATH");
-            std::env::remove_var("HOME");
-        }
     }
 }

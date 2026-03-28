@@ -1,7 +1,8 @@
+import type { JSX } from "react";
 import { signIn } from "@/auth";
 import { LOCAL_TENANTS } from "./local-auth";
 
-export function LocalTenantPicker() {
+export function LocalTenantPicker(): JSX.Element {
   return (
     <div className="space-y-3">
       {LOCAL_TENANTS.map((tenant) => (

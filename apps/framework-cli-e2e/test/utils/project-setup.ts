@@ -12,6 +12,23 @@ export interface ProjectSetupOptions {
 
 const execAsync = promisify(require("child_process").exec);
 
+interface PackageJsonWithMooseLibDeps {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+function readPackageJson(filePath: string): PackageJsonWithMooseLibDeps {
+  const packageJsonSource = fs.readFileSync(filePath, "utf-8");
+
+  try {
+    return JSON.parse(packageJsonSource) as PackageJsonWithMooseLibDeps;
+  } catch (error) {
+    throw new Error(`Failed to parse ${filePath} as JSON`, {
+      cause: error,
+    });
+  }
+}
+
 function updateMooseLibDependencyRecursively(
   dir: string,
   mooseLibPath: string,
@@ -39,7 +56,7 @@ function updateMooseLibDependencyRecursively(
         continue;
       }
 
-      const packageJson = JSON.parse(fs.readFileSync(fullPath, "utf-8"));
+      const packageJson = readPackageJson(fullPath);
       let changed = false;
 
       for (const depKey of ["dependencies", "devDependencies"] as const) {

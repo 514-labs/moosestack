@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 const ORIGINAL_ENV = { ...process.env };
 
 async function loadEnvVarsModule() {
@@ -14,6 +16,9 @@ describe("env-vars", () => {
     delete process.env.MCP_SERVER_URL;
     delete process.env.ANTHROPIC_MODEL_ID;
     delete process.env.OPENAI_MODEL_ID;
+    delete process.env.OIDC_ISSUER;
+    delete process.env.OIDC_CLIENT_ID;
+    delete process.env.OIDC_CLIENT_SECRET;
   });
 
   afterEach(() => {
@@ -62,5 +67,28 @@ describe("env-vars", () => {
 
     expect(getAnthropicModelId()).toBe("claude-custom");
     expect(getOpenAiModelId()).toBe("gpt-custom");
+  });
+
+  it("fails fast when OIDC configuration is partial", async () => {
+    process.env.OIDC_ISSUER = "https://issuer.example.com";
+    process.env.OIDC_CLIENT_ID = "client-id";
+
+    const { getOidcConfig } = await loadEnvVarsModule();
+
+    expect(() => getOidcConfig()).toThrow(/OIDC configuration is incomplete/);
+  });
+
+  it("returns the OIDC configuration when all required values are present", async () => {
+    process.env.OIDC_ISSUER = "https://issuer.example.com";
+    process.env.OIDC_CLIENT_ID = "client-id";
+    process.env.OIDC_CLIENT_SECRET = "client-secret";
+
+    const { getOidcConfig } = await loadEnvVarsModule();
+
+    expect(getOidcConfig()).toEqual({
+      issuer: "https://issuer.example.com",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
   });
 });

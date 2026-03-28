@@ -9,4 +9,5 @@ dist
 coverage
 .ts-node
 
-.env*.local
+.env*
+!.env.example

@@ -15,7 +15,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { Streamdown } from "streamdown";
 import {
@@ -81,12 +80,13 @@ export const Reasoning = memo(
     });
 
     const hasEverStreamedRef = useRef(isStreaming);
-    const [hasAutoClosed, setHasAutoClosed] = useState(false);
+    const hasAutoClosedRef = useRef(false);
     const startTimeRef = useRef<number | null>(null);
 
     // Track when streaming starts and compute duration
     useEffect(() => {
       if (isStreaming) {
+        hasAutoClosedRef.current = false;
         hasEverStreamedRef.current = true;
         if (startTimeRef.current === null) {
           startTimeRef.current = Date.now();
@@ -110,16 +110,16 @@ export const Reasoning = memo(
         hasEverStreamedRef.current &&
         !isStreaming &&
         isOpen &&
-        !hasAutoClosed
+        !hasAutoClosedRef.current
       ) {
         const timer = setTimeout(() => {
           setIsOpen(false);
-          setHasAutoClosed(true);
+          hasAutoClosedRef.current = true;
         }, AUTO_CLOSE_DELAY);
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [isStreaming, isOpen, setIsOpen]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {

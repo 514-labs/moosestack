@@ -84,6 +84,7 @@ catalog:
   recharts: "2.15.4"
   remark-gfm: "4.0.1"
   shiki: "4.0.2"
+  server-only: "0.0.1"
   sonner: "2.0.7"
   streamdown: "2.5.0"
   tailwind-merge: "3.5.0"
@@ -101,5 +102,7 @@ catalog:
   zod: "4.3.6"
 
 catalogs:
+  # Most of the template uses Zod 4, but moosestack-service still depends on
+  # the Zod 3 line required by its current MCP stack.
   zod3:
     zod: "3.25.76"

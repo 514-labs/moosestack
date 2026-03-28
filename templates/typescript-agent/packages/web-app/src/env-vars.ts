@@ -1,3 +1,5 @@
+import "server-only";
+
 const MCP_ENDPOINT_PATH = "/tools";
 
 function missingEnvError(envVarName: string, guidance: string): Error {
@@ -168,11 +170,38 @@ export function getOidcConfig():
   const clientId = process.env.OIDC_CLIENT_ID;
   const clientSecret = process.env.OIDC_CLIENT_SECRET;
 
-  if (!issuer || !clientId || !clientSecret) {
+  const configuredEntries = [
+    ["OIDC_ISSUER", issuer],
+    ["OIDC_CLIENT_ID", clientId],
+    ["OIDC_CLIENT_SECRET", clientSecret],
+  ] as const;
+  const populatedEntries = configuredEntries.filter(([, value]) =>
+    Boolean(value),
+  );
+
+  if (populatedEntries.length === 0) {
     return undefined;
   }
 
-  return { issuer, clientId, clientSecret };
+  if (populatedEntries.length !== configuredEntries.length) {
+    const missingEnvVars = configuredEntries
+      .filter(([, value]) => !value)
+      .map(([envVarName]) => envVarName);
+
+    throw new Error(
+      `OIDC configuration is incomplete. Set ${missingEnvVars.join(", ")} or clear the partial OIDC env vars in \`packages/web-app/.env.local\`.`,
+    );
+  }
+
+  if (!issuer || !clientId || !clientSecret) {
+    throw new Error("OIDC configuration validation failed unexpectedly.");
+  }
+
+  return {
+    issuer,
+    clientId,
+    clientSecret,
+  };
 }
 
 export function getOidcTenantClaim(): string {

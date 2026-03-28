@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ElementType, JSX } from "react";
+import type { CSSProperties, ElementType } from "react";
 import { memo } from "react";
 
 import { cn } from "@/lib/utils";
@@ -27,10 +27,8 @@ const ShimmerComponent = ({
       "linear-gradient(90deg, var(--color-muted-foreground) calc(50% - var(--shimmer-spread)), var(--color-foreground), var(--color-muted-foreground) calc(50% + var(--shimmer-spread)))",
   } as CSSProperties;
 
-  const Tag = Component as keyof JSX.IntrinsicElements;
-
   return (
-    <Tag
+    <Component
       className={cn(
         "inline-block bg-[length:250%_100%] bg-clip-text text-transparent [animation:shimmer-slide_var(--shimmer-duration)_linear_infinite]",
         className,
@@ -38,7 +36,7 @@ const ShimmerComponent = ({
       style={shimmerStyle}
     >
       {children}
-    </Tag>
+    </Component>
   );
 };
 
