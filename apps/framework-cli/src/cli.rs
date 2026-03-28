@@ -90,6 +90,13 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::timeout;
 
+/// Reads a boolean from an environment variable (`"1"` or `"true"`, case-insensitive).
+fn env_bool(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 /// Generic prompt function with hints, default values, and better formatting
 pub fn prompt_user(
     prompt_text: &str,
@@ -790,11 +797,6 @@ pub async fn top_command_handler(
                 info!("Payload logging enabled");
             }
 
-            let env_bool = |name: &str| -> bool {
-                std::env::var(name)
-                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                    .unwrap_or(false)
-            };
             let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
             let confirmation_policy = ConfirmationPolicy {
                 accept_destructive: accept_all
@@ -1028,11 +1030,6 @@ pub async fn top_command_handler(
                 })?;
 
                 // --- rename + destructive confirmation gates ---
-                let env_bool = |name: &str| -> bool {
-                    std::env::var(name)
-                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                        .unwrap_or(false)
-                };
                 let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
                 let migration_policy = ConfirmationPolicy {
                     accept_destructive: accept_all
@@ -1130,6 +1127,7 @@ pub async fn top_command_handler(
                                         )?;
                                         !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
                                     } else {
+                                        info!("Non-interactive mode: auto-appending backfill SQL");
                                         true
                                     }
                                 };

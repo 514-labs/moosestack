@@ -105,7 +105,11 @@ impl MigrationPlan {
                 continue;
             }
 
-            let col_names: Vec<&str> = base_table.columns.iter().map(|c| c.name.as_str()).collect();
+            let col_names: Vec<String> = base_table
+                .columns
+                .iter()
+                .map(|c| format!("`{}`", c.name))
+                .collect();
             let cols_csv = col_names.join(", ");
 
             let sql = format!(
