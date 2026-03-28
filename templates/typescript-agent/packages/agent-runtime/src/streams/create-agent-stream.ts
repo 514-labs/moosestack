@@ -62,61 +62,75 @@ export async function createAgentStream(
     execute: async ({ writer }) => {
       const toolCallTimings = new Map<string, ToolTiming>();
       let stepCount = 0;
-      const tools =
-        Object.keys(runtime.tools).length > 0 ?
-          wrapTools({
-            runtimeTools: runtime.tools,
-            tenantId: options.tenantId,
-            traceId: traceSession.traceId,
-            toolCallTimings,
-            getStepNumber: () => stepCount + 1,
-            recordStep: traceSession.recordStep,
-          })
-        : runtime.tools;
 
-      const result = streamText({
-        model: runtime.model,
-        system: runtime.system,
-        messages: runtime.messages,
-        tools: tools as StreamTextTools,
-        toolChoice: runtime.toolChoice,
-        stopWhen: runtime.stopWhen,
-        onStepFinish: async (stepResult) => {
-          stepCount += 1;
+      try {
+        const tools =
+          Object.keys(runtime.tools).length > 0 ?
+            wrapTools({
+              runtimeTools: runtime.tools,
+              tenantId: options.tenantId,
+              traceId: traceSession.traceId,
+              toolCallTimings,
+              getStepNumber: () => stepCount + 1,
+              recordStep: traceSession.recordStep,
+            })
+          : runtime.tools;
 
-          if (!stepResult.toolCalls?.length) {
-            return;
-          }
+        const result = streamText({
+          model: runtime.model,
+          system: runtime.system,
+          messages: runtime.messages,
+          tools: tools as StreamTextTools,
+          toolChoice: runtime.toolChoice,
+          stopWhen: runtime.stopWhen,
+          onStepFinish: async (stepResult) => {
+            stepCount += 1;
 
-          emitToolTimings(writer, toolCallTimings, stepResult.toolCalls);
-        },
-        onFinish: async ({ totalUsage }) => {
-          await traceSession.finalizeTrace({
-            guardrailAction: "none",
-            status: "completed",
-            totalSteps: traceSession.observedSteps.length,
-            totalInputTokens: totalUsage?.inputTokens ?? 0,
-            totalOutputTokens: totalUsage?.outputTokens ?? 0,
-          });
-        },
-        onError: async ({ error }) => {
-          await traceSession.finalizeTrace({
-            guardrailAction: "none",
-            status: "failed",
-            totalSteps: traceSession.observedSteps.length,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            completedAt: new Date().toISOString(),
-          });
-          console.error("Agent stream failed:", error);
-        },
-      });
+            if (!stepResult.toolCalls?.length) {
+              return;
+            }
 
-      writer.merge(
-        result.toUIMessageStream({
-          onError: formatAgentRuntimeErrorMessage,
-        }),
-      );
+            emitToolTimings(writer, toolCallTimings, stepResult.toolCalls);
+          },
+          onFinish: async ({ totalUsage }) => {
+            await traceSession.finalizeTrace({
+              guardrailAction: "none",
+              status: "completed",
+              totalSteps: traceSession.observedSteps.length,
+              totalInputTokens: totalUsage?.inputTokens ?? 0,
+              totalOutputTokens: totalUsage?.outputTokens ?? 0,
+            });
+          },
+          onError: async ({ error }) => {
+            await traceSession.finalizeTrace({
+              guardrailAction: "none",
+              status: "failed",
+              totalSteps: traceSession.observedSteps.length,
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              completedAt: new Date().toISOString(),
+            });
+            console.error("Agent stream failed:", error);
+          },
+        });
+
+        writer.merge(
+          result.toUIMessageStream({
+            onError: formatAgentRuntimeErrorMessage,
+          }),
+        );
+      } catch (error) {
+        await traceSession.finalizeTrace({
+          guardrailAction: "none",
+          status: "failed",
+          totalSteps: traceSession.observedSteps.length,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          completedAt: new Date().toISOString(),
+        });
+
+        throw new Error(formatAgentRuntimeErrorMessage(error));
+      }
     },
   });
 }
