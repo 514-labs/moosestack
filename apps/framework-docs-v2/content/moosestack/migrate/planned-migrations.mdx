@@ -97,6 +97,17 @@ moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 | `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
 | `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
 
+### Confirmation flags
+
+These flags control the interactive confirmation prompts during plan generation:
+
+| Option | Environment Variable | Description |
+| :--- | :--- | :--- |
+| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames and destructive operations). |
+| `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE=1` | Skip the confirmation prompt for destructive operations. |
+| `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
+| `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
+
 ## Drift Detection
 
 Drift occurs when the target database's schema changes between the time you generate a plan and the time you apply it.

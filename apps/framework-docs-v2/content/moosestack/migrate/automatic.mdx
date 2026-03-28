@@ -24,7 +24,7 @@ moose dev
 While technically possible to use automatic migrations in production environments, it is **strongly discouraged**.
 
 <Callout type="warning" title="Data Loss Risk">
-  Automatic migrations will immediately drop columns containing data if a field is renamed or removed in the code. In production, this leads to irreversible data loss.
+  Automatic migrations can drop columns containing data if a field is removed in the code. While column renames are now detected and confirmed interactively, production deployments should always use planned migrations.
 </Callout>
 
 Production deployments should always use [Planned Migrations](/moosestack/migrate/planned-migrations) to ensure schema changes are reviewed, tested, and safe.
@@ -48,28 +48,38 @@ The following table describes how code changes are translated into database oper
 | **Add Field** | Add Column | `ALTER TABLE ... ADD COLUMN ...` | Safe |
 | **Remove Field** | Drop Column | `ALTER TABLE ... DROP COLUMN ...` | **Destructive** (Data Loss) |
 | **Change Field Type** | Modify Column | `ALTER TABLE ... MODIFY COLUMN ...` | Potentially Destructive (Cast dependent) |
-| **Rename Field** | Drop + Add | `DROP COLUMN old`; `ADD COLUMN new` | **Destructive** (Data Loss - see limitations) |
+| **Rename Field** | Rename (with confirmation) | `ALTER TABLE ... RENAME COLUMN old TO new` | Safe (if confirmed as rename) |
 | **Remove Table** | Drop Table | `DROP TABLE ...` | **Destructive** |
 
-## Limitations and Safety
+## Confirmation Prompts
 
-### Renaming Fields
+### Column Rename Detection
 
-The auto-inference engine is stateless regarding user intent. It cannot distinguish between **renaming** a field and **deleting one field to add another**.
+When you rename a field, Moose uses heuristic analysis (name similarity, type matching) to detect likely renames. Instead of silently dropping the old column and adding a new one, it prompts you:
 
-If you rename `user_id` to `uid`:
-1.  Moose sees `user_id` is missing from the code -> Generates `DROP COLUMN user_id`.
-2.  Moose sees `uid` is new in the code -> Generates `ADD COLUMN uid`.
+```text
+ Rename (1/1): `events`.`user_id` → `uid` (confidence: 0.82)  y=rename  n=drop+create  c=cancel
+```
 
-**Result:** The column is dropped and re-added empty. Data in the original column is lost immediately.
+- **y** (default): Apply as a `RENAME COLUMN` — data is preserved.
+- **n**: Treat as a destructive drop + add — old column data is lost.
+- **c**: Cancel the entire change cycle.
 
-<Callout type="warning" title="Renaming in Production">
-  To rename columns without data loss, you must use [Planned Migrations](/moosestack/migrate/planned-migrations) and manually adjust the migration plan to use a `rename` operation instead of `drop` + `add`.
-</Callout>
+To skip prompts and auto-accept all renames, pass `--yes-rename` or set `MOOSE_ACCEPT_RENAME=1`.
 
 ### Destructive Operations
 
-Automatic migrations do not prompt for confirmation before dropping tables or columns. If you comment out a table export or remove a field definition, the corresponding data structure in the database is removed immediately.
+When the plan contains destructive operations (table drops, column removals, view removals, table recreates), Moose pauses and asks for confirmation before proceeding:
+
+```text
+ ⚠  1 destructive change(s) — type y to accept, n to reject
+```
+
+If you reject, the change cycle is skipped — your code change stays, and Moose will re-prompt on the next file save. To skip destructive prompts, pass `--yes-destructive` or set `MOOSE_ACCEPT_DESTRUCTIVE=1`. Use `--yes-all` to skip both rename and destructive prompts.
+
+<Callout type="warning" title="Production deployments">
+  Even with confirmation prompts, automatic migrations are not recommended for production. Use [Planned Migrations](/moosestack/migrate/planned-migrations) for reviewed, safe schema changes.
+</Callout>
 
 ## Configuration
 

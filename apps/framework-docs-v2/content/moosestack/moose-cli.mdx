@@ -108,14 +108,16 @@ Starts a local development environment with hot reload and automatic infrastruct
 - **Python**: `pip install -r requirements.txt`
 
 ```bash
-moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes-destructive]
+moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes-all] [--yes-destructive] [--yes-rename]
 ```
 - `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp) for details.
 - `--no-infra`: Skip starting docker containers for infrastructure
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
-- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via the `MOOSE_ACCEPT_DESTRUCTIVE=1` environment variable.
+- `--yes-all`: Skip all confirmation prompts (renames and destructive operations). Equivalent to passing both `--yes-destructive` and `--yes-rename`. Can also be set via `MOOSE_ACCEPT_ALL=1`.
+- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-rename`: Skip the interactive confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
@@ -385,13 +387,25 @@ Create an ordered ClickHouse DDL plan by comparing a remote instance with your l
 ```bash
 moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
-- Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
-- Omit `--save` to output to stdout without writing files
-- Requires OLAP to be enabled in `moose.config.toml`:
-  ```toml filename="moose.config.toml" copy
-  [features]
-  olap = true
-  ```
+
+**Connection options** (one required):
+- `--url <URL>` + `--token <TOKEN>`: Connect to a running Moose server
+- `--clickhouse-url <URL>`: Connect directly to ClickHouse (for serverless deployments). Optionally pair with `--redis-url` when `state_config.storage = "redis"`.
+
+**Output options:**
+- `--save`: Write `./migrations/plan.yaml`, `remote_state.json`, and `local_infra_map.json`. Omit to output plan YAML to stdout.
+
+**Confirmation flags:**
+- `--yes-all`: Skip all confirmation prompts (renames and destructive operations). Can also be set via `MOOSE_ACCEPT_ALL=1`.
+- `--yes-destructive`: Skip the confirmation prompt for destructive operations (table/column drops, view removals, table recreates). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-rename`: Skip the confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
+- `--no-auto-backfill-sql`: Disable automatic backfill SQL generation for versioned tables.
+
+Requires OLAP to be enabled in `moose.config.toml`:
+```toml filename="moose.config.toml" copy
+[features]
+olap = true
+```
 
 ### DB Pull (External Tables)
 Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
