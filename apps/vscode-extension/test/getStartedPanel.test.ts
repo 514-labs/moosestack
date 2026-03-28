@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { buildHarnessSplashHtml } from "../src/getStartedPanel";
 
-test("buildHarnessSplashHtml renders the harness command and support links", async () => {
-  const html = await buildHarnessSplashHtml();
+test("buildHarnessSplashHtml renders the harness command and support links", () => {
+  const html = buildHarnessSplashHtml();
 
   assert.match(html, /Create a Moose Harness Project/);
   assert.match(html, /moose init/);
@@ -15,8 +15,8 @@ test("buildHarnessSplashHtml renders the harness command and support links", asy
   assert.match(html, /http:\/\/slack\.moosestack\.com\//);
 });
 
-test("buildHarnessSplashHtml uses a per-panel CSP nonce", async () => {
-  const html = await buildHarnessSplashHtml();
+test("buildHarnessSplashHtml uses a per-panel CSP nonce", () => {
+  const html = buildHarnessSplashHtml();
 
   const cspNonceMatch = html.match(/script-src 'nonce-([^']+)'/);
   const scriptNonceMatch = html.match(/<script nonce="([^"]+)">/);
