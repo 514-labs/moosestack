@@ -190,7 +190,7 @@ jobs:
   publish-vscode:
     name: Publish to VS Code Marketplace
     needs: build
-    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs.pre-release == 'true' || github.ref == 'refs/heads/main') }}
+    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs['pre-release'] == 'true' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download VSIX artifact
@@ -230,7 +230,7 @@ jobs:
   publish-openvsx:
     name: Publish to Open VSX
     needs: build
-    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs.pre-release == 'true' || github.ref == 'refs/heads/main') }}
+    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs['pre-release'] == 'true' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download VSIX artifact
