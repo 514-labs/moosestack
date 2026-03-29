@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  assertTenantMooseContext,
   getTenantMooseContext,
   requireTenantMoose,
 } from "../app/http/context/tenant-context";
@@ -18,6 +19,12 @@ describe("tenant-context", () => {
     expect(context).toEqual(
       expect.objectContaining({
         tenantId: "acme",
+        rowPolicyOptions: {
+          role: "moose_rls_role",
+          clickhouse_settings: {
+            SQL_moose_rls_tenant_id: "  acme  ",
+          },
+        },
       }),
     );
   });
@@ -95,5 +102,21 @@ describe("tenant-context", () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(response.status).not.toHaveBeenCalled();
     expect(result).toBeUndefined();
+  });
+
+  it("asserts the tenant context after middleware invariants", () => {
+    expect(
+      assertTenantMooseContext({
+        moose: {
+          jwt: {
+            tenant_id: "acme",
+          },
+        },
+      } as never),
+    ).toEqual(
+      expect.objectContaining({
+        tenantId: "acme",
+      }),
+    );
   });
 });

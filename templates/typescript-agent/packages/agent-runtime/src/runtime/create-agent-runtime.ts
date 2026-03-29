@@ -13,17 +13,22 @@ export async function createAgentRuntime(
     mcpServerUrl: options.mcpServerUrl,
   });
 
-  return {
-    provider: modelSelection.provider,
-    modelId: modelSelection.modelId,
-    model: modelSelection.model,
-    guardrailAdapter: options.guardrailAdapter,
-    system: options.systemPrompt ?? DEFAULT_AGENT_SYSTEM_PROMPT,
-    messages: await convertToModelMessages(options.messages),
-    tools,
-    toolChoice: "auto",
-    stopWhen: stepCountIs(options.maxSteps ?? 25),
-    mcpServerUrl: resolvedMcpServerUrl,
-    close: () => closeMcpClient(mcpClient),
-  };
+  try {
+    return {
+      provider: modelSelection.provider,
+      modelId: modelSelection.modelId,
+      model: modelSelection.model,
+      guardrailAdapter: options.guardrailAdapter,
+      system: options.systemPrompt ?? DEFAULT_AGENT_SYSTEM_PROMPT,
+      messages: await convertToModelMessages(options.messages),
+      tools,
+      toolChoice: "auto",
+      stopWhen: stepCountIs(options.maxSteps ?? 25),
+      mcpServerUrl: resolvedMcpServerUrl,
+      close: () => closeMcpClient(mcpClient),
+    };
+  } catch (error) {
+    await closeMcpClient(mcpClient);
+    throw error;
+  }
 }

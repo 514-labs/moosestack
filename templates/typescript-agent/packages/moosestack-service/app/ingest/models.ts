@@ -6,6 +6,10 @@ import {
   SelectRowPolicy,
 } from "@514labs/moose-lib";
 import type { tags } from "typia";
+import {
+  TENANT_ID_CLAIM,
+  TENANT_ID_COLUMN,
+} from "../security/tenant-isolation";
 
 export interface TenantKnowledge {
   record_id: string & tags.Format<"uuid">;
@@ -23,7 +27,7 @@ export const TenantKnowledgePipeline = new IngestPipeline<TenantKnowledge>(
   {
     table: {
       engine: ClickHouseEngines.ReplacingMergeTree,
-      orderByFields: ["tenant_id", "category", "timestamp", "record_id"],
+      orderByFields: ["tenant_id", "timestamp", "category", "record_id"],
     },
     stream: true,
     ingestApi: true,
@@ -42,6 +46,6 @@ export const TenantKnowledgeTable = tenantKnowledgeTable;
 
 export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
   tables: [TenantKnowledgeTable],
-  column: "tenant_id",
-  claim: "tenant_id",
+  column: TENANT_ID_COLUMN,
+  claim: TENANT_ID_CLAIM,
 });

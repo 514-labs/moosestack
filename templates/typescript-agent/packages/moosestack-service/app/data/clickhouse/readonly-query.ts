@@ -6,41 +6,32 @@ import {
 } from "@514labs/moose-lib";
 
 type QueryClient = MooseUtils["client"]["query"];
+type ReadonlyQueryOptions = {
+  limit?: number;
+  rowPolicyOptions?: RowPolicyOptions;
+};
 
 function formatClickHouseDateTime(value: Date): string {
-  return value.toISOString();
+  return value.toISOString().slice(0, 19).replace("T", " ");
 }
 
-function isRowPolicyOptions(value: unknown): value is RowPolicyOptions {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "role" in value &&
-    typeof value.role === "string" &&
-    "clickhouse_settings" in value &&
-    typeof value.clickhouse_settings === "object" &&
-    value.clickhouse_settings !== null
-  );
-}
+function normalizeReadonlyQueryOptions(
+  limitOrOptions?: number | ReadonlyQueryOptions,
+): ReadonlyQueryOptions {
+  if (typeof limitOrOptions === "number") {
+    return { limit: limitOrOptions };
+  }
 
-function getRowPolicyOptions(
-  queryClient: QueryClient,
-): RowPolicyOptions | undefined {
-  const rowPolicyOptions = Reflect.get(
-    queryClient as object,
-    "rowPolicyOptions",
-  );
-
-  return isRowPolicyOptions(rowPolicyOptions) ? rowPolicyOptions : undefined;
+  return limitOrOptions ?? {};
 }
 
 async function executeReadonlyQuery<T>(
   queryClient: QueryClient,
   query: string,
   queryParams: Record<string, unknown>,
-  limit?: number,
+  options: ReadonlyQueryOptions,
 ): Promise<T[]> {
-  const rowPolicyOptions = getRowPolicyOptions(queryClient);
+  const { limit, rowPolicyOptions } = options;
   const result = await queryClient.client.query({
     query,
     query_params: Object.fromEntries(
@@ -72,16 +63,26 @@ async function executeReadonlyQuery<T>(
 export async function executeReadonlySql<T>(
   queryClient: QueryClient,
   sql: Sql,
-  limit?: number,
+  limitOrOptions?: number | ReadonlyQueryOptions,
 ): Promise<T[]> {
   const [query, queryParams] = toQuery(sql);
-  return await executeReadonlyQuery<T>(queryClient, query, queryParams, limit);
+  return await executeReadonlyQuery<T>(
+    queryClient,
+    query,
+    queryParams,
+    normalizeReadonlyQueryOptions(limitOrOptions),
+  );
 }
 
 export async function executeReadonlyStatement<T>(
   queryClient: QueryClient,
   query: string,
-  limit?: number,
+  limitOrOptions?: number | ReadonlyQueryOptions,
 ): Promise<T[]> {
-  return await executeReadonlyQuery<T>(queryClient, query, {}, limit);
+  return await executeReadonlyQuery<T>(
+    queryClient,
+    query,
+    {},
+    normalizeReadonlyQueryOptions(limitOrOptions),
+  );
 }

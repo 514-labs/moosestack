@@ -1,17 +1,17 @@
 import { Code } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { ReasoningPart } from "../../types/message-parts";
+import {
+  getReasoningText,
+  type ReasoningPart,
+} from "../../types/message-parts";
 
 type ReasoningSectionProps = {
   part: ReasoningPart;
 };
 
 export function ReasoningSection({ part }: ReasoningSectionProps) {
-  const reasoningText =
-    part.details
-      ?.map((detail) => (detail.type === "text" ? detail.text : "<redacted>"))
-      .join("") || "Reasoning content";
+  const reasoningText = getReasoningText(part) || "Reasoning content";
 
   return (
     <div

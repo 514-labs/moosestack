@@ -1,9 +1,4 @@
-import {
-  createUIMessageStream,
-  generateText,
-  stepCountIs,
-  streamText,
-} from "ai";
+import { createUIMessageStream, generateText, streamText } from "ai";
 import { formatAgentRuntimeErrorMessage } from "../errors.js";
 import {
   MULTI_AGENT_NARRATOR_PROMPT,
@@ -24,6 +19,10 @@ import {
 } from "./helpers.js";
 import { emitToolTimings, wrapTools } from "./tool-tracing.js";
 import { createTraceSession } from "./trace-session.js";
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function createMultiAgentStream(
   options: CreateAgentStreamOptions,
@@ -130,6 +129,7 @@ export async function createMultiAgentStream(
           : runtime.tools;
         const workerStartedAt = new Date().toISOString();
         const workerStartedAtMs = Date.now();
+        let workerFailed = false;
         const workerResult = streamText({
           model: runtime.model,
           system: `${runtime.system}\n\n${specialist.systemPrompt}`,
@@ -146,7 +146,21 @@ export async function createMultiAgentStream(
 
             emitToolTimings(writer, toolCallTimings, stepResult.toolCalls);
           },
-          onError: (error) => {
+          onError: ({ error }) => {
+            workerFailed = true;
+            traceSession.recordStep({
+              stepId: crypto.randomUUID(),
+              traceId: traceSession.traceId,
+              tenantId: options.tenantId,
+              stepType: "agent",
+              toolName: specialist.label,
+              status: "failed",
+              notes: getErrorMessage(error),
+              startedAt: workerStartedAt,
+              durationMs: Date.now() - workerStartedAtMs,
+              inputTokens: 0,
+              outputTokens: 0,
+            });
             console.error("Multi-agent worker stream failed:", error);
           },
         });
@@ -162,19 +176,21 @@ export async function createMultiAgentStream(
         const workerNotes = await workerResult.text;
         const workerUsage = await workerResult.totalUsage;
 
-        traceSession.recordStep({
-          stepId: crypto.randomUUID(),
-          traceId: traceSession.traceId,
-          tenantId: options.tenantId,
-          stepType: "agent",
-          toolName: specialist.label,
-          status: "completed",
-          notes: workerNotes,
-          startedAt: workerStartedAt,
-          durationMs: Date.now() - workerStartedAtMs,
-          inputTokens: getInputTokens(workerUsage),
-          outputTokens: getOutputTokens(workerUsage),
-        });
+        if (!workerFailed) {
+          traceSession.recordStep({
+            stepId: crypto.randomUUID(),
+            traceId: traceSession.traceId,
+            tenantId: options.tenantId,
+            stepType: "agent",
+            toolName: specialist.label,
+            status: "completed",
+            notes: workerNotes,
+            startedAt: workerStartedAt,
+            durationMs: Date.now() - workerStartedAtMs,
+            inputTokens: getInputTokens(workerUsage),
+            outputTokens: getOutputTokens(workerUsage),
+          });
+        }
 
         writeAgentMarker(
           writer,
@@ -184,12 +200,27 @@ export async function createMultiAgentStream(
 
         const narratorStartedAt = new Date().toISOString();
         const narratorStartedAtMs = Date.now();
+        let narratorFailed = false;
         const narratorResult = streamText({
           model: runtime.model,
           system: MULTI_AGENT_NARRATOR_PROMPT,
           prompt: `Latest user request:\n${userPrompt}\n\nSupervisor route:\n${specialist.label}\n\nSpecialist notes:\n${workerNotes}`,
-          stopWhen: stepCountIs(5),
-          onError: (error) => {
+          stopWhen: runtime.stopWhen,
+          onError: ({ error }) => {
+            narratorFailed = true;
+            traceSession.recordStep({
+              stepId: crypto.randomUUID(),
+              traceId: traceSession.traceId,
+              tenantId: options.tenantId,
+              stepType: "agent",
+              toolName: "narrator",
+              status: "failed",
+              notes: getErrorMessage(error),
+              startedAt: narratorStartedAt,
+              durationMs: Date.now() - narratorStartedAtMs,
+              inputTokens: 0,
+              outputTokens: 0,
+            });
             console.error("Multi-agent narrator stream failed:", error);
           },
         });
@@ -203,19 +234,21 @@ export async function createMultiAgentStream(
 
         const narratorUsage = await narratorResult.totalUsage;
 
-        traceSession.recordStep({
-          stepId: crypto.randomUUID(),
-          traceId: traceSession.traceId,
-          tenantId: options.tenantId,
-          stepType: "agent",
-          toolName: "narrator",
-          status: "completed",
-          notes: `worker=${specialist.label}`,
-          startedAt: narratorStartedAt,
-          durationMs: Date.now() - narratorStartedAtMs,
-          inputTokens: getInputTokens(narratorUsage),
-          outputTokens: getOutputTokens(narratorUsage),
-        });
+        if (!narratorFailed) {
+          traceSession.recordStep({
+            stepId: crypto.randomUUID(),
+            traceId: traceSession.traceId,
+            tenantId: options.tenantId,
+            stepType: "agent",
+            toolName: "narrator",
+            status: "completed",
+            notes: `worker=${specialist.label}`,
+            startedAt: narratorStartedAt,
+            durationMs: Date.now() - narratorStartedAtMs,
+            inputTokens: getInputTokens(narratorUsage),
+            outputTokens: getOutputTokens(narratorUsage),
+          });
+        }
 
         await traceSession.finalizeTrace({
           guardrailAction: "none",

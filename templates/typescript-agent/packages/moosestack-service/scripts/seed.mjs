@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { extractJsonRowsFromOutput } from "./seed-output.mjs";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(currentDir, "..");
@@ -25,40 +26,9 @@ function runMooseQuery(args, description) {
 
   return result.stdout;
 }
-
-function stripAnsiSequences(value) {
-  let result = "";
-  let skippingSequence = false;
-
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-
-    if (!skippingSequence && char === String.fromCharCode(27) && value[index + 1] === "[") {
-      skippingSequence = true;
-      continue;
-    }
-
-    if (skippingSequence) {
-      if ((char >= "A" && char <= "Z") || (char >= "a" && char <= "z")) {
-        skippingSequence = false;
-      }
-      continue;
-    }
-
-    result += char;
-  }
-
-  return result;
-}
-
 function queryJsonRows(sql) {
   const output = runMooseQuery([sql], "query seeded data");
-
-  return output
-    .split("\n")
-    .map((line) => stripAnsiSequences(line).trim())
-    .filter((line) => line.startsWith("{") || line.startsWith("["))
-    .map((line) => JSON.parse(line));
+  return extractJsonRowsFromOutput(output);
 }
 
 function queryCount(sql) {
@@ -70,10 +40,9 @@ const totalBefore = queryCount("SELECT count() AS total FROM tenant_knowledge");
 
 console.log("Seeding starter data...");
 
-for (const fileName of ["tenant_knowledge.sql"]) {
-  runMooseQuery(["-f", join(seedDir, fileName)], `apply ${fileName}`);
-  console.log(`- Applied ${fileName}`);
-}
+const seedFileName = "tenant_knowledge.sql";
+runMooseQuery(["-f", join(seedDir, seedFileName)], `apply ${seedFileName}`);
+console.log(`- Applied ${seedFileName}`);
 
 const totalAfter = queryCount("SELECT count() AS total FROM tenant_knowledge");
 const totalsByTenant = queryJsonRows(`

@@ -61,6 +61,17 @@ export interface ToolTimingEvent {
   data: ToolTimingPayload;
 }
 
+export function getReasoningText(part: ReasoningPart): string {
+  return (
+    part.details
+      ?.map((detail) =>
+        detail.type === "text" ? (detail.text ?? "") : "<redacted>",
+      )
+      .join("")
+      .trim() ?? ""
+  );
+}
+
 export function isObjectRecord(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -76,7 +87,19 @@ export function isTextPart(part: unknown): part is TextPart {
 }
 
 export function isReasoningPart(part: unknown): part is ReasoningPart {
-  return isObjectRecord(part) && part.type === "reasoning";
+  return (
+    isObjectRecord(part) &&
+    part.type === "reasoning" &&
+    (part.details === undefined ||
+      (Array.isArray(part.details) &&
+        part.details.every((detail) => {
+          return (
+            isObjectRecord(detail) &&
+            typeof detail.type === "string" &&
+            (detail.text === undefined || typeof detail.text === "string")
+          );
+        })))
+  );
 }
 
 export function isSourcePart(part: unknown): part is SourcePart {
@@ -106,7 +129,11 @@ export function isToolTimingEvent(data: unknown): data is ToolTimingEvent {
     isObjectRecord(data.data) &&
     typeof data.data.toolCallId === "string" &&
     typeof data.data.duration === "number" &&
+    Number.isFinite(data.data.duration) &&
+    data.data.duration >= 0 &&
     typeof data.data.stepNumber === "number" &&
+    Number.isInteger(data.data.stepNumber) &&
+    data.data.stepNumber >= 0 &&
     typeof data.data.toolName === "string"
   );
 }
@@ -136,8 +163,8 @@ export function extractTextContentParts(value: unknown) {
 
 export function hasOutputError(
   value: unknown,
-): value is { isError: boolean } & Record<string, unknown> {
-  return isObjectRecord(value) && typeof value.isError === "boolean";
+): value is { isError: true } & Record<string, unknown> {
+  return isObjectRecord(value) && value.isError === true;
 }
 
 export function getToolName(part: ToolPart) {

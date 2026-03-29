@@ -23,9 +23,8 @@ function readPackageJson(filePath: string): PackageJsonWithMooseLibDeps {
   try {
     return JSON.parse(packageJsonSource) as PackageJsonWithMooseLibDeps;
   } catch (error) {
-    throw new Error(`Failed to parse ${filePath} as JSON`, {
-      cause: error,
-    });
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse ${filePath} as JSON: ${details}`);
   }
 }
 

@@ -65,6 +65,35 @@ export interface ToolAccessPolicy {
   validateExposedReadonlyQuery(rawQuery: string): string;
 }
 
+const MAX_SEARCH_PATTERN_LENGTH = 128;
+const MAX_SEARCH_PATTERN_METACHARACTERS = 12;
+const READONLY_QUERY_KEYWORD_PATTERN =
+  /\b(show|insert|update|delete|alter|create|drop|optimize|grant|revoke|attach|detach|rename|truncate|use|kill)\b/i;
+const TABLE_REFERENCE_BOUNDARY_KEYWORDS = new Set([
+  "array",
+  "except",
+  "final",
+  "format",
+  "full",
+  "group",
+  "having",
+  "inner",
+  "intersect",
+  "join",
+  "left",
+  "limit",
+  "on",
+  "order",
+  "outer",
+  "prewhere",
+  "right",
+  "sample",
+  "settings",
+  "union",
+  "using",
+  "where",
+]);
+
 function getTableEngine(table: RuntimeTable): string {
   if (typeof table.config !== "object" || table.config === null) {
     return "MergeTree";
@@ -250,9 +279,27 @@ function toTableInfo(table: RuntimeTable): TableInfo {
   };
 }
 
+function shouldFallbackToSubstringSearch(searchPattern: string): boolean {
+  if (searchPattern.length > MAX_SEARCH_PATTERN_LENGTH) {
+    return true;
+  }
+
+  if (/\\[1-9]|(^|[^\\])\(\?/.test(searchPattern)) {
+    return true;
+  }
+
+  const regexMetacharacterCount = (searchPattern.match(/[\\()[\]{}+*?]/g) ?? [])
+    .length;
+  return regexMetacharacterCount > MAX_SEARCH_PATTERN_METACHARACTERS;
+}
+
 function matchesSearchPattern(name: string, searchPattern?: string): boolean {
   if (!searchPattern) {
     return true;
+  }
+
+  if (shouldFallbackToSubstringSearch(searchPattern)) {
+    return name.toLowerCase().includes(searchPattern.toLowerCase());
   }
 
   try {
@@ -264,6 +311,52 @@ function matchesSearchPattern(name: string, searchPattern?: string): boolean {
 
 function stripSqlComments(query: string): string {
   return query.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/gm, " ");
+}
+
+// Mask string contents so validation scans do not treat quoted text as SQL.
+function maskSqlStringLiterals(query: string): string {
+  let result = "";
+
+  for (let index = 0; index < query.length; index += 1) {
+    const char = query[index];
+
+    if (char !== "'") {
+      result += char;
+      continue;
+    }
+
+    result += " ";
+
+    for (index += 1; index < query.length; index += 1) {
+      const current = query[index];
+
+      if (current === "\\") {
+        result += " ";
+
+        if (index + 1 < query.length) {
+          result += " ";
+          index += 1;
+        }
+
+        continue;
+      }
+
+      if (current === "'") {
+        if (query[index + 1] === "'") {
+          result += "  ";
+          index += 1;
+          continue;
+        }
+
+        result += " ";
+        break;
+      }
+
+      result += " ";
+    }
+  }
+
+  return result;
 }
 
 function normalizeIdentifier(identifier: string): string {
@@ -283,6 +376,134 @@ function normalizeIdentifier(identifier: string): string {
   }
 
   return unquotedIdentifier.toLowerCase();
+}
+
+type SqlToken =
+  | { kind: "comma" | "dot" | "paren"; value: string }
+  | { kind: "quoted_identifier" | "word"; value: string };
+
+function tokenizeSql(query: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+
+  for (let index = 0; index < query.length; ) {
+    const char = query[index];
+
+    if (!char) {
+      break;
+    }
+
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+
+    if (char === "," || char === "." || char === "(" || char === ")") {
+      tokens.push({
+        kind:
+          char === "," ? "comma"
+          : char === "." ? "dot"
+          : "paren",
+        value: char,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (char === '"' || char === "`") {
+      const quote = char;
+      let value = quote;
+      index += 1;
+
+      while (index < query.length) {
+        const current = query[index];
+        value += current;
+        index += 1;
+
+        if (current === quote) {
+          break;
+        }
+      }
+
+      tokens.push({ kind: "quoted_identifier", value });
+      continue;
+    }
+
+    if (/[A-Za-z_]/.test(char)) {
+      let value = char;
+      index += 1;
+
+      while (index < query.length && /[A-Za-z0-9_$]/.test(query[index] ?? "")) {
+        value += query[index];
+        index += 1;
+      }
+
+      tokens.push({ kind: "word", value });
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return tokens;
+}
+
+function isIdentifierToken(
+  token: SqlToken | undefined,
+): token is Extract<SqlToken, { kind: "quoted_identifier" | "word" }> {
+  return token?.kind === "word" || token?.kind === "quoted_identifier";
+}
+
+function readCompositeIdentifier(
+  tokens: SqlToken[],
+  startIndex: number,
+): { identifier: string; nextIndex: number } | undefined {
+  const firstToken = tokens[startIndex];
+  if (!isIdentifierToken(firstToken)) {
+    return undefined;
+  }
+
+  let identifier = firstToken.value;
+  let nextIndex = startIndex + 1;
+
+  while (tokens[nextIndex]?.kind === "dot") {
+    const nextToken = tokens[nextIndex + 1];
+    if (!isIdentifierToken(nextToken)) {
+      break;
+    }
+
+    identifier += `.${nextToken.value}`;
+    nextIndex += 2;
+  }
+
+  return {
+    identifier,
+    nextIndex,
+  };
+}
+
+function skipOptionalAlias(tokens: SqlToken[], startIndex: number): number {
+  const token = tokens[startIndex];
+  if (!token) {
+    return startIndex;
+  }
+
+  if (token.kind === "word" && token.value.toLowerCase() === "as") {
+    return isIdentifierToken(tokens[startIndex + 1]) ?
+        startIndex + 2
+      : startIndex + 1;
+  }
+
+  if (
+    isIdentifierToken(token) &&
+    !(
+      token.kind === "word" &&
+      TABLE_REFERENCE_BOUNDARY_KEYWORDS.has(token.value.toLowerCase())
+    )
+  ) {
+    return startIndex + 1;
+  }
+
+  return startIndex;
 }
 
 export function createToolAccessPolicy(
@@ -319,13 +540,45 @@ export function createToolAccessPolicy(
 
   function validateSelectLikeQuery(query: string) {
     const identifiers: string[] = [];
-    const tableReferencePattern =
-      /\b(?:from|join)\s+([`"\w.]+)(?:\s+(?:as\s+)?[A-Za-z_]\w*)?\s*(,?)/gi;
+    const tokens = tokenizeSql(query);
 
-    for (const match of query.matchAll(tableReferencePattern)) {
-      identifiers.push(normalizeIdentifier(match[1]));
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token?.kind !== "word") {
+        continue;
+      }
 
-      if (match[2] === ",") {
+      const keyword = token.value.toLowerCase();
+      if (keyword !== "from" && keyword !== "join") {
+        continue;
+      }
+
+      if (
+        keyword === "join" &&
+        tokens[index - 1]?.kind === "word" &&
+        tokens[index - 1].value.toLowerCase() === "array"
+      ) {
+        continue;
+      }
+
+      if (
+        tokens[index + 1]?.kind === "paren" &&
+        tokens[index + 1]?.value === "("
+      ) {
+        continue;
+      }
+
+      const tableReference = readCompositeIdentifier(tokens, index + 1);
+      if (!tableReference) {
+        continue;
+      }
+
+      identifiers.push(normalizeIdentifier(tableReference.identifier));
+
+      if (
+        tokens[skipOptionalAlias(tokens, tableReference.nextIndex)]?.kind ===
+        "comma"
+      ) {
         throw new Error(
           "Comma-separated FROM and JOIN target lists are not allowed. Use explicit JOIN syntax against exposed data components.",
         );
@@ -416,46 +669,43 @@ export function createToolAccessPolicy(
 
     validateExposedReadonlyQuery(rawQuery: string): string {
       const query = stripSqlComments(rawQuery).trim().replace(/;+$/, "");
+      const sanitizedQuery = maskSqlStringLiterals(query);
 
       if (!query) {
         throw new Error("Query is required.");
       }
 
-      if (/\bsystem\s*\./i.test(query)) {
+      if (/\bsystem\s*\./i.test(sanitizedQuery)) {
         throw new Error(
           "System metadata is not exposed by default. Use get_data_catalog for the allowlisted schema surface.",
         );
       }
 
-      if (
-        /\b(show|insert|update|delete|alter|create|drop|optimize|grant|revoke|attach|detach|rename|truncate|use|kill)\b/i.test(
-          query,
-        )
-      ) {
+      if (READONLY_QUERY_KEYWORD_PATTERN.test(sanitizedQuery)) {
         throw new Error(
           "Only SELECT, DESCRIBE, and EXPLAIN SELECT queries against exposed data components are allowed by default.",
         );
       }
 
-      if (/^\s*(describe|desc)\b/i.test(query)) {
-        validateDescribeQuery(query);
+      if (/^\s*(describe|desc)\b/i.test(sanitizedQuery)) {
+        validateDescribeQuery(sanitizedQuery);
         return query;
       }
 
-      if (/^\s*explain\b/i.test(query)) {
-        const selectIndex = query.search(/\bselect\b/i);
+      if (/^\s*explain\b/i.test(sanitizedQuery)) {
+        const selectIndex = sanitizedQuery.search(/\bselect\b/i);
         if (selectIndex < 0) {
           throw new Error(
             "Only EXPLAIN SELECT queries are allowed by default, and they must target exposed data components.",
           );
         }
 
-        validateSelectLikeQuery(query.slice(selectIndex));
+        validateSelectLikeQuery(sanitizedQuery.slice(selectIndex));
         return query;
       }
 
-      if (/^\s*select\b/i.test(query)) {
-        validateSelectLikeQuery(query);
+      if (/^\s*select\b/i.test(sanitizedQuery)) {
+        validateSelectLikeQuery(sanitizedQuery);
         return query;
       }
 

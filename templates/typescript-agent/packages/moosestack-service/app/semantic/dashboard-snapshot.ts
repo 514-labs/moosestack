@@ -1,4 +1,8 @@
-import { type MooseUtils, sql } from "@514labs/moose-lib";
+import {
+  type MooseUtils,
+  type RowPolicyOptions,
+  sql,
+} from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
 import { executeReadonlySql } from "../data/clickhouse/readonly-query";
 import { TenantKnowledgeTable } from "../ingest/models";
@@ -7,6 +11,7 @@ import { knowledgeMetricsModel } from "./knowledge";
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
   tenantId: string,
+  rowPolicyOptions?: RowPolicyOptions,
 ): Promise<DashboardSnapshot> {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -37,14 +42,14 @@ export async function getDashboardSnapshot(
     executeReadonlySql<{
       totalRecords: number;
       highPriorityRecords: number;
-    }>(queryClient, knowledgeMetricsQuery),
+    }>(queryClient, knowledgeMetricsQuery, { rowPolicyOptions }),
     executeReadonlySql<{
       headline: string;
       category: string;
       priority: string;
       source: string;
       timestamp: string;
-    }>(queryClient, recentKnowledgeQuery),
+    }>(queryClient, recentKnowledgeQuery, { rowPolicyOptions }),
   ]);
 
   return {
