@@ -8,15 +8,7 @@ import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
 
 # Dev Approach
 
-The Analytics Agent Harness has a lot of moving parts: ClickHouse, APIs, MCP tools, JWT auth, row-level security, observability, guardrails. You could wire it up by hand. Or you could give a coding agent a well-structured environment and let it do the bulk of the work.
-
-The tutorial is designed for that second path. Every section has agent-ready prompts. The hard question isn't whether to use a coding agent — it's how to set that coding agent up to succeed.
-
-The answer is the **Coding Agent Harness**.
-
-## The Coding Agent Harness
-
-The Coding Agent Harness is the build-time layer your coding agent works inside. It gives your coding agent live access to the running stack, real schema introspection, SQL validation, and domain-specific skills — so it can make accurate changes and verify them immediately instead of guessing.
+This guide assumes you'll use a coding agent to accelerate your build. Additionally, this guide proposes using a Coding Agent Harness: that will set your coding agent up for success to safely, quickly, effectively build out your production-ready Analytics Agent and Analytics Agent Harness.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -39,59 +31,72 @@ The Coding Agent Harness is the build-time layer your coding agent works inside.
                └────────────────────────────────────────────────────────────┘
 ```
 
-The Analytics Agent Harness is what you're shipping. The Coding Agent Harness is what you build it with.
+## Why use a Coding Agent Harness
 
-## The strategy: start locally, ship with confidence
-
-The Coding Agent Harness runs the full Analytics Agent Harness on your machine. Your coding agent has a live ClickHouse instance, real schema introspection, and a running stack to validate against — before anything gets near production.
-
-1. **Start locally** — the dev server runs the complete stack. Your coding agent works against real data, real schemas, real query results. No mocking, no guessing.
-2. **Iterate fast** — hot-reloading, MCP-accessible logs, and the SQL Language Server let your coding agent make a change, see the result, and catch errors without manual inspection.
-3. **Ship with confidence** — deploy to 514 hosting when you're ready. Preview environments per PR provision an isolated ClickHouse database per branch. Schema changes are validated before they hit production.
-
-You're not guessing at whether something works. The Coding Agent Harness gives the coding agent a real environment to work against at every stage.
-
-## What the Coding Agent Harness includes
+If you're building a prototype, a coding agent can probably get you all the way there on its own. But if you're building production-ready analytics agents on real-time analytical infrastructure, coding agents tend to run into a predictable set of problems:
 
 <BulletPointsCard
-  title="Elements of the Coding Agent Harness"
+  bulletStyle="x"
+  bullets={[
+    {
+      title: "Missing best practices for data engineering and OLAP",
+      description: "Agents don't have the right specialization for real-time analytical infrastructure. Wrong key design, missing LowCardinality, ORDER BY that kills query performance at scale.",
+    },
+    {
+      title: "No tight, safe, local feedback loop",
+      description: "Errors surface at deploy time, not write time. Without the right context immediately available, agents can't catch and fix mistakes as they go.",
+    },
+    {
+      title: "No infrastructure interfaces built for how coding agents work",
+      description: "CLIs, MCPs, APIs, and code-based interfaces are how coding agents operate effectively. Without them, agents can't interact with or validate against the running infrastructure.",
+    },
+  ]}
+/>
+
+The result: you don't get a production-ready application quickly or safely. The Coding Agent Harness fixes this by giving the coding agent everything it needs to be successful.
+
+## What is the Coding Agent Harness
+
+The Coding Agent Harness is an integrated environment that exposes all the infrastructure, interfaces, tools, skills, code, and context a coding agent needs to rapidly and safely build production-ready analytics infrastructure.
+
+<BulletPointsCard
+  title="Components of the Coding Agent Harness"
   bulletStyle="number"
   bullets={[
     {
-      title: "typescript-agent template",
-      description:
-        "The Analytics Agent Harness pre-wired: JWT auth, row-level security, multi-agent orchestration, observability, semantic layer, and guardrails. Your coding agent starts with a working foundation, not a blank file.",
-    },
-    {
       title: "MooseStack Framework",
       description:
-        "TypeScript interfaces for ClickHouse and real-time analytical infrastructure. Designed to be readable and writable by coding agents — the abstractions are thin enough that the agent understands what it's doing.",
+        "TypeScript interfaces for ClickHouse and real-time analytical infrastructure. Schemas, materialized views, ingest pipelines, and APIs are typed code objects — readable and writable by coding agents without any database-specific tooling.",
     },
     {
       title: "MooseStack CLI",
       description:
-        "Agent-friendly CLI for initializing projects, running queries, and inspecting infrastructure. The coding agent uses it throughout the tutorial to validate each step.",
+        "Agent-friendly command-line interface for initializing projects, running queries against local ClickHouse, inspecting tables, and validating infrastructure state. Designed to work in agentic loops.",
     },
     {
-      title: "Dev Server",
+      title: "Local Dev Server",
       description:
-        "Runs the full Analytics Agent Harness locally with hot-reloading. Your coding agent has a live target to work against — make a change, see the result.",
+        "Runs your full Analytics Agent App locally, including all real-time analytical infrastructure in local docker containers. Hot-swaps code changes without restarting — the agent edits a model, the table schema updates, the MCP tools reflect the change, all without manual intervention.",
     },
     {
       title: "MCP Server + SQL Language Server",
       description:
-        "Live ClickHouse introspection, schema access, query execution, and SQL validation without leaving the editor. This is what gives the coding agent accurate context about the running stack.",
+        "Agent-facing interfaces for interacting with the running stack: live schema introspection, query execution, log access, and SQL validation. The agent collects context and surfaces errors without leaving the editor.",
     },
     {
       title: "Agent Skills",
       description:
-        "ClickHouse and data engineering best practices packaged as skills your coding agent can invoke. The coding agent knows to use them; you don't have to prompt it.",
+        "ClickHouse and data engineering best practices packaged as invocable skills. Covers primary key design, LowCardinality usage, ORDER BY strategy, materialized view patterns, and data type selection — the specializations agents most commonly get wrong.",
+    },
+    {
+      title: "`Typescript-agent` Template",
+      description:
+        "A production-ready skeleton for the full Analytics Agent Harness: JWT auth, row-level security, multi-agent orchestration, observability, semantic layer, and guardrails pre-wired. The agent fills in your domain logic, not the plumbing.",
     },
   ]}
 />
 
 Setting up the Coding Agent Harness in Section 1 of the tutorial is what makes every subsequent section agent-executable.
-
 
 <CommunityCallout title="Need live support?">
 Join the MooseStack Slack — the team behind the Coding Agent Harness and this template is there.
