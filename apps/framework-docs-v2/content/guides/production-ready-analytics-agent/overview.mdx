@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Why analytics agents need a runtime harness to reach production, and what this approach provides
+description: Why analytics agents need an analytics agent harness to reach production, and what this approach provides
 languages: ["typescript"]
 ---
 
@@ -43,16 +43,16 @@ That changes what's possible. Analytics products can let users explore data free
   ]}
 />
 
-## The runtime harness
+## The analytics agent harness
 
-An analytics agent prototype is straightforward to build. Getting it to production is where teams stall — because the agent alone isn't enough. You need a runtime harness around it.
+An analytics agent prototype is straightforward to build. Getting it to production is where teams stall — because the agent alone isn't enough. You need an analytics agent harness around it.
 
-The runtime harness is the layer between your data infrastructure and your analytics agent that makes it production-ready. It handles everything the agent can't safely do for itself: enforcing data access boundaries, capturing traces, ensuring metrics mean the same thing everywhere, and blocking content that shouldn't reach the model. What we're building in this guide is the runtime harness for an analytics agent.
+The analytics agent harness is everything that makes your analytics agent production-ready: the high-performance analytical infrastructure (ClickHouse), the APIs and MCP tools that expose data to the agent, and the operational layer that enforces security, captures traces, keeps metrics consistent, and applies guardrails. ClickHouse isn't separate from the harness — it's the foundation of it. What we're building in this guide is the analytics agent harness.
 
 Most analytics agent prototypes work in demos and break under real conditions. The problems aren't hard to name — they're just easy to defer until they become incidents.
 
 <BulletPointsCard
-  title="What the runtime harness handles"
+  title="What the analytics agent harness handles"
   bulletStyle="x"
   bullets={[
     {
@@ -85,37 +85,26 @@ Most analytics agent prototypes work in demos and break under real conditions. T
 
 ## Architecture
 
-There are two harnesses in this stack. Understanding the distinction makes the architecture clear.
+Two harnesses. One for run-time, one for build-time.
 
 ```
-Your Data Sources
-    │  (ingest API / flat file / CDC)
-    ▼
-ClickHouse
-    │
-    ▼
-┌────────────────────────────────┐
-│         Runtime Harness        │
-│  APIs & MCPs                   │──► Analytics Agent
-│  Security (RLS)                │    supervisor → specialist → narrator
-│  Observability (Langfuse)      │              │
-│  Semantic Layer                │              ▼
-│  Guardrails                    │         Next.js UI
-└────────────────────────────────┘
+                    ┌──────────────────────────────────────┐
+                    │      Analytics Agent Harness         │
+Source Data ───────►│  ClickHouse · APIs · MCPs            │───► Analytics Agent ───► Next.js GUI
+                    │  Security · Observability            │
+                    │  Semantic Layer · Guardrails         │
+                    └──────────────────────────────────────┘
 
-
-┌────────────────────────────────────────────────────────────────┐
-│  DevHarness  (514 / MooseStack)                                │
-│                                                                │
-│  Your coding agent builds and configures all of the above:    │
-│  data ingest, ClickHouse infrastructure, Runtime Harness,     │
-│  and Next.js UI integration                                    │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                         Coding Agent Harness  (514 / MooseStack)                 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                          ▲
+                                   Coding Agent
 ```
 
-**Runtime Harness** — sits between ClickHouse and the analytics agent at run-time. It exposes the data surface through APIs and MCP tools, enforces security, captures traces, and applies guardrails. This is what you're shipping.
+**Analytics Agent Harness** — what you're shipping. Takes in source data, stores and serves it through ClickHouse, exposes it to the analytics agent through APIs and MCP tools, and enforces the operational layer: tenant security, observability, semantic consistency, and guardrails. ClickHouse is part of the harness, not a separate layer.
 
-**DevHarness** — 514 and MooseStack. A build-time harness for your coding agent. It gives the agent live ClickHouse access via MCP, MooseStack-specific skills, SQL intelligence via the Language Server, and project context. It's what enables a coding agent to build and configure the entire stack — data ingest, infrastructure, the Runtime Harness, and the UI — rather than doing it by hand.
+**Coding Agent Harness** — 514 and MooseStack. A build-time harness for your coding agent. It gives the agent live ClickHouse access via MCP, MooseStack-specific skills, SQL intelligence via the Language Server, and project context. The coding agent uses it to build and configure the entire architecture above — source data ingest, the Analytics Agent Harness, and the Next.js UI — rather than doing it by hand.
 
 ## When this approach is worth building
 
