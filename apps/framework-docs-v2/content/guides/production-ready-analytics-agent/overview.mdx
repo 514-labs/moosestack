@@ -8,16 +8,22 @@ import { BulletPointsCard } from "@/components/mdx";
 
 # Overview
 
-## Why analytics agents
+## Why build your own Analytics Agent
 
-An analytics agent isn't a better search box. It's a qualitatively different interface: users ask questions in natural language, and the system responds by querying the actual systems of record — live, structured data — not a summarized document corpus or a static dashboard. The model inspects schemas, runs SQL, computes aggregates, and explains real results.
+An analytics agent lets users ask questions in natural language and get answers from your actual data — live, structured data queried directly, not a summarized document corpus or a pre-built dashboard. The model inspects schemas, runs SQL, computes aggregates, and explains real results.
 
-That changes what's possible. Analytics products can let users explore data freely instead of navigating pre-built dashboards. Internal tooling teams can give non-technical stakeholders direct access to metrics without building a new interface for every question. Customer-facing products can surface insights that would otherwise require analyst involvement. The same agent that answers a free-form question can also power deterministic API endpoints and MCP tools — all from the same data surface.
+That changes what's possible. Users explore data freely instead of waiting on analysts. Non-technical stakeholders get direct access to metrics. The same agent that answers a free-form question can also power deterministic API endpoints and MCP tools — all from the same data surface.
 
-## Common use cases
+BI providers offer off-the-shelf analytics agents. Here's why you'd build your own instead:
+
+- **You own the code and the full logic.** No black box. Every decision about how queries are constructed, how results are explained, and how the agent behaves is yours to inspect, modify, and improve.
+- **Custom security and auth.** Your tenancy model, your JWT flow, your row-level policies — enforced exactly how your product requires, not how a vendor decided to implement it.
+- **Custom semantics.** Your definition of "revenue", "active users", or "churn" — not a vendor's approximation. The agent speaks your domain, with the exact metric definitions your business relies on.
+- **Performance you can optimize.** You control the query layer, the ClickHouse schema, the caching strategy. You can tune for your data shape, your query patterns, your scale — not a generic workload.
+- **It's your agent.** You can extend it, specialize it, integrate it with anything, and ship it on your timeline.
 
 <BulletPointsCard
-  title="Who builds this"
+  title="Common use cases"
   bulletStyle="number"
   bullets={[
     {
@@ -43,7 +49,7 @@ That changes what's possible. Analytics products can let users explore data free
   ]}
 />
 
-## Getting to production
+## What makes an Analytics Agent "production-ready"?
 
 An analytics agent prototype is straightforward to build. Getting it to production is where teams stall. The problems aren't hard to name — they're just easy to defer until they become incidents.
 
@@ -64,7 +70,7 @@ An analytics agent prototype is straightforward to build. Getting it to producti
     {
       title: "Observability",
       description:
-        "Without traces you can't see what SQL the agent generated, what it cost, or where latency went. You can't tune what you can't measure, and you can't debug an incident without a record of what happened.",
+        "Without agent traces (via Langfuse or similar), you can't see which tool calls the agent made, what SQL it generated, what each step cost, or where latency went. You can't tune prompts or debug incidents without a record of what the agent actually did.",
     },
     {
       title: "Semantic consistency",
@@ -79,7 +85,7 @@ An analytics agent prototype is straightforward to build. Getting it to producti
   ]}
 />
 
-## The Analytics Agent Harness
+## Building an Analytics Agent Harness
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -94,7 +100,7 @@ An analytics agent prototype is straightforward to build. Getting it to producti
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The Analytics Agent Harness is the layer that makes the analytics agent production-ready. Source data flows in, gets stored in ClickHouse, and is exposed to the analytics agent through APIs and MCP tools. The operational layer enforces tenant security, captures traces, keeps metrics consistent, and applies guardrails. The analytics agent queries that surface and streams results to the Next.js UI.
+The Analytics Agent Harness is the layer that makes the analytics agent production-ready. You don't just need to build the agent - you need to build the harness too. Source data flows in, gets stored in ClickHouse, and is exposed to the analytics agent through APIs and MCP tools. The harness layer enforces tenant security, captures traces, keeps metrics consistent, and applies guardrails. The analytics agent queries that surface and streams results to the Next.js UI.
 
 <BulletPointsCard
   title="How the Analytics Agent Harness addresses each challenge"
@@ -113,7 +119,7 @@ The Analytics Agent Harness is the layer that makes the analytics agent producti
     {
       title: "Observability",
       description:
-        "Full traces out of the box: every SQL query the agent generated, what it cost, where latency went. Tune prompts and identify slow queries from real trace data.",
+        "Langfuse traces wired in out of the box: every tool call, model decision, SQL query, cost, and latency captured per request. Tune prompts, identify regressions, and debug incidents from real agent trace data.",
     },
     {
       title: "Semantic consistency",
