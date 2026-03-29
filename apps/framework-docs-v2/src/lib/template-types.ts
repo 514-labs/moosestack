@@ -6,10 +6,12 @@ export interface TemplateConfig {
   description: string;
   visible?: boolean;
   default_sloan_telemetry?: string;
+  frameworks?: string[];
+  features?: string[];
 }
 
 /**
- * Enhanced template metadata with inferred information
+ * Enhanced template metadata with explicit or inferred information
  */
 export interface TemplateMetadata {
   name: string;
