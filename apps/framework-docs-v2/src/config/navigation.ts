@@ -39,6 +39,7 @@ import {
   IconTrendingUp,
   IconSearch,
   IconFlask,
+  IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -1716,6 +1717,29 @@ const guidesNavigationConfig: NavigationConfig = [
         slug: "guides/chat-in-your-app/tutorial",
         title: "Tutorial",
         languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
+    slug: "guides/production-ready-analytics-agent",
+    title: "Production-Ready Analytics Agent",
+    description:
+      "Get a multi-tenant, observable, data-powered agent running from a production-shaped template.",
+    icon: IconRobot,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/overview",
+        title: "Overview",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
       },
     ],
   },

@@ -1,0 +1,111 @@
+---
+title: Overview
+description: Why data-powered agents need a production foundation, and what this approach provides
+languages: ["typescript"]
+---
+
+import { BulletPointsCard } from "@/components/mdx";
+
+# Overview
+
+## Why data-powered agents
+
+A data-connected agent isn't a better search box. It's a qualitatively different interface: users ask questions in natural language, and the system responds by querying the actual systems of record — live, structured data — not a summarized document corpus or a static dashboard. The model inspects schemas, runs SQL, computes aggregates, and explains real results.
+
+That changes what's possible. Analytics products can let users explore data freely instead of navigating pre-built dashboards. Internal tooling teams can give non-technical stakeholders direct access to metrics without building a new interface for every question. Customer-facing products can surface insights that would otherwise require analyst involvement. The same agent that answers a free-form question can also power deterministic API endpoints and MCP tools — all from the same data surface.
+
+## Common use cases
+
+<BulletPointsCard
+  title="Who builds this"
+  bulletStyle="number"
+  bullets={[
+    {
+      title: "Enterprise analytics agent",
+      description:
+        "Internal BI replacement or augmentation. Executives ask follow-ups on metrics without waiting on analysts. Business users generate ad-hoc cuts without learning SQL. The agent queries the same tables as the dashboards.",
+    },
+    {
+      title: "Customer-facing analytics product",
+      description:
+        "SaaS operators exploring their own usage, adoption, and performance data. Each customer sees only their data. The chat interface adapts to their questions without requiring a bespoke dashboard per role.",
+    },
+    {
+      title: "Operational workflow agent",
+      description:
+        "Support, supply chain, DevOps chatops. Rapid, auditable data lookup: the agent shows what it queried and why. The structured data layer means answers can be verified, not just trusted.",
+    },
+    {
+      title: "Multi-tenant data product",
+      description:
+        "An agency or platform serving multiple customers from one deployment, each scoped to their own data. Tenant isolation is enforced at the database layer — not in application code that can be bypassed.",
+    },
+  ]}
+/>
+
+## What "production-ready" actually means
+
+Most analytics agent prototypes work in demos and break under real conditions. The problems aren't hard to name — they're just easy to defer until they become incidents.
+
+<BulletPointsCard
+  title="What breaks if you skip this"
+  bulletStyle="x"
+  bullets={[
+    {
+      title: "Performance",
+      description:
+        "Analytical queries at scale require a purpose-built OLAP engine. An agent hitting a transactional database works against small datasets and fails under real data volume and concurrency. ClickHouse handles analytical workloads at the scale analytics agents generate.",
+    },
+    {
+      title: "Security",
+      description:
+        "Tenant isolation enforced at the application layer can be bypassed — by a bug, a prompt injection, or a misconfiguration. It has to be enforced at the data layer, where the database itself rejects cross-tenant queries regardless of what the application sends.",
+    },
+    {
+      title: "Observability",
+      description:
+        "Without traces you can't see what SQL the agent generated, what it cost, or where latency went. You can't tune what you can't measure, and you can't debug an incident without a record of what happened.",
+    },
+    {
+      title: "Semantic consistency",
+      description:
+        "The same metric defined in five places will drift. Chat, APIs, dashboards, and MCP tools each develop their own SQL definition of 'revenue' or 'active users', and they start returning different numbers. A semantic layer gives every surface a single source of truth.",
+    },
+    {
+      title: "Guardrails",
+      description:
+        "Content policy enforcement needs to be deliberate and verifiable. A guardrail bolted on after a production incident is harder to audit and easier to miss. Wire it in before you ship.",
+    },
+  ]}
+/>
+
+## Architecture
+
+Data flows through a layered stack, each layer with a clear owner:
+
+```
+Your Data Sources
+    │  (ingest API / flat file / CDC)
+    ▼
+ClickHouse (via MooseStack)
+    │  typed models, tenant RLS, semantic layer
+    ▼
+MCP Server  ──────────────────────────────┐
+    │  query_clickhouse, get_data_catalog  │
+    ▼                                      │
+AI Agent (multi-agent runtime)             │ same data surface
+    │  supervisor → specialist → narrator  │ powers dashboards,
+    ▼                                      │ APIs, and MCP clients
+Next.js UI  ◄──────────────────────────────┘
+    │  chat panel + dashboard
+    ▼
+Langfuse  (traces, cost, latency)
+```
+
+MooseStack owns the data layer: ingest, storage, tenant policy, and semantic models. The agent runtime owns orchestration. Next.js owns auth and UI. Langfuse owns observability. Nothing crosses those boundaries.
+
+## When this approach is worth building
+
+This is the right foundation when: the product has meaningful data gravity, users ask questions that can't be pre-built as dashboards, and the same data surface needs to power chat, APIs, and dashboards consistently. The overhead is real — you're setting up a full OLAP stack, multi-agent runtime, auth, and observability. That overhead pays off when the data complexity warrants it.
+
+It's overkill for a thin UI over an existing API. If you need LLM-assisted responses but don't need ClickHouse, tenant isolation, or a semantic layer, start with [Chat in Your App](/guides/chat-in-your-app) — the same stack without the multi-tenant production requirements.
