@@ -344,87 +344,56 @@ Without these, the template uses an in-memory fallback collector — the app wor
 
 The template's demo model (`TenantKnowledge`) is a stand-in to confirm setup. This section replaces it with your domain data.
 
-The order matters: **load a sample first, then model it, then load everything.** Your coding agent needs to see real data — actual column types, cardinalities, and example values — before it can define an accurate ClickHouse schema. Don't define the model from docs alone if you can get a sample.
-
-There are three common paths depending on your data source:
-
-- **Data dump** — a CSV, Parquet, or SQL export. Fastest path to get started.
-- **API or scheduled pull** — create a MooseStack Workflow that fetches from your source on a schedule.
-- **Live database replication (CDC)** — connect a running Postgres or MySQL database. See the [Performant Dashboards guide](/guides/performant-dashboards) for full CDC setup with ClickPipes or Debezium.
-
-All three follow the same sequence in the steps below: sample → model → full load.
+The order matters: **sample first, then model, then load.** Your coding agent needs to see real field names, types, and values before it can define an accurate ClickHouse schema. Don't model from docs alone if you can get a sample.
 
 <GuideStepper id="agent-data" persist>
 
-<GuideStepper.Step id="load-sample" number={1} title="Load a sample" summary="Get a small slice of your data into ClickHouse so your coding agent can model it accurately">
+<GuideStepper.Step id="collect-sample" number={1} title="Collect a data sample" summary="Get a representative sample your coding agent can read and understand">
 <GuideStepper.WhatYouNeed>
-  - Access to your data source
-  - Coding Agent Harness running from Section 1
+  - Access to your data source (API, database, or an existing file)
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - A representative sample in local ClickHouse
-  - Your coding agent can inspect real column types and values before modeling
+  - A sample file (JSON, CSV, Parquet, SQL export, or API response) your coding agent can read
+  - Enough real field names, types, and values to define an accurate data model in Step 2
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="sample-data-dump" title="Option A: Data dump (CSV, Parquet, SQL export)">
+The sample doesn't need to be large — a few hundred rows is enough. What matters is that it's real data your coding agent can inspect: actual field names, realistic values, and the types it will need to model.
 
-If you have a flat file or can export one, load a subset directly:
+<GuideStepper.Checkpoint id="sample-already-have" title="Option A: You already have a file">
 
-```sql
--- sample-data.sql — load a small slice to start
-INSERT INTO local.your_raw_table
-  SELECT * FROM s3(
-    's3://your-bucket/path/to/export.parquet',
-    '<Access-Key-ID>',
-    '<Secret-Access-Key>',
-    'Parquet'
-  )
-  LIMIT 10000;
-```
-
-```shell
-moose query -f sample-data.sql
-```
-
-<ToggleBlock openText="No data yet? Use the Amazon Customer Reviews dataset" closeText="Hide">
-The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) is 150M+ rows of real product reviews in Parquet on S3 — no credentials required. Pull a sample:
-
-```shell
-moose query "
-  SELECT * FROM s3(
-    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
-  ) LIMIT 10000;
-"
-```
-</ToggleBlock>
+If you have a JSON, CSV, Parquet, or SQL export ready, share it with your coding agent and proceed to Step 2.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="sample-workflow" title="Option B: API or scheduled pull">
-
-Create a [MooseStack Workflow](https://docs.fiveonefour.com/moosestack/workflows?lang=typescript) that fetches from your API. Run it once to pull a sample:
+<GuideStepper.Checkpoint id="sample-from-api" title="Option B: Pull a sample from an API">
 
 <GuideStepper.Prompt>
-Create a MooseStack Workflow that fetches data from [your API source] and inserts
-it into ClickHouse. Use the MooseStack Workflows docs:
-https://docs.fiveonefour.com/moosestack/workflows?lang=typescript
-Run it once to get a representative sample — we'll configure the full schedule
-after the data model is defined.
+Fetch a sample of data from [your API endpoint] and save it as a JSON or CSV file
+I can share with you. Pull enough records to be representative — a few hundred rows
+is fine. Don't load anything into ClickHouse yet.
 </GuideStepper.Prompt>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="sample-cdc" title="Option C: Live database replication (CDC)">
+<GuideStepper.Checkpoint id="sample-from-db" title="Option C: Export a sample from a database">
 
-For ongoing replication from Postgres or MySQL, set up CDC first. See the [Performant Dashboards guide](/guides/performant-dashboards) for ClickPipes and Debezium setup. Once replication starts, a sample will be in ClickHouse within minutes — continue to Step 2 once rows are flowing.
+<GuideStepper.Prompt>
+Export a sample from [your database table or query] and save it as a CSV or JSON file
+I can share with you. A few hundred rows is enough — we just need real field names
+and values to model from. Don't load anything into ClickHouse yet.
+</GuideStepper.Prompt>
 
 </GuideStepper.Checkpoint>
 
+<ToggleBlock openText="No data yet? Use the Amazon Customer Reviews dataset" closeText="Hide">
+The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) is 150M+ rows of real product reviews in Parquet on S3 — no credentials required. Use it as your sample and proceed to Step 2.
+</ToggleBlock>
+
 </GuideStepper.Step>
 
-<GuideStepper.Step id="define-model" number={2} title="Define your data model" summary="Create ClickHouse tables based on your actual data">
+<GuideStepper.Step id="define-model" number={2} title="Define your data model" summary="Create ClickHouse tables based on the sample data">
 <GuideStepper.WhatYouNeed>
-  - Sample data in ClickHouse from Step 1
+  - Sample data from Step 1 (file shared with your coding agent)
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
   - Typed `OlapTable` in `models.ts` shaped to your domain
@@ -432,28 +401,18 @@ For ongoing replication from Postgres or MySQL, set up CDC first. See the [Perfo
   - MCP tools automatically scoped to the new table
 </GuideStepper.WhatYouGet>
 
-With sample data in ClickHouse, your coding agent can inspect the actual schema: column types, value ranges, cardinality. This is what makes the model accurate. Point it at the data before asking it to write the model.
-
-<GuideStepper.Checkpoint id="gather-context" title="Give your coding agent context">
-
-Ask your agent to inspect the sample data in ClickHouse before modeling. The MooseDev MCP gives it direct access.
-
-If you also have schema docs, a data dictionary, or API response examples, share those too.
-
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide">
-The schema is documented at [clickhouse.com/docs/getting-started/example-datasets/amazon-reviews](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews). Point your agent at that page alongside the sample rows already in ClickHouse.
-</ToggleBlock>
-
-</GuideStepper.Checkpoint>
+Give your coding agent the sample and any additional context — schema docs, data dictionary, API response examples. The more it understands the data, the better the model.
 
 <GuideStepper.Checkpoint id="create-data-model" title="Create the data model">
 
 Key file: `packages/moosestack-service/app/ingest/models.ts`
 
 <GuideStepper.Prompt>
+I'm sharing [your sample file / the Amazon Reviews schema at
+https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews].
 Replace the TenantKnowledge interface and IngestPipeline in
 packages/moosestack-service/app/ingest/models.ts with a model for [your domain].
-Use the sample data already in ClickHouse to inform column types and cardinalities.
+Use the sample data to inform column types and cardinalities.
 Keep the tenant_id field and SelectRowPolicy for multi-tenant isolation.
 Follow ClickHouse best practices for typing and orderBy — invoke the
 /moosestack-clickhouse-best-practices skill.
@@ -481,17 +440,17 @@ moose ls
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="load-all-data" number={3} title="Load all your data" summary="Fill ClickHouse with the full dataset now that the schema is right">
+<GuideStepper.Step id="load-all-data" number={3} title="Load your data" summary="Load your real data into ClickHouse from your actual source">
 <GuideStepper.WhatYouNeed>
   - Data model defined and table verified from Step 2
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - Local ClickHouse populated with real data, ready for the agent to query
+  - ClickHouse populated with real data, ready for the agent to query
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="load-full-data-dump" title="Option A: Full data dump load">
+<GuideStepper.Checkpoint id="load-full-data-dump" title="Option A: Data dump (CSV, Parquet, SQL export)">
 
-Update your SQL to remove the `LIMIT` and run the full insert:
+Insert from your file directly into ClickHouse:
 
 ```sql
 -- load-data.sql
@@ -512,22 +471,23 @@ In production, use `514 query` to run the same SQL against your hosted ClickHous
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="load-full-workflow" title="Option B: Full workflow run + schedule">
+<GuideStepper.Checkpoint id="load-full-workflow" title="Option B: API — workflow + schedule">
 
-Configure the workflow schedule and run a full backfill:
+Create a MooseStack Workflow that fetches from your API and loads into ClickHouse on a schedule:
 
 <GuideStepper.Prompt>
-Update the MooseStack Workflow in packages/moosestack-service to run on a
-[daily/hourly/your preferred] schedule and backfill all historical data from
-[your source]. Use the MooseStack Workflows docs:
+Create a MooseStack Workflow in packages/moosestack-service that fetches data from
+[your API endpoint] and inserts it into [your table]. Configure it to run on a
+[daily/hourly/your preferred] schedule and backfill all historical data.
+Use the MooseStack Workflows docs:
 https://docs.fiveonefour.com/moosestack/workflows?lang=typescript
 </GuideStepper.Prompt>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="load-full-cdc" title="Option C: CDC — ongoing">
+<GuideStepper.Checkpoint id="load-full-cdc" title="Option C: Live database (CDC)">
 
-If you set up CDC in Step 1, replication is already running. No additional action needed — historical backfill behavior depends on your CDC setup. Check the [Performant Dashboards guide](/guides/performant-dashboards) if you need to trigger a full backfill.
+For ongoing replication from Postgres or MySQL, use CDC. See the [Performant Dashboards — From Existing OLTP DB](/guides/applications/performant-dashboards/existing-oltp-db) guide for ClickPipes and Debezium setup. Once replication is running, data flows into ClickHouse automatically.
 
 </GuideStepper.Checkpoint>
 
