@@ -8,11 +8,7 @@ import { Callout, BulletPointsCard, ToggleBlock, CommunityCallout } from "@/comp
 
 # Tutorial: Production-Ready Analytics Agent
 
-The [overview](/guides/production-ready-analytics-agent/overview) covers the runtime harness concept and when this approach is worth building. This tutorial walks you through building it.
-
-The strategy is: start locally, move fast, then ship with confidence. The DevHarness (514 + MooseStack) gives your coding agent everything it needs to work safely against a live local stack — live ClickHouse access via MCP, MooseStack-specific skills, SQL intelligence via the Language Server. You iterate locally until things are working, then deploy to 514 hosting and Vercel when you're ready. Preview environments per PR mean you can validate schema changes before they hit production.
-
-This guide works with any coding agent. **Claude Code** is the primary target, but **Cursor**, **Kiro**, **Codex**, and any agent that can read a guide and run shell commands will work. Agents that support MCP get the most out of the DevHarness — live schema introspection, query execution, and log access without leaving the editor.
+Read the [Overview](/guides/production-ready-analytics-agent/overview) and [Dev Approach](/guides/production-ready-analytics-agent/dev-approach) pages before starting. The overview explains what the Analytics Agent Harness is and when this approach is worth building. Dev Approach explains how the Coding Agent Harness works and how to use this tutorial with your coding agent.
 
 <BulletPointsCard
   title="By the end of this guide you'll have"
@@ -58,7 +54,7 @@ This guide works with any coding agent. **Claude Code** is the primary target, b
 
 You'll work through:
 
-1. [Set Up the Harness](#set-up-the-harness) — install CLIs, scaffold the project, start the dev environment with demo data
+1. [Set Up the Coding Agent Harness](#set-up-the-coding-agent-harness) — install CLIs, scaffold the project, start the dev environment with demo data
 2. [Configure the Template](#configure-the-template) — AI provider (for the analytics agents), Langfuse, guardrails; verify the template is wired correctly
 3. [Get Your Data In](#get-your-data-in) — load a sample, define your data model, load the full dataset, verify chat with real data
 4. [Customize Your Agent](#customize-your-agent) — system prompt, multi-agent pattern, domain specialists
@@ -66,17 +62,17 @@ You'll work through:
 6. [Deploy](#deploy) — 514 hosting and Vercel
 
 <CommunityCallout title="Need live support?">
-Join the MooseStack Slack — the team behind the harness and this template is there.
+Join the MooseStack Slack — the team behind the Coding Agent Harness and this template is there.
 [Join the community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
 </CommunityCallout>
 
 ---
 
-## Set Up the Harness
+## Set Up the Coding Agent Harness
 
-The harness is what makes this guide agent-executable. It includes the MooseStack Framework, CLI, Dev Server, MCP Server + LSP, and the `typescript-agent` template with the production plumbing already wired. Section 1 gets it running. Once it's up, your coding agent has live access to ClickHouse, MooseStack-specific skills, and a real local stack to work against.
+Section 1 gets the Coding Agent Harness running locally. Once it's up, your coding agent has live access to ClickHouse, MooseStack-specific skills, and a real local stack to work against for the rest of the tutorial.
 
-### Install the harness
+### Install the Coding Agent Harness
 
 Pick the option that fits your setup. Both install the `514` and `moose` CLIs — the only difference is how you get them.
 
@@ -84,7 +80,7 @@ Pick the option that fits your setup. Both install the `514` and `moose` CLIs �
 
 **Option A — Editor extension** (recommended for VS Code, Cursor, and Kiro)
 
-Install the [514 Harness extension](https://marketplace.visualstudio.com/items?itemName=514-labs.fiveonefour) from the VS Code Marketplace. After install, click **Install Harness** on the splash screen. This provisions the `514` and `moose` CLIs in the background and configures your editor.
+Install the [514 Harness extension](https://marketplace.visualstudio.com/items?itemName=514-labs.fiveonefour) from the VS Code Marketplace. After install, click **Install Harness** on the splash screen. This provisions the `514` and `moose` CLIs and configures the Coding Agent Harness in your editor.
 
 Supported editors: VS Code, Cursor, Kiro.
 
@@ -111,9 +107,9 @@ The installer keeps both CLIs up to date. If you already have `moose` installed,
 
 <GuideStepper id="agent-harness-setup" persist>
 
-<GuideStepper.Step id="create-project" number={1} title="Create a project for the harness" summary="Scaffold from the typescript-agent template with skills, MCP configs, and LSP configured for your coding agents">
+<GuideStepper.Step id="create-project" number={1} title="Create a project for the Coding Agent Harness" summary="Scaffold from the typescript-agent template with skills, MCP configs, and LSP configured for your coding agents">
 <GuideStepper.WhatYouNeed>
-  - Harness CLIs installed (above)
+  - Coding Agent Harness CLIs installed (above)
   - Terminal open to where you want the project
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -121,7 +117,7 @@ The installer keeps both CLIs up to date. If you already have `moose` installed,
   - Skills, MCP configs, and LSP configured for your coding agent(s)
 </GuideStepper.WhatYouGet>
 
-The `typescript-agent` template is a complete reference implementation with the runtime harness already wired: JWT auth, multi-tenant row-level security, multi-agent orchestration, observability hooks, a semantic layer, and guardrails. You're customizing it for your domain, not building from scratch.
+The `typescript-agent` template is a complete reference implementation with the Analytics Agent Harness already wired: JWT auth, multi-tenant row-level security, multi-agent orchestration, observability hooks, a semantic layer, and guardrails. You're customizing it for your domain, not building from scratch.
 
 Choose how to run it:
 
@@ -161,7 +157,7 @@ Add `--clickhouse-url <url>` to connect to an existing ClickHouse instance.
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="start-harness" number={2} title="Start the harness" summary="Install deps, prepare env files, start services, load demo data">
+<GuideStepper.Step id="start-harness" number={2} title="Start the Coding Agent Harness" summary="Install deps, prepare env files, start services, load demo data">
 <GuideStepper.WhatYouNeed>
   - Docker Desktop (or Finch) running
   - Project from Step 1
@@ -227,7 +223,7 @@ Open `http://localhost:3000`, sign in as `acme` or `globex`, and confirm the das
 
 </GuideStepper>
 
-**Section 1 complete.** You have a running local stack: ClickHouse, the MooseStack service, the Next.js UI, and demo data. Your coding agent is connected to the live environment via MooseDev MCP. Next: wire in your AI provider so the analytics agents inside the app can respond.
+**Section 1 complete.** The Coding Agent Harness is running locally: ClickHouse, the MooseStack service, the Next.js UI, and demo data. Your coding agent is connected to the live environment via MooseDev MCP. Next: wire in your AI provider so the analytics agents inside the Analytics Agent Harness can respond.
 
 ---
 
@@ -243,7 +239,7 @@ The AI provider you configure here is for the **analytics agents running inside 
 
 <GuideStepper.Step id="configure" number={1} title="Configure AI provider, observability, and guardrails" summary="Connect your AI provider, enable Langfuse tracing, and confirm the template is wired up correctly">
 <GuideStepper.WhatYouNeed>
-  - Running harness from Section 1
+  - Coding Agent Harness running from Section 1
   - API credentials for your chosen AI provider
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -325,7 +321,7 @@ All three follow the same sequence in the steps below: sample → model → full
 <GuideStepper.Step id="load-sample" number={1} title="Load a sample" summary="Get a small slice of your data into ClickHouse so your coding agent can model it accurately">
 <GuideStepper.WhatYouNeed>
   - Access to your data source
-  - Harness running from Section 1
+  - Coding Agent Harness running from Section 1
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
   - A representative sample in local ClickHouse

@@ -1,0 +1,94 @@
+---
+title: Dev Approach
+description: How the Coding Agent Harness enables you to build and ship a production analytics agent fast
+languages: ["typescript"]
+---
+
+import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
+
+# Dev Approach
+
+## The two harnesses
+
+Building a production analytics agent involves two distinct harnesses — one you ship, one you build with.
+
+```
+                    ┌──────────────────────────────────────┐
+                    │      Analytics Agent Harness         │
+Source Data ───────►│  ClickHouse · APIs · MCPs            │───► Analytics Agent ───► Next.js GUI
+                    │  Security · Observability            │
+                    │  Semantic Layer · Guardrails         │
+                    └──────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                       Coding Agent Harness  (514 / MooseStack)                   │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                          ▲
+                                   Coding Agent
+```
+
+**Analytics Agent Harness** — what you're shipping. Source data flows in, gets stored in ClickHouse, and is exposed to the analytics agent through APIs and MCP tools. The operational layer enforces security, captures traces, keeps metrics consistent, and applies guardrails.
+
+**Coding Agent Harness** — 514 and MooseStack. The build-time harness your coding agent uses to build, configure, and validate the entire Analytics Agent Harness. The coding agent feeds into it; it builds the architecture above.
+
+## What the Coding Agent Harness includes
+
+The Coding Agent Harness is what makes the tutorial agent-executable. It gives your coding agent the context and tools it needs to work safely and accurately against the live local stack:
+
+- **MooseStack Framework** — TypeScript interfaces for ClickHouse and real-time analytical infrastructure, designed to be readable and writable by coding agents
+- **MooseStack CLI** — agent-friendly CLI for initializing projects, running queries, and inspecting infrastructure
+- **Dev Server** — runs the full Analytics Agent Harness locally, hot-swaps code changes, gives the coding agent a live environment to work against
+- **MCP Server + LSP** — live ClickHouse introspection, schema access, query execution, and SQL validation without leaving the editor
+- **Agent Skills** — ClickHouse and data engineering best practices packaged as skills your coding agent can invoke
+- **`typescript-agent` template** — the Analytics Agent Harness pre-wired: JWT auth, row-level security, multi-agent orchestration, observability, semantic layer, and guardrails
+
+Setting up the Coding Agent Harness in Section 1 of the tutorial is what makes every subsequent section agent-executable.
+
+## The strategy: start locally, ship with confidence
+
+The Coding Agent Harness enables a specific development loop:
+
+1. **Start locally** — the dev server runs the full Analytics Agent Harness on your machine. Your coding agent has live access to ClickHouse, real schema introspection, and a running stack to validate against.
+2. **Iterate fast** — hot-reloading, MCP-accessible logs, and the SQL Language Server mean your coding agent can make a change, see the result, and catch errors without manual inspection.
+3. **Ship with confidence** — deploy to 514 hosting when you're ready. Preview environments per PR provision an isolated ClickHouse database per branch, so schema changes are validated before they hit production.
+
+You're not guessing at whether something works. The Coding Agent Harness gives the coding agent a real environment to work against at every stage.
+
+## Supported coding agents
+
+The Coding Agent Harness works with any coding agent. MCP support unlocks the most capability — live schema introspection, query execution, and log access without leaving the editor.
+
+| Agent | MCP support | Notes |
+|---|---|---|
+| **Claude Code** | ✓ | Primary target — full MCP integration with the Coding Agent Harness |
+| **Cursor** | ✓ | Full MCP integration |
+| **Kiro** | ✓ | Full MCP integration |
+| **Codex** | — | Works via terminal; no native MCP support |
+| **Any agent** | varies | Any agent that can read a guide and run shell commands can follow the tutorial |
+
+## How to use the tutorial
+
+The [tutorial](/guides/production-ready-analytics-agent/tutorial) is structured so you can use it in different ways depending on how much you want to involve your coding agent.
+
+**Option A — Agent-first (recommended)**
+
+Complete Section 1 of the tutorial yourself to set up the Coding Agent Harness. Once it's running, point your coding agent at the tutorial and let it execute the remaining sections. The Coding Agent Harness gives it everything it needs: live ClickHouse access, skills, and the project context to make accurate changes.
+
+```text
+Read the tutorial at /guides/production-ready-analytics-agent/tutorial
+and execute sections 2 through 6. The Coding Agent Harness is already
+running — use it to validate each step as you go.
+```
+
+**Option B — Step-by-step**
+
+Go through the tutorial manually, using your coding agent for the specific steps marked with agent prompts. All `GuideStepper.Prompt` blocks are ready to paste into your agent.
+
+**Option C — Hybrid**
+
+Run the setup sections (1–2) yourself. Hand off domain-specific work — data modeling, prompt tuning, adding specialists — to your coding agent. Pick it back up for the deployment section.
+
+<CommunityCallout title="Need live support?">
+Join the MooseStack Slack — the team behind the Coding Agent Harness and this template is there.
+[Join the community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+</CommunityCallout>

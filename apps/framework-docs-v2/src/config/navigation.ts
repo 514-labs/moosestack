@@ -1737,6 +1737,12 @@ const guidesNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "guides/production-ready-analytics-agent/dev-approach",
+        title: "Dev Approach",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
         slug: "guides/production-ready-analytics-agent/tutorial",
         title: "Tutorial",
         languages: ["typescript"],
