@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 
 export interface FeatureCardProps {
   href?: string;
-  Icon: React.ElementType;
+  Icon?: React.ElementType;
   title: string;
   description: string;
   features?: string[];

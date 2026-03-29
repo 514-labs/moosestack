@@ -43,27 +43,23 @@ That changes what's possible. Analytics products can let users explore data free
   ]}
 />
 
-## The analytics agent harness
+## Getting to production
 
-An analytics agent prototype is straightforward to build. Getting it to production is where teams stall — because the agent alone isn't enough. You need an analytics agent harness around it.
-
-The analytics agent harness is everything that makes your analytics agent production-ready: the high-performance analytical infrastructure (ClickHouse), the APIs and MCP tools that expose data to the agent, and the operational layer that enforces security, captures traces, keeps metrics consistent, and applies guardrails. ClickHouse isn't separate from the harness — it's the foundation of it. What we're building in this guide is the analytics agent harness.
-
-Most analytics agent prototypes work in demos and break under real conditions. The problems aren't hard to name — they're just easy to defer until they become incidents.
+An analytics agent prototype is straightforward to build. Getting it to production is where teams stall. The problems aren't hard to name — they're just easy to defer until they become incidents.
 
 <BulletPointsCard
-  title="What the analytics agent harness handles"
+  title="Common pitfalls"
   bulletStyle="x"
   bullets={[
     {
       title: "Performance",
       description:
-        "Analytical queries at scale require a purpose-built OLAP engine. An agent hitting a transactional database works against small datasets and fails under real data volume and concurrency. ClickHouse handles analytical workloads at the scale analytics agents generate.",
+        "An agent hitting a transactional database works in demos and fails under real data volume and concurrency. Analytical queries at scale need a purpose-built OLAP engine.",
     },
     {
       title: "Security",
       description:
-        "Tenant isolation enforced at the application layer can be bypassed — by a bug, a prompt injection, or a misconfiguration. It has to be enforced at the data layer, where the database itself rejects cross-tenant queries regardless of what the application sends.",
+        "Tenant isolation enforced at the application layer can be bypassed — by a bug, a prompt injection, or a misconfiguration. Application-layer checks aren't sufficient.",
     },
     {
       title: "Observability",
@@ -73,17 +69,17 @@ Most analytics agent prototypes work in demos and break under real conditions. T
     {
       title: "Semantic consistency",
       description:
-        "The same metric defined in five places will drift. Chat, APIs, dashboards, and MCP tools each develop their own SQL definition of 'revenue' or 'active users', and they start returning different numbers. A semantic layer gives every surface a single source of truth.",
+        "The same metric defined in five places will drift. Chat, APIs, dashboards, and MCP tools each develop their own SQL definition of 'revenue' or 'active users', and they start returning different numbers.",
     },
     {
       title: "Guardrails",
       description:
-        "Content policy enforcement needs to be deliberate and verifiable. A guardrail bolted on after a production incident is harder to audit and easier to miss. Wire it in before you ship.",
+        "Content policy enforcement bolted on after a production incident is harder to audit and easier to miss.",
     },
   ]}
 />
 
-## Architecture
+## The Analytics Agent Harness
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -98,12 +94,40 @@ Most analytics agent prototypes work in demos and break under real conditions. T
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Source data flows into the Analytics Agent Harness, which stores and serves it through ClickHouse, exposes it to the analytics agent through APIs and MCP tools, and enforces the operational layer: tenant security, observability, semantic consistency, and guardrails. The analytics agent queries that surface and streams results to the Next.js UI.
+The Analytics Agent Harness is the layer that makes the analytics agent production-ready. Source data flows in, gets stored in ClickHouse, and is exposed to the analytics agent through APIs and MCP tools. The operational layer enforces tenant security, captures traces, keeps metrics consistent, and applies guardrails. The analytics agent queries that surface and streams results to the Next.js UI.
 
-How you build and configure this — the Coding Agent Harness — is covered on the [Dev Approach](/guides/production-ready-analytics-agent/dev-approach) page.
+<BulletPointsCard
+  title="How the Analytics Agent Harness addresses each challenge"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Performance",
+      description:
+        "ClickHouse is a purpose-built OLAP engine. Queries that would time out against a transactional database return in milliseconds. The Analytics Agent Harness is built on ClickHouse — not bolted onto an existing database.",
+    },
+    {
+      title: "Security",
+      description:
+        "Tenant isolation is enforced at the database layer. The database itself rejects cross-tenant queries regardless of what the application sends — a bug or misconfiguration in application code can't bypass it.",
+    },
+    {
+      title: "Observability",
+      description:
+        "Full traces out of the box: every SQL query the agent generated, what it cost, where latency went. Tune prompts and identify slow queries from real trace data.",
+    },
+    {
+      title: "Semantic consistency",
+      description:
+        "A semantic layer gives every surface a single definition of each metric. Chat, APIs, dashboards, and MCP tools all share one source of truth. Metrics don't drift.",
+    },
+    {
+      title: "Guardrails",
+      description:
+        "Content policy enforcement wired in before you ship — deliberate, auditable, and testable. Not patched in after an incident.",
+    },
+  ]}
+/>
 
 ## When this approach is worth building
 
-This is the right foundation when: the product has meaningful data gravity, users ask questions that can't be pre-built as dashboards, and the same data surface needs to power chat, APIs, and dashboards consistently. The overhead is real — you're setting up a full OLAP stack, multi-agent runtime, auth, and observability. That overhead pays off when the data complexity warrants it.
-
-It's overkill for a thin UI over an existing API. If you need LLM-assisted responses but don't need ClickHouse, tenant isolation, or a semantic layer, start with [Chat in Your App](/guides/chat-in-your-app) — the same stack without the multi-tenant production requirements.
+This is the right foundation when: the product has meaningful data gravity, users ask questions that can't be pre-built as dashboards, and the same data surface needs to power chat, APIs, and dashboards consistently. The overhead is real — you're setting up a full OLAP stack, multi-agent runtime, auth, and observability. That overhead pays off when the data complexity or the security posture warrants it.

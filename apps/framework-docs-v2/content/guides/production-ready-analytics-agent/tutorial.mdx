@@ -8,30 +8,39 @@ import { Callout, BulletPointsCard, ToggleBlock, CommunityCallout } from "@/comp
 
 # Tutorial: Production-Ready Analytics Agent
 
+### How to use this tutorial
 Read the [Overview](/guides/production-ready-analytics-agent/overview) and [Dev Approach](/guides/production-ready-analytics-agent/dev-approach) pages before starting. The Overview explains what the Analytics Agent Harness is and when this approach is worth building. Dev Approach explains the Coding Agent Harness and how to set your coding agent up for success.
 
-## How to use this tutorial
+<FeatureGrid columns={3}>
+  <FeatureCard
+    title="Option A — Agent-first"
+    description="Point your coding agent at this tutorial and let it execute every section from start to finish. The tutorial gives it everything it needs."
+  />
+  <FeatureCard
+    title="Option B — Hybrid"
+    description="Go through the tutorial manually, using your coding agent for the steps marked with agent prompts. All prompt blocks are ready to paste into your agent."
+  />
+  <FeatureCard
+    title="Option C — Fully manual"
+    description="Follow the tutorial yourself without using the agent prompts. Every step can be completed manually."
+  />
+</FeatureGrid>
 
-The tutorial is structured so you can use it in different ways depending on how much you want to involve your coding agent.
-
-**Option A — Agent-first (recommended)**
-
-Complete Section 1 yourself to set up the Coding Agent Harness. Once it's running, point your coding agent at the tutorial and let it execute the remaining sections. The Coding Agent Harness gives it everything it needs: live ClickHouse access, skills, and the project context to make accurate changes.
+If you're going agent-first, paste this into your coding agent to get started:
 
 ```text
-Read the tutorial at /guides/production-ready-analytics-agent/tutorial
-and execute sections 2 through 6. The Coding Agent Harness is already
-running — use it to validate each step as you go.
+I want to build a production ready analytics agent. Read the tutorial at
+https://docs.fiveonefour.com/guides/production-ready-analytics-agent/tutorial
+for context, and prepare to execute all sections. Let's start by setting up the
+Coding Agent Harness locally, so you have an environment to build it. Then let's
+create a plan together for everything you need to build the agent. Let me know
+what context about my use case, my goals, my data, my desired outcome, etc that
+you need from me.
 ```
 
-**Option B — Step-by-step**
+---
 
-Go through the tutorial manually, using your coding agent for the specific steps marked with agent prompts. All `GuideStepper.Prompt` blocks are ready to paste into your agent.
-
-**Option C — Hybrid**
-
-Run the setup sections (1–2) yourself. Hand off domain-specific work — data modeling, prompt tuning, adding specialists — to your coding agent. Pick it back up for the deployment section.
-
+### What this tutorial covers
 <BulletPointsCard
   title="By the end of this guide you'll have"
   bulletStyle="check"
