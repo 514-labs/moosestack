@@ -72,31 +72,34 @@ Join the MooseStack Slack — the team behind the Coding Agent Harness and this 
 
 Section 1 gets the Coding Agent Harness running locally. Once it's up, your coding agent has live access to ClickHouse, MooseStack-specific skills, and a real local stack to work against for the rest of the tutorial.
 
-### Install the Coding Agent Harness
+<GuideStepper id="agent-harness-setup" persist>
 
-Pick the option that fits your setup. Both install the `514` and `moose` CLIs — the only difference is how you get them.
+<GuideStepper.Step id="install" number={1} title="Install the Coding Agent Harness" summary="Install the 514 and moose CLIs — via editor extension or bash">
+<GuideStepper.WhatYouNeed>
+  - VS Code, Cursor, Kiro, or any terminal
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+  - `514` and `moose` CLIs installed
+  - Coding Agent Harness extension active in your editor (Option A only)
+</GuideStepper.WhatYouGet>
 
----
-
-**Option A — Editor extension** (recommended for VS Code, Cursor, and Kiro)
+<GuideStepper.Checkpoint id="install-option-a" title="Option A — Editor extension (recommended for VS Code, Cursor, Kiro)">
 
 Install the [514 Harness extension](https://marketplace.visualstudio.com/items?itemName=514-labs.fiveonefour) from the VS Code Marketplace. After install, click **Install Harness** on the splash screen. This provisions the `514` and `moose` CLIs and configures the Coding Agent Harness in your editor.
 
-Supported editors: VS Code, Cursor, Kiro.
+</GuideStepper.Checkpoint>
 
----
-
-**Option B — Bash** (any terminal, including Claude Code)
+<GuideStepper.Checkpoint id="install-option-b" title="Option B — Bash (any terminal, including Claude Code)">
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514,moose
 ```
 
-Works in any terminal. Use this path if you're running Claude Code or another terminal-based agent, or if you prefer not to install the editor extension.
+</GuideStepper.Checkpoint>
 
----
+<GuideStepper.Checkpoint id="install-verify" title="Verify">
 
-**Verify** — open a new terminal after install:
+Open a new terminal after install:
 
 ```bash
 moose --version
@@ -105,11 +108,13 @@ moose --version
 
 The installer keeps both CLIs up to date. If you already have `moose` installed, it will be updated.
 
-<GuideStepper id="agent-harness-setup" persist>
+</GuideStepper.Checkpoint>
 
-<GuideStepper.Step id="create-project" number={1} title="Create a project for the Coding Agent Harness" summary="Scaffold from the typescript-agent template with skills, MCP configs, and LSP configured for your coding agents">
+</GuideStepper.Step>
+
+<GuideStepper.Step id="create-project" number={2} title="Create a project for the Coding Agent Harness" summary="Scaffold from the typescript-agent template with skills, MCP configs, and LSP configured for your coding agents">
 <GuideStepper.WhatYouNeed>
-  - Coding Agent Harness CLIs installed (above)
+  - Coding Agent Harness CLIs installed from Step 1
   - Terminal open to where you want the project
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -119,9 +124,7 @@ The installer keeps both CLIs up to date. If you already have `moose` installed,
 
 The `typescript-agent` template is a complete reference implementation with the Analytics Agent Harness already wired: JWT auth, multi-tenant row-level security, multi-agent orchestration, observability hooks, a semantic layer, and guardrails. You're customizing it for your domain, not building from scratch.
 
-Choose how to run it:
-
-**Interactive mode** — for humans running it manually:
+<GuideStepper.Checkpoint id="init-option-a" title="Option A — Interactive mode (for humans running it manually)">
 
 ```bash
 514 harness init
@@ -138,7 +141,9 @@ The wizard asks:
 | Template? | Select **typescript-agent** |
 | Remote ClickHouse cluster? | Optional — skip to use the local Docker ClickHouse |
 
-**Non-interactive mode** — for agents or scripted environments:
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="init-option-b" title="Option B — Non-interactive mode (for agents or scripted environments)">
 
 <Callout type="info">
 Flag names below are the expected interface — confirm with `514 harness init --help` if they've changed.
@@ -155,9 +160,11 @@ Flag names below are the expected interface — confirm with `514 harness init -
 
 Add `--clickhouse-url <url>` to connect to an existing ClickHouse instance.
 
+</GuideStepper.Checkpoint>
+
 </GuideStepper.Step>
 
-<GuideStepper.Step id="start-harness" number={2} title="Start the Coding Agent Harness" summary="Install deps, prepare env files, start services, load demo data">
+<GuideStepper.Step id="start-harness" number={3} title="Start the Coding Agent Harness" summary="Install deps, prepare env files, start services, load demo data">
 <GuideStepper.WhatYouNeed>
   - Docker Desktop (or Finch) running
   - Project from Step 1
