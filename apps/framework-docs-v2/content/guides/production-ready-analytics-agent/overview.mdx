@@ -86,12 +86,16 @@ Most analytics agent prototypes work in demos and break under real conditions. T
 ## Architecture
 
 ```
-                    ┌──────────────────────────────────────┐
-                    │      Analytics Agent Harness         │
-Source Data ───────►│  ClickHouse · APIs · MCPs            │───► Analytics Agent ───► Next.js GUI
-                    │  Security · Observability            │
-                    │  Semantic Layer · Guardrails         │
-                    └──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 Your Analytics Agent App                                 │
+│                                                                                          │
+│  ┌─────────────┐   ┌─────────────────────────────────┐   ┌─────────────┐   ┌──────────┐  │
+│  │ Source Data │──►│     Analytics Agent Harness     │──►│  Analytics  │──►│ Next.js  │  │
+│  └─────────────┘   │  ClickHouse · APIs · MCPs       │   │    Agent    │   │   GUI    │  │
+│                    │  Security · Observability       │   └─────────────┘   └──────────┘  │
+│                    │  Semantic Layer · Guardrails    │                                   │
+│                    └─────────────────────────────────┘                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Source data flows into the Analytics Agent Harness, which stores and serves it through ClickHouse, exposes it to the analytics agent through APIs and MCP tools, and enforces the operational layer: tenant security, observability, semantic consistency, and guardrails. The analytics agent queries that surface and streams results to the Next.js UI.
