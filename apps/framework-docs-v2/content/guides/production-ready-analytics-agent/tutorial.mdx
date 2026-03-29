@@ -8,22 +8,11 @@ import { Callout, BulletPointsCard, ToggleBlock, CommunityCallout } from "@/comp
 
 # Tutorial: Production-Ready Analytics Agent
 
-The harness is the full development environment for building production analytics agents with MooseStack. It includes:
+The [overview](/guides/production-ready-analytics-agent/overview) covers the runtime harness concept and when this approach is worth building. This tutorial walks you through building it.
 
-- **MooseStack Framework** — TypeScript interfaces for ClickHouse and real-time analytical infrastructure, designed to be readable and writable by coding agents
-- **MooseStack CLI** — agent-friendly CLI for initializing projects, running queries, and inspecting infrastructure
-- **Dev Server** — runs the full stack locally, hot-swaps code changes, gives your agent a live environment to work against
-- **MCP Server + LSP** — agent-friendly interfaces for troubleshooting: logs, errors, schema introspection, query results
-- **Agent Skills** — ClickHouse and data engineering best practices packaged as skills your coding agent can invoke
-- **Template** — the `typescript-agent` skeleton reference implementation with the production plumbing already wired: auth, tenant isolation, multi-agent orchestration, observability, semantic layer, guardrails
+The strategy is: start locally, move fast, then ship with confidence. The DevHarness (514 + MooseStack) gives your coding agent everything it needs to work safely against a live local stack — live ClickHouse access via MCP, MooseStack-specific skills, SQL intelligence via the Language Server. You iterate locally until things are working, then deploy to 514 hosting and Vercel when you're ready. Preview environments per PR mean you can validate schema changes before they hit production.
 
-Section 1 sets up the harness. Once it's running, every subsequent section can be executed by your coding agent.
-
-<Callout type="info" title="Three ways to use this guide">
-1. **Manually** — read each step and run the commands yourself
-2. **With your coding agent** — point Claude Code, Cursor, or Kiro at this guide and let it execute each section; the harness gives it the context and tools it needs
-3. **Hybrid** — run setup steps yourself, hand off domain-specific work (data modeling, prompt tuning, adding specialists) to your coding agent
-</Callout>
+This guide works with any coding agent. **Claude Code** is the primary target, but **Cursor**, **Kiro**, **Codex**, and any agent that can read a guide and run shell commands will work. Agents that support MCP get the most out of the DevHarness — live schema introspection, query execution, and log access without leaving the editor.
 
 <BulletPointsCard
   title="By the end of this guide you'll have"
@@ -69,9 +58,9 @@ Section 1 sets up the harness. Once it's running, every subsequent section can b
 
 You'll work through:
 
-1. [Set Up the Harness](#set-up-the-harness) — install CLIs, scaffold the project, start the dev environment
-2. [Configure the Template](#configure-the-template) — AI provider, Langfuse, guardrails; verify chat works
-3. [Get Your Data In](#get-your-data-in) — define your data model, load data, validate
+1. [Set Up the Harness](#set-up-the-harness) — install CLIs, scaffold the project, start the dev environment with demo data
+2. [Configure the Template](#configure-the-template) — AI provider (for the analytics agents), Langfuse, guardrails; verify the template is wired correctly
+3. [Get Your Data In](#get-your-data-in) — load a sample, define your data model, load the full dataset, verify chat with real data
 4. [Customize Your Agent](#customize-your-agent) — system prompt, multi-agent pattern, domain specialists
 5. [Harden for Production](#harden-for-production) — observability, semantic layer, RLS verification, guardrails
 6. [Deploy](#deploy) — 514 hosting and Vercel
@@ -85,38 +74,33 @@ Join the MooseStack Slack — the team behind the harness and this template is t
 
 ## Set Up the Harness
 
-Start here — this section gets the harness running so your coding agent has everything it needs for the rest of the guide.
+The harness is what makes this guide agent-executable. It includes the MooseStack Framework, CLI, Dev Server, MCP Server + LSP, and the `typescript-agent` template with the production plumbing already wired. Section 1 gets it running. Once it's up, your coding agent has live access to ClickHouse, MooseStack-specific skills, and a real local stack to work against.
 
-<GuideStepper id="agent-harness-setup" persist>
+### Install the harness
 
-<GuideStepper.Step id="install" number={1} title="Install the Harness" summary="Install the 514 and moose CLIs and the editor extension">
-<GuideStepper.WhatYouNeed>
-  - VS Code, Cursor, Kiro, or any terminal
-</GuideStepper.WhatYouNeed>
-<GuideStepper.WhatYouGet>
-  - `514` and `moose` CLIs installed
-  - Harness extension active in your editor (if using VS Code, Cursor, or Kiro)
-</GuideStepper.WhatYouGet>
+Pick the option that fits your setup. Both install the `514` and `moose` CLIs — the only difference is how you get them.
 
-<GuideStepper.Checkpoint id="install-editor" title="Option A — Install via editor extension (recommended for VS Code, Cursor, Kiro)">
+---
 
-Install the [514 Harness extension](https://marketplace.visualstudio.com/items?itemName=514-labs.fiveonefour) from the VS Code Marketplace.
+**Option A — Editor extension** (recommended for VS Code, Cursor, and Kiro)
 
-After install, click **Install Harness** on the splash screen. This provisions the `514` and `moose` CLIs in the background.
+Install the [514 Harness extension](https://marketplace.visualstudio.com/items?itemName=514-labs.fiveonefour) from the VS Code Marketplace. After install, click **Install Harness** on the splash screen. This provisions the `514` and `moose` CLIs in the background and configures your editor.
 
-</GuideStepper.Checkpoint>
+Supported editors: VS Code, Cursor, Kiro.
 
-<GuideStepper.Checkpoint id="install-bash" title="Option B — Install via bash (any terminal, including Claude Code)">
+---
+
+**Option B — Bash** (any terminal, including Claude Code)
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514,moose
 ```
 
-</GuideStepper.Checkpoint>
+Works in any terminal. Use this path if you're running Claude Code or another terminal-based agent, or if you prefer not to install the editor extension.
 
-<GuideStepper.Checkpoint id="install-verify" title="Verify">
+---
 
-Open a new terminal after install:
+**Verify** — open a new terminal after install:
 
 ```bash
 moose --version
@@ -125,21 +109,23 @@ moose --version
 
 The installer keeps both CLIs up to date. If you already have `moose` installed, it will be updated.
 
-</GuideStepper.Checkpoint>
+<GuideStepper id="agent-harness-setup" persist>
 
-</GuideStepper.Step>
-
-<GuideStepper.Step id="create-project" number={2} title="Create the Project" summary="Scaffold from typescript-agent with skills, MCP configs, and LSP configured">
+<GuideStepper.Step id="create-project" number={1} title="Create a project for the harness" summary="Scaffold from the typescript-agent template with skills, MCP configs, and LSP configured for your coding agents">
 <GuideStepper.WhatYouNeed>
-  - Harness CLIs from Step 1
+  - Harness CLIs installed (above)
   - Terminal open to where you want the project
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - Project scaffolded from `typescript-agent`
+  - Project scaffolded from the [`typescript-agent` template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent)
   - Skills, MCP configs, and LSP configured for your coding agent(s)
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="init-wizard" title="Run the init wizard">
+The `typescript-agent` template is a complete reference implementation with the runtime harness already wired: JWT auth, multi-tenant row-level security, multi-agent orchestration, observability hooks, a semantic layer, and guardrails. You're customizing it for your domain, not building from scratch.
+
+Choose how to run it:
+
+**Interactive mode** — for humans running it manually:
 
 ```bash
 514 harness init
@@ -156,9 +142,7 @@ The wizard asks:
 | Template? | Select **typescript-agent** |
 | Remote ClickHouse cluster? | Optional — skip to use the local Docker ClickHouse |
 
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="init-noninteractive" title="Non-interactive mode (for coding agents or scripted environments)">
+**Non-interactive mode** — for agents or scripted environments:
 
 <Callout type="info">
 Flag names below are the expected interface — confirm with `514 harness init --help` if they've changed.
@@ -175,19 +159,18 @@ Flag names below are the expected interface — confirm with `514 harness init -
 
 Add `--clickhouse-url <url>` to connect to an existing ClickHouse instance.
 
-</GuideStepper.Checkpoint>
-
 </GuideStepper.Step>
 
-<GuideStepper.Step id="start-harness" number={3} title="Start the Harness" summary="Install deps, prepare env files, start services, seed demo data">
+<GuideStepper.Step id="start-harness" number={2} title="Start the harness" summary="Install deps, prepare env files, start services, load demo data">
 <GuideStepper.WhatYouNeed>
   - Docker Desktop (or Finch) running
-  - Project from Step 2
+  - Project from Step 1
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - MooseStack + ClickHouse at `http://localhost:4000`
-  - Next.js at `http://localhost:3000`
+  - MooseStack + ClickHouse running at `http://localhost:4000`
+  - Next.js running at `http://localhost:3000`
   - Coding agent connected to live ClickHouse via MooseDev MCP
+  - Demo data loaded to verify your setup
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="install-deps" title="Install dependencies and prepare environment files">
@@ -216,7 +199,7 @@ Set `MOOSE_DEV__CONTAINER_CLI_PATH=finch` or add `[dev] container_cli_path = "fi
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="seed-data" title="Seed demo data">
+<GuideStepper.Checkpoint id="seed-data" title="Load demo data">
 
 In a second terminal:
 
@@ -224,7 +207,7 @@ In a second terminal:
 pnpm seed
 ```
 
-Inserts tenant-scoped records for demo tenants `acme` and `globex`.
+This inserts a small set of **fake fleet management records** for demo tenants `acme` and `globex` — brake alert counts, late-return tickets, battery incidents, and hub utilization figures. It's placeholder data to confirm your setup is working end-to-end. You'll replace it with your own domain data in Section 3.
 
 </GuideStepper.Checkpoint>
 
@@ -234,11 +217,9 @@ Restart your coding agent so it picks up the MooseDev MCP server now that it's r
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="verify-app" title="Verify the app">
+<GuideStepper.Checkpoint id="verify-app" title="Verify the app is running">
 
 Open `http://localhost:3000`, sign in as `acme` or `globex`, and confirm the dashboard and chat panel load.
-
-Chat will be inactive until you configure an AI provider in Section 2.
 
 </GuideStepper.Checkpoint>
 
@@ -246,19 +227,27 @@ Chat will be inactive until you configure an AI provider in Section 2.
 
 </GuideStepper>
 
+**Section 1 complete.** You have a running local stack: ClickHouse, the MooseStack service, the Next.js UI, and demo data. Your coding agent is connected to the live environment via MooseDev MCP. Next: wire in your AI provider so the analytics agents inside the app can respond.
+
 ---
 
 ## Configure the Template
 
+The template ships configured for local development with mock auth and a passthrough observability collector. This section connects the real services: an AI provider for the analytics agents, Langfuse for traces, and optionally Bedrock Guardrails.
+
+<Callout type="info" title="AI provider vs. coding agent">
+The AI provider you configure here is for the **analytics agents running inside the application** — the supervisor, specialist, and narrator that respond to user queries. This is separate from the coding agent (Claude Code, Cursor, etc.) you're using to build the app.
+</Callout>
+
 <GuideStepper id="agent-configure" persist>
 
-<GuideStepper.Step id="configure" number={1} title="Configure AI Provider, Observability, and Guardrails" summary="Connect your AI provider, enable Langfuse tracing, and verify chat is working">
+<GuideStepper.Step id="configure" number={1} title="Configure AI provider, observability, and guardrails" summary="Connect your AI provider, enable Langfuse tracing, and confirm the template is wired up correctly">
 <GuideStepper.WhatYouNeed>
   - Running harness from Section 1
   - API credentials for your chosen AI provider
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - Chat panel active and streaming responses
+  - Analytics agents connected to your AI provider
   - Langfuse traces landing (optional but recommended now)
 </GuideStepper.WhatYouGet>
 
@@ -309,68 +298,128 @@ Without these, the template uses an in-memory fallback collector — the app wor
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="verify-chat" title="Verify chat is working">
-
-Open `http://localhost:3000`, sign in, and ask a data question.
-
-You'll see the multi-agent pattern in the streamed response: `[AGENT:supervisor]` → `[AGENT:<specialist>]` → `[AGENT:narrator]`.
-
-If you've configured Langfuse, check your dashboard to confirm a trace landed with spans for each agent step.
-
-</GuideStepper.Checkpoint>
-
 </GuideStepper.Step>
 
 </GuideStepper>
+
+**Section 2 complete.** To verify: open `http://localhost:3000`, sign in as `acme`, and send a chat message. You should see the multi-agent pattern in the streamed response: `[AGENT:supervisor]` → `[AGENT:<specialist>]` → `[AGENT:narrator]`. The response may be vague or generic — the demo data is fake placeholder data, not your domain. That's expected. What you're confirming here is that the template is wired correctly: auth works, the AI provider is connected, and the agent pipeline is running. You'll verify the agent can actually answer useful questions in Section 3, once real data is in.
 
 ---
 
 ## Get Your Data In
 
-The template ships with `TenantKnowledge` as a placeholder data model. This section walks through replacing it with your own domain data. If you don't have data ready, several no-friction options are listed below.
+The template's demo model (`TenantKnowledge`) is a stand-in to confirm setup. This section replaces it with your domain data.
+
+The order matters: **load a sample first, then model it, then load everything.** Your coding agent needs to see real data — actual column types, cardinalities, and example values — before it can define an accurate ClickHouse schema. Don't define the model from docs alone if you can get a sample.
+
+There are three common paths depending on your data source:
+
+- **Data dump** — a CSV, Parquet, or SQL export. Fastest path to get started.
+- **API or scheduled pull** — create a MooseStack Workflow that fetches from your source on a schedule.
+- **Live database replication (CDC)** — connect a running Postgres or MySQL database. See the [Performant Dashboards guide](/guides/performant-dashboards) for full CDC setup with ClickPipes or Debezium.
+
+All three follow the same sequence in the steps below: sample → model → full load.
 
 <GuideStepper id="agent-data" persist>
 
-<GuideStepper.Step id="define-model" number={1} title="Define Your Data Model" summary="Replace the demo model with your schema">
+<GuideStepper.Step id="load-sample" number={1} title="Load a sample" summary="Get a small slice of your data into ClickHouse so your coding agent can model it accurately">
 <GuideStepper.WhatYouNeed>
-  - Sample data, schema docs, or API response examples
+  - Access to your data source
   - Harness running from Section 1
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - Typed `IngestPipeline` in `models.ts`
-  - Table created in local ClickHouse
-  - MCP tools automatically scoped to the new table
+  - A representative sample in local ClickHouse
+  - Your coding agent can inspect real column types and values before modeling
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="gather-context" title="Gather sample data and schema context">
+<GuideStepper.Checkpoint id="sample-data-dump" title="Option A: Data dump (CSV, Parquet, SQL export)">
 
-Give your coding agent the context it needs to model your data: sample records, schema documentation, data dictionaries, or API response examples. The more context, the better the model.
+If you have a flat file or can export one, load a subset directly:
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) has 150M+ product reviews in Parquet on S3. The schema is documented on that page, so you can point your agent directly at it.
+```sql
+-- sample-data.sql — load a small slice to start
+INSERT INTO local.your_raw_table
+  SELECT * FROM s3(
+    's3://your-bucket/path/to/export.parquet',
+    '<Access-Key-ID>',
+    '<Secret-Access-Key>',
+    'Parquet'
+  )
+  LIMIT 10000;
+```
 
-To grab sample data locally:
+```shell
+moose query -f sample-data.sql
+```
+
+<ToggleBlock openText="No data yet? Use the Amazon Customer Reviews dataset" closeText="Hide">
+The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) is 150M+ rows of real product reviews in Parquet on S3 — no credentials required. Pull a sample:
 
 ```shell
 moose query "
   SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
-  ) LIMIT 10;
+  ) LIMIT 10000;
 "
 ```
 </ToggleBlock>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="create-data-model" title="Create a data model">
+<GuideStepper.Checkpoint id="sample-workflow" title="Option B: API or scheduled pull">
+
+Create a [MooseStack Workflow](https://docs.fiveonefour.com/moosestack/workflows?lang=typescript) that fetches from your API. Run it once to pull a sample:
+
+<GuideStepper.Prompt>
+Create a MooseStack Workflow that fetches data from [your API source] and inserts
+it into ClickHouse. Use the MooseStack Workflows docs:
+https://docs.fiveonefour.com/moosestack/workflows?lang=typescript
+Run it once to get a representative sample — we'll configure the full schedule
+after the data model is defined.
+</GuideStepper.Prompt>
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="sample-cdc" title="Option C: Live database replication (CDC)">
+
+For ongoing replication from Postgres or MySQL, set up CDC first. See the [Performant Dashboards guide](/guides/performant-dashboards) for ClickPipes and Debezium setup. Once replication starts, a sample will be in ClickHouse within minutes — continue to Step 2 once rows are flowing.
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+
+<GuideStepper.Step id="define-model" number={2} title="Define your data model" summary="Create ClickHouse tables based on your actual data">
+<GuideStepper.WhatYouNeed>
+  - Sample data in ClickHouse from Step 1
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+  - Typed `OlapTable` in `models.ts` shaped to your domain
+  - Table created in local ClickHouse
+  - MCP tools automatically scoped to the new table
+</GuideStepper.WhatYouGet>
+
+With sample data in ClickHouse, your coding agent can inspect the actual schema: column types, value ranges, cardinality. This is what makes the model accurate. Point it at the data before asking it to write the model.
+
+<GuideStepper.Checkpoint id="gather-context" title="Give your coding agent context">
+
+Ask your agent to inspect the sample data in ClickHouse before modeling. The MooseDev MCP gives it direct access.
+
+If you also have schema docs, a data dictionary, or API response examples, share those too.
+
+<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide">
+The schema is documented at [clickhouse.com/docs/getting-started/example-datasets/amazon-reviews](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews). Point your agent at that page alongside the sample rows already in ClickHouse.
+</ToggleBlock>
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="create-data-model" title="Create the data model">
 
 Key file: `packages/moosestack-service/app/ingest/models.ts`
-
-Ask your coding agent to replace the `TenantKnowledge` model. Invoke the `/moosestack-clickhouse-best-practices` skill for efficient typing and `orderBy` choices.
 
 <GuideStepper.Prompt>
 Replace the TenantKnowledge interface and IngestPipeline in
 packages/moosestack-service/app/ingest/models.ts with a model for [your domain].
+Use the sample data already in ClickHouse to inform column types and cardinalities.
 Keep the tenant_id field and SelectRowPolicy for multi-tenant isolation.
 Follow ClickHouse best practices for typing and orderBy — invoke the
 /moosestack-clickhouse-best-practices skill.
@@ -379,18 +428,16 @@ Export the new table from app/index.ts.
 
 Key considerations:
 - **Typing matters**: use tight types, `LowCardinality` for low-cardinality strings, appropriate numeric precision
-- **Order By is critical**: the `orderBy` determines how data is physically stored in ClickHouse — think about how the data will be queried and filtered
-- **Keep `tenant_id`**: this field is required for the row-level security policy
+- **Order By is critical**: determines physical storage — lead with your most common filter columns
+- **Keep `tenant_id`**: required for the row-level security policy
 
 <Callout type="info" title="MCP tools are automatically scoped">
-Tables included in the `SelectRowPolicy` are automatically exposed to MCP tools (`get_data_catalog`, `query_clickhouse`). No manual edits to `exposed-surface.ts` are needed — just make sure your table is in the `tables` array of the `tenantIsolation` policy.
+Tables in the `SelectRowPolicy` are automatically exposed to `get_data_catalog` and `query_clickhouse`. No manual edits to `exposed-surface.ts` needed — just ensure your table is in the `tables` array of the `tenantIsolation` policy.
 </Callout>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="verify-tables" title="Verify the tables were created">
-
-The dev server picks up new models automatically. Verify with:
+<GuideStepper.Checkpoint id="verify-tables" title="Verify tables were created">
 
 ```shell
 moose ls
@@ -400,18 +447,17 @@ moose ls
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="load-data" number={2} title="Load Your Data" summary="Get data into ClickHouse via flat file, push API, pull workflow, or existing ClickHouse">
+<GuideStepper.Step id="load-all-data" number={3} title="Load all your data" summary="Fill ClickHouse with the full dataset now that the schema is right">
 <GuideStepper.WhatYouNeed>
-  - Data model created and tables verified
-  - Access to your data source
+  - Data model defined and table verified from Step 2
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
   - Local ClickHouse populated with real data, ready for the agent to query
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="load-flat-file" title="Option A: Load a flat file">
+<GuideStepper.Checkpoint id="load-full-data-dump" title="Option A: Full data dump load">
 
-If you have data in a flat file (Parquet, CSV, etc.) accessible via S3 or a URL, write a SQL file to insert it:
+Update your SQL to remove the `LIMIT` and run the full insert:
 
 ```sql
 -- load-data.sql
@@ -424,91 +470,42 @@ INSERT INTO local.YourTable
   );
 ```
 
-Then execute it with:
-
 ```shell
 moose query -f load-data.sql
 ```
 
 In production, use `514 query` to run the same SQL against your hosted ClickHouse.
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
-```sql
--- load-data.sql
-INSERT INTO local.amazon_reviews
-  SELECT * FROM s3(
-    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet',
-    'Parquet'
-  );
-```
+</GuideStepper.Checkpoint>
 
-<Callout type="info" title="Large dataset">
-The full dataset is ~150M rows across multiple files. Start with a single year file for testing, then use a wildcard (`amazon_reviews_*.snappy.parquet`) for the full load.
-</Callout>
-</ToggleBlock>
+<GuideStepper.Checkpoint id="load-full-workflow" title="Option B: Full workflow run + schedule">
+
+Configure the workflow schedule and run a full backfill:
+
+<GuideStepper.Prompt>
+Update the MooseStack Workflow in packages/moosestack-service to run on a
+[daily/hourly/your preferred] schedule and backfill all historical data from
+[your source]. Use the MooseStack Workflows docs:
+https://docs.fiveonefour.com/moosestack/workflows?lang=typescript
+</GuideStepper.Prompt>
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="load-push-api" title="Option B: Push via ingest API">
+<GuideStepper.Checkpoint id="load-full-cdc" title="Option C: CDC — ongoing">
 
-The `IngestPipeline` auto-creates an ingest endpoint at `http://localhost:4000/ingest/<ModelName>`. POST single records or arrays of JSON.
-
-For webhooks or event streams, create an API endpoint using the [MooseStack BYO API framework](https://docs.fiveonefour.com/moosestack/api-framework?lang=typescript):
-
-```text
-Create an Express API endpoint to receive incoming data and insert it into
-ClickHouse. Use the MooseStack BYO API framework
-(https://docs.fiveonefour.com/moosestack/api-framework?lang=typescript).
-```
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="load-pull-workflow" title="Option C: Pull from an external API or schedule">
-
-Create a [MooseStack Workflow](https://docs.fiveonefour.com/moosestack/workflows?lang=typescript) to fetch and load data on a schedule:
-
-```text
-Create a MooseStack Workflow that fetches data from [your source] and inserts
-it into ClickHouse. Use the MooseStack Workflows docs
-(https://docs.fiveonefour.com/moosestack/workflows?lang=typescript).
-```
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="load-postgres" title="Option D: Export from Postgres or another database">
-
-Export your data to CSV or Parquet and load it via Option A's flat-file path.
-
-For ongoing live replication from Postgres, see the [Performant Dashboards guide](/guides/performant-dashboards) which covers ClickPipes and Debezium CDC.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint id="load-existing-clickhouse" title="Option E: Connect to an existing ClickHouse instance">
-
-Set these in `packages/moosestack-service/.env.local`:
-
-| Variable | Purpose |
-|---|---|
-| `MOOSE_CLICKHOUSE_CONFIG__URL` | ClickHouse HTTPS connection URL |
-| `MOOSE_CLICKHOUSE_CONFIG__HOST` | Host |
-| `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | HTTP port |
-| `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` | Database name |
-| `MOOSE_CLICKHOUSE_CONFIG__USER` | Username |
-| `MOOSE_CLICKHOUSE_CONFIG__PASSWORD` | Password |
-| `MOOSE_CLICKHOUSE_CONFIG__USE_SSL` | `true` / `false` |
-| `MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT` | Native TCP port |
+If you set up CDC in Step 1, replication is already running. No additional action needed — historical backfill behavior depends on your CDC setup. Check the [Performant Dashboards guide](/guides/performant-dashboards) if you need to trigger a full backfill.
 
 </GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="validate-data" number={3} title="Validate" summary="Confirm data loaded and the agent can query it">
+<GuideStepper.Step id="validate" number={4} title="Validate" summary="Confirm data loaded correctly and chat is working with your real data">
 <GuideStepper.WhatYouNeed>
-  - Data loaded from Step 2
+  - Data loaded from Step 3
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-  - Confirmed row count
-  - Agent querying your data with correct tenant scoping
+  - Verified row count
+  - Chat responding accurately with your domain data and correct tenant scoping
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="count-check" title="Verify row count">
@@ -519,9 +516,15 @@ moose query "SELECT COUNT(*) FROM \`local\`.your_table_name"
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint id="chat-check" title="Test with the chat panel">
+<GuideStepper.Checkpoint id="chat-check" title="Verify chat with real data">
 
-Ask the chat panel a question about your data. Check the tool call results in the chat UI or in Langfuse to confirm `query_clickhouse` is running queries against your table with the correct `tenant_id` scope.
+Open `http://localhost:3000`, sign in, and ask a question about your data. Check the `query_clickhouse` tool call results in the chat UI — each one shows the SQL that was executed. Confirm:
+
+- The query targets your table, not the demo `tenant_knowledge` table
+- The `WHERE tenant_id = '...'` scope is present
+- The answer is accurate against what's in your data
+
+If you've configured Langfuse, check your dashboard to confirm a trace landed with spans for each agent step and inspect the SQL generated by the specialist.
 
 </GuideStepper.Checkpoint>
 
@@ -529,15 +532,19 @@ Ask the chat panel a question about your data. Check the tool call results in th
 
 </GuideStepper>
 
+**Section 3 complete.** Your data is in ClickHouse, the model is defined, and chat is returning real answers. Next: customize the agent's behavior for your domain.
+
 ---
 
 ## Customize Your Agent
 
+The template's system prompt and agent routing are intentionally minimal. This section shapes the agent's behavior for your domain — terminology, response format, and any specialized routing you need.
+
 <GuideStepper id="agent-customize" persist>
 
-<GuideStepper.Step id="system-prompt" number={1} title="Edit the System Prompt" summary="Add domain context to shape how the agent interprets your data">
+<GuideStepper.Step id="system-prompt" number={1} title="Edit the system prompt" summary="Add domain context to shape how the agent interprets your data">
 <GuideStepper.WhatYouNeed>
-  - Working chat from Section 2
+  - Working chat with real data from Section 3
   - Understanding of your domain terminology and metric conventions
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -562,7 +569,7 @@ metric naming conventions, and any formatting preferences for answers.
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="multi-agent" number={2} title="Understand the Multi-Agent Pattern" summary="See how supervisor, specialist, and narrator interact">
+<GuideStepper.Step id="multi-agent" number={2} title="Understand the multi-agent pattern" summary="See how supervisor, specialist, and narrator interact">
 <GuideStepper.WhatYouGet>
   - Orientation on the agent architecture
   - Key files to modify when adding specialists
@@ -570,7 +577,7 @@ metric naming conventions, and any formatting preferences for answers.
 
 <GuideStepper.Checkpoint id="agent-flow" title="The supervisor → specialist → narrator flow">
 
-The chat output shows the handoff markers you saw in Section 2: `[AGENT:supervisor]` → `[AGENT:<specialist>]` → `[AGENT:narrator]`.
+The handoff markers in the streamed response (`[AGENT:supervisor]` → `[AGENT:<specialist>]` → `[AGENT:narrator]`) show the pipeline in action:
 
 - The **supervisor** receives the user's message and routes it to the appropriate specialist
 - The **specialist** has access to the MCP tools (`query_clickhouse`, `get_data_catalog`) and generates the data response
@@ -586,7 +593,7 @@ The chat output shows the handoff markers you saw in Section 2: `[AGENT:supervis
 
 </GuideStepper.Step>
 
-<GuideStepper.Step id="add-specialist" number={3} title="(Optional) Add a Domain-Specific Specialist" summary="Extend the agent with a specialist tuned for a specific part of your domain">
+<GuideStepper.Step id="add-specialist" number={3} title="(Optional) Add a domain-specific specialist" summary="Extend the agent with a specialist tuned for a specific part of your domain">
 <GuideStepper.WhatYouNeed>
   - Familiarity with the multi-agent pattern from Step 2
 </GuideStepper.WhatYouNeed>
@@ -615,11 +622,13 @@ selection logic. Do not modify the MCP server or web app.
 
 </GuideStepper>
 
+**Section 4 complete.** The agent knows your domain and routes queries to the right specialist. Next: make sure the production hardening is correctly configured for your data model — not just the template defaults.
+
 ---
 
 ## Harden for Production
 
-The template ships the right structure for each of these. This section makes sure each one is correctly configured for your domain — not just the defaults.
+The template ships the right structure for each of these. This section verifies they're correctly configured for your domain — not just the defaults.
 
 <GuideStepper id="agent-harden" persist>
 
@@ -652,9 +661,11 @@ Use this to tune system prompts and identify queries that should be backed by ma
 
 </GuideStepper.Checkpoint>
 
+**Validated:** Traces are landing in Langfuse with spans for each agent step. You can see the SQL the specialist generated, the cost, and the latency breakdown.
+
 </GuideStepper.Step>
 
-<GuideStepper.Step id="semantic-layer" number={2} title="Semantic Consistency — Query Layer" summary="Define metrics once, shared across chat, APIs, dashboards, and MCP tools">
+<GuideStepper.Step id="semantic-layer" number={2} title="Semantic consistency — query layer" summary="Define metrics once, shared across chat, APIs, dashboards, and MCP tools">
 <GuideStepper.WhatYouNeed>
   - Working chat with real queries running (review tool call results in Langfuse or the chat UI)
 </GuideStepper.WhatYouNeed>
@@ -667,9 +678,7 @@ Use this to tune system prompts and identify queries that should be backed by ma
 
 Right now, the chat generates SQL on the fly. That works for exploration, but the moment the same metric lives in chat, an API, a dashboard, and an MCP tool, you have multiple SQL definitions that can drift.
 
-Before building the query layer, understand what queries your agent is actually running. Review the `query_clickhouse` tool call results in your chat UI — each one shows the SQL that was executed.
-
-Look for:
+Review the `query_clickhouse` tool call results in your chat UI — each one shows the SQL that was executed. Look for:
 - Repeated aggregation patterns (e.g., `GROUP BY date`, `COUNT(*)`)
 - Metrics that should have constraints (e.g., revenue should only count completed transactions)
 - Common filter and grouping combinations
@@ -709,12 +718,14 @@ Check the output:
 
 </GuideStepper.Checkpoint>
 
+**Validated:** Every surface — chat, APIs, dashboards, MCP — now shares one set of metric definitions. If a metric changes, it changes once.
+
 </GuideStepper.Step>
 
-<GuideStepper.Step id="tenant-isolation" number={3} title="Tenant Isolation — Verify RLS" summary="Confirm row-level security is enforced at the database layer for your data model">
+<GuideStepper.Step id="tenant-isolation" number={3} title="Tenant isolation — verify RLS" summary="Confirm row-level security is enforced at the database layer for your data model">
 <GuideStepper.WhatYouNeed>
   - Your data model in `models.ts` with `tenant_id` field
-  - Data loaded for both `acme` and `globex` demo tenants
+  - Data loaded for multiple tenants
   - Langfuse configured for trace inspection
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -725,10 +736,12 @@ Check the output:
 
 1. Confirm `tenant_id: string & LowCardinality` is present on your data model in `models.ts`
 2. Confirm your table is included in the `tables` array of the `tenantIsolation` `SelectRowPolicy` in `models.ts`
-3. Send a chat message as `acme`. Open the Langfuse trace and confirm the SQL generated by `query_clickhouse` includes `WHERE tenant_id = 'acme'` (or equivalent RLS enforcement)
-4. Sign in as `globex` and ask the same question. Confirm the result is different and scoped to `globex` data only
+3. Sign in as one tenant and send a chat message. Open the Langfuse trace and confirm the SQL generated by `query_clickhouse` includes a `WHERE tenant_id = '...'` clause
+4. Sign in as a different tenant and ask the same question. Confirm the result is different and scoped correctly
 
 </GuideStepper.Checkpoint>
+
+**Validated:** Tenant isolation is enforced at the database layer. Different tenants get different answers for the same question, and the SQL trace confirms the scope is applied by ClickHouse — not the application.
 
 </GuideStepper.Step>
 
@@ -755,24 +768,30 @@ Guardrails are Bedrock-only in this template.
 
 </GuideStepper.Checkpoint>
 
+**Validated:** Guardrail behavior is confirmed for your provider — either actively blocking policy violations (Bedrock) or with a clear path to adding custom enforcement (Anthropic/OpenAI).
+
 </GuideStepper.Step>
 
 </GuideStepper>
+
+**Section 5 complete.** Every production concern is configured for your domain: traces are flowing, metrics are consistent, tenant isolation is verified, and guardrails are in place. Time to ship.
 
 ---
 
 ## Deploy
 
+The template is pre-configured for deployment to 514 hosting (MooseStack service) and Vercel (Next.js web app). Preview environments are provisioned automatically per PR — each branch gets an isolated ClickHouse database so schema changes can be validated before merging.
+
 <GuideStepper id="agent-deploy" persist>
 
-<GuideStepper.Step id="deploy-moosestack" number={1} title="Deploy the MooseStack Service to 514 Hosting" summary="Connect your repo to 514 hosting and configure production env vars">
+<GuideStepper.Step id="deploy-moosestack" number={1} title="Deploy the MooseStack service to 514 hosting" summary="Connect your repo to 514 hosting and configure production env vars">
 <GuideStepper.WhatYouNeed>
   - GitHub repo with your project
   - 514 account at [boreal.cloud](https://boreal.cloud)
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
   - MooseStack service deployed on 514 hosting
-  - Preview environment provisioned per PR with isolated ClickHouse database
+  - Preview environment per PR with isolated ClickHouse database
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint id="514-setup" title="Create a 514 project and connect your repo">
@@ -792,7 +811,7 @@ In 514 hosting project settings, add:
 | `BEDROCK_GUARDRAIL_ID` + `BEDROCK_GUARDRAIL_VERSION` | If using Bedrock Guardrails |
 | `MOOSE_JWT__SECRET` | Your production OIDC provider's PEM public key (replaces the local RSA key) |
 
-**For production OIDC** (replacing the built-in local mock auth), add to the web app env:
+**For production OIDC** (replacing the built-in local mock auth):
 
 | Variable | Notes |
 |---|---|
@@ -812,9 +831,11 @@ Push to main to deploy. Open a feature branch and create a PR to get a preview e
 
 </GuideStepper.Checkpoint>
 
+**Validated:** MooseStack service is live at your 514 hosting URL. A PR preview environment is provisioned and accessible.
+
 </GuideStepper.Step>
 
-<GuideStepper.Step id="deploy-vercel" number={2} title="Deploy the Web App to Vercel" summary="Connect your repo to Vercel and set production env vars">
+<GuideStepper.Step id="deploy-vercel" number={2} title="Deploy the web app to Vercel" summary="Connect your repo to Vercel and set production env vars">
 <GuideStepper.WhatYouNeed>
   - Vercel account
   - MooseStack service deployed from Step 1
@@ -846,6 +867,8 @@ Required env vars in Vercel project settings:
 All env vars are documented in `vercel.json` — check it for the full list.
 
 </GuideStepper.Checkpoint>
+
+**Validated:** Chat UI is live at your Vercel URL. Sign in, run a query, and confirm the trace lands in Langfuse with the correct tenant scope. You're done.
 
 </GuideStepper.Step>
 

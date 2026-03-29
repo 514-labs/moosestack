@@ -1722,10 +1722,10 @@ const guidesNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "guides/production-ready-analytics-agent",
+    slug: "guides/production-ready-analytics-agent/overview",
     title: "Production-Ready Analytics Agent",
     description:
-      "Get a multi-tenant, observable, data-powered agent running from a production-shaped template.",
+      "Get a multi-tenant, observable, analytics agent running from a production-shaped template.",
     icon: IconRobot,
     languages: ["typescript"],
     children: [
