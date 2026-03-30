@@ -526,6 +526,25 @@ impl DockerClient {
             }
         }
 
+        // Pass temporal versions into template data so they're baked into the compose file
+        // (nerdctl compose doesn't support env var substitution from process environment)
+        if settings.features.scripts || project.features.workflows {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "temporal_version".to_string(),
+                    json!(project.temporal_config.temporal_version),
+                );
+                obj.insert(
+                    "temporal_admintools_version".to_string(),
+                    json!(project.temporal_config.admin_tools_version),
+                );
+                obj.insert(
+                    "temporal_ui_version".to_string(),
+                    json!(project.temporal_config.ui_version),
+                );
+            }
+        }
+
         // Write temporal dynamic config file when scripts/workflows are enabled
         if settings.features.scripts || project.features.workflows {
             let config_content = "\
