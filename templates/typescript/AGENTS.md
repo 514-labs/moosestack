@@ -39,7 +39,7 @@ Pre-configured in `.mcp.json`. Add "use context7" to your prompts when you need 
 
 ### ClickHouse Best Practices Skill (optional)
 
-Not included by default. Install with `514 agent init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+Not included by default. Install with `moose harness init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ### Moose CLI
 

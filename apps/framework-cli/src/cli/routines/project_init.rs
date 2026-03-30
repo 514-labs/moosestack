@@ -1,0 +1,171 @@
+use std::path::{Path, PathBuf};
+
+use crate::cli::display::{Message, MessageType};
+use crate::cli::load_project_dev;
+use crate::cli::routines::code_generation::{db_to_dmv2, prompt_user_for_remote_ch_http};
+use crate::cli::routines::templates::create_project_from_template;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string_with_metadata;
+use crate::infrastructure::olap::clickhouse::config_resolver::store_remote_clickhouse_credentials;
+use crate::project::{ClickHouseProtocol, RemoteClickHouseConfig};
+use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
+
+use super::RoutineFailure;
+
+pub enum RemoteBootstrapSource {
+    None,
+    Prompt,
+    ConnectionString(String),
+}
+
+pub struct ProjectInitOptions<'a> {
+    pub template: &'a str,
+    pub project_name: &'a str,
+    pub dir_path: &'a Path,
+    pub no_fail_already_exists: bool,
+    pub custom_dockerfile: bool,
+    pub remote_bootstrap: RemoteBootstrapSource,
+}
+
+pub struct ProjectInitOutcome {
+    pub post_install_message: String,
+}
+
+struct CurrentDirGuard {
+    previous_dir: Option<PathBuf>,
+}
+
+impl CurrentDirGuard {
+    fn capture() -> Self {
+        Self {
+            previous_dir: std::env::current_dir().ok(),
+        }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        if let Some(previous_dir) = &self.previous_dir {
+            let _ = std::env::set_current_dir(previous_dir);
+        }
+    }
+}
+
+pub async fn initialize_project(
+    options: &ProjectInitOptions<'_>,
+) -> Result<ProjectInitOutcome, RoutineFailure> {
+    let post_install_message = create_project_from_template(
+        options.template,
+        options.project_name,
+        options.dir_path,
+        options.no_fail_already_exists,
+        options.custom_dockerfile,
+    )
+    .await?;
+
+    match &options.remote_bootstrap {
+        RemoteBootstrapSource::None => {}
+        RemoteBootstrapSource::Prompt => {
+            let _guard = CurrentDirGuard::capture();
+            let connection_string = prompt_user_for_remote_ch_http()?;
+            db_to_dmv2(&connection_string, options.dir_path).await?;
+            configure_remote_clickhouse(
+                options.project_name,
+                options.dir_path,
+                &connection_string,
+            )?;
+        }
+        RemoteBootstrapSource::ConnectionString(connection_string) => {
+            let _guard = CurrentDirGuard::capture();
+            db_to_dmv2(connection_string, options.dir_path).await?;
+            configure_remote_clickhouse(options.project_name, options.dir_path, connection_string)?;
+        }
+    }
+
+    Ok(ProjectInitOutcome {
+        post_install_message,
+    })
+}
+
+fn configure_remote_clickhouse(
+    project_name: &str,
+    dir_path: &Path,
+    connection_string: &str,
+) -> Result<(), RoutineFailure> {
+    std::env::set_current_dir(dir_path).map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failure".to_string(), "changing directory".to_string()),
+            e,
+        )
+    })?;
+
+    let parsed =
+        parse_clickhouse_connection_string_with_metadata(connection_string).map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Parse Error".to_string(),
+                    "Failed to parse ClickHouse URL".to_string(),
+                ),
+                e,
+            )
+        })?;
+
+    let mut project = load_project_dev()?;
+    project.dev.remote_clickhouse = Some(RemoteClickHouseConfig {
+        protocol: ClickHouseProtocol::Http,
+        host: Some(parsed.config.host.clone()),
+        port: Some(parsed.config.host_port as u16),
+        database: Some(parsed.config.db_name.clone()),
+        use_ssl: parsed.config.use_ssl,
+    });
+
+    project.write_to_disk().map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Failure".to_string(),
+                "writing remote_clickhouse config".to_string(),
+            ),
+            e,
+        )
+    })?;
+
+    show_message!(
+        MessageType::Success,
+        Message::new(
+            "Config".to_string(),
+            format!(
+                "Wrote [dev.remote_clickhouse] to moose.config.toml (host: {}, database: {})",
+                parsed.config.host, parsed.config.db_name
+            ),
+        )
+    );
+
+    if let Err(e) = store_remote_clickhouse_credentials(
+        project_name,
+        &parsed.config.user,
+        &parsed.config.password,
+    ) {
+        show_message!(
+            MessageType::Warning,
+            Message::new(
+                "Keychain".to_string(),
+                format!("Failed to store credentials: {e:?}. You'll be prompted again next time."),
+            )
+        );
+    }
+
+    let repo = KeyringSecretRepository;
+    if let Err(e) = repo.store(project_name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+        show_message!(
+            MessageType::Warning,
+            Message::new(
+                "Keychain".to_string(),
+                format!(
+                    "Failed to store connection URL: {e:?}. You'll be prompted again next time."
+                ),
+            )
+        );
+    }
+
+    Ok(())
+}

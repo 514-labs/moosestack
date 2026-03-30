@@ -33,7 +33,7 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 3. **Context7** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts for MooseStack documentation.
 
-4. **ClickHouse Best Practices Skill** (optional) — Install with `514 agent init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+4. **ClickHouse Best Practices Skill** (optional) — Install with `moose harness init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ## Key Files
 
@@ -202,7 +202,7 @@ These are the tools exposed to the chat UI and external MCP clients. Edit them i
 
 ### ClickHouse Best Practices Skill (optional)
 
-Not included by default. Install with `514 agent init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+Not included by default. Install with `moose harness init` to get rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ### Moose CLI
 
