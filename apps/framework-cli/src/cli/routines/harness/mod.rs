@@ -341,11 +341,18 @@ fn resolve_non_interactive_options(
         } else {
             request_install_lsp
         },
-        agent_selection: resolve_agent_selection(if !flags.agents.is_empty() {
-            flags.agents.clone()
-        } else {
-            request_agents
-        })?,
+        agent_selection: {
+            let agent_ids = if !flags.agents.is_empty() {
+                flags.agents.clone()
+            } else {
+                request_agents
+            };
+            if agent_ids.is_empty() {
+                AgentSelection::None
+            } else {
+                resolve_agent_selection(agent_ids)?
+            }
+        },
     })
 }
 
@@ -605,7 +612,7 @@ fn prompt_bool(prompt: &str, default: bool) -> Result<bool, RoutineFailure> {
 
 fn resolve_agent_selection(agent_ids: Vec<String>) -> Result<AgentSelection, RoutineFailure> {
     if agent_ids.is_empty() {
-        return Ok(AgentSelection::AutoDetect);
+        return Ok(AgentSelection::None);
     }
 
     if agent_ids.len() == 1 {
