@@ -135,6 +135,7 @@ pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
 /// and no per-table `seedFilter.limit` is configured.
 pub const DEFAULT_SEED_LIMIT: usize = 1000;
 
+pub const MIGRATIONS_DIR: &str = "migrations";
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";

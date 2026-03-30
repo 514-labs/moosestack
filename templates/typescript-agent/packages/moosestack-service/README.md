@@ -1,0 +1,47 @@
+# moosestack-service
+
+MooseStack backend for the template.
+
+This package owns:
+
+- tenant-scoped data models
+- JWT-backed row-level security
+- Moose semantic/query models
+- app-facing HTTP APIs
+- custom MCP tools and the MCP allowlist policy
+- readonly ClickHouse helpers for semantic reads and tool execution
+- seed data
+
+## Source Layout
+
+| Path | Purpose |
+| --- | --- |
+| `app/index.ts` | Public entrypoint. Export Moose-discovered primitives here. |
+| `app/ingest/` | `IngestPipeline` declarations, tables, and row policies. |
+| `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
+| `app/data/clickhouse/` | Low-level readonly ClickHouse helpers. |
+| `app/http/` | Frontend-facing Express APIs and shared request auth/context. |
+| `app/mcp/` | MCP transport, tool registration, allowlist policy, and tool-specific parsers/errors. |
+| `seed/` | Starter SQL seed files. |
+| `test/` | Service-local unit tests. |
+
+## Commands
+
+From the template root:
+
+```bash
+pnpm dev:moose
+pnpm build:service
+pnpm seed
+pnpm test:unit -- packages/moosestack-service/test
+```
+
+`pnpm seed` applies the starter SQL and then prints inserted-record counts plus current totals by tenant.
+
+## Notes
+
+- Keep tenant boundaries enforced here, not in the web app.
+- Keep Moose semantic models in `app/semantic/` so the read layer is visible.
+- Keep the MCP schema surface allowlisted by default in `app/mcp/tool-access/`.
+- Use `packages/moosestack-service/.env.local` with `MOOSE_CLICKHOUSE_CONFIG__*` overrides when you want this template to connect to an existing ClickHouse instance instead of the local Docker defaults.
+- Prefer pure helper logic in `app/mcp/tool-access/`, `app/mcp/parsers/`, and `app/mcp/errors/` when adding testable MCP behavior.

@@ -1,0 +1,13 @@
+# Moose / Sloan / Cursor folders
+.moose
+.sloan
+.cursor
+
+# Node
+node_modules
+dist
+coverage
+.ts-node
+
+.env*
+!.env.example

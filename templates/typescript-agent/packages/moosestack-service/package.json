@@ -1,0 +1,27 @@
+{
+  "name": "moosestack-service",
+  "version": "0.0.0",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev",
+    "seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "catalog:",
+    "@cfworker/json-schema": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "agent-contracts": "workspace:*",
+    "express": "catalog:",
+    "typia": "catalog:",
+    "zod": "catalog:zod3"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "catalog:",
+    "@types/express": "catalog:",
+    "@types/node": "catalog:",
+    "ts-patch": "catalog:",
+    "tsconfig-paths": "catalog:",
+    "typescript": "catalog:"
+  }
+}

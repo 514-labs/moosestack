@@ -1,0 +1,145 @@
+language = "typescript" # Must be typescript or python
+description = "TypeScript agent starter with MCP tools, Moose-owned dashboard APIs, JWT RLS, Bedrock support, and Langfuse tracing."
+frameworks = ["Next.js", "MCP", "Agents"]
+features = ["Moose OLAP", "Moose APIs", "Frontend", "MCP", "Auth", "Agents"]
+post_install_print = """
+Deploy on Boreal
+
+Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+Run this next:
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install all dependencies:
+    $ pnpm install
+
+🔐 Create environment files:
+    $ pnpm env:prepare
+
+⚙️ Set environment variables:
+    1. Set your LLM provider credentials in `packages/web-app/.env.local`.
+    2. Keep `MOOSE_AUTH_MODE=local` for the built-in mock OIDC issuer during local dev.
+    3. If you are using an existing ClickHouse instance, fill in the `MOOSE_CLICKHOUSE_CONFIG__*` overrides in `packages/moosestack-service/.env.local`.
+    4. Optionally configure Langfuse and Bedrock Guardrails in `packages/web-app/.env.local`.
+
+🌱 Seed starter data:
+    $ pnpm seed
+
+🚀 Start both services:
+    $ pnpm dev:start
+
+Or start each service separately:
+    $ pnpm dev:moose    # Start MooseStack service first
+    $ pnpm dev:web      # Start the web app after the Moose service is ready
+"""
+default_sloan_telemetry = "standard"
+
+# Boreal one-click deploy configuration
+[boreal]
+enabled = true
+display_name = "TypeScript Agent Starter"
+short_description = "Build tenant-scoped TypeScript agents with MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
+featured = true
+
+# Env vars user must provide
+[[boreal.env_vars]]
+name = "AI_PROVIDER"
+description = "LLM provider selection: anthropic, openai, or bedrock"
+
+[[boreal.env_vars]]
+name = "ANTHROPIC_API_KEY"
+description = "Required when AI_PROVIDER=anthropic"
+
+[[boreal.env_vars]]
+name = "ANTHROPIC_MODEL_ID"
+description = "Optional Anthropic model override"
+
+[[boreal.env_vars]]
+name = "AUTH_SECRET"
+description = "Auth.js session secret"
+
+[[boreal.env_vars]]
+name = "AWS_ACCESS_KEY_ID"
+description = "Optional AWS access key when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_PROFILE"
+description = "Optional AWS profile when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_REGION"
+description = "AWS region when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_SECRET_ACCESS_KEY"
+description = "Optional AWS secret access key when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "AWS_SESSION_TOKEN"
+description = "Optional AWS session token when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "BEDROCK_GUARDRAIL_ID"
+description = "Optional Bedrock guardrail ID"
+
+[[boreal.env_vars]]
+name = "BEDROCK_GUARDRAIL_VERSION"
+description = "Optional Bedrock guardrail version"
+
+[[boreal.env_vars]]
+name = "BEDROCK_MODEL_ID"
+description = "Required when AI_PROVIDER=bedrock"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_BASE_URL"
+description = "Optional Langfuse base URL"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_PUBLIC_KEY"
+description = "Optional Langfuse public key"
+
+[[boreal.env_vars]]
+name = "LANGFUSE_SECRET_KEY"
+description = "Optional Langfuse secret key"
+
+[[boreal.env_vars]]
+name = "MCP_SERVER_URL"
+description = "Optional override for the custom MCP tools endpoint"
+
+[[boreal.env_vars]]
+name = "MOOSE_AUTH_MODE"
+description = "Auth mode: local for development, oidc for production"
+
+[[boreal.env_vars]]
+name = "MOOSE_SERVICE_URL"
+description = "Base URL for Moose dashboard APIs and, by default, the MCP tools endpoint"
+
+[[boreal.env_vars]]
+name = "OIDC_ISSUER"
+description = "Production OIDC issuer URL"
+
+[[boreal.env_vars]]
+name = "OIDC_CLIENT_ID"
+description = "Production OIDC client ID"
+
+[[boreal.env_vars]]
+name = "OIDC_CLIENT_SECRET"
+description = "Production OIDC client secret"
+
+[[boreal.env_vars]]
+name = "OIDC_TENANT_CLAIM"
+description = "OIDC claim name that carries tenant_id"
+
+[[boreal.env_vars]]
+name = "OPENAI_API_KEY"
+description = "Required when AI_PROVIDER=openai"
+
+[[boreal.env_vars]]
+name = "OPENAI_MODEL_ID"
+description = "Optional OpenAI model override"

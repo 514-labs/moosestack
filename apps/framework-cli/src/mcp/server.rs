@@ -12,7 +12,10 @@ use rmcp::{
 use std::sync::Arc;
 use tracing::info;
 
-use super::tools::{create_error_result, infra_issues, infra_map, logs, query_olap, sample_stream};
+use super::tools::{
+    all_tool_definitions, create_error_result, infra_issues, infra_map, logs, query_olap,
+    sample_stream,
+};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -80,13 +83,7 @@ impl ServerHandler for MooseMcpHandler {
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
             meta: None,
-            tools: vec![
-                logs::tool_definition(),
-                infra_map::tool_definition(),
-                infra_issues::tool_definition(),
-                query_olap::tool_definition(),
-                sample_stream::tool_definition(),
-            ],
+            tools: all_tool_definitions(),
             next_cursor: None,
         })
     }

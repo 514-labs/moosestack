@@ -12,6 +12,72 @@ export interface ProjectSetupOptions {
 
 const execAsync = promisify(require("child_process").exec);
 
+interface PackageJsonWithMooseLibDeps {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+function readPackageJson(filePath: string): PackageJsonWithMooseLibDeps {
+  const packageJsonSource = fs.readFileSync(filePath, "utf-8");
+
+  try {
+    return JSON.parse(packageJsonSource) as PackageJsonWithMooseLibDeps;
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse ${filePath} as JSON: ${details}`);
+  }
+}
+
+function updateMooseLibDependencyRecursively(
+  dir: string,
+  mooseLibPath: string,
+  log: ScopedLogger,
+) {
+  const updatedFiles: string[] = [];
+
+  const visit = (currentDir: string) => {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (
+        entry.name === "node_modules" ||
+        entry.name === ".git" ||
+        entry.name === ".next"
+      ) {
+        continue;
+      }
+
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath);
+        continue;
+      }
+
+      if (entry.name !== "package.json") {
+        continue;
+      }
+
+      const packageJson = readPackageJson(fullPath);
+      let changed = false;
+
+      for (const depKey of ["dependencies", "devDependencies"] as const) {
+        if (packageJson[depKey]?.["@514labs/moose-lib"]) {
+          packageJson[depKey]["@514labs/moose-lib"] = `file:${mooseLibPath}`;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        fs.writeFileSync(fullPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+        updatedFiles.push(fullPath);
+      }
+    }
+  };
+
+  visit(dir);
+  log.debug("Updated package.json files to use local moose-lib", {
+    updatedFiles,
+  });
+}
+
 /**
  * Sets up a TypeScript project with the specified template
  */
@@ -41,12 +107,13 @@ export const setupTypeScriptProject = async (
     throw error;
   }
 
-  // Update package.json to use local moose-lib
-  log.debug("Updating package.json to use local moose-lib", { mooseLibPath });
-  const packageJsonPath = path.join(projectDir, "package.json");
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-  packageJson.dependencies["@514labs/moose-lib"] = `file:${mooseLibPath}`;
-  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+  // Update package.json files to use local moose-lib.
+  // Monorepo templates such as typescript-agent depend on moose-lib from
+  // multiple workspace packages.
+  log.debug("Updating package.json files to use local moose-lib", {
+    mooseLibPath,
+  });
+  updateMooseLibDependencyRecursively(projectDir, mooseLibPath, log);
 
   // Install dependencies
   log.info(`Installing dependencies with ${packageManager}`);
