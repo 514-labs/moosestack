@@ -120,9 +120,9 @@ export function createTraceSession(
             modelId: runtime.modelId,
             prompt: sanitizedPrompt,
             startedAt: traceStartedAt,
-            completedAt: summary.completedAt ?? new Date().toISOString(),
             totalDurationMs: Date.now() - traceStartedAtMs,
             ...summary,
+            completedAt: summary.completedAt ?? new Date().toISOString(),
           });
         } catch (error) {
           console.error("Trace collector failed to finish a trace:", error);

@@ -98,6 +98,10 @@ function inferFrameworks(name: string): string[] {
   }
   if (name.includes("agent")) {
     frameworks.push("Agents");
+    if (name === "typescript-agent") {
+      frameworks.push("Next.js");
+      frameworks.push("MCP");
+    }
   }
 
   return frameworks;
@@ -121,6 +125,10 @@ function inferFeatures(name: string, description: string): string[] {
   if (lowerName.includes("agent")) {
     features.push("Auth");
     features.push("Agents");
+    if (lowerName === "typescript-agent") {
+      features.push("Frontend");
+      features.push("MCP");
+    }
   }
   if (lowerName.includes("frontend") || lowerName.includes("next")) {
     features.push("Frontend");
