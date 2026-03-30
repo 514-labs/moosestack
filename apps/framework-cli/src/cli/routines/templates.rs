@@ -319,17 +319,9 @@ fn collect_template_infos(templates: &toml::value::Table) -> Vec<TemplateInfo> {
     template_infos
 }
 
-pub async fn list_available_templates(
-    template_version: &str,
-    json: bool,
-) -> Result<RoutineSuccess, RoutineFailure> {
-    let manifest = get_template_manifest(template_version).await.map_err(|e| {
-        RoutineFailure::error(Message {
-            action: "Templates".to_string(),
-            details: format!("Failed to load template manifest: {e:?}"),
-        })
-    })?;
-
+fn visible_template_infos_from_manifest(
+    manifest: &Value,
+) -> Result<Vec<TemplateInfo>, RoutineFailure> {
     let templates = manifest.get("templates").ok_or_else(|| {
         RoutineFailure::error(Message {
             action: "Templates".to_string(),
@@ -337,10 +329,40 @@ pub async fn list_available_templates(
         })
     })?;
 
-    let template_infos = templates
-        .as_table()
-        .map(collect_template_infos)
-        .unwrap_or_default();
+    let templates_table = templates.as_table().ok_or_else(|| {
+        RoutineFailure::error(Message {
+            action: "Templates".to_string(),
+            details: "Invalid manifest: templates section must be a table".to_string(),
+        })
+    })?;
+
+    Ok(collect_template_infos(templates_table))
+}
+
+/// Returns visible template metadata for the requested template manifest version.
+///
+/// This loads the manifest for `template_version`, filters out hidden templates,
+/// and returns the remaining entries sorted by name. It returns
+/// `RoutineFailure` when the manifest cannot be loaded or is missing the
+/// expected `templates` section.
+pub async fn get_visible_template_infos(
+    template_version: &str,
+) -> Result<Vec<TemplateInfo>, RoutineFailure> {
+    let manifest = get_template_manifest(template_version).await.map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Templates".to_string(),
+            details: format!("Failed to load template manifest: {e:?}"),
+        })
+    })?;
+
+    visible_template_infos_from_manifest(&manifest)
+}
+
+pub async fn list_available_templates(
+    template_version: &str,
+    json: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let template_infos = get_visible_template_infos(template_version).await?;
 
     if json {
         let payload = TemplateListJson {
@@ -716,6 +738,19 @@ mod tests {
                 language: "typescript".to_string(),
                 description: "Visible template".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn test_visible_template_infos_from_manifest_rejects_non_table_templates() {
+        let manifest = toml::toml! {
+            templates = []
+        };
+
+        let error = visible_template_infos_from_manifest(&manifest).unwrap_err();
+        assert_eq!(
+            error.message.details,
+            "Invalid manifest: templates section must be a table"
         );
     }
 
