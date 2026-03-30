@@ -1156,7 +1156,7 @@ fn handle_table_update(
     after: &Table,
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
-    let (mut column_plan, handled) = process_column_changes(before, after, column_changes);
+    let (column_plan, handled) = process_column_changes(before, after, column_changes);
     let constraint_changes = process_constraint_changes(before, after);
     let index_changes = process_index_changes(
         before,
@@ -4155,6 +4155,109 @@ mod tests {
     }
 
     #[test]
+    fn test_process_constraint_add() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![];
+
+        let mut after = before.clone();
+        after.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 0);
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_id"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_remove() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.constraints = vec![];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert_eq!(plan.setup_ops.len(), 0);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_id"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_modify() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id >= 0".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_id"
+        ));
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_id" && constraint.expression == "id >= 0"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_noop() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let after = before.clone();
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 0);
+        assert_eq!(plan.setup_ops.len(), 0);
+    }
+
+    #[test]
     fn test_populate_materialized_view_includes_truncate() {
         let test_cases = vec![
             (
@@ -4226,6 +4329,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4322,6 +4426,7 @@ mod tests {
             table_settings: None,
             indexes,
             projections,
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

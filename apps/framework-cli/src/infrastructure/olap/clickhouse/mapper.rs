@@ -1028,6 +1028,33 @@ mod tests {
     }
 
     #[test]
+    fn test_low_cardinality_nullable_mapping() {
+        use serde_json::Value;
+
+        // Test that a non-required LowCardinality column becomes LowCardinality(Nullable(T))
+        let col = Column {
+            data_type: ColumnType::String,
+            required: false, // This should trigger the Nullable wrapping
+            annotations: vec![("LowCardinality".to_string(), Value::Bool(true))],
+            ..make_column("test_col")
+        };
+        let ch_col = std_column_to_clickhouse_column(col).unwrap();
+        assert!(
+            matches!(
+                ch_col.column_type,
+                ClickHouseColumnType::LowCardinality(ref inner) if matches!(**inner, ClickHouseColumnType::Nullable(_))
+            ),
+            "Expected LowCardinality(Nullable(T)), got {:?}",
+            ch_col.column_type
+        );
+
+        // Test that an already Nullable inner type inside LowCardinality remains LowCardinality(Nullable(T))
+        // Currently std_field_type_to_clickhouse_type_mapper doesn't produce LowCardinality(Nullable) directly from annotations
+        // but if it did, the wrapping logic should handle it idempotently. We simulate this by checking
+        // the wrapping logic directly if possible, but testing the end-to-end behavior is also good.
+    }
+
+    #[test]
     fn test_validation_default_and_materialized_mutually_exclusive() {
         let col = Column {
             default: Some("42".to_string()),

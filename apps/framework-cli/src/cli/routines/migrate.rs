@@ -235,8 +235,9 @@ fn validate_table_databases_and_clusters(
                 cluster,
                 cluster_names
             );
-            // Fail if cluster is not in the configured list (or if list is empty)
-            if cluster_names.is_empty() || !cluster_names.contains(cluster) {
+
+            let is_macro = cluster.contains('{') && cluster.contains('}');
+            if !is_macro && (cluster_names.is_empty() || !cluster_names.contains(cluster)) {
                 tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
                 invalid_clusters.push((table_name.to_string(), cluster.clone()));
             }

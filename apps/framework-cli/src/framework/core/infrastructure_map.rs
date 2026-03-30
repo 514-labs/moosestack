@@ -2407,6 +2407,8 @@ impl InfrastructureMap {
 
         let constraints_changed = table.constraints != target_table.constraints;
         let projections_changed = table.projections != target_table.projections;
+        let engine_changed = table.engine != target_table.engine;
+        let table_settings_changed = table.table_settings != target_table.table_settings;
 
         if !column_changes.is_empty()
             || order_by_changed
@@ -2415,6 +2417,8 @@ impl InfrastructureMap {
             || ttl_changed
             || constraints_changed
             || projections_changed
+            || engine_changed
+            || table_settings_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2507,6 +2511,8 @@ impl InfrastructureMap {
 
         let constraints_changed = table.constraints != target_table.constraints;
         let projections_changed = table.projections != target_table.projections;
+        let engine_changed = table.engine != target_table.engine;
+        let table_settings_changed = table.table_settings != target_table.table_settings;
 
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
@@ -2516,6 +2522,8 @@ impl InfrastructureMap {
             || ttl_changed
             || constraints_changed
             || projections_changed
+            || engine_changed
+            || table_settings_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -4196,6 +4204,7 @@ mod rename_detection_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

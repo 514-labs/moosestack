@@ -360,9 +360,9 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     // user-defined schema. Always strip from both sides before comparison so that state
     // captured before the introspection-side filter was introduced doesn't generate phantom
     // DropTableIndex operations in the plan.
-    normalized
-        .indexes
-        .retain(|i| !i.name.starts_with("auto_minmax_index_"));
+    normalized.indexes.retain(|i| {
+        !(i.name.starts_with("auto_minmax_index_") && i.index_type.to_lowercase() == "minmax")
+    });
 
     if ignore_ops.is_empty() {
         return normalized;
@@ -692,6 +692,36 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
     }
 }
 
+fn extract_cluster_name_from_serializable(op: &SerializableOlapOperation) -> Option<&str> {
+    match op {
+        SerializableOlapOperation::CreateTable { table } => table.cluster_name.as_deref(),
+        SerializableOlapOperation::DropTable { cluster_name, .. }
+        | SerializableOlapOperation::AddTableColumn { cluster_name, .. }
+        | SerializableOlapOperation::DropTableColumn { cluster_name, .. }
+        | SerializableOlapOperation::ModifyTableColumn { cluster_name, .. }
+        | SerializableOlapOperation::ModifyTableSettings { cluster_name, .. }
+        | SerializableOlapOperation::ModifyTableTtl { cluster_name, .. }
+        | SerializableOlapOperation::AddTableIndex { cluster_name, .. }
+        | SerializableOlapOperation::DropTableIndex { cluster_name, .. }
+        | SerializableOlapOperation::AddTableProjection { cluster_name, .. }
+        | SerializableOlapOperation::DropTableProjection { cluster_name, .. }
+        | SerializableOlapOperation::AddTableConstraint { cluster_name, .. }
+        | SerializableOlapOperation::DropTableConstraint { cluster_name, .. }
+        | SerializableOlapOperation::ModifySampleBy { cluster_name, .. }
+        | SerializableOlapOperation::RemoveSampleBy { cluster_name, .. }
+        | SerializableOlapOperation::RenameTableColumn { cluster_name, .. } => {
+            cluster_name.as_deref()
+        }
+        SerializableOlapOperation::CreateMaterializedView { .. }
+        | SerializableOlapOperation::DropMaterializedView { .. }
+        | SerializableOlapOperation::CreateView { .. }
+        | SerializableOlapOperation::DropView { .. }
+        | SerializableOlapOperation::RawSql { .. }
+        | SerializableOlapOperation::CreateRowPolicy { .. }
+        | SerializableOlapOperation::DropRowPolicy { .. } => None,
+    }
+}
+
 /// Executes a single atomic OLAP operation.
 pub async fn execute_atomic_operation(
     db_name: &str,
@@ -699,6 +729,10 @@ pub async fn execute_atomic_operation(
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
+    if let Some(cluster) = extract_cluster_name_from_serializable(operation) {
+        validate_clickhouse_cluster_name(cluster)?;
+    }
+
     match operation {
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;

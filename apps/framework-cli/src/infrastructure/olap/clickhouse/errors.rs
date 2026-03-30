@@ -44,12 +44,42 @@ pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
 /// Checks if a string is a valid ClickHouse cluster name.
 /// Allows `{` and `}` for macro patterns like `{cluster}`.
 pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '{' || c == '}')
-        && !name.chars().next().unwrap().is_ascii_digit()
-        && !name.starts_with('-')
+    if name.is_empty() {
+        return false;
+    }
+
+    let mut in_brace = false;
+    let mut macro_len = 0;
+
+    for c in name.chars() {
+        if c == '{' {
+            if in_brace {
+                return false; // nested braces not allowed
+            }
+            in_brace = true;
+            macro_len = 0;
+        } else if c == '}' {
+            if !in_brace || macro_len == 0 {
+                return false; // unbalanced or empty braces not allowed
+            }
+            in_brace = false;
+        } else if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return false; // invalid character
+        } else if in_brace {
+            macro_len += 1;
+        }
+    }
+
+    if in_brace {
+        return false; // unclosed brace
+    }
+
+    let first_char = name.chars().next().unwrap();
+    if first_char.is_ascii_digit() || first_char == '-' {
+        return false;
+    }
+
+    true
 }
 
 /// Validates a cluster name, allowing ClickHouse macro patterns like `{cluster}`.

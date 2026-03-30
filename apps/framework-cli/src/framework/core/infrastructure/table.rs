@@ -2547,6 +2547,14 @@ mod tests {
     }
 
     #[test]
+    fn test_constraint_type_serde_alias() {
+        // Test that the legacy "constraint_type" key works
+        let json = r#"{"constraint_type": "CHECK", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+    }
+
+    #[test]
     fn test_canonicalize_idempotent() {
         use crate::framework::core::infrastructure_map::PrimitiveSignature;
         use crate::framework::core::infrastructure_map::PrimitiveTypes;

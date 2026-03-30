@@ -426,7 +426,7 @@ You can configure constraints on MergeTree-family ClickHouse tables to enforce d
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/datamodels/user.ts"
-import { Key } from "@514labs/moose-lib";
+import { Key, OlapTable } from "@514labs/moose-lib";
 
 export interface User {
   id: Key<string>;

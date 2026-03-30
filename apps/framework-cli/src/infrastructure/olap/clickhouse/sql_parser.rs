@@ -815,20 +815,54 @@ fn strip_outer_parens(s: &str) -> &str {
     }
     // Verify the opening paren matches the closing one (not two separate groups)
     let mut depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+
     let inner = &trimmed[1..trimmed.len() - 1];
-    for ch in inner.chars() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth < 0 {
-                    // The first ')' closes the opening paren before end — not a single wrapper
-                    return trimmed;
-                }
-            }
-            _ => {}
+    let chars: Vec<char> = inner.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        let next_ch = if i + 1 < chars.len() {
+            chars[i + 1]
+        } else {
+            '\0'
+        };
+
+        // Handle escaping by doubling quotes
+        if ch == '\'' && in_single_quote && next_ch == '\'' {
+            i += 2;
+            continue;
         }
+
+        if ch == '\'' && !in_double_quote && !in_backtick {
+            in_single_quote = !in_single_quote;
+        } else if ch == '"' && !in_single_quote && !in_backtick {
+            in_double_quote = !in_double_quote;
+        } else if ch == '`' && !in_single_quote && !in_double_quote {
+            in_backtick = !in_backtick;
+        }
+
+        // Only consider parens outside of quotes
+        if !in_single_quote && !in_double_quote && !in_backtick {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // The first ')' closes the opening paren before end — not a single wrapper
+                        return trimmed;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        i += 1;
     }
+
     if depth == 0 {
         inner.trim()
     } else {

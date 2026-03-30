@@ -7671,7 +7671,7 @@ ORDER BY (`event_time`)
             "MergeTree DDL should contain constraints. Got: {}",
             query
         );
-        assert!(query.contains("`should_be_kept` CHECK id > 0"));
+        assert!(query.contains("`should_be_kept` CHECK (id > 0)"));
     }
 
     #[test]
