@@ -526,6 +526,39 @@ impl DockerClient {
             }
         }
 
+        // Pass temporal versions into template data so they're baked into the compose file
+        // (nerdctl compose doesn't support env var substitution from process environment)
+        if settings.features.scripts || project.features.workflows {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "temporal_version".to_string(),
+                    json!(project.temporal_config.temporal_version),
+                );
+                obj.insert(
+                    "temporal_admintools_version".to_string(),
+                    json!(project.temporal_config.admin_tools_version),
+                );
+                obj.insert(
+                    "temporal_ui_version".to_string(),
+                    json!(project.temporal_config.ui_version),
+                );
+            }
+        }
+
+        // Write temporal dynamic config file when scripts/workflows are enabled
+        if settings.features.scripts || project.features.workflows {
+            let config_content = "\
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true # Dev setup only. Please don't turn this on in production.
+    constraints: {}
+";
+            let config_file = project.internal_dir()?.join("temporal-dynamic-config.yaml");
+            std::fs::write(&config_file, config_content)?;
+        }
+
         if project.is_production {
             let rendered = handlebars
                 .render_template(PROD_COMPOSE_FILE, &data)
