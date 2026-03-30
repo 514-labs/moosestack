@@ -24,6 +24,7 @@ use commands::{
 use config::ConfigError;
 use display::with_spinner_completion;
 use regex::Regex;
+use rmcp::ServiceExt;
 use routines::auth::{display_hash_token_result, generate_hash_token};
 use routines::build::build_package;
 use routines::clean::clean_project;
@@ -1682,6 +1683,61 @@ pub async fn top_command_handler(
         Commands::Truncate { tables, all, rows } => {
             let project = load_project(commands)?;
             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
+        }
+        Commands::Mcp { host, port } => {
+            // Resolve host/port: CLI args > project config > defaults
+            let (resolved_host, resolved_port) = {
+                let default_host = "localhost".to_string();
+                let default_port: u16 = 4000;
+
+                match (host.clone(), *port) {
+                    (Some(h), Some(p)) => (h, p),
+                    (h, p) => {
+                        // Try loading project config for unset values
+                        let (proj_host, proj_port) = load_project(commands)
+                            .map(|proj| {
+                                (
+                                    proj.http_server_config.host.clone(),
+                                    proj.http_server_config.port,
+                                )
+                            })
+                            .unwrap_or((default_host.clone(), default_port));
+                        (h.unwrap_or(proj_host), p.unwrap_or(proj_port))
+                    }
+                }
+            };
+
+            let dev_server_url = format!("http://{}:{}/mcp", resolved_host, resolved_port);
+            eprintln!(
+                "Moose MCP proxy connecting to dev server at {}",
+                dev_server_url
+            );
+
+            let handler = crate::mcp::ProxyMcpHandler::new(dev_server_url);
+
+            let service = handler
+                .serve(rmcp::transport::io::stdio())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::error(Message::new(
+                        "MCP".to_string(),
+                        format!("Failed to start MCP proxy: {e}"),
+                    ))
+                })?;
+
+            service.waiting().await.map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "MCP".to_string(),
+                    format!("MCP proxy error: {e}"),
+                ))
+            })?;
+
+            // Return an empty message so nothing is written to stdout,
+            // which is reserved for MCP protocol frames.
+            Ok(RoutineSuccess::success(Message::new(
+                String::new(),
+                String::new(),
+            )))
         }
         Commands::Kafka(KafkaArgs { command }) => match command {
             KafkaCommands::Pull {
