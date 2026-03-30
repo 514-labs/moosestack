@@ -625,6 +625,17 @@ async fn install_harness_support(
         .map(|agent| agent.display_name.to_string())
         .collect::<Vec<_>>();
 
+    let lsp_installed = if install_lsp_requested {
+        install_lsp().await.map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Harness".to_string(),
+                format!("Failed to install MooseStack LSP: {e}"),
+            ))
+        })?
+    } else {
+        false
+    };
+
     if agents.is_empty() {
         return Ok(HarnessSetupOutcome {
             selected_agents,
@@ -633,7 +644,7 @@ async fn install_harness_support(
             configured_lsp_agents: Vec::new(),
             plugin_agents: Vec::new(),
             install_lsp_requested,
-            lsp_installed: false,
+            lsp_installed,
             warnings: vec![
                 "Skipped skills and MCP configuration because no coding agents were selected or detected."
                     .to_string(),
@@ -668,17 +679,6 @@ async fn install_harness_support(
     for skill in &skills {
         install_skill(skill, agents, home, branch).await?;
     }
-
-    let lsp_installed = if install_lsp_requested {
-        install_lsp().await.map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "Harness".to_string(),
-                format!("Failed to install MooseStack LSP: {e}"),
-            ))
-        })?
-    } else {
-        false
-    };
 
     let mut configured_mcp_agents = Vec::new();
     let mut configured_lsp_agents = Vec::new();
@@ -1093,7 +1093,7 @@ async fn install_skill(
         match &file.source {
             SkillFileSource::GitHubPath(repo_path) => {
                 let client = client.get_or_insert_with(reqwest::Client::new);
-                let data = download_raw_file(&client, branch, repo_path).await?;
+                let data = download_raw_file(client, branch, repo_path).await?;
                 std::fs::write(&destination, data).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(

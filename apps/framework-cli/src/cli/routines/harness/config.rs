@@ -428,7 +428,7 @@ fn write_mcp_yaml_to_path(path: &Path) -> Result<bool, Box<dyn std::error::Error
     merged.retain(|entry| {
         entry
             .as_mapping()
-            .and_then(|mapping| mapping.get(&serde_yaml::Value::String("name".into())))
+            .and_then(|mapping| mapping.get(serde_yaml::Value::String("name".into())))
             .and_then(|value| value.as_str())
             .map(|name| name != "moose-dev" && name != "context7")
             .unwrap_or(true)

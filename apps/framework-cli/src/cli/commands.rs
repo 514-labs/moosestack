@@ -511,7 +511,9 @@ pub enum HarnessInitAction {
 }
 
 #[derive(Debug, Args)]
-#[command(after_help = "Examples:
+#[command(
+    args_conflicts_with_subcommands = true,
+    after_help = "Examples:
   moose harness init
   moose harness init my-app typescript --agent codex
   moose harness init my-app python-empty --location ./sandbox
@@ -520,7 +522,8 @@ pub enum HarnessInitAction {
   moose harness init schema --json
 
 Arg-driven mode is non-interactive. When any flags, positionals, or --input are provided,
-omitted optional values resolve to defaults and the command does not prompt.")]
+omitted optional values resolve to defaults and the command does not prompt."
+)]
 pub struct HarnessInitArgs {
     #[command(subcommand)]
     pub action: Option<HarnessInitAction>,
