@@ -12,6 +12,9 @@ use tracing::{error, info};
 use super::tools::all_tool_definitions;
 use crate::utilities::constants::CLI_VERSION;
 
+/// Maximum time to wait for the MCP client connection + handshake with the dev server.
+const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Maximum time to wait for a proxied tool call before returning a timeout error.
 const PROXY_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -43,10 +46,22 @@ impl ProxyMcpHandler {
         // Create a minimal client handler (no-op, we only need to send requests)
         let client = NoOpClientHandler;
 
-        let running = match rmcp::serve_client(client, transport).await {
-            Ok(running) => running,
-            Err(e) => {
+        let running = match tokio::time::timeout(
+            PROXY_CONNECT_TIMEOUT,
+            rmcp::serve_client(client, transport),
+        )
+        .await
+        {
+            Ok(Ok(running)) => running,
+            Ok(Err(e)) => {
                 info!("[MCP Proxy] Dev server not reachable: {}", e);
+                return Ok(dev_server_not_running_error(&self.dev_server_url));
+            }
+            Err(_elapsed) => {
+                info!(
+                    "[MCP Proxy] Connection to dev server timed out after {:?}",
+                    PROXY_CONNECT_TIMEOUT
+                );
                 return Ok(dev_server_not_running_error(&self.dev_server_url));
             }
         };
