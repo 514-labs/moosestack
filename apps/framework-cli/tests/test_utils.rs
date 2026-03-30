@@ -56,21 +56,15 @@ fn setup_test_environment() -> anyhow::Result<()> {
     // Ensure the target directory exists
     fs::create_dir_all(&target_dir)?;
 
-    // Files to copy (add more if other tests need different template .tgz files)
-    let files_to_copy = ["manifest.toml", "default.tgz", "python.tgz"];
+    for entry in fs::read_dir(&source_dir)? {
+        let entry = entry?;
+        let source_file = entry.path();
+        let file_name = entry.file_name();
+        let should_copy = file_name == "manifest.toml"
+            || source_file.extension().and_then(|ext| ext.to_str()) == Some("tgz");
 
-    for file_name in files_to_copy {
-        let source_file = source_dir.join(file_name);
-        let target_file = target_dir.join(file_name);
-
-        if source_file.exists() {
-            fs::copy(&source_file, &target_file)?;
-        } else {
-            // Optionally warn or error if a source file is missing
-            eprintln!(
-                "Warning: Source file {} not found, skipping copy.",
-                source_file.display()
-            );
+        if should_copy {
+            fs::copy(&source_file, target_dir.join(file_name))?;
         }
     }
 
