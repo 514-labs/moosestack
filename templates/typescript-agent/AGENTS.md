@@ -43,11 +43,11 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 1. **Dev server** — Prefer `pnpm dev:start` from the template root. It prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
 
-2. **MooseDev MCP** — Pre-configured in `.mcp.json`. Primary tool for inspecting the project (see Available Tools below).
+2. **MooseDev MCP** — Primary tool for inspecting the project (see Available Tools below).
 
-3. **Context7** — Pre-configured in `.mcp.json`. Add "use context7" to your prompts for MooseStack documentation.
+3. **Context7** — "use context7" to your prompts for MooseStack documentation.
 
-4. **ClickHouse Best Practices Skill** (optional) — Install with `514 agent init`. Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
+4. **MooseStack and ClickHouse Best Practices Skills** — Contains rules for schema design, query optimization, insert strategy, and MooseStack-specific patterns.
 
 ## Package Guides
 
