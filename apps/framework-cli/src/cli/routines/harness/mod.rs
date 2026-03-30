@@ -884,6 +884,8 @@ fn discover_skills_from_tree(tree: &GitTreeResponse) -> Result<Vec<SkillInfo>, R
         })
         .collect::<Vec<_>>();
 
+    let all_skill_dirs: HashSet<String> = skill_dirs.iter().map(|(dir, _)| dir.clone()).collect();
+
     let mut seen = HashSet::new();
     let mut skills = Vec::new();
 
@@ -898,8 +900,22 @@ fn discover_skills_from_tree(tree: &GitTreeResponse) -> Result<Vec<SkillInfo>, R
             .tree
             .iter()
             .filter(|entry| {
-                entry.entry_type == "blob"
-                    && (entry.path.starts_with(&format!("{repo_dir}/")) || entry.path == repo_dir)
+                if entry.entry_type != "blob" {
+                    return false;
+                }
+                if !(entry.path.starts_with(&format!("{repo_dir}/")) || entry.path == repo_dir) {
+                    return false;
+                }
+                for nested_skill_dir in &all_skill_dirs {
+                    if nested_skill_dir != &repo_dir
+                        && nested_skill_dir.starts_with(&format!("{repo_dir}/"))
+                        && (entry.path.starts_with(&format!("{nested_skill_dir}/"))
+                            || entry.path == nested_skill_dir.as_str())
+                    {
+                        return false;
+                    }
+                }
+                true
             })
             .map(|entry| {
                 let relative_path = entry

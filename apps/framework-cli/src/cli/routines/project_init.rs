@@ -89,16 +89,9 @@ pub async fn initialize_project(
 
 fn configure_remote_clickhouse(
     project_name: &str,
-    dir_path: &Path,
+    _dir_path: &Path,
     connection_string: &str,
 ) -> Result<(), RoutineFailure> {
-    std::env::set_current_dir(dir_path).map_err(|e| {
-        RoutineFailure::new(
-            Message::new("Failure".to_string(), "changing directory".to_string()),
-            e,
-        )
-    })?;
-
     let parsed =
         parse_clickhouse_connection_string_with_metadata(connection_string).map_err(|e| {
             RoutineFailure::new(
