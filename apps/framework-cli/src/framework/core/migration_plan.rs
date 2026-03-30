@@ -1,5 +1,6 @@
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{InfraChanges, InfrastructureMap};
+use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use crate::infrastructure::olap::ddl_ordering::PlanOrderingError;
 use crate::utilities::json;
@@ -51,7 +52,6 @@ impl MigrationPlan {
         remote_tables: &HashMap<String, Table>,
         default_database: &str,
     ) -> Vec<BackfillCheckResult> {
-        let re = regex::Regex::new(r"^(.+)_v(\d+)$").expect("valid regex");
         let mut results = Vec::new();
 
         let created_tables: Vec<&Table> = self
@@ -73,13 +73,14 @@ impl MigrationPlan {
             .collect();
 
         for new_table in &created_tables {
-            let caps = match re.captures(&new_table.name) {
-                Some(c) => c,
+            let new_version = match &new_table.version {
+                Some(v) => v,
                 None => continue,
             };
-            let base_name = caps[1].to_string();
 
-            let base_table = match find_base_table(remote_tables, &base_name, &re) {
+            let primitive_name = &new_table.source_primitive.name;
+
+            let base_table = match find_base_table(remote_tables, primitive_name, new_version) {
                 Some(t) => t,
                 None => continue,
             };
@@ -188,29 +189,26 @@ pub enum BackfillCheckResult {
     Duplicate { target: String, source: String },
 }
 
-/// Finds the base table: first tries exact `base_name`, then looks for the
-/// highest existing version below the new one (e.g. `Events_v1` for `Events_v2`).
+/// Finds the remote table with the same `source_primitive.name` that has the
+/// highest version strictly below `new_version`. An unversioned table (version
+/// `None`) is treated as lower than any versioned table.
 fn find_base_table<'a>(
     tables: &'a HashMap<String, Table>,
-    base_name: &str,
-    version_re: &regex::Regex,
+    primitive_name: &str,
+    new_version: &Version,
 ) -> Option<&'a Table> {
-    if let Some(t) = tables.get(base_name) {
-        return Some(t);
-    }
     tables
         .values()
-        .filter(|t| {
-            version_re
-                .captures(&t.name)
-                .map(|c| c.get(1).unwrap().as_str() == base_name)
-                .unwrap_or(false)
+        .filter(|t| t.source_primitive.name == primitive_name)
+        .filter(|t| match &t.version {
+            None => true,
+            Some(v) => v < new_version,
         })
-        .max_by_key(|t| {
-            version_re
-                .captures(&t.name)
-                .and_then(|c| c[2].parse::<u32>().ok())
-                .unwrap_or(0)
+        .max_by(|a, b| match (&a.version, &b.version) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, Some(_)) => std::cmp::Ordering::Less,
+            (Some(_), None) => std::cmp::Ordering::Greater,
+            (Some(va), Some(vb)) => va.cmp(vb),
         })
 }
 
@@ -342,7 +340,13 @@ mod tests {
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
-    fn test_table(name: &str, cols: Vec<Column>) -> Table {
+    fn make_table(
+        name: &str,
+        cols: Vec<Column>,
+        version: Option<&str>,
+        primitive_name: &str,
+    ) -> Table {
+        let ver = version.map(|v| Version::from_string(v.to_string()));
         Table {
             name: name.to_string(),
             columns: cols,
@@ -350,9 +354,9 @@ mod tests {
             partition_by: None,
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
-            version: None,
+            version: ver,
             source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
+                name: primitive_name.to_string(),
                 primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
@@ -429,11 +433,11 @@ mod tests {
             test_col("id", ColumnType::String),
             test_col("ts", ColumnType::DateTime { precision: None }),
         ];
-        let base = test_table("Events", cols.clone());
-        let new = test_table("Events_v2", cols);
+        let base = make_table("Events", cols.clone(), None, "Events");
+        let new = make_table("Events_2", cols, Some("2"), "Events");
 
         let mut remote = HashMap::new();
-        remote.insert("Events".to_string(), base);
+        remote.insert("default_Events".to_string(), base);
 
         let plan = MigrationPlan {
             created_at: Utc::now(),
@@ -443,18 +447,18 @@ mod tests {
         let results = plan.detect_backfill_candidates(&remote, "default");
         assert_eq!(results.len(), 1);
         assert!(matches!(&results[0], BackfillCheckResult::Candidate(c)
-            if c.target_table_name == "Events_v2" && c.source_table_name == "Events"
+            if c.target_table_name == "Events_2" && c.source_table_name == "Events"
         ));
     }
 
     #[test]
     fn append_backfill_adds_raw_sql() {
         let cols = vec![test_col("id", ColumnType::String)];
-        let base = test_table("Events", cols.clone());
-        let new = test_table("Events_v2", cols);
+        let base = make_table("Events", cols.clone(), None, "Events");
+        let new = make_table("Events_2", cols, Some("2"), "Events");
 
         let mut remote = HashMap::new();
-        remote.insert("Events".to_string(), base);
+        remote.insert("default_Events".to_string(), base);
 
         let mut plan = MigrationPlan {
             created_at: Utc::now(),
@@ -470,7 +474,7 @@ mod tests {
         match plan.operations.last().unwrap() {
             SerializableOlapOperation::RawSql { sql, .. } => {
                 assert!(sql[0].contains("INSERT INTO"));
-                assert!(sql[0].contains("Events_v2"));
+                assert!(sql[0].contains("Events_2"));
                 assert!(sql[0].contains("Events"));
             }
             _ => panic!("Expected RawSql operation"),
@@ -484,11 +488,11 @@ mod tests {
             test_col("id", ColumnType::String),
             test_col("extra", ColumnType::BigInt),
         ];
-        let base = test_table("Events", base_cols);
-        let new = test_table("Events_v2", new_cols);
+        let base = make_table("Events", base_cols, None, "Events");
+        let new = make_table("Events_2", new_cols, Some("2"), "Events");
 
         let mut remote = HashMap::new();
-        remote.insert("Events".to_string(), base);
+        remote.insert("default_Events".to_string(), base);
 
         let plan = MigrationPlan {
             created_at: Utc::now(),
@@ -499,7 +503,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(
             matches!(&results[0], BackfillCheckResult::NonEquivalent { target, reason, .. }
-                if target == "Events_v2" && reason.contains("extra")
+                if target == "Events_2" && reason.contains("extra")
             )
         );
     }
@@ -507,7 +511,7 @@ mod tests {
     #[test]
     fn detect_skipped_when_no_base_table() {
         let cols = vec![test_col("id", ColumnType::String)];
-        let new = test_table("BrandNew_v2", cols);
+        let new = make_table("BrandNew_2", cols, Some("2"), "BrandNew");
 
         let remote = HashMap::new();
 
@@ -523,11 +527,11 @@ mod tests {
     #[test]
     fn detect_duplicate_after_append() {
         let cols = vec![test_col("id", ColumnType::String)];
-        let base = test_table("Events", cols.clone());
-        let new = test_table("Events_v2", cols);
+        let base = make_table("Events", cols.clone(), None, "Events");
+        let new = make_table("Events_2", cols, Some("2"), "Events");
 
         let mut remote = HashMap::new();
-        remote.insert("Events".to_string(), base);
+        remote.insert("default_Events".to_string(), base);
 
         let mut plan = MigrationPlan {
             created_at: Utc::now(),
@@ -544,7 +548,7 @@ mod tests {
         assert_eq!(second.len(), 1);
         assert!(
             matches!(&second[0], BackfillCheckResult::Duplicate { target, .. }
-                if target == "Events_v2"
+                if target == "Events_2"
             )
         );
         assert_eq!(plan.operations.len(), 2);
@@ -553,7 +557,7 @@ mod tests {
     #[test]
     fn detect_non_versioned_table_is_skipped() {
         let cols = vec![test_col("id", ColumnType::String)];
-        let new = test_table("NewTable", cols);
+        let new = make_table("NewTable", cols, None, "NewTable");
 
         let remote = HashMap::new();
         let plan = MigrationPlan {
@@ -568,13 +572,13 @@ mod tests {
     #[test]
     fn detect_finds_highest_existing_version() {
         let cols = vec![test_col("id", ColumnType::String)];
-        let v1 = test_table("Events_v1", cols.clone());
-        let v2 = test_table("Events_v2", cols.clone());
-        let new = test_table("Events_v3", cols);
+        let v1 = make_table("Events_1", cols.clone(), Some("1"), "Events");
+        let v2 = make_table("Events_2", cols.clone(), Some("2"), "Events");
+        let new = make_table("Events_3", cols, Some("3"), "Events");
 
         let mut remote = HashMap::new();
-        remote.insert("Events_v1".to_string(), v1);
-        remote.insert("Events_v2".to_string(), v2);
+        remote.insert("default_Events_1".to_string(), v1);
+        remote.insert("default_Events_2".to_string(), v2);
 
         let plan = MigrationPlan {
             created_at: Utc::now(),
@@ -584,7 +588,7 @@ mod tests {
         let results = plan.detect_backfill_candidates(&remote, "default");
         assert_eq!(results.len(), 1);
         assert!(matches!(&results[0], BackfillCheckResult::Candidate(c)
-            if c.source_table_name == "Events_v2"
+            if c.source_table_name == "Events_2"
         ));
     }
 }

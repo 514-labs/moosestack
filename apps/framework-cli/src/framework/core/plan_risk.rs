@@ -20,6 +20,7 @@ use tokio::io::AsyncBufReadExt;
 use crate::cli::display::{terminal_lock, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
+use crate::framework::versions::{version_to_string, Version};
 
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 
@@ -34,6 +35,7 @@ pub enum DestructiveChange {
     TableDrop {
         database: Option<String>,
         table_name: String,
+        version: Option<Version>,
     },
     ColumnDrop {
         database: Option<String>,
@@ -45,6 +47,7 @@ pub enum DestructiveChange {
         database: Option<String>,
         table_name: String,
         reason: String,
+        version: Option<Version>,
     },
     ViewDrop {
         database: Option<String>,
@@ -69,6 +72,7 @@ impl fmt::Display for DestructiveChange {
             DestructiveChange::TableDrop {
                 database,
                 table_name,
+                ..
             } => {
                 write!(f, "DROP TABLE ")?;
                 fmt_qualified(f, database, table_name)
@@ -85,6 +89,7 @@ impl fmt::Display for DestructiveChange {
                 database,
                 table_name,
                 reason,
+                ..
             } => {
                 write!(f, "DROP + RECREATE ")?;
                 fmt_qualified(f, database, table_name)?;
@@ -205,11 +210,13 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                         database: table.database.clone(),
                         table_name: table.name.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
+                        version: table.version.clone(),
                     });
                 } else {
                     destructive_changes.push(DestructiveChange::TableDrop {
                         database: table.database.clone(),
                         table_name: table.name.clone(),
+                        version: table.version.clone(),
                     });
                 }
             }
@@ -608,22 +615,36 @@ pub fn classify_operations_risk(operations: &[SerializableOlapOperation]) -> Pla
         .copied()
         .collect();
 
+    let version_by_name: HashMap<(Option<&str>, &str), Option<&Version>> = operations
+        .iter()
+        .filter_map(|op| match op {
+            SerializableOlapOperation::CreateTable { table } => Some((
+                (table.database.as_deref(), table.name.as_str()),
+                table.version.as_ref(),
+            )),
+            _ => None,
+        })
+        .collect();
+
     for op in operations {
         match op {
             SerializableOlapOperation::DropTable {
                 table, database, ..
             } => {
                 let key = (database.as_deref(), table.as_str());
+                let version = version_by_name.get(&key).and_then(|v| v.cloned());
                 if recreated.contains(&key) {
                     destructive_changes.push(DestructiveChange::TableRecreate {
                         database: database.clone(),
                         table_name: table.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
+                        version,
                     });
                 } else {
                     destructive_changes.push(DestructiveChange::TableDrop {
                         database: database.clone(),
                         table_name: table.clone(),
+                        version,
                     });
                 }
             }
@@ -671,20 +692,51 @@ pub struct DestructiveTableInfo {
     pub table_name: String,
     pub database: Option<String>,
     pub next_version_name: String,
+    /// Dot-separated version string for user guidance (e.g. `"0.1"`, `"2.0"`).
+    pub next_version_string: String,
 }
 
-/// Computes the next versioned name for a table.
+/// Computes a suggested next versioned ClickHouse table name.
 ///
-/// `Events`    -> `Events_v2`
-/// `Events_v3` -> `Events_v4`
-pub fn derive_next_version(table_name: &str) -> String {
-    let re = regex::Regex::new(r"^(.+)_v(\d+)$").expect("valid regex");
-    if let Some(caps) = re.captures(table_name) {
-        let base = &caps[1];
-        let current: u32 = caps[2].parse().unwrap_or(1);
-        format!("{base}_v{}", current + 1)
-    } else {
-        format!("{table_name}_v2")
+/// Uses the `Table.version` field rather than parsing the table name.
+///
+/// `("Events",     None)                 -> "Events_0_1"`
+/// `("Events_3",   Some(Version("3")))   -> "Events_4"`
+/// `("Events_1_0", Some(Version("1.0"))) -> "Events_2_0"`
+pub fn derive_next_version(table_name: &str, version: Option<&Version>) -> String {
+    match version {
+        Some(v) => {
+            let suffix = format!("_{}", v.as_suffix());
+            let base = table_name.strip_suffix(&suffix).unwrap_or(table_name);
+            let mut parsed = v.parsed().to_vec();
+            if let Some(first) = parsed.first_mut() {
+                *first += 1;
+            }
+            let new_v = Version::from_string(version_to_string(&parsed));
+            format!("{base}_{}", new_v.as_suffix())
+        }
+        None => {
+            let first_version = Version::from_string("0.1".to_string());
+            format!("{table_name}_{}", first_version.as_suffix())
+        }
+    }
+}
+
+/// Returns the suggested `version` string (dot-separated) for the next version.
+///
+/// `None`                 -> `"0.1"`
+/// `Some(Version("3"))`   -> `"4"`
+/// `Some(Version("1.0"))` -> `"2.0"`
+pub fn derive_next_version_string(version: Option<&Version>) -> String {
+    match version {
+        Some(v) => {
+            let mut parsed = v.parsed().to_vec();
+            if let Some(first) = parsed.first_mut() {
+                *first += 1;
+            }
+            version_to_string(&parsed)
+        }
+        None => "0.1".to_string(),
     }
 }
 
@@ -697,15 +749,18 @@ fn collect_destructive_table_info(risk: &PlanRisk) -> Vec<DestructiveTableInfo> 
             DestructiveChange::TableRecreate {
                 database,
                 table_name,
+                version,
                 ..
             }
             | DestructiveChange::TableDrop {
                 database,
                 table_name,
+                version,
             } => Some(DestructiveTableInfo {
                 table_name: table_name.clone(),
                 database: database.clone(),
-                next_version_name: derive_next_version(table_name),
+                next_version_name: derive_next_version(table_name, version.as_ref()),
+                next_version_string: derive_next_version_string(version.as_ref()),
             }),
             _ => None,
         })
@@ -811,29 +866,31 @@ pub fn print_migration_rejected_guidance(
 
     println!("\nMigration generation aborted.");
     println!(
-        "Safer next step: create a versioned table in your model code, \
+        "Safer next step: create a new version of the table in your model code, \
          export it from your root module, then regenerate migration.\n"
     );
 
     for info in tables {
-        println!("  {0} → {1}", info.table_name, info.next_version_name);
+        println!(
+            "  {0} → {1}  (version: \"{2}\")",
+            info.table_name, info.next_version_name, info.next_version_string
+        );
     }
 
-    let (root_file, export_hint) = match language {
+    let (root_file, version_hint) = match language {
         SupportedLanguages::Typescript => (
             "index.ts",
-            "export { <Model>_vN } from './your-model-file';",
+            "Set `version: \"<version>\"` in your OlapTable config and export from index.ts",
         ),
         SupportedLanguages::Python => (
             "__init__.py or models directory",
-            "from .your_model_file import <Model>_vN",
+            "Set `version=\"<version>\"` in your OlapTable config and export from __init__.py",
         ),
     };
 
     println!("\nNext Steps");
-    println!("  1. Rename your updated model to the versioned name shown above");
-    println!("  2. Export the new symbol from root `{root_file}`");
-    println!("     {export_hint}");
+    println!("  1. {version_hint}");
+    println!("  2. Export the new table from root `{root_file}`");
     println!("  3. Run `moose generate migration` again");
 }
 
@@ -1136,7 +1193,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableDrop { database: None, table_name } if table_name == "events"
+            DestructiveChange::TableDrop { database: None, table_name, .. } if table_name == "events"
         ));
     }
 
@@ -1535,32 +1592,42 @@ mod tests {
 
     #[test]
     fn next_version_from_unversioned_table() {
-        assert_eq!(derive_next_version("Events"), "Events_v2");
+        assert_eq!(derive_next_version("Events", None), "Events_0_1");
     }
 
     #[test]
     fn next_version_from_v3() {
-        assert_eq!(derive_next_version("Events_v3"), "Events_v4");
+        let v = Version::from_string("3".to_string());
+        assert_eq!(derive_next_version("Events_3", Some(&v)), "Events_4");
     }
 
     #[test]
     fn next_version_from_v1() {
-        assert_eq!(derive_next_version("Events_v1"), "Events_v2");
+        let v = Version::from_string("1".to_string());
+        assert_eq!(derive_next_version("Events_1", Some(&v)), "Events_2");
+    }
+
+    #[test]
+    fn next_version_from_multi_component() {
+        let v = Version::from_string("1.0".to_string());
+        assert_eq!(derive_next_version("Events_1_0", Some(&v)), "Events_2_0");
     }
 
     #[test]
     fn collect_destructive_info_for_recreate() {
+        let v = Version::from_string("3".to_string());
         let risk = PlanRisk {
             destructive_changes: vec![DestructiveChange::TableRecreate {
                 database: None,
-                table_name: "Events_v3".to_string(),
+                table_name: "Events_3".to_string(),
                 reason: "order by changed".to_string(),
+                version: Some(v),
             }],
         };
         let info = collect_destructive_table_info(&risk);
         assert_eq!(info.len(), 1);
-        assert_eq!(info[0].table_name, "Events_v3");
-        assert_eq!(info[0].next_version_name, "Events_v4");
+        assert_eq!(info[0].table_name, "Events_3");
+        assert_eq!(info[0].next_version_name, "Events_4");
     }
 
     #[test]
@@ -1569,12 +1636,14 @@ mod tests {
             destructive_changes: vec![DestructiveChange::TableDrop {
                 database: Some("analytics".to_string()),
                 table_name: "Users".to_string(),
+                version: None,
             }],
         };
         let info = collect_destructive_table_info(&risk);
         assert_eq!(info.len(), 1);
         assert_eq!(info[0].table_name, "Users");
-        assert_eq!(info[0].next_version_name, "Users_v2");
+        assert_eq!(info[0].next_version_name, "Users_0_1");
+        assert_eq!(info[0].next_version_string, "0.1");
         assert_eq!(info[0].database, Some("analytics".to_string()));
     }
 
