@@ -8,27 +8,29 @@ import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
 
 # Dev Approach
 
-This guide assumes you'll use a coding agent to accelerate your build. Additionally, this guide proposes using a Coding Agent Harness: that will set your coding agent up for success to safely, quickly, effectively build out your production-ready Analytics Agent and Analytics Agent Harness.
+So you want to build a custom analytics agent - cool! This guide assumes you'll be using a coding agent to accelerate your build (Claude code, Cursor, Kiro, Codex, etc). Additionally, this guide proposes using a Coding Agent Harness: that will set your coding agent up for success to safely, quickly, effectively build out your production-ready Analytics Agent and Analytics Agent Harness.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 Your Analytics Agent App                                 │
-│                                                                                          │
-│  ┌─────────────┐   ┌─────────────────────────────────┐   ┌─────────────┐   ┌──────────┐  │
-│  │ Source Data │──►│     Analytics Agent Harness     │──►│  Analytics  │──►│ Next.js  │  │
-│  └─────────────┘   │  ClickHouse · APIs · MCPs       │   │    Agent    │   │   GUI    │  │
-│                    │  Security · Observability       │   └─────────────┘   └──────────┘  │
-│                    │  Semantic Layer · Guardrails    │                                   │
-│                    └─────────────────────────────────┘                                   │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-                                             ▲
-               ┌────────────────────────────────────────────────────────────┐
-               │          Coding Agent Harness  (514 / MooseStack)          │
-               └────────────────────────────────────────────────────────────┘
-                                             ▲
-               ┌────────────────────────────────────────────────────────────┐
-               │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
-               └────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                      Your Analytics Agent App                                     │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │          Coding Agent Harness  (514 / MooseStack)          │
+                     └────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
+                     └────────────────────────────────────────────────────────────┘
 ```
 
 ## Why use a Coding Agent Harness
@@ -39,6 +41,10 @@ If you're building a prototype, a coding agent can probably get you all the way 
   bulletStyle="x"
   bullets={[
     {
+      title: "Reinventing the wheel on infra and plumbing",
+      description: "Agents burn time on generic problems — infra, auth, monitoring, API wiring — instead of the business logic that actually matters. Known patterns exist. Use them. Start from a template.",
+    },
+    {
       title: "Missing best practices for data engineering and OLAP",
       description: "Agents don't have the right specialization for real-time analytical infrastructure. Wrong key design, missing LowCardinality, ORDER BY that kills query performance at scale.",
     },
@@ -47,7 +53,7 @@ If you're building a prototype, a coding agent can probably get you all the way 
       description: "Errors surface at deploy time, not write time. Without the right context immediately available, agents can't catch and fix mistakes as they go.",
     },
     {
-      title: "No infrastructure interfaces built for how coding agents work",
+      title: "No infrastructure interfaces designed for how coding agents work",
       description: "CLIs, MCPs, APIs, and code-based interfaces are how coding agents operate effectively. Without them, agents can't interact with or validate against the running infrastructure.",
     },
   ]}
@@ -64,7 +70,17 @@ The Coding Agent Harness is an integrated environment that exposes all the infra
   bulletStyle="number"
   bullets={[
     {
-      title: "MooseStack Framework",
+      title: "Best-in-class OSS infrastructure",
+      description:
+        "ClickHouse for OLAP, Redpanda for streaming, Temporal for workflows, Langfuse for agent observability. Battle-tested at scale, open source, and pre-wired so your agent starts with the right stack instead of assembling one.",
+    },
+    {
+      title: "Quickstart Template",
+      description:
+        "A production-ready skeleton for the full Analytics Agent Harness: JWT auth, row-level security, multi-agent orchestration, observability, semantic layer, and guardrails pre-wired. You and your agent fill in your domain logic, not the plumbing.",
+    },
+    {
+      title: "MooseStack Typescript Framework",
       description:
         "TypeScript interfaces for ClickHouse and real-time analytical infrastructure. Schemas, materialized views, ingest pipelines, and APIs are typed code objects — readable and writable by coding agents without any database-specific tooling.",
     },
@@ -87,11 +103,6 @@ The Coding Agent Harness is an integrated environment that exposes all the infra
       title: "Agent Skills",
       description:
         "ClickHouse and data engineering best practices packaged as invocable skills. Covers primary key design, LowCardinality usage, ORDER BY strategy, materialized view patterns, and data type selection — the specializations agents most commonly get wrong.",
-    },
-    {
-      title: "`Typescript-agent` Template",
-      description:
-        "A production-ready skeleton for the full Analytics Agent Harness: JWT auth, row-level security, multi-agent orchestration, observability, semantic layer, and guardrails pre-wired. The agent fills in your domain logic, not the plumbing.",
     },
   ]}
 />

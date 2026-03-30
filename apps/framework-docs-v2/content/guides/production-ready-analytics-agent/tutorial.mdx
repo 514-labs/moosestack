@@ -8,52 +8,53 @@ import { Callout, BulletPointsCard, ToggleBlock, CommunityCallout } from "@/comp
 
 # Tutorial: Production-Ready Analytics Agent
 
-### How to use this tutorial
-Read the [Overview](/guides/production-ready-analytics-agent/overview) and [Dev Approach](/guides/production-ready-analytics-agent/dev-approach) pages before starting. The Overview explains what the Analytics Agent Harness is and when this approach is worth building. Dev Approach explains the Coding Agent Harness and how to set your coding agent up for success.
+This tutorial will you guide you (or your coding agent!) step-by-step through building out a production-ready analytics agent. Ie an AI agent that can query data, extract insights, and present findings, all while doing it safely, reliably, and blazing fast.
 
-<FeatureGrid columns={3}>
-  <FeatureCard
-    title="Option A — Agent-first"
-    description="Point your coding agent at this tutorial and let it execute every section from start to finish. The tutorial gives it everything it needs."
-  />
-  <FeatureCard
-    title="Option B — Hybrid"
-    description="Go through the tutorial manually, using your coding agent for the steps marked with agent prompts. All prompt blocks are ready to paste into your agent."
-  />
-  <FeatureCard
-    title="Option C — Fully manual"
-    description="Follow the tutorial yourself without using the agent prompts. Every step can be completed manually."
-  />
-</FeatureGrid>
+The foundation of this tutorial is a [highly composable template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent), with best practices for analytical agents and infrastructure included, so you can quickly focus on your custom implementation, instead of the plumbing and boiler plate.
 
-If you're going agent-first, paste this into your coding agent to get started:
-
-```text
-I want to build a production ready analytics agent. Read the tutorial at
-https://docs.fiveonefour.com/guides/production-ready-analytics-agent/tutorial
-for context, and prepare to execute all sections. Let's start by setting up the
-Coding Agent Harness locally, so you have an environment to build it. Then let's
-create a plan together for everything you need to build the agent. Let me know
-what context about my use case, my goals, my data, my desired outcome, etc that
-you need from me.
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                      Your Analytics Agent App                                     │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │          Coding Agent Harness  (514 / MooseStack)          │
+                     └────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
+                     └────────────────────────────────────────────────────────────┘
 ```
 
----
+For more context, read the [Overview](/guides/production-ready-analytics-agent/overview) and [Dev Approach](/guides/production-ready-analytics-agent/dev-approach) pages before starting. The Overview explains what the Analytics Agent Harness is and when this approach is worth building. Dev Approach explains the Coding Agent Harness and how to set your coding agent up for success.
 
-### What this tutorial covers
 <BulletPointsCard
-  title="By the end of this guide you'll have"
+  title="By the end of this tutorial you'll have"
   bulletStyle="check"
   bullets={[
     {
-      title: "A multi-agent chat UI delivering high analytical performance, backed by ClickHouse",
+      title: "A production-ready multi-agent analytics agent",
       description:
-        "Queries fast enough to support real-time exploration, served through a supervisor → specialist → narrator agent flow.",
+        "A supervisor → specialist → narrator pipeline that routes questions, runs targeted ClickHouse queries, and returns accurate, well-explained answers.",
     },
     {
-      title: "Your own domain data loaded and queryable by the agent",
+      title: "High-performance analytical infrastructure backing your agent",
       description:
-        "Replace the demo model with your schema. The agent queries it through the same MCP tools.",
+        "Open source realtime analytical database, ClickHouse, powers every query. Fast enough for real-time exploration — not a transactional database being asked to do analytical work.",
+    },
+    {
+      title: "A frontend chat UI wired to the agent",
+      description:
+        "A Next.js frontend with an auth-gated chat interface. Users ask questions, the agent answers from real data.",
     },
     {
       title: "Secure, multi-tenant access — JWT-authenticated, tenant-isolated at the database layer",
@@ -75,15 +76,41 @@ you need from me.
       description:
         "Content policy enforcement wired in before you ship, not bolted on after an incident.",
     },
-    {
-      title: "A deployment on 514 hosting with preview environments per PR",
-      description:
-        "Isolated ClickHouse database per branch. Schema changes validated before they hit production.",
-    },
   ]}
 />
 
-You'll work through:
+### How to use this tutorial
+
+<FeatureGrid columns={3}>
+  <FeatureCard
+    title="Option A — Agent-first"
+    description="Point your coding agent at this tutorial and let it execute every section from start to finish. The tutorial gives it everything it needs."
+  />
+  <FeatureCard
+    title="Option B — Hybrid"
+    description="Go through the tutorial manually, using your coding agent for the steps marked with agent prompts. All prompt blocks are ready to paste into your agent."
+  />
+  <FeatureCard
+    title="Option C — Fully manual"
+    description="Follow the tutorial yourself without using the agent prompts. Every step can be completed manually."
+  />
+</FeatureGrid>
+
+If you're going agent-first, paste this into your coding agent to get started:
+
+```text
+I want to build a production-ready analytics agent. Read the tutorial at
+https://docs.fiveonefour.com/guides/production-ready-analytics-agent/tutorial
+for context, and prepare to execute all sections. Let's start by setting up the
+Coding Agent Harness locally, so you have an environment to build it. Then let's
+create a plan together for everything you need to build the agent. Let me know
+what context about my use case, my goals, my data, my desired outcome, etc that
+you need from me.
+```
+
+---
+
+### Steps of the Tutorial
 
 1. [Set Up the Coding Agent Harness](#set-up-the-coding-agent-harness) — install CLIs, scaffold the project, start the dev environment with demo data
 2. [Configure the Template](#configure-the-template) — AI provider (for the analytics agents), Langfuse, guardrails; verify the template is wired correctly
