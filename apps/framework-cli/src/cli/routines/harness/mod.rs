@@ -959,6 +959,11 @@ fn discover_local_skills(root: &Path) -> Result<Vec<SkillInfo>, RoutineFailure> 
     collect_skill_dirs(&skills_root, &mut skill_dirs)?;
     skill_dirs.sort();
 
+    let nested_skill_dirs = skill_dirs
+        .iter()
+        .map(|dir| (dir.clone(), true))
+        .collect::<HashMap<_, _>>();
+
     let mut skills = Vec::new();
     for skill_dir in skill_dirs {
         let relative = skill_dir.strip_prefix(&skills_root).map_err(|e| {
@@ -976,7 +981,7 @@ fn discover_local_skills(root: &Path) -> Result<Vec<SkillInfo>, RoutineFailure> 
         validate_relative_path(&name)?;
 
         let mut files = Vec::new();
-        collect_skill_files(&skill_dir, &skill_dir, &mut files)?;
+        collect_skill_files(&skill_dir, &skill_dir, &nested_skill_dirs, &mut files)?;
         files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
 
         skills.push(SkillInfo { name, files });
@@ -1020,10 +1025,9 @@ fn collect_skill_dirs(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), Routi
         {
             let path = entry.path();
             if path.join("SKILL.md").is_file() {
-                output.push(path);
-            } else {
-                collect_skill_dirs(&path, output)?;
+                output.push(path.clone());
             }
+            collect_skill_dirs(&path, output)?;
         }
     }
 
@@ -1033,6 +1037,7 @@ fn collect_skill_dirs(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), Routi
 fn collect_skill_files(
     root: &Path,
     dir: &Path,
+    nested_skill_dirs: &HashMap<PathBuf, bool>,
     output: &mut Vec<SkillFileSpec>,
 ) -> Result<(), RoutineFailure> {
     for entry in std::fs::read_dir(dir).map_err(|e| {
@@ -1065,7 +1070,10 @@ fn collect_skill_files(
         })?;
 
         if file_type.is_dir() {
-            collect_skill_files(root, &path, output)?;
+            if path != *root && nested_skill_dirs.contains_key(&path) {
+                continue;
+            }
+            collect_skill_files(root, &path, nested_skill_dirs, output)?;
             continue;
         }
 
@@ -1547,6 +1555,42 @@ mod tests {
         };
 
         let skills = discover_skills_from_tree(&tree).unwrap();
+        let parent_skill = skills.iter().find(|skill| skill.name == "a").unwrap();
+        let child_skill = skills.iter().find(|skill| skill.name == "a/b").unwrap();
+
+        let mut parent_files = parent_skill
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>();
+        parent_files.sort();
+        assert_eq!(parent_files, vec!["README.md", "SKILL.md"]);
+
+        let mut child_files = child_skill
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>();
+        child_files.sort();
+        assert_eq!(child_files, vec!["SKILL.md", "examples/example.md"]);
+    }
+
+    #[test]
+    fn discover_local_skills_excludes_nested_child_skill_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let skills_root = temp_dir.path().join("skills");
+
+        std::fs::create_dir_all(skills_root.join("a")).unwrap();
+        std::fs::write(skills_root.join("a/SKILL.md"), "# Skill A").unwrap();
+        std::fs::write(skills_root.join("a/README.md"), "README for A").unwrap();
+
+        std::fs::create_dir_all(skills_root.join("a/b/examples")).unwrap();
+        std::fs::write(skills_root.join("a/b/SKILL.md"), "# Skill B").unwrap();
+        std::fs::write(skills_root.join("a/b/examples/example.md"), "Example").unwrap();
+
+        let skills = discover_local_skills(temp_dir.path()).unwrap();
+        assert_eq!(skills.len(), 2);
+
         let parent_skill = skills.iter().find(|skill| skill.name == "a").unwrap();
         let child_skill = skills.iter().find(|skill| skill.name == "a/b").unwrap();
 
