@@ -65,26 +65,31 @@ But if you want your analytics agent to be safe, reliable and performant in prod
       title: "Performance: Analytical Infrastructure",
       description:
         "Transactional databases fail under real analytical workloads. Production analytics agents need a purpose-built OLAP engine — one where queries that would time out elsewhere return in milliseconds.",
+      examples: ["ClickHouse (OLAP)", "Redpanda / Kafka (streaming)", "Temporal (workflows)"],
     },
     {
       title: "Security: Auth and Access",
       description:
         "Application-layer tenant isolation can be bypassed by a bug or prompt injection. Robust isolation needs to be enforced at the database layer — so the database itself rejects cross-tenant queries.",
+      examples: ["JWT auth", "Row-level security", "DB-layer tenant isolation"],
     },
     {
       title: "Observability: Tracing and Troubleshooting",
       description:
         "Without agent traces you can't tune prompts or debug incidents. Every tool call, model decision, SQL query, cost, and latency needs to be captured per request — wired in from the start, not added after an incident.",
+      examples: ["Langfuse", "OTEL"],
     },
     {
       title: "Consistency: Semantic layer",
       description:
         "Metrics defined in multiple places drift. Every surface — chat, APIs, dashboards, MCP tools — needs a single definition of each metric. 'Revenue' should mean the same thing everywhere.",
+      examples: ["Express APIs & MCPs", "MooseStack Query Models"],
     },
     {
-      title: "Compliance: Policies and Gaurdrails",
+      title: "Compliance: Policies and Guardrails",
       description:
         "Content policy bolted on after an incident is hard to audit. Guardrails need to be deliberate, testable, and always on — built in before you ship, not retrofitted after.",
+      examples: ["AWS BedRock", "AWS Guardrails"],
     },
   ]}
 />

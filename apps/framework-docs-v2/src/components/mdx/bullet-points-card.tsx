@@ -10,6 +10,7 @@ export type BulletPointLinkVariant = "default" | "emphasized";
 export interface BasicBulletPoint {
   title: string;
   description?: string;
+  examples?: string[];
   link?: {
     text: string;
     href: string;
@@ -108,6 +109,21 @@ export function BulletPointContent({
           )}
         >
           <p className="mb-1">{point.description}</p>
+          {point.examples && point.examples.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <span className="text-xs text-muted-foreground/70 font-mono">
+                Examples:
+              </span>
+              {point.examples.map((ex, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-xs font-mono text-muted-foreground border border-border"
+                >
+                  {ex}
+                </span>
+              ))}
+            </div>
+          )}
           {point.link &&
             (point.link.external ?
               <Link
