@@ -672,8 +672,9 @@ async fn install_harness_support(
         .map(|skill| skill.name.clone())
         .collect::<Vec<_>>();
 
+    let mut client: Option<reqwest::Client> = None;
     for skill in &skills {
-        install_skill(skill, agents, home, branch).await?;
+        install_skill(skill, agents, home, branch, &mut client).await?;
     }
 
     let lsp_installed = maybe_install_lsp(install_lsp_requested).await?;
@@ -1100,6 +1101,7 @@ async fn install_skill(
     agents: &[&'static AgentInfo],
     home: &Path,
     branch: &str,
+    client: &mut Option<reqwest::Client>,
 ) -> Result<(), RoutineFailure> {
     let canonical_dir = canonical_skill_dir(home, &skill.name);
     std::fs::create_dir_all(&canonical_dir).map_err(|e| {
@@ -1115,7 +1117,6 @@ async fn install_skill(
         )
     })?;
 
-    let mut client: Option<reqwest::Client> = None;
     for file in &skill.files {
         let destination = canonical_dir.join(&file.relative_path);
         if let Some(parent) = destination.parent() {
@@ -1136,7 +1137,7 @@ async fn install_skill(
         match &file.source {
             SkillFileSource::GitHubPath(repo_path) => {
                 if client.is_none() {
-                    client = Some(build_http_client()?);
+                    *client = Some(build_http_client()?);
                 }
                 let http_client = client.as_ref().expect("HTTP client initialized");
                 let data = download_raw_file(http_client, branch, repo_path).await?;
