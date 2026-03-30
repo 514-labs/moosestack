@@ -912,14 +912,8 @@ fn github_skill_tree_url(branch: &str) -> Result<reqwest::Url, RoutineFailure> {
                 "Failed to mutate GitHub tree URL segments".to_string(),
             ))
         })?;
-        segments.extend([
-            "repos",
-            GITHUB_REPO_OWNER,
-            GITHUB_REPO_NAME,
-            "git",
-            "trees",
-            branch,
-        ]);
+        segments.extend(["repos", GITHUB_REPO_OWNER, GITHUB_REPO_NAME, "git", "trees"]);
+        segments.extend(branch.split('/'));
     }
     url.query_pairs_mut().append_pair("recursive", "1");
     Ok(url)
@@ -939,7 +933,8 @@ fn github_raw_file_url(branch: &str, path: &str) -> Result<reqwest::Url, Routine
                 "Failed to mutate GitHub raw-file URL segments".to_string(),
             ))
         })?;
-        segments.extend([GITHUB_REPO_OWNER, GITHUB_REPO_NAME, branch]);
+        segments.extend([GITHUB_REPO_OWNER, GITHUB_REPO_NAME]);
+        segments.extend(branch.split('/'));
         segments.extend(path.split('/'));
     }
     Ok(url)
@@ -1771,7 +1766,7 @@ mod tests {
         let url = github_skill_tree_url("feature/test-branch").unwrap();
         assert_eq!(
             url.as_str(),
-            "https://api.github.com/repos/514-labs/agent-skills/git/trees/feature%2Ftest-branch?recursive=1"
+            "https://api.github.com/repos/514-labs/agent-skills/git/trees/feature/test-branch?recursive=1"
         );
     }
 
@@ -1780,7 +1775,7 @@ mod tests {
         let url = github_raw_file_url("feature/test-branch", "skills/a/SKILL.md").unwrap();
         assert_eq!(
             url.as_str(),
-            "https://raw.githubusercontent.com/514-labs/agent-skills/feature%2Ftest-branch/skills/a/SKILL.md"
+            "https://raw.githubusercontent.com/514-labs/agent-skills/feature/test-branch/skills/a/SKILL.md"
         );
     }
 
