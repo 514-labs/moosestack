@@ -75,7 +75,7 @@ Row-level security lands in Moose with the new `SelectRowPolicy` primitive, plus
   Destructive Plan contains 1 destructive operation(s) that may cause data loss:
     - DROP + RECREATE `Bar` (schema change requires drop + recreate)
               Tip For production, consider a versioned-table migration instead:
-    1. Create a *_v2 table with the new schema
+    1. Set version: "0.1" in your OlapTable config for the new schema
     2. Cut readers/writers over
     3. Validate parity
     4. Retire the old table later

@@ -90,9 +90,9 @@ During plan generation, Moose will prompt you interactively when it detects:
 
 1. **Column renames** — Moose uses heuristic analysis to detect likely renames. For each, you choose whether to treat it as a rename (preserving data) or a drop + add (destructive). Confirmed renames appear as `RenameTableColumn` operations in the plan. Rejected renames stay as `DropTableColumn` + `AddTableColumn`.
 
-2. **Destructive operations** — If the plan contains table drops, column removals, table recreates, or view removals, Moose shows a `DANGER` banner and asks for confirmation. If you reject, Moose prints guidance on how to create a versioned table instead (e.g., `Events` → `Events_v2`) and aborts.
+2. **Destructive operations** — If the plan contains table drops, column removals, table recreates, or view removals, Moose shows a `DANGER` banner and asks for confirmation. If you reject, Moose prints guidance on how to create a versioned table instead (e.g., `Events` → `Events_0_1` via `version: "0.1"`) and aborts.
 
-3. **Backfill for versioned tables** — When creating a new versioned table (e.g., `Events_v2`) whose schema matches the existing base table, Moose offers to append an `INSERT INTO ... SELECT` backfill operation to the plan.
+3. **Backfill for versioned tables** — When creating a new versioned table (e.g., `Events_0_1` with `version: "0.1"`) whose schema matches the existing base table, Moose offers to append an `INSERT INTO ... SELECT` backfill operation to the plan.
 
 To skip prompts in CI/CD, use `--yes-all`, `--yes-destructive`, `--yes-rename`, or the corresponding environment variables (`MOOSE_ACCEPT_ALL`, `MOOSE_ACCEPT_DESTRUCTIVE`, `MOOSE_ACCEPT_RENAME`). Use `--no-auto-backfill-sql` to disable automatic backfill detection.
 
