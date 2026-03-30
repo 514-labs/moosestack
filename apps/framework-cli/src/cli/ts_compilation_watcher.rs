@@ -39,6 +39,9 @@ use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -289,6 +292,7 @@ async fn watch(
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
+    confirmation_policy: ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -418,34 +422,53 @@ async fn watch(
                                         continue;
                                     }
 
-                                    // Show success message for incremental builds
                                     display_compilation_success(&event);
 
-                                    let project_clone = project.clone();
-                                    let result: anyhow::Result<()> = with_spinner_completion_async(
+                                    let activate_spinner = {
+                                        use crate::utilities::constants::SHOW_TIMING;
+                                        use std::sync::atomic::Ordering;
+                                        !project.is_production
+                                            && !SHOW_TIMING.load(Ordering::Relaxed)
+                                    };
+
+                                    let result: anyhow::Result<bool> = with_spinner_completion_async(
                                         "Processing infrastructure changes",
                                         "Infrastructure changes processed successfully",
-                                        async {
+                                        async |spinner_handle| {
                                             let plan_result = with_timing_async("Planning", async {
                                                 // IS_DEV_MODE is set, so ensure_typescript_compiled is a no-op
                                                 // (moose-tspc --watch already compiled)
                                                 framework::core::plan::plan_changes(
                                                     &**state_storage,
-                                                    &project_clone,
+                                                    &project,
                                                 )
                                                 .await
                                             })
                                             .await;
 
                                             match plan_result {
-                                                Ok((_, plan_result)) => {
+                                                Ok((_, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
-                                                            &project_clone,
+                                                            &project,
                                                             &plan_result,
                                                         )
                                                     })
                                                     .await?;
+
+                                                    spinner_handle.pause();
+                                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy).await? {
+                                                        Some(drops) => drops,
+                                                        None => return Ok(false),
+                                                    };
+
+                                                    let mut risk = classify_plan_risk(&plan_result.changes);
+                                                    risk.exclude_approved_drops(&approved_drops);
+                                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                                    if !proceed? {
+                                                        return Ok(false);
+                                                    }
+                                                    spinner_handle.resume();
 
                                                     display::show_changes(&plan_result);
                                                     // Hold the mutation guard only for execution/persist steps.
@@ -457,7 +480,7 @@ async fn watch(
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
                                                             framework::core::execute::execute_online_change(
-                                                                &project_clone,
+                                                                &project,
                                                                 &plan_result,
                                                                 route_update_channel.clone(),
                                                                 webapp_update_channel.clone(),
@@ -482,7 +505,7 @@ async fn watch(
 
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
-                                                                    &project_clone,
+                                                                    &project,
                                                                     &plan_result.target_infra_map,
                                                                 )
                                                                 .await
@@ -492,7 +515,7 @@ async fn watch(
                                                             let mut infra_ptr =
                                                                 infrastructure_map.write().await;
                                                             *infra_ptr = plan_result.target_infra_map;
-                                                            Ok(())
+                                                            Ok(true)
                                                         }
                                                         Err(e) => {
                                                             Err(e.into())
@@ -504,21 +527,24 @@ async fn watch(
                                                 }
                                             }
                                         },
-                                        {
-                                            use crate::utilities::constants::SHOW_TIMING;
-                                            use std::sync::atomic::Ordering;
-                                            !project.is_production
-                                                && !SHOW_TIMING.load(Ordering::Relaxed)
-                                        },
+                                        activate_spinner,
                                     )
                                     .await;
 
                                     match result {
-                                        Ok(()) => {
+                                        Ok(true) => {
                                             project
                                                 .http_server_config
                                                 .run_after_dev_server_reload_script()
                                                 .await;
+                                        }
+                                        Ok(false) => {
+                                            show_message!(MessageType::Info, {
+                                                Message {
+                                                    action: "Skipped".to_string(),
+                                                    details: "Destructive changes declined by user".to_string(),
+                                                }
+                                            });
                                         }
                                         Err(e) => {
                                             show_message!(MessageType::Error, {
@@ -616,6 +642,7 @@ impl TsCompilationWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
+        confirmation_policy: ConfirmationPolicy,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -631,6 +658,7 @@ impl TsCompilationWatcher {
                 processing_coordinator,
                 shutdown_rx,
                 initial_handle,
+                confirmation_policy,
             )
             .await
         };

@@ -1,0 +1,191 @@
+---
+title: Row-Level Security
+description: Filter query results per-request using ClickHouse row policies tied to JWT claims
+order: 52
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Row-Level Security
+
+Row-Level Security (RLS) restricts which rows a query returns based on the caller's identity. Moose implements this with [ClickHouse row policies](https://clickhouse.com/docs/en/sql-reference/statements/create/row-policy) that read JWT claim values at query time via `getSetting()`.
+
+## How It Works
+
+1. You define a `SelectRowPolicy` mapping a table column to a JWT claim
+2. Moose generates a `CREATE ROW POLICY` DDL filtering rows where the column matches the claim value
+3. At request time, Moose extracts the claim from the JWT and injects it as a ClickHouse custom setting
+4. ClickHouse evaluates the row policy on every query, returning only matching rows
+
+<Callout type="warning" title="JWT configuration required">
+RLS requires a `[jwt]` section in `moose.config.toml`. See [JWT Configuration](/moosestack/configuration/jwt) for setup options.
+</Callout>
+
+## Defining a Row Policy
+
+Define a `SelectRowPolicy` in your Moose project. It must be reachable from your root entrypoint (`app/index.ts`):
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/rowPolicies.ts" copy
+import { SelectRowPolicy } from "@514labs/moose-lib";
+import { OrdersPipeline } from "./orders";
+import { InvoicesPipeline } from "./invoices";
+
+export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
+  tables: [OrdersPipeline.table!, InvoicesPipeline.table!],
+  column: "org_id",
+  claim: "org_id",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+<Callout type="warning">
+Row-Level Security is currently available in TypeScript only. Python support is planned for a future release.
+</Callout>
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Configuration Reference
+
+| Parameter | Type | Description |
+|:----------|:-----|:------------|
+| `name` | `string` | Unique name for the policy (used in ClickHouse DDL) |
+| `tables` | `OlapTable[]` | Tables the policy applies to |
+| `column` | `keyof` table row | Column to filter on (type-checked against the listed tables) |
+| `claim` | `string` | JWT claim name whose value is compared against the column |
+
+### Generated DDL
+
+For the example above, Moose generates:
+
+```sql
+CREATE ROLE IF NOT EXISTS moose_rls_role;
+CREATE USER IF NOT EXISTS moose_rls_user IDENTIFIED BY '...';
+GRANT moose_rls_role TO moose_rls_user;
+
+CREATE ROW POLICY IF NOT EXISTS `tenant_isolation_on_Orders`
+  ON `local`.`Orders`
+  USING `org_id` = getSetting('SQL_moose_rls_org_id')
+  AS RESTRICTIVE TO moose_rls_role;
+
+CREATE ROW POLICY IF NOT EXISTS `tenant_isolation_on_Invoices`
+  ON `local`.`Invoices`
+  USING `org_id` = getSetting('SQL_moose_rls_org_id')
+  AS RESTRICTIVE TO moose_rls_role;
+```
+
+## Querying with Row Policies
+
+### APIs
+
+Row policies are enforced automatically when a valid JWT is present. Requests without a valid JWT return `401 Unauthorized`.
+
+```ts filename="app/apis/orders.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { OrdersPipeline } from "../orders";
+
+interface QueryParams {
+  limit?: number;
+}
+
+interface OrderRow {
+  orderId: string;
+  org_id: string;
+  amount: number;
+}
+
+export const ordersApi = new Api<QueryParams, OrderRow[]>(
+  "orders",
+  async ({ limit = 100 }, { client, sql }) => {
+    // Row policies are applied automatically — only rows matching
+    // the JWT's org_id claim are returned
+    const result = await client.query.execute<OrderRow>(
+      sql`SELECT * FROM ${OrdersPipeline.table!} LIMIT ${limit}`,
+    );
+    return result.json();
+  },
+);
+```
+
+### Bring Your Own API Framework
+
+When using `getMooseUtils()` outside of a Moose API handler (e.g., in a WebApp), pass `rlsContext` to scope queries.
+
+```ts filename="app/server.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+const orgId = "acme-corp"; // from your auth layer
+
+const { client, sql } = await getMooseUtils({
+  rlsContext: { org_id: orgId },
+});
+
+const result = await client.query.execute(
+  sql`SELECT * FROM orders`
+);
+```
+
+See [Bring Your Own Framework](/moosestack/app-api-frameworks) for examples.
+
+## Build-Time Validation
+
+Moose validates row policies at build time:
+
+- **Table existence**: Every table in `tables` must be a defined Moose primitive
+- **Column existence**: The `column` must exist on every listed table
+- **Claim consistency**: If multiple policies filter on the same column, they must map to the same JWT claim
+
+Validation errors are reported before any DDL is executed.
+
+## Multiple Policies
+
+You can define multiple row policies for different dimensions:
+
+```ts filename="app/rowPolicies.ts" copy
+import { SelectRowPolicy } from "@514labs/moose-lib";
+import { OrdersPipeline } from "./orders";
+
+export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
+  tables: [OrdersPipeline.table!],
+  column: "org_id",
+  claim: "org_id",
+});
+
+export const regionFilter = new SelectRowPolicy("region_filter", {
+  tables: [OrdersPipeline.table!],
+  column: "region",
+  claim: "region",
+});
+```
+
+When multiple policies apply to the same table, Moose creates them as [restrictive](https://clickhouse.com/docs/sql-reference/statements/create/row-policy#as-clause) — a row must satisfy **every** policy to be returned.
+
+## Views
+
+Row policies defined on a table automatically propagate through regular [Views](https://clickhouse.com/docs/en/sql-reference/statements/create/view). If you define a `View` that queries a table with a row policy, the policy filters results when the view is queried — no additional configuration is needed.
+
+```ts filename="app/views/ordersSummary.ts" copy
+import { View, sql } from "@514labs/moose-lib";
+import { OrdersPipeline } from "../orders";
+
+const ordersTable = OrdersPipeline.table!;
+
+export const OrdersSummary = new View(
+  "OrdersSummary",
+  sql`SELECT org_id, count() as order_count FROM ${ordersTable} GROUP BY org_id`,
+  [ordersTable],
+);
+```
+
+When an API queries `OrdersSummary`, ClickHouse evaluates the row policy on the underlying `Orders` table, so each caller only sees aggregates for their own `org_id`.
+
+<Callout type="warning" title="Materialized views">
+Row policies are not compatible with materialized views. ClickHouse evaluates row policies on the backing table during the MV insert path, which causes `getSetting()` to fail. Use a regular `View` if you need RLS on aggregated data.
+</Callout>
+
+## Limitations
+
+**Materialized views**: Not compatible with row policies. ClickHouse evaluates policies during the MV insert path, causing `getSetting()` to fail. Use a regular `View` for RLS on aggregated data.
+
+**Clustered deployments**: Row policy DDL does not yet include `ON CLUSTER`.

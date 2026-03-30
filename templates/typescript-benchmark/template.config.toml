@@ -1,0 +1,3 @@
+language = "typescript" # Must be typescript or python
+description = "Hidden template for the benchmark package scaffold"
+visible=false

@@ -210,10 +210,12 @@ export class Sql {
         }
         this.strings[pos] += rawString;
       } else if (isTable(child)) {
+        const deployedName = child.generateTableName();
         if (child.config.database) {
-          this.strings[pos] += `\`${child.config.database}\`.\`${child.name}\``;
+          this.strings[pos] +=
+            `\`${child.config.database}\`.\`${deployedName}\``;
         } else {
-          this.strings[pos] += `\`${child.name}\``;
+          this.strings[pos] += `\`${deployedName}\``;
         }
         this.strings[pos] += rawString;
       } else if (isView(child)) {

@@ -58,7 +58,6 @@ impl ProcessRegistries {
     /// * `project` - Project configuration containing paths and settings for processes
     /// * `settings` - Global application settings
     /// * `syncing` - Syncing processes registry for Kafka to ClickHouse and topic-to-topic synchronization
-    ///
     /// # Returns
     /// * `Self` - A new ProcessRegistries instance
     pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {

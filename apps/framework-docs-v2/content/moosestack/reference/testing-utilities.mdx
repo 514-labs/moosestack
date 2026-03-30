@@ -1,0 +1,178 @@
+---
+title: Testing Utilities
+description: ClickHouse profiling, table diagnostics, and test reporting for MooseStack applications
+category: reference
+---
+
+import { Callout } from "@/components/mdx";
+
+# Testing Utilities
+
+<Callout type="info">
+Testing utilities are currently available for TypeScript only.
+</Callout>
+
+The testing utilities provide purpose-built tools for benchmarking, validating, and diagnosing MooseStack applications against ClickHouse. They are shipped as a separate subpath import so they are never bundled into production code.
+
+```typescript
+import {
+  profileBenchmark,
+  explain,
+  tableStats,
+  createTestReporter,
+} from "@514labs/moose-lib/testing";
+```
+
+## Query Profiling
+
+Profile query execution by reading ClickHouse's `system.query_log`. The profiling workflow batches multiple runs, flushes logs once, and resolves all results in a single lookup.
+
+### profileBenchmark
+
+Run a query N times and return server-side profiling data with percentile summaries.
+
+```typescript copy filename="benchmark.test.ts"
+import { getMooseUtils } from "@514labs/moose-lib";
+import { profileBenchmark } from "@514labs/moose-lib/testing";
+
+const { client, sql } = await getMooseUtils();
+const query = sql`SELECT count() FROM MyTable WHERE status = 'active'`;
+
+const { profiles, p50, p95 } = await profileBenchmark(client.query, query, 12);
+
+console.log(`p50: ${p50}ms, p95: ${p95}ms`);
+// Each profile contains: queryId, durationMs, readRows, readBytes,
+// memoryUsage, resultRows, diskReadUs, osReadBytes
+```
+
+Queries are executed **sequentially** to measure individual query performance, not contention.
+
+### profileQuery / resolveProfiles
+
+For finer control, execute queries individually and batch-resolve profiles later.
+
+```typescript copy filename="manual-profile.test.ts"
+import { profileQuery, resolveProfiles } from "@514labs/moose-lib/testing";
+
+// Run several queries, collecting query IDs
+const ids: string[] = [];
+ids.push(await profileQuery(client.query, queryA));
+ids.push(await profileQuery(client.query, queryB));
+
+// Flush logs once and resolve all profiles in one batch
+const profiles = await resolveProfiles(client.query, ids);
+```
+
+### BenchmarkResult
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `profiles` | `readonly ProfileResult[]` | Per-run profiling data |
+| `p50` | `number` | 50th percentile of server-side duration (ms) |
+| `p95` | `number` | 95th percentile of server-side duration (ms) |
+
+### ProfileResult
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `queryId` | `string` | ClickHouse query ID |
+| `durationMs` | `number` | Server-side query duration (ms) |
+| `readRows` | `number` | Rows read from storage |
+| `readBytes` | `number` | Bytes read from storage |
+| `memoryUsage` | `number` | Peak memory usage (bytes) |
+| `resultRows` | `number` | Rows in result set |
+| `diskReadUs` | `number` | Disk read time (microseconds) |
+| `osReadBytes` | `number` | OS-level bytes read |
+
+## EXPLAIN Analysis
+
+### explain
+
+Run `EXPLAIN indexes=1` on a query and extract index condition and granule pruning statistics.
+
+```typescript copy filename="explain.test.ts"
+import { explain } from "@514labs/moose-lib/testing";
+
+const plan = await explain(client.query, query);
+
+console.log(`Index: ${plan.indexCondition}`);
+console.log(`Granules: ${plan.selectedGranules}/${plan.totalGranules} (skip ${plan.granuleSkipPct}%)`);
+```
+
+### ExplainResult
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `indexCondition` | `string` | The index condition extracted from the EXPLAIN plan |
+| `selectedGranules` | `number` | Number of granules selected for reading |
+| `totalGranules` | `number` | Total granules in the table |
+| `granuleSkipPct` | `number` | Percentage of granules skipped (0–100) |
+| `rawPlan` | `string` | Full EXPLAIN output |
+
+## Table Diagnostics
+
+### tableStats
+
+Get row count, part count, and disk size for a single table.
+
+```typescript copy filename="table-stats.test.ts"
+import { tableStats } from "@514labs/moose-lib/testing";
+
+const stats = await tableStats(client.query, "MyTable");
+console.log(`${stats.rows} rows, ${stats.parts} parts, ${stats.diskSize}`);
+```
+
+Supports `database.table` notation. Table names are validated and quoted to prevent injection.
+
+### TableStats
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `table` | `string` | Table name as provided |
+| `rows` | `number` | Total row count |
+| `parts` | `number` | Active part count |
+| `diskSize` | `string` | Human-readable disk size (e.g. `"1.23 GiB"`) |
+
+## Test Reporting
+
+Accumulate test results and flush them to a timestamped JSON file.
+
+### createTestReporter
+
+```typescript copy filename="reporter.test.ts"
+import { createTestReporter } from "@514labs/moose-lib/testing";
+
+const { results, flush } = createTestReporter({
+  prefix: "benchmark-details",
+  outputDir: new URL("../reports", import.meta.url).pathname,
+});
+
+// Record results during tests
+results.tests["baseline"] = { p50: 12, p95: 45 };
+results.tests["variant-A"] = { p50: 10, p95: 38 };
+
+// Write to disk (returns the filepath)
+const filepath = await flush();
+```
+
+The output JSON includes a `timestamp`, `target` (ClickHouse host and database), and all recorded `tests`.
+
+### TestReporterOptions
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `prefix` | `string` | Yes | Filename prefix (e.g. `"benchmark-details"`) |
+| `outputDir` | `string` | Yes | Directory to write report files |
+| `target` | `TestReportTarget` | No | ClickHouse host and database. Defaults to `MOOSE_CLICKHOUSE_CONFIG__HOST` and `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` env vars. |
+
+## Utility Functions
+
+### percentile
+
+Calculate the Nth percentile from an array of numbers.
+
+```typescript
+import { percentile } from "@514labs/moose-lib/testing";
+
+percentile([10, 20, 30, 40, 50], 95); // 50
+```

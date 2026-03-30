@@ -59,12 +59,11 @@ Running the generation command produces three files in the `migrations/` directo
 
 ## Configuration
 
-Planned migrations are enabled via the `ddl_plan` feature flag in your project configuration.
+Planned migrations are active whenever a `plan.yaml` file exists in the `migrations/` directory. No feature flag is required -- if the file is present, `moose prod` applies the static plan; if it is absent, Moose falls back to dynamic OLAP reconciliation.
 
 ```toml filename="moose.config.toml"
 [features]
 olap = true
-ddl_plan = true
 ```
 
 ## Command Options

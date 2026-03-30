@@ -9,7 +9,7 @@ use super::{
 };
 use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
 use std::sync::atomic::Ordering;
-use tracing::info;
+use tracing::{error, info, warn};
 
 /// Displays a message about a batch database insertion.
 ///
@@ -130,7 +130,11 @@ pub fn show_message_impl(
     if should_log {
         let log_action = action.replace('\n', " ");
         let log_details = details.replace('\n', " ");
-        info!("{} {}", log_action.trim(), log_details.trim());
+        match message_type {
+            MessageType::Error => error!("{} {}", log_action.trim(), log_details.trim()),
+            MessageType::Warning => warn!("{} {}", log_action.trim(), log_details.trim()),
+            _ => info!("{} {}", log_action.trim(), log_details.trim()),
+        }
     }
 
     Ok(())
@@ -244,6 +248,20 @@ mod tests {
     fn test_show_message_impl_with_logging() {
         let message = Message::new("Log".to_string(), "This should be logged".to_string());
         let result = show_message_impl(MessageType::Info, message, true, false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_show_message_impl_with_logging_error() {
+        let message = Message::new("Error".to_string(), "This should log as error".to_string());
+        let result = show_message_impl(MessageType::Error, message, true, false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_show_message_impl_with_logging_warning() {
+        let message = Message::new("Warning".to_string(), "This should log as warn".to_string());
+        let result = show_message_impl(MessageType::Warning, message, true, false, false, false);
         assert!(result.is_ok());
     }
 

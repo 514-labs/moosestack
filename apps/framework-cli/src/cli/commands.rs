@@ -143,6 +143,18 @@ pub enum Commands {
         /// Log payloads at ingest API and streaming functions for debugging
         #[arg(long)]
         log_payloads: bool,
+
+        /// Skip all confirmation prompts (renames and destructive operations)
+        #[arg(long)]
+        yes_all: bool,
+
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        #[arg(long)]
+        yes_destructive: bool,
+
+        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        #[arg(long)]
+        yes_rename: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]
@@ -284,7 +296,7 @@ pub enum Commands {
         visible_alias = "a",
         about = "[EXPERIMENTAL] Add a component to your project",
         long_about = "Add a component to your project\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases.",
-        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app"
+        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app\n  moose add benchmark --dir moose"
     )]
     Add {
         #[command(subcommand)]
@@ -305,6 +317,11 @@ pub enum AddComponent {
         after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - Project must use App Router\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
     )]
     Chat(AddArgs),
+    /// Query benchmark package for a TypeScript Moose project
+    #[command(
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a TypeScript Moose project\n\nExample:\n  moose add benchmark --dir moose"
+    )]
+    Benchmark(AddArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -471,7 +488,11 @@ pub struct TemplateCommands {
 pub enum TemplateSubCommands {
     /// List available templates
     #[command(visible_alias = "l")]
-    List {},
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]

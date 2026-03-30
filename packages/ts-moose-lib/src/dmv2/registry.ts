@@ -16,6 +16,7 @@ import { Workflow } from "./sdk/workflow";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
+import { SelectRowPolicy } from "./sdk/selectRowPolicy";
 import { getMooseInternal } from "./internal";
 
 /**
@@ -210,4 +211,21 @@ export function getViews(): Map<string, View> {
  */
 export function getView(name: string): View | undefined {
   return getMooseInternal().views.get(name);
+}
+
+/**
+ * Get all registered row policies.
+ * @returns A Map of policy name to SelectRowPolicy instance
+ */
+export function getSelectRowPolicies(): Map<string, SelectRowPolicy> {
+  return getMooseInternal().selectRowPolicies;
+}
+
+/**
+ * Get a registered row policy by name.
+ * @param name - The name of the row policy
+ * @returns The SelectRowPolicy instance or undefined if not found
+ */
+export function getSelectRowPolicy(name: string): SelectRowPolicy | undefined {
+  return getMooseInternal().selectRowPolicies.get(name);
 }

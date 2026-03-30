@@ -2996,7 +2996,7 @@ async fn shutdown(
         with_spinner_completion_async(
             "Stopping managed processes (functions, syncing, consumption, workers)",
             "Managed processes stopped",
-            async {
+            async |_handle| {
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },
@@ -3885,6 +3885,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3910,6 +3913,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3951,6 +3957,9 @@ mod tests {
             unmapped_views: vec![],
             missing_views: vec![],
             mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

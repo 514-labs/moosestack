@@ -556,6 +556,7 @@ USER root:root
 WORKDIR /temp-monorepo
 COPY --from=monorepo-base /monorepo/pnpm-workspace.yaml ./
 {}
+COPY --from=monorepo-base /monorepo/.npmr[c] ./
 COPY --from=monorepo-base /monorepo/{} ./{}
 # Copy all workspace directories that exist
 {}

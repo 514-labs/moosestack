@@ -1,0 +1,90 @@
+---
+title: agent
+description: Agent commands for skills installation, MCP configuration, and read-only resource inspection.
+order: 10
+---
+
+# 514 agent
+
+Use `514 agent` for agent setup, skills management, and a read-only command surface optimized for agents and automation flows.
+
+## Usage
+
+```bash
+514 agent [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### Setup
+
+#### init
+
+Install 514 agent skills, MCP servers, LSP, and plugins for detected coding agents.
+
+```bash
+514 agent init [OPTIONS]
+```
+
+See the full command reference: [`514 agent init`](/hosting/cli/agent/init).
+
+#### remove
+
+Remove installed 514 agent skills and clean up symlinks.
+
+```bash
+514 agent remove [OPTIONS] [SKILLS...]
+```
+
+See the full command reference: [`514 agent remove`](/hosting/cli/agent/remove).
+
+### Resources
+
+- `auth`: Authentication state inspection
+- `org`: Organization resources
+- `project`: Project resources
+- `deployment`: Deployment resources
+- `doc`: Documentation resources
+- `metrics`: Query metrics and analytics
+- `logs`: Query runtime application logs
+- `api-endpoint`: API endpoint resources
+- `stream`: Stream resources
+- `function`: Function resources
+- `stream-to-table-sync`: Stream-to-table sync resources
+- `stream-to-stream-sync`: Stream-to-stream sync resources
+- `table`: Table resources
+- `view`: View resources
+- `web-app`: Web-app resources
+- `workflow`: Workflow resources
+- `sql-resource`: SQL resource entries
+- `materialized-view`: Materialized view resources
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+# Set up agent skills and MCP configuration
+514 agent init
+
+# Set up for specific agents only
+514 agent init --agent claude-code --agent cursor
+
+# Remove all installed skills
+514 agent remove --yes
+
+# Read-only resource inspection
+514 agent auth whoami
+514 agent project list --json
+514 agent deployment list --project my-org/my-project
+514 agent stream list dep_abc123 --project my-org/my-project
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 agent init`](/hosting/cli/agent/init)
+- [`514 agent remove`](/hosting/cli/agent/remove)
+- [`514 auth`](/hosting/cli/auth)
