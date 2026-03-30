@@ -819,7 +819,8 @@ pub async fn migration_destructive_gate(
         Message::new(
             "DANGER".to_string(),
             format!(
-                "The operation that you just committed is going to create destructive changes:\n{}",
+                "Plan contains {} destructive operation(s) that may cause data loss:\n{}",
+                risk.destructive_changes.len(),
                 summary
             )
         )
