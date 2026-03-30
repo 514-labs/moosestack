@@ -1732,9 +1732,11 @@ pub async fn top_command_handler(
                 ))
             })?;
 
+            // Return an empty message so nothing is written to stdout,
+            // which is reserved for MCP protocol frames.
             Ok(RoutineSuccess::success(Message::new(
-                "MCP".to_string(),
-                "Proxy server stopped".to_string(),
+                String::new(),
+                String::new(),
             )))
         }
         Commands::Kafka(KafkaArgs { command }) => match command {

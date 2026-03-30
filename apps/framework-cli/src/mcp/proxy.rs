@@ -47,7 +47,7 @@ impl ProxyMcpHandler {
             Ok(running) => running,
             Err(e) => {
                 info!("[MCP Proxy] Dev server not reachable: {}", e);
-                return Ok(dev_server_not_running_error());
+                return Ok(dev_server_not_running_error(&self.dev_server_url));
             }
         };
 
@@ -134,14 +134,13 @@ impl ServerHandler for ProxyMcpHandler {
     }
 }
 
-fn dev_server_not_running_error() -> CallToolResult {
-    CallToolResult::error(vec![Content::text(
-        "The Moose dev server is not running. \
+fn dev_server_not_running_error(dev_server_url: &str) -> CallToolResult {
+    CallToolResult::error(vec![Content::text(format!(
+        "The Moose dev server is not reachable at {dev_server_url}. \
          Start it in the background by running the shell command `moose dev` \
          (do not wait for it to finish — it is a long-running process). \
          Wait a few seconds for it to initialize, then retry this tool call."
-            .to_string(),
-    )])
+    ))])
 }
 
 /// Minimal no-op client handler used when connecting to the dev server.
@@ -165,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_dev_server_not_running_error_message() {
-        let result = dev_server_not_running_error();
+        let result = dev_server_not_running_error("http://localhost:4000/mcp");
         assert_eq!(result.is_error, Some(true));
         assert!(!result.content.is_empty());
     }
