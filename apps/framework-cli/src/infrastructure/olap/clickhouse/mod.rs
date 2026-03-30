@@ -510,7 +510,7 @@ pub async fn execute_changes(
             // Database has tables with clusters - create on each cluster
             for cluster in clusters {
                 let create_db_query = format!(
-                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER '{}'",
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER `{}`",
                     database, cluster
                 );
                 info!("Creating database {} on cluster {}", database, cluster);
@@ -850,7 +850,7 @@ pub async fn execute_atomic_operation(
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let cluster_clause = cluster_name
                 .as_ref()
-                .map(|c| format!(" ON CLUSTER '{}'", c))
+                .map(|c| format!(" ON CLUSTER `{}`", c))
                 .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
@@ -1182,13 +1182,11 @@ async fn execute_add_table_constraint(
         .map_err(ClickhouseChangesError::Clickhouse)?;
     validate_clickhouse_identifier(&constraint.name, "Constraint name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
-    validate_clickhouse_identifier(&constraint.constraint_type.to_string(), "Constraint type")
-        .map_err(ClickhouseChangesError::Clickhouse)?;
     errors::validate_clickhouse_expression(&constraint.expression, "Constraint expression")
         .map_err(ClickhouseChangesError::Clickhouse)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER '{}'", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
     let sql = format!(
@@ -2974,7 +2972,10 @@ impl OlapOperations for ConfiguredDBClient {
             let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
                 .into_iter()
-                .filter(|i| !i.name.starts_with("auto_minmax_index_"))
+                .filter(|i| {
+                    !(i.name.starts_with("auto_minmax_index_")
+                        && i.index_type.to_lowercase() == "minmax")
+                })
                 .map(|i| TableIndex {
                     name: i.name,
                     expression: i.expression,
@@ -3014,13 +3015,22 @@ impl OlapOperations for ConfiguredDBClient {
                     .collect(),
                 constraints: extract_constraints_from_create_table(&create_query)
                     .into_iter()
-                    .map(
-                        |c| crate::framework::core::infrastructure::table::TableConstraint {
+                    .map(|c| {
+                        let parsed_type = c.constraint_type.parse().unwrap_or_else(|_| {
+                            tracing::warn!(
+                                "Unrecognized constraint type '{}' for constraint '{}' on table '{}', defaulting to Unparsed",
+                                c.constraint_type,
+                                c.name,
+                                table_name
+                            );
+                            crate::framework::core::infrastructure::table::ConstraintType::Unparsed(c.constraint_type.clone())
+                        });
+                        crate::framework::core::infrastructure::table::TableConstraint {
                             name: c.name,
                             expression: c.expression,
-                            constraint_type: c.constraint_type.parse().unwrap(),
-                        },
-                    )
+                            constraint_type: parsed_type,
+                        }
+                    })
                     .collect(),
                 database: Some(database),
                 table_ttl_setting,

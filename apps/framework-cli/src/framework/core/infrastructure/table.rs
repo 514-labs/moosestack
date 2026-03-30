@@ -2555,6 +2555,21 @@ mod tests {
     }
 
     #[test]
+    fn test_constraint_type_serialization() {
+        let constraint = TableConstraint {
+            name: "test_check".to_string(),
+            expression: "id > 0".to_string(),
+            constraint_type: ConstraintType::Check,
+        };
+        let json = serde_json::to_string(&constraint).unwrap();
+        assert!(
+            json.contains(r#""type":"CHECK""#),
+            "Serialized JSON should use uppercase CHECK: {}",
+            json
+        );
+    }
+
+    #[test]
     fn test_canonicalize_idempotent() {
         use crate::framework::core::infrastructure_map::PrimitiveSignature;
         use crate::framework::core::infrastructure_map::PrimitiveTypes;

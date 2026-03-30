@@ -123,7 +123,7 @@ pub fn create_alias_for_table(
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
-ON CLUSTER '{{cluster_name}}'{{/if}}
+ON CLUSTER `{{cluster_name}}`{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_constraints}}, {{#each constraints}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
@@ -3559,7 +3559,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}' SYNC{{/if}};
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}` SYNC{{/if}};
 "#;
 
 pub fn drop_table_query(
@@ -3580,12 +3580,12 @@ pub fn drop_table_query(
 }
 
 pub static ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
 MODIFY SETTING {{settings}};
 "#;
 
 pub static ALTER_TABLE_RESET_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
 RESET SETTING {{settings}};
 "#;
 
@@ -5938,7 +5938,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER '{cluster}'"),
+            query.contains("ON CLUSTER `{cluster}`"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -6000,7 +6000,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER '{cluster}'"),
+            query.contains("ON CLUSTER `{cluster}`"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -6052,11 +6052,25 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         .unwrap();
 
         assert!(
-            query.contains("ON CLUSTER 'test_cluster'"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "MODIFY SETTING query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
         assert!(query.contains("MODIFY SETTING"));
+
+        // Also test with a macro cluster
+        let macro_query = alter_table_modify_settings_query(
+            "test_db",
+            "test_table",
+            &settings,
+            Some("{cluster}"),
+        )
+        .unwrap();
+
+        assert!(
+            macro_query.contains("ON CLUSTER `{cluster}`"),
+            "MODIFY SETTING query should contain ON CLUSTER clause with macro"
+        );
     }
 
     #[test]
@@ -6076,7 +6090,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         };
 
         let cluster_clause = Some("test_cluster")
-            .map(|c| format!(" ON CLUSTER '{}'", c))
+            .map(|c| format!(" ON CLUSTER `{}`", c))
             .unwrap_or_default();
 
         let query = format!(
@@ -6085,11 +6099,23 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
 
         assert!(
-            query.contains("ON CLUSTER 'test_cluster'"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "ADD COLUMN query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
         assert!(query.contains("ADD COLUMN"));
+
+        // Also test with a macro cluster for reset settings
+        let settings = vec!["index_granularity".to_string()];
+
+        let reset_query =
+            alter_table_reset_settings_query("test_db", "test_table", &settings, Some("{cluster}"))
+                .unwrap();
+
+        assert!(
+            reset_query.contains("ON CLUSTER `{cluster}`"),
+            "RESET SETTING query should contain ON CLUSTER clause with macro"
+        );
     }
 
     #[test]

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "514-cli": {
+      "source": "514-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "e9d7adc9c051071171dd7fb1528c60efbb7fc31db482b81d8c67c28c27e19524"
+    },
+    "514-debug": {
+      "source": "514-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "4f708cf75c5bac7f9fb01bc51e1692bde495a15b20c5e4255d412ce77864420d"
+    },
+    "514-perf-optimize": {
+      "source": "514-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "a5b66ae5ad1be9122298c4f421173344538f99a15ea3f958d97ce1f455d5b33f"
+    },
+    "clickhouse-best-practices-ts-py": {
+      "source": "514-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "c889b3b5050d5cfdee020838ce0a8c819d5040de9b93a1cf99f8fee5a8b08d52"
+    }
+  }
+}

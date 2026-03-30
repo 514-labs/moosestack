@@ -236,6 +236,8 @@ fn validate_table_databases_and_clusters(
                 cluster_names
             );
 
+            // Cluster macros like `{cluster}` bypass the cluster_names validation
+            // since they are evaluated dynamically by ClickHouse.
             let is_macro = cluster.contains('{') && cluster.contains('}');
             if !is_macro && (cluster_names.is_empty() || !cluster_names.contains(cluster)) {
                 tracing::info!("Cluster '{}' not found in configured clusters!", cluster);

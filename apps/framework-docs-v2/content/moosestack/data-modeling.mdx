@@ -453,7 +453,32 @@ export const UserTable = new OlapTable<User>("User", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-# Coming soon to Python
+from moose_lib import OlapTable, OlapConfig, Key, MergeTreeEngine
+
+class User(MooseModel):
+    id: Key[str]
+    name: str
+    age: int
+    status: str
+
+UserTable = OlapTable(
+    User,
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        constraints=[
+            OlapConfig.TableConstraint(
+                name="valid_age",
+                expression="age >= 0",
+                type="CHECK"
+            ),
+            OlapConfig.TableConstraint(
+                name="valid_status",
+                expression="status IN ('active', 'inactive', 'pending')",
+                type="ASSUME"
+            )
+        ]
+    )
+)
 ```
   </LanguageTabContent>
 </LanguageTabs>

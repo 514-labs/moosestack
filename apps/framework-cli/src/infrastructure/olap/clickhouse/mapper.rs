@@ -1048,10 +1048,31 @@ mod tests {
             ch_col.column_type
         );
 
-        // Test that an already Nullable inner type inside LowCardinality remains LowCardinality(Nullable(T))
-        // Currently std_field_type_to_clickhouse_type_mapper doesn't produce LowCardinality(Nullable) directly from annotations
-        // but if it did, the wrapping logic should handle it idempotently. We simulate this by checking
-        // the wrapping logic directly if possible, but testing the end-to-end behavior is also good.
+        // Test that if we somehow have a ColumnType that maps to Nullable already
+        // (we simulate this by creating an Optional type, though Moose model usually represents
+        // this with `required: false`), we do not double wrap.
+        // In the current mapper, `required: false` is the primary way Nullable is introduced.
+        // We'll test the wrapping logic handles an already Nullable type.
+
+        let col_already_nullable = Column {
+            data_type: ColumnType::String,
+            required: false, // Will become Nullable
+            annotations: vec![("LowCardinality".to_string(), Value::Bool(true))],
+            ..make_column("test_col_2")
+        };
+        // The mapping logic wraps the mapped inner type.
+        // Let's verify we don't end up with LowCardinality(Nullable(Nullable(T)))
+        let ch_col_2 = std_column_to_clickhouse_column(col_already_nullable).unwrap();
+
+        if let ClickHouseColumnType::LowCardinality(inner) = &ch_col_2.column_type {
+            if let ClickHouseColumnType::Nullable(inner_inner) = &**inner {
+                assert!(
+                    !matches!(**inner_inner, ClickHouseColumnType::Nullable(_)),
+                    "Expected no double Nullable wrapping, got {:?}",
+                    ch_col_2.column_type
+                );
+            }
+        }
     }
 
     #[test]

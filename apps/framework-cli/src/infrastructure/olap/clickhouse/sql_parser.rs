@@ -831,6 +831,12 @@ fn strip_outer_parens(s: &str) -> &str {
             '\0'
         };
 
+        // Handle backslash escapes inside quotes
+        if ch == '\\' && (in_single_quote || in_double_quote || in_backtick) {
+            i += 2;
+            continue;
+        }
+
         // Handle escaping by doubling quotes
         if ch == '\'' && in_single_quote && next_ch == '\'' {
             i += 2;
