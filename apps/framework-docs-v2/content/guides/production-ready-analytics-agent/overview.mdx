@@ -65,7 +65,13 @@ But if you want your analytics agent to be safe, reliable and performant in prod
       title: "Performance: Analytical Infrastructure",
       description:
         "Transactional databases fail under real analytical workloads. Production analytics agents need a purpose-built OLAP engine — one where queries that would time out elsewhere return in milliseconds.",
-      examples: ["ClickHouse (OLAP)", "Redpanda / Kafka (streaming)", "Temporal (workflows)"],
+      examples: ["ClickHouse", "StarRocks", "DuckDB"],
+    },
+    {
+      title: "Data Ingest: Streaming and Batch",
+      description:
+        "An OLAP engine is only as good as the data flowing into it. You need pipelines that can get data in reliably at scale — from transactional databases, event streams, or third-party sources — in real time or on a schedule.",
+      examples: ["Redpanda / Kafka (streaming)", "Temporal (batch workflows)", "CDC from OLTP"],
     },
     {
       title: "Security: Auth and Access",

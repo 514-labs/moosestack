@@ -27,6 +27,7 @@ interface BulletPointCardProps {
   bulletStyle?: BulletStyle;
   uppercase?: boolean;
   compact?: boolean;
+  examplesLabel?: string;
 }
 
 // ------------------- Shared components -------------------
@@ -92,9 +93,11 @@ export function BulletIcon({
 export function BulletPointContent({
   point,
   compact,
+  examplesLabel = "Examples:",
 }: {
   point: BasicBulletPoint | string;
   compact?: boolean;
+  examplesLabel?: string;
 }) {
   return (
     <div className="flex-1 space-y-1">
@@ -112,7 +115,7 @@ export function BulletPointContent({
           {point.examples && point.examples.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <span className="text-xs text-muted-foreground/70 font-mono">
-                Examples:
+                {examplesLabel}
               </span>
               {point.examples.map((ex, i) => (
                 <span
@@ -231,16 +234,22 @@ function BulletPoint({
   index,
   bulletStyle,
   compact,
+  examplesLabel,
 }: {
   bullet: BasicBulletPoint | string | undefined;
   index: number;
   bulletStyle?: BulletStyle;
   compact?: boolean;
+  examplesLabel?: string;
 }) {
   return (
     <div className="flex items-start flex-1">
       <BulletIcon index={index} bulletStyle={bulletStyle} compact={compact} />
-      <BulletPointContent point={bullet!} compact={compact} />
+      <BulletPointContent
+        point={bullet!}
+        compact={compact}
+        examplesLabel={examplesLabel}
+      />
     </div>
   );
 }
@@ -256,6 +265,7 @@ export function BulletPointsCard({
   bulletStyle,
   uppercase = true,
   compact = false,
+  examplesLabel,
 }: BulletPointCardProps) {
   return (
     <BulletPointCard className={className} compact={compact}>
@@ -276,6 +286,7 @@ export function BulletPointsCard({
                 index={index}
                 bulletStyle={bulletStyle}
                 compact={compact}
+                examplesLabel={examplesLabel}
               />
             </Row>
           </React.Fragment>
