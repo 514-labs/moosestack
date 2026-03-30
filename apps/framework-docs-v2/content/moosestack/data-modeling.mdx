@@ -432,7 +432,7 @@ export interface User {
   id: Key<string>;
   name: string;
   age: number;
-  status: string;
+  name_len: number;
 }
 
 export const UserTable = new OlapTable<User>("User", {
@@ -443,8 +443,8 @@ export const UserTable = new OlapTable<User>("User", {
       type: "CHECK"
     },
     {
-      name: "valid_status",
-      expression: "status IN ('active', 'inactive', 'pending')",
+      name: "assume_name_len",
+      expression: "length(name) = name_len",
       type: "ASSUME"
     }
   ]
@@ -459,7 +459,7 @@ class User(MooseModel):
     id: Key[str]
     name: str
     age: int
-    status: str
+    name_len: int
 
 UserTable = OlapTable(
     User,
@@ -472,8 +472,8 @@ UserTable = OlapTable(
                 type="CHECK"
             ),
             OlapConfig.TableConstraint(
-                name="valid_status",
-                expression="status IN ('active', 'inactive', 'pending')",
+                name="assume_name_len",
+                expression="length(name) = name_len",
                 type="ASSUME"
             )
         ]
@@ -482,6 +482,14 @@ UserTable = OlapTable(
 ```
   </LanguageTabContent>
 </LanguageTabs>
+
+The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.
+
+In the example above, `ASSUME CONSTRAINT` is used to assert that the `length(name)` function always equals the value of the `name_len` column. This means that whenever `length(name)` is called in a query, ClickHouse can replace it with `name_len`, which should be faster because it avoids calling the `length()` function.
+
+Then, when executing a query like `SELECT name FROM User WHERE length(name) < 5;`, ClickHouse can optimize it to `SELECT name FROM User WHERE name_len < 5;` because of the `ASSUME CONSTRAINT`. This can make the query run faster because it avoids calculating the length of name for each row.
+
+**Note**: `ASSUME CONSTRAINT` does not enforce the constraint, it merely informs the optimizer that the constraint holds true. If the constraint is not actually true, the results of the queries may be incorrect. Therefore, you should only use `ASSUME CONSTRAINT` if you are sure that the constraint is true.
 
 **Key Point**: Complex types including nested objects and arrays work consistently across all infrastructure.
 
