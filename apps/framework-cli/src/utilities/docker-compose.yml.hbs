@@ -291,7 +291,6 @@ services:
     configs:
       - source: temporal-config
         target: /etc/temporal/config/dynamicconfig/development-sql.yaml
-        mode: 0444
     volumes:
       - temporal-data:/var/temporal/data
     healthcheck:
