@@ -246,13 +246,13 @@ export default function RootLayout({ children }) {
 <GuideStepper.Checkpoint id="agent-init" title="Initialize MooseStack Skills and LSP">
 
 ```shell
-514 agent init
+moose harness init
 ```
 
 This sets up [MooseStack Skills](https://github.com/514-labs/agent-skills) and the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server), giving your coding agent access to MooseStack-specific actions and language intelligence.
 
 <Callout type="info" title="Dev harness complete">
-With `moose init` and `514 agent init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
+With `moose init` and `moose harness init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
 </Callout>
 
 </GuideStepper.Checkpoint>
@@ -1228,4 +1228,3 @@ Check your Fiveonefour project overview — you should see storage populated, th
 </GuideStepper.Step>
 
 </GuideStepper>
-

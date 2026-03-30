@@ -87,7 +87,7 @@ Access the application at `http://localhost:3000`. Click the chat icon in the bo
 If you want to use MooseStack skills, bootstrap them with:
 
 ```bash
-514 agent init
+moose harness init
 ```
 
 This installs the following skills:

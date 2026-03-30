@@ -42,6 +42,29 @@ The JSON payload is versioned for backwards-compatible tooling. It includes:
 - `template_version`: version of the template manifest being listed
 - `templates`: visible templates available for initialization
 
+### Harness Init
+Initializes a Moose project and sets up the developer harness in one flow.
+
+```bash
+moose harness init
+moose harness init <name> <template> [--location <location>] [--agent <agent>] [--from-remote <connection-string>] [--lsp]
+```
+
+- Zero-arg `moose harness init` starts the interactive wizard.
+- Arg-driven mode is non-interactive: if you pass flags or positionals, omitted optional values fall back to defaults instead of prompting.
+- `--agent`: Repeat to target specific coding agents. Omit to auto-detect supported agents.
+- `--name <name>`: Explicitly set the project name when it would otherwise collide with a harness subcommand such as `schema`.
+- `--template <template>`: Explicitly set the template. Combine with `--name` for collision-safe invocations like `moose harness init --name schema --template typescript`.
+- `--from-remote`: Bootstrap the project from a remote ClickHouse cluster.
+- `--lsp`: Install and configure the MooseStack LSP where supported.
+- `--input <path>`: Read structured JSON input from a file. Use `--input -` to read JSON from stdin.
+
+For automation and editor integrations, you can inspect the versioned input contract:
+
+```bash
+moose harness init schema --json
+```
+
 ### Component
 Lists available components you can add to your project.
 
