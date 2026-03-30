@@ -3064,11 +3064,11 @@ impl InfrastructureMap {
         // Parse the CREATE MATERIALIZED VIEW statement
         let parsed = parse_create_materialized_view(setup_sql).ok()?;
 
-        // Convert source tables to unqualified names for consistency
+        // Format source tables with backtick quoting to match Python/TS conventions
         let source_tables: Vec<String> = parsed
             .source_tables
             .iter()
-            .map(|t| t.table.clone())
+            .map(|t| t.format_for_source_tables())
             .collect();
 
         // Migrate source_file to metadata.source.file
@@ -3128,11 +3128,13 @@ impl InfrastructureMap {
         let as_pos = upper.find(" AS ")?;
         let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
 
-        // Extract source tables (use unqualified names for consistency)
-        // Try AST parser first (same approach as MaterializedView migration),
-        // fall back to regex if it fails on ClickHouse-specific syntax
+        // Format source tables with backtick quoting to match Python/TS conventions.
+        // Try AST parser first, fall back to regex if it fails on ClickHouse-specific syntax.
         let source_tables: Vec<String> = match extract_source_tables_from_query(&select_sql) {
-            Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
+            Ok(tables) => tables
+                .iter()
+                .map(|t| t.format_for_source_tables())
+                .collect(),
             Err(e) => {
                 tracing::debug!(
                     "AST parser failed to extract source tables from view '{}' SELECT query: {}. \
@@ -3141,7 +3143,10 @@ impl InfrastructureMap {
                     e
                 );
                 match extract_source_tables_from_query_regex(&select_sql, default_database) {
-                    Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
+                    Ok(tables) => tables
+                        .iter()
+                        .map(|t| t.format_for_source_tables())
+                        .collect(),
                     Err(e) => {
                         tracing::debug!(
                             "Regex parser also failed to extract source tables from view '{}' SELECT query: {}. \
