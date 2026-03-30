@@ -319,10 +319,9 @@ fn collect_template_infos(templates: &toml::value::Table) -> Vec<TemplateInfo> {
     template_infos
 }
 
-pub async fn list_available_templates(
+pub async fn get_visible_template_infos(
     template_version: &str,
-    json: bool,
-) -> Result<RoutineSuccess, RoutineFailure> {
+) -> Result<Vec<TemplateInfo>, RoutineFailure> {
     let manifest = get_template_manifest(template_version).await.map_err(|e| {
         RoutineFailure::error(Message {
             action: "Templates".to_string(),
@@ -337,10 +336,17 @@ pub async fn list_available_templates(
         })
     })?;
 
-    let template_infos = templates
+    Ok(templates
         .as_table()
         .map(collect_template_infos)
-        .unwrap_or_default();
+        .unwrap_or_default())
+}
+
+pub async fn list_available_templates(
+    template_version: &str,
+    json: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let template_infos = get_visible_template_infos(template_version).await?;
 
     if json {
         let payload = TemplateListJson {
