@@ -526,6 +526,20 @@ impl DockerClient {
             }
         }
 
+        // Write temporal dynamic config file when scripts/workflows are enabled
+        if settings.features.scripts || project.features.workflows {
+            let config_content = "\
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true # Dev setup only. Please don't turn this on in production.
+    constraints: {}
+";
+            let config_file = project.internal_dir()?.join("temporal-dynamic-config.yaml");
+            std::fs::write(&config_file, config_content)?;
+        }
+
         if project.is_production {
             let rendered = handlebars
                 .render_template(PROD_COMPOSE_FILE, &data)
