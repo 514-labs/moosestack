@@ -905,14 +905,21 @@ fn discover_skills_from_tree(tree: &GitTreeResponse) -> Result<Vec<SkillInfo>, R
             .tree
             .iter()
             .filter(|entry| {
-                entry.entry_type == "blob"
-                    && (entry.path.starts_with(&format!("{repo_dir}/")) || entry.path == repo_dir)
+                entry.entry_type == "blob" && entry.path.starts_with(&format!("{repo_dir}/"))
             })
             .map(|entry| {
                 let relative_path = entry
                     .path
                     .strip_prefix(&format!("{repo_dir}/"))
-                    .unwrap_or("SKILL.md");
+                    .ok_or_else(|| {
+                        RoutineFailure::error(Message::new(
+                            "Harness".to_string(),
+                            format!(
+                                "Failed to resolve relative path for skill file: {}",
+                                entry.path
+                            ),
+                        ))
+                    })?;
                 validate_relative_path(relative_path)?;
                 Ok(SkillFileSpec {
                     relative_path: relative_path.to_string(),
