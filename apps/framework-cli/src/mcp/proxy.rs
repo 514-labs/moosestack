@@ -6,10 +6,14 @@ use rmcp::{
     service::RequestContext,
     ClientHandler, ErrorData, RoleServer, ServerHandler,
 };
+use std::time::Duration;
 use tracing::{error, info};
 
 use super::tools::all_tool_definitions;
 use crate::utilities::constants::CLI_VERSION;
+
+/// Maximum time to wait for a proxied tool call before returning a timeout error.
+const PROXY_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A lightweight MCP proxy server that runs over stdio.
 ///
@@ -47,7 +51,26 @@ impl ProxyMcpHandler {
             }
         };
 
-        let result = running.peer().call_tool(params).await;
+        let result = match tokio::time::timeout(
+            PROXY_TOOL_TIMEOUT,
+            running.peer().call_tool(params),
+        )
+        .await
+        {
+            Ok(inner) => inner,
+            Err(_elapsed) => {
+                error!(
+                    "[MCP Proxy] Tool call timed out after {:?}",
+                    PROXY_TOOL_TIMEOUT
+                );
+                let _ = running.cancel().await;
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Tool call timed out after {} seconds. The Moose dev server may be \
+                         overloaded or stuck. Please check `moose dev` output and retry.",
+                    PROXY_TOOL_TIMEOUT.as_secs()
+                ))]));
+            }
+        };
 
         // Cancel the client session gracefully
         let _ = running.cancel().await;
