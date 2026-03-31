@@ -16,7 +16,7 @@ Use `514 env list` to list environment variables for a project. Optionally scope
 
 ## Options
 
-- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL. Auto-detects from `514 project link` when omitted.
 - `--branch <BRANCH>`: Branch name (infers branch scope).
 - `--platform`: Include platform-managed variables. Auto-detects the branch from git when `--branch` is omitted.
 - `--dotenv`: Output in dotenv format (`KEY="value"`). Mutually exclusive with `--json`.
@@ -37,7 +37,7 @@ Use `514 env list` to list environment variables for a project. Optionally scope
 514 env list --platform --dotenv > .env.local
 
 # JSON output
-514 --json env list --project acme/analytics-api
+514 --json env list
 ```
 
 ## Related
