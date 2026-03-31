@@ -52,8 +52,8 @@ export function isSemanticToolName(
   name: string | undefined,
 ): name is SemanticToolName {
   return (
-    name === "query_tenant_knowledge_metrics" ||
-    name === "list_tenant_knowledge_records"
+    typeof name === "string" &&
+    Object.prototype.hasOwnProperty.call(SEMANTIC_TOOL_TITLES, name)
   );
 }
 

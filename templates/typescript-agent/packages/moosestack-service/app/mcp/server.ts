@@ -69,6 +69,6 @@ export const mcpServer = new WebApp("mcpServer", app, {
   mountPath: "/tools",
   metadata: {
     description:
-      "MCP server exposing ClickHouse query tools via Express and WebApp",
+      "MCP server exposing tenant-scoped semantic query tools via Express and WebApp",
   },
 });

@@ -25,7 +25,7 @@ export interface DashboardSnapshot {
 
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
-  rowPolicyOptions?: RowPolicyOptions,
+  rowPolicyOptions: RowPolicyOptions,
 ): Promise<DashboardSnapshot> {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
