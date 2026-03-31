@@ -125,6 +125,18 @@ jobs:
           echo "Publish: ${PUBLISH}"
           echo "Pre-release: ${PRE_RELEASE}"
 
+      - name: Validate publish target
+        if: ${{ steps.publish-settings.outputs.publish == 'true' }}
+        env:
+          PRE_RELEASE: ${{ steps.publish-settings.outputs.pre-release }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "${PRE_RELEASE}" != "true" && "${WORKFLOW_REF}" != "refs/heads/main" ]]; then
+            echo "::error title=Invalid publish target::Stable publishing is only allowed from refs/heads/main. Use pre-release=true to validate publishing from ${REF_NAME}."
+            exit 1
+          fi
+
       - name: Validate publish secrets
         if: ${{ steps.publish-settings.outputs.publish == 'true' }}
         env:
@@ -178,7 +190,7 @@ jobs:
   publish-vscode:
     name: Publish to VS Code Marketplace
     needs: build
-    if: ${{ needs.build.outputs.publish == 'true' }}
+    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs.pre-release == 'true' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download VSIX artifact
@@ -218,7 +230,7 @@ jobs:
   publish-openvsx:
     name: Publish to Open VSX
     needs: build
-    if: ${{ needs.build.outputs.publish == 'true' }}
+    if: ${{ needs.build.outputs.publish == 'true' && (needs.build.outputs.pre-release == 'true' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download VSIX artifact

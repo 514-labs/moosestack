@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { HARNESS_INIT_COMMAND } from "../src/constants";
 import { buildHarnessSplashHtml } from "../src/getStartedPanel";
 
-test("buildHarnessSplashHtml renders the harness command and support links", async () => {
-  const html = await buildHarnessSplashHtml();
+test("buildHarnessSplashHtml renders the harness command and support links", () => {
+  const html = buildHarnessSplashHtml();
 
-  assert.match(html, /Create a Moose Harness Project/);
-  assert.match(html, /moose init/);
+  assert.match(html, /Create a Moose Harness project/i);
+  assert.ok(html.includes(HARNESS_INIT_COMMAND));
+  assert.ok(html.includes(`Copy ${HARNESS_INIT_COMMAND}`));
   assert.match(html, /Open MooseStack docs/);
   assert.match(html, /Open support/);
   assert.match(html, /Windows through WSL/);
@@ -15,8 +17,8 @@ test("buildHarnessSplashHtml renders the harness command and support links", asy
   assert.match(html, /http:\/\/slack\.moosestack\.com\//);
 });
 
-test("buildHarnessSplashHtml uses a per-panel CSP nonce", async () => {
-  const html = await buildHarnessSplashHtml();
+test("buildHarnessSplashHtml uses a per-panel CSP nonce", () => {
+  const html = buildHarnessSplashHtml();
 
   const cspNonceMatch = html.match(/script-src 'nonce-([^']+)'/);
   const scriptNonceMatch = html.match(/<script nonce="([^"]+)">/);

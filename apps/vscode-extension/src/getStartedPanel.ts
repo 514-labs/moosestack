@@ -12,29 +12,26 @@ import { getVscodeApi } from "./vscodeApi";
 
 const PANEL_ID = "fiveonefour.harnessGuide";
 const PANEL_TITLE = "Create a Moose Harness Project";
-type EscapeGoatModule = typeof import("escape-goat");
 
-const importModule = new Function("specifier", "return import(specifier);") as <
-  T,
->(
-  specifier: string,
-) => Promise<T>;
-
-function loadEscapeGoat(): Promise<EscapeGoatModule> {
-  return importModule<EscapeGoatModule>("escape-goat");
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 export function buildHarnessSplashHtml(
   nonce = crypto.randomUUID().replaceAll("-", ""),
-): Promise<string> {
-  return loadEscapeGoat().then(({ htmlEscape }) => {
-    const escapedBrand = htmlEscape(EXTENSION_BRAND);
-    const escapedHarnessCommand = htmlEscape(HARNESS_INIT_COMMAND);
-    const escapedDocsUrl = htmlEscape(MOOSESTACK_DOCS_URL);
-    const escapedNonce = htmlEscape(nonce);
-    const escapedSupportUrl = htmlEscape(SUPPORT_URL);
+): string {
+  const escapedBrand = escapeHtml(EXTENSION_BRAND);
+  const escapedHarnessCommand = escapeHtml(HARNESS_INIT_COMMAND);
+  const escapedDocsUrl = escapeHtml(MOOSESTACK_DOCS_URL);
+  const escapedNonce = escapeHtml(nonce);
+  const escapedSupportUrl = escapeHtml(SUPPORT_URL);
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -258,7 +255,7 @@ export function buildHarnessSplashHtml(
       </section>
 
       <section class="actions">
-        <button type="button" data-command="copyHarnessCommand">Copy moose init</button>
+        <button type="button" data-command="copyHarnessCommand">Copy ${escapedHarnessCommand}</button>
         <button type="button" class="secondary" data-link="${escapedDocsUrl}">Open MooseStack docs</button>
         <button type="button" class="secondary" data-link="${escapedSupportUrl}">Open support</button>
         <button type="button" class="secondary" data-command="checkInstallState">Check install state</button>
@@ -280,7 +277,6 @@ export function buildHarnessSplashHtml(
     </script>
   </body>
 </html>`;
-  });
 }
 
 export function showHarnessSplashPanel(
@@ -297,35 +293,7 @@ export function showHarnessSplashPanel(
       retainContextWhenHidden: false,
     },
   );
-  let isDisposed = false;
-  panel.onDidDispose(() => {
-    isDisposed = true;
-  });
-
-  const setPanelHtml = (html: string): void => {
-    if (isDisposed) {
-      return;
-    }
-
-    panel.webview.html = html;
-  };
-
-  setPanelHtml(
-    '<!DOCTYPE html><html lang="en"><body>Loading Fiveonefour...</body></html>',
-  );
-  void buildHarnessSplashHtml()
-    .then((html) => {
-      setPanelHtml(html);
-    })
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      outputChannel.appendLine(
-        `Failed to render the harness guide: ${message}`,
-      );
-      setPanelHtml(
-        '<!DOCTYPE html><html lang="en"><body>Failed to load the Fiveonefour harness guide.</body></html>',
-      );
-    });
+  panel.webview.html = buildHarnessSplashHtml();
   panel.webview.onDidReceiveMessage(
     async (message: unknown) => {
       if (typeof message !== "object" || message === null) {
@@ -343,7 +311,7 @@ export function showHarnessSplashPanel(
       if (command === "copyHarnessCommand") {
         await vscodeApi.env.clipboard.writeText(HARNESS_INIT_COMMAND);
         void vscodeApi.window.showInformationMessage(
-          "Copied `moose init` to the clipboard.",
+          `Copied \`${HARNESS_INIT_COMMAND}\` to the clipboard.`,
         );
         return;
       }

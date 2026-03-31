@@ -206,6 +206,8 @@ pub enum Commands {
     /// Manage templates
     #[command(visible_alias = "t")]
     Template(TemplateCommands),
+    /// Initialize a Moose project and developer harness
+    Harness(HarnessCommands),
     #[command(
         about = "[EXPERIMENTAL] Manage components",
         long_about = "Manage components\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases."
@@ -508,6 +510,101 @@ pub enum WorkflowCommands {
 pub struct TemplateCommands {
     #[command(subcommand)]
     pub command: Option<TemplateSubCommands>,
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct HarnessCommands {
+    #[command(subcommand)]
+    pub command: HarnessSubCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HarnessSubCommands {
+    /// Initialize a Moose project plus the developer harness
+    #[command(visible_alias = "i")]
+    Init(HarnessInitArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HarnessInitAction {
+    /// Show the machine-readable input contract for `moose harness init`
+    Schema {
+        /// Output schema in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = "Examples:
+  moose harness init
+  moose harness init my-app typescript --agent codex
+  moose harness init --name schema --template typescript --agent none
+  moose harness init my-app python-empty --location ./sandbox
+  moose harness init --input request.json
+  cat request.json | moose harness init --input -
+  moose harness init schema --json
+
+Arg-driven mode is non-interactive. When any flags, positionals, or --input are provided,
+omitted optional values resolve to defaults and the command does not prompt.")]
+pub struct HarnessInitArgs {
+    #[command(subcommand)]
+    pub action: Option<HarnessInitAction>,
+
+    /// Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`
+    #[arg(long = "name", value_name = "NAME", conflicts_with = "name")]
+    pub name_option: Option<String>,
+
+    /// Explicit template name. Use this with `--name` when positional parsing would be ambiguous
+    #[arg(
+        long = "template",
+        value_name = "TEMPLATE",
+        conflicts_with = "template"
+    )]
+    pub template_option: Option<String>,
+
+    /// Name of your app or service
+    pub name: Option<String>,
+
+    /// Template to use for the project
+    pub template: Option<String>,
+
+    /// Location of your app or service
+    #[arg(short, long)]
+    pub location: Option<String>,
+
+    /// Disable the existing-directory guard when reusing a location
+    #[arg(long)]
+    pub no_fail_already_exists: bool,
+
+    /// Initialize from a remote ClickHouse database using an explicit connection string
+    #[arg(long, value_name = "CONNECTION_STRING")]
+    pub from_remote: Option<String>,
+
+    /// Generate a custom Dockerfile at project root for customization
+    #[arg(long)]
+    pub custom_dockerfile: bool,
+
+    /// Target specific coding agents instead of auto-detecting (repeatable)
+    #[arg(long = "agent")]
+    pub agents: Vec<String>,
+
+    /// Install and configure MooseStack LSP where supported (default behavior)
+    #[arg(long, conflicts_with = "no_lsp")]
+    pub lsp: bool,
+
+    /// Skip MooseStack LSP installation/configuration
+    #[arg(long, conflicts_with = "lsp")]
+    pub no_lsp: bool,
+
+    /// Git branch of the agent-skills repo to install from (default: main)
+    #[arg(long)]
+    pub branch: Option<String>,
+
+    /// Read structured JSON input from a file, or use `-` to read from stdin
+    #[arg(long)]
+    pub input: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

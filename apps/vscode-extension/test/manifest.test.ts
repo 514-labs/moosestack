@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { HARNESS_INIT_COMMAND } from "../src/constants";
+
 interface ExtensionManifest {
   activationEvents?: unknown;
   bugs?: {
@@ -100,7 +102,7 @@ test("README describes the installer-only harness workflow", () => {
     readme,
     /Runs the official Fiveonefour installer on every activation/,
   );
-  assert.match(readme, /moose init/);
+  assert.ok(readme.includes(HARNESS_INIT_COMMAND));
   assert.match(
     readme,
     /On Windows, Fiveonefour does not attempt to run the installer/,
