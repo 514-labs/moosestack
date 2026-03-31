@@ -96,8 +96,21 @@ impl MigrationPlan {
                 .unwrap_or(default_database)
                 .to_string();
 
-            if !columns_equivalent(&base_table.columns, &new_table.columns) {
-                let reason = schema_diff_reason(&base_table.columns, &new_table.columns);
+            let base_insertable: Vec<Column> = base_table
+                .columns
+                .iter()
+                .filter(|c| is_insertable(c))
+                .cloned()
+                .collect();
+            let new_insertable: Vec<Column> = new_table
+                .columns
+                .iter()
+                .filter(|c| is_insertable(c))
+                .cloned()
+                .collect();
+
+            if !columns_equivalent(&base_insertable, &new_insertable) {
+                let reason = schema_diff_reason(&base_insertable, &new_insertable);
                 results.push(BackfillCheckResult::NonEquivalent {
                     target: new_table.name.clone(),
                     source: base_table.name.clone(),
@@ -106,8 +119,7 @@ impl MigrationPlan {
                 continue;
             }
 
-            let col_names: Vec<String> = base_table
-                .columns
+            let col_names: Vec<String> = base_insertable
                 .iter()
                 .map(|c| format!("`{}`", c.name))
                 .collect();
@@ -212,8 +224,15 @@ fn find_base_table<'a>(
         })
 }
 
-/// Two column sets are equivalent when they contain the same columns
-/// (by name, data_type, and required) regardless of order.
+/// Returns `true` when a column is physically stored and can appear in
+/// an INSERT statement. MATERIALIZED and ALIAS columns are computed by
+/// ClickHouse and must be excluded from backfill SQL.
+fn is_insertable(col: &Column) -> bool {
+    col.materialized.is_none() && col.alias.is_none()
+}
+
+/// Two column sets are equivalent when they contain the same *insertable*
+/// columns (by name, data_type, and required) regardless of order.
 fn columns_equivalent(a: &[Column], b: &[Column]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -555,6 +574,66 @@ mod tests {
 
         let results = plan.detect_backfill_candidates(&remote, "default");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn detect_candidate_ignores_materialized_and_alias_columns() {
+        let base_cols = vec![
+            test_col("id", ColumnType::String),
+            test_col("ts", ColumnType::DateTime { precision: None }),
+        ];
+        let mut new_cols = base_cols.clone();
+        new_cols.push(Column {
+            name: "computed".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: Some("concat(id, '-suffix')".to_string()),
+            alias: None,
+        });
+        new_cols.push(Column {
+            name: "aliased".to_string(),
+            data_type: ColumnType::BigInt,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: Some("length(id)".to_string()),
+        });
+
+        let base = make_table("Events", base_cols, None, "Events");
+        let new = make_table("Events_2", new_cols, Some("2"), "Events");
+
+        let mut remote = HashMap::new();
+        remote.insert("default_Events".to_string(), base);
+
+        let plan = MigrationPlan {
+            created_at: Utc::now(),
+            operations: vec![SerializableOlapOperation::CreateTable { table: new }],
+        };
+
+        let results = plan.detect_backfill_candidates(&remote, "default");
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            BackfillCheckResult::Candidate(c) => {
+                assert!(!c.sql.contains("computed"));
+                assert!(!c.sql.contains("aliased"));
+                assert!(c.sql.contains("`id`"));
+                assert!(c.sql.contains("`ts`"));
+            }
+            other => panic!("Expected Candidate, got {other:?}"),
+        }
     }
 
     #[test]
