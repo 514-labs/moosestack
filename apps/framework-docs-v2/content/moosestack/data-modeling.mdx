@@ -423,10 +423,20 @@ pipeline = IngestPipeline[CompositeShared]("composite_shared", IngestPipelineCon
 
 You can configure constraints on MergeTree-family ClickHouse tables to enforce data integrity. 
 
+#### The `TableConstraint` Interface
+
+Constraints are defined using the `TableConstraint` interface:
+
+- `name` (string): The identifier for the constraint.
+- `expression` (string): The ClickHouse SQL expression to evaluate.
+- `type` (string): The type of constraint. Allowed values are `"CHECK"` or `"ASSUME"`.
+
+*Compatibility Note: Table constraints are fully supported in both standalone `OlapTable` definitions and when used inside `IngestPipeline` configurations.*
+
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/datamodels/user.ts"
-import { Key, OlapTable } from "@514labs/moose-lib";
+import { Key, OlapTable, TableConstraint } from "@514labs/moose-lib";
 
 export interface User {
   id: Key<string>;
@@ -435,19 +445,21 @@ export interface User {
   name_len: number;
 }
 
+// Defining constraints
+const ageConstraint: TableConstraint = {
+  name: "valid_age",
+  expression: "age >= 0",
+  type: "CHECK"
+};
+
+const nameLenConstraint: TableConstraint = {
+  name: "assume_name_len",
+  expression: "length(name) = name_len",
+  type: "ASSUME"
+};
+
 export const UserTable = new OlapTable<User>("User", {
-  constraints: [
-    {
-      name: "valid_age",
-      expression: "age >= 0",
-      type: "CHECK"
-    },
-    {
-      name: "assume_name_len",
-      expression: "length(name) = name_len",
-      type: "ASSUME"
-    }
-  ]
+  constraints: [ageConstraint, nameLenConstraint]
 });
 ```
   </LanguageTabContent>
@@ -461,22 +473,24 @@ class User(MooseModel):
     age: int
     name_len: int
 
+# Defining constraints via OlapConfig.TableConstraint
+age_constraint = OlapConfig.TableConstraint(
+    name="valid_age",
+    expression="age >= 0",
+    type="CHECK"
+)
+
+name_len_constraint = OlapConfig.TableConstraint(
+    name="assume_name_len",
+    expression="length(name) = name_len",
+    type="ASSUME"
+)
+
 UserTable = OlapTable(
     User,
     OlapConfig(
         engine=MergeTreeEngine(),
-        constraints=[
-            OlapConfig.TableConstraint(
-                name="valid_age",
-                expression="age >= 0",
-                type="CHECK"
-            ),
-            OlapConfig.TableConstraint(
-                name="assume_name_len",
-                expression="length(name) = name_len",
-                type="ASSUME"
-            )
-        ]
+        constraints=[age_constraint, name_len_constraint]
     )
 )
 ```

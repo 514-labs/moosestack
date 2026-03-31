@@ -4258,6 +4258,91 @@ mod tests {
     }
 
     #[test]
+    fn test_column_constraint_ordering_add() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let before = create_test_table("test_table", vec![], vec![], vec![]);
+        let mut after = before.clone();
+
+        after.columns.push(Column {
+            name: "new_col".to_string(),
+            data_type: ColumnType::Int(
+                crate::framework::core::infrastructure::table::IntType::Int32,
+            ),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        });
+
+        after.constraints.push(TableConstraint {
+            name: "check_new_col".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "new_col > 0".to_string(),
+        });
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        let col_idx = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableColumn { column, .. } if column.name == "new_col")
+        });
+
+        let constraint_idx = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableConstraint { constraint, .. } if constraint.name == "check_new_col")
+        }).expect("Should have AddTableConstraint");
+
+        assert!(col_idx.is_none(), "handle_table_update delegates column changes to TableDiffStrategy, so AddTableColumn shouldn't be here");
+    }
+
+    #[test]
+    fn test_column_constraint_ordering_remove() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.columns.push(Column {
+            name: "old_col".to_string(),
+            data_type: ColumnType::Int(
+                crate::framework::core::infrastructure::table::IntType::Int32,
+            ),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        });
+        before.constraints.push(TableConstraint {
+            name: "check_old_col".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "old_col > 0".to_string(),
+        });
+
+        let after = create_test_table("test_table", vec![], vec![], vec![]);
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        let constraint_idx = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableConstraint { constraint_name, .. } if constraint_name == "check_old_col")
+        }).expect("Should have DropTableConstraint");
+
+        let col_idx = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableColumn { column_name, .. } if column_name == "old_col")
+        });
+
+        assert!(col_idx.is_none(), "handle_table_update delegates column changes to TableDiffStrategy, so DropTableColumn shouldn't be here");
+    }
+
+    #[test]
     fn test_populate_materialized_view_includes_truncate() {
         let test_cases = vec![
             (
