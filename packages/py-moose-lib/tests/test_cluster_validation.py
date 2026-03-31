@@ -40,23 +40,20 @@ def test_explicit_params_only_is_allowed():
     assert table is not None
 
 
-def test_cluster_and_explicit_params_raises_error():
-    """Test that specifying both cluster and explicit keeper_path/replica_name raises an error."""
-    with pytest.raises(
-        ValueError,
-        match=r"Cannot specify both 'cluster' and explicit replication params",
-    ):
-        OlapTable[SampleModel](
-            "TestBothClusterAndExplicit",
-            OlapConfig(
-                engine=ReplicatedMergeTreeEngine(
-                    keeper_path="/clickhouse/tables/{database}/{table}",
-                    replica_name="{replica}",
-                ),
-                order_by_fields=["id"],
-                cluster="test_cluster",
+def test_cluster_and_explicit_params_is_allowed():
+    """Test that specifying both cluster and explicit keeper_path/replica_name is allowed."""
+    table = OlapTable[SampleModel](
+        "TestBothClusterAndExplicit",
+        OlapConfig(
+            engine=ReplicatedMergeTreeEngine(
+                keeper_path="/clickhouse/tables/{database}/{table}",
+                replica_name="{replica}",
             ),
-        )
+            order_by_fields=["id"],
+            cluster="test_cluster",
+        ),
+    )
+    assert table is not None
 
 
 def test_non_replicated_engine_with_cluster_is_allowed():

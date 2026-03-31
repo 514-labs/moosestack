@@ -192,4 +192,31 @@ mod tests {
     fn test_validate_expression_rejects_block_comment_close() {
         assert!(validate_clickhouse_expression("*/ UNION SELECT 1", "test").is_err());
     }
+
+    #[test]
+    fn test_is_valid_clickhouse_cluster_name() {
+        // Valid basic names
+        assert!(is_valid_clickhouse_cluster_name("my_cluster"));
+        assert!(is_valid_clickhouse_cluster_name("cluster-123"));
+        assert!(is_valid_clickhouse_cluster_name("c1"));
+
+        // Valid macro names
+        assert!(is_valid_clickhouse_cluster_name("{cluster}"));
+        assert!(is_valid_clickhouse_cluster_name("{my_cluster}"));
+        assert!(is_valid_clickhouse_cluster_name("prefix_{cluster}_suffix"));
+
+        // Invalid basic names
+        assert!(!is_valid_clickhouse_cluster_name("")); // empty
+        assert!(!is_valid_clickhouse_cluster_name("1cluster")); // starts with digit
+        assert!(!is_valid_clickhouse_cluster_name("-cluster")); // starts with hyphen
+        assert!(!is_valid_clickhouse_cluster_name("my cluster")); // contains space
+        assert!(!is_valid_clickhouse_cluster_name("my@cluster")); // invalid char
+
+        // Invalid macro names
+        assert!(!is_valid_clickhouse_cluster_name("{}")); // empty braces
+        assert!(!is_valid_clickhouse_cluster_name("{a{b}")); // nested braces
+        assert!(!is_valid_clickhouse_cluster_name("}{")); // unbalanced braces
+        assert!(!is_valid_clickhouse_cluster_name("{cluster")); // unclosed brace
+        assert!(!is_valid_clickhouse_cluster_name("cluster}")); // unopened brace
+    }
 }

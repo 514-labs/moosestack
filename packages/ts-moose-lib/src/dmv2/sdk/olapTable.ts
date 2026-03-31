@@ -811,13 +811,6 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
-    // Validate cluster and explicit replication params are not both specified
-    const hasCluster = typeof (resolvedConfig as any).cluster === "string";
-    const hasKeeperPath =
-      typeof (resolvedConfig as any).keeperPath === "string";
-    const hasReplicaName =
-      typeof (resolvedConfig as any).replicaName === "string";
-
     // When cluster is specified alongside keeperPath/replicaName, cluster is used
     // only for ON CLUSTER DDL generation while keeperPath/replicaName remain explicit.
     // This supports tables with existing ZooKeeper paths that need ON CLUSTER for ALTER.

@@ -465,7 +465,7 @@ export const UserTable = new OlapTable<User>("User", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-from moose_lib import OlapTable, OlapConfig, Key, MergeTreeEngine
+from moose_lib import OlapTable, OlapConfig, Key, MergeTreeEngine, MooseModel
 
 class User(MooseModel):
     id: Key[str]
