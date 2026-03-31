@@ -198,24 +198,36 @@ read_env_value() {
       BEGIN {
         prefix = name "="
         capture = 0
+        current = ""
         value = ""
+        found = 0
       }
       capture == 1 {
-        value = value ORS $0
+        current = current ORS $0
         if ($0 ~ /"$/) {
-          print value
-          exit
+          value = current
+          found = 1
+          capture = 0
         }
         next
       }
       index($0, prefix) == 1 {
-        value = substr($0, length(prefix) + 1)
-        if (value ~ /^"/ && value !~ /"$/) {
+        current = substr($0, length(prefix) + 1)
+        if (current ~ /^"/ && current !~ /"$/) {
           capture = 1
           next
         }
-        print value
-        exit
+        value = current
+        found = 1
+      }
+      END {
+        if (capture == 1) {
+          value = current
+          found = 1
+        }
+        if (found) {
+          print value
+        }
       }
     ' "${file_path}"
   )"
