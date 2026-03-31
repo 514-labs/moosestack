@@ -87,7 +87,6 @@ pub fn create_init_commit(project: Arc<Project>, dir_path: &Path) {
             "wheels".to_string(),
             "*.egg-info/".to_string(),
             ".installed.cfg".to_string(),
-            "*.egg".to_string(),
             "MANIFEST".to_string(),
         ],
     });

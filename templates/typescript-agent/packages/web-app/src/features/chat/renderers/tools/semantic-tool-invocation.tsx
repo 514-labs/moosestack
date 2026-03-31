@@ -98,25 +98,21 @@ function MetricResults({
           </tr>
         </thead>
         <tbody className="[&_tr:last-child]:border-0">
-          {payload.rows.map((row, rowIndex) => {
-            const rowKey = JSON.stringify(row) || `row-${rowIndex}`;
-
-            return (
-              <tr
-                key={`${rowKey}:${rowIndex}`}
-                className="border-b transition-colors hover:bg-muted/50"
-              >
-                {columns.map((column) => (
-                  <td
-                    key={`${rowKey}:${column}`}
-                    className="p-1.5 align-middle font-mono text-xs whitespace-nowrap"
-                  >
-                    {formatSemanticValue(row[column])}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
+          {payload.rows.map((row, rowIndex) => (
+            <tr
+              key={rowIndex}
+              className="border-b transition-colors hover:bg-muted/50"
+            >
+              {columns.map((column) => (
+                <td
+                  key={column}
+                  className="p-1.5 align-middle font-mono text-xs whitespace-nowrap"
+                >
+                  {formatSemanticValue(row[column])}
+                </td>
+              ))}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

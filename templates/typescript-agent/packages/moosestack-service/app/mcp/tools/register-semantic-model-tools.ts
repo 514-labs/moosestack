@@ -50,7 +50,9 @@ export function registerSemanticModelTools(
         try {
           const request = tool.buildRequest(params);
           const limit =
-            typeof params.limit === "number" ? params.limit : defaultLimit;
+            typeof params.limit === "number" && !Number.isNaN(params.limit) ?
+              params.limit
+            : defaultLimit;
           const rows = await executeReadonlySql<Record<string, unknown>>(
             context.queryClient,
             model.toSql(request),
