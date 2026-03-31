@@ -167,8 +167,10 @@ export function createModelTool(
     ...new Set([...modelRequiredFilters, ...(options.requiredFilters ?? [])]),
   ];
   const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? DEFAULT_LIMIT;
-  const defaultLimit =
-    options.defaultLimit ?? mergedDefaults.limit ?? DEFAULT_LIMIT;
+  const defaultLimit = Math.min(
+    options.defaultLimit ?? mergedDefaults.limit ?? DEFAULT_LIMIT,
+    maxLimit,
+  );
 
   const requiredSet = new Set(requiredFilters);
   const schema: Record<string, z.ZodType> = {};
@@ -343,7 +345,11 @@ export function registerModelTools(
     const toolName = model.name;
     const toolDescription = model.description ?? toolName;
     const tool = createModelTool(model);
-    const defaultLimit = model.defaults?.limit ?? DEFAULT_LIMIT;
+    const maxLimit = model.defaults?.maxLimit ?? DEFAULT_LIMIT;
+    const defaultLimit = Math.min(
+      model.defaults?.limit ?? DEFAULT_LIMIT,
+      maxLimit,
+    );
 
     server.tool(
       toolName,

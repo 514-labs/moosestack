@@ -8,7 +8,6 @@
  * @module query-layer/model-schema
  */
 
-import { toQuery } from "../sqlHelpers";
 import { QueryClient } from "../consumption-apis/helpers";
 import type { FilterInputTypeHint } from "./types";
 import type { QueryModelBase } from "./model-tools";
@@ -103,13 +102,7 @@ async function fetchDistinctValues(
       dimensions: [dimensionId],
       metrics: [],
     });
-    const [query, queryParams] = toQuery(sqlObj);
-    const result = await client.client.query({
-      query,
-      query_params: queryParams,
-      format: "JSONEachRow",
-      clickhouse_settings: { readonly: "2" },
-    });
+    const result = await client.execute(sqlObj);
     const rows = (await result.json()) as Record<string, unknown>[];
     return rows
       .map((row) => {
