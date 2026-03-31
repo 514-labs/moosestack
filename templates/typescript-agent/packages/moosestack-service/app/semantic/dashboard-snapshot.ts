@@ -1,42 +1,30 @@
-import {
-  type MooseUtils,
-  type RowPolicyOptions,
-  sql,
-} from "@514labs/moose-lib";
+import type { MooseUtils, RowPolicyOptions } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
 import { executeReadonlySql } from "../data/clickhouse/readonly-query";
-import { TenantKnowledgeTable } from "../ingest/models";
-import { knowledgeMetricsModel } from "./knowledge";
+import {
+  tenantKnowledgeMetricsModel,
+  tenantKnowledgeRecordsModel,
+} from "./knowledge";
 
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
-  tenantId: string,
   rowPolicyOptions?: RowPolicyOptions,
 ): Promise<DashboardSnapshot> {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const knowledgeMetricsQuery = knowledgeMetricsModel.toSql({
-    dimensions: [],
+  const knowledgeMetricsQuery = tenantKnowledgeMetricsModel.toSql({
     metrics: ["totalRecords", "highPriorityRecords"],
     filters: {
       timestamp: { gte: weekAgo, lte: now },
-      tenantId: { eq: tenantId },
     },
   });
 
-  const recentKnowledgeQuery = sql.statement`
-    SELECT
-      ${TenantKnowledgeTable.columns.headline},
-      ${TenantKnowledgeTable.columns.category},
-      ${TenantKnowledgeTable.columns.priority},
-      ${TenantKnowledgeTable.columns.source},
-      ${TenantKnowledgeTable.columns.timestamp}
-    FROM ${TenantKnowledgeTable}
-    WHERE ${TenantKnowledgeTable.columns.tenant_id} = ${tenantId}
-    ORDER BY ${TenantKnowledgeTable.columns.timestamp} DESC
-    LIMIT 5
-  `;
+  const recentKnowledgeQuery = tenantKnowledgeRecordsModel.toSql({
+    columns: ["headline", "category", "priority", "source", "timestamp"],
+    orderBy: [["timestamp", "DESC"]],
+    limit: 5,
+  });
 
   const [[knowledgeMetrics], recentKnowledge] = await Promise.all([
     executeReadonlySql<{

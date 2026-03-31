@@ -17,7 +17,7 @@ This package owns:
 | Path | Purpose |
 | --- | --- |
 | `app/index.ts` | Public entrypoint. Export Moose-discovered primitives here. |
-| `app/ingest/` | `IngestPipeline` declarations, tables, and row policies. |
+| `app/ingest/` | Explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
 | `app/data/clickhouse/` | Low-level readonly ClickHouse helpers. |
 | `app/http/` | Frontend-facing Express APIs and shared request auth/context. |

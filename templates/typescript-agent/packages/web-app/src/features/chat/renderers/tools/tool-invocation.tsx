@@ -22,9 +22,10 @@ import {
   type ToolPart,
 } from "../../types/message-parts";
 import { CodeBlock } from "../text/code-block";
-import { ClickHouseToolInvocation } from "./clickhouse-tool-invocation";
 import { DataCatalogToolInvocation } from "./data-catalog-tool-invocation";
 import { formatDuration } from "./format-duration";
+import { SemanticToolInvocation } from "./semantic-tool-invocation";
+import { isSemanticToolName } from "./semantic-tool-payload";
 
 interface ToolInvocationProps {
   part: ToolPart;
@@ -36,12 +37,12 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
 
   const toolName = getToolName(part);
 
-  if (toolName === "query_clickhouse") {
-    return <ClickHouseToolInvocation part={part} timing={timing} />;
-  }
-
   if (toolName === "get_data_catalog") {
     return <DataCatalogToolInvocation part={part} timing={timing} />;
+  }
+
+  if (isSemanticToolName(toolName)) {
+    return <SemanticToolInvocation part={part} timing={timing} />;
   }
 
   const isLoading = part.state === "input-streaming";
