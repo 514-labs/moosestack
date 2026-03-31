@@ -165,6 +165,14 @@ seed_local_jwt_keys() {
     return
   fi
 
+  if [[ -n "${existing_private_key}" && -z "${existing_public_key}" ]]; then
+    fail "Detected partial JWT keypair: LOCAL_DEV_JWT_PRIVATE_KEY is present but MOOSE_JWT__SECRET is missing. Remove LOCAL_DEV_JWT_PRIVATE_KEY from packages/web-app/.env.local and rerun pnpm env:prepare to regenerate both keys"
+  fi
+
+  if [[ -z "${existing_private_key}" && -n "${existing_public_key}" ]]; then
+    fail "Detected partial JWT keypair: MOOSE_JWT__SECRET is present but LOCAL_DEV_JWT_PRIVATE_KEY is missing. Remove MOOSE_JWT__SECRET from packages/moosestack-service/.env.local and rerun pnpm env:prepare to regenerate both keys"
+  fi
+
   if [[ -n "${existing_private_key}" && -n "${existing_public_key}" ]]; then
     derived_public_key="$(derive_public_key_from_private "${existing_private_key}")"
     if [[ "${derived_public_key}" != "${existing_public_key}" ]]; then
