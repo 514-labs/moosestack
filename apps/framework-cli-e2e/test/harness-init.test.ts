@@ -139,6 +139,35 @@ describe("harness init", () => {
     expect(codexConfig).to.not.contain("http://localhost:4000/mcp");
   });
 
+  it("preserves the typescript-agent turbo cache ignore entry", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "agent-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "agent-e2e",
+        "typescript-agent",
+        "--location",
+        projectDir,
+        "--agent",
+        "none",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.equal(0, result.stderr);
+    expect(fs.existsSync(path.join(projectDir, "package.json"))).to.equal(true);
+    expect(
+      fs.readFileSync(path.join(projectDir, ".gitignore"), "utf8"),
+    ).to.contain(".turbo");
+  });
+
   it("rejects bare --from-remote in arg-driven mode", async function () {
     this.timeout(120_000);
 
