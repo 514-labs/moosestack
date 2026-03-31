@@ -8,9 +8,11 @@ import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
 
 # Dev Approach
 
-This guide assumes you'll be using a coding agent to accelerate your build (Claude Code, Cursor, Kiro, Codex, etc). In addition, we recommend two approaches to further accerlerate the build and ensure success:
+This guide assumes you'll be using a coding agent (Claude Code, Cursor, Kiro, Codex, etc) to accelerate your build of your new analytics agent and all the infra and middleware needed to support it.
+
+In addition, we recommend two approaches to further accerlerate the build and ensure success:
 1. **Use a template:** Start from a proven open source template with analytical infra & middleware built in, instead of rolling your own from scratch.
-2. **Use a specialized coding agent harness:** Fiveonefour is your vertically-integrated coding agent harness, specialized in data engineering workloads, so you don't have to cobble together your own.
+2. **Use a specialized coding agent harness:** MooseStack is your open source, vertically-integrated coding agent harness, specialized in data engineering workloads, so you don't have to cobble together your own.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -49,7 +51,7 @@ This guide uses the open source [`typescript-agent` template](https://github.com
 
 Once the template is in place, you need to customize for your use case. Your coding agent can be great here, but analytical infrastructure is specialized territory. Without the right setup, your agent will write schemas that perform fine in dev and fall apart at scale, make changes without understanding what they break downstream, and have no way to read errors from the stack it's supposed to be building.
 
-You might get there, but it will take weeks. In order to maximize the effectiveness of your coding agent on this stack, here's what you'll want to have in place:
+In the end, you might get what you want, but it will take weeks. We want you shipping in days, or even hours. In order to maximize the effectiveness of your coding agent on this stack, here's what you'll want to have in place:
 
 <BulletPointsCard
   bulletStyle="number"
@@ -109,7 +111,7 @@ MooseStack is a vertically integrated coding agent harness, specialized in data 
     {
       title: "MooseStack CLI",
       description:
-        "Agent-friendly command-line interface for running queries, inspecting tables, and validating infrastructure state. Built to work in agentic loops, not just human terminals.",
+        "Unified CLI for all your analytical infra. Agent-friendly command-line interface for running queries, inspecting tables, and validating infrastructure state. Built to work in agentic loops, not just human terminals.",
     },
     {
       title: "Local Dev Server",
