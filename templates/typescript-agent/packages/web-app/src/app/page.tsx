@@ -261,22 +261,18 @@ export default async function Home({
             <div className="rounded-3xl border bg-card/85 p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Try in chat</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                The chat runtime uses the same tenant JWT as the dashboard. If
-                Langfuse is configured, model and tool traces are emitted there.
+                The chat runtime uses the same tenant JWT as the dashboard and
+                answers with tenant-scoped semantic tools. If Langfuse is
+                configured, model and tool traces are emitted there.
               </p>
 
               <div className="mt-5 space-y-4">
-                <div className="rounded-2xl border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Multi-agent reference flow: supervisor -&gt; specialist -&gt;
-                  narrator, with streamed <code>[AGENT:...]</code> handoff
-                  markers.
-                </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   “Summarize the highest-priority signals for this tenant.”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  “Use the multi-agent flow to inspect the data catalog, route
-                  to the right specialist, then summarize the result.”
+                  “Break down the high-priority records by category for this
+                  tenant.”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   “Which categories changed most recently for this tenant?”
