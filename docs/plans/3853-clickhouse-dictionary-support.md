@@ -102,13 +102,124 @@ export const EnrichClicksMV = new MaterializedView<EnrichedClick>("enrich_clicks
 
 Only ClickHouse `OlapTable`/`View`/`Sql` sources participate in Moose dependency tracking. External sources have no Moose-managed dependencies.
 
-### Questions for the issue requester
+### Confirmed real-world usage (from client feedback)
 
-1. **Composite keys** — Do you use multi-column keys (requiring COMPLEX_KEY_HASHED)?
-2. **Which layouts** — Which layouts do you actually use? (HASHED, COMPLEX_KEY_HASHED_ARRAY, CACHE, FLAT, etc.)
-3. **Where is dictGet used** — Primarily in MaterializedViews, Views, or also in ConsumptionApis?
-4. **Dictionary-to-dictionary** — Do you have dictionaries sourcing from other dictionaries?
-5. **Invalidation patterns** — Is `max(version)` the only pattern, or do you use others?
+```sql
+-- Client's actual dictionary definition
+CREATE DICTIONARY IF NOT EXISTS snson_telemetry.partition_strategies
+  [ON CLUSTER 'senseon']
+(
+    name String,
+    strategy String DEFAULT 'WEEK'
+)
+PRIMARY KEY name
+SOURCE(CLICKHOUSE(
+    NAME 'dict_source'          -- Named Collection reference
+    TABLE 'partition_strategies_source'
+))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 60 MAX 300)
+
+-- Used in MV CTEs for dynamic partition routing:
+-- WITH dictGetOrDefault('snson_telemetry.partition_strategies', 'strategy',
+--   tuple('<table_name>'), 'WEEK') AS partition_strategy
+-- SELECT ... FROM ...
+```
+
+**Key takeaways:**
+1. **COMPLEX_KEY_HASHED** is actively used — composite key support is required
+2. **dictGetOrDefault** with `tuple()` for keys — our `getOrDefault()` helper must handle tuple wrapping for composite keys automatically
+3. **Named Collections** (`NAME 'dict_source'`) — client uses server-side Named Collections for ClickHouse source config. Currently deferred, but confirmed as a real pattern.
+4. **MV + CTE pattern** — dictionaries used in `WITH` CTEs inside MaterializedViews for dynamic partition key computation. Great pattern for documentation.
+5. **Simple LIFETIME refresh** — no `INVALIDATE_QUERY`, just `MIN 60 MAX 300` polling
+6. **DEFAULT values on columns** — `strategy String DEFAULT 'WEEK'` confirms column-level defaults are needed
+
+### Resolved questions
+
+All client questions answered:
+1. **Composite keys** — Yes, uses `COMPLEX_KEY_HASHED`. Required.
+2. **Layouts** — Only `COMPLEX_KEY_HASHED` confirmed. All layouts supported via typed union, but this gets priority testing/docs.
+3. **Where dictGet is used** — MaterializedViews, specifically in `WITH` CTEs for dynamic partition routing.
+4. **Dictionary-to-dictionary** — Not used. Deferred.
+5. **Invalidation** — Simple `LIFETIME(MIN/MAX)` polling only. No `INVALIDATE_QUERY` needed yet.
+6. **Named Collections** — Client uses them but only as indirection for same-server tables. Moose typed refs replace this pattern. Deferred.
+
+### Credential security for external sources
+
+External sources (MongoDB, MySQL, PostgreSQL, HTTP, Redis, Cassandra, ODBC) often require credentials. Moose already provides `mooseRuntimeEnv` (`packages/ts-moose-lib/src/secrets.ts`) for secure runtime environment variable resolution. This is the recommended approach for all external source credentials.
+
+**How it works**: During infrastructure map loading (`IS_LOADING_INFRA_MAP=true`), `mooseRuntimeEnv.get("VAR")` returns a marker string (`__MOOSE_RUNTIME_ENV__:VAR`). At deploy time, Moose CLI resolves these markers from actual environment variables. Credentials never appear in source code or Docker images.
+
+**Example — MongoDB source with secure credentials:**
+
+```typescript
+import { OlapDictionary, mooseRuntimeEnv, ClickHouseInt } from "@514labs/moose-lib";
+
+interface ProductLookup {
+  ProductId: string;
+  ProductName: string;
+  Category: string;
+  PriceLevel: number & ClickHouseInt<"Int32">;
+}
+
+export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
+  source: {
+    type: "mongodb",
+    host: "mongo.example.com",
+    port: 27017,
+    user: mooseRuntimeEnv.get("MONGO_USER"),
+    password: mooseRuntimeEnv.get("MONGO_PASSWORD"),
+    db: "catalog",
+    collection: "products",
+  },
+  primaryKey: ["ProductId"],
+  layout: { type: "HASHED" },
+  lifetime: { min: 300, max: 360 },
+});
+```
+
+**Example — MySQL source with secure credentials:**
+
+```typescript
+export const ProductDictMySQL = new OlapDictionary<ProductLookup>("dict_products_mysql", {
+  source: {
+    type: "mysql",
+    host: "mysql.example.com",
+    port: 3306,
+    user: mooseRuntimeEnv.get("MYSQL_USER"),
+    password: mooseRuntimeEnv.get("MYSQL_PASSWORD"),
+    db: "catalog",
+    table: "products",
+  },
+  primaryKey: ["ProductId"],
+  layout: { type: "HASHED" },
+  lifetime: { min: 300, max: 360 },
+});
+```
+
+**Example — HTTP source with secure credentials:**
+
+```typescript
+export const ProductDictHTTP = new OlapDictionary<ProductLookup>("dict_products_http", {
+  source: {
+    type: "http",
+    url: "https://api.example.com/products",
+    format: "JSONEachRow",
+    credentials: {
+      user: mooseRuntimeEnv.get("API_USER"),
+      password: mooseRuntimeEnv.get("API_PASSWORD"),
+    },
+    headers: {
+      "X-API-Key": mooseRuntimeEnv.get("API_KEY"),
+    },
+  },
+  primaryKey: ["ProductId"],
+  layout: { type: "CACHE", sizeInCells: 10000 },
+  lifetime: { min: 60, max: 120 },
+});
+```
+
+All documentation examples for external sources MUST use `mooseRuntimeEnv.get()` for credentials — never hardcoded values.
 
 ### Key design decisions (from critique of the original issue)
 
@@ -118,6 +229,61 @@ Only ClickHouse `OlapTable`/`View`/`Sql` sources participate in Moose dependency
 4. **Key/attribute column distinction** — `primaryKey` identifies key columns; attribute columns can have `defaults` for missing key lookups.
 5. **Dependency tracking** — source table reference automatically tracked (same as MV/View pattern).
 6. **Immutable diffing** — ClickHouse dictionaries cannot be ALTER-ed; any change = DROP + CREATE.
+
+---
+
+## Rust implementation conventions
+
+All Rust code must mirror existing patterns exactly. The reference types are `MaterializedView` (`materialized_view.rs`) and `Table` (`table.rs`).
+
+**Derives and serde:**
+- Core structs: `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]`
+- Add `Hash` only when needed for HashMap/HashSet keys
+- `#[serde(rename_all = "camelCase")]` on all user-facing types (JSON from TS/Python)
+- Every `Option<T>` field: `#[serde(skip_serializing_if = "Option::is_none", default)]`
+- Every `Vec<T>` field: `#[serde(default)]`
+- Tagged enums: `#[serde(tag = "kind")]` or `#[serde(tag = "type")]`
+- Use `#[serde(rename = "type")]` for Rust keyword conflicts
+
+**Struct field ordering:**
+1. `name: String`
+2. `database: Option<String>`
+3. Core domain fields (source, primary_key, columns, layout, lifetime, etc.)
+4. `metadata: Option<Metadata>`
+5. `life_cycle: LifeCycle`
+
+**Methods (in order within impl block):**
+1. `new()` — constructor with `impl Into<String>` params
+2. `id(&self, default_database: &str) -> String` — format: `"{database}_{name}"`
+3. `quoted_name(&self) -> String` — backtick-quoted `` `db`.`name` ``
+4. `to_create_sql(&self) -> String` — infallible, uses `IF NOT EXISTS`
+5. `to_drop_sql(&self) -> String` — infallible, uses `IF EXISTS`
+6. `short_display(&self) -> String` / `expanded_display(&self) -> String`
+7. `to_proto(&self) -> ProtoType` / `from_proto(proto: ProtoType) -> Self`
+
+**Trait implementations:**
+- `DataLineage` trait: `pulls_data_from()` and `pushes_data_to()` returning `Vec<InfrastructureSignature>`
+
+**Error handling:**
+- No error types in the infrastructure data model layer — these are pure data types, DDL generation is infallible
+- Error types only at the execution layer (e.g., `clickhouse/errors.rs`), using `thiserror` with named fields
+- Never use `anyhow::Result`
+
+**Tests:**
+- Inline `#[cfg(test)] mod tests { use super::*; ... }` at bottom of file
+- `test_` prefix with descriptive snake_case names
+- Raw struct literals for test data (no builder pattern)
+- `assert_eq!` for equality, `assert!` with `.contains()` for SQL string checks
+- `.unwrap()` freely in tests, never in production code
+
+**Documentation:**
+- `//!` module-level docs at top of file explaining what the module provides
+- `///` on all public types, fields, methods, and constants
+- Cross-reference related types with backticks
+
+**Clippy:**
+- Zero warnings: `cargo clippy --all-targets -- -D warnings`
+- Use `#[allow(clippy::large_enum_variant)]` only when justified
 
 ---
 
@@ -166,7 +332,42 @@ Implement:
 
 - Add dictionary lifecycle filtering (DELETION_PROTECTED blocks DROP, EXTERNALLY_MANAGED blocks all)
 
-### 1.8 Modify: Proto file + state persistence
+### 1.8 Modify: Plan risk assessment (`apps/framework-cli/src/framework/core/plan_risk.rs`)
+
+- Add `DestructiveChange::DictionaryDrop` variant
+- Handle `OlapChange::Dictionary(Change::Removed(...))` in `classify_plan_risk()` — currently a wildcard `_ => {}` would silently skip dictionary drops
+- Dropping a dictionary is destructive: it breaks any `dictGet()` queries referencing it
+
+### 1.9 Modify: Runtime env credential resolution (`apps/framework-cli/src/framework/core/infrastructure_map.rs`)
+
+- Extend `resolve_runtime_credentials_from_env()` (~line 2551) to iterate over `self.dictionaries.values_mut()` and resolve `__MOOSE_RUNTIME_ENV__:` markers in external source configs (host, user, password, etc.)
+- Without this, `mooseRuntimeEnv.get()` markers in dictionary source configs would not be resolved at runtime → ClickHouse errors
+
+### 1.10 Modify: Plan validator (`apps/framework-cli/src/framework/core/plan_validator.rs`)
+
+- Validate that dictionary source table references exist in the target InfrastructureMap
+- Validate that `primaryKey` column names are valid columns in the dictionary schema
+- Validate cluster references for dictionaries (same pattern as tables)
+
+### 1.11 Modify: SQL normalization (`apps/framework-cli/src/framework/core/plan.rs`)
+
+- Extend `normalize_infra_map_for_comparison()` (~line 102) to normalize SQL in dictionary source configs (when source is a SQL query) — prevents false diffs from whitespace/formatting differences
+
+### 1.12 Modify: `moose ls` (`apps/framework-cli/src/cli/routines/ls.rs`)
+
+- Add `dictionaries` field to `ResourceListing` struct
+- Add display logic for dictionaries in the `moose ls` output
+
+### 1.13 Modify: `OlapOperations` trait (`apps/framework-cli/src/infrastructure/olap/mod.rs`)
+
+- Add `list_dictionaries()` method to the trait for reality checking via `system.dictionaries`
+
+### 1.14 Modify: Init deployment (`apps/framework-cli/src/framework/core/infrastructure_map.rs`)
+
+- Chain dictionaries into `init_tables()` (~line 739) so they are created on first-time deployment
+- Must come after source tables in the chain
+
+### 1.15 Modify: Proto file + state persistence (`packages/protobuf/infrastructure_map.proto`)
 
 - `packages/protobuf/infrastructure_map.proto`:
   - Add `message OlapDictionary { ... }` with all fields (name, database, cluster, source, primary_key, columns, layout, lifetime, invalidate, defaults, settings, life_cycle, metadata)
@@ -183,10 +384,10 @@ Implement:
 
 **Why this is required in v1**: Without proto updates, dictionaries are silently lost on state persistence (to_proto drops them), causing every restart to re-create them. The failure is runtime data loss, not a build error.
 
-### 1.9 Modify: Plan + reconciliation
+### 1.16 Modify: Plan + reconciliation
 
 - `plan.rs` — add `dictionary_ids` to `ReconciliationFilter`
-- `infra_reality_checker.rs` — add dictionary reconciliation
+- `infra_reality_checker.rs` — add dictionary reconciliation + `InfraDiscrepancies` fields (`unmapped_dictionaries`, `missing_dictionaries`, `mismatched_dictionaries`) + update `is_empty()`
 - `display/mod.rs` — add plan display formatting for dictionary changes
 
 ---
@@ -299,6 +500,31 @@ Mirrors TypeScript API with Pydantic config models.
   - Executable Pool (command, format, pool_size)
   - Null
 - **Tutorial**: "Using OlapDictionary for fast ClickHouse lookups" — end-to-end walkthrough: define source table, create dictionary, use `dictGet` in a MaterializedView
+- **Migration guide**: "Migrating existing ClickHouse dictionaries to Moose" — shows how to bring existing infrastructure under Moose's type system using `lifeCycle: "EXTERNALLY_MANAGED"` for pre-existing tables while letting Moose manage the dictionary. Key example:
+  ```typescript
+  // Pre-existing table — Moose won't create/drop/modify it
+  export const PartitionStrategiesSource = new OlapTable<PartitionStrategy>(
+    "partition_strategies_source",
+    { orderByFields: ["name"], lifeCycle: "EXTERNALLY_MANAGED" }
+  );
+
+  // Moose-managed dictionary referencing the external table
+  export const PartitionStrategies = new OlapDictionary<PartitionStrategy>(
+    "partition_strategies",
+    {
+      source: PartitionStrategiesSource,
+      primaryKey: ["name"],
+      layout: { type: "COMPLEX_KEY_HASHED" },
+      lifetime: { min: 60, max: 300 },
+      defaults: { strategy: "WEEK" },
+    }
+  );
+
+  // Type-safe dictGet in MV CTEs — replaces raw dictGetOrDefault() calls
+  sql`WITH ${PartitionStrategies.getOrDefault("strategy", "WEEK", sql`tuple(table_name)`)} AS partition_strategy
+      SELECT ...`
+  ```
+  Highlights: replaces Named Collection indirection, eliminates raw SQL, adds dependency tracking and type safety. Covers the three lifeCycle modes and when to use each.
 - **Known limitation note** in docs: Dictionary dependencies in View/MV SQL strings are not automatically detected. When using raw `dictGet('dict_name', ...)` in SQL, the dictionary won't be auto-registered as a dependency for DDL ordering. Users should use the typed `.get()` helper (which generates correct SQL) or be aware that dictionary creation order depends on the source table reference, not on downstream consumers.
 - Update SDK overview / primitives listing page
 - Update ClickHouse best practices if relevant
@@ -310,6 +536,7 @@ Mirrors TypeScript API with Pydantic config models.
 - `moose db pull` introspection for dictionaries (complex `system.dictionaries` parsing)
 - Environment-aware source config (belongs in Moose's env system, not Dictionary-specific)
 - Automatic `dictGet` dependency detection in View/MV SQL strings
+- **ClickHouse Named Collections** — server-side credential store (`CREATE NAMED COLLECTION ... AS key1='val1', ...`). Would allow referencing credentials by collection name in DDL instead of embedding resolved values. For v1, `mooseRuntimeEnv` covers the same security need via environment variables. Named Collections could be added as an optional Moose-managed primitive in a follow-up if users request it.
 
 ---
 
@@ -331,7 +558,12 @@ Mirrors TypeScript API with Pydantic config models.
 | Rust | `ddl_ordering.rs` | Atomic ops + dependency graph |
 | Rust | `clickhouse/mod.rs` | Execution + introspection |
 | Rust | `lifecycle_filter.rs` | Lifecycle enforcement |
-| Rust | `plan.rs` | Reconciliation filter |
+| Rust | `plan_risk.rs` | Destructive change classification |
+| Rust | `plan.rs` | Reconciliation filter + SQL normalization |
+| Rust | `plan_validator.rs` | Source table + column validation |
+| Rust | `infra_reality_checker.rs` | Reality checking + discrepancies |
+| Rust | `cli/routines/ls.rs` | `moose ls` dictionary listing |
+| Rust | `olap/mod.rs` | `OlapOperations` trait — `list_dictionaries()` |
 | Proto | `packages/protobuf/infrastructure_map.proto` | State persistence schema |
 | Rust | `mcp/compressed_map.rs` | MCP compressed map |
 | TS | `dmv2/sdk/olapDictionary.ts` (NEW) | SDK class |
