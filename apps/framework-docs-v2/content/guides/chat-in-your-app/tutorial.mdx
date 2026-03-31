@@ -24,7 +24,7 @@ This tutorial walks you through building a chat-over-data application with Moose
     {
       title: "MooseStack backend with MCP server",
       description:
-        "A MooseStack service exposing query_clickhouse and get_data_catalog tools, with bearer token authentication.",
+        "A MooseStack service exposing MCP tools for catalog discovery and tenant-scoped data queries, with bearer token authentication.",
     },
     {
       title: "Type-safe query layer (optional)",
@@ -117,7 +117,7 @@ moose init <project-name> typescript-agent
 cd <project-name>
 ```
 
-Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you. The `typescript-agent` starter includes local mock auth for development, optional production OIDC wiring, and a reference supervisor -> specialist -> narrator chat flow.
+Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you. The `typescript-agent` starter includes local mock auth for development, optional production OIDC wiring, and tenant-scoped semantic MCP tools for the default chat experience.
 
 <ToggleBlock openText="Show post-init instructions" closeText="Hide post-init instructions">
 
@@ -597,7 +597,7 @@ Verify that your chat can query your data through the MCP tools.
 
 <GuideStepper.Checkpoint id="chat-with-data" title="Chat with your data">
 
-Open [http://localhost:3000](http://localhost:3000/) and try asking questions about your data. The chat uses MCP tools (`query_clickhouse` and `get_data_catalog`) to answer.
+Open [http://localhost:3000](http://localhost:3000/) and try asking questions about your data. The chat uses MCP tools to answer, combining catalog discovery with tenant-scoped semantic queries.
 
 Try a few queries and pay attention to the tool call results — each one shows the SQL that was executed. This will help you identify patterns for the optional query layer later.
 
@@ -653,7 +653,7 @@ See the [query layer docs](https://docs.fiveonefour.com/moosestack/reference/que
 
 <GuideStepper.Checkpoint id="identify-query-patterns" title="Identify query patterns from chat usage">
 
-Before building the query layer, understand what queries your chat is actually running. Review the tool call results in your chat UI — each `query_clickhouse` call shows the SQL that was executed.
+Before building the query layer, understand what queries your chat is actually running. Review the tool call results in your chat UI — raw-SQL tools show the executed SQL directly, while semantic-layer tools show the structured request passed to the model-backed query.
 
 Look for:
 

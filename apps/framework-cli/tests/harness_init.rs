@@ -116,6 +116,38 @@ fn harness_init_arg_driven_mode_is_non_interactive() {
 
 #[test]
 #[serial_test::serial(harness_init)]
+fn harness_init_typescript_agent_keeps_turbo_gitignore_entry() {
+    ensure_test_environment();
+
+    let home = tempfile::tempdir().expect("temp home");
+    setup_codex_home(home.path());
+    let project_dir = home.path().join("agent-app");
+
+    cli()
+        .env("HOME", home.path())
+        .env("MOOSE_HARNESS_SKILLS_DIR", fixture_skills_dir())
+        .current_dir(home.path())
+        .args([
+            "harness",
+            "init",
+            "agent-app",
+            "typescript-agent",
+            "--location",
+            project_dir.to_str().expect("project dir"),
+            "--agent",
+            "none",
+            "--no-lsp",
+        ])
+        .assert()
+        .success();
+
+    let gitignore =
+        fs::read_to_string(project_dir.join(".gitignore")).expect("gitignore should exist");
+    assert!(gitignore.contains(".turbo"));
+}
+
+#[test]
+#[serial_test::serial(harness_init)]
 fn harness_init_rejects_bare_from_remote_flag() {
     ensure_test_environment();
 

@@ -39,56 +39,81 @@ pub fn create_init_commit(project: Arc<Project>, dir_path: &Path) {
     let mut git_ignore_file = project.project_location.clone();
     git_ignore_file.push(GITIGNORE);
 
-    let mut git_ignore_entries = vec![CLI_USER_DIRECTORY];
-    git_ignore_entries.append(&mut match project.language {
-        SupportedLanguages::Typescript => {
-            vec!["node_modules", "dist", "coverage", ".ts-node"]
-        }
+    let mut git_ignore_entries = vec![CLI_USER_DIRECTORY.to_string()];
+    git_ignore_entries.extend(match project.language {
+        SupportedLanguages::Typescript => vec![
+            "node_modules".to_string(),
+            "dist".to_string(),
+            "coverage".to_string(),
+            ".ts-node".to_string(),
+            ".turbo".to_string(),
+        ],
         SupportedLanguages::Python => vec![
-            "__pycache__",
-            "*.pyc",
-            "*.pyo",
-            "*.pyd",
-            ".Python",
-            "env",
-            ".venv",
-            "venv",
-            "ENV",
-            "env.bak",
-            ".spyderproject",
-            ".ropeproject",
-            ".idea",
-            "*.ipynb_checkpoints",
-            ".pytest_cache",
-            ".mypy_cache",
-            ".hypothesis",
-            ".coverage",
-            "cover",
-            "*.cover",
-            ".DS_Store",
-            ".cache",
-            "*.so",
-            "*.egg",
-            "*.egg-info",
-            "dist",
-            "build",
-            "develop-eggs",
-            "downloads",
-            "eggs",
-            "lib",
-            "lib64",
-            "parts",
-            "sdist",
-            "var",
-            "wheels",
-            "*.egg-info/",
-            ".installed.cfg",
-            "*.egg",
-            "MANIFEST",
+            "__pycache__".to_string(),
+            "*.pyc".to_string(),
+            "*.pyo".to_string(),
+            "*.pyd".to_string(),
+            ".Python".to_string(),
+            "env".to_string(),
+            ".venv".to_string(),
+            "venv".to_string(),
+            "ENV".to_string(),
+            "env.bak".to_string(),
+            ".spyderproject".to_string(),
+            ".ropeproject".to_string(),
+            ".idea".to_string(),
+            "*.ipynb_checkpoints".to_string(),
+            ".pytest_cache".to_string(),
+            ".mypy_cache".to_string(),
+            ".hypothesis".to_string(),
+            ".coverage".to_string(),
+            "cover".to_string(),
+            "*.cover".to_string(),
+            ".DS_Store".to_string(),
+            ".cache".to_string(),
+            "*.so".to_string(),
+            "*.egg".to_string(),
+            "*.egg-info".to_string(),
+            "dist".to_string(),
+            "build".to_string(),
+            "develop-eggs".to_string(),
+            "downloads".to_string(),
+            "eggs".to_string(),
+            "lib".to_string(),
+            "lib64".to_string(),
+            "parts".to_string(),
+            "sdist".to_string(),
+            "var".to_string(),
+            "wheels".to_string(),
+            "*.egg-info/".to_string(),
+            ".installed.cfg".to_string(),
+            "*.egg".to_string(),
+            "MANIFEST".to_string(),
         ],
     });
+    let existing_entries = std::fs::read_to_string(&git_ignore_file)
+        .ok()
+        .map(|content| {
+            content
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    for entry in existing_entries {
+        if !git_ignore_entries
+            .iter()
+            .any(|candidate| candidate == &entry)
+        {
+            git_ignore_entries.push(entry);
+        }
+    }
+
     let mut git_ignore = git_ignore_entries.join("\n");
-    git_ignore.push_str("\n\n");
+    git_ignore.push('\n');
     std::fs::write(git_ignore_file, git_ignore).unwrap();
 
     let mut repo_create_options = RepositoryInitOptions::new();
