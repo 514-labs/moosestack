@@ -128,8 +128,8 @@ Only ClickHouse `OlapTable`/`View`/`Sql` sources participate in Moose dependency
 Create `Dictionary` struct with: `name`, `database`, `cluster`, `source_table`, `primary_key`, `columns: Vec<DictionaryColumn>`, `layout: DictionaryLayout` (tagged enum), `lifetime: DictionaryLifetime` (untagged enum: single number or {min, max}), `invalidate: Option<DictionaryInvalidation>`, `defaults`, `settings`, `life_cycle`, `metadata`.
 
 Implement:
-- `to_create_sql()` → `CREATE DICTIONARY IF NOT EXISTS ...`
-- `to_drop_sql()` → `DROP DICTIONARY IF EXISTS ...`
+- `to_create_sql()` → `CREATE DICTIONARY IF NOT EXISTS \`db\`.\`name\` [ON CLUSTER \`cluster\`] (...)` — follows the same conditional `ON CLUSTER` pattern as OlapTable: if `cluster` is `Some`/non-empty, append `ON CLUSTER \`{cluster_name}\``; otherwise omit it
+- `to_drop_sql()` → `DROP DICTIONARY IF EXISTS \`db\`.\`name\` [ON CLUSTER \`cluster\`]` — same conditional cluster inclusion
 - `DataLineage` trait (pulls from source table)
 - `id()` method → `"{database}_{name}"`
 - Unit tests for DDL generation (all layout types, invalidation, defaults, cluster)
