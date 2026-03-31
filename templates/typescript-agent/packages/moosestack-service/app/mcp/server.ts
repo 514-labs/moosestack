@@ -7,8 +7,12 @@ import {
   requireTenantMoose,
   type TenantMooseContext,
 } from "../http/context/tenant-context";
+import {
+  tenantKnowledgeMetricsModel,
+  tenantKnowledgeRecordsModel,
+} from "../semantic/knowledge";
 import { registerGetDataCatalogTool } from "./tools/get-data-catalog";
-import { registerQueryClickhouseTool } from "./tools/query-clickhouse";
+import { registerSemanticModelTools } from "./tools/register-semantic-model-tools";
 
 const app = express();
 app.use(express.json());
@@ -22,7 +26,14 @@ function createMcpServer(
     version: "1.0.0",
   });
 
-  registerQueryClickhouseTool(server, context);
+  registerSemanticModelTools(
+    server,
+    [tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel],
+    {
+      queryClient: context.moose.client.query,
+      rowPolicyOptions: context.rowPolicyOptions,
+    },
+  );
   registerGetDataCatalogTool(server);
 
   return server;
