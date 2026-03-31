@@ -10,7 +10,7 @@ use home::home_dir;
 use serde::Deserialize;
 
 use self::agents::{detect_installed_agents, find_agent_by_id, AgentInfo, AGENT_REGISTRY};
-use self::config::{install_lsp, install_plugin, write_agent_lsp, write_agent_mcp};
+use self::config::{install_lsp, install_plugin, write_agent_lsp, write_agent_mcp, HARNESS_LABEL};
 use crate::cli::commands::{HarnessInitAction, HarnessInitArgs};
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::project_init::{
@@ -122,7 +122,7 @@ pub async fn run_harness_init(
 
     let home = home_dir().ok_or_else(|| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             "Could not determine home directory".to_string(),
         ))
     })?;
@@ -204,7 +204,7 @@ fn read_init_request_input(input_path: Option<&str>) -> Result<Option<String>, R
         std::io::stdin().read_to_string(&mut buf).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     "Failed to read harness init input from stdin".to_string(),
                 ),
                 e,
@@ -215,7 +215,7 @@ fn read_init_request_input(input_path: Option<&str>) -> Result<Option<String>, R
         std::fs::read_to_string(path).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to read harness init input file '{path}'"),
                 ),
                 e,
@@ -225,7 +225,7 @@ fn read_init_request_input(input_path: Option<&str>) -> Result<Option<String>, R
 
     if content.trim().is_empty() {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             "Harness init input was empty".to_string(),
         )));
     }
@@ -236,14 +236,14 @@ fn read_init_request_input(input_path: Option<&str>) -> Result<Option<String>, R
 fn parse_init_request(raw: &str) -> Result<HarnessInitRequest, RoutineFailure> {
     let request: HarnessInitRequest = serde_json::from_str(raw).map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to parse harness init input JSON: {e}"),
         ))
     })?;
 
     if request.version != HARNESS_INIT_SCHEMA_VERSION {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!(
                 "Unsupported harness init input version {} (expected {})",
                 request.version, HARNESS_INIT_SCHEMA_VERSION
@@ -303,7 +303,7 @@ fn resolve_non_interactive_options(
         .or(request_name)
         .ok_or_else(|| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             "Non-interactive harness init requires a project name. Provide it as an argument or in the input JSON.".to_string(),
         ))
     })?;
@@ -315,7 +315,7 @@ fn resolve_non_interactive_options(
         .or(request_template)
         .ok_or_else(|| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 "Non-interactive harness init requires a template name. Provide it as an argument or in the input JSON.".to_string(),
             ))
         })?;
@@ -355,7 +355,7 @@ async fn resolve_interactive_options(
     show_message!(
         MessageType::Info,
         Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             "Starting interactive harness setup".to_string(),
         )
     );
@@ -370,7 +370,7 @@ async fn resolve_interactive_options(
             show_message!(
                 MessageType::Warning,
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     "Project name cannot be empty.".to_string(),
                 )
             );
@@ -492,7 +492,7 @@ fn prompt_for_template_selection(
             Err(details) => {
                 show_message!(
                     MessageType::Warning,
-                    Message::new("Harness".to_string(), details)
+                    Message::new(HARNESS_LABEL.to_string(), details)
                 );
             }
         }
@@ -531,7 +531,7 @@ fn prompt_for_agents(home: &Path) -> Result<AgentSelection, RoutineFailure> {
         show_message!(
             MessageType::Warning,
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!(
                     "No supported coding agents auto-detected. Supported agents: {}",
                     AGENT_REGISTRY
@@ -546,7 +546,7 @@ fn prompt_for_agents(home: &Path) -> Result<AgentSelection, RoutineFailure> {
         show_message!(
             MessageType::Info,
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!(
                     "Detected coding agents: {}",
                     detected
@@ -594,7 +594,7 @@ fn prompt_bool(prompt: &str, default: bool) -> Result<bool, RoutineFailure> {
                 show_message!(
                     MessageType::Warning,
                     Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         "Please answer yes or no.".to_string(),
                     )
                 );
@@ -622,7 +622,7 @@ fn resolve_agent_selection(agent_ids: Vec<String>) -> Result<AgentSelection, Rou
         let normalized = id.trim().to_lowercase();
         if normalized == "auto" || normalized == "none" {
             return Err(RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 "Use either `auto`, `none`, or explicit agent ids, but do not mix them."
                     .to_string(),
             )));
@@ -632,7 +632,7 @@ fn resolve_agent_selection(agent_ids: Vec<String>) -> Result<AgentSelection, Rou
         }
         if find_agent_by_id(&normalized).is_none() {
             return Err(RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!(
                     "Unknown agent '{}'. Valid agents: {}",
                     normalized,
@@ -662,7 +662,7 @@ fn resolve_target_agents(
                 }
                 let agent = find_agent_by_id(agent_id).ok_or_else(|| {
                     RoutineFailure::error(Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         format!(
                             "Unknown agent '{}'. Valid agents: {}",
                             agent_id,
@@ -712,7 +712,7 @@ async fn install_harness_support(
     show_message!(
         MessageType::Info,
         Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!(
                 "Installing harness support for {}",
                 selected_agents.join(", ")
@@ -723,7 +723,7 @@ async fn install_harness_support(
     let skills = load_skills(branch).await?;
     if skills.is_empty() {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             "No skills were found in the agent skills catalog.".to_string(),
         )));
     }
@@ -753,7 +753,7 @@ async fn install_harness_support(
         if agent.plugin.is_some()
             && install_plugin(agent).await.map_err(|e| {
                 RoutineFailure::error(Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to install plugin for {}: {e}", agent.display_name),
                 ))
             })?
@@ -763,7 +763,7 @@ async fn install_harness_support(
 
         if write_agent_mcp(agent, home).map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to configure MCP for {}: {e}", agent.display_name),
             ))
         })? {
@@ -773,7 +773,7 @@ async fn install_harness_support(
         if lsp_installed
             && write_agent_lsp(agent, home).map_err(|e| {
                 RoutineFailure::error(Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to configure LSP for {}: {e}", agent.display_name),
                 ))
             })?
@@ -801,7 +801,7 @@ async fn maybe_install_lsp(install_lsp_requested: bool) -> Result<bool, RoutineF
 
     install_lsp().await.map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to install MooseStack LSP: {e}"),
         ))
     })
@@ -874,7 +874,7 @@ async fn load_skills(branch: &str) -> Result<Vec<SkillInfo>, RoutineFailure> {
     show_message!(
         MessageType::Info,
         Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!(
                 "Fetching skills from github.com/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME} (branch: {branch})"
             ),
@@ -893,7 +893,7 @@ fn build_http_client() -> Result<reqwest::Client, RoutineFailure> {
         .build()
         .map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to create HTTP client: {e}"),
             ))
         })
@@ -902,14 +902,14 @@ fn build_http_client() -> Result<reqwest::Client, RoutineFailure> {
 fn github_skill_tree_url(branch: &str) -> Result<reqwest::Url, RoutineFailure> {
     let mut url = reqwest::Url::parse("https://api.github.com").map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to build GitHub tree URL: {e}"),
         ))
     })?;
     {
         let mut segments = url.path_segments_mut().map_err(|_| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 "Failed to mutate GitHub tree URL segments".to_string(),
             ))
         })?;
@@ -923,14 +923,14 @@ fn github_skill_tree_url(branch: &str) -> Result<reqwest::Url, RoutineFailure> {
 fn github_raw_file_url(branch: &str, path: &str) -> Result<reqwest::Url, RoutineFailure> {
     let mut url = reqwest::Url::parse("https://raw.githubusercontent.com").map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to build GitHub raw-file URL: {e}"),
         ))
     })?;
     {
         let mut segments = url.path_segments_mut().map_err(|_| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 "Failed to mutate GitHub raw-file URL segments".to_string(),
             ))
         })?;
@@ -954,7 +954,7 @@ async fn fetch_repo_tree(
         .await
         .map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to fetch skill catalog from GitHub: {e}"),
             ))
         })?;
@@ -962,21 +962,21 @@ async fn fetch_repo_tree(
     let status = response.status();
     let body = response.text().await.map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to read GitHub response body: {e}"),
         ))
     })?;
 
     if !status.is_success() {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("GitHub skill catalog request failed with HTTP {status}: {body}"),
         )));
     }
 
     serde_json::from_str(&body).map_err(|e| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to parse GitHub skill catalog: {e}"),
         ))
     })
@@ -1054,7 +1054,7 @@ fn discover_local_skills(root: &Path) -> Result<Vec<SkillInfo>, RoutineFailure> 
     let skills_root = root.join("skills");
     if !skills_root.is_dir() {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!(
                 "Local skills override at {} does not contain a skills/ directory.",
                 root.display()
@@ -1070,7 +1070,7 @@ fn discover_local_skills(root: &Path) -> Result<Vec<SkillInfo>, RoutineFailure> 
     for skill_dir in skill_dirs {
         let relative = skill_dir.strip_prefix(&skills_root).map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to resolve local skill path: {e}"),
             ))
         })?;
@@ -1096,7 +1096,7 @@ fn collect_skill_dirs(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), Routi
     for entry in std::fs::read_dir(dir).map_err(|e| {
         RoutineFailure::new(
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to read local skills directory {}", dir.display()),
             ),
             e,
@@ -1105,7 +1105,7 @@ fn collect_skill_dirs(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), Routi
         let entry = entry.map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     "Failed to inspect local skill entry".to_string(),
                 ),
                 e,
@@ -1117,7 +1117,7 @@ fn collect_skill_dirs(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), Routi
             .map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         "Failed to inspect local skill file type".to_string(),
                     ),
                     e,
@@ -1145,7 +1145,7 @@ fn collect_skill_files(
     for entry in std::fs::read_dir(dir).map_err(|e| {
         RoutineFailure::new(
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to read local skill files in {}", dir.display()),
             ),
             e,
@@ -1154,7 +1154,7 @@ fn collect_skill_files(
         let entry = entry.map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     "Failed to inspect local skill file".to_string(),
                 ),
                 e,
@@ -1164,7 +1164,7 @@ fn collect_skill_files(
         let file_type = entry.file_type().map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     "Failed to inspect local skill file type".to_string(),
                 ),
                 e,
@@ -1182,7 +1182,7 @@ fn collect_skill_files(
 
         let relative = path.strip_prefix(root).map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to resolve relative skill file path: {e}"),
             ))
         })?;
@@ -1212,7 +1212,7 @@ async fn install_skill(
     let canonical_dir = canonical_skill_dir(home, &skill.name);
     let canonical_parent = canonical_dir.parent().ok_or_else(|| {
         RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!(
                 "Failed to determine skill parent directory for {}",
                 canonical_dir.display()
@@ -1222,7 +1222,7 @@ async fn install_skill(
     std::fs::create_dir_all(canonical_parent).map_err(|e| {
         RoutineFailure::new(
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!(
                     "Failed to create canonical skill parent directory {}",
                     canonical_parent.display()
@@ -1237,7 +1237,7 @@ async fn install_skill(
         .map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!(
                         "Failed to create staging directory for {}",
                         canonical_dir.display()
@@ -1254,7 +1254,7 @@ async fn install_skill(
             std::fs::create_dir_all(parent).map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         format!(
                             "Failed to create skill parent directory {}",
                             parent.display()
@@ -1269,7 +1269,7 @@ async fn install_skill(
             SkillFileSource::GitHubPath(repo_path) => {
                 let http_client = http_client.ok_or_else(|| {
                     RoutineFailure::error(Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         "Missing shared HTTP client for GitHub-backed skill installation."
                             .to_string(),
                     ))
@@ -1278,7 +1278,7 @@ async fn install_skill(
                 std::fs::write(&destination, data).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
-                            "Harness".to_string(),
+                            HARNESS_LABEL.to_string(),
                             format!("Failed to write skill file {}", destination.display()),
                         ),
                         e,
@@ -1289,7 +1289,7 @@ async fn install_skill(
                 std::fs::copy(path, &destination).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
-                            "Harness".to_string(),
+                            HARNESS_LABEL.to_string(),
                             format!("Failed to copy local skill file {}", path.display()),
                         ),
                         e,
@@ -1303,7 +1303,7 @@ async fn install_skill(
     std::fs::rename(&staging_path, &canonical_dir).map_err(|e| {
         RoutineFailure::new(
             Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!(
                     "Failed to replace canonical skill directory {}",
                     canonical_dir.display()
@@ -1320,7 +1320,7 @@ async fn install_skill(
         std::fs::create_dir_all(&skill_root).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!(
                         "Failed to create agent skill directory {}",
                         skill_root.display()
@@ -1338,7 +1338,7 @@ async fn install_skill(
             std::os::unix::fs::symlink(&canonical_dir, &link_path).map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         format!("Failed to link skill into {}", link_path.display()),
                     ),
                     e,
@@ -1349,7 +1349,7 @@ async fn install_skill(
             std::os::windows::fs::symlink_dir(&canonical_dir, &link_path).map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
-                        "Harness".to_string(),
+                        HARNESS_LABEL.to_string(),
                         format!("Failed to link skill into {}", link_path.display()),
                     ),
                     e,
@@ -1372,7 +1372,7 @@ async fn download_raw_file(
         .await
         .map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to download skill file {path}: {e}"),
             ))
         })?;
@@ -1380,7 +1380,7 @@ async fn download_raw_file(
     let status = response.status();
     if !status.is_success() {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Failed to download skill file {path}: HTTP {status}"),
         )));
     }
@@ -1391,7 +1391,7 @@ async fn download_raw_file(
         .map(|bytes| bytes.to_vec())
         .map_err(|e| {
             RoutineFailure::error(Message::new(
-                "Harness".to_string(),
+                HARNESS_LABEL.to_string(),
                 format!("Failed to read downloaded skill file {path}: {e}"),
             ))
         })
@@ -1403,7 +1403,7 @@ fn validate_relative_path(path: &str) -> Result<(), RoutineFailure> {
         || path.split('/').any(|segment| segment == "..")
     {
         return Err(RoutineFailure::error(Message::new(
-            "Harness".to_string(),
+            HARNESS_LABEL.to_string(),
             format!("Unsafe skill path encountered: {path}"),
         )));
     }
@@ -1432,7 +1432,7 @@ fn remove_path_entry(path: &Path) -> Result<(), RoutineFailure> {
         Err(error) => {
             return Err(RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to inspect {}", path.display()),
                 ),
                 error,
@@ -1445,7 +1445,7 @@ fn remove_path_entry(path: &Path) -> Result<(), RoutineFailure> {
         std::fs::remove_file(path).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to remove {}", path.display()),
                 ),
                 e,
@@ -1455,7 +1455,7 @@ fn remove_path_entry(path: &Path) -> Result<(), RoutineFailure> {
         std::fs::remove_dir(path).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to remove {}", path.display()),
                 ),
                 e,
@@ -1465,7 +1465,7 @@ fn remove_path_entry(path: &Path) -> Result<(), RoutineFailure> {
         std::fs::remove_file(path).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to remove {}", path.display()),
                 ),
                 e,
@@ -1475,7 +1475,7 @@ fn remove_path_entry(path: &Path) -> Result<(), RoutineFailure> {
         std::fs::remove_dir_all(path).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to remove {}", path.display()),
                 ),
                 e,
@@ -1570,7 +1570,7 @@ fn emit_schema(json: bool) -> Result<RoutineSuccess, RoutineFailure> {
             "{}",
             serde_json::to_string_pretty(&schema).map_err(|e| {
                 RoutineFailure::error(Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to serialize schema: {e}"),
                 ))
             })?
@@ -1611,7 +1611,7 @@ fn emit_schema(json: bool) -> Result<RoutineSuccess, RoutineFailure> {
             }))
             .map_err(|e| {
                 RoutineFailure::error(Message::new(
-                    "Harness".to_string(),
+                    HARNESS_LABEL.to_string(),
                     format!("Failed to serialize schema example: {e}"),
                 ))
             })?

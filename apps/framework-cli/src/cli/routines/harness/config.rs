@@ -11,7 +11,7 @@ use crate::cli::display::{Message, MessageType};
 use super::agents::{AgentInfo, JsonMcpFormat, LspConfig, McpConfig};
 
 const CONTEXT7_URL: &str = "https://mcp.context7.com/mcp";
-const HARNESS_LABEL: &str = "Harness";
+pub(super) const HARNESS_LABEL: &str = "Harness";
 const HARNESS_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 const MOOSE_MCP_COMMAND: &str = "moose";
 const MOOSE_MCP_ARG: &str = "mcp";
