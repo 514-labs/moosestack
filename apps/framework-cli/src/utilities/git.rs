@@ -91,29 +91,41 @@ pub fn create_init_commit(project: Arc<Project>, dir_path: &Path) {
             "MANIFEST".to_string(),
         ],
     });
-    let existing_entries = std::fs::read_to_string(&git_ignore_file)
-        .ok()
-        .map(|content| {
-            content
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let existing_content = std::fs::read_to_string(&git_ignore_file).ok();
 
-    for entry in existing_entries {
-        if !git_ignore_entries
-            .iter()
-            .any(|candidate| candidate == &entry)
-        {
-            git_ignore_entries.push(entry);
+    let git_ignore = if let Some(content) = existing_content {
+        let existing_entries: Vec<String> = content
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+
+        let mut missing_entries = Vec::new();
+        for entry in &git_ignore_entries {
+            if !existing_entries.iter().any(|e| e == entry) {
+                missing_entries.push(entry.clone());
+            }
         }
-    }
 
-    let mut git_ignore = git_ignore_entries.join("\n");
-    git_ignore.push('\n');
+        if missing_entries.is_empty() {
+            content
+        } else {
+            let mut result = content.clone();
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push('\n');
+            result.push_str(&missing_entries.join("\n"));
+            result.push('\n');
+            result
+        }
+    } else {
+        let mut content = git_ignore_entries.join("\n");
+        content.push('\n');
+        content
+    };
+
     std::fs::write(git_ignore_file, git_ignore).unwrap();
 
     let mut repo_create_options = RepositoryInitOptions::new();

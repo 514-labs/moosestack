@@ -124,7 +124,3 @@ export const tenantKnowledgeRecordsModel = defineQueryModel({
     maxLimit: 100,
   },
 });
-
-export const knowledgeMetricsModel = tenantKnowledgeMetricsModel;
-
-export const recentKnowledgeModel = tenantKnowledgeRecordsModel;
