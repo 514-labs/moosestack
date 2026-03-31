@@ -940,6 +940,30 @@ This feature is purely additive — no breaking changes for existing Moose proje
 
 ---
 
+## Open decisions (resolved)
+
+1. **ClickHouse version compatibility** — minimum version requirement. `CREATE OR REPLACE DICTIONARY` requires ClickHouse 22.4+. Document this as a requirement, no fallback to DROP+CREATE.
+2. **Migration from SqlResource** — follow-up: `moose db pull` with a specified identifier to import an existing resource. Not in initial scope.
+3. **Rollback / failure recovery** — re-creation on next plan run. No rollback mechanism in ClickHouse. If `CREATE OR REPLACE` fails, `moose plan` will detect the missing/mismatched dictionary on next run and re-emit the creation.
+4. **Observability** — follow-up: needs holistic design across all infrastructure types (tables, MVs, dictionaries) for silently failed mutations. Not dictionary-specific.
+5. **Concurrency in clustered deployments** — set aside: k8s lease coordination is in-flight separately (Nico). Dictionary support will use `ON CLUSTER` for ClickHouse-level coordination, Moose-level coordination deferred to the k8s lease work.
+
+## PR strategy (stacked PRs via Graphite)
+
+Feature is split into 5 stacked PRs, each reviewable independently but gated on the previous:
+
+| PR | Branch | Content | Key Reviewer | ~Size |
+|---|---|---|---|---|
+| 1 | `dict/rust-core` | dictionary.rs, infra_map, proto, DDL ordering, lifecycle | Nico (Rust) | ~800 lines |
+| 2 | `dict/rust-integration` | plan_risk, plan_validator, ls, reality checker, credential resolution | Nico (Rust) | ~400 lines |
+| 3 | `dict/typescript-sdk` | olapDictionary.ts, internal.ts, sqlHelpers, exports, unit tests | SDK reviewer | ~600 lines |
+| 4 | `dict/python-sdk` | olap_dictionary.py, internal.py, registry, exports, unit tests | SDK reviewer | ~500 lines |
+| 5 | `dict/e2e-docs` | E2E tests, documentation, template updates | Anyone | ~400 lines |
+
+All PRs can be open for review simultaneously. When PR 1 merges, Graphite auto-rebases PR 2–5 onto main.
+
+---
+
 ## Deferred (follow-up PRs)
 
 - `moose db pull` introspection for dictionaries (complex `system.dictionaries` / `SHOW CREATE DICTIONARY` parsing)
@@ -948,6 +972,8 @@ This feature is purely additive — no breaking changes for existing Moose proje
 - **Full DDL reconciliation via `SHOW CREATE DICTIONARY`** — currently reality checker only does existence/status checks. Full DDL comparison for exact diffing is complex and deferred.
 - **Connection test during plan phase** — for external sources (MySQL, PostgreSQL, HTTP, etc.), optionally test connectivity during `moose plan` rather than waiting for ClickHouse to fail at CREATE time
 - **Typed dictGet variants** — `dictGetUInt32`, `dictGetFloat64`, etc. for type-specific lookups. For v1, `get()` uses the generic `dictGet` which auto-casts.
+- **`moose db pull` for dictionaries** — import existing dictionaries with a specified identifier. Enables SqlResource → OlapDictionary migration path.
+- **Dictionary load status monitoring** — check `system.dictionaries` status after creation, warn on `LOADING_FAILED`. Part of holistic observability design for all infra types.
 - **ClickHouse Named Collections** — server-side credential store (`CREATE NAMED COLLECTION ... AS key1='val1', ...`). Would allow referencing credentials by collection name in DDL instead of embedding resolved values. For v1, `mooseRuntimeEnv` covers the same security need via environment variables. Named Collections could be added as an optional Moose-managed primitive in a follow-up if users request it.
 
 ---
