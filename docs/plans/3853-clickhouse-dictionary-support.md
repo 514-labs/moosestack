@@ -299,6 +299,7 @@ Mirrors TypeScript API with Pydantic config models.
   - Executable Pool (command, format, pool_size)
   - Null
 - **Tutorial**: "Using OlapDictionary for fast ClickHouse lookups" — end-to-end walkthrough: define source table, create dictionary, use `dictGet` in a MaterializedView
+- **Known limitation note** in docs: Dictionary dependencies in View/MV SQL strings are not automatically detected. When using raw `dictGet('dict_name', ...)` in SQL, the dictionary won't be auto-registered as a dependency for DDL ordering. Users should use the typed `.get()` helper (which generates correct SQL) or be aware that dictionary creation order depends on the source table reference, not on downstream consumers.
 - Update SDK overview / primitives listing page
 - Update ClickHouse best practices if relevant
 
