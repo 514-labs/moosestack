@@ -468,6 +468,7 @@ describe("TypeScript Agent Template E2E", function () {
   let serviceEnvPath: string;
   let webAppEnvPath: string;
   let webAppPort: number;
+  let initOutput = "";
   let webProcess: ChildProcess | null = null;
   let mooseProcess: ChildProcess | null = null;
 
@@ -495,7 +496,12 @@ describe("TypeScript Agent Template E2E", function () {
       MOOSE_LIB_PATH,
       APP_NAME,
       "pnpm",
-      { logger: testLogger },
+      {
+        logger: testLogger,
+        onInitComplete: ({ stdout }) => {
+          initOutput = stdout;
+        },
+      },
     );
 
     testLogger.info("Preparing local env files with root pnpm env:prepare");
@@ -631,6 +637,25 @@ describe("TypeScript Agent Template E2E", function () {
     expect(readEnvValue(webAppEnvPath, "AUTH_SECRET")).to.not.equal(
       "replace-me-with-a-random-secret",
     );
+  });
+
+  it("should print start instructions before seed instructions during init", function () {
+    expect(initOutput).to.include("pnpm dev:start");
+    expect(initOutput).to.include("pnpm seed");
+    expect(initOutput.indexOf("pnpm dev:start")).to.be.lessThan(
+      initOutput.indexOf("pnpm seed"),
+    );
+  });
+
+  it("should prebuild the workspace before dev entrypoints", function () {
+    const rootPackageJson = JSON.parse(
+      fs.readFileSync(path.join(projectDir, "package.json"), "utf8"),
+    ) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(rootPackageJson.scripts?.predev).to.equal("pnpm build");
+    expect(rootPackageJson.scripts?.["predev:start"]).to.equal("pnpm build");
   });
 
   it("should render the unauthenticated landing page and provider status", async function () {

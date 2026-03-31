@@ -75,7 +75,7 @@ Start with these files if you want to customize the pattern:
 - One local container runtime: Docker Desktop / Docker Engine, or Finch
 - Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials plus `BEDROCK_MODEL_ID`
 
-`pnpm dev:start` auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
+`pnpm dev:start` runs the workspace build first, then auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
 
 If you run `pnpm dev:moose` or `moose dev` directly with Finch, set `MOOSE_DEV__CONTAINER_CLI_PATH=finch` or add `[dev] container_cli_path = "finch"` to `~/.moose/config.toml`.
 
@@ -93,7 +93,7 @@ pnpm dev:start
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
-`pnpm dev:start` checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
+`pnpm dev:start` runs the workspace build, checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
 
 In a third terminal, seed starter data:
 
@@ -365,8 +365,8 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 ## Notes
 
 - `pnpm env:prepare` creates local env files from the checked-in examples.
-- `pnpm dev:start` validates Docker or Finch, waits for readiness, and starts both services.
-- `pnpm dev` starts both the Moose service and the web app without the extra readiness checks.
+- `pnpm dev:start` runs the workspace build, validates Docker or Finch, waits for readiness, and starts both services.
+- `pnpm dev` runs the same workspace build, then starts both services without the extra readiness checks.
 - `pnpm build` uses Turbo to build the shared packages plus the Next app in dependency order.
 - `pnpm build:service` builds the Moose service docker image.
 - `pnpm test` uses Vitest at the workspace root and is safe to run before `pnpm dev`.
