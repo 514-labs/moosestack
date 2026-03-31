@@ -199,12 +199,13 @@ read_env_value() {
         prefix = name "="
         capture = 0
         value = ""
+        found = 0
       }
       capture == 1 {
         value = value ORS $0
         if ($0 ~ /"$/) {
-          print value
-          exit
+          found = 1
+          capture = 0
         }
         next
       }
@@ -214,8 +215,12 @@ read_env_value() {
           capture = 1
           next
         }
-        print value
-        exit
+        found = 1
+      }
+      END {
+        if (found) {
+          print value
+        }
       }
     ' "${file_path}"
   )"
