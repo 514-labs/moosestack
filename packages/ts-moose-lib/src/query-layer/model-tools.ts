@@ -12,6 +12,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toQuery, type Sql } from "../sqlHelpers";
 import { QueryClient } from "../consumption-apis/helpers";
 import type { FilterInputTypeHint, SortDir } from "./types";
+
+export const DEFAULT_LIMIT = 1000;
+
 // =============================================================================
 // QueryModelBase — Minimal structural interface for MCP utilities
 // =============================================================================
@@ -163,8 +166,9 @@ export function createModelTool(
   const requiredFilters = [
     ...new Set([...modelRequiredFilters, ...(options.requiredFilters ?? [])]),
   ];
-  const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? 1000;
-  const defaultLimit = options.defaultLimit ?? mergedDefaults.limit ?? 1000;
+  const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? DEFAULT_LIMIT;
+  const defaultLimit =
+    options.defaultLimit ?? mergedDefaults.limit ?? DEFAULT_LIMIT;
 
   const requiredSet = new Set(requiredFilters);
   const schema: Record<string, z.ZodType> = {};
@@ -339,7 +343,7 @@ export function registerModelTools(
     const toolName = model.name;
     const toolDescription = model.description ?? toolName;
     const tool = createModelTool(model);
-    const defaultLimit = model.defaults?.limit ?? 1000;
+    const defaultLimit = model.defaults?.limit ?? DEFAULT_LIMIT;
 
     server.tool(
       toolName,

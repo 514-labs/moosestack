@@ -79,15 +79,13 @@ export interface GetModelSchemaOptions {
 // Implementation
 // =============================================================================
 
+const RANGE_OPS = new Set(["gt", "gte", "lt", "lte", "between"]);
+
 /** Check whether a filter is categorical (eq/in, no range ops) */
 function isCategoricalFilter(operators: readonly string[]): boolean {
   return (
     (operators.includes("eq") || operators.includes("in")) &&
-    !operators.includes("gt") &&
-    !operators.includes("gte") &&
-    !operators.includes("lt") &&
-    !operators.includes("lte") &&
-    !operators.includes("between")
+    !operators.some((op) => RANGE_OPS.has(op))
   );
 }
 
@@ -121,8 +119,11 @@ async function fetchDistinctValues(
       })
       .filter((v) => v.value !== "")
       .sort((a, b) => a.label.localeCompare(b.label));
-  } catch {
-    // Fall back to no values — UI renders text input
+  } catch (err) {
+    console.warn(
+      `Failed to fetch distinct values for dimension "${dimensionId}":`,
+      err,
+    );
     return undefined;
   }
 }
@@ -153,46 +154,46 @@ export async function getModelSchema(
 ): Promise<QueryModelSchema> {
   const { client } = options;
 
-  const metrics: SchemaMetric[] = Object.entries(model.metrics ?? {}).map(
-    ([id, m]) => ({
-      id,
-      label: id,
-      description: m.description,
-    }),
-  );
+  const metricsMap = model.metrics ?? {};
+  const dimensionsMap = model.dimensions ?? {};
 
-  const dimensions: SchemaDimension[] = Object.entries(
-    model.dimensions ?? {},
-  ).map(([id, d]) => ({
+  const metrics: SchemaMetric[] = Object.entries(metricsMap).map(([id, m]) => ({
     id,
     label: id,
-    description: d.description,
+    description: m.description,
   }));
 
-  const dimensionIds = new Set(Object.keys(model.dimensions ?? {}));
-
-  const filters: SchemaFilter[] = await Promise.all(
-    Object.entries(model.filters).map(async ([id, f]) => {
-      const operators = [...f.operators];
-      const categorical = isCategoricalFilter(operators);
-      const hasDimension = dimensionIds.has(id);
-
-      let values: SchemaFilterValue[] | undefined;
-      if (categorical && hasDimension && client) {
-        values = await fetchDistinctValues(model, id, client);
-      }
-
-      return {
-        id,
-        label: id,
-        operators,
-        inputType: f.inputType,
-        description: f.description,
-        ...(f.required && { required: true }),
-        ...(values && { values }),
-      };
+  const dimensions: SchemaDimension[] = Object.entries(dimensionsMap).map(
+    ([id, d]) => ({
+      id,
+      label: id,
+      description: d.description,
     }),
   );
+
+  const dimensionIds = new Set(Object.keys(dimensionsMap));
+
+  const filters: SchemaFilter[] = [];
+  for (const [id, f] of Object.entries(model.filters)) {
+    const operators = [...f.operators];
+    const categorical = isCategoricalFilter(operators);
+    const hasDimension = dimensionIds.has(id);
+
+    let values: SchemaFilterValue[] | undefined;
+    if (categorical && hasDimension && client) {
+      values = await fetchDistinctValues(model, id, client);
+    }
+
+    filters.push({
+      id,
+      label: id,
+      operators,
+      inputType: f.inputType,
+      description: f.description,
+      ...(f.required && { required: true }),
+      ...(values && { values }),
+    });
+  }
 
   return {
     name: model.name,
