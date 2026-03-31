@@ -591,6 +591,24 @@ pub struct DestructiveTableInfo {
     pub next_version_string: String,
 }
 
+/// Default version string assigned to previously-unversioned tables.
+const FIRST_VERSION: &str = "0.1";
+
+/// Increments the major component of `version`, or returns the default
+/// first version when `None` is given.
+fn increment_version(version: Option<&Version>) -> Version {
+    match version {
+        Some(v) => {
+            let mut parsed = v.parsed().to_vec();
+            if let Some(first) = parsed.first_mut() {
+                *first += 1;
+            }
+            Version::from_string(version_to_string(&parsed))
+        }
+        None => Version::from_string(FIRST_VERSION.to_string()),
+    }
+}
+
 /// Computes a suggested next versioned ClickHouse table name.
 ///
 /// Uses the `Table.version` field rather than parsing the table name.
@@ -599,22 +617,15 @@ pub struct DestructiveTableInfo {
 /// `("Events_3",   Some(Version("3")))   -> "Events_4"`
 /// `("Events_1_0", Some(Version("1.0"))) -> "Events_2_0"`
 pub fn derive_next_version(table_name: &str, version: Option<&Version>) -> String {
-    match version {
+    let next = increment_version(version);
+    let base = match version {
         Some(v) => {
             let suffix = format!("_{}", v.as_suffix());
-            let base = table_name.strip_suffix(&suffix).unwrap_or(table_name);
-            let mut parsed = v.parsed().to_vec();
-            if let Some(first) = parsed.first_mut() {
-                *first += 1;
-            }
-            let new_v = Version::from_string(version_to_string(&parsed));
-            format!("{base}_{}", new_v.as_suffix())
+            table_name.strip_suffix(&suffix).unwrap_or(table_name)
         }
-        None => {
-            let first_version = Version::from_string("0.1".to_string());
-            format!("{table_name}_{}", first_version.as_suffix())
-        }
-    }
+        None => table_name,
+    };
+    format!("{base}_{}", next.as_suffix())
 }
 
 /// Returns the suggested `version` string (dot-separated) for the next version.
@@ -623,16 +634,7 @@ pub fn derive_next_version(table_name: &str, version: Option<&Version>) -> Strin
 /// `Some(Version("3"))`   -> `"4"`
 /// `Some(Version("1.0"))` -> `"2.0"`
 pub fn derive_next_version_string(version: Option<&Version>) -> String {
-    match version {
-        Some(v) => {
-            let mut parsed = v.parsed().to_vec();
-            if let Some(first) = parsed.first_mut() {
-                *first += 1;
-            }
-            version_to_string(&parsed)
-        }
-        None => "0.1".to_string(),
-    }
+    version_to_string(increment_version(version).parsed())
 }
 
 /// Collects [`DestructiveTableInfo`] for every table recreate / drop in the
