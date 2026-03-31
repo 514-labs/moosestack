@@ -73,11 +73,34 @@ export const EnrichClicksMV = new MaterializedView<EnrichedClick>("enrich_clicks
 
 ### Source config behavior
 
+**ClickHouse sources (typed Moose references):**
+
 | `source` value | `sourceTables` | DDL generated |
 |---|---|---|
 | `OlapTable` ref | Not needed (auto-extracted) | `SOURCE(CLICKHOUSE(TABLE 'name' DB 'db'))` |
 | `View` ref | Not needed (auto-extracted) | `SOURCE(CLICKHOUSE(TABLE 'name' DB 'db'))` |
 | `` sql`SELECT ...` `` | Required (explicit) | `SOURCE(CLICKHOUSE(QUERY 'SELECT ...'))` |
+
+**All supported source types (typed discriminated union):**
+
+| Source type | Key parameters |
+|---|---|
+| ClickHouse (typed ref) | `OlapTable \| View` — auto-extracts table/db |
+| ClickHouse (SQL query) | `Sql \| string` + explicit `sourceTables` |
+| ClickHouse (remote) | host, port, user, password, db, table/query, where, secure, invalidateQuery |
+| HTTP(S) | url, format, credentials (user/password), headers |
+| MySQL | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
+| PostgreSQL | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
+| MongoDB | host, port, user, password, db, collection |
+| Redis | host, port, dbIndex, password, storageType |
+| Cassandra | host, port, user, password, keyspace, columnFamily |
+| ODBC | connectionString, db, table/query |
+| File | path, format |
+| Executable | command, format |
+| Executable Pool | command, format, poolSize |
+| Null | (none) |
+
+Only ClickHouse `OlapTable`/`View`/`Sql` sources participate in Moose dependency tracking. External sources have no Moose-managed dependencies.
 
 ### Questions for the issue requester
 
@@ -89,7 +112,7 @@ export const EnrichClicksMV = new MaterializedView<EnrichedClick>("enrich_clicks
 
 ### Key design decisions (from critique of the original issue)
 
-1. **Flexible source config** — `source` accepts `OlapTable | View` for direct table references, or `Sql | string` for custom queries (with typed interpolation via the `sql` template tag). No `type: "clickhouse"` field needed — ClickHouse is always implicit. When source is SQL, explicit `sourceTables` is required for dependency tracking.
+1. **Flexible source config** — `source` accepts `OlapTable | View` for typed ClickHouse table references, `Sql | string` for custom ClickHouse queries (with typed interpolation via the `sql` template tag), or external source configs (`{ type: "mysql", ... }`, `{ type: "http", ... }`, etc.) for all 12 ClickHouse-supported source types. When source is a SQL query, explicit `sourceTables` is required for dependency tracking. External sources have no Moose-managed dependencies.
 2. **Typed layout config** — not a plain string. A discriminated union with per-layout parameters (e.g., `CACHE` has `sizeInCells`).
 3. **`dictGet` helper** — typed method on `OlapDictionary` instances for use in `sql` template tags.
 4. **Key/attribute column distinction** — `primaryKey` identifies key columns; attribute columns can have `defaults` for missing key lookups.
@@ -163,7 +186,7 @@ class OlapDictionary<T> {
 }
 ```
 
-Config includes: `name`, `source: OlapTable | View | Sql | string` (table ref or SQL query), `sourceTables?: (OlapTable | View)[]` (required when source is SQL, for dependency tracking), `primaryKey`, `layout` (typed union), `lifetime`, `invalidate?`, `defaults?`, `settings?`, `database?`, `cluster?`, `lifeCycle?`
+Config includes: `name`, `source: OlapDictionarySource` (typed discriminated union — OlapTable/View ref, Sql/string query, or external source config like `{ type: "mysql", host, port, ... }`), `sourceTables?: (OlapTable | View)[]` (required when source is Sql/string, for dependency tracking), `primaryKey`, `layout` (typed union), `lifetime`, `invalidate?`, `defaults?`, `settings?`, `database?`, `cluster?`, `lifeCycle?`
 
 Self-registers into `getMooseInternal().olapDictionaries`.
 
