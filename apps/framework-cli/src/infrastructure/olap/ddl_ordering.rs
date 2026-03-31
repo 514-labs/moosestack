@@ -4293,7 +4293,7 @@ mod tests {
             matches!(op, AtomicOlapOperation::AddTableColumn { column, .. } if column.name == "new_col")
         });
 
-        let constraint_idx = plan.setup_ops.iter().position(|op| {
+        let _constraint_idx = plan.setup_ops.iter().position(|op| {
             matches!(op, AtomicOlapOperation::AddTableConstraint { constraint, .. } if constraint.name == "check_new_col")
         }).expect("Should have AddTableConstraint");
 
@@ -4331,7 +4331,7 @@ mod tests {
 
         let plan = handle_table_update(&before, &after, &[]);
 
-        let constraint_idx = plan.teardown_ops.iter().position(|op| {
+        let _constraint_idx = plan.teardown_ops.iter().position(|op| {
             matches!(op, AtomicOlapOperation::DropTableConstraint { constraint_name, .. } if constraint_name == "check_old_col")
         }).expect("Should have DropTableConstraint");
 
