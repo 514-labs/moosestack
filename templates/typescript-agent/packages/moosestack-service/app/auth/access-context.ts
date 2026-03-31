@@ -10,12 +10,12 @@ import {
   type AccessRole,
 } from "agent-contracts";
 import type express from "express";
-import { ACCESS_ROLE_CLAIM, TENANT_ID_CLAIM } from "./claims";
-import { TENANT_ROW_POLICY_CONFIG } from "../security/tenant-isolation";
+import { ORG_ROW_POLICY_CONFIG } from "../security/tenant-isolation";
+import { ACCESS_ROLE_CLAIM, ORG_ID_CLAIM } from "./claims";
 
 const ROW_POLICY_CONFIG = Object.freeze({
-  [`${MOOSE_RLS_SETTING_PREFIX}${TENANT_ROW_POLICY_CONFIG.column}`]:
-    TENANT_ROW_POLICY_CONFIG.claim,
+  [`${MOOSE_RLS_SETTING_PREFIX}${ORG_ROW_POLICY_CONFIG.column}`]:
+    ORG_ROW_POLICY_CONFIG.claim,
 });
 
 export type MooseRequest = express.Request & { moose?: MooseUtils };
@@ -26,10 +26,10 @@ interface BaseAccessContext {
   rowPolicyOptions?: RowPolicyOptions;
 }
 
-export interface TenantAccessContext extends BaseAccessContext {
-  kind: "tenant";
+export interface OrgAccessContext extends BaseAccessContext {
+  kind: "org";
   accessRole: typeof ACCESS_ROLE_TENANT;
-  tenantId: string;
+  orgId: string;
   rowPolicyOptions: RowPolicyOptions;
 }
 
@@ -39,18 +39,18 @@ export interface AdminDebugAccessContext extends BaseAccessContext {
 }
 
 export type AuthenticatedAccessContext =
-  | TenantAccessContext
+  | OrgAccessContext
   | AdminDebugAccessContext;
 
-function getTenantIdFromJwt(moose: MooseUtils): string | undefined {
-  const tenantIdValue = moose.jwt?.[TENANT_ID_CLAIM];
+function getOrgIdFromJwt(moose: MooseUtils): string | undefined {
+  const orgIdValue = moose.jwt?.[ORG_ID_CLAIM];
 
-  if (typeof tenantIdValue !== "string") {
+  if (typeof orgIdValue !== "string") {
     return undefined;
   }
 
-  const tenantId = tenantIdValue.trim();
-  return tenantId.length > 0 ? tenantId : undefined;
+  const orgId = orgIdValue.trim();
+  return orgId.length > 0 ? orgId : undefined;
 }
 
 function isAdminDebugJwt(moose: MooseUtils): boolean {
@@ -65,13 +65,13 @@ export function getAuthenticatedAccessContext(
     return undefined;
   }
 
-  const tenantId = getTenantIdFromJwt(moose);
-  if (tenantId) {
+  const orgId = getOrgIdFromJwt(moose);
+  if (orgId) {
     return {
-      kind: "tenant",
+      kind: "org",
       accessRole: ACCESS_ROLE_TENANT,
       moose,
-      tenantId,
+      orgId,
       rowPolicyOptions: buildRowPolicyOptionsFromClaims(
         ROW_POLICY_CONFIG,
         moose.jwt,
@@ -108,7 +108,7 @@ export function respondUnauthorized(res: express.Response): express.Response {
   return res.status(401).json({
     error: "Unauthorized",
     details:
-      "A valid JWT is required. Use a tenant-scoped token with tenant_id, or use the local Admin Debug identity.",
+      "A valid JWT is required. Use an organization-scoped token with org_id, or use the local Admin Debug access option.",
   });
 }
 
@@ -124,8 +124,8 @@ export function requireAuthenticatedMoose(
   next();
 }
 
-export function isTenantAccessContext(
+export function isOrgAccessContext(
   context: AuthenticatedAccessContext,
-): context is TenantAccessContext {
-  return context.kind === "tenant";
+): context is OrgAccessContext {
+  return context.kind === "org";
 }

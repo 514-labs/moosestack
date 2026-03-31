@@ -1,9 +1,9 @@
 INSERT INTO tenant_knowledge
-  (record_id, tenant_id, category, priority, headline, details, source, timestamp)
+  (record_id, org_id, category, priority, headline, details, source, timestamp)
 VALUES
   (
     generateUUIDv4(),
-    'tenant_a',
+    'org_a',
     'fleet_health',
     'high',
     'Brake alerts increased by 14% this week',
@@ -13,7 +13,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'tenant_a',
+    'org_a',
     'support',
     'normal',
     'Late-return tickets cluster around Toronto',
@@ -23,7 +23,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'tenant_b',
+    'org_b',
     'fleet_health',
     'normal',
     'Cold-start battery incidents trending down',
@@ -33,7 +33,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'tenant_b',
+    'org_b',
     'operations',
     'high',
     'Seattle hub utilization breached 92%',

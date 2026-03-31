@@ -10,7 +10,7 @@ import type {
 type TraceSummaryInput = Omit<
   AgentTraceSummary,
   | "traceId"
-  | "tenantId"
+  | "accessScopeId"
   | "provider"
   | "modelId"
   | "prompt"
@@ -63,7 +63,7 @@ function sanitizeStep(step: AgentStepRecord): AgentStepRecord {
 }
 
 export function createTraceSession(
-  options: Pick<CreateAgentStreamOptions, "tenantId" | "traceCollector">,
+  options: Pick<CreateAgentStreamOptions, "accessScopeId" | "traceCollector">,
   runtime: Pick<AgentRuntime, "provider" | "modelId" | "close">,
   userPrompt: string,
 ): TraceSession {
@@ -75,7 +75,7 @@ export function createTraceSession(
 
   try {
     traceId = options.traceCollector.startTrace({
-      tenantId: options.tenantId,
+      accessScopeId: options.accessScopeId,
       provider: runtime.provider,
       modelId: runtime.modelId,
       prompt: sanitizedPrompt,
@@ -115,7 +115,7 @@ export function createTraceSession(
         try {
           await options.traceCollector.endTrace(traceId, {
             traceId,
-            tenantId: options.tenantId,
+            accessScopeId: options.accessScopeId,
             provider: runtime.provider,
             modelId: runtime.modelId,
             prompt: sanitizedPrompt,

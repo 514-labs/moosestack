@@ -44,7 +44,7 @@ default_sloan_telemetry = "standard"
 [boreal]
 enabled = true
 display_name = "TypeScript Agent Starter"
-short_description = "Build TypeScript agents with local debug auth, tenant-aware data access, MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
+short_description = "Build TypeScript agents with local debug auth, organization-aware data access, MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
 featured = true
 
 # Env vars user must provide
@@ -133,8 +133,8 @@ name = "OIDC_CLIENT_SECRET"
 description = "Production OIDC client secret"
 
 [[boreal.env_vars]]
-name = "OIDC_TENANT_CLAIM"
-description = "OIDC claim name that carries tenant_id"
+name = "OIDC_ORG_CLAIM"
+description = "OIDC claim name that carries org_id"
 
 [[boreal.env_vars]]
 name = "OPENAI_API_KEY"

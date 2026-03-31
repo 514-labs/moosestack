@@ -11,7 +11,7 @@ export interface KnowledgeMetrics {
 }
 
 export interface RecentKnowledgeRecord {
-  tenantId: string;
+  orgId: string;
   headline: string;
   category: string;
   priority: string;

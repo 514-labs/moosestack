@@ -4,9 +4,9 @@ import {
   type AccessRole,
 } from "agent-contracts";
 import NextAuth, { type NextAuthConfig } from "next-auth";
-import { createLocalIdentityProvider } from "@/dev/local-auth";
-import { getAuthMode, getOidcConfig, getOidcTenantClaim } from "@/env-vars";
-import { extractTenantIdFromIdToken } from "@/lib/id-token";
+import { createLocalAccessProvider } from "@/dev/local-auth";
+import { getAuthMode, getOidcConfig, getOidcOrgClaim } from "@/env-vars";
+import { extractOrgIdFromIdToken } from "@/lib/id-token";
 
 type AuthProvider = NonNullable<NextAuthConfig["providers"]>[number];
 const SESSION_MAX_AGE_SECONDS = 60 * 60;
@@ -14,7 +14,7 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60;
 const providers: AuthProvider[] = [];
 
 if (getAuthMode() === "local") {
-  providers.push(createLocalIdentityProvider());
+  providers.push(createLocalAccessProvider());
 }
 
 const oidcConfig = getOidcConfig();
@@ -43,7 +43,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   providers,
   callbacks: {
     async signIn({ account, user }) {
-      if (account?.provider === "local-identity") {
+      if (account?.provider === "local-access") {
         return true;
       }
 
@@ -51,10 +51,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return false;
       }
 
-      const tenantId = extractTenantIdFromIdToken(account.id_token);
-      if (!tenantId) {
+      const orgId = extractOrgIdFromIdToken(account.id_token);
+      if (!orgId) {
         console.error(
-          `OIDC sign-in rejected: missing ${getOidcTenantClaim()} claim`,
+          `OIDC sign-in rejected: missing ${getOidcOrgClaim()} claim`,
         );
         return false;
       }
@@ -65,24 +65,24 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       if (user) {
         token.userId = user.id;
         token.accessRole = resolveAccessRole(user.accessRole);
-        token.tenantId = user.tenantId;
-        token.tenantName = user.tenantName ?? user.name ?? user.tenantId ?? "";
+        token.orgId = user.orgId;
+        token.orgName = user.orgName ?? user.name ?? user.orgId ?? "";
         token.provider = user.provider ?? account?.provider;
         token.idToken = user.idToken;
         token.idTokenExpiresAt = user.idTokenExpiresAt;
       }
 
       if (account?.id_token) {
-        const tenantId = extractTenantIdFromIdToken(account.id_token);
+        const orgId = extractOrgIdFromIdToken(account.id_token);
         token.idToken = account.id_token;
         token.provider = account.provider;
         token.accessRole = ACCESS_ROLE_TENANT;
-        token.tenantId = tenantId;
-        token.tenantName =
-          typeof token.tenantName === "string" && token.tenantName.trim() ?
-            token.tenantName
+        token.orgId = orgId;
+        token.orgName =
+          typeof token.orgName === "string" && token.orgName.trim() ?
+            token.orgName
           : typeof token.name === "string" && token.name.trim() ? token.name
-          : (tenantId ?? "");
+          : (orgId ?? "");
         token.idTokenExpiresAt =
           typeof account.expires_at === "number" ?
             account.expires_at * 1000
@@ -95,13 +95,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = String(token.userId ?? token.sub ?? "");
         session.user.accessRole = resolveAccessRole(token.accessRole);
-        session.user.tenantId =
-          typeof token.tenantId === "string" && token.tenantId.trim() ?
-            token.tenantId
+        session.user.orgId =
+          typeof token.orgId === "string" && token.orgId.trim() ?
+            token.orgId
           : undefined;
-        session.user.tenantName =
-          typeof token.tenantName === "string" && token.tenantName.trim() ?
-            token.tenantName
+        session.user.orgName =
+          typeof token.orgName === "string" && token.orgName.trim() ?
+            token.orgName
           : undefined;
         session.user.provider = String(token.provider ?? "unknown");
       }

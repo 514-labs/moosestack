@@ -6,7 +6,7 @@ MooseStack backend package for the TypeScript agent template.
 
 This package owns:
 
-- tenant-scoped ingest models and row policies
+- organization-scoped ingest models and row policies
 - JWT claim parsing and request-level access context
 - Moose semantic/query models for frontend and tool reads
 - frontend-facing HTTP APIs mounted through `WebApp`

@@ -4,29 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertAuthenticatedAccessContext,
   getAuthenticatedAccessContext,
-  isTenantAccessContext,
+  isOrgAccessContext,
   requireAuthenticatedMoose,
 } from "../app/auth/access-context";
 
 describe("access-context", () => {
-  it("trims tenant identifiers before returning them", () => {
+  it("trims org identifiers before returning them", () => {
     const context = getAuthenticatedAccessContext({
       moose: {
         jwt: {
-          tenant_id: "  tenant_a  ",
+          org_id: "  org_a  ",
         },
       },
     } as never);
 
-    expect(context && isTenantAccessContext(context)).toBe(true);
+    expect(context && isOrgAccessContext(context)).toBe(true);
     expect(context).toEqual(
       expect.objectContaining({
-        kind: "tenant",
-        tenantId: "tenant_a",
+        kind: "org",
+        orgId: "org_a",
         rowPolicyOptions: {
           role: "moose_rls_role",
           clickhouse_settings: {
-            SQL_moose_rls_tenant_id: "  tenant_a  ",
+            SQL_moose_rls_org_id: "  org_a  ",
           },
         },
       }),
@@ -50,31 +50,31 @@ describe("access-context", () => {
     );
   });
 
-  it("returns undefined for blank tenant identifiers", () => {
+  it("returns undefined for blank org identifiers", () => {
     expect(
       getAuthenticatedAccessContext({
         moose: {
           jwt: {
-            tenant_id: "   ",
+            org_id: "   ",
           },
         },
       } as never),
     ).toBeUndefined();
   });
 
-  it("returns undefined for non-string tenant identifiers", () => {
+  it("returns undefined for non-string org identifiers", () => {
     expect(
       getAuthenticatedAccessContext({
         moose: {
           jwt: {
-            tenant_id: 123,
+            org_id: 123,
           },
         },
       } as never),
     ).toBeUndefined();
   });
 
-  it("responds with 401 when a tenant context is missing", () => {
+  it("responds with 401 when an org context is missing", () => {
     const next = vi.fn();
     let response: {
       status: ReturnType<typeof vi.fn>;
@@ -95,14 +95,14 @@ describe("access-context", () => {
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({
         error: "Unauthorized",
-        details: expect.stringContaining("tenant_id"),
+        details: expect.stringContaining("org_id"),
       }),
     );
     expect(next).not.toHaveBeenCalled();
     expect(result).toBe(response);
   });
 
-  it("calls next when a tenant context is present", () => {
+  it("calls next when an org context is present", () => {
     const next = vi.fn();
     let response: {
       status: ReturnType<typeof vi.fn>;
@@ -117,7 +117,7 @@ describe("access-context", () => {
       {
         moose: {
           jwt: {
-            tenant_id: "tenant_a",
+            org_id: "org_a",
           },
         },
       } as never,
@@ -163,14 +163,14 @@ describe("access-context", () => {
       assertAuthenticatedAccessContext({
         moose: {
           jwt: {
-            tenant_id: "tenant_a",
+            org_id: "org_a",
           },
         },
       } as never),
     ).toEqual(
       expect.objectContaining({
-        kind: "tenant",
-        tenantId: "tenant_a",
+        kind: "org",
+        orgId: "org_a",
       }),
     );
   });

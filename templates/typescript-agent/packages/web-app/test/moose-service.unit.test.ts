@@ -99,7 +99,7 @@ describe("getDashboardSnapshot", () => {
       },
       recentKnowledge: [
         {
-          tenantId: "tenant_a",
+          orgId: "org_a",
           headline: "Brake alerts increased by 14% this week",
           category: "fleet_health",
           priority: "high",

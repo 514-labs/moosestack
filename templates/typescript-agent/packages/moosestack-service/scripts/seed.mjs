@@ -45,16 +45,16 @@ runMooseQuery(["-f", join(seedDir, seedFileName)], `apply ${seedFileName}`);
 console.log(`- Applied ${seedFileName}`);
 
 const totalAfter = queryCount("SELECT count() AS total FROM tenant_knowledge");
-const totalsByTenant = queryJsonRows(`
-  SELECT tenant_id, count() AS total
+const totalsByOrg = queryJsonRows(`
+  SELECT org_id, count() AS total
   FROM tenant_knowledge
-  GROUP BY tenant_id
-  ORDER BY tenant_id
+  GROUP BY org_id
+  ORDER BY org_id
 `);
 
 console.log(`- Inserted ${Math.max(0, totalAfter - totalBefore)} records into tenant_knowledge`);
 console.log("- Current totals by tenant:");
 
-for (const row of totalsByTenant) {
-  console.log(`  ${row.tenant_id}: ${row.total}`);
+for (const row of totalsByOrg) {
+  console.log(`  ${row.org_id}: ${row.total}`);
 }

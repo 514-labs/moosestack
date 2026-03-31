@@ -119,13 +119,13 @@ cd <project-name>
 
 Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you.
 
-If you want the richer `typescript-agent` starter instead of the leaner MCP-only path, it includes local identities for development (`Tenant A`, `Tenant B`, and `Admin Debug`), optional production OIDC wiring, and the auth/access model below.
+If you want the richer `typescript-agent` starter instead of the leaner MCP-only path, it includes local access options for development (`Org A`, `Org B`, and `Admin Debug`), optional production OIDC wiring, and the auth/access model below.
 
 ```mermaid
 flowchart LR
   subgraph Access["Authentication"]
-    TenantA["Tenant A"]
-    TenantB["Tenant B"]
+    TenantA["Org A"]
+    TenantB["Org B"]
     Admin["Admin Debug<br/>local only"]
     OIDC["External OIDC"]
   end
@@ -147,7 +147,7 @@ flowchart LR
   TenantB --> Auth
   Admin --> Auth
   OIDC --> Auth
-  Auth -->|tenant_id or access_role| UI
+  Auth -->|org_id or access_role| UI
   Auth -->|Bearer JWT| Chat
   UI -->|Bearer JWT| AppAPI
   Chat -->|Bearer JWT| MCP

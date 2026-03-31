@@ -4,7 +4,7 @@ MooseStack backend for the template.
 
 This package owns:
 
-- tenant-scoped data models
+- organization-scoped data models
 - JWT claim parsing and request-level authorization
 - JWT-backed row-level security
 - Moose semantic/query models
@@ -40,7 +40,7 @@ pnpm seed
 pnpm test:unit -- packages/moosestack-service/test
 ```
 
-`pnpm seed` applies the starter SQL and then prints inserted-record counts plus current totals by tenant.
+`pnpm seed` applies the starter SQL and then prints inserted-record counts plus current totals by organization.
 
 ## Notes
 

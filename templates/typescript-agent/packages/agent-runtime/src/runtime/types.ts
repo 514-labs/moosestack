@@ -49,6 +49,6 @@ export interface AgentRuntime {
 }
 
 export interface CreateAgentStreamOptions extends AgentRuntimeOptions {
-  tenantId: string;
+  accessScopeId: string;
   traceCollector: TraceCollector;
 }

@@ -10,16 +10,16 @@ declare module "next-auth" {
     user: NonNullable<DefaultSession["user"]> & {
       id: string;
       accessRole: AccessRole;
-      tenantId?: string;
-      tenantName?: string;
+      orgId?: string;
+      orgName?: string;
       provider: string;
     };
   }
 
   interface User {
     accessRole?: AccessRole;
-    tenantId?: string;
-    tenantName?: string;
+    orgId?: string;
+    orgName?: string;
     provider?: string;
     idToken?: string;
     idTokenExpiresAt?: number;
@@ -30,8 +30,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     userId?: string;
     accessRole?: AccessRole;
-    tenantId?: string;
-    tenantName?: string;
+    orgId?: string;
+    orgName?: string;
     provider?: string;
     idToken?: string;
     idTokenExpiresAt?: number;

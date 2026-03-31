@@ -1,7 +1,7 @@
 import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT } from "agent-contracts";
 import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createLocalIdentityProvider } from "../src/dev/local-auth";
+import { createLocalAccessProvider } from "../src/dev/local-auth";
 
 const TEST_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCz1giCZPtooM/5
@@ -33,17 +33,19 @@ DtgtOtWLI162YXWv/oHbs7M=
 -----END PRIVATE KEY-----`;
 
 function getProviderAuthorize() {
-  const provider = createLocalIdentityProvider() as {
-    authorize?: (
-      credentials: Record<string, unknown>,
-      request?: Request,
-    ) => Promise<Record<string, unknown> | null>;
+  const provider = createLocalAccessProvider() as {
+    options?: {
+      authorize?: (
+        credentials: Record<string, unknown>,
+        request?: Request,
+      ) => Promise<Record<string, unknown> | null>;
+    };
   };
 
-  return provider.authorize;
+  return provider.options?.authorize;
 }
 
-describe("createLocalIdentityProvider", () => {
+describe("createLocalAccessProvider", () => {
   beforeEach(() => {
     process.env.LOCAL_DEV_JWT_PRIVATE_KEY = TEST_PRIVATE_KEY.replaceAll(
       "\n",
@@ -55,41 +57,41 @@ describe("createLocalIdentityProvider", () => {
     delete process.env.LOCAL_DEV_JWT_PRIVATE_KEY;
   });
 
-  it("issues tenant-scoped local sessions for tenant identities", async () => {
+  it("issues organization-scoped local sessions for org access options", async () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      identityId: "tenant_a",
+      selectionId: "org_a",
     });
 
     expect(user).toMatchObject({
-      tenantId: "tenant_a",
-      tenantName: "Tenant A",
+      orgId: "org_a",
+      orgName: "Org A",
       accessRole: ACCESS_ROLE_TENANT,
       provider: "local",
     });
 
     const claims = decodeJwt(String(user?.idToken));
-    expect(claims.tenant_id).toBe("tenant_a");
+    expect(claims.org_id).toBe("org_a");
     expect(claims.access_role).toBe(ACCESS_ROLE_TENANT);
   });
 
-  it("issues local admin debug sessions without tenant scoping", async () => {
+  it("issues local admin debug sessions without organization scoping", async () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      identityId: "admin_debug",
+      selectionId: "admin_debug",
     });
 
     expect(user).toMatchObject({
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,
       provider: "local",
     });
-    expect(user?.tenantId).toBeUndefined();
-    expect(user?.tenantName).toBeUndefined();
+    expect(user?.orgId).toBeUndefined();
+    expect(user?.orgName).toBeUndefined();
 
     const claims = decodeJwt(String(user?.idToken));
-    expect(claims.tenant_id).toBeUndefined();
+    expect(claims.org_id).toBeUndefined();
     expect(claims.access_role).toBe(ACCESS_ROLE_ADMIN_DEBUG);
   });
 });

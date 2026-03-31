@@ -7,28 +7,28 @@ import { importPKCS8, SignJWT } from "jose";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
-const localIdentitySchema = z.object({
-  identityId: z.string().min(1),
+const localAccessSchema = z.object({
+  selectionId: z.string().min(1),
 });
 const LOCAL_ID_TOKEN_TTL_SECONDS = 60 * 60;
 
-export const LOCAL_IDENTITIES = [
+export const LOCAL_ACCESS_OPTIONS = [
   {
-    id: "tenant_a",
-    name: "Tenant A",
-    email: "tenant-a@example.local",
+    id: "org_a",
+    name: "Org A",
+    email: "org-a@example.local",
     accessRole: ACCESS_ROLE_TENANT,
-    tenantId: "tenant_a",
-    tenantName: "Tenant A",
+    orgId: "org_a",
+    orgName: "Org A",
     description: "Brake alerts and support volumes rising in the north-east.",
   },
   {
-    id: "tenant_b",
-    name: "Tenant B",
-    email: "tenant-b@example.local",
+    id: "org_b",
+    name: "Org B",
+    email: "org-b@example.local",
     accessRole: ACCESS_ROLE_TENANT,
-    tenantId: "tenant_b",
-    tenantName: "Tenant B",
+    orgId: "org_b",
+    orgName: "Org B",
     description:
       "Seattle hub is close to capacity with healthy battery trends.",
   },
@@ -38,11 +38,11 @@ export const LOCAL_IDENTITIES = [
     email: "admin-debug@example.local",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
     description:
-      "Local-only debug identity with read access across both seeded tenants.",
+      "Local-only debug access with read visibility across both seeded organizations.",
   },
 ] as const;
 
-export type LocalIdentity = (typeof LOCAL_IDENTITIES)[number];
+export type LocalAccessOption = (typeof LOCAL_ACCESS_OPTIONS)[number];
 
 let localPrivateKeyPromise: Promise<CryptoKey> | undefined;
 
@@ -65,63 +65,73 @@ function getLocalPrivateKey(): Promise<CryptoKey> {
   return localPrivateKeyPromise;
 }
 
-function getLocalIdentity(identityId: string): LocalIdentity | undefined {
-  return LOCAL_IDENTITIES.find((identity) => identity.id === identityId);
+function getLocalAccessOption(
+  selectionId: string,
+): LocalAccessOption | undefined {
+  return LOCAL_ACCESS_OPTIONS.find((option) => option.id === selectionId);
 }
 
-function getLocalIdentityScope(accessRole: AccessRole): string {
+function getLocalAccessScope(accessRole: AccessRole): string {
   return accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
       "agent:query admin:debug"
     : "agent:query";
 }
 
-async function issueLocalIdentityToken(
-  identity: LocalIdentity,
+async function issueLocalAccessToken(
+  accessOption: LocalAccessOption,
 ): Promise<string> {
   const privateKey = await getLocalPrivateKey();
+  const orgClaims =
+    accessOption.accessRole === ACCESS_ROLE_TENANT ?
+      { org_id: accessOption.orgId }
+    : {};
 
   return await new SignJWT({
-    ...(identity.tenantId ? { tenant_id: identity.tenantId } : {}),
-    email: identity.email,
-    name: identity.name,
-    scope: getLocalIdentityScope(identity.accessRole),
-    access_role: identity.accessRole,
+    ...orgClaims,
+    email: accessOption.email,
+    name: accessOption.name,
+    scope: getLocalAccessScope(accessOption.accessRole),
+    access_role: accessOption.accessRole,
   })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer("typescript-agent-local")
     .setAudience("typescript-agent")
-    .setSubject(`local-${identity.id}`)
+    .setSubject(`local-${accessOption.id}`)
     .setExpirationTime(`${LOCAL_ID_TOKEN_TTL_SECONDS}s`)
     .sign(privateKey);
 }
 
-export function createLocalIdentityProvider() {
+export function createLocalAccessProvider() {
   return Credentials({
-    id: "local-identity",
-    name: "Local identity",
+    id: "local-access",
+    name: "Local access",
     credentials: {
-      identityId: { label: "Identity", type: "text" },
+      selectionId: { label: "Access option", type: "text" },
     },
     async authorize(credentials) {
-      const parsed = localIdentitySchema.safeParse(credentials);
+      const parsed = localAccessSchema.safeParse(credentials);
       if (!parsed.success) {
         return null;
       }
 
-      const identity = getLocalIdentity(parsed.data.identityId);
-      if (!identity) {
+      const accessOption = getLocalAccessOption(parsed.data.selectionId);
+      if (!accessOption) {
         return null;
       }
 
       return {
-        id: `local-${identity.id}`,
-        name: identity.name,
-        email: identity.email,
-        tenantId: identity.tenantId,
-        tenantName: identity.tenantName,
+        id: `local-${accessOption.id}`,
+        name: accessOption.name,
+        email: accessOption.email,
+        ...(accessOption.accessRole === ACCESS_ROLE_TENANT ?
+          {
+            orgId: accessOption.orgId,
+            orgName: accessOption.orgName,
+          }
+        : {}),
         provider: "local",
-        accessRole: identity.accessRole,
-        idToken: await issueLocalIdentityToken(identity),
+        accessRole: accessOption.accessRole,
+        idToken: await issueLocalAccessToken(accessOption),
         idTokenExpiresAt: Date.now() + LOCAL_ID_TOKEN_TTL_SECONDS * 1000,
       };
     },

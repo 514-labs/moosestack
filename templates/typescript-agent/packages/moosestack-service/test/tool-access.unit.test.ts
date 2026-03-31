@@ -13,11 +13,11 @@ const mockTables = [
     },
     columnArray: [
       {
-        name: "tenant_id",
+        name: "org_id",
         data_type: "String",
         required: true,
         annotations: [["LowCardinality", true]],
-        comment: "Tenant partition key",
+        comment: "Organization partition key",
       },
       {
         name: "headline",
@@ -52,7 +52,7 @@ describe("tool-access", () => {
     expect(tables).toHaveLength(1);
     expect(tables[0]?.name).toBe("tenant_knowledge");
     expect(tables[0]?.columns.map((column) => column.name)).toEqual(
-      expect.arrayContaining(["tenant_id", "headline", "timestamp"]),
+      expect.arrayContaining(["org_id", "headline", "timestamp"]),
     );
   });
 
@@ -83,7 +83,7 @@ describe("tool-access", () => {
     expect(detailedCatalog.tables.tenant_knowledge.columns).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "tenant_id",
+          name: "org_id",
           type: "LowCardinality(String)",
         }),
       ]),
@@ -93,9 +93,9 @@ describe("tool-access", () => {
   it("allows read-only queries against exposed tables", () => {
     expect(
       validateExposedReadonlyQuery(
-        "SELECT tenant_id, headline FROM tenant_knowledge LIMIT 10;",
+        "SELECT org_id, headline FROM tenant_knowledge LIMIT 10;",
       ),
-    ).toBe("SELECT tenant_id, headline FROM tenant_knowledge LIMIT 10");
+    ).toBe("SELECT org_id, headline FROM tenant_knowledge LIMIT 10");
 
     expect(
       validateExposedReadonlyQuery("DESCRIBE TABLE tenant_knowledge"),
@@ -103,9 +103,9 @@ describe("tool-access", () => {
 
     expect(
       validateExposedReadonlyQuery(
-        "EXPLAIN SELECT tenant_id FROM tenant_knowledge",
+        "EXPLAIN SELECT org_id FROM tenant_knowledge",
       ),
-    ).toBe("EXPLAIN SELECT tenant_id FROM tenant_knowledge");
+    ).toBe("EXPLAIN SELECT org_id FROM tenant_knowledge");
   });
 
   it("rejects system metadata and write queries", () => {
@@ -129,10 +129,10 @@ describe("tool-access", () => {
   it("allows EXISTS subqueries against exposed tables", () => {
     expect(
       validateExposedReadonlyQuery(
-        "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'tenant_a')",
+        "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE org_id = 'org_a')",
       ),
     ).toBe(
-      "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'tenant_a')",
+      "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE org_id = 'org_a')",
     );
   });
 
@@ -165,7 +165,7 @@ describe("tool-access", () => {
   it("rejects joined tables that are not exposed", () => {
     expect(() =>
       validateExposedReadonlyQuery(
-        "SELECT * FROM tenant_knowledge AS tk JOIN secret_table AS s ON s.tenant_id = tk.tenant_id",
+        "SELECT * FROM tenant_knowledge AS tk JOIN secret_table AS s ON s.org_id = tk.org_id",
       ),
     ).toThrow(/Available tables: tenant_knowledge/);
   });
@@ -173,7 +173,7 @@ describe("tool-access", () => {
   it("rejects bare JOIN targets that are not exposed", () => {
     expect(() =>
       validateExposedReadonlyQuery(
-        "SELECT * FROM tenant_knowledge JOIN secret_table ON secret_table.tenant_id = tenant_knowledge.tenant_id",
+        "SELECT * FROM tenant_knowledge JOIN secret_table ON secret_table.org_id = tenant_knowledge.org_id",
       ),
     ).toThrow(/Available tables: tenant_knowledge/);
   });
@@ -181,11 +181,9 @@ describe("tool-access", () => {
   it("allows ARRAY JOIN without treating the joined array as a table reference", () => {
     expect(
       validateExposedReadonlyQuery(
-        "SELECT tenant_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag",
+        "SELECT org_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag",
       ),
-    ).toBe(
-      "SELECT tenant_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag",
-    );
+    ).toBe("SELECT org_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag");
   });
 
   it("falls back safely for oversized search patterns", () => {

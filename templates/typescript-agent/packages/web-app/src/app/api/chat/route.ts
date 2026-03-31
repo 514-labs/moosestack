@@ -66,7 +66,7 @@ export const POST = auth(async function POST(
         {
           error: "Unauthorized",
           details:
-            "Sign in with a local identity or your OIDC provider before using the agent chat.",
+            "Sign in with a local access option or your OIDC provider before using the agent chat.",
         },
         401,
       );
@@ -100,7 +100,7 @@ export const POST = auth(async function POST(
     return await getAgentResponse({
       messages,
       bearerToken: session.idToken,
-      accessScopeId: access.traceScopeId,
+      accessScopeId: access.accessScopeId,
     });
   } catch (error) {
     const response = getChatErrorResponse(error);

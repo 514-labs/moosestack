@@ -7,17 +7,17 @@ import type { Session } from "next-auth";
 
 interface BaseSessionAccess {
   accessRole: AccessRole;
-  identityName: string;
+  displayName: string;
   scopeBadge: string;
   scopeDescription: string;
-  traceScopeId: string;
+  accessScopeId: string;
 }
 
-export interface TenantSessionAccess extends BaseSessionAccess {
-  kind: "tenant";
+export interface OrgSessionAccess extends BaseSessionAccess {
+  kind: "org";
   accessRole: typeof ACCESS_ROLE_TENANT;
-  tenantId: string;
-  tenantName: string;
+  orgId: string;
+  orgName: string;
 }
 
 export interface AdminDebugSessionAccess extends BaseSessionAccess {
@@ -25,22 +25,22 @@ export interface AdminDebugSessionAccess extends BaseSessionAccess {
   accessRole: typeof ACCESS_ROLE_ADMIN_DEBUG;
 }
 
-export type SessionAccess = TenantSessionAccess | AdminDebugSessionAccess;
+export type SessionAccess = OrgSessionAccess | AdminDebugSessionAccess;
 
-function resolveIdentityName(session: Session): string {
+function resolveDisplayName(session: Session): string {
   const explicitName = session.user.name?.trim();
   if (explicitName) {
     return explicitName;
   }
 
-  const tenantName = session.user.tenantName?.trim();
-  if (tenantName) {
-    return tenantName;
+  const orgName = session.user.orgName?.trim();
+  if (orgName) {
+    return orgName;
   }
 
   return session.user.accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
       "Admin Debug"
-    : "Tenant user";
+    : "Organization access";
 }
 
 export function getSessionAccess(
@@ -54,31 +54,31 @@ export function getSessionAccess(
     return {
       kind: "admin",
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,
-      identityName: resolveIdentityName(session),
+      displayName: resolveDisplayName(session),
       scopeBadge: "Admin debug access",
       scopeDescription:
         "Authenticated as the local debug admin. Authorization is unrestricted across the seeded dataset.",
-      traceScopeId: ACCESS_ROLE_ADMIN_DEBUG,
+      accessScopeId: ACCESS_ROLE_ADMIN_DEBUG,
     };
   }
 
   if (
     session.user.accessRole === ACCESS_ROLE_TENANT &&
-    typeof session.user.tenantId === "string" &&
-    session.user.tenantId.trim()
+    typeof session.user.orgId === "string" &&
+    session.user.orgId.trim()
   ) {
-    const tenantId = session.user.tenantId.trim();
-    const tenantName = session.user.tenantName?.trim() || tenantId;
+    const orgId = session.user.orgId.trim();
+    const orgName = session.user.orgName?.trim() || orgId;
 
     return {
-      kind: "tenant",
+      kind: "org",
       accessRole: ACCESS_ROLE_TENANT,
-      tenantId,
-      tenantName,
-      identityName: resolveIdentityName(session),
-      scopeBadge: `${tenantName} only`,
-      scopeDescription: `Authenticated as ${tenantName}. Authorization is limited to ${tenantName} data.`,
-      traceScopeId: tenantId,
+      orgId,
+      orgName,
+      displayName: resolveDisplayName(session),
+      scopeBadge: `${orgName} only`,
+      scopeDescription: `Authenticated as ${orgName}. Authorization is limited to ${orgName} data.`,
+      accessScopeId: orgId,
     };
   }
 

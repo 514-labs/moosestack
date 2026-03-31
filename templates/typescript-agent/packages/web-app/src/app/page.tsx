@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { JSX } from "react";
 import { auth, signIn, signOut } from "@/auth";
 import { getSessionAccess } from "@/authz/session-access";
-import { LocalIdentityPicker } from "@/dev/local-identity-picker";
+import { LocalAccessPicker } from "@/dev/local-access-picker";
 import { getAiProvider, getAuthMode, getOidcConfig } from "@/env-vars";
 import {
   DashboardSnapshotUnauthorizedError,
@@ -64,13 +64,13 @@ export default async function Home({
               </div>
               <div className="space-y-4">
                 <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
-                  Local identities for development, tenant authorization for
+                  Local access for development, organization authorization for
                   real data access.
                 </h1>
                 <p className="max-w-2xl text-lg text-muted-foreground">
                   Authentication decides who you are. Authorization decides
-                  whether you can read one tenant or every seeded record. Use
-                  Tenant A or Tenant B for scoped access, or use Admin Debug for
+                  whether you can read one organization or every seeded record.
+                  Use Org A or Org B for scoped access, or use Admin Debug for
                   local troubleshooting.
                 </p>
               </div>
@@ -78,18 +78,18 @@ export default async function Home({
               <div className="grid gap-4 sm:grid-cols-3">
                 <MetricCard
                   label="Authentication"
-                  value="Identity"
-                  helper="Choose a local identity in development or use OIDC in production."
+                  value="Auth"
+                  helper="Choose a local access option in development or use OIDC in production."
                 />
                 <MetricCard
                   label="Authorization"
                   value="RLS"
-                  helper="Tenant identities stay scoped to their own records."
+                  helper="Organization-scoped access stays limited to that organization's records."
                 />
                 <MetricCard
                   label="Debugging"
                   value="Admin"
-                  helper="Local Admin Debug bypasses tenant filters for investigation."
+                  helper="Local Admin Debug bypasses org filters for investigation."
                 />
               </div>
             </section>
@@ -97,13 +97,12 @@ export default async function Home({
             <section className="rounded-3xl border bg-card/85 p-6 shadow-xl backdrop-blur">
               <div className="space-y-5">
                 <div>
-                  <h2 className="text-xl font-semibold">
-                    Choose a local identity
-                  </h2>
+                  <h2 className="text-xl font-semibold">Choose local access</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Local development signs a short-lived JWT for the identity
-                    you choose. Tenant identities carry a `tenant_id`; Admin
-                    Debug carries an unrestricted local debug role instead.
+                    Local development signs a short-lived JWT for the access
+                    option you choose. Organization-scoped options carry an
+                    `org_id`; Admin Debug carries an unrestricted local debug
+                    role instead.
                   </p>
                 </div>
 
@@ -114,7 +113,7 @@ export default async function Home({
                   </div>
                 )}
 
-                {authMode === "local" && <LocalIdentityPicker />}
+                {authMode === "local" && <LocalAccessPicker />}
 
                 {authMode === "oidc" && oidcConfig && (
                   <form
@@ -133,9 +132,9 @@ export default async function Home({
                 )}
 
                 <div className="rounded-2xl bg-muted/60 p-4 text-sm text-muted-foreground">
-                  Local development includes seeded records for Tenant A and
-                  Tenant B. Admin Debug is available only in local mode and is
-                  intended for troubleshooting, not production access control.
+                  Local development includes seeded records for Org A and Org B.
+                  Admin Debug is available only in local mode and is intended
+                  for troubleshooting, not production access control.
                 </div>
               </div>
             </section>
@@ -164,8 +163,7 @@ export default async function Home({
   const recentCategoryCount = new Set(
     snapshot.recentKnowledge.map((row) => row.category),
   ).size;
-  const accessCardValue =
-    access.kind === "admin" ? "All data" : access.tenantName;
+  const accessCardValue = access.kind === "admin" ? "All data" : access.orgName;
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_30%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.18))]">
@@ -173,13 +171,13 @@ export default async function Home({
         <section className="flex flex-col gap-6 rounded-3xl border bg-card/85 p-8 shadow-lg lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <div className="inline-flex rounded-full border px-3 py-1 text-sm text-muted-foreground">
-              Signed in as {access.identityName}
+              Signed in as {access.displayName}
             </div>
             <div>
               <h1 className="text-4xl font-semibold tracking-tight">
                 {access.kind === "admin" ?
                   "Debug dashboard across all seeded data"
-                : `${access.tenantName} knowledge dashboard`}
+                : `${access.orgName} knowledge dashboard`}
               </h1>
               <p className="mt-2 max-w-3xl text-muted-foreground">
                 {access.scopeDescription} The dashboard and chat assistant share
@@ -207,7 +205,7 @@ export default async function Home({
           <MetricCard
             label="Visible Records"
             value={String(snapshot.knowledgeMetrics.totalRecords)}
-            helper="Records currently authorized for this identity"
+            helper="Records currently authorized for this access scope"
           />
           <MetricCard
             label="High Priority"
@@ -225,7 +223,7 @@ export default async function Home({
             helper={
               adminView ?
                 "Local debug authorization across all seeded records"
-              : "Tenant-scoped authorization"
+              : "Organization-scoped authorization"
             }
           />
         </section>
@@ -237,8 +235,9 @@ export default async function Home({
                 <h2 className="text-xl font-semibold">Recent knowledge</h2>
                 <p className="text-sm text-muted-foreground">
                   {adminView ?
-                    "Latest seeded records across both tenant datasets."
-                  : "Latest seeded records currently visible to this tenant."}
+                    "Latest seeded records across both organization datasets."
+                  : "Latest seeded records currently visible to this organization."
+                  }
                 </p>
               </div>
             </div>
@@ -246,11 +245,11 @@ export default async function Home({
             <div className="space-y-4">
               {snapshot.recentKnowledge.map((row) => (
                 <div
-                  key={`${row.tenantId}-${row.category}-${row.timestamp}-${row.headline}`}
+                  key={`${row.orgId}-${row.category}-${row.timestamp}-${row.headline}`}
                   className="rounded-2xl border p-4"
                 >
                   <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                    {adminView && <span>{row.tenantId}</span>}
+                    {adminView && <span>{row.orgId}</span>}
                     {adminView && <span>•</span>}
                     <span>{row.category}</span>
                     <span>•</span>
@@ -296,7 +295,7 @@ export default async function Home({
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   {adminView ?
-                    "“Compare the newest signals across Tenant A and Tenant B.”"
+                    "“Compare the newest signals across Org A and Org B.”"
                   : "“Compare the newest support updates with the fleet health changes.”"
                   }
                 </div>

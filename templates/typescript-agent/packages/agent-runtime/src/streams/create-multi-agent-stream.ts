@@ -50,7 +50,7 @@ export async function createMultiAgentStream(
     traceSession.recordStep({
       stepId: crypto.randomUUID(),
       traceId: traceSession.traceId,
-      tenantId: options.tenantId,
+      accessScopeId: options.accessScopeId,
       stepType: "guardrail",
       toolName: "",
       status: "blocked",
@@ -94,7 +94,7 @@ export async function createMultiAgentStream(
         traceSession.recordStep({
           stepId: crypto.randomUUID(),
           traceId: traceSession.traceId,
-          tenantId: options.tenantId,
+          accessScopeId: options.accessScopeId,
           stepType: "agent",
           toolName: "supervisor",
           status: "completed",
@@ -120,7 +120,7 @@ export async function createMultiAgentStream(
           Object.keys(runtime.tools).length > 0 ?
             wrapTools({
               runtimeTools: runtime.tools,
-              tenantId: options.tenantId,
+              accessScopeId: options.accessScopeId,
               traceId: traceSession.traceId,
               toolCallTimings,
               getStepNumber: () => stepCount + 1,
@@ -151,7 +151,7 @@ export async function createMultiAgentStream(
             traceSession.recordStep({
               stepId: crypto.randomUUID(),
               traceId: traceSession.traceId,
-              tenantId: options.tenantId,
+              accessScopeId: options.accessScopeId,
               stepType: "agent",
               toolName: specialist.label,
               status: "failed",
@@ -180,7 +180,7 @@ export async function createMultiAgentStream(
           traceSession.recordStep({
             stepId: crypto.randomUUID(),
             traceId: traceSession.traceId,
-            tenantId: options.tenantId,
+            accessScopeId: options.accessScopeId,
             stepType: "agent",
             toolName: specialist.label,
             status: "completed",
@@ -211,7 +211,7 @@ export async function createMultiAgentStream(
             traceSession.recordStep({
               stepId: crypto.randomUUID(),
               traceId: traceSession.traceId,
-              tenantId: options.tenantId,
+              accessScopeId: options.accessScopeId,
               stepType: "agent",
               toolName: "narrator",
               status: "failed",
@@ -238,7 +238,7 @@ export async function createMultiAgentStream(
           traceSession.recordStep({
             stepId: crypto.randomUUID(),
             traceId: traceSession.traceId,
-            tenantId: options.tenantId,
+            accessScopeId: options.accessScopeId,
             stepType: "agent",
             toolName: "narrator",
             status: "completed",

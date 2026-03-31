@@ -10,8 +10,8 @@ import { tenantKnowledgeMetricsModel } from "./knowledge";
 
 export type DashboardSnapshotAccess =
   | {
-      kind: "tenant";
-      tenantId: string;
+      kind: "org";
+      orgId: string;
       rowPolicyOptions: RowPolicyOptions;
     }
   | {
@@ -35,7 +35,7 @@ export async function getDashboardSnapshot(
 
   const recentKnowledgeQuery = sql.statement`
     SELECT
-      ${TenantKnowledgeTable.columns.tenant_id} AS tenantId,
+      ${TenantKnowledgeTable.columns.org_id} AS orgId,
       ${TenantKnowledgeTable.columns.headline},
       ${TenantKnowledgeTable.columns.category},
       ${TenantKnowledgeTable.columns.priority},
@@ -54,7 +54,7 @@ export async function getDashboardSnapshot(
       rowPolicyOptions: access.rowPolicyOptions,
     }),
     executeReadonlySql<{
-      tenantId: string;
+      orgId: string;
       headline: string;
       category: string;
       priority: string;

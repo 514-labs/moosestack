@@ -56,7 +56,7 @@ export async function getAgentResponse({
   const stream = await createAgentStream({
     messages,
     bearerToken,
-    tenantId: accessScopeId,
+    accessScopeId,
     mcpServerUrl: getMcpServerUrl(),
     providerConfig: getProviderConfig(),
     guardrailAdapter: createGuardrailAdapter(provider),

@@ -1,26 +1,26 @@
 import { ACCESS_ROLE_ADMIN_DEBUG, type AccessRole } from "agent-contracts";
 import type { JSX } from "react";
 import { signIn } from "@/auth";
-import { LOCAL_IDENTITIES } from "./local-auth";
+import { LOCAL_ACCESS_OPTIONS } from "./local-auth";
 
 function getAuthorizationCopy(accessRole: AccessRole): string {
   if (accessRole === ACCESS_ROLE_ADMIN_DEBUG) {
-    return "Authorized to read all seeded records across both tenants. Local development only.";
+    return "Authorized to read all seeded records across both organizations. Local development only.";
   }
 
-  return "Authorized only for the seeded records assigned to this tenant identity.";
+  return "Authorized only for the seeded records assigned to this organization.";
 }
 
-export function LocalIdentityPicker(): JSX.Element {
+export function LocalAccessPicker(): JSX.Element {
   return (
     <div className="space-y-3">
-      {LOCAL_IDENTITIES.map((identity) => (
+      {LOCAL_ACCESS_OPTIONS.map((accessOption) => (
         <form
-          key={identity.id}
+          key={accessOption.id}
           action={async () => {
             "use server";
-            await signIn("local-identity", {
-              identityId: identity.id,
+            await signIn("local-access", {
+              selectionId: accessOption.id,
               redirectTo: "/",
             });
           }}
@@ -29,18 +29,18 @@ export function LocalIdentityPicker(): JSX.Element {
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="font-medium">{identity.name}</div>
+                <div className="font-medium">{accessOption.name}</div>
                 <div className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                  {identity.accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
+                  {accessOption.accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
                     "Admin debug"
-                  : "Tenant-scoped"}
+                  : "Org-scoped"}
                 </div>
               </div>
               <div className="text-sm text-muted-foreground">
-                {identity.description}
+                {accessOption.description}
               </div>
               <div className="text-xs text-muted-foreground">
-                {getAuthorizationCopy(identity.accessRole)}
+                {getAuthorizationCopy(accessOption.accessRole)}
               </div>
             </div>
             <button

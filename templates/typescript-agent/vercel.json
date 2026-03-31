@@ -96,8 +96,8 @@
       "description": "OIDC client secret",
       "required": true
     },
-    "OIDC_TENANT_CLAIM": {
-      "description": "OIDC claim name for tenant_id",
+    "OIDC_ORG_CLAIM": {
+      "description": "OIDC claim name for org_id",
       "required": false
     }
   }

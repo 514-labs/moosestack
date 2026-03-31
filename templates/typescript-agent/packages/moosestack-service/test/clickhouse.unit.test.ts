@@ -10,7 +10,7 @@ describe("executeReadonlyStatement", () => {
   it("uses max_result_rows instead of the legacy limit setting", async () => {
     const querySpy = vi.fn(async () => {
       return {
-        json: async () => [{ tenant_id: "tenant_a" }],
+        json: async () => [{ org_id: "org_a" }],
       };
     });
     const queryClient = {
@@ -28,19 +28,19 @@ describe("executeReadonlyStatement", () => {
       },
     };
 
-    const rows = await executeReadonlyStatement<{ tenant_id: string }>(
+    const rows = await executeReadonlyStatement<{ org_id: string }>(
       queryClient as never,
-      "SELECT tenant_id FROM tenant_knowledge LIMIT 1",
+      "SELECT org_id FROM tenant_knowledge LIMIT 1",
       {
         limit: 100,
         rowPolicyOptions,
       },
     );
 
-    expect(rows).toEqual([{ tenant_id: "tenant_a" }]);
+    expect(rows).toEqual([{ org_id: "org_a" }]);
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "SELECT tenant_id FROM tenant_knowledge LIMIT 1",
+        query: "SELECT org_id FROM tenant_knowledge LIMIT 1",
         role: "tenant_reader",
         clickhouse_settings: expect.objectContaining({
           readonly: "2",
@@ -101,7 +101,7 @@ describe("executeReadonlyStatement", () => {
 
     await executeReadonlyStatement(
       queryClient as never,
-      "SELECT tenant_id FROM tenant_knowledge",
+      "SELECT org_id FROM tenant_knowledge",
       10,
     );
 

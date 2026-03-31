@@ -3,7 +3,7 @@ import type { AIProvider } from "./shared-types.js";
 export interface AgentStepRecord {
   stepId: string;
   traceId: string;
-  tenantId: string;
+  accessScopeId: string;
   stepType: string;
   toolName: string;
   status: string;
@@ -16,7 +16,7 @@ export interface AgentStepRecord {
 
 export interface AgentTraceSummary {
   traceId: string;
-  tenantId: string;
+  accessScopeId: string;
   provider: AIProvider;
   modelId: string;
   prompt: string;
@@ -32,7 +32,7 @@ export interface AgentTraceSummary {
 
 export interface TraceCollector {
   startTrace(metadata: {
-    tenantId: string;
+    accessScopeId: string;
     provider: AIProvider;
     modelId: string;
     prompt: string;

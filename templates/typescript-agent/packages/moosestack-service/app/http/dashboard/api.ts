@@ -16,10 +16,10 @@ app.get("/dashboard/snapshot", async (req, res, next) => {
 
     const snapshot = await getDashboardSnapshot(
       context.moose.client.query,
-      context.kind === "tenant" ?
+      context.kind === "org" ?
         {
-          kind: "tenant",
-          tenantId: context.tenantId,
+          kind: "org",
+          orgId: context.orgId,
           rowPolicyOptions: context.rowPolicyOptions,
         }
       : {

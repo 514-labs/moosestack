@@ -15,22 +15,21 @@ describe("createTraceSession", () => {
     };
     const session = createTraceSession(
       {
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         traceCollector,
       },
       runtime,
-      "Show me the most recent revenue rows for this tenant.",
+      "Show me the most recent revenue rows for this organization.",
     );
 
     session.recordStep({
       stepId: "step-1",
       traceId: session.traceId,
-      tenantId: "tenant_a",
+      accessScopeId: "org_a",
       stepType: "tool",
       toolName: "query_tenant_knowledge_metrics",
       status: "completed",
-      notes: "Queried tenant knowledge metrics for the last 7 days.",
-      notes: "Queried tenant knowledge metrics for the last 7 days.",
+      notes: "Queried organization knowledge metrics for the last 7 days.",
       startedAt: new Date("2026-03-28T12:00:00.000Z").toISOString(),
       durationMs: 42,
       inputTokens: 0,
@@ -85,18 +84,18 @@ describe("createTraceSession", () => {
     };
     const session = createTraceSession(
       {
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         traceCollector,
       },
       runtime,
-      "Show me the tenant summary.",
+      "Show me the organization summary.",
     );
 
     expect(() =>
       session.recordStep({
         stepId: "step-2",
         traceId: session.traceId,
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         stepType: "agent",
         toolName: "narrator",
         status: "failed",
@@ -141,11 +140,11 @@ describe("createTraceSession", () => {
     };
     const session = createTraceSession(
       {
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         traceCollector,
       },
       runtime,
-      "Show me the tenant summary.",
+      "Show me the organization summary.",
     );
 
     expect(session.traceId).toMatch(
@@ -155,7 +154,7 @@ describe("createTraceSession", () => {
     session.recordStep({
       stepId: "step-3",
       traceId: session.traceId,
-      tenantId: "tenant_a",
+      accessScopeId: "org_a",
       stepType: "agent",
       toolName: "supervisor",
       status: "completed",

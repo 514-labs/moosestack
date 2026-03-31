@@ -17,28 +17,28 @@ function createSession(
       image: null,
       provider: "local",
       accessRole: ACCESS_ROLE_TENANT,
-      tenantId: "tenant_a",
-      tenantName: "Tenant A",
+      orgId: "org_a",
+      orgName: "Org A",
       ...overrides,
     },
   };
 }
 
 describe("getSessionAccess", () => {
-  it("returns a tenant access summary for tenant-scoped sessions", () => {
+  it("returns an org access summary for organization-scoped sessions", () => {
     const access = getSessionAccess(
       createSession({
-        name: "Tenant A",
+        name: "Org A",
       }),
     );
 
     expect(access).toEqual(
       expect.objectContaining({
-        kind: "tenant",
-        tenantId: "tenant_a",
-        tenantName: "Tenant A",
-        traceScopeId: "tenant_a",
-        scopeBadge: "Tenant A only",
+        kind: "org",
+        orgId: "org_a",
+        orgName: "Org A",
+        accessScopeId: "org_a",
+        scopeBadge: "Org A only",
       }),
     );
   });
@@ -48,8 +48,8 @@ describe("getSessionAccess", () => {
       createSession({
         name: "Admin Debug",
         accessRole: ACCESS_ROLE_ADMIN_DEBUG,
-        tenantId: undefined,
-        tenantName: undefined,
+        orgId: undefined,
+        orgName: undefined,
       }),
     );
 
@@ -57,18 +57,18 @@ describe("getSessionAccess", () => {
       expect.objectContaining({
         kind: "admin",
         accessRole: ACCESS_ROLE_ADMIN_DEBUG,
-        traceScopeId: ACCESS_ROLE_ADMIN_DEBUG,
+        accessScopeId: ACCESS_ROLE_ADMIN_DEBUG,
         scopeBadge: "Admin debug access",
       }),
     );
   });
 
-  it("returns undefined when a tenant-scoped session omits tenant_id", () => {
+  it("returns undefined when an organization-scoped session omits org_id", () => {
     expect(
       getSessionAccess(
         createSession({
-          tenantId: undefined,
-          tenantName: undefined,
+          orgId: undefined,
+          orgName: undefined,
         }),
       ),
     ).toBeUndefined();

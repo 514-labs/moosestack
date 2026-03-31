@@ -105,10 +105,10 @@ describe("createAgentRuntime", () => {
 
     mocks.mcpToolsMock.mockResolvedValue({
       query_tenant_knowledge_metrics: {
-        description: "Summarize tenant-scoped knowledge metrics.",
+        description: "Summarize organization-scoped knowledge metrics.",
       },
       list_tenant_knowledge_records: {
-        description: "List tenant-scoped knowledge records.",
+        description: "List organization-scoped knowledge records.",
       },
       get_data_catalog: {
         description: "Inspect the exposed data surface.",
@@ -164,10 +164,10 @@ describe("createAgentRuntime", () => {
     expect(runtime.system).toBe(DEFAULT_AGENT_SYSTEM_PROMPT);
     expect(runtime.tools).toEqual({
       query_tenant_knowledge_metrics: {
-        description: "Summarize tenant-scoped knowledge metrics.",
+        description: "Summarize organization-scoped knowledge metrics.",
       },
       list_tenant_knowledge_records: {
-        description: "List tenant-scoped knowledge records.",
+        description: "List organization-scoped knowledge records.",
       },
       get_data_catalog: {
         description: "Inspect the exposed data surface.",
@@ -392,7 +392,7 @@ describe("createAgentRuntime", () => {
     await createMultiAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "tenant_a",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -491,7 +491,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "tenant_a",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -565,7 +565,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "tenant_a",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -611,7 +611,7 @@ describe("createAgentRuntime", () => {
       createAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",
@@ -647,7 +647,7 @@ describe("createAgentRuntime", () => {
       createMultiAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "tenant_a",
+        accessScopeId: "org_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",
