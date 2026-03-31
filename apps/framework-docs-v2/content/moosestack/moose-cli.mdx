@@ -390,7 +390,9 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 
 **Connection options** (one required):
 - `--url <URL>` + `--token <TOKEN>`: Connect to a running Moose server
-- `--clickhouse-url <URL>`: Connect directly to ClickHouse (for serverless deployments). Optionally pair with `--redis-url` when `state_config.storage = "redis"`.
+- `--clickhouse-url <URL>`: Connect directly to ClickHouse (for serverless deployments). Also requires `--redis-url` when `state_config.storage = "redis"`.
+
+All connection flags accept environment-variable fallbacks: `MOOSE_CLICKHOUSE_CONFIG__URL` for `--clickhouse-url` and `MOOSE_REDIS_CONFIG__URL` for `--redis-url`.
 
 **Output options:**
 - `--save`: Write `./migrations/plan.yaml`, `remote_state.json`, and `local_infra_map.json`. Omit to output plan YAML to stdout.
