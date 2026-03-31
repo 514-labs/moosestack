@@ -147,7 +147,7 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/getting-started/quickstart",
-    title: "5 Minute Quickstart",
+    title: "Quickstart",
     icon: IconRocket,
     languages: ["typescript", "python"],
   },
