@@ -2,14 +2,14 @@
 
 ## Context
 
-ClickHouse Dictionaries can currently only be modeled via raw SQL in `SqlResource`, which provides no type safety, no diff detection, no lifecycle management, and no introspection. This adds a first-class `Dictionary` SDK primitive — analogous to `OlapTable` and `MaterializedView` — across TypeScript, Python, and Rust.
+ClickHouse Dictionaries can currently only be modeled via raw SQL in `SqlResource`, which provides no type safety, no diff detection, no lifecycle management, and no introspection. This adds a first-class `OlapDictionary` SDK primitive — analogous to `OlapTable` and `MaterializedView` — across TypeScript, Python, and Rust.
 
 Issue: https://github.com/514-labs/moosestack/issues/3853
 
 ### Confirmed API — TypeScript usage example
 
 ```typescript
-import { OlapTable, Dictionary, View, MaterializedView, ClickHouseInt, sql } from "@514labs/moose-lib";
+import { OlapTable, OlapDictionary, View, MaterializedView, ClickHouseInt, sql } from "@514labs/moose-lib";
 
 // 1. Source table
 interface Product {
@@ -34,7 +34,7 @@ interface ProductLookup {
   PriceLevel: number & ClickHouseInt<"Int32">;
 }
 
-export const ProductDict = new Dictionary<ProductLookup>("dict_products", {
+export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
   source: ProductsTable,          // OlapTable | View reference
   primaryKey: ["ProductId"],
   layout: { type: "HASHED" },
@@ -45,7 +45,7 @@ export const ProductDict = new Dictionary<ProductLookup>("dict_products", {
 
 // 2b. Complex case — sql template with typed table/column interpolation
 //     Generates: SOURCE(CLICKHOUSE(QUERY 'SELECT ... FROM `local`.`products` FINAL'))
-export const ProductDictComplex = new Dictionary<ProductLookup>("dict_products_v2", {
+export const ProductDictComplex = new OlapDictionary<ProductLookup>("dict_products_v2", {
   source: sql`SELECT ProductId, ProductName, Category, PriceLevel FROM ${ProductsTable} FINAL`,
   sourceTables: [ProductsTable],  // explicit dependency tracking (same pattern as MV/View)
   primaryKey: ["ProductId"],
@@ -91,7 +91,7 @@ export const EnrichClicksMV = new MaterializedView<EnrichedClick>("enrich_clicks
 
 1. **Flexible source config** — `source` accepts `OlapTable | View` for direct table references, or `Sql | string` for custom queries (with typed interpolation via the `sql` template tag). No `type: "clickhouse"` field needed — ClickHouse is always implicit. When source is SQL, explicit `sourceTables` is required for dependency tracking.
 2. **Typed layout config** — not a plain string. A discriminated union with per-layout parameters (e.g., `CACHE` has `sizeInCells`).
-3. **`dictGet` helper** — typed method on `Dictionary` instances for use in `sql` template tags.
+3. **`dictGet` helper** — typed method on `OlapDictionary` instances for use in `sql` template tags.
 4. **Key/attribute column distinction** — `primaryKey` identifies key columns; attribute columns can have `defaults` for missing key lookups.
 5. **Dependency tracking** — source table reference automatically tracked (same as MV/View pattern).
 6. **Immutable diffing** — ClickHouse dictionaries cannot be ALTER-ed; any change = DROP + CREATE.
@@ -153,11 +153,11 @@ Implement:
 
 ## Phase 2: TypeScript SDK
 
-### 2.1 New file: `packages/ts-moose-lib/src/dmv2/sdk/dictionary.ts`
+### 2.1 New file: `packages/ts-moose-lib/src/dmv2/sdk/olapDictionary.ts`
 
 ```typescript
-class Dictionary<T> {
-  constructor(config: DictionaryConfig<T>, schema?, columns?)
+class OlapDictionary<T> {
+  constructor(config: OlapDictionaryConfig<T>, schema?, columns?)
   get(attr: keyof T, ...keys: (Sql|string|number)[]): Sql
   getOrDefault(attr: keyof T, defaultVal, ...keys): Sql
 }
@@ -165,24 +165,24 @@ class Dictionary<T> {
 
 Config includes: `name`, `source: OlapTable | View | Sql | string` (table ref or SQL query), `sourceTables?: (OlapTable | View)[]` (required when source is SQL, for dependency tracking), `primaryKey`, `layout` (typed union), `lifetime`, `invalidate?`, `defaults?`, `settings?`, `database?`, `cluster?`, `lifeCycle?`
 
-Self-registers into `getMooseInternal().dictionaries`.
+Self-registers into `getMooseInternal().olapDictionaries`.
 
 ### 2.2 Modify: `packages/ts-moose-lib/src/dmv2/internal.ts`
 
-- Add `dictionaries` to registry type and initialization
-- Add serialization block for dictionaries
+- Add `olapDictionaries` to registry type and initialization
+- Add serialization block for olap dictionaries
 
 ### 2.3 Modify: `packages/ts-moose-lib/src/dmv2/dataModelMetadata.ts`
 
-- Add `["Dictionary", 1]` to `typesToArgsLength` (1 user arg before injected schema+columns)
+- Add `["OlapDictionary", 1]` to `typesToArgsLength` (1 user arg before injected schema+columns)
 
 ### 2.4 Modify: `packages/ts-moose-lib/src/sqlHelpers.ts`
 
-- Add Dictionary interpolation support in `sql` template tag
+- Add OlapDictionary interpolation support in `sql` template tag
 
 ### 2.5 Modify export chain
 
-- `dmv2/index.ts`, `browserCompatible.ts` — export Dictionary + types
+- `dmv2/index.ts`, `browserCompatible.ts` — export OlapDictionary + types
 
 ### 2.6 Unit tests: `packages/ts-moose-lib/src/__tests__/dictionary.test.ts`
 
@@ -195,11 +195,11 @@ Self-registers into `getMooseInternal().dictionaries`.
 
 ## Phase 3: Python SDK
 
-### 3.1 New file: `packages/py-moose-lib/moose_lib/dmv2/dictionary.py`
+### 3.1 New file: `packages/py-moose-lib/moose_lib/dmv2/olap_dictionary.py`
 
 ```python
-class Dictionary(Generic[T]):
-    def __init__(self, config: DictionaryConfig, **kwargs)
+class OlapDictionary(Generic[T]):
+    def __init__(self, config: OlapDictionaryConfig, **kwargs)
     def get(self, attr: str, *keys) -> str
     def get_or_default(self, attr: str, default, *keys) -> str
 ```
@@ -208,15 +208,15 @@ Mirrors TypeScript API with Pydantic config models.
 
 ### 3.2 Modify: `packages/py-moose-lib/moose_lib/dmv2/_registry.py`
 
-- Add `_dictionaries` dict
+- Add `_olap_dictionaries` dict
 
 ### 3.3 Modify: `packages/py-moose-lib/moose_lib/internal.py`
 
-- Add dictionary serialization to `InfrastructureMapConfig`
+- Add olap dictionary serialization to `InfrastructureMapConfig`
 
 ### 3.4 Modify export chain
 
-- `dmv2/__init__.py`, `moose_lib/__init__.py` — export Dictionary + types
+- `dmv2/__init__.py`, `moose_lib/__init__.py` — export OlapDictionary + types
 
 ### 3.5 Unit tests: `packages/py-moose-lib/tests/test_dictionary.py`
 
@@ -228,7 +228,7 @@ Mirrors TypeScript API with Pydantic config models.
 
 ### 4.1 E2E tests (in `templates/typescript-tests` and `templates/python-tests`)
 
-- Create OlapTable + Dictionary → verify `moose plan` shows creation
+- Create OlapTable + OlapDictionary → verify `moose plan` shows creation
 - Modify dictionary layout → verify plan shows DROP + CREATE
 - Remove dictionary → verify plan shows removal
 - Lifecycle: DELETION_PROTECTED blocks removal
@@ -236,8 +236,8 @@ Mirrors TypeScript API with Pydantic config models.
 
 ### 4.2 Documentation (`apps/framework-docs-v2/`)
 
-- New SDK reference page for `Dictionary` (TS + Python)
-- Tutorial: "Using ClickHouse Dictionaries for fast lookups"
+- New SDK reference page for `OlapDictionary` (TS + Python)
+- Tutorial: "Using OlapDictionary for fast ClickHouse lookups"
 - Update SDK overview / primitives listing page
 - Update ClickHouse best practices if relevant
 
@@ -257,7 +257,7 @@ Mirrors TypeScript API with Pydantic config models.
 1. **Unit tests**: `cargo test --package moose-cli`, `cd packages/ts-moose-lib && pnpm test`, `cd packages/py-moose-lib && pytest`
 2. **Lint**: `cargo clippy --all-targets -- -D warnings`
 3. **E2E**: `cd apps/framework-cli-e2e && pnpm test`
-4. **Manual**: Init a test project in /tmp, define an OlapTable + Dictionary, run `moose plan`, verify DDL output
+4. **Manual**: Init a test project in /tmp, define an OlapTable + OlapDictionary, run `moose plan`, verify DDL output
 
 ## Key files to modify
 
@@ -271,12 +271,12 @@ Mirrors TypeScript API with Pydantic config models.
 | Rust | `clickhouse/mod.rs` | Execution + introspection |
 | Rust | `lifecycle_filter.rs` | Lifecycle enforcement |
 | Rust | `plan.rs` | Reconciliation filter |
-| TS | `dmv2/sdk/dictionary.ts` (NEW) | SDK class |
+| TS | `dmv2/sdk/olapDictionary.ts` (NEW) | SDK class |
 | TS | `dmv2/internal.ts` | Registry + serialization |
 | TS | `dmv2/dataModelMetadata.ts` | Compiler plugin registration |
 | TS | `sqlHelpers.ts` | `sql` tag interpolation |
 | TS | `dmv2/index.ts`, `browserCompatible.ts` | Exports |
-| Python | `dmv2/dictionary.py` (NEW) | SDK class |
+| Python | `dmv2/olap_dictionary.py` (NEW) | SDK class |
 | Python | `dmv2/_registry.py` | Registry |
 | Python | `internal.py` | Serialization |
 | Python | `dmv2/__init__.py`, `__init__.py` | Exports |
