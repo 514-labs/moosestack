@@ -102,10 +102,20 @@ pub async fn execute_initial_infra_change(
                 .cloned()
                 .collect();
             if !desired_policies.is_empty() {
-                olap::bootstrap_rls(ctx.project, &desired_policies).await?;
+                olap::bootstrap_rls(
+                    ctx.project,
+                    &desired_policies,
+                    &ctx.plan.target_infra_map.tables,
+                )
+                .await?;
             }
 
-            olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
+            olap::execute_changes(
+                ctx.project,
+                &ctx.plan.changes.olap_changes,
+                &ctx.plan.target_infra_map.tables,
+            )
+            .await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if ctx.project.features.streaming_engine {
@@ -198,10 +208,16 @@ pub async fn execute_online_change(
                 .cloned()
                 .collect();
             if !desired_policies.is_empty() {
-                olap::bootstrap_rls(project, &desired_policies).await?;
+                olap::bootstrap_rls(project, &desired_policies, &plan.target_infra_map.tables)
+                    .await?;
             }
 
-            olap::execute_changes(project, &plan.changes.olap_changes).await?;
+            olap::execute_changes(
+                project,
+                &plan.changes.olap_changes,
+                &plan.target_infra_map.tables,
+            )
+            .await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if project.features.streaming_engine {

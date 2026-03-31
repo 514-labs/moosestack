@@ -1,4 +1,9 @@
-import { OlapTable, Key, ClickHouseEngines } from "@514labs/moose-lib";
+import {
+  OlapTable,
+  Key,
+  ClickHouseEngines,
+  SelectRowPolicy,
+} from "@514labs/moose-lib";
 
 /**
  * Test models for ClickHouse cluster support
@@ -8,6 +13,7 @@ import { OlapTable, Key, ClickHouseEngines } from "@514labs/moose-lib";
 export interface TableA {
   id: Key<string>;
   value: string;
+  org_id: string;
   timestamp: number;
 }
 
@@ -89,4 +95,11 @@ export const tableF = new OlapTable<TableF>("TableF", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
   cluster: "cluster_a",
   database: "analytics",
+});
+
+// Row policy on a clustered table — verifies ON CLUSTER in DDL
+export const clusterRlsPolicy = new SelectRowPolicy("cluster_rls", {
+  tables: [tableA],
+  column: "org_id",
+  claim: "org_id",
 });

@@ -187,5 +187,3 @@ Row policies are not compatible with materialized views. ClickHouse evaluates ro
 ## Limitations
 
 **Materialized views**: Not compatible with row policies. ClickHouse evaluates policies during the MV insert path, causing `getSetting()` to fail. Use a regular `View` for RLS on aggregated data.
-
-**Clustered deployments**: Row policy DDL does not yet include `ON CLUSTER`.

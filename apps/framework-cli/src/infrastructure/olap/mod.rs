@@ -150,6 +150,7 @@ pub trait OlapOperations {
 pub async fn execute_changes(
     project: &Project,
     changes: &[OlapChange],
+    tables: &std::collections::HashMap<String, Table>,
 ) -> Result<(), OlapChangesError> {
     // LIFECYCLE GUARD: Final safety check before execution
     // This catches any lifecycle violations that may have slipped through the
@@ -167,7 +168,7 @@ pub async fn execute_changes(
         ddl_ordering::order_olap_changes(changes, &project.clickhouse_config.db_name)?;
 
     // Execute the ordered changes
-    clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
+    clickhouse::execute_changes(project, &teardown_plan, &setup_plan, tables).await?;
     Ok(())
 }
 
@@ -177,8 +178,9 @@ pub async fn execute_changes(
 pub async fn bootstrap_rls(
     project: &Project,
     desired_row_policies: &[SelectRowPolicy],
+    tables: &std::collections::HashMap<String, Table>,
 ) -> Result<(), OlapChangesError> {
-    clickhouse::rls_bootstrap(project, desired_row_policies).await?;
+    clickhouse::rls_bootstrap(project, desired_row_policies, tables).await?;
     Ok(())
 }
 

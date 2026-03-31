@@ -412,6 +412,7 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
 /// * `project` - The Project configuration containing ClickHouse connection details
 /// * `teardown_plan` - A slice of AtomicOlapOperation representing the teardown plan
 /// * `setup_plan` - A slice of AtomicOlapOperation representing the setup plan
+/// * `tables` - Table definitions for cluster name resolution in row policy operations
 ///
 /// # Returns
 ///
@@ -437,6 +438,7 @@ pub async fn execute_changes(
     project: &Project,
     teardown_plan: &[AtomicOlapOperation],
     setup_plan: &[AtomicOlapOperation],
+    tables: &HashMap<String, Table>,
 ) -> Result<(), ClickhouseChangesError> {
     // Setup the client
     let client = create_client(project.clickhouse_config.clone());
@@ -515,8 +517,14 @@ pub async fn execute_changes(
     debug!("Ordered Teardown plan: {:?}", teardown_plan);
     for op in teardown_plan {
         debug!("Teardown operation: {:?}", op);
-        execute_atomic_operation(db_name, &op.to_minimal(), &client, !project.is_production)
-            .await?;
+        execute_atomic_operation(
+            db_name,
+            &op.to_minimal(),
+            &client,
+            !project.is_production,
+            tables,
+        )
+        .await?;
     }
 
     // Execute Setup Plan
@@ -527,8 +535,14 @@ pub async fn execute_changes(
     debug!("Ordered Setup plan: {:?}", setup_plan);
     for op in setup_plan {
         debug!("Setup operation: {:?}", op);
-        execute_atomic_operation(db_name, &op.to_minimal(), &client, !project.is_production)
-            .await?;
+        execute_atomic_operation(
+            db_name,
+            &op.to_minimal(),
+            &client,
+            !project.is_production,
+            tables,
+        )
+        .await?;
     }
 
     info!("OLAP Change execution complete");
@@ -648,11 +662,13 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
 }
 
 /// Executes a single atomic OLAP operation.
+/// `tables` provides cluster lookup for row policy operations; pass an empty map when unavailable.
 pub async fn execute_atomic_operation(
     db_name: &str,
     operation: &SerializableOlapOperation,
     client: &ConfiguredDBClient,
     is_dev: bool,
+    tables: &HashMap<String, Table>,
 ) -> Result<(), ClickhouseChangesError> {
     match operation {
         SerializableOlapOperation::CreateTable { table } => {
@@ -908,10 +924,10 @@ pub async fn execute_atomic_operation(
             execute_raw_sql(sql, description, client).await?;
         }
         SerializableOlapOperation::CreateRowPolicy { policy } => {
-            execute_create_row_policy(db_name, policy, client).await?;
+            execute_create_row_policy(db_name, policy, client, tables).await?;
         }
         SerializableOlapOperation::DropRowPolicy { policy } => {
-            execute_drop_row_policy(db_name, policy, client).await?;
+            execute_drop_row_policy(db_name, policy, client, tables).await?;
         }
     }
     Ok(())
@@ -1639,9 +1655,13 @@ async fn execute_raw_sql(
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Runs once per startup when any row policies are configured,
 /// regardless of whether the policies themselves changed.
+///
+/// When tables have `cluster_name` set, bootstrap DDL includes `ON CLUSTER` so that
+/// roles, users, grants, and policy assignments replicate across all cluster nodes.
 pub async fn rls_bootstrap(
     project: &Project,
     desired_policies: &[SelectRowPolicy],
+    tables: &HashMap<String, Table>,
 ) -> Result<(), ClickhouseChangesError> {
     let client = create_client(project.clickhouse_config.clone());
     check_ready(&client)
@@ -1660,33 +1680,54 @@ pub async fn rls_bootstrap(
         desired_policies.len()
     );
 
+    // Collect unique cluster names from all tables referenced by policies
+    let mut policy_clusters: HashSet<Option<String>> = HashSet::new();
+    for policy in desired_policies {
+        for table_ref in &policy.tables {
+            let db = table_ref.database.as_deref().unwrap_or(db_name);
+            let cluster =
+                lookup_table_cluster(tables, db_name, db, &table_ref.name).map(|c| c.to_string());
+            policy_clusters.insert(cluster);
+        }
+    }
+
     // 1. Role + user (ALTER ensures password stays in sync if rotated)
-    let bootstrap_sqls = vec![
-        format!("CREATE ROLE IF NOT EXISTS `{MOOSE_RLS_ROLE}`"),
-        format!(
-            "CREATE USER IF NOT EXISTS `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"
-        ),
-        format!("ALTER USER `{escaped_rls_user}` IDENTIFIED BY '{escaped_password}'"),
-    ];
-    for sql in &bootstrap_sqls {
-        run_query(sql, &client)
-            .await
-            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
-                error: e,
-                resource: Some("rls-bootstrap".to_string()),
+    // Execute once per unique cluster, plus once without cluster for non-clustered tables
+    for cluster in &policy_clusters {
+        let cluster_clause = on_cluster_clause(cluster.as_deref());
+        let bootstrap_sqls = vec![
+            format!("CREATE ROLE IF NOT EXISTS `{MOOSE_RLS_ROLE}`{cluster_clause}"),
+            format!(
+                "CREATE USER IF NOT EXISTS `{escaped_rls_user}`{cluster_clause} IDENTIFIED BY '{escaped_password}'"
+            ),
+            format!("ALTER USER `{escaped_rls_user}`{cluster_clause} IDENTIFIED BY '{escaped_password}'"),
+        ];
+        for sql in &bootstrap_sqls {
+            run_query(sql, &client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some("rls-bootstrap".to_string()),
+                }
             })?;
+        }
     }
 
     // 2. Collect all databases that have policies and grant SELECT
-    let mut all_databases: HashSet<String> = HashSet::new();
+    // Group databases by their cluster so we can use ON CLUSTER in the GRANT
+    let mut db_clusters: HashMap<String, Option<String>> = HashMap::new();
     for policy in desired_policies {
-        for db in policy.resolved_databases(db_name) {
-            all_databases.insert(db);
+        for table_ref in &policy.tables {
+            let db = table_ref.database.as_deref().unwrap_or(db_name).to_string();
+            let cluster =
+                lookup_table_cluster(tables, db_name, &db, &table_ref.name).map(|c| c.to_string());
+            db_clusters.entry(db).or_insert(cluster);
         }
     }
-    for db in &all_databases {
+    for (db, cluster) in &db_clusters {
         let escaped_db = db.replace('`', "``");
-        let grant_sql = format!("GRANT SELECT ON `{escaped_db}`.* TO `{escaped_rls_user}`");
+        let cluster_clause = on_cluster_clause(cluster.as_deref());
+        let grant_sql =
+            format!("GRANT{cluster_clause} SELECT ON `{escaped_db}`.* TO `{escaped_rls_user}`");
         tracing::debug!("RLS grant: {}", grant_sql);
         run_query(&grant_sql, &client).await.map_err(|e| {
             ClickhouseChangesError::ClickhouseClient {
@@ -1696,14 +1737,18 @@ pub async fn rls_bootstrap(
         })?;
     }
 
-    // 3. Grant role to user
-    let grant_role_sql = format!("GRANT `{MOOSE_RLS_ROLE}` TO `{escaped_rls_user}`");
-    run_query(&grant_role_sql, &client).await.map_err(|e| {
-        ClickhouseChangesError::ClickhouseClient {
-            error: e,
-            resource: Some("rls-grant-role".to_string()),
-        }
-    })?;
+    // 3. Grant role to user (once per cluster)
+    for cluster in &policy_clusters {
+        let cluster_clause = on_cluster_clause(cluster.as_deref());
+        let grant_role_sql =
+            format!("GRANT{cluster_clause} `{MOOSE_RLS_ROLE}` TO `{escaped_rls_user}`");
+        run_query(&grant_role_sql, &client).await.map_err(|e| {
+            ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some("rls-grant-role".to_string()),
+            }
+        })?;
+    }
 
     // 4. Re-point all policies to the current role name, in case it changed.
     for policy in desired_policies {
@@ -1712,10 +1757,13 @@ pub async fn rls_bootstrap(
             let db = table_ref.database.as_deref().unwrap_or(db_name);
             let escaped_db = db.replace('`', "``");
             let escaped_table = table_ref.name.replace('`', "``");
+            let cluster = lookup_table_cluster(tables, db_name, db, &table_ref.name);
+            let cluster_clause = on_cluster_clause(cluster);
             let sql = format!(
-                "ALTER ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}` TO `{MOOSE_RLS_ROLE}`",
+                "ALTER ROW POLICY IF EXISTS `{name}_on_{table}`{cluster} ON `{db}`.`{table}` TO `{MOOSE_RLS_ROLE}`",
                 name = escaped_name,
                 table = escaped_table,
+                cluster = cluster_clause,
                 db = escaped_db,
             );
             tracing::debug!("RLS ensure policy targeting: {}", sql);
@@ -1740,16 +1788,20 @@ async fn execute_create_row_policy(
     db_name: &str,
     policy: &SelectRowPolicy,
     client: &ConfiguredDBClient,
+    tables: &HashMap<String, Table>,
 ) -> Result<(), ClickhouseChangesError> {
     let escaped_name = policy.name.replace('`', "``");
     for table_ref in &policy.tables {
         let db = table_ref.database.as_deref().unwrap_or(db_name);
         let escaped_db = db.replace('`', "``");
         let escaped_table = table_ref.name.replace('`', "``");
+        let cluster = lookup_table_cluster(tables, db_name, db, &table_ref.name);
+        let cluster_clause = on_cluster_clause(cluster);
         let sql = format!(
-            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}` ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO `{MOOSE_RLS_ROLE}`",
+            "CREATE ROW POLICY IF NOT EXISTS `{name}_on_{table}`{cluster} ON `{db}`.`{table}` USING {using} AS RESTRICTIVE TO `{MOOSE_RLS_ROLE}`",
             name = escaped_name,
             table = escaped_table,
+            cluster = cluster_clause,
             db = escaped_db,
             using = policy.using_expr(),
         );
@@ -1770,17 +1822,21 @@ async fn execute_drop_row_policy(
     db_name: &str,
     policy: &SelectRowPolicy,
     client: &ConfiguredDBClient,
+    tables: &HashMap<String, Table>,
 ) -> Result<(), ClickhouseChangesError> {
     let escaped_name = policy.name.replace('`', "``");
     for table_ref in &policy.tables {
         let db = table_ref.database.as_deref().unwrap_or(db_name);
         let escaped_db = db.replace('`', "``");
         let escaped_table = table_ref.name.replace('`', "``");
+        let cluster = lookup_table_cluster(tables, db_name, db, &table_ref.name);
+        let cluster_clause = on_cluster_clause(cluster);
         let sql = format!(
-            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`",
+            "DROP ROW POLICY IF EXISTS `{name}_on_{table}` ON `{db}`.`{table}`{cluster}",
             name = escaped_name,
             table = escaped_table,
             db = escaped_db,
+            cluster = cluster_clause,
         );
         tracing::debug!("Dropping row policy: {}", sql);
         run_query(&sql, client)
@@ -1791,6 +1847,31 @@ async fn execute_drop_row_policy(
             })?;
     }
     Ok(())
+}
+
+/// Finds the cluster name for a table by matching against the infra map tables.
+/// Returns `None` if no matching table found or the table has no cluster.
+fn lookup_table_cluster<'a>(
+    tables: &'a HashMap<String, Table>,
+    default_db: &str,
+    table_db: &str,
+    table_name: &str,
+) -> Option<&'a str> {
+    tables
+        .values()
+        .find(|t| {
+            let t_db = t.database.as_deref().unwrap_or(default_db);
+            t_db == table_db && t.name == table_name
+        })
+        .and_then(|t| t.cluster_name.as_deref())
+}
+
+/// Formats the `ON CLUSTER` clause if a cluster name is present.
+fn on_cluster_clause(cluster: Option<&str>) -> String {
+    match cluster {
+        Some(c) => format!(" ON CLUSTER `{}`", c.replace('`', "``")),
+        None => String::new(),
+    }
 }
 
 /// Strips backticks from an identifier string.
@@ -5110,5 +5191,132 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             sql,
             "query without `?` should be unchanged"
         );
+    }
+
+    mod rls_cluster_tests {
+        use super::*;
+        use crate::framework::core::infrastructure::table::OrderBy;
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        fn make_table(name: &str, db: Option<&str>, cluster: Option<&str>) -> Table {
+            Table {
+                name: name.to_string(),
+                database: db.map(|d| d.to_string()),
+                cluster_name: cluster.map(|c| c.to_string()),
+                columns: vec![],
+                order_by: OrderBy::Fields(vec![]),
+                partition_by: None,
+                sample_by: None,
+                engine: ClickhouseEngine::MergeTree,
+                version: None,
+                source_primitive: PrimitiveSignature {
+                    name: "test".to_string(),
+                    primitive_type: PrimitiveTypes::DataModel,
+                },
+                metadata: None,
+                life_cycle: LifeCycle::FullyManaged,
+                engine_params_hash: None,
+                table_settings_hash: None,
+                table_settings: None,
+                indexes: vec![],
+                projections: vec![],
+                table_ttl_setting: None,
+                primary_key_expression: None,
+                seed_filter: Default::default(),
+            }
+        }
+
+        fn make_tables_map(tables: Vec<Table>) -> HashMap<String, Table> {
+            tables
+                .into_iter()
+                .map(|t| {
+                    let db = t.database.as_deref().unwrap_or("local");
+                    let key = format!("{}_{}", db, t.name);
+                    (key, t)
+                })
+                .collect()
+        }
+
+        #[test]
+        fn test_on_cluster_clause_with_cluster() {
+            assert_eq!(
+                on_cluster_clause(Some("my_cluster")),
+                " ON CLUSTER `my_cluster`"
+            );
+        }
+
+        #[test]
+        fn test_on_cluster_clause_without_cluster() {
+            assert_eq!(on_cluster_clause(None), "");
+        }
+
+        #[test]
+        fn test_on_cluster_clause_escapes_backticks() {
+            assert_eq!(
+                on_cluster_clause(Some("my`cluster")),
+                " ON CLUSTER `my``cluster`"
+            );
+        }
+
+        #[test]
+        fn test_lookup_table_cluster_found() {
+            let tables = make_tables_map(vec![make_table("events", None, Some("cluster1"))]);
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "events"),
+                Some("cluster1")
+            );
+        }
+
+        #[test]
+        fn test_lookup_table_cluster_no_cluster() {
+            let tables = make_tables_map(vec![make_table("events", None, None)]);
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "events"),
+                None
+            );
+        }
+
+        #[test]
+        fn test_lookup_table_cluster_not_found() {
+            let tables = make_tables_map(vec![make_table("events", None, Some("cluster1"))]);
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "unknown_table"),
+                None
+            );
+        }
+
+        #[test]
+        fn test_lookup_table_cluster_explicit_db() {
+            let tables = make_tables_map(vec![make_table(
+                "events",
+                Some("analytics"),
+                Some("cluster2"),
+            )]);
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "analytics", "events"),
+                Some("cluster2")
+            );
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "events"),
+                None
+            );
+        }
+
+        #[test]
+        fn test_lookup_table_cluster_mixed_cluster_and_non_cluster() {
+            let tables = make_tables_map(vec![
+                make_table("events", None, Some("cluster1")),
+                make_table("logs", None, None),
+            ]);
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "events"),
+                Some("cluster1")
+            );
+            assert_eq!(
+                lookup_table_cluster(&tables, "local", "local", "logs"),
+                None
+            );
+        }
     }
 }

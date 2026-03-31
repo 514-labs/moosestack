@@ -502,6 +502,7 @@ async fn execute_operations(
             operation,
             client,
             is_dev,
+            &std::collections::HashMap::new(),
         )
         .await
         {

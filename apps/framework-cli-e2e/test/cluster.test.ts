@@ -546,6 +546,89 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         expect(createStatement).to.not.include("ON CLUSTER");
       });
     });
+
+    if (config.language === "typescript") {
+      it("should create RLS row policy on all cluster_a nodes", async function () {
+        this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+        await withClickHouseClient(async (client) => {
+          const result = await client.query({
+            query: `
+              SELECT hostName() as host, name
+              FROM clusterAllReplicas(cluster_a, system.row_policies)
+              WHERE name LIKE '%cluster_rls%'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const policies = await result.json<{
+            host: string;
+            name: string;
+          }>();
+          testLogger.info(
+            "Row policies on cluster_a nodes:",
+            JSON.stringify(policies, null, 2),
+          );
+
+          expect(
+            policies.length,
+            "cluster_rls policy should exist on all cluster_a nodes (at least 2)",
+          ).to.be.at.least(2);
+        });
+      });
+
+      it("should create RLS role on all cluster_a nodes", async function () {
+        this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+        await withClickHouseClient(async (client) => {
+          const result = await client.query({
+            query: `
+              SELECT hostName() as host, name
+              FROM clusterAllReplicas(cluster_a, system.roles)
+              WHERE name = 'moose_rls_role'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const roles = await result.json<{ host: string; name: string }>();
+          testLogger.info(
+            "moose_rls_role on cluster_a nodes:",
+            JSON.stringify(roles, null, 2),
+          );
+
+          expect(
+            roles.length,
+            "moose_rls_role should exist on all cluster_a nodes (at least 2)",
+          ).to.be.at.least(2);
+        });
+      });
+
+      it("should create RLS user on all cluster_a nodes", async function () {
+        this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+        await withClickHouseClient(async (client) => {
+          const result = await client.query({
+            query: `
+              SELECT hostName() as host, name
+              FROM clusterAllReplicas(cluster_a, system.users)
+              WHERE name = 'moose_rls_user'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const users = await result.json<{ host: string; name: string }>();
+          testLogger.info(
+            "moose_rls_user on cluster_a nodes:",
+            JSON.stringify(users, null, 2),
+          );
+
+          expect(
+            users.length,
+            "moose_rls_user should exist on all cluster_a nodes (at least 2)",
+          ).to.be.at.least(2);
+        });
+      });
+    }
   });
 };
 
