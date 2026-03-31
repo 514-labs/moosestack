@@ -725,51 +725,57 @@ describe("TypeScript Agent Template E2E", function () {
       return tool.name;
     });
 
-    expect(toolNames).to.include("query_clickhouse");
+    expect(toolNames).to.include("query_tenant_knowledge_metrics");
+    expect(toolNames).to.include("list_tenant_knowledge_records");
     expect(toolNames).to.include("get_data_catalog");
+    expect(toolNames).to.not.include("query_clickhouse");
+
+    const acmeMetrics = await callMcpTool<{
+      rows: Array<{ totalRecords: number; highPriorityRecords: number }>;
+      rowCount: number;
+    }>(acmeToken, "query_tenant_knowledge_metrics", {
+      metrics: ["totalRecords", "highPriorityRecords"],
+      limit: 10,
+    });
+
+    expect(acmeMetrics.rowCount).to.equal(1);
+    expect(acmeMetrics.rows[0]?.totalRecords).to.equal(2);
+    expect(acmeMetrics.rows[0]?.highPriorityRecords).to.equal(1);
 
     const acmeRows = await callMcpTool<{
-      rows: Array<{ tenant_id: string; headline: string }>;
+      rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "query_clickhouse", {
-      query:
-        "SELECT tenant_id, headline FROM tenant_knowledge ORDER BY timestamp DESC",
+    }>(acmeToken, "list_tenant_knowledge_records", {
+      columns: ["headline", "priority"],
       limit: 10,
     });
 
     expect(acmeRows.rowCount).to.equal(2);
-    expect(acmeRows.rows.every((row) => row.tenant_id === "acme")).to.equal(
-      true,
-    );
     expect(acmeRows.rows.map((row) => row.headline).join(" ")).to.include(
       "Brake alerts increased by 14% this week",
     );
 
-    const preLimitedRows = await callMcpTool<{
-      rows: Array<{ tenant_id: string; headline: string }>;
+    const acmeHighPriorityRows = await callMcpTool<{
+      rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "query_clickhouse", {
-      query:
-        "SELECT tenant_id, headline FROM tenant_knowledge ORDER BY timestamp DESC LIMIT 1",
-      limit: 100,
+    }>(acmeToken, "list_tenant_knowledge_records", {
+      columns: ["headline", "priority"],
+      priority: "high",
+      limit: 10,
     });
 
-    expect(preLimitedRows.rowCount).to.equal(1);
-    expect(preLimitedRows.rows[0]?.tenant_id).to.equal("acme");
+    expect(acmeHighPriorityRows.rowCount).to.equal(1);
+    expect(acmeHighPriorityRows.rows[0]?.headline).to.include("Brake alerts");
 
     const globexRows = await callMcpTool<{
-      rows: Array<{ tenant_id: string; headline: string }>;
+      rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(globexToken, "query_clickhouse", {
-      query:
-        "SELECT tenant_id, headline FROM tenant_knowledge ORDER BY timestamp DESC",
+    }>(globexToken, "list_tenant_knowledge_records", {
+      columns: ["headline", "priority"],
       limit: 10,
     });
 
     expect(globexRows.rowCount).to.equal(2);
-    expect(globexRows.rows.every((row) => row.tenant_id === "globex")).to.equal(
-      true,
-    );
     expect(globexRows.rows.map((row) => row.headline).join(" ")).to.include(
       "Seattle hub utilization breached 92%",
     );
@@ -798,31 +804,6 @@ describe("TypeScript Agent Template E2E", function () {
     expect(filteredCatalog.isError).to.equal(false);
     expect(filteredCatalog.text).to.include(
       "No data components found matching the specified filters.",
-    );
-
-    const describeRows = await callMcpTool<{
-      rows: Array<{ name: string; type: string }>;
-      rowCount: number;
-    }>(acmeToken, "query_clickhouse", {
-      query: "DESCRIBE TABLE tenant_knowledge",
-      limit: 50,
-    });
-    expect(describeRows.rowCount).to.be.greaterThan(0);
-    expect(describeRows.rows.some((row) => row.name === "tenant_id")).to.equal(
-      true,
-    );
-
-    const blockedSystemQuery = await callMcpToolText(
-      acmeToken,
-      "query_clickhouse",
-      {
-        query: "SELECT name FROM system.tables ORDER BY name",
-        limit: 10,
-      },
-    );
-    expect(blockedSystemQuery.isError).to.equal(true);
-    expect(blockedSystemQuery.text).to.include(
-      "System metadata is not available to this tool",
     );
   });
 
@@ -859,11 +840,11 @@ describe("TypeScript Agent Template E2E", function () {
     expect(acmeHtml).to.include("Tenant-scoped agent dashboard");
     expect(acmeHtml).to.include("ACME Fleet");
     expect(acmeHtml).to.include("Brake alerts increased by 14% this week");
-    expect(acmeHtml).to.include("Multi-agent reference flow");
-    expect(acmeHtml).to.include("supervisor");
-    expect(acmeHtml).to.include("specialist");
-    expect(acmeHtml).to.include("narrator");
-    expect(acmeHtml).to.include("[AGENT:...]");
+    expect(acmeHtml).to.include("answers with tenant-scoped semantic tools");
+    expect(acmeHtml).to.include(
+      "Break down the high-priority records by category for this tenant.",
+    );
+    expect(acmeHtml).to.not.include("Multi-agent reference flow");
     expect(acmeHtml).to.not.include("Seattle hub utilization breached 92%");
 
     const globexAuth = await signInLocalTenant("globex");
@@ -899,7 +880,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(globexHtml).to.include("Globex Mobility");
     expect(globexHtml).to.include("Seattle hub utilization breached 92%");
     expect(globexHtml).to.include(
-      "Use the multi-agent flow to inspect the data catalog, route",
+      "Break down the high-priority records by category for this tenant.",
     );
     expect(globexHtml).to.not.include(
       "Brake alerts increased by 14% this week",
