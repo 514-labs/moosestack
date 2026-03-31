@@ -8,9 +8,10 @@ export const COMMANDS = {
 
 export const INSTALLER_SCRIPT_URL = "https://fiveonefour.com/install.sh";
 export const INSTALLER_TARGETS = ["moose", "514"] as const;
-export const HARNESS_INIT_COMMAND = "moose init";
+export const HARNESS_INIT_COMMAND = "moose harness init";
 
-export const MOOSESTACK_DOCS_URL = "https://docs.fiveonefour.com/moosestack";
+export const MOOSESTACK_DOCS_URL =
+  "https://docs.fiveonefour.com/moosestack?utm_source=vscode-extension";
 export const SUPPORT_URL = "http://slack.moosestack.com/";
 
 export const WINDOWS_WSL_MESSAGE =
