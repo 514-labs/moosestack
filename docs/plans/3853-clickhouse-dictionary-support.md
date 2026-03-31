@@ -514,31 +514,324 @@ Self-registers into `getMooseInternal().olapDictionaries`.
 
 ### 3.1 New file: `packages/py-moose-lib/moose_lib/dmv2/olap_dictionary.py`
 
+Follows the existing `OlapTable`/`MaterializedView` patterns exactly.
+
+**Config model (`OlapDictionaryConfig`):**
+
 ```python
-class OlapDictionary(Generic[T]):
-    def __init__(self, config: OlapDictionaryConfig, **kwargs)
-    def get(self, attr: str, *keys) -> str
-    def get_or_default(self, attr: str, default, *keys) -> str
-    def has(self, *keys) -> str  # → dictHas('db.dict', key)
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, Union
+from moose_lib.dmv2.olap_table import OlapTable
+from moose_lib.dmv2.view import View
+
+class DictionaryColumn(BaseModel):
+    """Per-column attributes for dictionary columns."""
+    model_config = ConfigDict(extra="forbid")
+    default: Optional[str] = None
+    expression: Optional[str] = None
+    hierarchical: bool = False
+    injective: bool = False
+    is_object_id: bool = False
+
+class DictionaryLifetime(BaseModel):
+    """LIFETIME(MIN x MAX y) or LIFETIME(x) or LIFETIME(0) for static."""
+    model_config = ConfigDict(extra="forbid")
+    min: int = 0
+    max: int = 0
+
+class DictionaryInvalidation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    column: str
+    fn: str  # e.g., "max"
+
+# --- Layout types (discriminated union) ---
+class FlatLayout(BaseModel):
+    type: Literal["FLAT"] = "FLAT"
+    initial_size: Optional[int] = None
+    max_size: Optional[int] = None
+
+class HashedLayout(BaseModel):
+    type: Literal["HASHED"] = "HASHED"
+    shards: Optional[int] = None
+
+class ComplexKeyHashedLayout(BaseModel):
+    type: Literal["COMPLEX_KEY_HASHED"] = "COMPLEX_KEY_HASHED"
+    shards: Optional[int] = None
+
+class CacheLayout(BaseModel):
+    type: Literal["CACHE"] = "CACHE"
+    size_in_cells: int
+
+class RangeHashedLayout(BaseModel):
+    type: Literal["RANGE_HASHED"] = "RANGE_HASHED"
+    range_min: str
+    range_max: str
+# ... (all 16 layouts follow the same pattern)
+
+DictionaryLayout = Union[
+    FlatLayout, HashedLayout, ComplexKeyHashedLayout, CacheLayout,
+    RangeHashedLayout, # ... all 16 types
+]
+
+# --- External source types (discriminated union) ---
+class MongoDbSource(BaseModel):
+    type: Literal["mongodb"] = "mongodb"
+    host: str
+    port: int = 27017
+    user: str
+    password: str
+    db: str
+    collection: str
+
+class MySqlSource(BaseModel):
+    type: Literal["mysql"] = "mysql"
+    host: str
+    port: int = 3306
+    user: str
+    password: str
+    db: str
+    table: Optional[str] = None
+    query: Optional[str] = None
+# ... (all 12 external source types)
+
+ExternalSource = Union[MongoDbSource, MySqlSource, ...]  # discriminated on "type"
+
+class OlapDictionaryConfig(BaseModel):
+    """User-facing config for OlapDictionary."""
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    # Source — exactly one must be set (validated in model_post_init)
+    source_table: Optional[Union[OlapTable, View]] = None
+    source_query: Optional[str] = None  # SQL string (from sql helper)
+    source_tables: Optional[list[Union[OlapTable, View]]] = None  # required with source_query
+    external_source: Optional[ExternalSource] = None
+
+    primary_key: list[str]
+    layout: DictionaryLayout
+    lifetime: Union[int, DictionaryLifetime] = DictionaryLifetime(min=0, max=0)
+    invalidate: Optional[DictionaryInvalidation] = None
+    columns: Optional[dict[str, DictionaryColumn]] = None  # per-column attributes
+    defaults: Optional[dict[str, Union[str, int, float]]] = None
+    settings: Optional[dict[str, Union[str, int]]] = None
+    comment: Optional[str] = None
+    database: Optional[str] = None
+    cluster: Optional[str] = None
+    life_cycle: Optional[LifeCycle] = None
+    metadata: Optional[dict] = None
+
+    def model_post_init(self, __context):
+        # Validate exactly one source field is set
+        sources = [self.source_table, self.source_query, self.external_source]
+        set_count = sum(1 for s in sources if s is not None)
+        if set_count != 1:
+            raise ValueError("Exactly one of source_table, source_query, or external_source must be set")
+        if self.source_query and not self.source_tables:
+            raise ValueError("source_tables is required when using source_query")
 ```
 
-Mirrors TypeScript API with Pydantic config models.
+**Class definition:**
+
+```python
+from moose_lib.dmv2.types import BaseTypedResource
+from moose_lib.dmv2._registry import _olap_dictionaries
+
+class OlapDictionary(BaseTypedResource, Generic[T]):
+    kind: str = "OlapDictionary"
+
+    def __init__(self, name: str, config: OlapDictionaryConfig, **kwargs):
+        t = self._get_type(kwargs)
+        self._set_type(name, t)
+        self.name = name
+        self.config = config
+        self._column_list = _to_columns(t)
+        self.life_cycle = config.life_cycle
+        self.metadata = {**(config.metadata or {}), "source": get_source_file_from_stack()}
+
+        # Format source tables for serialization
+        if config.source_table:
+            self.source_tables = [_format_table_reference(config.source_table)]
+        elif config.source_tables:
+            self.source_tables = [_format_table_reference(t) for t in config.source_tables]
+        else:
+            self.source_tables = []
+
+        # Register with duplicate check
+        if name in _olap_dictionaries:
+            raise ValueError(f"OlapDictionary '{name}' already registered")
+        _olap_dictionaries[name] = self
+
+    def get(self, attr: str, *keys) -> str:
+        """Generate dictGet SQL fragment.
+        Returns: dictGet('db.dict_name', 'attr', key1, key2, ...)
+        """
+        db = self.config.database or "local"
+        key_args = ", ".join(str(k) for k in keys)
+        return f"dictGet('{db}.{self.name}', '{attr}', {key_args})"
+
+    def get_or_default(self, attr: str, default, *keys) -> str:
+        """Generate dictGetOrDefault SQL fragment."""
+        db = self.config.database or "local"
+        key_args = ", ".join(str(k) for k in keys)
+        return f"dictGetOrDefault('{db}.{self.name}', '{attr}', {key_args}, {default})"
+
+    def has(self, *keys) -> str:
+        """Generate dictHas SQL fragment."""
+        db = self.config.database or "local"
+        key_args = ", ".join(str(k) for k in keys)
+        return f"dictHas('{db}.{self.name}', {key_args})"
+```
+
+**Usage example:**
+
+```python
+from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig, OlapConfig
+from moose_lib import HashedLayout, ComplexKeyHashedLayout, DictionaryLifetime
+from moose_lib import moose_runtime_env
+from pydantic import BaseModel
+
+# 1. Source table
+class Product(BaseModel):
+    product_id: str
+    product_name: str
+    category: str
+    price_level: int
+
+products_table = OlapTable[Product](
+    name="products",
+    config=OlapConfig(order_by_fields=["product_id"]),
+)
+
+# 2a. Simple case — direct table reference
+class ProductLookup(BaseModel):
+    product_id: str
+    product_name: str
+    category: str
+
+product_dict = OlapDictionary[ProductLookup](
+    name="dict_products",
+    config=OlapDictionaryConfig(
+        source_table=products_table,
+        primary_key=["product_id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=10, max=15),
+        defaults={"category": "Unknown"},
+    ),
+)
+
+# 2b. External source with secure credentials
+class MongoProduct(BaseModel):
+    product_id: str
+    product_name: str
+
+mongo_dict = OlapDictionary[MongoProduct](
+    name="dict_mongo_products",
+    config=OlapDictionaryConfig(
+        external_source=MongoDbSource(
+            host="mongo.example.com",
+            port=27017,
+            user=moose_runtime_env.get("MONGO_USER"),
+            password=moose_runtime_env.get("MONGO_PASSWORD"),
+            db="catalog",
+            collection="products",
+        ),
+        primary_key=["product_id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=300, max=360),
+    ),
+)
+
+# 3. Use in MV
+f"""
+  SELECT
+    click_id,
+    {product_dict.get("product_name", "product_id")} AS product_name,
+    {product_dict.get("category", "product_id")} AS category
+  FROM raw_clicks
+"""
+```
 
 ### 3.2 Modify: `packages/py-moose-lib/moose_lib/dmv2/_registry.py`
 
-- Add `_olap_dictionaries` dict
+- Add `_olap_dictionaries: Dict[str, Any] = {}`
 
-### 3.3 Modify: `packages/py-moose-lib/moose_lib/internal.py`
+### 3.3 Modify: `packages/py-moose-lib/moose_lib/dmv2/registry.py`
 
-- Add olap dictionary serialization to `InfrastructureMapConfig`
+- Add `get_olap_dictionaries() -> Dict[str, OlapDictionary]` accessor function
+- Add `get_olap_dictionary(name: str) -> OlapDictionary` accessor function
 
-### 3.4 Modify export chain
+### 3.4 Modify: `packages/py-moose-lib/moose_lib/internal.py`
 
-- `dmv2/__init__.py`, `moose_lib/__init__.py` — export OlapDictionary + types
+Add serialization model and conversion:
 
-### 3.5 Unit tests: `packages/py-moose-lib/tests/test_dictionary.py`
+```python
+class OlapDictionaryJson(BaseModel):
+    """Serialization model for OlapDictionary → JSON → Rust CLI."""
+    model_config = ConfigDict(
+        alias_generator=AliasGenerator(serialization_alias=to_camel)
+    )
+    name: str
+    database: Optional[str] = None
+    cluster: Optional[str] = None
+    source: dict  # serialized source config
+    primary_key: list[str]
+    columns: list[dict]  # serialized column definitions
+    layout: dict  # serialized layout config
+    lifetime: Union[int, dict]
+    invalidate: Optional[dict] = None
+    defaults: Optional[dict] = None
+    settings: Optional[dict] = None
+    comment: Optional[str] = None
+    metadata: Optional[dict] = None
+    life_cycle: str = "FULLY_MANAGED"
+```
 
-- Mirror of TS tests
+Add to `InfrastructureMap`:
+```python
+class InfrastructureMap(BaseModel):
+    # ... existing fields ...
+    olap_dictionaries: dict[str, OlapDictionaryJson]
+```
+
+Add conversion in `to_infra_map()`:
+```python
+olap_dictionaries = {}
+for name, d in get_olap_dictionaries().items():
+    olap_dictionaries[name] = OlapDictionaryJson(
+        name=d.name,
+        database=d.config.database,
+        cluster=d.config.cluster,
+        source=_serialize_dict_source(d.config),
+        primary_key=d.config.primary_key,
+        columns=_serialize_dict_columns(d._column_list, d.config.columns),
+        layout=d.config.layout.model_dump(),
+        lifetime=_serialize_lifetime(d.config.lifetime),
+        invalidate=d.config.invalidate.model_dump() if d.config.invalidate else None,
+        defaults=d.config.defaults,
+        settings=d.config.settings,
+        comment=d.config.comment,
+        metadata=d.metadata,
+        life_cycle=(d.life_cycle.value if d.life_cycle else "FULLY_MANAGED"),
+    )
+```
+
+### 3.5 Modify export chain
+
+- `dmv2/__init__.py` — export `OlapDictionary`, `OlapDictionaryConfig`, all layout types, all external source types, `DictionaryColumn`, `DictionaryLifetime`, `DictionaryInvalidation`, `get_olap_dictionaries`
+- `moose_lib/__init__.py` — re-export all of the above
+
+### 3.6 Unit tests: `packages/py-moose-lib/tests/test_olap_dictionary.py`
+
+- Construction with all three source types
+- Source validation: exactly one source field, reject zero/multiple
+- Registration + duplicate rejection
+- `get()`, `get_or_default()`, `has()` SQL fragment generation
+- Composite key tuple wrapping
+- Layout validation (all 16 types)
+- Layout-key compatibility (non-complex requires single key)
+- Named Collection reference rejected
+- Dictionary-to-dictionary source rejected
+- Serialization round-trip via `OlapDictionaryJson`
+- `moose_runtime_env` marker strings in external source credentials
 
 ---
 
