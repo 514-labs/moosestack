@@ -18,36 +18,27 @@ Use `514 env list` to list environment variables for a project. Optionally scope
 
 - `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or 514 URL.
 - `--branch <BRANCH>`: Branch name (infers branch scope).
-- `--all`: Include platform-managed variables for a branch (use with --branch)
-- `--dotenv`: Output as dotenv format (`KEY="value"`), suitable for redirecting to a `.env` file.
+- `--platform`: Include platform-managed variables. Auto-detects the branch from git when `--branch` is omitted.
+- `--dotenv`: Output in dotenv format (`KEY="value"`). Mutually exclusive with `--json`.
 
 :::include /shared/hosting/cli/global-options.mdx
 
 ## Examples
 
 ```bash
+# List user-defined env vars
 514 env list --project acme/analytics-api
 514 env list --project acme/analytics-api --branch feature/new-ingest
+
+# Include platform-managed variables (auto-detects branch from git)
+514 env list --platform
+
+# Export to .env.local for use with moose cli
+514 env list --platform --dotenv > .env.local
+
+# JSON output
 514 --json env list --project acme/analytics-api
 ```
-
-Include platform-managed variables:
-
-```bash
-514 env list --all -b main
-514 --json env list --all -b main
-```
-
-Export to a `.env` file for use with `moose` CLI commands:
-
-```bash
-514 env list --all --dotenv -b main > .env && moose generate migration
-```
-
-## Notes
-
-- `--dotenv` and `--json` are mutually exclusive.
-- `--all` without `--branch` prints a warning and skips platform variables.
 
 ## Related
 
