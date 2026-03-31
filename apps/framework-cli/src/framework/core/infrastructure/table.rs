@@ -2756,11 +2756,18 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
-            constraints: vec![TableConstraint {
-                name: "id_positive".to_string(),
-                expression: "id > 0".to_string(),
-                constraint_type: ConstraintType::Check,
-            }],
+            constraints: vec![
+                TableConstraint {
+                    name: "id_positive".to_string(),
+                    expression: "id > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "future_constraint".to_string(),
+                    expression: "future_expr".to_string(),
+                    constraint_type: ConstraintType::Unparsed("FUTURE_TYPE".to_string()),
+                },
+            ],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,

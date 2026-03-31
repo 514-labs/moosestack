@@ -1055,7 +1055,7 @@ mod tests {
         // We'll test the wrapping logic handles an already Nullable type.
 
         let col_already_nullable = Column {
-            data_type: ColumnType::String,
+            data_type: ColumnType::Nullable(Box::new(ColumnType::String)),
             required: false, // Will become Nullable
             annotations: vec![("LowCardinality".to_string(), Value::Bool(true))],
             ..make_column("test_col_2")

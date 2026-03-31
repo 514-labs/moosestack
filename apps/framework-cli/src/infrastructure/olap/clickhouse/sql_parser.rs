@@ -900,7 +900,9 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
     let mut items: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut depth = 0i32;
-    let mut in_string = false;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
     let mut escape = false;
     for ch in body.chars() {
         if escape {
@@ -908,24 +910,33 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
             escape = false;
             continue;
         }
+        let in_any_quote = in_single_quote || in_double_quote || in_backtick;
         match ch {
-            '\\' if in_string => {
+            '\\' if in_any_quote => {
                 current.push(ch);
                 escape = true;
             }
-            '\'' => {
-                in_string = !in_string;
+            '\'' if !in_double_quote && !in_backtick => {
+                in_single_quote = !in_single_quote;
                 current.push(ch);
             }
-            '(' if !in_string => {
+            '"' if !in_single_quote && !in_backtick => {
+                in_double_quote = !in_double_quote;
+                current.push(ch);
+            }
+            '`' if !in_single_quote && !in_double_quote => {
+                in_backtick = !in_backtick;
+                current.push(ch);
+            }
+            '(' if !in_any_quote => {
                 depth += 1;
                 current.push(ch);
             }
-            ')' if !in_string => {
+            ')' if !in_any_quote => {
                 depth -= 1;
                 current.push(ch);
             }
-            ',' if !in_string && depth == 0 => {
+            ',' if !in_any_quote && depth == 0 => {
                 items.push(current.trim().to_string());
                 current.clear();
             }
@@ -950,20 +961,22 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
             None => continue,
         };
 
-        // Name is the next token, handle backtick quoting
-        let (name, after_name) = if after_keyword.starts_with('`') {
-            // Find the matching closing backtick properly respecting UTF-8 char boundaries
+        // Name is the next token, handle backtick or double quoting
+        let (name, after_name) = if after_keyword.starts_with('`') || after_keyword.starts_with('"')
+        {
+            let quote_char = after_keyword.chars().next().unwrap();
+            // Find the matching closing quote properly respecting UTF-8 char boundaries
             let mut end_idx = None;
             let mut chars = after_keyword.char_indices().skip(1);
             while let Some((idx, ch)) = chars.next() {
-                if ch == '`' {
-                    // Check if it's an escaped backtick (``)
-                    let next_is_backtick = chars
+                if ch == quote_char {
+                    // Check if it's an escaped quote (e.g. `` or "")
+                    let next_is_quote = chars
                         .clone()
                         .next()
-                        .is_some_and(|(_, next_ch)| next_ch == '`');
-                    if next_is_backtick {
-                        chars.next(); // skip the second backtick
+                        .is_some_and(|(_, next_ch)| next_ch == quote_char);
+                    if next_is_quote {
+                        chars.next(); // skip the second quote
                         continue;
                     }
                     end_idx = Some(idx);
@@ -972,11 +985,13 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
             }
 
             if let Some(idx) = end_idx {
-                let name = after_keyword[1..idx].replace("``", "`"); // extract and unescape
+                let escaped_quote = format!("{}{}", quote_char, quote_char);
+                let unescaped_quote = quote_char.to_string();
+                let name = after_keyword[1..idx].replace(&escaped_quote, &unescaped_quote); // extract and unescape
                 let after_name = after_keyword[idx + 1..].trim_start();
                 (name, after_name)
             } else {
-                // Fallback if no closing backtick
+                // Fallback if no closing quote
                 let name_end = after_keyword
                     .find(|c: char| c.is_whitespace())
                     .unwrap_or(after_keyword.len());
@@ -3277,6 +3292,36 @@ ENGINE = MergeTree"#;
         assert_eq!(constraints[0].name, "foo🔥bar");
         assert_eq!(constraints[0].constraint_type, "CHECK");
         assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 10: Constraint names with double quotes
+        let sql_double_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT "not null" CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_double_quotes);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 11: Constraint names with commas inside quotes
+        let sql_comma_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `comma,name` CHECK id > 0,
+    CONSTRAINT "comma,name2" CHECK id > 1
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_comma_quotes);
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0].name, "comma,name");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+        assert_eq!(constraints[1].name, "comma,name2");
+        assert_eq!(constraints[1].constraint_type, "CHECK");
+        assert_eq!(constraints[1].expression, "id > 1");
     }
 
     #[test]
