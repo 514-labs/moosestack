@@ -22,8 +22,6 @@ use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::versions::{version_to_string, Version};
 
-use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
-
 use super::infrastructure_map::{
     apply_detected_renames, Change, ColumnChange, DetectedColumnRename, InfraChanges, OlapChange,
     PendingTableRenames, TableChange,
@@ -34,18 +32,18 @@ use super::infrastructure_map::{
 pub enum DestructiveChange {
     TableDrop {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
         version: Option<Version>,
     },
     ColumnDrop {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
         column_name: String,
     },
     /// A table that must be dropped and recreated (ORDER BY, PARTITION BY, engine, etc.)
     TableRecreate {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
         reason: String,
         version: Option<Version>,
     },
@@ -71,28 +69,28 @@ impl fmt::Display for DestructiveChange {
         match self {
             DestructiveChange::TableDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 ..
             } => {
                 write!(f, "DROP TABLE ")?;
-                fmt_qualified(f, database, table_name)
+                fmt_qualified(f, database, table_name_with_suffix)
             }
             DestructiveChange::ColumnDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 column_name,
             } => {
                 write!(f, "DROP COLUMN `{column_name}` FROM ")?;
-                fmt_qualified(f, database, table_name)
+                fmt_qualified(f, database, table_name_with_suffix)
             }
             DestructiveChange::TableRecreate {
                 database,
-                table_name,
+                table_name_with_suffix,
                 reason,
                 ..
             } => {
                 write!(f, "DROP + RECREATE ")?;
-                fmt_qualified(f, database, table_name)?;
+                fmt_qualified(f, database, table_name_with_suffix)?;
                 write!(f, " ({reason})")
             }
             DestructiveChange::ViewDrop {
@@ -140,13 +138,13 @@ impl PlanRisk {
         self.destructive_changes.retain(|dc| {
             if let DestructiveChange::ColumnDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 column_name,
             } = dc
             {
                 !approved.contains(&ApprovedColumnDrop {
                     database: database.clone(),
-                    table_name: table_name.clone(),
+                    table_name_with_suffix: table_name_with_suffix.clone(),
                     column_name: column_name.clone(),
                 })
             } else {
@@ -161,7 +159,7 @@ impl PlanRisk {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ApprovedColumnDrop {
     pub database: Option<String>,
-    pub table_name: String,
+    pub table_name_with_suffix: String,
     pub column_name: String,
 }
 
@@ -208,14 +206,14 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                 if recreated_table_keys.contains(&key) {
                     destructive_changes.push(DestructiveChange::TableRecreate {
                         database: table.database.clone(),
-                        table_name: table.name.clone(),
+                        table_name_with_suffix: table.name.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
                         version: table.version.clone(),
                     });
                 } else {
                     destructive_changes.push(DestructiveChange::TableDrop {
                         database: table.database.clone(),
-                        table_name: table.name.clone(),
+                        table_name_with_suffix: table.name.clone(),
                         version: table.version.clone(),
                     });
                 }
@@ -229,7 +227,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                     if let ColumnChange::Removed(col) = col_change {
                         destructive_changes.push(DestructiveChange::ColumnDrop {
                             database: before.database.clone(),
-                            table_name: before.name.clone(),
+                            table_name_with_suffix: before.name.clone(),
                             column_name: col.name.clone(),
                         });
                     }
@@ -579,109 +577,6 @@ pub async fn confirm_renames_and_classify(
 }
 
 // ---------------------------------------------------------------------------
-// classify_operations_risk (used by `moose migrate`)
-// ---------------------------------------------------------------------------
-
-/// Classifies risk from serialized migration operations (used by `moose migrate`).
-///
-/// Detects `DropTable`, `DropTableColumn`, and `DropView`/`DropMaterializedView`
-/// operations. A `DropTable` followed by a `CreateTable` with the same
-/// (database, name) pair is classified as a recreate.
-pub fn classify_operations_risk(operations: &[SerializableOlapOperation]) -> PlanRisk {
-    let mut destructive_changes = Vec::new();
-
-    let dropped_tables: HashSet<(Option<&str>, &str)> = operations
-        .iter()
-        .filter_map(|op| match op {
-            SerializableOlapOperation::DropTable {
-                table, database, ..
-            } => Some((database.as_deref(), table.as_str())),
-            _ => None,
-        })
-        .collect();
-
-    let created_tables: HashSet<(Option<&str>, &str)> = operations
-        .iter()
-        .filter_map(|op| match op {
-            SerializableOlapOperation::CreateTable { table } => {
-                Some((table.database.as_deref(), table.name.as_str()))
-            }
-            _ => None,
-        })
-        .collect();
-
-    let recreated: HashSet<(Option<&str>, &str)> = dropped_tables
-        .intersection(&created_tables)
-        .copied()
-        .collect();
-
-    let version_by_name: HashMap<(Option<&str>, &str), Option<&Version>> = operations
-        .iter()
-        .filter_map(|op| match op {
-            SerializableOlapOperation::CreateTable { table } => Some((
-                (table.database.as_deref(), table.name.as_str()),
-                table.version.as_ref(),
-            )),
-            _ => None,
-        })
-        .collect();
-
-    for op in operations {
-        match op {
-            SerializableOlapOperation::DropTable {
-                table, database, ..
-            } => {
-                let key = (database.as_deref(), table.as_str());
-                let version = version_by_name.get(&key).and_then(|v| v.cloned());
-                if recreated.contains(&key) {
-                    destructive_changes.push(DestructiveChange::TableRecreate {
-                        database: database.clone(),
-                        table_name: table.clone(),
-                        reason: "schema change requires drop + recreate".to_string(),
-                        version,
-                    });
-                } else {
-                    destructive_changes.push(DestructiveChange::TableDrop {
-                        database: database.clone(),
-                        table_name: table.clone(),
-                        version,
-                    });
-                }
-            }
-            SerializableOlapOperation::DropTableColumn {
-                table,
-                column_name,
-                database,
-                ..
-            } => {
-                destructive_changes.push(DestructiveChange::ColumnDrop {
-                    database: database.clone(),
-                    table_name: table.clone(),
-                    column_name: column_name.clone(),
-                });
-            }
-            SerializableOlapOperation::DropView { name, database } => {
-                destructive_changes.push(DestructiveChange::ViewDrop {
-                    database: database.clone(),
-                    view_name: name.clone(),
-                });
-            }
-            SerializableOlapOperation::DropMaterializedView { name, database, .. } => {
-                destructive_changes.push(DestructiveChange::MaterializedViewDrop {
-                    database: database.clone(),
-                    view_name: name.clone(),
-                });
-            }
-            _ => {}
-        }
-    }
-
-    PlanRisk {
-        destructive_changes,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Migration-generation specific destructive gate
 // ---------------------------------------------------------------------------
 
@@ -748,18 +643,18 @@ fn collect_destructive_table_info(risk: &PlanRisk) -> Vec<DestructiveTableInfo> 
         .filter_map(|c| match c {
             DestructiveChange::TableRecreate {
                 database,
-                table_name,
+                table_name_with_suffix,
                 version,
                 ..
             }
             | DestructiveChange::TableDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 version,
             } => Some(DestructiveTableInfo {
-                table_name: table_name.clone(),
+                table_name: table_name_with_suffix.clone(),
                 database: database.clone(),
-                next_version_name: derive_next_version(table_name, version.as_ref()),
+                next_version_name: derive_next_version(table_name_with_suffix, version.as_ref()),
                 next_version_string: derive_next_version_string(version.as_ref()),
             }),
             _ => None,
@@ -819,7 +714,8 @@ pub async fn migration_destructive_gate(
         Message::new(
             "DANGER".to_string(),
             format!(
-                "The operation that you just committed is going to create destructive changes:\n{}",
+                "The generated migration plan contains {} destructive operation(s) that may cause data loss:\n{}",
+                risk.destructive_changes.len(),
                 summary
             )
         )
@@ -1051,7 +947,7 @@ pub async fn rename_confirmation_gate(
                     );
                     approved_drops.insert(ApprovedColumnDrop {
                         database: table_renames.database.clone(),
-                        table_name: table_renames.table_name.clone(),
+                        table_name_with_suffix: table_renames.table_name.clone(),
                         column_name: rename.before.name.clone(),
                     });
                 }
@@ -1193,7 +1089,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableDrop { database: None, table_name, .. } if table_name == "events"
+            DestructiveChange::TableDrop { database: None, table_name_with_suffix, .. } if table_name_with_suffix == "events"
         ));
     }
 
@@ -1221,8 +1117,8 @@ mod tests {
         assert!(risk.is_destructive());
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::ColumnDrop { database: None, table_name, column_name }
-                if table_name == "events" && column_name == "old_col"
+            DestructiveChange::ColumnDrop { database: None, table_name_with_suffix, column_name }
+                if table_name_with_suffix == "events" && column_name == "old_col"
         ));
     }
 
@@ -1243,7 +1139,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableRecreate { database: None, table_name, .. } if table_name == "events"
+            DestructiveChange::TableRecreate { database: None, table_name_with_suffix, .. } if table_name_with_suffix == "events"
         ));
     }
 
@@ -1466,123 +1362,10 @@ mod tests {
 
         let approved = HashSet::from([ApprovedColumnDrop {
             database: None,
-            table_name: "events".to_string(),
+            table_name_with_suffix: "events".to_string(),
             column_name: "old_name".to_string(),
         }]);
         risk.exclude_approved_drops(&approved);
-        assert!(!risk.is_destructive());
-    }
-
-    // ---------------------------------------------------------------
-    // classify_operations_risk tests
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn ops_empty_is_not_destructive() {
-        let risk = classify_operations_risk(&[]);
-        assert!(!risk.is_destructive());
-    }
-
-    #[test]
-    fn ops_drop_table_is_destructive() {
-        let ops = vec![SerializableOlapOperation::DropTable {
-            table: "events".to_string(),
-            database: None,
-            cluster_name: None,
-        }];
-        let risk = classify_operations_risk(&ops);
-        assert!(risk.is_destructive());
-        assert!(matches!(
-            &risk.destructive_changes[0],
-            DestructiveChange::TableDrop { table_name, .. } if table_name == "events"
-        ));
-    }
-
-    #[test]
-    fn ops_drop_plus_create_same_name_is_recreate() {
-        let ops = vec![
-            SerializableOlapOperation::DropTable {
-                table: "events".to_string(),
-                database: None,
-                cluster_name: None,
-            },
-            SerializableOlapOperation::CreateTable {
-                table: make_table("events"),
-            },
-        ];
-        let risk = classify_operations_risk(&ops);
-        assert!(risk.is_destructive());
-        assert_eq!(risk.destructive_changes.len(), 1);
-        assert!(matches!(
-            &risk.destructive_changes[0],
-            DestructiveChange::TableRecreate { table_name, .. } if table_name == "events"
-        ));
-    }
-
-    #[test]
-    fn ops_drop_column_is_destructive() {
-        let ops = vec![SerializableOlapOperation::DropTableColumn {
-            table: "events".to_string(),
-            column_name: "old_col".to_string(),
-            database: None,
-            cluster_name: None,
-        }];
-        let risk = classify_operations_risk(&ops);
-        assert!(risk.is_destructive());
-        assert!(matches!(
-            &risk.destructive_changes[0],
-            DestructiveChange::ColumnDrop { table_name, column_name, .. }
-                if table_name == "events" && column_name == "old_col"
-        ));
-    }
-
-    #[test]
-    fn ops_drop_view_is_destructive() {
-        let ops = vec![SerializableOlapOperation::DropView {
-            name: "my_view".to_string(),
-            database: None,
-        }];
-        let risk = classify_operations_risk(&ops);
-        assert!(risk.is_destructive());
-        assert!(matches!(
-            &risk.destructive_changes[0],
-            DestructiveChange::ViewDrop { view_name, .. } if view_name == "my_view"
-        ));
-    }
-
-    #[test]
-    fn ops_drop_mv_is_destructive() {
-        let ops = vec![SerializableOlapOperation::DropMaterializedView {
-            name: "my_mv".to_string(),
-            database: None,
-        }];
-        let risk = classify_operations_risk(&ops);
-        assert!(risk.is_destructive());
-        assert!(matches!(
-            &risk.destructive_changes[0],
-            DestructiveChange::MaterializedViewDrop { view_name, .. } if view_name == "my_mv"
-        ));
-    }
-
-    #[test]
-    fn ops_create_only_is_not_destructive() {
-        let ops = vec![SerializableOlapOperation::CreateTable {
-            table: make_table("new_table"),
-        }];
-        let risk = classify_operations_risk(&ops);
-        assert!(!risk.is_destructive());
-    }
-
-    #[test]
-    fn ops_add_column_is_not_destructive() {
-        let ops = vec![SerializableOlapOperation::AddTableColumn {
-            table: "events".to_string(),
-            column: make_column("new_col"),
-            after_column: None,
-            database: None,
-            cluster_name: None,
-        }];
-        let risk = classify_operations_risk(&ops);
         assert!(!risk.is_destructive());
     }
 
@@ -1619,7 +1402,7 @@ mod tests {
         let risk = PlanRisk {
             destructive_changes: vec![DestructiveChange::TableRecreate {
                 database: None,
-                table_name: "Events_3".to_string(),
+                table_name_with_suffix: "Events_3".to_string(),
                 reason: "order by changed".to_string(),
                 version: Some(v),
             }],
@@ -1635,7 +1418,7 @@ mod tests {
         let risk = PlanRisk {
             destructive_changes: vec![DestructiveChange::TableDrop {
                 database: Some("analytics".to_string()),
-                table_name: "Users".to_string(),
+                table_name_with_suffix: "Users".to_string(),
                 version: None,
             }],
         };
@@ -1657,7 +1440,7 @@ mod tests {
                 },
                 DestructiveChange::ColumnDrop {
                     database: None,
-                    table_name: "events".to_string(),
+                    table_name_with_suffix: "events".to_string(),
                     column_name: "old_col".to_string(),
                 },
             ],

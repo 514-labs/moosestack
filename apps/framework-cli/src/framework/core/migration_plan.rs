@@ -1,4 +1,4 @@
-use crate::framework::core::infrastructure::table::Table;
+use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
 use crate::framework::core::infrastructure_map::{InfraChanges, InfrastructureMap};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
@@ -6,7 +6,7 @@ use crate::infrastructure::olap::ddl_ordering::PlanOrderingError;
 use crate::utilities::json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A comprehensive migration plan that can be reviewed, approved, and executed
 ///
@@ -63,7 +63,7 @@ impl MigrationPlan {
             })
             .collect();
 
-        let existing_raw_sqls: std::collections::HashSet<String> = self
+        let existing_raw_sqls: HashSet<String> = self
             .operations
             .iter()
             .filter_map(|op| match op {
@@ -214,21 +214,12 @@ fn find_base_table<'a>(
 
 /// Two column sets are equivalent when they contain the same columns
 /// (by name, data_type, and required) regardless of order.
-fn columns_equivalent(
-    a: &[crate::framework::core::infrastructure::table::Column],
-    b: &[crate::framework::core::infrastructure::table::Column],
-) -> bool {
-    use std::collections::HashSet;
-
+fn columns_equivalent(a: &[Column], b: &[Column]) -> bool {
     if a.len() != b.len() {
         return false;
     }
 
-    type ColKey<'c> = (
-        &'c str,
-        &'c crate::framework::core::infrastructure::table::ColumnType,
-        bool,
-    );
+    type ColKey<'c> = (&'c str, &'c ColumnType, bool);
 
     let set_a: HashSet<ColKey> = a
         .iter()
@@ -243,10 +234,7 @@ fn columns_equivalent(
 }
 
 /// Produces a human-readable description of why two column sets differ.
-fn schema_diff_reason(
-    source: &[crate::framework::core::infrastructure::table::Column],
-    target: &[crate::framework::core::infrastructure::table::Column],
-) -> String {
+fn schema_diff_reason(source: &[Column], target: &[Column]) -> String {
     use std::collections::HashSet;
     let src_names: HashSet<&str> = source.iter().map(|c| c.name.as_str()).collect();
     let tgt_names: HashSet<&str> = target.iter().map(|c| c.name.as_str()).collect();
