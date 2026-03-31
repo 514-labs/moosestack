@@ -88,6 +88,12 @@ generate_local_jwt_keypair() {
   node -e 'const { generateKeyPairSync } = require("node:crypto"); const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }); console.log(JSON.stringify({ privateKey: privateKey.replace(/\n/g, "\\n"), publicKey: publicKey.replace(/\n/g, "\\n") }));'
 }
 
+derive_public_key_from_private() {
+  local private_key="$1"
+
+  node -e 'const { createPrivateKey, createPublicKey } = require("node:crypto"); const privateKey = process.argv[1].replace(/\\n/g, "\n"); const publicKey = createPublicKey(createPrivateKey(privateKey)).export({ type: "spki", format: "pem" }); process.stdout.write(publicKey.trimEnd());' -- "${private_key}"
+}
+
 copy_if_missing() {
   local source_path="$1"
   local target_path="$2"
@@ -140,24 +146,31 @@ seed_web_auth_secret() {
 seed_local_jwt_keys() {
   local existing_private_key=""
   local existing_public_key=""
+  local derived_public_key=""
 
   existing_private_key="$(read_env_value "${WEB_ENV_LOCAL}" "LOCAL_DEV_JWT_PRIVATE_KEY" || true)"
   existing_public_key="$(read_env_value "${SERVICE_ENV_LOCAL}" "MOOSE_JWT__SECRET" || true)"
 
-  if [[ -n "${existing_private_key}" && -n "${existing_public_key}" ]]; then
+  if [[ -z "${existing_private_key}" && -z "${existing_public_key}" ]]; then
+    local keypair_json
+    keypair_json="$(generate_local_jwt_keypair)"
+    local private_key
+    local public_key
+    private_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.privateKey);' "${keypair_json}")"
+    public_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.publicKey);' "${keypair_json}")"
+
+    set_env_value "${WEB_ENV_LOCAL}" "LOCAL_DEV_JWT_PRIVATE_KEY" "\"${private_key}\""
+    set_env_value "${SERVICE_ENV_LOCAL}" "MOOSE_JWT__SECRET" "\"${public_key}\""
+    log "Generated a local RSA keypair for tenant JWTs"
     return
   fi
 
-  local keypair_json
-  keypair_json="$(generate_local_jwt_keypair)"
-  local private_key
-  local public_key
-  private_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.privateKey);' "${keypair_json}")"
-  public_key="$(node -e 'const keypair = JSON.parse(process.argv[1]); process.stdout.write(keypair.publicKey);' "${keypair_json}")"
-
-  set_env_value "${WEB_ENV_LOCAL}" "LOCAL_DEV_JWT_PRIVATE_KEY" "\"${private_key}\""
-  set_env_value "${SERVICE_ENV_LOCAL}" "MOOSE_JWT__SECRET" "\"${public_key}\""
-  log "Generated a local RSA keypair for tenant JWTs"
+  if [[ -n "${existing_private_key}" && -n "${existing_public_key}" ]]; then
+    derived_public_key="$(derive_public_key_from_private "${existing_private_key}")"
+    if [[ "${derived_public_key}" != "${existing_public_key}" ]]; then
+      fail "Detected mismatched local JWT keypair. LOCAL_DEV_JWT_PRIVATE_KEY in packages/web-app/.env.local does not match MOOSE_JWT__SECRET in packages/moosestack-service/.env.local. Remove both values and rerun pnpm env:prepare"
+    fi
+  fi
 }
 
 ensure_env_files() {
@@ -175,17 +188,54 @@ read_env_value() {
     return 1
   fi
 
-  local line
-  line="$(grep -E "^${variable_name}=" "${file_path}" | tail -n 1 || true)"
+  local value
+  value="$(
+    awk -v name="${variable_name}" '
+      BEGIN {
+        prefix = name "="
+        capture = 0
+        current = ""
+        value = ""
+        found = 0
+      }
+      capture == 1 {
+        current = current ORS $0
+        if ($0 ~ /"$/) {
+          value = current
+          found = 1
+          capture = 0
+        }
+        next
+      }
+      index($0, prefix) == 1 {
+        current = substr($0, length(prefix) + 1)
+        if (current ~ /^"/ && current !~ /"$/) {
+          capture = 1
+          next
+        }
+        value = current
+        found = 1
+      }
+      END {
+        if (capture == 1) {
+          value = current
+          found = 1
+        }
+        if (found) {
+          print value
+        }
+      }
+    ' "${file_path}"
+  )"
 
-  if [[ -z "${line}" ]]; then
+  if [[ -z "${value}" ]]; then
     return 1
   fi
 
-  local value="${line#*=}"
   value="${value%$'\r'}"
-  if [[ "${value}" =~ ^\"(.*)\"$ ]]; then
-    value="${BASH_REMATCH[1]}"
+  if [[ "${value}" == '"'*'"' ]]; then
+    value="${value#\"}"
+    value="${value%\"}"
   fi
 
   printf '%s\n' "${value}"

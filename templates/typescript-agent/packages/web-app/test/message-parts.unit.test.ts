@@ -32,7 +32,7 @@ describe("message-parts guards", () => {
           duration: 42,
           stepNumber: 1,
           toolCallId: "call-1",
-          toolName: "query_clickhouse",
+          toolName: "query_tenant_knowledge_metrics",
         },
       }),
     ).toBe(true);
@@ -44,7 +44,7 @@ describe("message-parts guards", () => {
           duration: Number.NaN,
           stepNumber: 1,
           toolCallId: "call-1",
-          toolName: "query_clickhouse",
+          toolName: "query_tenant_knowledge_metrics",
         },
       }),
     ).toBe(false);
@@ -56,7 +56,7 @@ describe("message-parts guards", () => {
           duration: 10,
           stepNumber: -1,
           toolCallId: "call-1",
-          toolName: "query_clickhouse",
+          toolName: "query_tenant_knowledge_metrics",
         },
       }),
     ).toBe(false);
