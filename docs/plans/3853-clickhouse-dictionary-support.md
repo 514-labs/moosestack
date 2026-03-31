@@ -914,6 +914,32 @@ for name, d in get_olap_dictionaries().items():
 
 ---
 
+## Backward compatibility
+
+This feature is purely additive — no breaking changes for existing Moose projects. However, several implementation details must be handled correctly to avoid regressions:
+
+**Critical guardrails:**
+
+1. **`#[serde(default)]` on the `dictionaries` field** — existing serialized `InfrastructureMap` JSON (from `moose check`, `moose build`, Redis state) does not contain a `dictionaries` key. Without `#[serde(default)]`, deserialization will fail → crash on startup. This is the #1 risk. Same pattern already used for every existing field on `InfrastructureMap`.
+
+2. **Proto field numbers** — must use the next available field number in `infrastructure_map.proto`, never reuse or conflict with existing ones. A collision would cause silent state corruption on existing deployments.
+
+3. **Empty dictionary map = zero operations** — `init_tables()`, `diff_dictionaries()`, and DDL ordering must handle the empty case gracefully. A project with no dictionaries must produce identical behavior to before this change.
+
+4. **Wildcard match arms** — places like `plan_risk.rs` (`_ => {}`) and `show_olap_changes` silently handle unknown `OlapChange` variants. All such match arms must be updated to explicitly handle `OlapChange::Dictionary(...)` before merging — otherwise dictionary drops/replacements are silently skipped without warnings.
+
+5. **Template lockfiles** — any test templates that add `OlapDictionary` must have their `pnpm-lock.yaml` regenerated (`cd templates/<name> && rm -rf node_modules && pnpm install`), or E2E tests will fail with dirty working tree checks.
+
+**Safe by design:**
+
+- **Protobuf backward compatibility** — new fields are ignored by old code, missing fields get defaults. Existing Redis-stored state will deserialize with `dictionaries = {}`.
+- **SDK exports** — only new exports added (`OlapDictionary`, config types, layout types). All existing primitives (`OlapTable`, `MaterializedView`, `View`, etc.) are untouched.
+- **DDL ordering** — new operation types are additive. Existing dependency graph edges are unchanged.
+- **`moose plan` / `moose dev`** — for projects without dictionaries, diff produces zero dictionary changes. No behavioral difference.
+- **CLI version compatibility** — an older CLI reading state written by a newer CLI will ignore unknown proto fields (dictionaries). A newer CLI reading old state will see `dictionaries = {}`. Both directions are safe.
+
+---
+
 ## Deferred (follow-up PRs)
 
 - `moose db pull` introspection for dictionaries (complex `system.dictionaries` / `SHOW CREATE DICTIONARY` parsing)
