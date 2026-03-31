@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => {
   const bedrockModelFactory = vi.fn((modelId: string) => {
     return { provider: "bedrock", modelId };
   });
+  const convertToModelMessagesMock = vi.fn(
+    async (messages: unknown) => messages,
+  );
   const openAiModelFactory = vi.fn((modelId: string) => {
     return { provider: "openai", modelId };
   });
@@ -15,6 +18,7 @@ const mocks = vi.hoisted(() => {
   return {
     anthropicModelFactory,
     bedrockModelFactory,
+    convertToModelMessagesMock,
     openAiModelFactory,
     createAnthropicMock: vi.fn(() => anthropicModelFactory),
     createAmazonBedrockMock: vi.fn(() => bedrockModelFactory),
@@ -35,6 +39,7 @@ vi.mock("ai", async (importOriginal) => {
 
   return {
     ...actual,
+    convertToModelMessages: mocks.convertToModelMessagesMock,
     createUIMessageStream: mocks.createUIMessageStreamMock,
     generateText: mocks.generateTextMock,
     streamText: mocks.streamTextMock,
@@ -89,6 +94,7 @@ describe("createAgentRuntime", () => {
     mocks.createOpenAiMock.mockClear();
     mocks.anthropicModelFactory.mockClear();
     mocks.bedrockModelFactory.mockClear();
+    mocks.convertToModelMessagesMock.mockReset();
     mocks.openAiModelFactory.mockClear();
     mocks.createUIMessageStreamMock.mockClear();
     mocks.generateTextMock.mockReset();
@@ -100,6 +106,9 @@ describe("createAgentRuntime", () => {
     mocks.mcpToolsMock.mockResolvedValue({
       query_clickhouse: { description: "Run read-only SQL" },
     });
+    mocks.convertToModelMessagesMock.mockImplementation(
+      async (messages) => messages,
+    );
     mocks.experimentalCreateMcpClientMock.mockResolvedValue({
       tools: mocks.mcpToolsMock,
       close: mocks.mcpCloseMock,
@@ -186,6 +195,35 @@ describe("createAgentRuntime", () => {
     });
   });
 
+  it("builds an OpenAI runtime when configured", async () => {
+    const runtime = await createAgentRuntime({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      mcpServerUrl: "http://localhost:4000",
+      providerConfig: {
+        provider: "openai",
+        apiKey: "openai-key",
+        modelId: "gpt-4.1-mini",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+    });
+
+    expect(mocks.createOpenAiMock).toHaveBeenCalledWith({
+      apiKey: "openai-key",
+    });
+    expect(mocks.openAiModelFactory).toHaveBeenCalledWith("gpt-4.1-mini");
+    expect(runtime.provider).toBe("openai");
+    expect(runtime.modelId).toBe("gpt-4.1-mini");
+  });
+
   it("wraps MCP connection failures with startup guidance", async () => {
     mocks.experimentalCreateMcpClientMock.mockRejectedValueOnce(
       new Error("fetch failed"),
@@ -220,6 +258,35 @@ describe("createAgentRuntime", () => {
     await expect(runtimePromise).rejects.toBeInstanceOf(
       McpServerUnavailableError,
     );
+  });
+
+  it("closes the MCP client if message conversion fails after tool discovery", async () => {
+    mocks.convertToModelMessagesMock.mockRejectedValueOnce(
+      new Error("Invalid message payload"),
+    );
+
+    await expect(
+      createAgentRuntime({
+        messages: userMessages,
+        bearerToken: "tenant-token",
+        mcpServerUrl: "http://localhost:4000",
+        providerConfig: {
+          provider: "anthropic",
+          apiKey: "anthropic-key",
+        },
+        guardrailAdapter: {
+          assessPrompt: async () => {
+            return {
+              action: "NONE",
+              details: [],
+              latencyMs: 0,
+            };
+          },
+        },
+      }),
+    ).rejects.toThrow("Invalid message payload");
+
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
   });
 
   it("supports explicit Bedrock model selection", async () => {
@@ -463,6 +530,55 @@ describe("createAgentRuntime", () => {
         status: "completed",
         totalInputTokens: 9,
         totalOutputTokens: 4,
+      }),
+    );
+    expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("finalizes and closes the runtime when single-agent execution throws before callbacks register", async () => {
+    const traceCollector = {
+      startTrace: vi.fn(() => "trace-1"),
+      recordStep: vi.fn(),
+      endTrace: vi.fn(async () => undefined),
+    };
+
+    mocks.streamTextMock.mockImplementationOnce(() => {
+      throw new Error("sync stream failure");
+    });
+
+    await createAgentStream({
+      messages: userMessages,
+      bearerToken: "tenant-token",
+      tenantId: "acme",
+      mcpServerUrl: "http://localhost:4000",
+      providerConfig: {
+        provider: "anthropic",
+        apiKey: "anthropic-key",
+      },
+      guardrailAdapter: {
+        assessPrompt: async () => {
+          return {
+            action: "NONE",
+            details: [],
+            latencyMs: 0,
+          };
+        },
+      },
+      traceCollector,
+    });
+
+    const execute = mocks.createUIMessageStreamMock.mock.calls[0][0].execute;
+    const writer = {
+      write: vi.fn(),
+      merge: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    await expect(execute({ writer })).rejects.toThrow("sync stream failure");
+    expect(traceCollector.endTrace).toHaveBeenCalledWith(
+      "trace-1",
+      expect.objectContaining({
+        status: "failed",
       }),
     );
     expect(mocks.mcpCloseMock).toHaveBeenCalledTimes(1);

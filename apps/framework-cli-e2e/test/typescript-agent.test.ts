@@ -17,6 +17,7 @@ import {
   cleanupTestSuite,
   createTempTestDirectory,
   logger,
+  performGlobalCleanup,
   setupTypeScriptProject,
   waitForDBWrite,
   waitForInfrastructureReady,
@@ -267,6 +268,29 @@ async function reserveWebAppPort(): Promise<number> {
   });
 }
 
+function updatePackageName(filePath: string, nextName: string): void {
+  const packageJson = JSON.parse(fs.readFileSync(filePath, "utf-8")) as {
+    name?: string;
+  };
+
+  packageJson.name = nextName;
+  fs.writeFileSync(
+    filePath,
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function createUniqueServicePackageName(projectDir: string): string {
+  const suffix = path
+    .basename(projectDir)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(-12);
+
+  return `moosestack-service-${suffix}`;
+}
+
 async function waitForWebAppReady() {
   await withRetries(
     async () => {
@@ -440,11 +464,19 @@ describe("TypeScript Agent Template E2E", function () {
 
   let projectDir: string;
   let serviceDir: string;
+  let serviceProjectName = "moosestack-service";
   let serviceEnvPath: string;
   let webAppEnvPath: string;
   let webAppPort: number;
   let webProcess: ChildProcess | null = null;
   let mooseProcess: ChildProcess | null = null;
+
+  before(async function () {
+    this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+    await performGlobalCleanup(
+      "Running global cleanup before TypeScript Agent Template E2E",
+    );
+  });
 
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -503,6 +535,12 @@ describe("TypeScript Agent Template E2E", function () {
       cwd: projectDir,
     });
 
+    serviceProjectName = createUniqueServicePackageName(projectDir);
+    updatePackageName(
+      path.join(serviceDir, "package.json"),
+      serviceProjectName,
+    );
+
     mooseProcess = spawn(CLI_PATH, ["dev"], {
       cwd: serviceDir,
       env: {
@@ -534,12 +572,9 @@ describe("TypeScript Agent Template E2E", function () {
     });
 
     await cleanupClickhouseData({ logger: testLogger });
-    const seedResult = await execAsync(
-      "pnpm --filter moosestack-service seed",
-      {
-        cwd: projectDir,
-      },
-    );
+    const seedResult = await execAsync("pnpm seed", {
+      cwd: serviceDir,
+    });
     expect(seedResult.stdout).to.contain(
       "Inserted 4 records into tenant_knowledge",
     );
@@ -584,7 +619,8 @@ describe("TypeScript Agent Template E2E", function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
 
     await stopChildProcess(webProcess, "web app");
-    await cleanupTestSuite(mooseProcess, projectDir, APP_NAME, {
+    await cleanupTestSuite(mooseProcess, projectDir, serviceProjectName, {
+      dockerProjectDir: serviceDir,
       logger: testLogger,
     });
   });
@@ -761,7 +797,7 @@ describe("TypeScript Agent Template E2E", function () {
     );
     expect(blockedSystemQuery.isError).to.equal(true);
     expect(blockedSystemQuery.text).to.include(
-      "System metadata is not exposed by default",
+      "System metadata is not available to this tool",
     );
   });
 

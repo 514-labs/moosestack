@@ -83,10 +83,12 @@ class LangfuseTraceCollector implements TraceCollector {
           totalOutputTokens: summary.totalOutputTokens,
         },
       });
-
-      await this.langfuse.flushAsync().catch(() => undefined);
     } finally {
-      this.traces.delete(traceId);
+      try {
+        await this.langfuse.flushAsync().catch(() => undefined);
+      } finally {
+        this.traces.delete(traceId);
+      }
     }
   }
 }

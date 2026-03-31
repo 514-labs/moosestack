@@ -1,7 +1,7 @@
-import type { MooseUtils } from "@514labs/moose-lib";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v3";
 import { executeReadonlyStatement } from "../../data/clickhouse/readonly-query";
+import type { TenantMooseContext } from "../../http/context/tenant-context";
 import { formatQueryToolError } from "../errors/query-tool-errors";
 import {
   getExposedDataCatalog,
@@ -10,7 +10,7 @@ import {
 
 export function registerQueryClickhouseTool(
   server: McpServer,
-  mooseUtils: MooseUtils,
+  context: Pick<TenantMooseContext, "moose" | "rowPolicyOptions">,
 ): void {
   server.registerTool(
     "query_clickhouse",
@@ -32,12 +32,15 @@ export function registerQueryClickhouseTool(
     },
     async ({ query, limit = 100 }) => {
       try {
-        const { client } = mooseUtils;
+        const { client } = context.moose;
         const validatedQuery = validateExposedReadonlyQuery(query);
         const rows = await executeReadonlyStatement<Record<string, unknown>>(
           client.query,
           validatedQuery,
-          limit,
+          {
+            limit,
+            rowPolicyOptions: context.rowPolicyOptions,
+          },
         );
 
         const output = {

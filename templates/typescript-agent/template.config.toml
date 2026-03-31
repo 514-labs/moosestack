@@ -1,5 +1,7 @@
 language = "typescript" # Must be typescript or python
 description = "TypeScript agent starter with MCP tools, Moose-owned dashboard APIs, JWT RLS, Bedrock support, and Langfuse tracing."
+frameworks = ["Next.js", "MCP", "Agents"]
+features = ["Moose OLAP", "Moose APIs", "Frontend", "MCP", "Auth", "Agents"]
 post_install_print = """
 Deploy on Boreal
 
@@ -16,6 +18,9 @@ Run this next:
 
 📦 Install all dependencies:
     $ pnpm install
+
+🔧 Build workspace packages:
+    $ pnpm build
 
 🔐 Create environment files:
     $ pnpm env:prepare

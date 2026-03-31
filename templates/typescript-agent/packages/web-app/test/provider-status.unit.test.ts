@@ -17,7 +17,10 @@ vi.mock("@/env-vars", () => {
 import { getChatProviderStatus } from "../src/lib/provider-status";
 
 describe("getChatProviderStatus", () => {
+  let previousAnthropicApiKey: string | undefined;
+
   beforeEach(() => {
+    previousAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
     getAiProviderMock.mockReset();
     getMcpServerUrlMock.mockReset();
     getAiProviderMock.mockReturnValue("anthropic");
@@ -26,7 +29,11 @@ describe("getChatProviderStatus", () => {
   });
 
   afterEach(() => {
-    delete process.env.ANTHROPIC_API_KEY;
+    if (previousAnthropicApiKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = previousAnthropicApiKey;
+    }
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });

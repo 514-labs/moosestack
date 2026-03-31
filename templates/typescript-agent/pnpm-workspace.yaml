@@ -71,6 +71,7 @@ catalog:
   motion: "12.38.0"
   nanoid: "5.1.7"
   next: "16.1.6"
+  # Auth.js v5 beta is required for the template's App Router integration.
   next-auth: "5.0.0-beta.30"
   next-themes: "0.2.1"
   radix-ui: "1.4.3"

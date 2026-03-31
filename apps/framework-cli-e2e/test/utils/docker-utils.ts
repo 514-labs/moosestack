@@ -1,7 +1,23 @@
 import { TIMEOUTS } from "../constants";
-import { logger, ScopedLogger } from "./logger";
+import { logger, type ScopedLogger } from "./logger";
 
 const dockerLogger = logger.scope("utils:docker");
+
+const STALE_E2E_CONTAINER_PREFIXES = [
+  "moose-e2e-test-",
+  "moosestack-service-moose-e2e-test-",
+  "moose-ts-agent-app-",
+  "moose-ts-otlp-app-",
+  "moose-ts-rls-app-",
+  "test-unloaded-ts-",
+  "test-unloaded-py-",
+  "test-override-app-",
+  "ts-dotenv-config-test-",
+  "py-dotenv-config-test-",
+  "incr-test-app-",
+  "query-cmd-test-",
+  "ts-migrate-",
+] as const;
 
 export interface DockerOptions {
   logger?: ScopedLogger;
@@ -48,6 +64,41 @@ const withTimeout = async <T>(
   });
 };
 
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function isStaleE2eContainer(name: string): boolean {
+  return STALE_E2E_CONTAINER_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
+async function removeStaleTestContainers(log: ScopedLogger): Promise<void> {
+  const { stdout } = await withTimeout(
+    execAsync("docker ps -a --format '{{.Names}}'"),
+    TIMEOUTS.DOCKER_VOLUME_LIST_MS,
+    "Docker container list timeout",
+  );
+
+  const staleContainers = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(isStaleE2eContainer);
+
+  if (staleContainers.length === 0) {
+    return;
+  }
+
+  log.debug("Removing stale E2E containers", { staleContainers });
+  await withTimeout(
+    execAsync(
+      `docker rm -f ${staleContainers.map(shellEscape).join(" ")} || true`,
+    ),
+    TIMEOUTS.DOCKER_COMPOSE_DOWN_MS,
+    "Stale Docker container cleanup timeout",
+  );
+}
+
 /**
  * Cleans up Docker resources with timeouts to prevent hanging
  */
@@ -64,7 +115,9 @@ export const cleanupDocker = async (
     await withTimeout(
       execAsync(
         `docker compose -f .moose/docker-compose.yml -p ${appName} down -v`,
-        { cwd: projectDir },
+        {
+          cwd: projectDir,
+        },
       ),
       TIMEOUTS.DOCKER_COMPOSE_DOWN_MS,
       "Docker compose down timeout",
@@ -112,6 +165,7 @@ export const globalDockerCleanup = async (
 
   try {
     log.debug("Running global Docker cleanup");
+    await removeStaleTestContainers(log);
     await withTimeout(
       execAsync("docker system prune -f --volumes || true"),
       TIMEOUTS.DOCKER_COMPOSE_DOWN_MS,

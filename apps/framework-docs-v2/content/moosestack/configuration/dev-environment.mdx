@@ -10,6 +10,41 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 This reference covers configuration options specific to the local development workflow (`moose dev`), including lifecycle hooks, Docker infrastructure extensions, and network defaults.
 
+## Container Runtime
+
+By default, Moose uses `docker` as the container runtime for local development infrastructure. You can switch to an alternative Docker-compatible CLI such as [Finch](https://github.com/runfinch/finch), [Podman](https://podman.io/), or [nerdctl](https://github.com/containerd/nerdctl).
+
+### Configuration
+
+Set the container CLI in your global Moose config file:
+
+```toml filename="~/.moose/config.toml"
+[dev]
+container_cli_path = "finch"
+```
+
+This applies to all Moose projects on your machine. You can also override per session with an environment variable:
+
+```bash
+MOOSE_DEV__CONTAINER_CLI_PATH=finch moose dev
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `container_cli_path` | `MOOSE_DEV__CONTAINER_CLI_PATH` | `docker` | Container CLI executable name or path. Must support `compose`, `ps`, `exec`, `logs`, and `info` subcommands. |
+
+<Callout type="info" title="Finch Setup">
+[Finch](https://github.com/runfinch/finch) is an open-source container tool by AWS that provides a Docker-compatible CLI backed by containerd and nerdctl.
+
+1. Install Finch: `brew install --cask finch` (macOS)
+2. Initialize the VM: `finch vm init && finch vm start`
+3. Configure Moose to use Finch:
+
+```bash
+echo -e '\n[dev]\ncontainer_cli_path = "finch"' >> ~/.moose/config.toml
+```
+</Callout>
+
 ## Lifecycle Hooks
 
 Configure shell commands to run automatically during the development server's lifecycle. These are defined within the `[http_server_config]` section of your configuration.

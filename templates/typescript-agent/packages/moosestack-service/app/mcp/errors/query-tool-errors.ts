@@ -25,6 +25,10 @@ export function formatQueryToolError(
 ): string {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
+  if (/System metadata is not exposed by default/i.test(errorMessage)) {
+    return "System metadata is not available to this tool. Use get_data_catalog to discover the exposed tables and columns.";
+  }
+
   if (/not exposed by default/i.test(errorMessage)) {
     const tableName = extractTableName(errorMessage) ?? "requested table";
     return `Table '${tableName}' is not exposed to this tool. Available tables: ${formatAvailableTableList(availableTables)}. Use get_data_catalog before writing queries.`;
@@ -33,10 +37,6 @@ export function formatQueryToolError(
   if (/Unknown table|doesn't exist/i.test(errorMessage)) {
     const tableName = extractTableName(errorMessage) ?? "requested table";
     return `Table '${tableName}' not found. Available tables: ${formatAvailableTableList(availableTables)}. Use get_data_catalog before writing queries.`;
-  }
-
-  if (/System metadata is not exposed by default/i.test(errorMessage)) {
-    return "System metadata is not available to this tool. Use get_data_catalog to discover the exposed tables and columns.";
   }
 
   if (

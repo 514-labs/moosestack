@@ -18,6 +18,8 @@ export interface CleanupOptions {
   timeout?: number;
   /** Whether to clean up Docker resources (defaults to true) */
   includeDocker?: boolean;
+  /** Optional directory containing the Moose .moose/docker-compose.yml state */
+  dockerProjectDir?: string;
   /** Optional prefix for log messages */
   logPrefix?: string;
   /** Optional logger (uses test context logger if provided) */
@@ -42,6 +44,7 @@ export async function cleanupTestSuite(
 ): Promise<void> {
   const {
     includeDocker = true,
+    dockerProjectDir = testProjectDir,
     logPrefix = "Test suite",
     logger: log = cleanupLogger,
   } = options;
@@ -57,8 +60,8 @@ export async function cleanupTestSuite(
 
     // Step 2: Clean up Docker resources (if enabled)
     if (includeDocker) {
-      log.debug("Cleaning up Docker resources", { appName });
-      await cleanupDocker(testProjectDir, appName, { logger: log });
+      log.debug("Cleaning up Docker resources", { appName, dockerProjectDir });
+      await cleanupDocker(dockerProjectDir, appName, { logger: log });
     }
 
     // Step 3: Remove test project directory

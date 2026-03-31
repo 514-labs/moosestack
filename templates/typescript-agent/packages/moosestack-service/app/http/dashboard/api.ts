@@ -2,9 +2,8 @@ import { WebApp } from "@514labs/moose-lib";
 import express from "express";
 import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
 import {
-  getTenantMooseContext,
+  assertTenantMooseContext,
   requireTenantMoose,
-  respondUnauthorized,
 } from "../context/tenant-context";
 
 const app = express();
@@ -13,14 +12,12 @@ app.use(requireTenantMoose);
 
 app.get("/dashboard/snapshot", async (req, res, next) => {
   try {
-    const context = getTenantMooseContext(req);
-    if (!context) {
-      return respondUnauthorized(res);
-    }
+    const context = assertTenantMooseContext(req);
 
     const snapshot = await getDashboardSnapshot(
       context.moose.client.query,
       context.tenantId,
+      context.rowPolicyOptions,
     );
 
     res.json(snapshot);

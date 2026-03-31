@@ -16,4 +16,9 @@ describe("formatChatUiErrorMessage", () => {
       "MCP server unavailable",
     );
   });
+
+  it("returns the generic failure for empty or whitespace-only input", () => {
+    expect(formatChatUiErrorMessage("")).toContain("chat request failed");
+    expect(formatChatUiErrorMessage("   ")).toContain("chat request failed");
+  });
 });
