@@ -30,7 +30,6 @@ describe("createTraceSession", () => {
       toolName: "query_tenant_knowledge_metrics",
       status: "completed",
       notes: "Queried tenant knowledge metrics for the last 7 days.",
-      notes: "Queried tenant knowledge metrics for the last 7 days.",
       startedAt: new Date("2026-03-28T12:00:00.000Z").toISOString(),
       durationMs: 42,
       inputTokens: 0,
