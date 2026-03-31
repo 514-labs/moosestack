@@ -1900,4 +1900,102 @@ mod tests {
             "Pre-normalized Views should be equivalent"
         );
     }
+
+    /// Reproduces GitHub issue #3856: cross-database sourceTables mismatch.
+    /// Local infra map (Python/TS) produces backtick-qualified source tables like
+    /// `staging_lake`.`orders_cdc`, but the CLI's try_migrate_sql_resource_to_mv
+    /// should produce the same format from introspected ClickHouse SQL resources.
+    #[test]
+    fn test_cross_database_source_tables_mv_equivalence() {
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+        use crate::framework::core::infrastructure_map::InfrastructureMap;
+
+        let default_db = "analytics";
+
+        // Simulate the local side (Python/TS formatTableReference):
+        // source in staging_lake db, target in analytics db
+        let mv_local = MaterializedView {
+            name: "fact_orders_daily_mv".to_string(),
+            database: Some("analytics".to_string()),
+            target_table: "fact_orders_daily".to_string(),
+            target_database: Some("analytics".to_string()),
+            select_sql: "SELECT toDate(created_at) AS order_date, count() AS order_count FROM staging_lake.orders_cdc GROUP BY order_date".to_string(),
+            source_tables: vec!["`staging_lake`.`orders_cdc`".to_string()],
+            metadata: None,
+            life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+        };
+
+        // Simulate the remote side: build a SqlResource as ClickHouse introspection would,
+        // then convert it via try_migrate_sql_resource_to_mv
+        let setup_sql = "CREATE MATERIALIZED VIEW IF NOT EXISTS fact_orders_daily_mv TO analytics.fact_orders_daily AS SELECT toDate(created_at) AS order_date, count() AS order_count FROM staging_lake.orders_cdc GROUP BY order_date";
+        let teardown_sql = "DROP VIEW IF EXISTS `fact_orders_daily_mv`";
+
+        let sql_resource = crate::framework::core::infrastructure::sql_resource::SqlResource {
+            name: "fact_orders_daily_mv".to_string(),
+            database: Some("analytics".to_string()),
+            source_file: None,
+            source_line: None,
+            source_column: None,
+            setup: vec![setup_sql.to_string()],
+            teardown: vec![teardown_sql.to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mv_remote =
+            InfrastructureMap::try_migrate_sql_resource_to_mv(&sql_resource, default_db)
+                .expect("Should successfully convert SqlResource to MaterializedView");
+
+        assert!(
+            materialized_views_are_equivalent(&mv_local, &mv_remote, default_db),
+            "Cross-database source tables should match.\nLocal source_tables: {:?}\nRemote source_tables: {:?}",
+            mv_local.source_tables,
+            mv_remote.source_tables,
+        );
+    }
+
+    /// Same as above but for Views with cross-database source tables.
+    #[test]
+    fn test_cross_database_source_tables_view_equivalence() {
+        use crate::framework::core::infrastructure::view::View;
+        use crate::framework::core::infrastructure_map::InfrastructureMap;
+
+        let default_db = "analytics";
+
+        // Local side: view reading from staging_lake.orders_cdc
+        let view_local = View {
+            name: "orders_summary_view".to_string(),
+            database: None,
+            select_sql: "SELECT toDate(created_at) AS order_date, count() AS order_count FROM staging_lake.orders_cdc GROUP BY order_date".to_string(),
+            source_tables: vec!["`staging_lake`.`orders_cdc`".to_string()],
+            metadata: None,
+        };
+
+        // Remote side: SqlResource from ClickHouse introspection
+        let setup_sql = "CREATE VIEW IF NOT EXISTS orders_summary_view AS SELECT toDate(created_at) AS order_date, count() AS order_count FROM staging_lake.orders_cdc GROUP BY order_date";
+        let teardown_sql = "DROP VIEW IF EXISTS `orders_summary_view`";
+
+        let sql_resource = crate::framework::core::infrastructure::sql_resource::SqlResource {
+            name: "orders_summary_view".to_string(),
+            database: Some("analytics".to_string()),
+            source_file: None,
+            source_line: None,
+            source_column: None,
+            setup: vec![setup_sql.to_string()],
+            teardown: vec![teardown_sql.to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let view_remote =
+            InfrastructureMap::try_migrate_sql_resource_to_view(&sql_resource, default_db)
+                .expect("Should successfully convert SqlResource to View");
+
+        assert!(
+            views_are_equivalent(&view_local, &view_remote, default_db),
+            "Cross-database source tables should match.\nLocal source_tables: {:?}\nRemote source_tables: {:?}",
+            view_local.source_tables,
+            view_remote.source_tables,
+        );
+    }
 }

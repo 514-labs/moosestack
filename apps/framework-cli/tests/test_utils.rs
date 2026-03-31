@@ -26,8 +26,11 @@ pub fn ensure_test_environment() {
     });
 }
 
-fn setup_test_environment() -> anyhow::Result<()> {
-    let crate_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
+fn setup_test_environment() -> std::io::Result<()> {
+    let crate_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").map_err(|e| {
+            std::io::Error::other(format!("Failed to read CARGO_MANIFEST_DIR: {e}"))
+        })?);
     let workspace_root = crate_dir.parent().unwrap().parent().unwrap();
 
     let source_dir = workspace_root.join("template-packages");
@@ -43,34 +46,33 @@ fn setup_test_environment() -> anyhow::Result<()> {
         .status()?;
 
     if !status.success() {
-        anyhow::bail!("Failed to run scripts/package-templates.js");
+        return Err(std::io::Error::other(
+            "Failed to run scripts/package-templates.js",
+        ));
     }
 
     if !source_dir.exists() {
-        anyhow::bail!(
-            "Source template package directory not found even after running scripts/package-templates.js: {:?}",
-            source_dir
-        );
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "Source template package directory not found even after running scripts/package-templates.js: {:?}",
+                source_dir
+            ),
+        ));
     }
 
     // Ensure the target directory exists
     fs::create_dir_all(&target_dir)?;
 
-    // Files to copy (add more if other tests need different template .tgz files)
-    let files_to_copy = ["manifest.toml", "default.tgz", "python.tgz"];
+    for entry in fs::read_dir(&source_dir)? {
+        let entry = entry?;
+        let source_file = entry.path();
+        let file_name = entry.file_name();
+        let should_copy = file_name == "manifest.toml"
+            || source_file.extension().and_then(|ext| ext.to_str()) == Some("tgz");
 
-    for file_name in files_to_copy {
-        let source_file = source_dir.join(file_name);
-        let target_file = target_dir.join(file_name);
-
-        if source_file.exists() {
-            fs::copy(&source_file, &target_file)?;
-        } else {
-            // Optionally warn or error if a source file is missing
-            eprintln!(
-                "Warning: Source file {} not found, skipping copy.",
-                source_file.display()
-            );
+        if should_copy {
+            fs::copy(&source_file, target_dir.join(file_name))?;
         }
     }
 

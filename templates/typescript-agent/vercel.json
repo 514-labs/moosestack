@@ -1,0 +1,104 @@
+{
+  "buildCommand": "pnpm --filter web-app build",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "packages/web-app/.next",
+  "env": {
+    "AUTH_SECRET": {
+      "description": "Auth.js session secret",
+      "required": true
+    },
+    "MOOSE_SERVICE_URL": {
+      "description": "Base URL of your Moose service",
+      "required": true
+    },
+    "MCP_SERVER_URL": {
+      "description": "Optional override for the custom MCP tools endpoint",
+      "required": false
+    },
+    "AI_PROVIDER": {
+      "description": "Selected LLM provider: anthropic, openai, or bedrock",
+      "required": true
+    },
+    "ANTHROPIC_API_KEY": {
+      "description": "Required when AI_PROVIDER=anthropic",
+      "required": false
+    },
+    "ANTHROPIC_MODEL_ID": {
+      "description": "Optional Anthropic model override",
+      "required": false
+    },
+    "OPENAI_API_KEY": {
+      "description": "Required when AI_PROVIDER=openai",
+      "required": false
+    },
+    "OPENAI_MODEL_ID": {
+      "description": "Optional OpenAI model override",
+      "required": false
+    },
+    "AWS_REGION": {
+      "description": "AWS region when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "AWS_PROFILE": {
+      "description": "Optional AWS profile when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "AWS_ACCESS_KEY_ID": {
+      "description": "Optional AWS access key when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "AWS_SECRET_ACCESS_KEY": {
+      "description": "Optional AWS secret access key when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "AWS_SESSION_TOKEN": {
+      "description": "Optional AWS session token when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "BEDROCK_MODEL_ID": {
+      "description": "Required when AI_PROVIDER=bedrock",
+      "required": false
+    },
+    "BEDROCK_GUARDRAIL_ID": {
+      "description": "Optional Bedrock guardrail ID",
+      "required": false
+    },
+    "BEDROCK_GUARDRAIL_VERSION": {
+      "description": "Optional Bedrock guardrail version",
+      "required": false
+    },
+    "LANGFUSE_PUBLIC_KEY": {
+      "description": "Optional Langfuse public key",
+      "required": false
+    },
+    "LANGFUSE_SECRET_KEY": {
+      "description": "Optional Langfuse secret key",
+      "required": false
+    },
+    "LANGFUSE_BASE_URL": {
+      "description": "Optional Langfuse base URL",
+      "required": false
+    },
+    "MOOSE_AUTH_MODE": {
+      "description": "Auth mode: local or oidc",
+      "required": false
+    },
+    "OIDC_ISSUER": {
+      "description": "OIDC issuer URL",
+      "required": true
+    },
+    "OIDC_CLIENT_ID": {
+      "description": "OIDC client ID",
+      "required": true
+    },
+    "OIDC_CLIENT_SECRET": {
+      "description": "OIDC client secret",
+      "required": true
+    },
+    "OIDC_TENANT_CLAIM": {
+      "description": "OIDC claim name for tenant_id",
+      "required": false
+    }
+  }
+}

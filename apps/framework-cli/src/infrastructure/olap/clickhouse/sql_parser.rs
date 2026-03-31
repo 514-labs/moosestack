@@ -119,6 +119,15 @@ impl TableReference {
             None => self.table.clone(),
         }
     }
+
+    /// Formats the table reference with backtick quoting, matching the
+    /// Python `_format_table_reference` and TypeScript `formatTableReference` conventions.
+    pub fn format_for_source_tables(&self) -> String {
+        match &self.database {
+            Some(db) => format!("`{}`.`{}`", db, self.table),
+            None => format!("`{}`", self.table),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1582,6 +1591,19 @@ pub mod tests {
     use super::*;
 
     pub const NESTED_OBJECTS_SQL: &str = "CREATE TABLE local.NestedObjects (`id` String, `timestamp` DateTime('UTC'), `address` Nested(street String, city String, coordinates Nested(lat Float64, lng Float64)), `metadata` Nested(tags Array(String), priority Int64, config Nested(enabled Bool, settings Nested(theme String, notifications Bool)))) ENGINE = MergeTree PRIMARY KEY id ORDER BY id SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760";
+
+    #[test]
+    fn test_format_for_source_tables_without_database() {
+        let tr = TableReference::new("events".to_string());
+        assert_eq!(tr.format_for_source_tables(), "`events`");
+    }
+
+    #[test]
+    fn test_format_for_source_tables_with_database() {
+        let tr =
+            TableReference::with_database("staging_lake".to_string(), "orders_cdc".to_string());
+        assert_eq!(tr.format_for_source_tables(), "`staging_lake`.`orders_cdc`");
+    }
 
     // Tests for extract_engine_from_create_table
     #[test]

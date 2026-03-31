@@ -1479,6 +1479,12 @@ const hostingNavigationConfig: NavigationConfig = [
     title: "Manage Environment Variables",
     languages: ["typescript", "python"],
   },
+  {
+    type: "page",
+    slug: "hosting/workflow/branch-data-seeding",
+    title: "Branch Data Seeding",
+    languages: ["typescript", "python"],
+  },
   { type: "separator" },
   { type: "label", title: "Integrations" },
   {

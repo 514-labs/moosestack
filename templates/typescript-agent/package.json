@@ -1,0 +1,49 @@
+{
+  "name": "typescript-agent",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "build": "turbo run build --filter=web-app",
+    "build:service": "pnpm --filter moosestack-service build",
+    "predev": "pnpm build",
+    "predev:start": "pnpm build",
+    "dev": "pnpm --parallel --stream -r --if-present dev",
+    "dev:start": "bash ./scripts/dev-start.sh",
+    "dev:moose": "pnpm --filter moosestack-service dev",
+    "dev:web": "pnpm --filter web-app dev",
+    "env:prepare": "bash ./scripts/dev-start.sh --prepare-only",
+    "seed": "pnpm --filter moosestack-service seed",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:watch": "vitest",
+    "lint": "pnpm lint:biome && pnpm --filter web-app lint",
+    "lint:biome": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format --check ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "typescript": "catalog:",
+    "turbo": "catalog:",
+    "vitest": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild",
+      "protobufjs",
+      "sharp",
+      "unrs-resolver",
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ],
+    "overrides": {
+      "tar": "7.5.7"
+    }
+  }
+}
