@@ -35,7 +35,7 @@ interface ProductLookup {
 }
 
 export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
-  source: ProductsTable,          // OlapTable | View reference
+  sourceTable: ProductsTable,     // OlapTable | View reference → SOURCE(CLICKHOUSE(TABLE ...))
   primaryKey: ["ProductId"],
   layout: { type: "HASHED" },
   lifetime: { min: 10, max: 15 },
@@ -46,8 +46,8 @@ export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
 // 2b. Complex case — sql template with typed table/column interpolation
 //     Generates: SOURCE(CLICKHOUSE(QUERY 'SELECT ... FROM `local`.`products` FINAL'))
 export const ProductDictComplex = new OlapDictionary<ProductLookup>("dict_products_v2", {
-  source: sql`SELECT ProductId, ProductName, Category, PriceLevel FROM ${ProductsTable} FINAL`,
-  sourceTables: [ProductsTable],  // explicit dependency tracking (same pattern as MV/View)
+  sourceQuery: sql`SELECT ProductId, ProductName, Category, PriceLevel FROM ${ProductsTable} FINAL`,
+  sourceTables: [ProductsTable],  // explicit dependency tracking (required for sourceQuery)
   primaryKey: ["ProductId"],
   layout: { type: "HASHED" },
   lifetime: { min: 10, max: 15 },
@@ -71,36 +71,40 @@ export const EnrichClicksMV = new MaterializedView<EnrichedClick>("enrich_clicks
 //   → dictGet('local.dict_products', 'ProductName', ProductId)
 ```
 
-### Source config behavior
+### Source config — mutually exclusive fields (not a union)
 
-**ClickHouse sources (typed Moose references):**
+The source is specified via **exactly one** of three mutually exclusive config fields. This eliminates ambiguity and makes validation straightforward:
 
-| `source` value | `sourceTables` | DDL generated |
-|---|---|---|
-| `OlapTable` ref | Not needed (auto-extracted) | `SOURCE(CLICKHOUSE(TABLE 'name' DB 'db'))` |
-| `View` ref | Not needed (auto-extracted) | `SOURCE(CLICKHOUSE(TABLE 'name' DB 'db'))` |
-| `` sql`SELECT ...` `` | Required (explicit) | `SOURCE(CLICKHOUSE(QUERY 'SELECT ...'))` |
+| Config field | Type | `sourceTables` | DDL generated |
+|---|---|---|---|
+| `sourceTable` | `OlapTable \| View` | Not needed (auto-extracted) | `SOURCE(CLICKHOUSE(TABLE 'name' DB 'db'))` |
+| `sourceQuery` | `Sql` (template tag only, no raw strings) | Required (explicit) | `SOURCE(CLICKHOUSE(QUERY 'SELECT ...'))` |
+| `externalSource` | Typed discriminated union (`{ type: "mysql", ... }`) | N/A | `SOURCE(MYSQL(...))`, `SOURCE(HTTP(...))`, etc. |
 
-**All supported source types (typed discriminated union):**
+Validation: exactly one of `sourceTable`/`sourceQuery`/`externalSource` must be set. Setting zero or multiple is a config error caught at registration time.
+
+**Why no raw `string` for sourceQuery**: A plain string is ambiguous — it's hard to distinguish "raw ClickHouse query" from "user accidentally passed a table name string instead of a typed reference." The `sql` template tag is required because it enables typed interpolation and dependency extraction.
+
+**External source types (typed discriminated union):**
 
 | Source type | Key parameters |
 |---|---|
-| ClickHouse (typed ref) | `OlapTable \| View` — auto-extracts table/db |
-| ClickHouse (SQL query) | `Sql \| string` + explicit `sourceTables` |
-| ClickHouse (remote) | host, port, user, password, db, table/query, where, secure, invalidateQuery |
-| HTTP(S) | url, format, credentials (user/password), headers |
-| MySQL | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
-| PostgreSQL | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
-| MongoDB | host, port, user, password, db, collection |
-| Redis | host, port, dbIndex, password, storageType |
-| Cassandra | host, port, user, password, keyspace, columnFamily |
-| ODBC | connectionString, db, table/query |
-| File | path, format |
-| Executable | command, format |
-| Executable Pool | command, format, poolSize |
-| Null | (none) |
+| `clickhouse_remote` | host, port, user, password, db, table/query, where, secure, invalidateQuery |
+| `http` | url, format, credentials (user/password), headers |
+| `mysql` | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
+| `postgresql` | host, port, user, password, db, table/query, where, replicas, invalidateQuery |
+| `mongodb` | host, port, user, password, db, collection |
+| `redis` | host, port, dbIndex, password, storageType |
+| `cassandra` | host, port, user, password, keyspace, columnFamily |
+| `odbc` | connectionString, db, table/query |
+| `file` | path, format |
+| `executable` | command, format |
+| `executable_pool` | command, format, poolSize |
+| `null` | (none) |
 
-Only ClickHouse `OlapTable`/`View`/`Sql` sources participate in Moose dependency tracking. External sources have no Moose-managed dependencies.
+**Named Collections**: Not supported in v1. If the SDK detects a `NAME` parameter or named collection reference in any source config, it must reject it with a clear error: "Named Collections are not yet supported. Use mooseRuntimeEnv for credentials and specify connection parameters directly."
+
+Only `sourceTable` and `sourceQuery` participate in Moose dependency tracking. External sources have no Moose-managed dependencies. Dictionary-to-dictionary sources (a dictionary referencing another dictionary) are explicitly rejected in v1 with a clear error message.
 
 ### Confirmed real-world usage (from client feedback)
 
@@ -163,7 +167,7 @@ interface ProductLookup {
 }
 
 export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
-  source: {
+  externalSource: {
     type: "mongodb",
     host: "mongo.example.com",
     port: 27017,
@@ -182,7 +186,7 @@ export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
 
 ```typescript
 export const ProductDictMySQL = new OlapDictionary<ProductLookup>("dict_products_mysql", {
-  source: {
+  externalSource: {
     type: "mysql",
     host: "mysql.example.com",
     port: 3306,
@@ -201,7 +205,7 @@ export const ProductDictMySQL = new OlapDictionary<ProductLookup>("dict_products
 
 ```typescript
 export const ProductDictHTTP = new OlapDictionary<ProductLookup>("dict_products_http", {
-  source: {
+  externalSource: {
     type: "http",
     url: "https://api.example.com/products",
     format: "JSONEachRow",
@@ -221,18 +225,54 @@ export const ProductDictHTTP = new OlapDictionary<ProductLookup>("dict_products_
 
 All documentation examples for external sources MUST use `mooseRuntimeEnv.get()` for credentials — never hardcoded values.
 
-### Key design decisions (from critique of the original issue)
+### Key design decisions
 
-1. **Flexible source config** — `source` accepts `OlapTable | View` for typed ClickHouse table references, `Sql | string` for custom ClickHouse queries (with typed interpolation via the `sql` template tag), or external source configs (`{ type: "mysql", ... }`, `{ type: "http", ... }`, etc.) for all 12 ClickHouse-supported source types. When source is a SQL query, explicit `sourceTables` is required for dependency tracking. External sources have no Moose-managed dependencies.
-2. **Typed layout config** — not a plain string. A discriminated union with per-layout parameters (e.g., `CACHE` has `sizeInCells`, `RANGE_HASHED` has `range_min`/`range_max`). Supports `HIERARCHICAL` attribute flag on columns.
-3. **`dictGet` helper** — typed methods on `OlapDictionary` instances for use in `sql` template tags: `get()`, `getOrDefault()`, and `has()`. The helper correctly prefixes with `database.dict_name` for cross-database usage.
-4. **Key/attribute column distinction** — `primaryKey` identifies key columns; attribute columns can have `defaults` for missing key lookups.
-5. **Dependency tracking** — source table reference automatically tracked (same as MV/View pattern).
-6. **Atomic swap diffing** — uses `CREATE OR REPLACE DICTIONARY` (supported in modern ClickHouse) for zero-downtime updates. This prevents the "blackout" period where `dictGet()` calls would fail during a DROP + CREATE cycle. Dependent materialized views and queries continue to work during dictionary updates.
-7. **COMMENT clause** — optional `comment` field on the dictionary config, rendered as `COMMENT '...'` in DDL. Useful for data discovery and catalogs.
-8. **LIFETIME(0) support** — `lifetime: 0` or `lifetime: { min: 0, max: 0 }` represents a static dictionary that never auto-refreshes, common for "gold" reference data.
-9. **Settings escape hatch** — `settings?: Record<string, string | number>` for power users who need ClickHouse-specific settings (e.g., `backoff_initial_interval`, `loading_cells_bundle_size`).
-10. **Credential safety** — resolved `mooseRuntimeEnv` values must NOT be logged during `moose plan` or `moose deploy --verbose`. Mask any `__MOOSE_RUNTIME_ENV__:` resolved values in CLI output.
+1. **Mutually exclusive source config** — three separate fields (`sourceTable`, `sourceQuery`, `externalSource`) instead of one overloaded `source` field. Eliminates ambiguity, enables clean validation, and avoids the "did the user mean a table name or a query?" problem. No raw strings accepted for queries — `sql` template tag required.
+2. **Full column attribute model** — each `DictionaryColumn` carries the full ClickHouse attribute set: `DEFAULT`, `EXPRESSION`, `INJECTIVE`, `HIERARCHICAL`, and `IS_OBJECT_ID`. Without these, valid dictionary definitions cannot round-trip through the SDK/CLI, and diffing against existing dictionaries would lose information or force false updates.
+3. **Exhaustive typed layout config** — a discriminated union covering all 16 ClickHouse layout types with per-layout parameters and key-type constraints. See "Layout types" section below.
+4. **`dictGet` helper** — typed methods on `OlapDictionary` instances: `get()`, `getOrDefault()`, and `has()`. The helper correctly prefixes with `database.dict_name` for cross-database usage. Range dictionaries are supported — `get()` accepts range-aware key arguments.
+5. **Key/attribute column distinction** — `primaryKey` identifies key columns; attribute columns carry per-column flags (`DEFAULT`, `EXPRESSION`, `INJECTIVE`, `HIERARCHICAL`, `IS_OBJECT_ID`).
+6. **Two-tier dependency tracking**:
+   - **Source-side** (upstream): `sourceTable` auto-tracked; `sourceQuery` requires explicit `sourceTables`. Dictionary created after its source, dropped before its source.
+   - **Consumer-side** (downstream): when `OlapDictionary` is interpolated via `sql` template tag in View/MV SQL (e.g., `${ProductDict.get(...)}`), the dictionary reference is recorded as a dependency of that View/MV. This ensures: (a) dictionary is created before dependent MVs/Views, (b) dropping a dictionary used by a MV surfaces as a plan risk, (c) creating a dictionary and MV in the same plan respects ordering.
+7. **Atomic swap updates** — `CREATE OR REPLACE DICTIONARY` for all updates. `CREATE DICTIONARY IF NOT EXISTS` only for initial bootstrap. `DROP DICTIONARY IF EXISTS` only for removal. The diff/reconciliation layer emits `CREATE OR REPLACE` for updates — never DROP+CREATE. This prevents query blackout during updates.
+8. **Plan risk for replacements** — dictionary drops are `DestructiveChange::DictionaryDrop`. Dictionary replacements (CREATE OR REPLACE) for cache/direct/external-source layouts are classified as `OperationalRisk::DictionaryReplace` because they can trigger reload cost, temporary cold-cache, or source access spikes. Simple HASHED replacements are low-risk.
+9. **COMMENT clause** — optional `comment` field, rendered as `COMMENT '...'` in DDL.
+10. **LIFETIME(0) support** — `lifetime: 0` or `{ min: 0, max: 0 }` for static dictionaries.
+11. **Settings escape hatch** — `settings?: Record<string, string | number>` for ClickHouse-specific settings.
+12. **Credential masking** — resolved `mooseRuntimeEnv` values must NOT appear in any display surface: plan output, deploy logs, debug dumps, proto snapshots, `moose ls`. All fields that could contain secrets (host, user, password, headers, connection strings, query strings) are masked.
+13. **Named Collections: explicit non-goal in v1** — not supported. SDK validates and rejects any Named Collection references with a clear error message and documentation pointing to `mooseRuntimeEnv` as the alternative.
+14. **Reality checker boundary** — reconciliation uses `system.dictionaries` for existence/status checks only (dictionary name, database, status, load time). It does NOT attempt full DDL diffing via `SHOW CREATE DICTIONARY` — that is deferred. Mismatches are reported as "dictionary exists but may differ from Moose state."
+
+### Layout types (exhaustive)
+
+All 16 ClickHouse dictionary layouts, grouped by key-type constraint:
+
+**Simple key layouts** (single UInt64 key):
+| Layout | Parameters |
+|---|---|
+| `FLAT` | `initialSize?`, `maxSize?` |
+| `HASHED` | `shards?`, `shard_load_queue_backlog?` |
+| `SPARSE_HASHED` | `shards?` |
+| `HASHED_ARRAY` | (none) |
+| `RANGE_HASHED` | `rangeMin: string`, `rangeMax: string` (column names) |
+| `CACHE` | `sizeInCells: number` |
+| `SSD_CACHE` | `sizeInCells: number`, `path: string`, `blockSize?`, `fileSize?` |
+| `DIRECT` | (none) |
+| `IP_TRIE` | (none) |
+
+**Complex key layouts** (multi-column / arbitrary type keys):
+| Layout | Parameters |
+|---|---|
+| `COMPLEX_KEY_HASHED` | `shards?` |
+| `COMPLEX_KEY_SPARSE_HASHED` | `shards?` |
+| `COMPLEX_KEY_HASHED_ARRAY` | (none) |
+| `COMPLEX_KEY_RANGE_HASHED` | `rangeMin: string`, `rangeMax: string` |
+| `COMPLEX_KEY_CACHE` | `sizeInCells: number` |
+| `COMPLEX_KEY_SSD_CACHE` | `sizeInCells: number`, `path: string` |
+| `COMPLEX_KEY_DIRECT` | (none) |
+
+Layout-key validation in `plan_validator`: non-complex layouts require exactly one UInt64 primary key; complex layouts allow arbitrary key types and counts.
 
 ---
 
@@ -295,7 +335,19 @@ All Rust code must mirror existing patterns exactly. The reference types are `Ma
 
 ### 1.1 New file: `apps/framework-cli/src/framework/core/infrastructure/dictionary.rs`
 
-Create `OlapDictionary` struct with: `name`, `database`, `cluster`, `source` (discriminated union), `primary_key`, `columns: Vec<DictionaryColumn>` (with optional `HIERARCHICAL` flag), `layout: DictionaryLayout` (tagged enum — includes `RANGE_HASHED` with `range_min`/`range_max`), `lifetime: DictionaryLifetime` (untagged enum: single number or {min, max}, allowing 0 for static), `invalidate: Option<DictionaryInvalidation>`, `defaults`, `settings: Option<HashMap<String, String>>`, `comment: Option<String>`, `life_cycle`, `metadata`.
+Create `OlapDictionary` struct with:
+- `name`, `database`, `cluster`
+- `source: DictionarySource` — enum with variants: `Table { name, database }`, `Query { sql, source_tables }`, `External(ExternalSource)` where `ExternalSource` is a tagged enum with all 12 external types. Dictionary-to-dictionary references are rejected at deserialization.
+- `primary_key: Vec<String>`
+- `columns: Vec<DictionaryColumn>` — each column carries: `name`, `column_type`, `default_value: Option`, `expression: Option`, `hierarchical: bool`, `injective: bool`, `is_object_id: bool`
+- `layout: DictionaryLayout` — tagged enum with all 16 layout types and per-layout parameters (see Layout types section)
+- `lifetime: DictionaryLifetime` — enum: `Static` (LIFETIME(0)), `Single(u64)`, `Range { min: u64, max: u64 }`
+- `invalidate: Option<DictionaryInvalidation>`
+- `settings: Option<HashMap<String, String>>`
+- `comment: Option<String>`
+- `life_cycle`, `metadata`
+
+Proto modeling: `source`, `layout`, and `lifetime` must be modeled as nested `oneof` messages in the proto schema, not flattened optional fields. This ensures proper round-trip serialization without losing variant information or producing false diffs on restart.
 
 Implement:
 - `to_create_sql()` → `CREATE OR REPLACE DICTIONARY \`db\`.\`name\` [ON CLUSTER \`cluster\`] (...) [COMMENT '...']` — uses `CREATE OR REPLACE` for atomic swap (zero downtime). Follows the same conditional `ON CLUSTER` pattern as OlapTable.
@@ -313,7 +365,7 @@ Implement:
 ### 1.3 Modify: `apps/framework-cli/src/framework/core/infrastructure_map.rs`
 
 - Add `pub dictionaries: HashMap<String, Dictionary>` to `InfrastructureMap`
-- Add `diff_dictionaries()` method (Added/Removed/Updated as DROP+CREATE)
+- Add `diff_dictionaries()` method (Added → `CREATE IF NOT EXISTS`, Removed → `DROP IF EXISTS`, Updated → `CREATE OR REPLACE`)
 - Call from main `diff_with_table_strategy()`
 - Add `Dictionary(Change<Dictionary>)` variant to `OlapChange`
 - Unit tests for diff: added, removed, updated, unchanged
@@ -325,8 +377,10 @@ Implement:
 
 ### 1.5 Modify: DDL ordering (`apps/framework-cli/src/infrastructure/olap/ddl_ordering.rs`)
 
-- Add `CreateDictionary` and `DropDictionary` to `AtomicOlapOperation`
-- Add dependency edges: dictionary created after source table, dropped before source table
+- Add `CreateDictionary`, `ReplaceDictionary`, and `DropDictionary` to `AtomicOlapOperation`
+- Add source-side dependency edges: dictionary created after source table, dropped before source table
+- Add consumer-side dependency edges: when a View/MV SQL references a dictionary (via `sql` tag interpolation recorded as `InfrastructureSignature::Dictionary`), the dictionary must be created/replaced before the dependent View/MV is created/replaced. This ensures a dictionary and MV introduced in the same plan are ordered correctly.
+- Reject cycles: if a View sources a dictionary that sources back to that View, emit a clear error at plan time
 
 ### 1.6 Modify: ClickHouse execution (`apps/framework-cli/src/infrastructure/olap/clickhouse/mod.rs`)
 
@@ -339,20 +393,24 @@ Implement:
 
 ### 1.8 Modify: Plan risk assessment (`apps/framework-cli/src/framework/core/plan_risk.rs`)
 
-- Add `DestructiveChange::DictionaryDrop` variant
-- Handle `OlapChange::Dictionary(Change::Removed(...))` in `classify_plan_risk()` — currently a wildcard `_ => {}` would silently skip dictionary drops
-- Dropping a dictionary is destructive: it breaks any `dictGet()` queries referencing it
+- Add `DestructiveChange::DictionaryDrop` variant for removals — breaks any `dictGet()` queries referencing it
+- Add `OperationalRisk::DictionaryReplace` variant for updates — `CREATE OR REPLACE` triggers reload. For `CACHE`/`DIRECT`/external-source layouts, this can cause temporary cold-cache behavior or source access spikes. Simple `HASHED` replacements are lower risk.
+- Handle both `Change::Removed` and `Change::Updated` in `classify_plan_risk()` — currently the wildcard `_ => {}` silently skips both
 
 ### 1.9 Modify: Runtime env credential resolution (`apps/framework-cli/src/framework/core/infrastructure_map.rs`)
 
-- Extend `resolve_runtime_credentials_from_env()` (~line 2551) to iterate over `self.dictionaries.values_mut()` and resolve `__MOOSE_RUNTIME_ENV__:` markers in external source configs (host, user, password, etc.)
-- Without this, `mooseRuntimeEnv.get()` markers in dictionary source configs would not be resolved at runtime → ClickHouse errors
+- Extend `resolve_runtime_credentials_from_env()` (~line 2551) to iterate over `self.dictionaries.values_mut()` and resolve `__MOOSE_RUNTIME_ENV__:` markers in ALL string fields that could contain secrets: host, user, password, headers, connection strings, query strings, URLs
+- Add credential masking to all display surfaces that serialize infra objects: plan display, verbose deploy logs, debug dumps, `moose ls`. Any resolved `__MOOSE_RUNTIME_ENV__:` value must be masked as `***` in output.
+- Without env resolution, `mooseRuntimeEnv.get()` markers in dictionary source configs would not be resolved at runtime → ClickHouse errors
 
 ### 1.10 Modify: Plan validator (`apps/framework-cli/src/framework/core/plan_validator.rs`)
 
 - Validate that dictionary source table references exist in the target InfrastructureMap
 - Validate that `primaryKey` column names are valid columns in the dictionary schema
+- Validate layout-key compatibility: non-`COMPLEX_KEY_*` layouts require exactly one UInt64 primary key; `COMPLEX_KEY_*` layouts allow arbitrary key types and counts
 - Validate cluster references for dictionaries (same pattern as tables)
+- Reject dictionary-to-dictionary sources (not supported in v1)
+- Reject Named Collection references in any source config
 
 ### 1.11 Modify: SQL normalization (`apps/framework-cli/src/framework/core/plan.rs`)
 
@@ -365,7 +423,7 @@ Implement:
 
 ### 1.13 Modify: `OlapOperations` trait (`apps/framework-cli/src/infrastructure/olap/mod.rs`)
 
-- Add `list_dictionaries()` method to the trait for reality checking via `system.dictionaries`
+- Add `list_dictionaries()` method to the trait — queries `system.dictionaries` for existence/status checks (name, database, status, origin, loading_duration). Does NOT attempt full DDL comparison via `SHOW CREATE DICTIONARY` — that is complex and deferred. Mismatches reported as "dictionary exists but may differ from Moose state."
 
 ### 1.14 Modify: Init deployment (`apps/framework-cli/src/framework/core/infrastructure_map.rs`)
 
@@ -375,9 +433,14 @@ Implement:
 ### 1.15 Modify: Proto file + state persistence (`packages/protobuf/infrastructure_map.proto`)
 
 - `packages/protobuf/infrastructure_map.proto`:
-  - Add `message OlapDictionary { ... }` with all fields (name, database, cluster, source, primary_key, columns, layout, lifetime, invalidate, defaults, settings, life_cycle, metadata)
+  - Add `message OlapDictionary { ... }` with all fields
+  - `source` as `oneof` with variants: `DictionarySourceTable`, `DictionarySourceQuery`, `DictionaryExternalSource` (which itself uses `oneof` for the 12 external types)
+  - `layout` as `oneof` with variants for all 16 layout types, each carrying its specific parameters
+  - `lifetime` as `oneof`: `uint64 static_lifetime = N` (for LIFETIME(0)), `uint64 single_lifetime = N`, `DictionaryLifetimeRange range_lifetime = N`
+  - `DictionaryColumn` message with: name, type, default_value, expression, hierarchical, injective, is_object_id
   - Add `map<string, OlapDictionary> olap_dictionaries = <next_field_number>;` to `InfrastructureMap` message
   - Add `string olap_dictionary_id = <next_field_number>;` to `InfrastructureSignature` oneof
+  - **Round-trip tests**: every source variant × every layout variant must survive TS/Python → Rust → proto → Rust without information loss or false diffs
 - `apps/framework-cli/src/framework/core/infrastructure/mod.rs`:
   - Add `OlapDictionary { id: String }` variant to `InfrastructureSignature` enum
   - Add `to_proto()` and `from_proto()` arms for the new variant
@@ -410,7 +473,9 @@ class OlapDictionary<T> {
 }
 ```
 
-Config includes: `name`, `source: OlapDictionarySource` (typed discriminated union — OlapTable/View ref, Sql/string query, or external source config like `{ type: "mysql", host, port, ... }`), `sourceTables?: (OlapTable | View)[]` (required when source is Sql/string, for dependency tracking), `primaryKey`, `layout` (typed union), `lifetime`, `invalidate?`, `defaults?`, `settings?`, `comment?`, `database?`, `cluster?`, `lifeCycle?`
+Config includes: `name`, source (exactly one of: `sourceTable: OlapTable | View`, `sourceQuery: Sql` + required `sourceTables: (OlapTable | View)[]`, or `externalSource: ExternalSourceConfig`), `primaryKey`, `layout` (typed union — all 16 layouts), `lifetime`, `invalidate?`, `defaults?`, `settings?`, `comment?`, `database?`, `cluster?`, `lifeCycle?`
+
+Validation at registration: exactly one source field set, layout-key compatibility checked, Named Collection references rejected, dictionary-to-dictionary sources rejected.
 
 Self-registers into `getMooseInternal().olapDictionaries`.
 
@@ -426,6 +491,7 @@ Self-registers into `getMooseInternal().olapDictionaries`.
 ### 2.4 Modify: `packages/ts-moose-lib/src/sqlHelpers.ts`
 
 - Add OlapDictionary interpolation support in `sql` template tag
+- When a dictionary `get()`/`getOrDefault()`/`has()` call is interpolated into a `sql` template, the dictionary reference must be recorded as a dependency (same mechanism used for OlapTable/View references). This enables consumer-side dependency tracking: a MV/View whose SQL includes `${dict.get(...)}` automatically depends on that dictionary for DDL ordering.
 
 ### 2.5 Modify export chain
 
@@ -434,9 +500,13 @@ Self-registers into `getMooseInternal().olapDictionaries`.
 ### 2.6 Unit tests: `packages/ts-moose-lib/src/__tests__/dictionary.test.ts`
 
 - Construction, validation, registration, serialization
-- `get()` and `getOrDefault()` SQL fragment generation
+- `get()`, `getOrDefault()`, `has()` SQL fragment generation
 - Duplicate name rejection
-- Layout validation
+- Layout validation (all 16 types)
+- Source validation: exactly one source field, reject zero/multiple
+- Named Collection reference rejected with clear error
+- Dictionary-to-dictionary source rejected
+- Layout-key compatibility validation
 
 ---
 
@@ -486,6 +556,14 @@ Mirrors TypeScript API with Pydantic config models.
 - `COMPLEX_KEY_HASHED` with composite keys — verify tuple wrapping in dictGet
 - Cross-database dictGet — verify `database.dict_name` prefix
 - Invalidation: update source table → verify dictionary reflects new data after LIFETIME expires
+- Dictionary + MV created in same plan → verify correct ordering (dictionary before MV)
+- Dictionary replacement while dependent MV remains intact
+- Per-column attributes round-trip (INJECTIVE, HIERARCHICAL, EXPRESSION, IS_OBJECT_ID)
+- External-source secrets masked in plan/deploy output
+- Proto round-trip: every source/layout variant survives serialize → deserialize without loss
+- Normalization stability: semantically identical source queries produce same diff result
+- Missing credentials at deploy time → clear error message
+- Invalid key/layout combination rejected at plan time before DDL
 
 ### 4.2 Documentation (`apps/framework-docs-v2/`)
 
@@ -524,7 +602,7 @@ Mirrors TypeScript API with Pydantic config models.
   export const PartitionStrategies = new OlapDictionary<PartitionStrategy>(
     "partition_strategies",
     {
-      source: PartitionStrategiesSource,
+      sourceTable: PartitionStrategiesSource,
       primaryKey: ["name"],
       layout: { type: "COMPLEX_KEY_HASHED" },
       lifetime: { min: 60, max: 300 },
@@ -537,7 +615,7 @@ Mirrors TypeScript API with Pydantic config models.
       SELECT ...`
   ```
   Highlights: replaces Named Collection indirection, eliminates raw SQL, adds dependency tracking and type safety. Covers the three lifeCycle modes and when to use each.
-- **Known limitation note** in docs: Dictionary dependencies in View/MV SQL strings are not automatically detected. When using raw `dictGet('dict_name', ...)` in SQL, the dictionary won't be auto-registered as a dependency for DDL ordering. Users should use the typed `.get()` helper (which generates correct SQL) or be aware that dictionary creation order depends on the source table reference, not on downstream consumers.
+- **Known limitation note** in docs: Dictionary dependencies are only tracked when using the typed `.get()`/`.getOrDefault()`/`.has()` helpers via the `sql` template tag. When using raw `dictGet('dict_name', ...)` in SQL strings, the dictionary is NOT auto-registered as a dependency. Users should always prefer the typed helpers for correct DDL ordering and drop safety.
 - Update SDK overview / primitives listing page
 - Update ClickHouse best practices if relevant
 
@@ -548,7 +626,7 @@ Mirrors TypeScript API with Pydantic config models.
 - `moose db pull` introspection for dictionaries (complex `system.dictionaries` / `SHOW CREATE DICTIONARY` parsing)
 - Environment-aware source config (belongs in Moose's env system, not Dictionary-specific)
 - Automatic `dictGet` dependency detection in View/MV SQL strings (cycle detection for dictionary↔view circular references)
-- **Layout-key type validation** — enforce that `HASHED` requires a single UInt64 key, `COMPLEX_KEY_HASHED` allows multi-column keys. Currently ClickHouse throws the error; ideally Moose validates at plan time.
+- **Full DDL reconciliation via `SHOW CREATE DICTIONARY`** — currently reality checker only does existence/status checks. Full DDL comparison for exact diffing is complex and deferred.
 - **Connection test during plan phase** — for external sources (MySQL, PostgreSQL, HTTP, etc.), optionally test connectivity during `moose plan` rather than waiting for ClickHouse to fail at CREATE time
 - **Typed dictGet variants** — `dictGetUInt32`, `dictGetFloat64`, etc. for type-specific lookups. For v1, `get()` uses the generic `dictGet` which auto-casts.
 - **ClickHouse Named Collections** — server-side credential store (`CREATE NAMED COLLECTION ... AS key1='val1', ...`). Would allow referencing credentials by collection name in DDL instead of embedding resolved values. For v1, `mooseRuntimeEnv` covers the same security need via environment variables. Named Collections could be added as an optional Moose-managed primitive in a follow-up if users request it.
