@@ -165,16 +165,12 @@ seed_local_jwt_keys() {
     return
   fi
 
-  if [[ -z "${existing_private_key}" || -z "${existing_public_key}" ]]; then
-    fail "Local JWT auth is only partially configured. Set both LOCAL_DEV_JWT_PRIVATE_KEY and MOOSE_JWT__SECRET, or remove both and rerun pnpm env:prepare"
+  if [[ -n "${existing_private_key}" && -n "${existing_public_key}" ]]; then
+    derived_public_key="$(derive_public_key_from_private "${existing_private_key}")"
+    if [[ "${derived_public_key}" != "${existing_public_key}" ]]; then
+      fail "Detected mismatched local JWT keypair. LOCAL_DEV_JWT_PRIVATE_KEY in packages/web-app/.env.local does not match MOOSE_JWT__SECRET in packages/moosestack-service/.env.local. Remove both values and rerun pnpm env:prepare"
+    fi
   fi
-
-  derived_public_key="$(derive_public_key_from_private "${existing_private_key}")"
-  if [[ "${derived_public_key}" == "${existing_public_key}" ]]; then
-    return
-  fi
-
-  fail "Detected mismatched local JWT keypair. LOCAL_DEV_JWT_PRIVATE_KEY in packages/web-app/.env.local does not match MOOSE_JWT__SECRET in packages/moosestack-service/.env.local. Remove both values and rerun pnpm env:prepare"
 }
 
 ensure_env_files() {
