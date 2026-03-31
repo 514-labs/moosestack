@@ -298,7 +298,7 @@ pub async fn destructive_confirmation_gate(
         return Ok(true);
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
         return Err(RoutineFailure::error(Message::new(
             "Destructive".to_string(),
             format!(
@@ -697,7 +697,7 @@ pub async fn migration_destructive_gate(
         return Ok(MigrationGateOutcome::Accepted);
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
         return Err(RoutineFailure::error(Message::new(
             "Destructive".to_string(),
             format!(
@@ -879,7 +879,7 @@ pub async fn rename_confirmation_gate(
         return Ok(Some(HashSet::new()));
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
         return Err(RoutineFailure::error(Message::new(
             "Rename".to_string(),
             format!(
