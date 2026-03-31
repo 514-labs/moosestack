@@ -19,6 +19,9 @@ Run this next:
 📦 Install all dependencies:
     $ pnpm install
 
+🔧 Build workspace packages:
+    $ pnpm build
+
 🔐 Create environment files:
     $ pnpm env:prepare
 

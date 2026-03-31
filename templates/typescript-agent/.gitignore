@@ -5,3 +5,7 @@ coverage
 .ts-node
 
 .turbo
+
+# env files
+.env*
+!.env.example
