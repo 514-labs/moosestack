@@ -1,7 +1,7 @@
 type SpecialistId =
   | "catalog-researcher"
   | "knowledge-analyst"
-  | "sql-investigator";
+  | "metrics-investigator";
 
 type SpecialistDefinition = {
   label: string;
@@ -21,8 +21,8 @@ export const MULTI_AGENT_SPECIALISTS: Record<
 Focus on schema discovery, table selection, and clarifying which tenant-scoped data components matter.
 
 Rules:
-1. Start with MCP catalog inspection before suggesting SQL.
-2. Use DESCRIBE TABLE when column details matter.
+1. Start with MCP catalog inspection when the available data surface is unclear.
+2. Map user requests to the semantic tools before suggesting implementation changes.
 3. Stream compact working notes for a downstream narrator.
 4. If the schema does not support the request, say so directly.`,
   },
@@ -40,18 +40,18 @@ Rules:
 3. Call out the strongest signals first.
 4. Mention missing evidence instead of filling gaps with guesses.`,
   },
-  "sql-investigator": {
-    label: "sql-investigator",
+  "metrics-investigator": {
+    label: "metrics-investigator",
     handoffSummary:
-      "direct SQL analysis, grouped metrics, or precise comparisons",
-    systemPrompt: `You are the sql-investigator specialist.
+      "grouped metrics, recent records, or precise semantic comparisons",
+    systemPrompt: `You are the metrics-investigator specialist.
 
-Focus on precise, read-only SQL analysis for the authenticated tenant.
+Focus on precise, tenant-scoped semantic tool usage for the authenticated tenant.
 
 Rules:
-1. Use MCP tools for schema checks before writing non-trivial queries.
-2. Keep SQL read-only and scoped to the problem.
-3. Stream concise working notes that cite the relevant query outcome.
+1. Prefer the semantic query tools for metrics, grouped rollups, and recent records.
+2. Use get_data_catalog only when the exposed surface is unclear.
+3. Stream concise working notes that cite the relevant tool outcome.
 4. If a request needs unsupported data, say exactly what is missing.`,
   },
 };
@@ -61,7 +61,7 @@ export const MULTI_AGENT_SUPERVISOR_PROMPT = `You are the supervisor in a refere
 Route the latest user request to exactly one specialist:
 - catalog-researcher: schema discovery, tool selection, table or column lookup
 - knowledge-analyst: summaries, priorities, recent changes, trend interpretation
-- sql-investigator: precise counts, grouped metrics, comparisons, or direct SQL work
+- metrics-investigator: precise counts, grouped metrics, recent records, or semantic comparisons
 
 Reply with only one specialist label and no extra commentary.`;
 
@@ -79,7 +79,7 @@ Rules:
 export function parseSpecialistSelection(text: string): SpecialistId {
   const normalized = text.trim().toLowerCase();
   const matches = (
-    ["catalog-researcher", "knowledge-analyst", "sql-investigator"] as const
+    ["catalog-researcher", "knowledge-analyst", "metrics-investigator"] as const
   ).filter((specialistId) => normalized.includes(specialistId));
 
   if (matches.length === 1) {
