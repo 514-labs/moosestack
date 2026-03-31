@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { HARNESS_INIT_COMMAND } from "../src/constants";
 import {
   buildInstallStateSummary,
   createInitialInstallState,
@@ -53,7 +54,7 @@ test("buildInstallStateSummary returns a readable installer status block", () =>
   assert.match(summary, /Last result: latest installer run succeeded/);
   assert.match(summary, /Moose CLI: moose 2\.0\.0/);
   assert.match(summary, /514 CLI: 514 1\.0\.0/);
-  assert.match(summary, /Harness init command: moose init/);
+  assert.ok(summary.includes(`Harness init command: ${HARNESS_INIT_COMMAND}`));
 });
 
 test("recordUnsupportedPlatform preserves the WSL guidance", () => {

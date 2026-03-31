@@ -255,7 +255,7 @@ export function buildHarnessSplashHtml(
       </section>
 
       <section class="actions">
-        <button type="button" data-command="copyHarnessCommand">Copy moose init</button>
+        <button type="button" data-command="copyHarnessCommand">Copy ${escapedHarnessCommand}</button>
         <button type="button" class="secondary" data-link="${escapedDocsUrl}">Open MooseStack docs</button>
         <button type="button" class="secondary" data-link="${escapedSupportUrl}">Open support</button>
         <button type="button" class="secondary" data-command="checkInstallState">Check install state</button>
@@ -311,7 +311,7 @@ export function showHarnessSplashPanel(
       if (command === "copyHarnessCommand") {
         await vscodeApi.env.clipboard.writeText(HARNESS_INIT_COMMAND);
         void vscodeApi.window.showInformationMessage(
-          "Copied `moose init` to the clipboard.",
+          `Copied \`${HARNESS_INIT_COMMAND}\` to the clipboard.`,
         );
         return;
       }

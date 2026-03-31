@@ -14,7 +14,7 @@ Fiveonefour is a narrow VS Code workspace extension for keeping the Moose and `5
 When the installer run succeeds, Fiveonefour opens a splash page focused on the current Harness init command:
 
 ```bash
-moose init
+moose harness init
 ```
 
 Use that command from a terminal in the parent directory where you want the new Harness project to be created.
