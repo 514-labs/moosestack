@@ -82,8 +82,5 @@
     "eslint": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "8.55.0"
-  },
-  "dependencies": {
-    "escape-goat": "^4.0.0"
   }
 }
