@@ -21,9 +21,9 @@ export function SuggestedPrompts({
         Suggested prompts
       </div>
       <Suggestions>
-        {prompts.map((prompt) => (
+        {prompts.map((prompt, index) => (
           <Suggestion
-            key={prompt}
+            key={`${prompt}-${index}`}
             className="border-border/70 bg-background/80 text-left text-muted-foreground hover:text-foreground"
             onClick={onPromptClick}
             suggestion={prompt}

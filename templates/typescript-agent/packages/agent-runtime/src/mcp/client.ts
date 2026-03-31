@@ -5,7 +5,9 @@ import { resolveMcpServerUrl } from "./urls.js";
 
 function shouldWrapMcpConnectionError(error: unknown): boolean {
   const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error);
+    error instanceof Error ?
+      error.message.toLowerCase()
+    : String(error).toLowerCase();
 
   if (
     message.includes("401") ||

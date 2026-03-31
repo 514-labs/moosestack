@@ -33,6 +33,19 @@ describe("query-tool-errors", () => {
     );
   });
 
+  it("keeps system metadata guidance distinct from table allowlist failures", () => {
+    expect(
+      formatQueryToolError(
+        new Error(
+          "System metadata is not exposed by default. Use get_data_catalog for the allowlisted schema surface.",
+        ),
+        ["tenant_knowledge"],
+      ),
+    ).toBe(
+      "System metadata is not available to this tool. Use get_data_catalog to discover the exposed tables and columns.",
+    );
+  });
+
   it("returns safe guidance for validation errors", () => {
     expect(
       formatQueryToolError(

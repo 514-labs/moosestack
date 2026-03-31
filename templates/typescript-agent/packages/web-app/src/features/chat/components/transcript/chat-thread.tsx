@@ -30,10 +30,10 @@ import { ToolInvocation } from "../../renderers/tools/tool-invocation";
 import {
   createMessagePartKeyFactory,
   extractTextFromParts,
+  getReasoningText,
   isReasoningPart,
   isSourcePart,
   isToolPart,
-  type ReasoningPart,
   type SourcePart,
   type ToolTimingPayload,
 } from "../../types/message-parts";
@@ -44,17 +44,6 @@ type ChatThreadProps = {
   errorMessage?: string | null;
   toolTimings?: Record<string, ToolTimingPayload>;
 };
-
-function getReasoningText(part: ReasoningPart) {
-  return (
-    part.details
-      ?.map((detail) =>
-        detail.type === "text" ? (detail.text ?? "") : "<redacted>",
-      )
-      .join("")
-      .trim() ?? ""
-  );
-}
 
 function MessageSources({ parts }: { parts: SourcePart[] }) {
   if (parts.length === 0) {

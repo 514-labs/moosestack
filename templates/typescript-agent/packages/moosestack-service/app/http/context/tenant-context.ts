@@ -1,11 +1,23 @@
-import type { MooseUtils } from "@514labs/moose-lib";
+import {
+  buildRowPolicyOptionsFromClaims,
+  MOOSE_RLS_SETTING_PREFIX,
+  type MooseUtils,
+  type RowPolicyOptions,
+} from "@514labs/moose-lib";
 import type express from "express";
+import { TENANT_ROW_POLICY_CONFIG } from "../../security/tenant-isolation";
+
+const ROW_POLICY_CONFIG = Object.freeze({
+  [`${MOOSE_RLS_SETTING_PREFIX}${TENANT_ROW_POLICY_CONFIG.column}`]:
+    TENANT_ROW_POLICY_CONFIG.claim,
+});
 
 export type MooseRequest = express.Request & { moose?: MooseUtils };
 
 export interface TenantMooseContext {
   moose: MooseUtils;
   tenantId: string;
+  rowPolicyOptions: RowPolicyOptions;
 }
 
 export function getTenantMooseContext(
@@ -22,10 +34,30 @@ export function getTenantMooseContext(
     return undefined;
   }
 
+  const rowPolicyOptions = buildRowPolicyOptionsFromClaims(
+    ROW_POLICY_CONFIG,
+    moose.jwt,
+  );
+
   return {
     moose,
     tenantId,
+    rowPolicyOptions,
   };
+}
+
+export function assertTenantMooseContext(
+  req: express.Request,
+): TenantMooseContext {
+  const context = getTenantMooseContext(req);
+
+  if (!context) {
+    throw new Error(
+      "Tenant context missing after requireTenantMoose middleware.",
+    );
+  }
+
+  return context;
 }
 
 export function respondUnauthorized(res: express.Response): express.Response {

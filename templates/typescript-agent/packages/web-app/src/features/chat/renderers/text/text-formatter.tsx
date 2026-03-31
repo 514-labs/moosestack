@@ -1,15 +1,16 @@
+import type { JSX } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { CodeBlock } from "./code-block";
 
-type TextFormatterProps = {
+interface TextFormatterProps {
   text: string;
-};
+}
 
-export function TextFormatter({ text }: TextFormatterProps) {
+export function TextFormatter({ text }: TextFormatterProps): JSX.Element {
   return (
-    <div className="max-w-[400px] min-w-full">
+    <div className="w-full max-w-[400px]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -36,9 +37,15 @@ export function TextFormatter({ text }: TextFormatterProps) {
             </ol>
           ),
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-          code: ({ className, children, ...props }) => {
+          code: ({ className, children, node, ...props }) => {
+            const rawChildren = String(children);
             const match = /language-(\w+)/.exec(className || "");
-            const isInline = !match && !String(children).includes("\n");
+            const hasMultipleLines =
+              node?.position ?
+                node.position.start.line !== node.position.end.line
+              : rawChildren.includes("\n");
+            const isInline =
+              !match && !hasMultipleLines && !rawChildren.endsWith("\n");
 
             if (isInline) {
               return (
@@ -56,7 +63,7 @@ export function TextFormatter({ text }: TextFormatterProps) {
 
             return (
               <CodeBlock language={match ? match[1] : undefined}>
-                {String(children).replace(/\n$/, "")}
+                {rawChildren.replace(/\n$/, "")}
               </CodeBlock>
             );
           },

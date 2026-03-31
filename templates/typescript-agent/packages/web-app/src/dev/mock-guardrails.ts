@@ -11,6 +11,9 @@ const MOCK_GUARDRAIL_PATTERNS = [
 class DevelopmentMockGuardrailAdapter implements GuardrailAdapter {
   async assessPrompt(prompt: string): Promise<GuardrailResult> {
     const start = Date.now();
+    // Dev-only mock guardrails intentionally use simple regexes. They are easy to
+    // evade via substitutions, Unicode confusables, or fuzzy phrasing and should
+    // never be treated as production-grade prompt safety.
     const flaggedPatterns = MOCK_GUARDRAIL_PATTERNS.filter((pattern) =>
       pattern.test(prompt),
     );

@@ -78,20 +78,17 @@ Rules:
 
 export function parseSpecialistSelection(text: string): SpecialistId {
   const normalized = text.trim().toLowerCase();
+  const matches = (
+    ["catalog-researcher", "knowledge-analyst", "sql-investigator"] as const
+  ).filter((specialistId) => normalized.includes(specialistId));
 
-  if (normalized.includes("catalog-researcher")) {
-    return "catalog-researcher";
-  }
-
-  if (normalized.includes("knowledge-analyst")) {
-    return "knowledge-analyst";
-  }
-
-  if (normalized.includes("sql-investigator")) {
-    return "sql-investigator";
+  if (matches.length === 1) {
+    return matches[0];
   }
 
   throw new Error(
-    `Supervisor returned an unknown specialist route: ${text || "<empty>"}`,
+    matches.length > 1 ?
+      `Supervisor returned an ambiguous specialist route: ${text || "<empty>"}.`
+    : `Supervisor returned an unknown specialist route: ${text || "<empty>"}`,
   );
 }

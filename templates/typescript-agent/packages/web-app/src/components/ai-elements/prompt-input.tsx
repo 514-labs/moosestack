@@ -15,9 +15,11 @@ import type {
   ChangeEventHandler,
   ClipboardEventHandler,
   ComponentProps,
+  CompositionEventHandler,
   FormEvent,
   FormEventHandler,
   HTMLAttributes,
+  JSX,
   KeyboardEventHandler,
   PropsWithChildren,
   ReactNode,
@@ -210,7 +212,7 @@ const ProviderAttachmentsContext = createContext<AttachmentsContext | null>(
   null,
 );
 
-export const usePromptInputController = () => {
+export const usePromptInputController = (): PromptInputControllerProps => {
   const ctx = useContext(PromptInputController);
   if (!ctx) {
     throw new Error(
@@ -224,7 +226,7 @@ export const usePromptInputController = () => {
 const useOptionalPromptInputController = () =>
   useContext(PromptInputController);
 
-export const useProviderAttachments = () => {
+export const useProviderAttachments = (): AttachmentsContext => {
   const ctx = useContext(ProviderAttachmentsContext);
   if (!ctx) {
     throw new Error(
@@ -248,7 +250,7 @@ export type PromptInputProviderProps = PropsWithChildren<{
 export const PromptInputProvider = ({
   initialInput: initialTextInput = "",
   children,
-}: PromptInputProviderProps) => {
+}: PromptInputProviderProps): JSX.Element => {
   // ----- textInput state
   const [textInput, setTextInput] = useState(initialTextInput);
   const clearInput = useCallback(() => setTextInput(""), []);
@@ -371,7 +373,7 @@ export const PromptInputProvider = ({
 
 const LocalAttachmentsContext = createContext<AttachmentsContext | null>(null);
 
-export const usePromptInputAttachments = () => {
+export const usePromptInputAttachments = (): AttachmentsContext => {
   // Prefer local context (inside PromptInput) as it has validation, fall back to provider
   const provider = useOptionalProviderAttachments();
   const local = useContext(LocalAttachmentsContext);
@@ -398,7 +400,7 @@ export interface ReferencedSourcesContext {
 export const LocalReferencedSourcesContext =
   createContext<ReferencedSourcesContext | null>(null);
 
-export const usePromptInputReferencedSources = () => {
+export const usePromptInputReferencedSources = (): ReferencedSourcesContext => {
   const ctx = useContext(LocalReferencedSourcesContext);
   if (!ctx) {
     throw new Error(
@@ -417,7 +419,7 @@ export type PromptInputActionAddAttachmentsProps = ComponentProps<
 export const PromptInputActionAddAttachments = ({
   label = "Add photos or files",
   ...props
-}: PromptInputActionAddAttachmentsProps) => {
+}: PromptInputActionAddAttachmentsProps): JSX.Element => {
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -445,7 +447,7 @@ export const PromptInputActionAddScreenshot = ({
   label = "Take screenshot",
   onSelect,
   ...props
-}: PromptInputActionAddScreenshotProps) => {
+}: PromptInputActionAddScreenshotProps): JSX.Element => {
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -523,7 +525,7 @@ export const PromptInput = ({
   onSubmit,
   children,
   ...props
-}: PromptInputProps) => {
+}: PromptInputProps): JSX.Element => {
   // Try to use a provider controller if present
   const controller = useOptionalPromptInputController();
   const usingProvider = !!controller;
@@ -564,6 +566,10 @@ export const PromptInput = ({
         .filter(Boolean);
 
       return patterns.some((pattern) => {
+        if (pattern.startsWith(".")) {
+          return f.name.toLowerCase().endsWith(pattern.toLowerCase());
+        }
+
         if (pattern.endsWith("/*")) {
           // e.g: image/* -> image/
           const prefix = pattern.slice(0, -1);
@@ -853,12 +859,6 @@ export const PromptInput = ({
             return (formData.get("message") as string) || "";
           })();
 
-      // Reset form immediately after capturing text to avoid race condition
-      // where user input during async blob conversion would be lost
-      if (!usingProvider) {
-        form.reset();
-      }
-
       try {
         // Convert blob URLs to data URLs asynchronously
         const convertedFiles: FileUIPart[] = await Promise.all(
@@ -884,6 +884,8 @@ export const PromptInput = ({
             clear();
             if (usingProvider) {
               controller.textInput.clear();
+            } else {
+              form.reset();
             }
           } catch {
             // Don't clear on error - user may want to retry
@@ -893,6 +895,8 @@ export const PromptInput = ({
           clear();
           if (usingProvider) {
             controller.textInput.clear();
+          } else {
+            form.reset();
           }
         }
       } catch {
@@ -945,7 +949,7 @@ export type PromptInputBodyProps = HTMLAttributes<HTMLDivElement>;
 export const PromptInputBody = ({
   className,
   ...props
-}: PromptInputBodyProps) => (
+}: PromptInputBodyProps): JSX.Element => (
   <div className={cn("contents", className)} {...props} />
 );
 
@@ -956,10 +960,13 @@ export type PromptInputTextareaProps = ComponentProps<
 export const PromptInputTextarea = ({
   onChange,
   onKeyDown,
+  onPaste,
+  onCompositionEnd,
+  onCompositionStart,
   className,
   placeholder = "What would you like to know?",
   ...props
-}: PromptInputTextareaProps) => {
+}: PromptInputTextareaProps): JSX.Element => {
   const controller = useOptionalPromptInputController();
   const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
@@ -1034,12 +1041,30 @@ export const PromptInputTextarea = ({
         event.preventDefault();
         attachments.add(files);
       }
+
+      onPaste?.(event);
     },
-    [attachments],
+    [attachments, onPaste],
   );
 
-  const handleCompositionEnd = useCallback(() => setIsComposing(false), []);
-  const handleCompositionStart = useCallback(() => setIsComposing(true), []);
+  const handleCompositionEnd = useCallback<
+    CompositionEventHandler<HTMLTextAreaElement>
+  >(
+    (event) => {
+      setIsComposing(false);
+      onCompositionEnd?.(event);
+    },
+    [onCompositionEnd],
+  );
+  const handleCompositionStart = useCallback<
+    CompositionEventHandler<HTMLTextAreaElement>
+  >(
+    (event) => {
+      setIsComposing(true);
+      onCompositionStart?.(event);
+    },
+    [onCompositionStart],
+  );
 
   const controlledProps =
     controller ?
@@ -1077,7 +1102,7 @@ export type PromptInputHeaderProps = Omit<
 export const PromptInputHeader = ({
   className,
   ...props
-}: PromptInputHeaderProps) => (
+}: PromptInputHeaderProps): JSX.Element => (
   <InputGroupAddon
     align="block-end"
     className={cn("order-first flex-wrap gap-1", className)}
@@ -1093,7 +1118,7 @@ export type PromptInputFooterProps = Omit<
 export const PromptInputFooter = ({
   className,
   ...props
-}: PromptInputFooterProps) => (
+}: PromptInputFooterProps): JSX.Element => (
   <InputGroupAddon
     align="block-end"
     className={cn("justify-between gap-1", className)}
@@ -1106,7 +1131,7 @@ export type PromptInputToolsProps = HTMLAttributes<HTMLDivElement>;
 export const PromptInputTools = ({
   className,
   ...props
-}: PromptInputToolsProps) => (
+}: PromptInputToolsProps): JSX.Element => (
   <div
     className={cn("flex min-w-0 items-center gap-1", className)}
     {...props}
@@ -1131,7 +1156,7 @@ export const PromptInputButton = ({
   size,
   tooltip,
   ...props
-}: PromptInputButtonProps) => {
+}: PromptInputButtonProps): JSX.Element => {
   const newSize =
     size ?? (Children.count(props.children) > 1 ? "sm" : "icon-sm");
 
@@ -1168,9 +1193,9 @@ export const PromptInputButton = ({
 };
 
 export type PromptInputActionMenuProps = ComponentProps<typeof DropdownMenu>;
-export const PromptInputActionMenu = (props: PromptInputActionMenuProps) => (
-  <DropdownMenu {...props} />
-);
+export const PromptInputActionMenu = (
+  props: PromptInputActionMenuProps,
+): JSX.Element => <DropdownMenu {...props} />;
 
 export type PromptInputActionMenuTriggerProps = PromptInputButtonProps;
 
@@ -1178,7 +1203,7 @@ export const PromptInputActionMenuTrigger = ({
   className,
   children,
   ...props
-}: PromptInputActionMenuTriggerProps) => (
+}: PromptInputActionMenuTriggerProps): JSX.Element => (
   <DropdownMenuTrigger asChild>
     <PromptInputButton className={className} {...props}>
       {children ?? <PlusIcon className="size-4" />}
@@ -1192,7 +1217,7 @@ export type PromptInputActionMenuContentProps = ComponentProps<
 export const PromptInputActionMenuContent = ({
   className,
   ...props
-}: PromptInputActionMenuContentProps) => (
+}: PromptInputActionMenuContentProps): JSX.Element => (
   <DropdownMenuContent align="start" className={cn(className)} {...props} />
 );
 
@@ -1202,7 +1227,7 @@ export type PromptInputActionMenuItemProps = ComponentProps<
 export const PromptInputActionMenuItem = ({
   className,
   ...props
-}: PromptInputActionMenuItemProps) => (
+}: PromptInputActionMenuItemProps): JSX.Element => (
   <DropdownMenuItem className={cn(className)} {...props} />
 );
 
@@ -1223,7 +1248,7 @@ export const PromptInputSubmit = ({
   onClick,
   children,
   ...props
-}: PromptInputSubmitProps) => {
+}: PromptInputSubmitProps): JSX.Element => {
   const isGenerating = status === "submitted" || status === "streaming";
 
   let Icon = <CornerDownLeftIcon className="size-4" />;
@@ -1265,9 +1290,9 @@ export const PromptInputSubmit = ({
 
 export type PromptInputSelectProps = ComponentProps<typeof Select>;
 
-export const PromptInputSelect = (props: PromptInputSelectProps) => (
-  <Select {...props} />
-);
+export const PromptInputSelect = (
+  props: PromptInputSelectProps,
+): JSX.Element => <Select {...props} />;
 
 export type PromptInputSelectTriggerProps = ComponentProps<
   typeof SelectTrigger
@@ -1276,7 +1301,7 @@ export type PromptInputSelectTriggerProps = ComponentProps<
 export const PromptInputSelectTrigger = ({
   className,
   ...props
-}: PromptInputSelectTriggerProps) => (
+}: PromptInputSelectTriggerProps): JSX.Element => (
   <SelectTrigger
     className={cn(
       "border-none bg-transparent font-medium text-muted-foreground shadow-none transition-colors",
@@ -1294,7 +1319,7 @@ export type PromptInputSelectContentProps = ComponentProps<
 export const PromptInputSelectContent = ({
   className,
   ...props
-}: PromptInputSelectContentProps) => (
+}: PromptInputSelectContentProps): JSX.Element => (
   <SelectContent className={cn(className)} {...props} />
 );
 
@@ -1303,7 +1328,7 @@ export type PromptInputSelectItemProps = ComponentProps<typeof SelectItem>;
 export const PromptInputSelectItem = ({
   className,
   ...props
-}: PromptInputSelectItemProps) => (
+}: PromptInputSelectItemProps): JSX.Element => (
   <SelectItem className={cn(className)} {...props} />
 );
 

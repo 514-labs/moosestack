@@ -43,9 +43,13 @@ export function useChatProviderStatus() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     async function fetchStatus() {
       try {
-        const response = await fetch("/api/chat/status");
+        const response = await fetch("/api/chat/status", {
+          signal: abortController.signal,
+        });
         if (!response.ok) {
           throw new Error(
             `Failed to fetch chat status: ${response.statusText}`,
@@ -61,6 +65,10 @@ export function useChatProviderStatus() {
 
         setData(status);
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
         console.error("Failed to fetch chat status:", error);
         setData({
           provider: "anthropic",
@@ -75,11 +83,17 @@ export function useChatProviderStatus() {
             "Failed to load chat status. Check the web app and Moose service logs.",
         });
       } finally {
-        setIsLoading(false);
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     }
 
     fetchStatus();
+
+    return () => {
+      abortController.abort();
+    };
   }, []);
 
   return { data, isLoading };

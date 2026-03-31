@@ -136,6 +136,16 @@ describe("tool-access", () => {
     );
   });
 
+  it("ignores SQL-looking text inside string literals", () => {
+    expect(
+      validateExposedReadonlyQuery(
+        "SELECT headline FROM tenant_knowledge WHERE headline = 'system.tables JOIN secret_table'",
+      ),
+    ).toBe(
+      "SELECT headline FROM tenant_knowledge WHERE headline = 'system.tables JOIN secret_table'",
+    );
+  });
+
   it("rejects qualified table names", () => {
     expect(() =>
       validateExposedReadonlyQuery(
@@ -150,5 +160,47 @@ describe("tool-access", () => {
         "SELECT * FROM tenant_knowledge AS tk, tenant_knowledge AS other_tk",
       ),
     ).toThrow(/Comma-separated FROM and JOIN target lists are not allowed/);
+  });
+
+  it("rejects joined tables that are not exposed", () => {
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge AS tk JOIN secret_table AS s ON s.tenant_id = tk.tenant_id",
+      ),
+    ).toThrow(/Available tables: tenant_knowledge/);
+  });
+
+  it("rejects bare JOIN targets that are not exposed", () => {
+    expect(() =>
+      validateExposedReadonlyQuery(
+        "SELECT * FROM tenant_knowledge JOIN secret_table ON secret_table.tenant_id = tenant_knowledge.tenant_id",
+      ),
+    ).toThrow(/Available tables: tenant_knowledge/);
+  });
+
+  it("allows ARRAY JOIN without treating the joined array as a table reference", () => {
+    expect(
+      validateExposedReadonlyQuery(
+        "SELECT tenant_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag",
+      ),
+    ).toBe(
+      "SELECT tenant_id, tag FROM tenant_knowledge ARRAY JOIN tags AS tag",
+    );
+  });
+
+  it("falls back safely for oversized search patterns", () => {
+    expect(() =>
+      getExposedDataCatalog("tables", "(a+)+$".repeat(200)),
+    ).not.toThrow();
+  });
+
+  it("falls back safely for suspicious regex features in catalog search", () => {
+    expect(() =>
+      getExposedDataCatalog("tables", "(?=tenant_knowledge)tenant_knowledge"),
+    ).not.toThrow();
+    expect(
+      getExposedDataCatalog("tables", "(?=tenant_knowledge)tenant_knowledge")
+        .tables,
+    ).toEqual([]);
   });
 });

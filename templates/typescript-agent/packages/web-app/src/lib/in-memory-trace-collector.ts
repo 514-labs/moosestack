@@ -3,7 +3,7 @@ import type { AgentStepRecord, TraceCollector } from "agent-runtime";
 class InMemoryTraceCollector implements TraceCollector {
   private traces = new Map<string, AgentStepRecord[]>();
 
-  startTrace(): string {
+  startTrace(_metadata: Parameters<TraceCollector["startTrace"]>[0]): string {
     const traceId = crypto.randomUUID();
     this.traces.set(traceId, []);
     return traceId;
@@ -18,7 +18,10 @@ class InMemoryTraceCollector implements TraceCollector {
     steps.push(step);
   }
 
-  async endTrace(): Promise<void> {
+  async endTrace(
+    _traceId: string,
+    _summary: Parameters<TraceCollector["endTrace"]>[1],
+  ): Promise<void> {
     return;
   }
 }

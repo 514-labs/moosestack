@@ -4,9 +4,16 @@ import type { experimental_createMCPClient } from "@ai-sdk/mcp";
 import type { createOpenAI } from "@ai-sdk/openai";
 import type { convertToModelMessages, stepCountIs, streamText } from "ai";
 
-export type AnthropicModel = ReturnType<ReturnType<typeof createAnthropic>>;
-export type BedrockModel = ReturnType<ReturnType<typeof createAmazonBedrock>>;
-export type OpenAIModel = ReturnType<ReturnType<typeof createOpenAI>>;
+type ModelFromFactory<TFactory> =
+  TFactory extends (...args: infer _FactoryArgs) => infer TProviderFactory ?
+    TProviderFactory extends (...args: infer _ModelArgs) => infer TModel ?
+      TModel
+    : never
+  : never;
+
+export type AnthropicModel = ModelFromFactory<typeof createAnthropic>;
+export type BedrockModel = ModelFromFactory<typeof createAmazonBedrock>;
+export type OpenAIModel = ModelFromFactory<typeof createOpenAI>;
 export type MCPClient = Awaited<
   ReturnType<typeof experimental_createMCPClient>
 >;

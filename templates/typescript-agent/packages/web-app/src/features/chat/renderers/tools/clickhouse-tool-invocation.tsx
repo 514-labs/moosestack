@@ -1,3 +1,5 @@
+"use client";
+
 import {
   AlertCircle,
   CheckCircle,
@@ -133,11 +135,14 @@ export function ClickHouseToolInvocation({
     >
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
-          <div
+          <button
+            aria-disabled={isLoading}
             className={cn(
-              "flex items-center gap-2 p-3 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors",
+              "flex w-full items-center gap-2 border-0 bg-transparent p-3 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-default",
               isLoading && "text-muted-foreground",
             )}
+            disabled={isLoading}
+            type="button"
           >
             <ChevronRight
               className={cn(
@@ -164,7 +169,7 @@ export function ClickHouseToolInvocation({
 
             <div className="flex-1" />
 
-            {part.state === "output-available" && timing && (
+            {part.state === "output-available" && timing !== undefined && (
               <Badge variant="secondary" className="text-xs mr-2">
                 {formatDuration(timing)}
               </Badge>
@@ -177,7 +182,7 @@ export function ClickHouseToolInvocation({
             )}
 
             {getStatusIcon()}
-          </div>
+          </button>
         </CollapsibleTrigger>
 
         <CollapsibleContent className="relative overflow-hidden">

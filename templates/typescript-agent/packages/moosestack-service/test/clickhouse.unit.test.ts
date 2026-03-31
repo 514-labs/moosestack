@@ -17,21 +17,24 @@ describe("executeReadonlyStatement", () => {
       client: {
         query: querySpy,
       },
-      rowPolicyOptions: {
-        role: "tenant_reader",
-        clickhouse_settings: {
-          readonly: "0",
-          max_result_rows: "9999",
-          result_overflow_mode: "throw",
-          output_format_json_quote_64bit_integers: "0",
-        },
+    };
+    const rowPolicyOptions = {
+      role: "tenant_reader",
+      clickhouse_settings: {
+        readonly: "0",
+        max_result_rows: "9999",
+        result_overflow_mode: "throw",
+        output_format_json_quote_64bit_integers: "0",
       },
     };
 
     const rows = await executeReadonlyStatement<{ tenant_id: string }>(
       queryClient as never,
       "SELECT tenant_id FROM tenant_knowledge LIMIT 1",
-      100,
+      {
+        limit: 100,
+        rowPolicyOptions,
+      },
     );
 
     expect(rows).toEqual([{ tenant_id: "acme" }]);
@@ -52,7 +55,7 @@ describe("executeReadonlyStatement", () => {
     );
   });
 
-  it("preserves full ISO timestamps for Date query parameters", async () => {
+  it("formats Date query parameters as ClickHouse-compatible UTC timestamps", async () => {
     const querySpy = vi.fn(async () => {
       return {
         json: async () => [],
@@ -74,11 +77,39 @@ describe("executeReadonlyStatement", () => {
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         query_params: {
-          p0: timestamp.toISOString(),
+          p0: "2026-03-27 16:34:56",
         },
         clickhouse_settings: expect.objectContaining({
           readonly: "2",
           max_result_rows: "25",
+        }),
+      }),
+    );
+  });
+
+  it("still supports the numeric limit shorthand", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+    };
+
+    await executeReadonlyStatement(
+      queryClient as never,
+      "SELECT tenant_id FROM tenant_knowledge",
+      10,
+    );
+
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clickhouse_settings: expect.objectContaining({
+          max_result_rows: "10",
+          readonly: "2",
         }),
       }),
     );

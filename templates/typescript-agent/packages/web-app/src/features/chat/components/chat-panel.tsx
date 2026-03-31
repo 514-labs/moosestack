@@ -44,9 +44,9 @@ function ChatUnavailableMessage({
   );
 }
 
-type ChatPanelProps = {
+interface ChatPanelProps {
   onClose?: () => void;
-};
+}
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
   const { data: providerStatus, isLoading: isStatusLoading } =
@@ -101,6 +101,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
           </div>
           {onClose && (
             <Button
+              aria-label="Close chat panel"
               variant="ghost"
               size="sm"
               onClick={onClose}
