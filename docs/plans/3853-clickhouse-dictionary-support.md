@@ -166,7 +166,24 @@ Implement:
 
 - Add dictionary lifecycle filtering (DELETION_PROTECTED blocks DROP, EXTERNALLY_MANAGED blocks all)
 
-### 1.8 Modify: Plan + reconciliation
+### 1.8 Modify: Proto file + state persistence
+
+- `packages/protobuf/infrastructure_map.proto`:
+  - Add `message OlapDictionary { ... }` with all fields (name, database, cluster, source, primary_key, columns, layout, lifetime, invalidate, defaults, settings, life_cycle, metadata)
+  - Add `map<string, OlapDictionary> olap_dictionaries = <next_field_number>;` to `InfrastructureMap` message
+  - Add `string olap_dictionary_id = <next_field_number>;` to `InfrastructureSignature` oneof
+- `apps/framework-cli/src/framework/core/infrastructure/mod.rs`:
+  - Add `OlapDictionary { id: String }` variant to `InfrastructureSignature` enum
+  - Add `to_proto()` and `from_proto()` arms for the new variant
+- `apps/framework-cli/src/framework/core/infrastructure_map.rs`:
+  - Add `to_proto()` serialization for dictionaries (~line 2830)
+  - Add `from_proto()` deserialization for dictionaries (~line 3000)
+- `apps/framework-cli/src/mcp/compressed_map.rs`:
+  - Add `add_olap_dictionaries()` to `build_compressed_map()`
+
+**Why this is required in v1**: Without proto updates, dictionaries are silently lost on state persistence (to_proto drops them), causing every restart to re-create them. The failure is runtime data loss, not a build error.
+
+### 1.9 Modify: Plan + reconciliation
 
 - `plan.rs` — add `dictionary_ids` to `ReconciliationFilter`
 - `infra_reality_checker.rs` — add dictionary reconciliation
@@ -291,7 +308,6 @@ Mirrors TypeScript API with Pydantic config models.
 
 - `moose db pull` introspection for dictionaries (complex `system.dictionaries` parsing)
 - Environment-aware source config (belongs in Moose's env system, not Dictionary-specific)
-- Proto file updates for infrastructure persistence (if needed)
 - Automatic `dictGet` dependency detection in View/MV SQL strings
 
 ---
@@ -315,6 +331,8 @@ Mirrors TypeScript API with Pydantic config models.
 | Rust | `clickhouse/mod.rs` | Execution + introspection |
 | Rust | `lifecycle_filter.rs` | Lifecycle enforcement |
 | Rust | `plan.rs` | Reconciliation filter |
+| Proto | `packages/protobuf/infrastructure_map.proto` | State persistence schema |
+| Rust | `mcp/compressed_map.rs` | MCP compressed map |
 | TS | `dmv2/sdk/olapDictionary.ts` (NEW) | SDK class |
 | TS | `dmv2/internal.ts` | Registry + serialization |
 | TS | `dmv2/dataModelMetadata.ts` | Compiler plugin registration |
