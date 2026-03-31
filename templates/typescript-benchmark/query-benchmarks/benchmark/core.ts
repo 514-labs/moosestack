@@ -32,7 +32,7 @@ export interface BenchmarkContext {
 }
 
 export async function createBenchmarkContext(): Promise<BenchmarkContext> {
-  const { client } = await getMooseUtils();
+  const { client } = await getMooseUtils({ readonly: true });
   const targetDb = process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME ?? "local";
   return {
     client,
