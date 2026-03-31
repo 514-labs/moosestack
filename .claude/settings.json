@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm format:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm clean:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo check:*)",
+      "Bash(pytest:*)",
+      "Bash(black:*)",
+      "Bash(turbo:*)",
+      "Bash(node scripts/*:*)",
+      "Bash(cargo-test:*)",
+      "Bash(ts-test:*)",
+      "Bash(py-test:*)",
+      "Bash(e2e-test:*)",
+      "Bash(test-all:*)",
+      "Bash(rustfmt:*)",
+      "Bash(mocha:*)",
+      "Bash(tsup:*)"
+    ]
+  }
+}
