@@ -1,45 +1,23 @@
 ---
-title: 5-Minute Quickstart
-description: Build your first analytical backend with Moose in 5 minutes
+title: Quickstart
+description: Specialize your coding agent for ClickHouse. Ship analytical infrastructure in hours, not weeks.
 order: 1
 category: getting-started
 ---
 
+import { Callout, ToggleBlock, BulletPointsCard, IconBadge, CTACards, CTACard, LanguageTabs, LanguageTabContent, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
 
-import { Callout, ToggleBlock, MuxVideo, BulletPointsCard, IconBadge, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
-import { PathConfig } from "@/lib/path-config";
-
-# 5-Minute Quickstart
+# Quickstart
 
 <div className="flex items-center gap-4 my-8 flex-wrap">
-<IconBadge Icon="Clock" label="5 minute setup" variant="moose" />
-<IconBadge Icon="Check" label="Zero config" variant="moose" />
-<IconBadge Icon="DeviceLaptop" label="Local ClickHouse, Redpanda, and APIs" variant="moose" />
+<IconBadge Icon="Robot" label="Agent-ready in 5 min" variant="moose" />
+<IconBadge Icon="DeviceLaptop" label="Local ClickHouse, Redpanda & Temporal" variant="moose" />
+<IconBadge Icon="Sparkles" label="Claude Code, Cursor, Kiro" variant="moose" />
 </div>
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-<MuxVideo
-  playbackId="ayaB9Q00q9RIePJLfErDyRnCIOpGpHmVNSX7xy02SBGN8"
-  title="Moose Quickstart Video"
-  width="100%"
-  height="auto"
-  poster="https://image.mux.com/ayaB9Q00q9RIePJLfErDyRnCIOpGpHmVNSX7xy02SBGN8/thumbnail.png?width=214&height=121&time=28"
-/>
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-<MuxVideo
-  playbackId="7b6BmW9005WdBQnBrA1l2dHKNvLKyKIrlz9700k9NV71o"
-  title="Moose Quickstart Video"
-  width="100%"
-  height="auto"
-  poster="https://image.mux.com/7b6BmW9005WdBQnBrA1l2dHKNvLKyKIrlz9700k9NV71o/thumbnail.png?width=214&height=121&time=29"
-/>
-  </LanguageTabContent>
-</LanguageTabs>
+MooseStack is the dev harness for ClickHouse. Set it up once — your coding agent builds and ships analytical infrastructure from there.
 
 ## Prerequisites
-Check that your pre-requisites are installed by running the following commands:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -58,6 +36,10 @@ Check that your pre-requisites are installed by running the following commands:
       title: "Docker Desktop",
       description: "For local development environment (requires at least 2.5GB memory)",
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
+    },
+    {
+      title: "A coding agent",
+      description: "Claude Code, Cursor, Kiro, or any MCP-compatible agent"
     },
     {
       title: "macOS/Linux",
@@ -93,6 +75,10 @@ docker ps
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
     },
     {
+      title: "A coding agent",
+      description: "Claude Code, Cursor, Kiro, or any MCP-compatible agent"
+    },
+    {
       title: "macOS/Linux",
       description: "Windows works via WSL2"
     }
@@ -106,6 +92,7 @@ python --version
 ```bash filename="Terminal" copy
 docker ps
 ```
+
   </LanguageTabContent>
 </LanguageTabs>
 
@@ -113,14 +100,9 @@ docker ps
 Make sure Docker Desktop has at least **2.5GB of memory allocated**. To check or change this setting, open Docker Desktop, go to Settings → Resources → Memory, and adjust the slider if needed. [Learn more about Docker Desktop settings →](https://docs.docker.com/desktop/settings/)
 </Callout>
 
-<Callout type="info" title="Already have ClickHouse running?" href={"/moosestack/getting-started/from-clickhouse"} icon="Database" ctaLabel="Add to ClickHouse">
-Skip the tutorial and add Moose as a layer on top of your existing database
-</Callout>
-
 <br />
 
-## Step 1: Install Moose (30 seconds)
-
+## Step 1: Install Moose
 
 ### Run the installation script
 
@@ -128,7 +110,7 @@ Skip the tutorial and add Moose as a layer on top of your existing database
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-You should see this message: `Moose vX.X.X installed successfully!` (note that X.X.X is the actual version number)
+You should see: `Moose vX.X.X installed successfully!`
 
 If you see an error instead, check [Troubleshooting](#need-help) below.
 
@@ -185,59 +167,136 @@ moose X.X.X
 You should see the moose version number. Do not proceed to Step 2 until `moose --version` works.
 </Callout>
 
-
-
 <br />
 
-## Step 2: Create Your Project (1 minute)
+## Step 2: Create your project
 
+Pick how you want to start. The wizard configures the rest — MCP server, agent context files, and ClickHouse best practices skills.
 
-### Initialize your project
+<Tabs defaultValue="playground">
+<TabsList>
+<TabsTrigger value="playground">Play with ClickHouse data</TabsTrigger>
+<TabsTrigger value="remote">Use your ClickHouse cluster</TabsTrigger>
+<TabsTrigger value="scratch">Start from scratch</TabsTrigger>
+</TabsList>
+
+<TabsContent value="playground">
+
+Uses the public ClickHouse playground — a live cluster with real datasets. No credentials needed.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
+
 ```bash filename="Terminal" copy
-moose init my-analytics-app typescript
+moose harness init my-app typescript-mcp \
+  --from-remote "https://explorer:@play.clickhouse.com:443/?database=default"
 ```
 
-You should see output like:
-```txt
-✓ Created my-analytics-app
-✓ Initialized TypeScript project
-```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-  ```bash filename="Terminal" copy
-  moose init my-analytics-app python
-  ```
-  
-  You should see output like:
-  ```txt
-  ✓ Created my-analytics-app
-  ✓ Initialized Python project
-  ```
+
+```bash filename="Terminal" copy
+moose harness init my-app python-fastapi \
+  --from-remote "https://explorer:@play.clickhouse.com:443/?database=default"
+```
+
   </LanguageTabContent>
 </LanguageTabs>
 
-### Navigate to your project directory
+<Callout type="info" title="Read-only" compact={true}>
+Moose introspects the playground schema to generate your data models. Nothing is written to the playground.
+</Callout>
+
+</TabsContent>
+
+<TabsContent value="remote">
+
+Moose introspects your cluster schema to bootstrap typed data models. Nothing is written to your database.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 
 ```bash filename="Terminal" copy
-cd my-analytics-app
+moose harness init my-app typescript-mcp \
+  --from-remote "https://user:pass@host:port/?database=name"
 ```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```bash filename="Terminal" copy
+moose harness init my-app python-fastapi \
+  --from-remote "https://user:pass@host:port/?database=name"
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="success" title="Safe to run against production" icon="Check" compact={true}>
+The `--from-remote` flag is read-only — it introspects your schema and generates local code. No data is modified or moved.
+</Callout>
+
+<ToggleBlock openText="Connection string format" closeText="Hide connection string format">
+
+```txt
+https://username:password@host:port/?database=database_name
+```
+
+For ClickHouse Cloud, your host looks like `abc123.us-east-1.aws.clickhouse.cloud` on port `8443`. For self-hosted ClickHouse, use port `8123` (HTTP) or `8443` (HTTPS).
+
+</ToggleBlock>
+
+</TabsContent>
+
+<TabsContent value="scratch">
+
+Start with a clean project. Your coding agent builds from here.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```bash filename="Terminal" copy
+moose harness init my-app typescript-mcp
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```bash filename="Terminal" copy
+moose harness init my-app python-fastapi
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+</TabsContent>
+</Tabs>
+
+<Callout type="info" title="What the wizard configures" compact={true}>
+Follow the prompts to pick your coding agent. The wizard sets up: **MooseDev MCP server** (live ClickHouse introspection), **Context7 MCP server** (up-to-date docs), **AGENTS.md / CLAUDE.md** (project context files), and **ClickHouse best practices skills**.
+</Callout>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+<Callout type="info" title="TypeScript vs Python" compact={true}>
+The TypeScript path (`typescript-mcp`) includes a **Next.js chat frontend** and a **custom MCP server** for querying your data. The Python path (`python-fastapi`) includes a **FastAPI analytical API** — no chat frontend.
+</Callout>
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+  </LanguageTabContent>
+</LanguageTabs>
 
 ### Install dependencies
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
+
 ```bash filename="Terminal" copy
-npm install
+cd my-app && npm install
 ```
 
-**Wait for installation to complete.**
-
-<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-Dependencies installed successfully with no errors.
-</Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
 
@@ -247,42 +306,39 @@ python3 -m venv .venv && source .venv/bin/activate
 ```
 </Callout>
 
-
 ```bash filename="Terminal" copy
-pip install -r requirements.txt
+cd my-app && pip install -r requirements.txt
 ```
 
-**Wait for installation to complete.** You should see successful installation messages ending with:
-```txt
-Successfully installed [list of packages]
-```
-
-<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-You should see `(.venv)` in your prompt and dependencies installed with no errors.
-</Callout>
   </LanguageTabContent>
 </LanguageTabs>
 
-### Start your development environment
+<Callout type="info" title="Want a different starting point?" compact={true}>
+Browse [templates](/templates) for other starters, or pick a [guide](/guides) to follow a specific use case.
+</Callout>
+
+<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
+Dependencies installed with no errors. Ready to start the harness.
+</Callout>
+
+<br />
+
+## Step 3: Start the harness
 
 ```bash filename="Terminal" copy
 moose dev
 ```
 
-For AI assistants or when you need to run other commands in the same terminal:
+For AI assistants or when you need a second terminal:
 ```bash
 nohup moose dev &
 ```
 
 <Callout type="info" title="This may take a minute the first time." compact={true}>
-Moose is:
-- Downloading Docker images for ClickHouse, Redpanda, and Temporal
-- Starting containers
-- Initializing databases
-- Starting the development server
+Moose is downloading Docker images for ClickHouse, Redpanda, and Temporal, starting containers, and initializing the MCP server.
 </Callout>
 
-Do not proceed until you see the "Started Webserver" message.
+Wait for the `Started Webserver` message before proceeding:
 
 ```txt
        Created docker compose file
@@ -293,356 +349,63 @@ Do not proceed until you see the "Started Webserver" message.
   Successfully validated red panda cluster
      Validated temporal docker container
   Successfully ran local infrastructure
-      Node Id: my-analytics-app::b15efaca-0c23-42b2-9b0c-642105f9c437
+      Node Id: my-app::b15efaca-0c23-42b2-9b0c-642105f9c437
       Starting development mode
-      Watching "/path/to/my-analytics-app/app"
+      Watching "/path/to/my-app/app"
        Started Webserver.  👈 WAIT FOR THIS
-
-
-  Next Steps
-
-💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure
-
-📥 Send Data to Moose
-	Your local development server is running at: http://localhost:4000/ingest
 ```
 
 <Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-Keep this terminal running. This is your Moose development server. You'll open a new terminal for the next step.
+Keep this terminal running. Your MCP server is live at `localhost:4000/mcp`. Open a new terminal for the next step.
 </Callout>
 
+<br />
 
+## Step 4: Use your agent
 
-## Step 3: Understand Your Project (1 minute)
-
-Your project includes a complete example pipeline:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-<FileTree>
-    <FileTree.Folder name="app" defaultOpen>
-        <FileTree.Folder name="apis">
-            <FileTree.File name="bar.ts" />
-        </FileTree.Folder>
-        <FileTree.Folder name="ingest" defaultOpen>
-            <FileTree.File name="models.ts" />
-            <FileTree.File name="transform.ts" />
-        </FileTree.Folder>
-        <FileTree.Folder name="views">
-            <FileTree.File name="barAggregated.ts" />
-        </FileTree.Folder>
-        <FileTree.Folder name="workflows">
-            <FileTree.File name="generator.ts" />
-        </FileTree.Folder>
-        <FileTree.File name="index.ts" />
-    </FileTree.Folder>
-</FileTree>
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-<FileTree>
-    <FileTree.Folder name="app" defaultOpen>
-        <FileTree.Folder name="apis">
-            <FileTree.File name="bar.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="ingest" defaultOpen>
-            <FileTree.File name="models.py" />
-            <FileTree.File name="transform.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="views">
-            <FileTree.File name="bar_aggregated.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="workflows">
-            <FileTree.File name="generator.py" />
-        </FileTree.Folder>
-        <FileTree.File name="main.py" />
-    </FileTree.Folder>
-</FileTree>
-  </LanguageTabContent>
-</LanguageTabs>
-
-**Important:** While your pipeline objects are defined in the child folders, they **must be imported** into the root `index.ts` (TypeScript) or `main.py` (Python) file for the Moose CLI to discover and use them.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="app/index.ts"
-export * from "./ingest/models";      // Data models & pipelines
-export * from "./ingest/transforms";  // Transformation logic
-export * from "./apis/bar";           // API endpoints
-export * from "./views/barAggregated"; // Materialized views
-export * from "./workflows/generator"; // Background workflows
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="app/main.py"
-from app.ingest.models import *      # Data models & pipelines
-from app.ingest.transform import *   # Transformation logic
-from app.apis.bar import *           # API endpoints
-from app.views.bar_aggregated import * # Materialized views
-from app.workflows.generator import *  # Background workflows
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-
-## Step 4: Test Your Pipeline (2 minutes)
-
-<Callout type="info" title="Important: Open a second terminal window" compact={true}>
-**Keep your `moose dev` terminal running.** You need a second terminal for the next commands.
-</Callout>
-
-
-### Navigate to your project in the new terminal
-
-In your **new terminal window** (not the one running `moose dev`):
-
-```bash filename="Terminal 2 (New Window)" copy
-cd my-analytics-app
-```
-
-### Run the data generator workflow
-
-Your project comes with a pre-built [Workflow](/moosestack/workflows) called `generator` that acts as a **data simulator**:
-
-```bash filename="Terminal 2 (New Window)" copy
-moose workflow run generator
-```
-
-You should see:
-```txt
-Workflow 'generator' triggered successfully
-```
-<Callout type="info" title="View Temporal Dashboard" compact={true}>
-The workflow runs in the background, powered by [Temporal](https://temporal.io). You can see workflow status at `http://localhost:8080`.
-</Callout>
-
-
-<ToggleBlock openText="Understanding the generator workflow" closeText="Hide details">
-
-<Callout type="info" title="How it works" compact={true} icon={false}>
-- Generates 1000 fake records with realistic data (using the Faker library)
-- Sends each record to your ingestion API via HTTP POST
-- Runs as a background task managed by Temporal
-- Helps you test your entire pipeline without needing real data
-
-You can see the code in the `/workflows/generator.ts` (TypeScript) or `/workflows/generator.py` (Python) file.
-</Callout>
-
-</ToggleBlock>
-
-### Watch for data processing logs
-
-**Switch to your first terminal** (where `moose dev` is running). You should see new logs streaming:
-
-```txt
-POST ingest/Foo
-[POST] Data received at ingest API sink for Foo
-Received Foo_0_0 -> Bar_0_0 1 message(s)
-[DB] 17 row(s) successfully written to DB table (Bar)
-```
-
-<Callout type="success" title="Data is flowing!" icon="Check" compact={true}>
-These logs show your pipeline working: Workflow generates data → Ingestion API receives it → Data transforms → Writes to ClickHouse
-</Callout>
-
-<ToggleBlock openText="Troubleshooting: Don't see logs?" closeText="Hide troubleshooting">
-**If you don't see logs after 30 seconds:**
-- Verify `moose dev` is still running in Terminal 1
-- Check Terminal 2 for error messages from the workflow command
-- Run `docker ps` to verify containers are running
-</ToggleBlock>
-
-
-<ToggleBlock openText="(Bonus) Peek at your data" closeText="Hide details">
-
-```bash filename="Terminal" copy
-moose peek Bar --limit 5 # This queries your Clickhouse database to show raw data; useful for debugging / verification
-```
-
-You should see output like:
-```txt
-┌─primaryKey─────────────────────────┬─utcTimestamp────────┬─hasText─┬─textLength─┐
-│ 123e4567-e89b-12d3-a456-426614174000 │ 2024-01-15 10:30:00 │       1 │         42 │
-│ 987fcdeb-51a2-43d1-b789-123456789abc │ 2024-01-15 10:31:00 │       0 │          0 │
-└────────────────────────────────────┴─────────────────────┴─────────┴────────────┘
-```
-
-If you see 0 rows, wait a few seconds for the workflow to process data, then try again.
-
-</ToggleBlock>
-
-### Query your data
-
-Your application has a pre-built [API](/moosestack/apis) that reads from your database. The API runs on `localhost:4000`.
-
-**In Terminal 2**, call the API with `curl`:
-
-```bash filename="Terminal 2 (New Window)" copy
-curl "http://localhost:4000/api/bar"
-```
-
-You should see JSON data like:
-```json
-[
-  {
-    "dayOfMonth": 15,
-    "totalRows": 67,
-    "rowsWithText": 34,
-    "maxTextLength": 142,
-    "totalTextLength": 2847
-  },
-  {
-    "dayOfMonth": 14,
-    "totalRows": 43,
-    "rowsWithText": 21,
-    "maxTextLength": 98,
-    "totalTextLength": 1923
-  }
-]
-```
-
-<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-You should see JSON data with analytics results. Your complete data pipeline is working!
-</Callout>
-
-**Try query parameters:**
-```bash filename="Terminal 2 - Add filters and limits" copy
-curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
-```
-
-<Callout type="info" title="Port Reference" compact={true}>
-- **Port 4000**: Your Moose application webserver (all APIs are running on this port)
-- **Port 8080**: Temporal UI dashboard (workflow management)
-- **Port 18123**: ClickHouse HTTP interface (direct database access)
-</Callout>
-
-<ToggleBlock openText="Troubleshooting" closeText="Hide troubleshooting">
-**If the workflow command doesn't work:**
-- Make sure you're in the project directory (`cd my-analytics-app`)
-- Verify `moose dev` is still running in your first terminal
-- Check that Docker containers are running: `docker ps`
-
-**If curl returns an error:**
-- Verify the URL is `http://localhost:4000` (not 8080)
-- Make sure the workflow has had time to generate data (wait 30-60 seconds)
-- Check your `moose dev` terminal for error messages
-
-**If you get HTML instead of JSON:**
-- You might be hitting the wrong port - use 4000, not 8080
-- Port 8080 serves the Temporal UI (workflow dashboard), not your API
-
-**If `moose peek Bar` shows 0 rows:**
-- Wait for the workflow to complete (it processes 1000 records)
-- Check the workflow is running: look for "Ingested X records..." messages
-- Verify no errors in your `moose dev` terminal logs
-
-**If you see connection refused:**
-- Restart `moose dev` and wait for "Started Webserver" message
-- Check if another process is using port 4000: `lsof -i :4000`
-</ToggleBlock>
-
-<ToggleBlock openText="Explore with OpenAPI UI" closeText="Hide Explore with OpenAPI UI">
-
-1. Install the [OpenAPI (Swagger) Viewer extension](https://marketplace.cursorapi.com/items?itemName=42Crunch.vscode-openapi) in your IDE
-2. Open `.moose/openapi.yaml` in your IDE
-3. Click the "Preview" icon to launch the interactive API explorer
-4. Test the `POST /ingest/Foo` and `GET /api/bar` endpoints
-
-<MuxVideo
-  playbackId="66qLKy46JddIBcJWqestllPmBJBxWcOwbgw00WpKXO02M"
-  title="Using the OpenAPI Swagger UI for Moose APIs"
-  width="100%"
-  height="auto"
-  autoPlay={true}
-  muted={true}
-  loop={true}
-/>
-
-</ToggleBlock>
-
-
-
-## Step 5: Hot Reload Schema Changes (1 minute)
-
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-
-1. Open `app/ingest/models.ts`
-2. Add a new field to your data model:
-```ts filename="app/ingest/models.ts" {5} copy
-/** Analyzed text metrics derived from Foo */
-export interface Bar {
-  primaryKey: Key<string>; // From Foo.primaryKey
-  utcTimestamp: DateTime; // From Foo.timestamp
-  hasText: boolean; // From Foo.optionalText?
-  textLength: number; // From Foo.optionalText.length
-  newField?: string; // Add this new optional field
-}
-```
-3. Save the file and watch your terminal (in Terminal 1 where `moose dev` is running). You should see:
-
-```txt
-⠋ Processing Infrastructure changes from file watcher
-             +  Table Bar:
-                  Column changes:
-                    + newField: String
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-
-1. Open `app/ingest/models.py`
-2. Add a new field to your data model:
-```python filename="app/ingest/models.py" {16} copy
-from moose_lib import Key, StringToEnumMixin
-from typing import Optional, Annotated
-from enum import IntEnum, auto
-from pydantic import BaseModel
-
-class Baz(StringToEnumMixin, IntEnum):
-    QUX = auto()
-    QUUX = auto()
-
-
-class Bar(BaseModel):
-    primary_key: Key[str]
-    utc_timestamp: datetime
-    baz: Baz
-    has_text: bool
-    text_length: int
-    new_field: Optional[str] = None # New field
-```
-
-3. Save the file and watch your terminal (in Terminal 1 where `moose dev` is running). You should see:
-
-```txt
-⠋ Processing Infrastructure changes from file watcher
-             ~  Table Bar:
-                  Column changes:
-                    + new_field: String
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-You should see the column change logged. Your API, database schema, and streaming topic all updated automatically!
-</Callout>
-
-**Try it yourself:** Add another field with a different data type and watch the infrastructure update in real-time.
-
-## Recap
-
-You've built a complete analytical backend with:
+Your harness is running. Open your coding agent — the MCP server is connected, skills are loaded, and your project context is in place. Give it a task.
 
 <BulletPointsCard
+  title="Starter prompts to try"
   bulletStyle="check"
-  title="What's Working"
+  compact={true}
+  divider={false}
   bullets={[
-    { title: "Type-safe ingestion pipeline with API and stream processing" },
-    { title: "ClickHouse database with dynamic schema management" },
-    { title: "Analytics API with filtering" },
-    { title: "Hot-reload development" }
+    { title: "Add a new data source to the project" },
+    { title: "Add a new metric to the semantic layer" },
+    { title: "Add a new API endpoint" },
+    { title: "Add a new MCP tool" }
   ]}
 />
+
+Your agent has live schema introspection via MCP, ClickHouse best practices via skills, and full project context via AGENTS.md. It will do the right thing.
+
+<br />
+
+## What's next
+
+<CTACards columns={3}>
+  <CTACard
+    title="Browse Templates"
+    description="Complete starting points for analytics apps, chat with data, semantic layers, and more."
+    ctaLink="/templates"
+    ctaLabel="Browse templates"
+  />
+  <CTACard
+    title="Guides"
+    description="Step-by-step guides for building on ClickHouse — dashboards, pipelines, agents, and more."
+    ctaLink="/guides"
+    ctaLabel="Explore guides"
+  />
+  <CTACard
+    title="Existing ClickHouse"
+    description="Deeper guide for bootstrapping from your own ClickHouse cluster, including seeding local data."
+    ctaLink="/moosestack/getting-started/from-clickhouse"
+    ctaLabel="Read the guide"
+  />
+</CTACards>
+
+<br />
 
 ## Need Help?
 
@@ -659,7 +422,7 @@ sudo systemctl start docker
 docker ps
 ```
 
-If Docker is running, but you're still having issues, try clearing your Docker cache:
+If Docker is running but you're still having issues, try clearing your Docker cache:
 ```bash filename="Terminal" copy
 docker system prune -a
 ```
@@ -668,7 +431,7 @@ docker system prune -a
 <ToggleBlock openText="Outdated Language Version" closeText="Outdated Language Version">
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-If you're using Node.js, make sure you're using a version >= 20. Use nvm to install and switch to the latest version:
+Make sure you're using Node.js 20 or later:
 ```bash filename="Terminal" copy
 # Check version
 node -v
@@ -680,7 +443,7 @@ nvm use 20
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-Make sure you're using a version >= 3.12. Use pyenv to install and switch to the latest version:
+Make sure you're using Python 3.12 or later:
 ```bash filename="Terminal" copy
 # Check version
 python3 --version
@@ -707,18 +470,17 @@ kill -9 <PID>
 ```
 
 **Option 2: Use a different port**
-You can also use a different port and set this in your `moose.config.toml` file (located in your project root):
+Set a different port in `moose.config.toml` in your project root:
 ```toml filename="moose.config.toml" copy
 [http_server_config]
-port = 4001 # Change to your desired port
+port = 4001
 ```
 
-Restart `moose dev` and you should be able to use the new port.
+Restart `moose dev` after saving.
 
 <Callout type="info" title="Customizing Ports for Local Infrastructure" compact={true}>
 You can also customize ClickHouse, Redpanda, and Temporal ports. See the [Configuration Reference](/moosestack/configuration#mooseconfigtoml-reference).
 </Callout>
 </ToggleBlock>
-
 
 **Still stuck?** Join our [Slack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) or [open an issue](https://github.com/514-labs/moose/issues).
