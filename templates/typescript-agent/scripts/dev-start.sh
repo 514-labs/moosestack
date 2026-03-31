@@ -170,7 +170,8 @@ seed_local_jwt_keys() {
   fi
 
   derived_public_key="$(derive_public_key_from_private "${existing_private_key}")"
-  if [[ "${derived_public_key}" == "${existing_public_key}" ]]; then
+  existing_public_key_normalized="$(printf '%s' "${existing_public_key}" | sed 's/\\n/\n/g')"
+  if [[ "${derived_public_key}" == "${existing_public_key_normalized}" ]]; then
     return
   fi
 
