@@ -2,7 +2,7 @@ import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 
 const SUGGESTED_PROMPTS = [
   "Summarize the highest-priority signals for this tenant.",
-  "Use the multi-agent flow to inspect the data catalog, route to the right specialist, then summarize the result.",
+  "Break down the highest-priority records by category for this tenant.",
   "Which knowledge categories changed most recently for this tenant?",
 ];
 

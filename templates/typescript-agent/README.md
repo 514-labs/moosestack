@@ -52,19 +52,19 @@ MooseStack Service
 
 ## Multi-Agent Reference Flow
 
-The generated chat route now demonstrates a simple multi-agent pattern out of the box:
+The runtime package still includes a simple multi-agent reference flow:
 
 - `supervisor` classifies the latest user request and selects one specialist
-- one specialist (`catalog-researcher`, `knowledge-analyst`, or `sql-investigator`) investigates with tenant-scoped MCP tools
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with tenant-scoped MCP tools
 - `narrator` rewrites the specialist's working notes into the final user-facing answer
 
-The streamed response includes lightweight handoff markers such as `[AGENT:supervisor]` and `[AGENT:narrator]` so teams can see where control moved while keeping the implementation simple.
+The generated UI no longer foregrounds that handoff pattern, but the code path remains available as a reference for teams that want to keep or extend it.
 
 Start with these files if you want to customize the pattern:
 
-- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference multi-agent orchestration
 - `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
-- `packages/web-app/src/app/page.tsx` - example prompts and UI copy that explain the default handoff flow
+- `packages/web-app/src/app/page.tsx` - default landing-page copy and suggested prompts
 
 ## Prerequisites
 
@@ -185,7 +185,7 @@ Then verify:
 - `http://localhost:3000` renders the landing page
 - local sign-in works for `acme` and `globex`
 - the dashboard changes by tenant
-- chat guidance mentions the supervisor -> specialist -> narrator flow
+- chat guidance focuses on tenant-scoped semantic queries
 - streamed chat responses include `[AGENT:...]` handoff markers
 - chat tool calls stay tenant-scoped
 - `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`
@@ -288,8 +288,8 @@ By default, the MCP surface is allowlisted:
 
 - `get_data_catalog` only returns the data components declared in `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts`
 - the default exposed table set is derived from `tenantIsolation.config.tables`
-- `query_clickhouse` only allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` against those exposed components
-- `system.*` metadata and undeclared tables are blocked by default
+- `query_tenant_knowledge_metrics` exposes tenant-scoped grouped metrics over the semantic layer
+- `list_tenant_knowledge_records` exposes tenant-scoped recent/detail records over the semantic layer
 
 ## External MCP Clients
 
@@ -324,10 +324,10 @@ Example:
 - `packages/web-app/src/components/ai-elements/` — reusable AI Elements chat primitives
 - `packages/web-app/src/features/chat/` — Moose-specific wrappers, tool renderers, and chat panel wiring
 - `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared multi-agent runtime
-- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog and SQL access policy
-- `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog and query validation
+- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog surface
+- `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog exposure and semantic tool wiring
 - `packages/moosestack-service/app/data/clickhouse/readonly-query.ts` — readonly ClickHouse access shared by semantic reads and MCP tools
-- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and reference supervisor -> specialist -> narrator execution flow
+- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and reference multi-agent execution flow
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
 - `packages/agent-contracts/` — shared contracts between frontend and service

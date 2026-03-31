@@ -22,7 +22,6 @@ import {
   type ToolPart,
 } from "../../types/message-parts";
 import { CodeBlock } from "../text/code-block";
-import { ClickHouseToolInvocation } from "./clickhouse-tool-invocation";
 import { DataCatalogToolInvocation } from "./data-catalog-tool-invocation";
 import { formatDuration } from "./format-duration";
 
@@ -35,10 +34,6 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const toolName = getToolName(part);
-
-  if (toolName === "query_clickhouse") {
-    return <ClickHouseToolInvocation part={part} timing={timing} />;
-  }
 
   if (toolName === "get_data_catalog") {
     return <DataCatalogToolInvocation part={part} timing={timing} />;
