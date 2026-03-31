@@ -3,7 +3,7 @@ INSERT INTO tenant_knowledge
 VALUES
   (
     generateUUIDv4(),
-    'acme',
+    'tenant_a',
     'fleet_health',
     'high',
     'Brake alerts increased by 14% this week',
@@ -13,7 +13,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'acme',
+    'tenant_a',
     'support',
     'normal',
     'Late-return tickets cluster around Toronto',
@@ -23,7 +23,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'globex',
+    'tenant_b',
     'fleet_health',
     'normal',
     'Cold-start battery incidents trending down',
@@ -33,7 +33,7 @@ VALUES
   ),
   (
     generateUUIDv4(),
-    'globex',
+    'tenant_b',
     'operations',
     'high',
     'Seattle hub utilization breached 92%',

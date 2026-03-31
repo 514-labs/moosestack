@@ -412,7 +412,7 @@ async function callMcpToolText(
   };
 }
 
-async function signInLocalTenant(tenantId: string) {
+async function signInLocalIdentity(identityId: string) {
   const jar = new Map<string, string>();
 
   const csrfResponse = await fetch(`${webAppUrl}/api/auth/csrf`, {
@@ -423,7 +423,7 @@ async function signInLocalTenant(tenantId: string) {
   const { csrfToken } = (await csrfResponse.json()) as { csrfToken: string };
 
   const callbackResponse = await fetch(
-    `${webAppUrl}/api/auth/callback/local-tenant`,
+    `${webAppUrl}/api/auth/callback/local-identity`,
     {
       method: "POST",
       redirect: "manual",
@@ -433,7 +433,7 @@ async function signInLocalTenant(tenantId: string) {
       },
       body: new URLSearchParams({
         csrfToken,
-        tenantId,
+        identityId,
         callbackUrl: `${webAppUrl}/`,
         json: "true",
       }),
@@ -584,8 +584,8 @@ describe("TypeScript Agent Template E2E", function () {
     expect(seedResult.stdout).to.contain(
       "Inserted 4 records into tenant_knowledge",
     );
-    expect(seedResult.stdout).to.contain("acme: 2");
-    expect(seedResult.stdout).to.contain("globex: 2");
+    expect(seedResult.stdout).to.contain("tenant_a: 2");
+    expect(seedResult.stdout).to.contain("tenant_b: 2");
 
     await waitForDBWrite(
       mooseProcess,
@@ -664,8 +664,8 @@ describe("TypeScript Agent Template E2E", function () {
 
     const html = await pageResponse.text();
     expect(html).to.include("typescript-agent");
-    expect(html).to.include("Choose a tenant");
-    expect(html).to.include("Production-shaped agent starter");
+    expect(html).to.include("Choose a local identity");
+    expect(html).to.include("Local identities for development");
 
     const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
@@ -705,15 +705,15 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should scope MCP tools to the caller tenant", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
-    const globexAuth = await signInLocalTenant("globex");
-    const acmeToken = acmeAuth.session.idToken;
-    const globexToken = globexAuth.session.idToken;
+    const tenantAAuth = await signInLocalIdentity("tenant_a");
+    const tenantBAuth = await signInLocalIdentity("tenant_b");
+    const tenantAToken = tenantAAuth.session.idToken;
+    const tenantBToken = tenantBAuth.session.idToken;
 
-    expect(acmeToken).to.be.a("string");
-    expect(globexToken).to.be.a("string");
+    expect(tenantAToken).to.be.a("string");
+    expect(tenantBToken).to.be.a("string");
 
-    const listResponse = await callMcp(acmeToken, {
+    const listResponse = await callMcp(tenantAToken, {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/list",
@@ -730,60 +730,72 @@ describe("TypeScript Agent Template E2E", function () {
     expect(toolNames).to.include("get_data_catalog");
     expect(toolNames).to.not.include("query_clickhouse");
 
-    const acmeMetrics = await callMcpTool<{
+    const tenantAMetrics = await callMcpTool<{
       rows: Array<{ totalRecords: number; highPriorityRecords: number }>;
       rowCount: number;
-    }>(acmeToken, "query_tenant_knowledge_metrics", {
+    }>(tenantAToken, "query_tenant_knowledge_metrics", {
       metrics: ["totalRecords", "highPriorityRecords"],
       limit: 10,
     });
 
-    expect(acmeMetrics.rowCount).to.equal(1);
-    expect(acmeMetrics.rows[0]?.totalRecords).to.equal(2);
-    expect(acmeMetrics.rows[0]?.highPriorityRecords).to.equal(1);
+    expect(tenantAMetrics.rowCount).to.equal(1);
+    expect(tenantAMetrics.rows[0]?.totalRecords).to.equal(2);
+    expect(tenantAMetrics.rows[0]?.highPriorityRecords).to.equal(1);
 
-    const acmeRows = await callMcpTool<{
+    const tenantARecords = await callMcpTool<{
       rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "list_tenant_knowledge_records", {
+    }>(tenantAToken, "list_tenant_knowledge_records", {
       columns: ["headline", "priority"],
       limit: 10,
     });
 
-    expect(acmeRows.rowCount).to.equal(2);
-    expect(acmeRows.rows.map((row) => row.headline).join(" ")).to.include(
+    expect(tenantARecords.rowCount).to.equal(2);
+    expect(tenantARecords.rows.map((row) => row.headline).join(" ")).to.include(
       "Brake alerts increased by 14% this week",
     );
+    expect(
+      tenantARecords.rows.some((row) =>
+        row.headline.includes("Seattle hub utilization breached 92%"),
+      ),
+    ).to.equal(false);
 
-    const acmeHighPriorityRows = await callMcpTool<{
+    const tenantAHighPriorityRecords = await callMcpTool<{
       rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "list_tenant_knowledge_records", {
+    }>(tenantAToken, "list_tenant_knowledge_records", {
       columns: ["headline", "priority"],
-      priority: "high",
+      priority_in: ["high"],
       limit: 10,
     });
 
-    expect(acmeHighPriorityRows.rowCount).to.equal(1);
-    expect(acmeHighPriorityRows.rows[0]?.headline).to.include("Brake alerts");
+    expect(tenantAHighPriorityRecords.rowCount).to.equal(1);
+    expect(tenantAHighPriorityRecords.rows[0]?.headline).to.include(
+      "Brake alerts",
+    );
 
-    const globexRows = await callMcpTool<{
+    const tenantBRecords = await callMcpTool<{
       rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(globexToken, "list_tenant_knowledge_records", {
+    }>(tenantBToken, "list_tenant_knowledge_records", {
       columns: ["headline", "priority"],
       limit: 10,
     });
 
-    expect(globexRows.rowCount).to.equal(2);
-    expect(globexRows.rows.map((row) => row.headline).join(" ")).to.include(
+    expect(tenantBRecords.rowCount).to.equal(2);
+    expect(tenantBRecords.rows.map((row) => row.headline).join(" ")).to.include(
       "Seattle hub utilization breached 92%",
     );
+    expect(
+      tenantBRecords.rows.some((row) =>
+        row.headline.includes("Brake alerts increased by 14% this week"),
+      ),
+    ).to.equal(false);
 
     const catalog = await callMcpTool<{
       tables?: Record<string, unknown>;
       materialized_views?: Record<string, unknown>;
-    }>(acmeToken, "get_data_catalog", {
+    }>(tenantAToken, "get_data_catalog", {
       format: "detailed",
       component_type: "tables",
     });
@@ -794,7 +806,7 @@ describe("TypeScript Agent Template E2E", function () {
     ]);
 
     const filteredCatalog = await callMcpToolText(
-      acmeToken,
+      tenantAToken,
       "get_data_catalog",
       {
         format: "summary",
@@ -808,92 +820,163 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should create local tenant sessions and render tenant-scoped dashboards", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
-    expect(acmeAuth.session.user.tenantId).to.equal("acme");
-    expect(acmeAuth.session.idToken).to.be.a("string");
+    const tenantAAuth = await signInLocalIdentity("tenant_a");
+    expect(tenantAAuth.session.user.tenantId).to.equal("tenant_a");
+    expect(tenantAAuth.session.user.accessRole).to.equal("tenant");
+    expect(tenantAAuth.session.idToken).to.be.a("string");
 
-    const acmeSnapshotResponse = await fetch(
+    const tenantASnapshotResponse = await fetch(
       `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
       {
         headers: {
-          Authorization: `Bearer ${acmeAuth.session.idToken}`,
+          Authorization: `Bearer ${tenantAAuth.session.idToken}`,
         },
       },
     );
-    expect(acmeSnapshotResponse.status).to.equal(200);
-    const acmeSnapshot = await acmeSnapshotResponse.json();
-    expect(acmeSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
+    expect(tenantASnapshotResponse.status).to.equal(200);
+    const tenantASnapshot = await tenantASnapshotResponse.json();
+    expect(tenantASnapshot.knowledgeMetrics.totalRecords).to.equal(2);
     expect(
-      acmeSnapshot.recentKnowledge.some((row: { headline: string }) =>
+      tenantASnapshot.recentKnowledge.some((row: { headline: string }) =>
         row.headline.includes("Brake alerts increased by 14% this week"),
       ),
     ).to.equal(true);
 
-    const acmeDashboardResponse = await fetch(webAppUrl, {
+    const tenantADashboardResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: acmeAuth.cookie,
+        Cookie: tenantAAuth.cookie,
       },
     });
-    expect(acmeDashboardResponse.status).to.equal(200);
+    expect(tenantADashboardResponse.status).to.equal(200);
 
-    const acmeHtml = await acmeDashboardResponse.text();
-    expect(acmeHtml).to.include("Tenant-scoped agent dashboard");
-    expect(acmeHtml).to.include("ACME Fleet");
-    expect(acmeHtml).to.include("Brake alerts increased by 14% this week");
-    expect(acmeHtml).to.include("answers with tenant-scoped semantic tools");
-    expect(acmeHtml).to.include(
-      "Break down the high-priority records by category for this tenant.",
+    const tenantAHtml = await tenantADashboardResponse.text();
+    expect(tenantAHtml).to.include("Tenant A knowledge dashboard");
+    expect(tenantAHtml).to.include("Signed in as Tenant A");
+    expect(tenantAHtml).to.include("Brake alerts increased by 14% this week");
+    expect(tenantAHtml).to.include("Tenant A only");
+    expect(tenantAHtml).to.include(
+      "Which knowledge categories changed most recently?",
     );
-    expect(acmeHtml).to.not.include("Multi-agent reference flow");
-    expect(acmeHtml).to.not.include("Seattle hub utilization breached 92%");
+    expect(tenantAHtml).to.not.include("Multi-agent reference flow");
+    expect(tenantAHtml).to.not.include("Seattle hub utilization breached 92%");
 
-    const globexAuth = await signInLocalTenant("globex");
-    expect(globexAuth.session.user.tenantId).to.equal("globex");
-    expect(globexAuth.session.idToken).to.be.a("string");
+    const tenantBAuth = await signInLocalIdentity("tenant_b");
+    expect(tenantBAuth.session.user.tenantId).to.equal("tenant_b");
+    expect(tenantBAuth.session.user.accessRole).to.equal("tenant");
+    expect(tenantBAuth.session.idToken).to.be.a("string");
 
-    const globexSnapshotResponse = await fetch(
+    const tenantBSnapshotResponse = await fetch(
       `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
       {
         headers: {
-          Authorization: `Bearer ${globexAuth.session.idToken}`,
+          Authorization: `Bearer ${tenantBAuth.session.idToken}`,
         },
       },
     );
-    expect(globexSnapshotResponse.status).to.equal(200);
-    const globexSnapshot = await globexSnapshotResponse.json();
-    expect(globexSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
+    expect(tenantBSnapshotResponse.status).to.equal(200);
+    const tenantBSnapshot = await tenantBSnapshotResponse.json();
+    expect(tenantBSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
     expect(
-      globexSnapshot.recentKnowledge.some((row: { headline: string }) =>
+      tenantBSnapshot.recentKnowledge.some((row: { headline: string }) =>
         row.headline.includes("Seattle hub utilization breached 92%"),
       ),
     ).to.equal(true);
 
-    const globexDashboardResponse = await fetch(webAppUrl, {
+    const tenantBDashboardResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: globexAuth.cookie,
+        Cookie: tenantBAuth.cookie,
       },
     });
-    expect(globexDashboardResponse.status).to.equal(200);
+    expect(tenantBDashboardResponse.status).to.equal(200);
 
-    const globexHtml = await globexDashboardResponse.text();
-    expect(globexHtml).to.include("Tenant-scoped agent dashboard");
-    expect(globexHtml).to.include("Globex Mobility");
-    expect(globexHtml).to.include("Seattle hub utilization breached 92%");
-    expect(globexHtml).to.include(
-      "Break down the high-priority records by category for this tenant.",
+    const tenantBHtml = await tenantBDashboardResponse.text();
+    expect(tenantBHtml).to.include("Tenant B knowledge dashboard");
+    expect(tenantBHtml).to.include("Signed in as Tenant B");
+    expect(tenantBHtml).to.include("Seattle hub utilization breached 92%");
+    expect(tenantBHtml).to.include("Tenant B only");
+    expect(tenantBHtml).to.include(
+      "Which knowledge categories changed most recently?",
     );
-    expect(globexHtml).to.not.include(
+    expect(tenantBHtml).to.not.include("Multi-agent reference flow");
+    expect(tenantBHtml).to.not.include(
       "Brake alerts increased by 14% this week",
     );
   });
 
+  it("should allow Admin Debug to inspect cross-tenant data", async function () {
+    const adminAuth = await signInLocalIdentity("admin_debug");
+    expect(adminAuth.session.user.accessRole).to.equal("admin_debug");
+    expect(adminAuth.session.user.tenantId).to.equal(undefined);
+    expect(adminAuth.session.idToken).to.be.a("string");
+
+    const adminMetrics = await callMcpTool<{
+      rows: Array<{ totalRecords: number; highPriorityRecords: number }>;
+      rowCount: number;
+    }>(adminAuth.session.idToken, "query_tenant_knowledge_metrics", {
+      metrics: ["totalRecords", "highPriorityRecords"],
+      limit: 10,
+    });
+
+    expect(adminMetrics.rowCount).to.equal(1);
+    expect(adminMetrics.rows[0]?.totalRecords).to.equal(4);
+
+    const adminRecords = await callMcpTool<{
+      rows: Array<{ headline: string }>;
+      rowCount: number;
+    }>(adminAuth.session.idToken, "list_tenant_knowledge_records", {
+      columns: ["headline"],
+      limit: 10,
+    });
+
+    expect(adminRecords.rowCount).to.equal(4);
+    expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "Brake alerts increased by 14% this week",
+    );
+    expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "Seattle hub utilization breached 92%",
+    );
+
+    const adminSnapshotResponse = await fetch(
+      `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
+      {
+        headers: {
+          Authorization: `Bearer ${adminAuth.session.idToken}`,
+        },
+      },
+    );
+    expect(adminSnapshotResponse.status).to.equal(200);
+    const adminSnapshot = await adminSnapshotResponse.json();
+    expect(adminSnapshot.knowledgeMetrics.totalRecords).to.equal(4);
+    expect(
+      adminSnapshot.recentKnowledge.every(
+        (row: { tenantId: string }) => typeof row.tenantId === "string",
+      ),
+    ).to.equal(true);
+
+    const adminDashboardResponse = await fetch(webAppUrl, {
+      headers: {
+        Cookie: adminAuth.cookie,
+      },
+    });
+    expect(adminDashboardResponse.status).to.equal(200);
+
+    const adminHtml = await adminDashboardResponse.text();
+    expect(adminHtml).to.include("Debug dashboard across all seeded data");
+    expect(adminHtml).to.include("Signed in as Admin Debug");
+    expect(adminHtml).to.include("tenant_a");
+    expect(adminHtml).to.include("tenant_b");
+    expect(adminHtml).to.include("Brake alerts increased by 14% this week");
+    expect(adminHtml).to.include("Seattle hub utilization breached 92%");
+  });
+
   it("should clear stale dashboard sessions instead of crashing the page", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
+    const tenantAAuth = await signInLocalIdentity("tenant_a");
     const expiredToken = await signTenantJwt(
       {
-        tenant_id: "acme",
-        email: "ops@acme.example",
-        name: "ACME Fleet",
+        tenant_id: "tenant_a",
+        email: "tenant-a@example.local",
+        name: "Tenant A",
+        access_role: "tenant",
         scope: "agent:query",
       },
       Math.floor(Date.now() / 1000) - 10,
@@ -901,28 +984,29 @@ describe("TypeScript Agent Template E2E", function () {
 
     const staleSessionCookie = await encodeSessionCookie(
       projectDir,
-      acmeAuth.sessionCookieName,
+      tenantAAuth.sessionCookieName,
       {
-        sub: "local-acme",
-        userId: "local-acme",
-        tenantId: "acme",
-        tenantName: "ACME Fleet",
-        providerName: "local",
-        name: "ACME Fleet",
-        email: "ops@acme.example",
+        sub: "local-tenant_a",
+        userId: "local-tenant_a",
+        accessRole: "tenant",
+        tenantId: "tenant_a",
+        tenantName: "Tenant A",
+        provider: "local",
+        name: "Tenant A",
+        email: "tenant-a@example.local",
         idToken: expiredToken,
       },
     );
 
     replaceSessionCookie(
-      acmeAuth.cookieJar,
-      acmeAuth.sessionCookieName,
+      tenantAAuth.cookieJar,
+      tenantAAuth.sessionCookieName,
       staleSessionCookie,
     );
 
     const redirectResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: cookieHeader(acmeAuth.cookieJar),
+        Cookie: cookieHeader(tenantAAuth.cookieJar),
       },
       redirect: "manual",
     });
@@ -936,7 +1020,7 @@ describe("TypeScript Agent Template E2E", function () {
       new URL(redirectResponse.headers.get("location") ?? "", webAppUrl),
       {
         headers: {
-          Cookie: cookieHeader(acmeAuth.cookieJar),
+          Cookie: cookieHeader(tenantAAuth.cookieJar),
         },
         redirect: "manual",
       },
@@ -947,19 +1031,21 @@ describe("TypeScript Agent Template E2E", function () {
       "session=expired",
     );
 
-    updateCookieJar(acmeAuth.cookieJar, clearSessionResponse);
-    expect(acmeAuth.cookieJar.has(acmeAuth.sessionCookieName)).to.equal(false);
+    updateCookieJar(tenantAAuth.cookieJar, clearSessionResponse);
+    expect(tenantAAuth.cookieJar.has(tenantAAuth.sessionCookieName)).to.equal(
+      false,
+    );
 
     const landingResponse = await fetch(`${webAppUrl}/?session=expired`, {
       headers: {
-        Cookie: cookieHeader(acmeAuth.cookieJar),
+        Cookie: cookieHeader(tenantAAuth.cookieJar),
       },
     });
 
     expect(landingResponse.status).to.equal(200);
 
     const landingHtml = await landingResponse.text();
-    expect(landingHtml).to.include("Choose a tenant");
+    expect(landingHtml).to.include("Choose a local identity");
     expect(landingHtml).to.include("previous session expired");
   });
 
@@ -981,7 +1067,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should surface MCP outages through status and chat errors", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
+    const tenantAAuth = await signInLocalIdentity("tenant_a");
 
     await stopChildProcess(mooseProcess, "moose service");
     mooseProcess = null;
@@ -999,7 +1085,7 @@ describe("TypeScript Agent Template E2E", function () {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: acmeAuth.cookie,
+        Cookie: tenantAAuth.cookie,
       },
       body: JSON.stringify({
         messages: [

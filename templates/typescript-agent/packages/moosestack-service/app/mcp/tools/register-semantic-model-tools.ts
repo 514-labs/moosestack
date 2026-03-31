@@ -11,7 +11,7 @@ import { createSemanticToolSuccessResult } from "./semantic-tool-output";
 
 interface SemanticModelContext {
   queryClient: MooseUtils["client"]["query"];
-  rowPolicyOptions: RowPolicyOptions;
+  rowPolicyOptions?: RowPolicyOptions;
 }
 
 type McpToolSchema = Parameters<McpServer["tool"]>[2];

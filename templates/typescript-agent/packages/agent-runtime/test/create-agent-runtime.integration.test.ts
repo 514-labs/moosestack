@@ -392,7 +392,7 @@ describe("createAgentRuntime", () => {
     await createMultiAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      tenantId: "tenant_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -491,7 +491,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      tenantId: "tenant_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -565,7 +565,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      tenantId: "tenant_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -611,7 +611,7 @@ describe("createAgentRuntime", () => {
       createAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "acme",
+        tenantId: "tenant_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",
@@ -647,7 +647,7 @@ describe("createAgentRuntime", () => {
       createMultiAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "acme",
+        tenantId: "tenant_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",

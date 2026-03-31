@@ -1,18 +1,23 @@
+import type { DefaultSession } from "next-auth";
 import "next-auth";
 import "next-auth/jwt";
+
+type AccessRole = "tenant" | "admin_debug";
 
 declare module "next-auth" {
   interface Session {
     idToken?: string;
-    user: {
+    user: NonNullable<DefaultSession["user"]> & {
       id: string;
-      tenantId: string;
-      tenantName: string;
+      accessRole: AccessRole;
+      tenantId?: string;
+      tenantName?: string;
       provider: string;
-    } & NonNullable<Session["user"]>;
+    };
   }
 
   interface User {
+    accessRole?: AccessRole;
     tenantId?: string;
     tenantName?: string;
     provider?: string;
@@ -24,6 +29,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     userId?: string;
+    accessRole?: AccessRole;
     tenantId?: string;
     tenantName?: string;
     provider?: string;

@@ -9,7 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 export const metadata: Metadata = {
   title: "TypeScript Agent Starter",
   description:
-    "Tenant-scoped agent starter with MCP tools, Moose-owned dashboard APIs, and Langfuse tracing.",
+    "TypeScript agent starter with local debug identities, tenant-aware data access, MCP tools, and Moose-owned dashboard APIs.",
 };
 
 export default async function RootLayout({

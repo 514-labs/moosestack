@@ -4,7 +4,7 @@ import { TenantKnowledgeTable } from "../ingest/models";
 export const tenantKnowledgeMetricsModel = defineQueryModel({
   name: "query_tenant_knowledge_metrics",
   description:
-    "Summarize tenant-scoped knowledge metrics and grouped rollups. Use for counts, priorities, categories, and source-level trends.",
+    "Summarize knowledge metrics and grouped rollups within the current access scope. Use for counts, priorities, categories, and source-level trends.",
   table: TenantKnowledgeTable,
   dimensions: {
     category: {
@@ -23,11 +23,11 @@ export const tenantKnowledgeMetricsModel = defineQueryModel({
   metrics: {
     totalRecords: {
       agg: sql.fragment`count(*)`,
-      description: "Total tenant knowledge records",
+      description: "Total knowledge records in scope",
     },
     highPriorityRecords: {
       agg: sql.fragment`countIf(${TenantKnowledgeTable.columns.priority} = 'high')`,
-      description: "High-priority records for the tenant",
+      description: "High-priority records in scope",
     },
   },
   filters: {
@@ -63,7 +63,7 @@ export const tenantKnowledgeMetricsModel = defineQueryModel({
 export const tenantKnowledgeRecordsModel = defineQueryModel({
   name: "list_tenant_knowledge_records",
   description:
-    "List tenant-scoped knowledge records for recent changes or detail inspection. Use for latest headlines, category filters, and priority-specific records.",
+    "List knowledge records visible in the current access scope. Use for latest headlines, category filters, and priority-specific records.",
   table: TenantKnowledgeTable,
   columns: {
     recordId: {

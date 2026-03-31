@@ -1,31 +1,27 @@
-import type { MooseUtils, RowPolicyOptions } from "@514labs/moose-lib";
-import { executeReadonlySql } from "../data/clickhouse/readonly-query";
 import {
-  tenantKnowledgeMetricsModel,
-  tenantKnowledgeRecordsModel,
-} from "./knowledge";
+  type MooseUtils,
+  type RowPolicyOptions,
+  sql,
+} from "@514labs/moose-lib";
+import type { DashboardSnapshot } from "agent-contracts";
+import { executeReadonlySql } from "../data/clickhouse/readonly-query";
+import { TenantKnowledgeTable } from "../ingest/models";
+import { tenantKnowledgeMetricsModel } from "./knowledge";
 
-interface DashboardKnowledgeMetrics {
-  totalRecords: number;
-  highPriorityRecords: number;
-}
-
-interface DashboardRecentKnowledgeRecord {
-  headline: string;
-  category: string;
-  priority: string;
-  source: string;
-  timestamp: string;
-}
-
-export interface DashboardSnapshot {
-  knowledgeMetrics: DashboardKnowledgeMetrics;
-  recentKnowledge: DashboardRecentKnowledgeRecord[];
-}
+export type DashboardSnapshotAccess =
+  | {
+      kind: "tenant";
+      tenantId: string;
+      rowPolicyOptions: RowPolicyOptions;
+    }
+  | {
+      kind: "admin";
+      rowPolicyOptions?: undefined;
+    };
 
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
-  rowPolicyOptions: RowPolicyOptions,
+  access: DashboardSnapshotAccess,
 ): Promise<DashboardSnapshot> {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -37,24 +33,36 @@ export async function getDashboardSnapshot(
     },
   });
 
-  const recentKnowledgeQuery = tenantKnowledgeRecordsModel.toSql({
-    columns: ["headline", "category", "priority", "source", "timestamp"],
-    orderBy: [["timestamp", "DESC"]],
-    limit: 5,
-  });
+  const recentKnowledgeQuery = sql.statement`
+    SELECT
+      ${TenantKnowledgeTable.columns.tenant_id} AS tenantId,
+      ${TenantKnowledgeTable.columns.headline},
+      ${TenantKnowledgeTable.columns.category},
+      ${TenantKnowledgeTable.columns.priority},
+      ${TenantKnowledgeTable.columns.source},
+      ${TenantKnowledgeTable.columns.timestamp}
+    FROM ${TenantKnowledgeTable}
+    ORDER BY ${TenantKnowledgeTable.columns.timestamp} DESC
+    LIMIT 5
+  `;
 
   const [[knowledgeMetrics], recentKnowledge] = await Promise.all([
     executeReadonlySql<{
       totalRecords: number;
       highPriorityRecords: number;
-    }>(queryClient, knowledgeMetricsQuery, { rowPolicyOptions }),
+    }>(queryClient, knowledgeMetricsQuery, {
+      rowPolicyOptions: access.rowPolicyOptions,
+    }),
     executeReadonlySql<{
+      tenantId: string;
       headline: string;
       category: string;
       priority: string;
       source: string;
       timestamp: string;
-    }>(queryClient, recentKnowledgeQuery, { rowPolicyOptions }),
+    }>(queryClient, recentKnowledgeQuery, {
+      rowPolicyOptions: access.rowPolicyOptions,
+    }),
   ]);
 
   return {

@@ -129,10 +129,10 @@ describe("tool-access", () => {
   it("allows EXISTS subqueries against exposed tables", () => {
     expect(
       validateExposedReadonlyQuery(
-        "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'acme')",
+        "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'tenant_a')",
       ),
     ).toBe(
-      "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'acme')",
+      "SELECT EXISTS(SELECT 1 FROM tenant_knowledge WHERE tenant_id = 'tenant_a')",
     );
   });
 

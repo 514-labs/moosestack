@@ -1,9 +1,9 @@
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 
 const SUGGESTED_PROMPTS = [
-  "Summarize the highest-priority signals for this tenant.",
-  "Break down the highest-priority records by category for this tenant.",
-  "Which knowledge categories changed most recently for this tenant?",
+  "Summarize the highest-priority signals in view.",
+  "Which knowledge categories changed most recently?",
+  "Compare the newest operational updates with the fleet health changes.",
 ];
 
 type SuggestedPromptsProps = {
