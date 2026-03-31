@@ -301,7 +301,7 @@ impl serde::Serialize for MigrationPlan {
 ///
 /// Holds the infrastructure diff (`changes`) before it is converted to a
 /// [`MigrationPlan`].  Callers should run confirmation gates on `changes`
-/// first, then call [`Self::into_migration_plan`] to produce the final
+/// first, then call [`Self::to_migration_plan`] to produce the final
 /// serialised operations.
 pub struct MigrationPlanWithBeforeAfter {
     pub remote_state: InfrastructureMap,

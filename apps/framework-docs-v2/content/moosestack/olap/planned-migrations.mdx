@@ -92,9 +92,18 @@ During plan generation, Moose will prompt you interactively when it detects:
 
 2. **Destructive operations** — If the plan contains table drops, column removals, table recreates, or view removals, Moose shows a `DANGER` banner and asks for confirmation. If you reject, Moose prints guidance on how to create a versioned table instead (e.g., `Events` → `Events_0_1` via `version: "0.1"`) and aborts.
 
-3. **Backfill for versioned tables** — When creating a new versioned table (e.g., `Events_0_1` with `version: "0.1"`) whose schema matches the existing base table, Moose offers to append an `INSERT INTO ... SELECT` backfill operation to the plan.
+3. **Backfill for versioned tables** — When creating a new versioned table (e.g., `Events_0_1` with `version: "0.1"`) whose schema matches the existing base table, Moose can append an `INSERT INTO ... SELECT` backfill operation to the plan. In an interactive terminal, Moose prompts you for each candidate (defaulting to **Yes**). In non-interactive runs (CI/CD), Moose automatically appends the backfill SQL without prompting. Pass `--no-auto-backfill-sql` to disable backfill detection entirely in either mode.
 
-To skip prompts in CI/CD, use `--yes-all`, `--yes-destructive`, `--yes-rename`, or the corresponding environment variables (`MOOSE_ACCEPT_ALL`, `MOOSE_ACCEPT_DESTRUCTIVE`, `MOOSE_ACCEPT_RENAME`). Use `--no-auto-backfill-sql` to disable automatic backfill detection.
+### CI/CD and non-interactive usage
+
+Rename and destructive prompts require a TTY. In non-interactive environments (CI/CD pipelines), Moose will error unless you explicitly opt in with override flags or environment variables:
+
+| Flag | Environment variable | Effect |
+|---|---|---|
+| `--yes-all` | `MOOSE_ACCEPT_ALL` | Accept all prompts (renames, destructive operations) |
+| `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE` | Accept destructive operations only |
+| `--yes-rename` | `MOOSE_ACCEPT_RENAME` | Accept detected column renames only |
+| `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation |
 
 ## Review and edit the plan
 

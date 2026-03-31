@@ -776,11 +776,11 @@ pub fn print_migration_rejected_guidance(
     let (root_file, version_hint) = match language {
         SupportedLanguages::Typescript => (
             "index.ts",
-            "Set `version: \"<version>\"` in your OlapTable config and export from index.ts",
+            "Set `version: \"<version>\"` in your OlapTable config",
         ),
         SupportedLanguages::Python => (
             "__init__.py or models directory",
-            "Set `version=\"<version>\"` in your OlapTable config and export from __init__.py",
+            "Set `version=\"<version>\"` in your OlapTable config",
         ),
     };
 
