@@ -10,7 +10,7 @@ describe("executeReadonlyStatement", () => {
   it("uses max_result_rows instead of the legacy limit setting", async () => {
     const querySpy = vi.fn(async () => {
       return {
-        json: async () => [{ tenant_id: "acme" }],
+        json: async () => [{ tenant_id: "tenant_a" }],
       };
     });
     const queryClient = {
@@ -37,7 +37,7 @@ describe("executeReadonlyStatement", () => {
       },
     );
 
-    expect(rows).toEqual([{ tenant_id: "acme" }]);
+    expect(rows).toEqual([{ tenant_id: "tenant_a" }]);
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SELECT tenant_id FROM tenant_knowledge LIMIT 1",

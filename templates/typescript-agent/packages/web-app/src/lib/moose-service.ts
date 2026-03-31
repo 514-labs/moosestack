@@ -12,6 +12,7 @@ const DashboardSnapshotSchema = z.object({
   }),
   recentKnowledge: z.array(
     z.object({
+      tenantId: z.string(),
       headline: z.string(),
       category: z.string(),
       priority: z.string(),

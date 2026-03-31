@@ -1,10 +1,10 @@
 # TypeScript Agent Template
 
-This template gives you a production-shaped TypeScript starter for building tenant-scoped agents on MooseStack.
+This template gives you a production-shaped TypeScript starter for building tenant-aware agents on MooseStack.
 
 It combines:
 - a Moose service with JWT-backed RLS and MCP tools
-- a Next.js app with chat, local mock OIDC login, and dashboard views
+- a Next.js app with chat, local identity-based auth, and dashboard views
 - a single-agent chat experience by default, plus optional reference multi-agent runtime code
 - AI Elements primitives for the generic chat shell
 - Moose-owned app APIs backed by query-layer models
@@ -33,38 +33,59 @@ If you only need a simple UI over an existing backend, plain Next.js is often en
 
 ## Overview
 
-```text
-Next.js App
-  ├─ Auth.js session (local mock OIDC or external OIDC)
-  ├─ Server-rendered UI
-  ├─ Chat API route
-  └─ Langfuse tracing
-          │
-          │ Bearer JWT with tenant_id
-          ▼
-MooseStack Service
-  ├─ /app dashboard API
-  ├─ /tools MCP server
-  ├─ query-layer models
-  ├─ tenant_knowledge
-  └─ SelectRowPolicy on tenant_id
+```mermaid
+flowchart LR
+  subgraph Access["Authentication"]
+    TenantA["Tenant A"]
+    TenantB["Tenant B"]
+    Admin["Admin Debug<br/>local only"]
+    OIDC["External OIDC"]
+  end
+
+  subgraph Web["Next.js host app"]
+    Auth["Auth.js session"]
+    UI["Dashboard UI"]
+    Chat["Chat API route"]
+  end
+
+  subgraph Moose["MooseStack service"]
+    AppAPI["/app dashboard API"]
+    MCP["/tools MCP server"]
+    Query["Semantic/query layer"]
+    Data["tenant_knowledge<br/>ClickHouse + RLS"]
+  end
+
+  TenantA --> Auth
+  TenantB --> Auth
+  Admin --> Auth
+  OIDC --> Auth
+  Auth -->|tenant_id or access_role| UI
+  Auth -->|Bearer JWT| Chat
+  UI -->|Bearer JWT| AppAPI
+  Chat -->|Bearer JWT| MCP
+  AppAPI --> Query
+  MCP --> Query
+  Query --> Data
 ```
+
+## Optional Multi-Agent Reference Flow
+Authentication establishes identity. Authorization determines whether the request is tenant-scoped (`tenant_id`) or uses the local-only `Admin Debug` bypass for troubleshooting.
 
 ## Optional Multi-Agent Reference Flow
 
 The runtime package still includes a simple multi-agent reference flow:
 
 - `supervisor` classifies the latest user request and selects one specialist
-- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with tenant-scoped MCP tools
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with the authenticated MCP tools
 - `narrator` rewrites the specialist's working notes into the final user-facing answer
 
 The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
 
 Start with these files if you want to customize the pattern:
 
-- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference multi-agent orchestration
-- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the default single-agent runtime
-- `packages/web-app/src/app/page.tsx` - default landing-page copy and suggested prompts
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
+- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
+- `packages/agent-runtime/src/prompts/multi-agent.ts` - reference supervisor/specialist/narrator prompts
 
 ## Prerequisites
 
@@ -89,7 +110,7 @@ pnpm env:prepare
 pnpm dev:start
 ```
 
-`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` plus a local RSA keypair used for the built-in tenant JWT flow.
+`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` plus a local RSA keypair used for the built-in identity flow.
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
@@ -103,7 +124,7 @@ pnpm seed
 
 `pnpm seed` prints a short summary showing how many records were inserted and the current totals per tenant.
 
-Open `http://localhost:3000`, sign in as one of the seeded tenants, then use the dashboard and chat panel.
+Open `http://localhost:3000`, sign in as `Tenant A`, `Tenant B`, or `Admin Debug`, then use the dashboard and chat panel.
 
 Before committing, run:
 
@@ -183,25 +204,27 @@ pnpm seed
 Then verify:
 
 - `http://localhost:3000` renders the landing page
-- local sign-in works for `acme` and `globex`
-- the dashboard changes by tenant
-- chat guidance focuses on tenant-scoped semantic queries
+- local sign-in works for `Tenant A`, `Tenant B`, and `Admin Debug`
+- tenant identities only see their own records, while `Admin Debug` can inspect both tenants
 - streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
-- chat tool calls stay tenant-scoped
-- `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`
+- chat tool calls follow the same authenticated access scope as the dashboard
+- `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`, or the local admin debug JWT with `access_role=admin_debug`
 
 ## Local Development
 
-Local development uses the built-in mock OIDC flow:
+Local development uses the built-in identity flow:
 
-- `MOOSE_AUTH_MODE=local` enables tenant picker sign-in in the web app
-- the web app signs a short-lived JWT carrying `tenant_id`
+- `MOOSE_AUTH_MODE=local` enables the local identity chooser in the web app
+- `Tenant A` and `Tenant B` sign-in issue short-lived JWTs carrying `tenant_id`
+- `Admin Debug` signs in with a short-lived JWT carrying `access_role=admin_debug`
 - Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
-- MCP tool queries and Moose app APIs are both scoped by the same row policy
+- tenant identities stay scoped by the same row policy across dashboard APIs and MCP tools
+- `Admin Debug` bypasses tenant scoping for local troubleshooting only
 
-Two demo tenants are included by default:
-- `acme`
-- `globex`
+Local identities included by default:
+- `Tenant A`
+- `Tenant B`
+- `Admin Debug`
 
 ## Environment Variables
 
@@ -232,7 +255,7 @@ In `packages/moosestack-service/.env.local`, you can also override the local Cli
 | `MOOSE_CLICKHOUSE_CONFIG__USE_SSL` | `true` / `false` for the HTTP connection |
 | `MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT` | Existing ClickHouse native TCP port |
 
-For local work, start by copying `packages/web-app/.env.example` to `.env.local` and then set the provider-specific variables you actually want to use.
+For local work, start with `pnpm env:prepare`, then update the provider-specific variables in `packages/web-app/.env.local` for the model backend you want to use.
 
 ### Provider-specific
 
@@ -256,7 +279,7 @@ When authoring custom MCP tools for Bedrock-backed chats, prefer `z.string()` pl
 
 ### Optional production OIDC
 
-Set these when replacing the local mock flow with a real provider:
+Set these when replacing the local identity flow with a real provider:
 
 | Variable | Purpose |
 | --- | --- |
@@ -280,7 +303,7 @@ If `AI_PROVIDER=bedrock`:
 
 `pnpm seed` inserts:
 
-- tenant-scoped knowledge records in `tenant_knowledge`
+- tenant-scoped knowledge records for `tenant_a` and `tenant_b` in `tenant_knowledge`
 
 The dashboard reads Moose-owned app APIs over that table, and the chat UI can inspect it through MCP. Langfuse remains the observability destination for chat/model traces.
 
@@ -297,7 +320,7 @@ The template exposes a custom MCP server at `http://localhost:4000/tools`.
 
 The custom MCP endpoint is derived from `MOOSE_SERVICE_URL` by default. Only set `MCP_SERVER_URL` when the MCP tools endpoint lives on a different URL or you need to point directly at a full `/tools` endpoint.
 
-Use a bearer JWT from the same auth provider that the web app uses. For local dev, sign in through the app and inspect requests, or mint an equivalent JWT carrying `tenant_id`.
+Use a bearer JWT from the same auth provider that the web app uses. For local dev, sign in through the app and inspect requests, or mint an equivalent JWT carrying `tenant_id` for tenant-scoped access or `access_role=admin_debug` for the local debug path.
 
 Example:
 
@@ -317,6 +340,7 @@ Example:
 
 ## Files to Start With
 
+- `packages/moosestack-service/app/auth/` — JWT claim parsing plus tenant/admin access context helpers
 - `packages/moosestack-service/app/ingest/models.ts` — tenant-scoped tables and row policies
 - `packages/moosestack-service/app/semantic/` — Moose semantic models and dashboard read composition
 - `packages/moosestack-service/app/http/dashboard/api.ts` — app-facing dashboard API endpoint
@@ -331,9 +355,10 @@ Example:
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
 - `packages/agent-contracts/` — shared contracts between frontend and service
-- `packages/web-app/src/auth.ts` — production auth wiring plus optional OIDC
+- `packages/web-app/src/auth.ts` — authentication provider wiring plus optional OIDC
+- `packages/web-app/src/authz/` — session-level authorization helpers for tenant vs admin debug access
 - `packages/web-app/src/lib/id-token.ts` — shared ID token claim parsing
-- `packages/web-app/src/dev/` — development-only local auth and mock guardrails
+- `packages/web-app/src/dev/` — development-only local identities and mock guardrails
 - `packages/web-app/src/lib/moose-service.ts` — authenticated service client for frontend reads
 - `packages/web-app/src/features/chat/` — chat UI components
 - `packages/web-app/test/` — unit tests for frontend/server host adapters and environment-driven wiring
@@ -373,4 +398,4 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 - `pnpm seed` requires the Moose service to be running.
 - `pnpm lint` runs Biome across the template and ESLint in the Next app.
 - `pnpm format` runs Biome formatting across the template.
-- The chat and dashboard are both tenant-scoped; if you sign in as a different tenant, visible data changes.
+- The chat and dashboard follow the same authenticated access scope; tenant identities see one tenant, while `Admin Debug` sees the seeded dataset across tenants.

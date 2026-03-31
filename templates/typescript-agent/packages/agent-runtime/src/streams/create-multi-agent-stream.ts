@@ -113,7 +113,7 @@ export async function createMultiAgentStream(
         writeAgentMarker(
           writer,
           specialist.label,
-          "Investigating with tenant-scoped MCP tools.",
+          "Investigating with the authenticated MCP tools.",
         );
 
         const tools =

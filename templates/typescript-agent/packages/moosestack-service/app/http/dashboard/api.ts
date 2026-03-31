@@ -1,22 +1,30 @@
 import { WebApp } from "@514labs/moose-lib";
 import express from "express";
-import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
 import {
-  assertTenantMooseContext,
-  requireTenantMoose,
-} from "../context/tenant-context";
+  assertAuthenticatedAccessContext,
+  requireAuthenticatedMoose,
+} from "../../auth/access-context";
+import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
 
 const app = express();
 
-app.use(requireTenantMoose);
+app.use(requireAuthenticatedMoose);
 
 app.get("/dashboard/snapshot", async (req, res, next) => {
   try {
-    const context = assertTenantMooseContext(req);
+    const context = assertAuthenticatedAccessContext(req);
 
     const snapshot = await getDashboardSnapshot(
       context.moose.client.query,
-      context.rowPolicyOptions,
+      context.kind === "tenant" ?
+        {
+          kind: "tenant",
+          tenantId: context.tenantId,
+          rowPolicyOptions: context.rowPolicyOptions,
+        }
+      : {
+          kind: "admin",
+        },
     );
 
     res.json(snapshot);
@@ -43,6 +51,6 @@ app.use(
 export const dashboardApi = new WebApp("dashboardApi", app, {
   mountPath: "/app",
   metadata: {
-    description: "Tenant-scoped app APIs for dashboard and frontend reads",
+    description: "Authenticated app APIs for dashboard and frontend reads",
   },
 });

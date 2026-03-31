@@ -1,29 +1,48 @@
+import {
+  ACCESS_ROLE_ADMIN_DEBUG,
+  ACCESS_ROLE_TENANT,
+  type AccessRole,
+} from "agent-contracts";
 import { importPKCS8, SignJWT } from "jose";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
-const localTenantSchema = z.object({
-  tenantId: z.string().min(1),
+const localIdentitySchema = z.object({
+  identityId: z.string().min(1),
 });
 const LOCAL_ID_TOKEN_TTL_SECONDS = 60 * 60;
 
-export const LOCAL_TENANTS = [
+export const LOCAL_IDENTITIES = [
   {
-    id: "acme",
-    name: "ACME Fleet",
-    email: "ops@acme.example",
+    id: "tenant_a",
+    name: "Tenant A",
+    email: "tenant-a@example.local",
+    accessRole: ACCESS_ROLE_TENANT,
+    tenantId: "tenant_a",
+    tenantName: "Tenant A",
     description: "Brake alerts and support volumes rising in the north-east.",
   },
   {
-    id: "globex",
-    name: "Globex Mobility",
-    email: "control@globex.example",
+    id: "tenant_b",
+    name: "Tenant B",
+    email: "tenant-b@example.local",
+    accessRole: ACCESS_ROLE_TENANT,
+    tenantId: "tenant_b",
+    tenantName: "Tenant B",
     description:
       "Seattle hub is close to capacity with healthy battery trends.",
   },
+  {
+    id: "admin_debug",
+    name: "Admin Debug",
+    email: "admin-debug@example.local",
+    accessRole: ACCESS_ROLE_ADMIN_DEBUG,
+    description:
+      "Local-only debug identity with read access across both seeded tenants.",
+  },
 ] as const;
 
-export type LocalTenant = (typeof LOCAL_TENANTS)[number];
+export type LocalIdentity = (typeof LOCAL_IDENTITIES)[number];
 
 let localPrivateKeyPromise: Promise<CryptoKey> | undefined;
 
@@ -46,53 +65,63 @@ function getLocalPrivateKey(): Promise<CryptoKey> {
   return localPrivateKeyPromise;
 }
 
-function getLocalTenant(tenantId: string): LocalTenant | undefined {
-  return LOCAL_TENANTS.find((tenant) => tenant.id === tenantId);
+function getLocalIdentity(identityId: string): LocalIdentity | undefined {
+  return LOCAL_IDENTITIES.find((identity) => identity.id === identityId);
 }
 
-async function issueLocalTenantToken(tenant: LocalTenant): Promise<string> {
+function getLocalIdentityScope(accessRole: AccessRole): string {
+  return accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
+      "agent:query admin:debug"
+    : "agent:query";
+}
+
+async function issueLocalIdentityToken(
+  identity: LocalIdentity,
+): Promise<string> {
   const privateKey = await getLocalPrivateKey();
 
   return await new SignJWT({
-    tenant_id: tenant.id,
-    email: tenant.email,
-    name: tenant.name,
-    scope: "agent:query",
+    ...(identity.tenantId ? { tenant_id: identity.tenantId } : {}),
+    email: identity.email,
+    name: identity.name,
+    scope: getLocalIdentityScope(identity.accessRole),
+    access_role: identity.accessRole,
   })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer("typescript-agent-local")
     .setAudience("typescript-agent")
-    .setSubject(`local-${tenant.id}`)
+    .setSubject(`local-${identity.id}`)
     .setExpirationTime(`${LOCAL_ID_TOKEN_TTL_SECONDS}s`)
     .sign(privateKey);
 }
 
-export function createLocalTenantProvider() {
+export function createLocalIdentityProvider() {
   return Credentials({
-    id: "local-tenant",
-    name: "Local tenant",
+    id: "local-identity",
+    name: "Local identity",
     credentials: {
-      tenantId: { label: "Tenant", type: "text" },
+      identityId: { label: "Identity", type: "text" },
     },
     async authorize(credentials) {
-      const parsed = localTenantSchema.safeParse(credentials);
+      const parsed = localIdentitySchema.safeParse(credentials);
       if (!parsed.success) {
         return null;
       }
 
-      const tenant = getLocalTenant(parsed.data.tenantId);
-      if (!tenant) {
+      const identity = getLocalIdentity(parsed.data.identityId);
+      if (!identity) {
         return null;
       }
 
       return {
-        id: `local-${tenant.id}`,
-        name: tenant.name,
-        email: tenant.email,
-        tenantId: tenant.id,
-        tenantName: tenant.name,
+        id: `local-${identity.id}`,
+        name: identity.name,
+        email: identity.email,
+        tenantId: identity.tenantId,
+        tenantName: identity.tenantName,
         provider: "local",
-        idToken: await issueLocalTenantToken(tenant),
+        accessRole: identity.accessRole,
+        idToken: await issueLocalIdentityToken(identity),
         idTokenExpiresAt: Date.now() + LOCAL_ID_TOKEN_TTL_SECONDS * 1000,
       };
     },

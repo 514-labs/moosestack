@@ -3,10 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import {
-  assertTenantMooseContext,
-  requireTenantMoose,
-  type TenantMooseContext,
-} from "../http/context/tenant-context";
+  assertAuthenticatedAccessContext,
+  requireAuthenticatedMoose,
+  type AuthenticatedAccessContext,
+} from "../auth/access-context";
 import {
   tenantKnowledgeMetricsModel,
   tenantKnowledgeRecordsModel,
@@ -16,10 +16,10 @@ import { registerSemanticModelTools } from "./tools/register-semantic-model-tool
 
 const app = express();
 app.use(express.json());
-app.use(requireTenantMoose);
+app.use(requireAuthenticatedMoose);
 
 function createMcpServer(
-  context: Pick<TenantMooseContext, "moose" | "rowPolicyOptions">,
+  context: Pick<AuthenticatedAccessContext, "moose" | "rowPolicyOptions">,
 ) {
   const server = new McpServer({
     name: "moosestack-mcp-tools",
@@ -43,7 +43,7 @@ app.all("/", async (req, res) => {
   try {
     console.log(`[MCP] Handling ${req.method} request (stateless mode)`);
 
-    const context = assertTenantMooseContext(req);
+    const context = assertAuthenticatedAccessContext(req);
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -69,6 +69,6 @@ export const mcpServer = new WebApp("mcpServer", app, {
   mountPath: "/tools",
   metadata: {
     description:
-      "MCP server exposing tenant-scoped semantic query tools via Express and WebApp",
+      "MCP server exposing access-scoped semantic query tools via Express and WebApp",
   },
 });

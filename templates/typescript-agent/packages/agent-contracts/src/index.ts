@@ -1,9 +1,17 @@
+export const ACCESS_ROLE_TENANT = "tenant";
+export const ACCESS_ROLE_ADMIN_DEBUG = "admin_debug";
+
+export type AccessRole =
+  | typeof ACCESS_ROLE_TENANT
+  | typeof ACCESS_ROLE_ADMIN_DEBUG;
+
 export interface KnowledgeMetrics {
   totalRecords: number;
   highPriorityRecords: number;
 }
 
 export interface RecentKnowledgeRecord {
+  tenantId: string;
   headline: string;
   category: string;
   priority: string;

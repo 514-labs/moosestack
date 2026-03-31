@@ -12,15 +12,15 @@ describe("seed output parsing", () => {
 
   it("extracts JSON rows and ignores bracketed log lines that are not JSON", () => {
     const output = [
-      '\u001b[32m{"tenant_id":"acme","total":2}\u001b[0m',
+      '\u001b[32m{"tenant_id":"tenant_a","total":2}\u001b[0m',
       "[INFO] warming query cache",
-      '[{"tenant_id":"globex","total":3}]',
+      '[{"tenant_id":"tenant_b","total":3}]',
       "plain text log line",
     ].join("\n");
 
     expect(extractJsonRowsFromOutput(output)).toEqual([
-      { tenant_id: "acme", total: 2 },
-      { tenant_id: "globex", total: 3 },
+      { tenant_id: "tenant_a", total: 2 },
+      { tenant_id: "tenant_b", total: 3 },
     ]);
   });
 });

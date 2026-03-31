@@ -90,4 +90,37 @@ describe("getDashboardSnapshot", () => {
       DashboardSnapshotUnauthorizedError,
     );
   });
+
+  it("parses tenant ids on dashboard rows for admin debug views", async () => {
+    const snapshot = {
+      knowledgeMetrics: {
+        totalRecords: 4,
+        highPriorityRecords: 2,
+      },
+      recentKnowledge: [
+        {
+          tenantId: "tenant_a",
+          headline: "Brake alerts increased by 14% this week",
+          category: "fleet_health",
+          priority: "high",
+          source: "seed",
+          timestamp: "2026-03-31T10:00:00.000Z",
+        },
+      ],
+    } satisfies DashboardSnapshot;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(JSON.stringify(snapshot), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    await expect(getDashboardSnapshot("admin-token")).resolves.toEqual(
+      snapshot,
+    );
+  });
 });
