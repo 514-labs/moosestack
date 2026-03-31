@@ -63,6 +63,20 @@ impl MigrationPlan {
             })
             .collect();
 
+        let dropped_tables: HashSet<(&str, &str)> = self
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                SerializableOlapOperation::DropTable {
+                    table, database, ..
+                } => Some((
+                    table.as_str(),
+                    database.as_deref().unwrap_or(default_database),
+                )),
+                _ => None,
+            })
+            .collect();
+
         let existing_raw_sqls: HashSet<String> = self
             .operations
             .iter()
@@ -85,16 +99,15 @@ impl MigrationPlan {
                 None => continue,
             };
 
-            let src_db = base_table
-                .database
-                .as_deref()
-                .unwrap_or(default_database)
-                .to_string();
-            let dst_db = new_table
-                .database
-                .as_deref()
-                .unwrap_or(default_database)
-                .to_string();
+            let src_db_ref = base_table.database.as_deref().unwrap_or(default_database);
+            let dst_db_ref = new_table.database.as_deref().unwrap_or(default_database);
+
+            if dropped_tables.contains(&(base_table.name.as_str(), src_db_ref)) {
+                continue;
+            }
+
+            let src_db = src_db_ref.to_string();
+            let dst_db = dst_db_ref.to_string();
 
             let base_insertable: Vec<Column> = base_table
                 .columns
@@ -657,5 +670,33 @@ mod tests {
         assert!(matches!(&results[0], BackfillCheckResult::Candidate(c)
             if c.source_table_name == "Events_2"
         ));
+    }
+
+    #[test]
+    fn detect_skips_candidate_when_source_is_dropped_in_same_plan() {
+        let cols = vec![test_col("id", ColumnType::String)];
+        let base = make_table("Events", cols.clone(), None, "Events");
+        let new = make_table("Events_2", cols, Some("2"), "Events");
+
+        let mut remote = HashMap::new();
+        remote.insert("default_Events".to_string(), base);
+
+        let plan = MigrationPlan {
+            created_at: Utc::now(),
+            operations: vec![
+                SerializableOlapOperation::DropTable {
+                    table: "Events".to_string(),
+                    database: None,
+                    cluster_name: None,
+                },
+                SerializableOlapOperation::CreateTable { table: new },
+            ],
+        };
+
+        let results = plan.detect_backfill_candidates(&remote, "default");
+        assert!(
+            results.is_empty(),
+            "Expected no candidates when source table is dropped in the same plan, got: {results:?}"
+        );
     }
 }
