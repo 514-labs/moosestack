@@ -50,6 +50,8 @@ export function runWithRequestContext<T>(
 export interface GetMooseUtilsOptions {
   /** Map of JWT claim names to their values for row policy scoping */
   rlsContext?: Record<string, string>;
+  /** When true, enforce ClickHouse readonly mode on all queries (SELECTs/EXPLAINs). */
+  readonly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +155,21 @@ export async function getMooseUtils(
 
   if (options?.rlsContext) {
     return createStandaloneRlsUtils(options.rlsContext);
+  }
+
+  if (options?.readonly) {
+    const baseClient = standaloneUtils!.client.query.client;
+    const readonlyQueryClient = new QueryClient(
+      baseClient,
+      "standalone-ro",
+      undefined,
+      true,
+    );
+    return {
+      client: new MooseClient(readonlyQueryClient),
+      sql: sql,
+      jwt: undefined,
+    };
   }
 
   return standaloneUtils!;
