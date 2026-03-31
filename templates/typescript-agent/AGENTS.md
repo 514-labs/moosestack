@@ -41,7 +41,7 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 ### 3. Agent tools available
 
-1. **Dev server** — Prefer `pnpm dev:start` from the template root. It prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
+1. **Dev server** — Prefer `pnpm dev:start` from the template root. It runs the workspace build, prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
 
 2. **MooseDev MCP** — Primary tool for inspecting the project (see Available Tools below).
 

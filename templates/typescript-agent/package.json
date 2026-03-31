@@ -9,6 +9,8 @@
   "scripts": {
     "build": "turbo run build --filter=web-app",
     "build:service": "pnpm --filter moosestack-service build",
+    "predev": "pnpm build",
+    "predev:start": "pnpm build",
     "dev": "pnpm --parallel --stream -r --if-present dev",
     "dev:start": "bash ./scripts/dev-start.sh",
     "dev:moose": "pnpm --filter moosestack-service dev",
