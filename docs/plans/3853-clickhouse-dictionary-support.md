@@ -259,8 +259,29 @@ Mirrors TypeScript API with Pydantic config models.
 
 ### 4.2 Documentation (`apps/framework-docs-v2/`)
 
-- New SDK reference page for `OlapDictionary` (TS + Python)
-- Tutorial: "Using OlapDictionary for fast ClickHouse lookups"
+- **SDK reference page** for `OlapDictionary` (TS + Python):
+  - Constructor signature, `OlapDictionaryConfig` type definition
+  - `OlapDictionaryLayout` union with all layout variants and their parameters
+  - `OlapDictionarySource` union with all source types
+  - `get()` and `getOrDefault()` helper methods
+  - Lifecycle management options
+- **Source type examples** — one complete code example per supported source type:
+  - ClickHouse (OlapTable reference)
+  - ClickHouse (View reference)
+  - ClickHouse (sql template query)
+  - ClickHouse (remote — host/port/credentials)
+  - HTTP(S) (url, format, credentials, headers)
+  - MySQL (host, port, credentials, table/query, replicas)
+  - PostgreSQL (host, port, credentials, table/query, replicas)
+  - MongoDB (host, port, credentials, db, collection)
+  - Redis (host, port, storage_type)
+  - Cassandra (host, port, keyspace, column_family)
+  - ODBC (connection_string, db, table)
+  - File (path, format)
+  - Executable (command, format)
+  - Executable Pool (command, format, pool_size)
+  - Null
+- **Tutorial**: "Using OlapDictionary for fast ClickHouse lookups" — end-to-end walkthrough: define source table, create dictionary, use `dictGet` in a MaterializedView
 - Update SDK overview / primitives listing page
 - Update ClickHouse best practices if relevant
 
