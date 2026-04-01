@@ -79,6 +79,23 @@ export { View } from "./sdk/view";
 export { SelectRowPolicy, SelectRowPolicyConfig } from "./sdk/selectRowPolicy";
 export { LifeCycle } from "./sdk/lifeCycle";
 export {
+  OlapDictionary,
+  OlapDictionaryConfig,
+  DictionaryColumnConfig,
+  DictionaryLayout,
+  DictionaryLifetime,
+  ExternalSource,
+  HttpExternalSource,
+  ClickHouseExternalSource,
+  MysqlExternalSource,
+  PostgresqlExternalSource,
+  RedisExternalSource,
+  MongodbExternalSource,
+  ExecutableExternalSource,
+  S3ExternalSource,
+  COMPLEX_KEY_LAYOUTS,
+} from "./sdk/olapDictionary";
+export {
   WebApp,
   WebAppConfig,
   WebAppHandler,
@@ -106,4 +123,6 @@ export {
   getView,
   getSelectRowPolicies,
   getSelectRowPolicy,
+  getOlapDictionaries,
+  getOlapDictionary,
 } from "./registry";

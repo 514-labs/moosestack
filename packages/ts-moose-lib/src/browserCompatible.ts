@@ -56,6 +56,15 @@ export {
   getMaterializedViews,
   getSelectRowPolicies,
   getSelectRowPolicy,
+  OlapDictionary,
+  OlapDictionaryConfig,
+  DictionaryColumnConfig,
+  DictionaryLayout,
+  DictionaryLifetime,
+  ExternalSource,
+  COMPLEX_KEY_LAYOUTS,
+  getOlapDictionaries,
+  getOlapDictionary,
 } from "./dmv2";
 
 export {
