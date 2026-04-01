@@ -42,6 +42,7 @@ import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import { SelectRowPolicy } from "./sdk/selectRowPolicy";
+import { OlapDictionary } from "./sdk/olapDictionary";
 import {
   getSourceDir,
   getCompiledIndexPath,
@@ -167,6 +168,7 @@ type MooseInternalRegistry = {
   materializedViews: Map<string, MaterializedView<any>>;
   views: Map<string, View>;
   selectRowPolicies: Map<string, SelectRowPolicy>;
+  olapDictionaries: Map<string, OlapDictionary<any>>;
 };
 
 let registryMutationVersion = 0;
@@ -210,6 +212,7 @@ function createRegistryFrom(
     materializedViews: toTrackingMap(existing?.materializedViews),
     views: toTrackingMap(existing?.views),
     selectRowPolicies: toTrackingMap(existing?.selectRowPolicies),
+    olapDictionaries: toTrackingMap(existing?.olapDictionaries),
   };
 }
 
@@ -253,6 +256,10 @@ const moose_internal: MooseInternalRegistry = {
   ),
   views: new MutationTrackingMap<string, View>(undefined, markRegistryMutated),
   selectRowPolicies: new MutationTrackingMap<string, SelectRowPolicy>(
+    undefined,
+    markRegistryMutated,
+  ),
+  olapDictionaries: new MutationTrackingMap<string, OlapDictionary<any>>(
     undefined,
     markRegistryMutated,
   ),
@@ -1098,6 +1105,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
   const selectRowPolicies: { [key: string]: SelectRowPolicyJson } = {};
+  const olapDictionaries: { [key: string]: Record<string, unknown> } = {};
   const lineage = getCachedLineage(registry);
 
   registry.tables.forEach((table) => {
@@ -1419,6 +1427,10 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     };
   });
 
+  registry.olapDictionaries.forEach((dict) => {
+    olapDictionaries[dict.name] = dict.toJson();
+  });
+
   return {
     topics,
     tables,
@@ -1430,6 +1442,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
     materializedViews,
     views,
     selectRowPolicies,
+    olapDictionaries,
     unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
@@ -1509,6 +1522,7 @@ const loadIndex = async () => {
   registry.materializedViews.clear();
   registry.views.clear();
   registry.selectRowPolicies.clear();
+  registry.olapDictionaries.clear();
 
   // Clear require cache for compiled directory to pick up changes
   const outDir = getOutDir();
