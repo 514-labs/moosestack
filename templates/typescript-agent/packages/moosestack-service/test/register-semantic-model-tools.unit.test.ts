@@ -24,13 +24,10 @@ describe("registerSemanticModelTools", () => {
       ),
     } as unknown as McpServer;
 
-    const queryClient = {
-      client: {
-        query: vi.fn(async () => ({
-          json: async () => [{ category: "incident", totalRecords: 3 }],
-        })),
-      },
-    };
+    const queryClient = {};
+    const queryMock = vi.fn(async () => [
+      { category: "incident", totalRecords: 3 },
+    ]);
     const fakeModel: QueryModelBase = {
       name: "query_test_metrics",
       description: "Test semantic metrics tool",
@@ -47,15 +44,11 @@ describe("registerSemanticModelTools", () => {
       },
       columnNames: [],
       toSql: () => sql`SELECT 1 AS total_records`,
+      query: queryMock,
     };
 
     registerSemanticModelTools(server, [fakeModel], {
       queryClient: queryClient as never,
-      rowPolicyOptions: {
-        clickhouse_settings: {
-          readonly: "1",
-        },
-      },
     });
 
     const result = (await handlers.query_test_metrics?.({
@@ -79,6 +72,13 @@ describe("registerSemanticModelTools", () => {
       rows: [{ category: "incident", totalRecords: 3 }],
     });
     expect(result.content[0]?.text).toContain('"rowCount": 1');
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metrics: ["totalRecords"],
+        limit: 25,
+      }),
+      queryClient,
+    );
   });
 
   it("returns sanitized backend errors for semantic tools", async () => {
@@ -100,13 +100,7 @@ describe("registerSemanticModelTools", () => {
       ),
     } as unknown as McpServer;
 
-    const queryClient = {
-      client: {
-        query: vi.fn(async () => {
-          throw new Error("socket hang up");
-        }),
-      },
-    };
+    const queryClient = {};
     const fakeModel: QueryModelBase = {
       name: "query_test_metrics",
       description: "Test semantic metrics tool",
@@ -123,17 +117,15 @@ describe("registerSemanticModelTools", () => {
       },
       columnNames: [],
       toSql: () => sql`SELECT 1 AS total_records`,
+      query: vi.fn(async () => {
+        throw new Error("socket hang up");
+      }),
     };
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     registerSemanticModelTools(server, [fakeModel], {
       queryClient: queryClient as never,
-      rowPolicyOptions: {
-        clickhouse_settings: {
-          readonly: "1",
-        },
-      },
     });
 
     const result = (await handlers.query_test_metrics?.({
@@ -157,9 +149,9 @@ describe("registerSemanticModelTools", () => {
       string,
       (params: Record<string, unknown>) => Promise<unknown>
     > = {};
-    const querySpy = vi.fn(async () => ({
-      json: async () => [{ category: "incident", totalRecords: 3 }],
-    }));
+    const querySpy = vi.fn(async () => [
+      { category: "incident", totalRecords: 3 },
+    ]);
     const server = {
       tool: vi.fn(
         (
@@ -174,11 +166,7 @@ describe("registerSemanticModelTools", () => {
       ),
     } as unknown as McpServer;
 
-    const queryClient = {
-      client: {
-        query: querySpy,
-      },
-    };
+    const queryClient = {};
     const fakeModel: QueryModelBase = {
       name: "query_test_metrics",
       description: "Test semantic metrics tool",
@@ -195,15 +183,11 @@ describe("registerSemanticModelTools", () => {
       },
       columnNames: [],
       toSql: () => sql`SELECT 1 AS total_records`,
+      query: querySpy,
     };
 
     registerSemanticModelTools(server, [fakeModel], {
       queryClient: queryClient as never,
-      rowPolicyOptions: {
-        clickhouse_settings: {
-          readonly: "1",
-        },
-      },
     });
 
     await handlers.query_test_metrics?.({
@@ -213,13 +197,10 @@ describe("registerSemanticModelTools", () => {
 
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "SELECT 1 AS total_records",
-        clickhouse_settings: expect.objectContaining({
-          max_result_rows: "25",
-          readonly: "2",
-          result_overflow_mode: "break",
-        }),
+        metrics: ["totalRecords"],
+        limit: 25,
       }),
+      queryClient,
     );
   });
 });

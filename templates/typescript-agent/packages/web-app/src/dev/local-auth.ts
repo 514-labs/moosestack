@@ -7,42 +7,43 @@ import { importPKCS8, SignJWT } from "jose";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
-const localAccessSchema = z.object({
-  selectionId: z.string().min(1),
+const localCredentialsSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
 });
 const LOCAL_ID_TOKEN_TTL_SECONDS = 60 * 60;
 
-export const LOCAL_ACCESS_OPTIONS = [
+export const LOCAL_MOCK_USERS = [
   {
-    id: "org_a",
-    name: "Org A",
-    email: "org-a@example.local",
+    id: "org-a-user-1",
+    name: "user1@orgA.com",
+    email: "user1@orgA.com",
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_a",
     orgName: "Org A",
-    description: "Brake alerts and support volumes rising in the north-east.",
+    description: "Organization-scoped access for Org A.",
   },
   {
-    id: "org_b",
-    name: "Org B",
-    email: "org-b@example.local",
+    id: "org-b-user-2",
+    name: "user2@orgB.com",
+    email: "user2@orgB.com",
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_b",
     orgName: "Org B",
-    description:
-      "Seattle hub is close to capacity with healthy battery trends.",
+    description: "Organization-scoped access for Org B.",
   },
   {
-    id: "admin_debug",
-    name: "Admin Debug",
-    email: "admin-debug@example.local",
+    id: "admin",
+    name: "admin@templae.com",
+    email: "admin@templae.com",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
     description:
-      "Local-only debug access with read visibility across both seeded organizations.",
+      "Local-only admin access with read visibility across both seeded organizations.",
   },
 ] as const;
 
-export type LocalAccessOption = (typeof LOCAL_ACCESS_OPTIONS)[number];
+export type LocalMockUser = (typeof LOCAL_MOCK_USERS)[number];
+export const LOCAL_PASSWORD_RULE = "Use the part before @ as the password.";
 
 let localPrivateKeyPromise: Promise<CryptoKey> | undefined;
 
@@ -65,10 +66,32 @@ function getLocalPrivateKey(): Promise<CryptoKey> {
   return localPrivateKeyPromise;
 }
 
-function getLocalAccessOption(
-  selectionId: string,
-): LocalAccessOption | undefined {
-  return LOCAL_ACCESS_OPTIONS.find((option) => option.id === selectionId);
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function deriveLocalPassword(email: string): string | undefined {
+  const normalizedEmail = normalizeEmail(email);
+  const atIndex = normalizedEmail.indexOf("@");
+
+  if (atIndex <= 0) {
+    return undefined;
+  }
+
+  return normalizedEmail.slice(0, atIndex);
+}
+
+export function getLocalMockUser(email: string): LocalMockUser | undefined {
+  const normalizedEmail = normalizeEmail(email);
+
+  return LOCAL_MOCK_USERS.find(
+    (mockUser) => normalizeEmail(mockUser.email) === normalizedEmail,
+  );
+}
+
+function isValidLocalPassword(email: string, password: string): boolean {
+  const expectedPassword = deriveLocalPassword(email);
+  return Boolean(expectedPassword && password === expectedPassword);
 }
 
 function getLocalAccessScope(accessRole: AccessRole): string {
@@ -77,26 +100,24 @@ function getLocalAccessScope(accessRole: AccessRole): string {
     : "agent:query";
 }
 
-async function issueLocalAccessToken(
-  accessOption: LocalAccessOption,
-): Promise<string> {
+async function issueLocalAccessToken(mockUser: LocalMockUser): Promise<string> {
   const privateKey = await getLocalPrivateKey();
   const orgClaims =
-    accessOption.accessRole === ACCESS_ROLE_TENANT ?
-      { org_id: accessOption.orgId }
+    mockUser.accessRole === ACCESS_ROLE_TENANT ?
+      { org_id: mockUser.orgId }
     : {};
 
   return await new SignJWT({
     ...orgClaims,
-    email: accessOption.email,
-    name: accessOption.name,
-    scope: getLocalAccessScope(accessOption.accessRole),
-    access_role: accessOption.accessRole,
+    email: mockUser.email,
+    name: mockUser.name,
+    scope: getLocalAccessScope(mockUser.accessRole),
+    access_role: mockUser.accessRole,
   })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer("typescript-agent-local")
     .setAudience("typescript-agent")
-    .setSubject(`local-${accessOption.id}`)
+    .setSubject(`local-${mockUser.id}`)
     .setExpirationTime(`${LOCAL_ID_TOKEN_TTL_SECONDS}s`)
     .sign(privateKey);
 }
@@ -104,34 +125,39 @@ async function issueLocalAccessToken(
 export function createLocalAccessProvider() {
   return Credentials({
     id: "local-access",
-    name: "Local access",
+    name: "Local login",
     credentials: {
-      selectionId: { label: "Access option", type: "text" },
+      email: { label: "Email", type: "email" },
+      password: { label: "Password", type: "password" },
     },
     async authorize(credentials) {
-      const parsed = localAccessSchema.safeParse(credentials);
+      const parsed = localCredentialsSchema.safeParse(credentials);
       if (!parsed.success) {
         return null;
       }
 
-      const accessOption = getLocalAccessOption(parsed.data.selectionId);
-      if (!accessOption) {
+      const mockUser = getLocalMockUser(parsed.data.email);
+      if (!mockUser) {
+        return null;
+      }
+
+      if (!isValidLocalPassword(mockUser.email, parsed.data.password)) {
         return null;
       }
 
       return {
-        id: `local-${accessOption.id}`,
-        name: accessOption.name,
-        email: accessOption.email,
-        ...(accessOption.accessRole === ACCESS_ROLE_TENANT ?
+        id: `local-${mockUser.id}`,
+        name: mockUser.name,
+        email: mockUser.email,
+        ...(mockUser.accessRole === ACCESS_ROLE_TENANT ?
           {
-            orgId: accessOption.orgId,
-            orgName: accessOption.orgName,
+            orgId: mockUser.orgId,
+            orgName: mockUser.orgName,
           }
         : {}),
         provider: "local",
-        accessRole: accessOption.accessRole,
-        idToken: await issueLocalAccessToken(accessOption),
+        accessRole: mockUser.accessRole,
+        idToken: await issueLocalAccessToken(mockUser),
         idTokenExpiresAt: Date.now() + LOCAL_ID_TOKEN_TTL_SECONDS * 1000,
       };
     },

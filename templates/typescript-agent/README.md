@@ -4,7 +4,7 @@ This template gives you a production-shaped TypeScript starter for building orga
 
 It combines:
 - a Moose service with JWT-backed RLS and MCP tools
-- a Next.js app with chat, local access-based auth, and dashboard views
+- a Next.js app with chat, mock email/password auth for local development, and dashboard views
 - a single-agent chat experience by default, plus optional reference multi-agent runtime code
 - AI Elements primitives for the generic chat shell
 - Moose-owned app APIs backed by query-layer models
@@ -110,7 +110,7 @@ pnpm env:prepare
 pnpm dev:start
 ```
 
-`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` plus a local RSA keypair used for the built-in local access flow.
+`pnpm env:prepare` creates `packages/moosestack-service/.env.local` and `packages/web-app/.env.local` from the checked-in examples. It also generates a random `AUTH_SECRET` plus a local RSA keypair used for the built-in local mock login flow.
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
@@ -124,7 +124,7 @@ pnpm seed
 
 `pnpm seed` prints a short summary showing how many records were inserted and the current totals per tenant.
 
-Open `http://localhost:3000`, sign in as `Org A`, `Org B`, or `Admin Debug`, then use the dashboard and chat panel.
+Open `http://localhost:3000`, sign in with one of the local mock accounts, then use the dashboard and chat panel.
 
 Before committing, run:
 
@@ -204,27 +204,27 @@ pnpm seed
 Then verify:
 
 - `http://localhost:3000` renders the landing page
-- local sign-in works for `Org A`, `Org B`, and `Admin Debug`
-- org access options only see their own records, while `Admin Debug` can inspect both tenants
+- local email/password sign-in works for the seeded mock users
+- org-scoped users only see their own records, while the local admin can inspect both tenants
 - streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
 - chat tool calls follow the same authenticated access scope as the dashboard
 - `http://localhost:4000/tools` requires a bearer JWT with `org_id`, or the local admin debug JWT with `access_role=admin_debug`
 
 ## Local Development
 
-Local development uses the built-in local access flow:
+Local development uses the built-in local mock login flow:
 
-- `MOOSE_AUTH_MODE=local` enables the local access chooser in the web app
-- `Org A` and `Org B` sign-in issue short-lived JWTs carrying `org_id`
-- `Admin Debug` signs in with a short-lived JWT carrying `access_role=admin_debug`
+- `MOOSE_AUTH_MODE=local` enables the mock email/password sign-in page in the web app
+- org-scoped mock users sign in with short-lived JWTs carrying `org_id`
+- `admin@templae.com` signs in with a short-lived JWT carrying `access_role=admin_debug`
 - Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
-- org access options stay scoped by the same row policy across dashboard APIs and MCP tools
-- `Admin Debug` bypasses tenant scoping for local troubleshooting only
+- org-scoped users stay limited by the same row policy across dashboard APIs and MCP tools
+- the admin mock user bypasses tenant scoping for local troubleshooting only
 
-Local access options included by default:
-- `Org A`
-- `Org B`
-- `Admin Debug`
+Local mock accounts included by default:
+- `user1@orgA.com` / `user1`
+- `user2@orgB.com` / `user2`
+- `admin@templae.com` / `admin`
 
 ## Environment Variables
 
@@ -279,7 +279,7 @@ When authoring custom MCP tools for Bedrock-backed chats, prefer `z.string()` pl
 
 ### Optional production OIDC
 
-Set these when replacing the local access flow with a real provider:
+Set these when replacing the local mock login flow with a real provider:
 
 | Variable | Purpose |
 | --- | --- |
@@ -358,7 +358,7 @@ Example:
 - `packages/web-app/src/auth.ts` — authentication provider wiring plus optional OIDC
 - `packages/web-app/src/authz/` — session-level authorization helpers for tenant vs admin debug access
 - `packages/web-app/src/lib/id-token.ts` — shared ID token claim parsing
-- `packages/web-app/src/dev/` — development-only local access options and mock guardrails
+- `packages/web-app/src/dev/` — development-only mock login users and guardrail stubs
 - `packages/web-app/src/lib/moose-service.ts` — authenticated service client for frontend reads
 - `packages/web-app/src/features/chat/` — chat UI components
 - `packages/web-app/test/` — unit tests for frontend/server host adapters and environment-driven wiring
@@ -398,4 +398,4 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 - `pnpm seed` requires the Moose service to be running.
 - `pnpm lint` runs Biome across the template and ESLint in the Next app.
 - `pnpm format` runs Biome formatting across the template.
-- The chat and dashboard follow the same authenticated access scope; org access options see one tenant, while `Admin Debug` sees the seeded dataset across tenants.
+- The chat and dashboard follow the same authenticated access scope; org-scoped mock users see one tenant, while the admin mock user sees the seeded dataset across tenants.

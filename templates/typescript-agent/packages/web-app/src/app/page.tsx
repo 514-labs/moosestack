@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { JSX } from "react";
 import { auth, signIn, signOut } from "@/auth";
 import { getSessionAccess } from "@/authz/session-access";
-import { LocalAccessPicker } from "@/dev/local-access-picker";
+import { LocalLoginForm } from "@/dev/local-login-form";
 import { getAiProvider, getAuthMode, getOidcConfig } from "@/env-vars";
 import {
   DashboardSnapshotUnauthorizedError,
@@ -49,96 +49,65 @@ export default async function Home({
     typeof resolvedSearchParams.session === "string" ?
       resolvedSearchParams.session
     : undefined;
+  const loginStatus =
+    typeof resolvedSearchParams.login === "string" ?
+      resolvedSearchParams.login
+    : undefined;
   const session = await auth();
   const authMode = getAuthMode();
   const oidcConfig = getOidcConfig();
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.16),_transparent_38%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.2))] text-foreground">
-        <main className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-16">
-          <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-            <section className="space-y-6">
-              <div className="inline-flex rounded-full border px-3 py-1 text-sm text-muted-foreground">
+      <div className="min-h-screen bg-[linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.12))] text-foreground">
+        <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-16">
+          <section className="w-full rounded-3xl border bg-card p-8 shadow-lg">
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
                 typescript-agent
               </div>
-              <div className="space-y-4">
-                <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
-                  Local access for development, organization authorization for
-                  real data access.
-                </h1>
-                <p className="max-w-2xl text-lg text-muted-foreground">
-                  Authentication decides who you are. Authorization decides
-                  whether you can read one organization or every seeded record.
-                  Use Org A or Org B for scoped access, or use Admin Debug for
-                  local troubleshooting.
-                </p>
-              </div>
+              <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+              <p className="text-sm text-muted-foreground">
+                Use one of the local mock accounts below to access the seeded
+                dashboard and chat experience.
+              </p>
+            </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <MetricCard
-                  label="Authentication"
-                  value="Auth"
-                  helper="Choose a local access option in development or use OIDC in production."
-                />
-                <MetricCard
-                  label="Authorization"
-                  value="RLS"
-                  helper="Organization-scoped access stays limited to that organization's records."
-                />
-                <MetricCard
-                  label="Debugging"
-                  value="Admin"
-                  helper="Local Admin Debug bypasses org filters for investigation."
-                />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border bg-card/85 p-6 shadow-xl backdrop-blur">
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-xl font-semibold">Choose local access</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Local development signs a short-lived JWT for the access
-                    option you choose. Organization-scoped options carry an
-                    `org_id`; Admin Debug carries an unrestricted local debug
-                    role instead.
-                  </p>
+            <div className="mt-6 space-y-4">
+              {sessionNotice === "expired" && (
+                <div className="rounded-xl border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+                  Your previous session expired or is no longer valid. Sign in
+                  again to refresh access.
                 </div>
+              )}
 
-                {sessionNotice === "expired" && (
-                  <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
-                    Your previous session expired or is no longer valid. Sign in
-                    again to refresh access.
-                  </div>
-                )}
+              {authMode === "local" && (
+                <LocalLoginForm
+                  errorMessage={
+                    loginStatus === "invalid" ?
+                      "Invalid email or password."
+                    : undefined
+                  }
+                />
+              )}
 
-                {authMode === "local" && <LocalAccessPicker />}
-
-                {authMode === "oidc" && oidcConfig && (
-                  <form
-                    action={async () => {
-                      "use server";
-                      await signIn("oidc", { redirectTo: "/" });
-                    }}
+              {authMode === "oidc" && oidcConfig && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("oidc", { redirectTo: "/" });
+                  }}
+                >
+                  <button
+                    type="submit"
+                    className="h-11 w-full rounded-xl border px-4 text-sm font-medium"
                   >
-                    <button
-                      type="submit"
-                      className="w-full rounded-full border px-4 py-3 text-sm font-medium"
-                    >
-                      Sign In With Your OIDC Provider
-                    </button>
-                  </form>
-                )}
-
-                <div className="rounded-2xl bg-muted/60 p-4 text-sm text-muted-foreground">
-                  Local development includes seeded records for Org A and Org B.
-                  Admin Debug is available only in local mode and is intended
-                  for troubleshooting, not production access control.
-                </div>
-              </div>
-            </section>
-          </div>
+                    Sign in with your OIDC provider
+                  </button>
+                </form>
+              )}
+            </div>
+          </section>
         </main>
       </div>
     );

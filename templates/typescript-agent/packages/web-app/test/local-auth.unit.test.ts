@@ -1,7 +1,11 @@
 import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT } from "agent-contracts";
 import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createLocalAccessProvider } from "../src/dev/local-auth";
+import {
+  createLocalAccessProvider,
+  deriveLocalPassword,
+  getLocalMockUser,
+} from "../src/dev/local-auth";
 
 const TEST_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCz1giCZPtooM/5
@@ -57,14 +61,16 @@ describe("createLocalAccessProvider", () => {
     delete process.env.LOCAL_DEV_JWT_PRIVATE_KEY;
   });
 
-  it("issues organization-scoped local sessions for org access options", async () => {
+  it("issues organization-scoped local sessions for seeded org users", async () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      selectionId: "org_a",
+      email: "user1@orgA.com",
+      password: "user1",
     });
 
     expect(user).toMatchObject({
+      email: "user1@orgA.com",
       orgId: "org_a",
       orgName: "Org A",
       accessRole: ACCESS_ROLE_TENANT,
@@ -76,14 +82,16 @@ describe("createLocalAccessProvider", () => {
     expect(claims.access_role).toBe(ACCESS_ROLE_TENANT);
   });
 
-  it("issues local admin debug sessions without organization scoping", async () => {
+  it("issues local admin sessions without organization scoping", async () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      selectionId: "admin_debug",
+      email: "admin@templae.com",
+      password: "admin",
     });
 
     expect(user).toMatchObject({
+      email: "admin@templae.com",
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,
       provider: "local",
     });
@@ -93,5 +101,30 @@ describe("createLocalAccessProvider", () => {
     const claims = decodeJwt(String(user?.idToken));
     expect(claims.org_id).toBeUndefined();
     expect(claims.access_role).toBe(ACCESS_ROLE_ADMIN_DEBUG);
+  });
+
+  it("rejects invalid local passwords", async () => {
+    const authorize = getProviderAuthorize();
+
+    const user = await authorize?.({
+      email: "user2@orgB.com",
+      password: "wrong-password",
+    });
+
+    expect(user).toBeNull();
+  });
+});
+
+describe("local mock user helpers", () => {
+  it("derives the password from the email local-part", () => {
+    expect(deriveLocalPassword("user1@orgA.com")).toBe("user1");
+    expect(deriveLocalPassword("admin@templae.com")).toBe("admin");
+  });
+
+  it("looks up mock users case-insensitively", () => {
+    expect(getLocalMockUser("USER2@ORGB.COM")).toMatchObject({
+      email: "user2@orgB.com",
+      orgId: "org_b",
+    });
   });
 });

@@ -66,7 +66,7 @@ export const POST = auth(async function POST(
         {
           error: "Unauthorized",
           details:
-            "Sign in with a local access option or your OIDC provider before using the agent chat.",
+            "Sign in with a local mock account or your OIDC provider before using the agent chat.",
         },
         401,
       );

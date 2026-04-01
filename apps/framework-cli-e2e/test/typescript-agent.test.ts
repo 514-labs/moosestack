@@ -412,7 +412,11 @@ async function callMcpToolText(
   };
 }
 
-async function signInLocalAccess(selectionId: string) {
+function deriveLocalPassword(email: string) {
+  return email.split("@")[0] ?? "";
+}
+
+async function signInLocalAccess(email: string) {
   const jar = new Map<string, string>();
 
   const csrfResponse = await fetch(`${webAppUrl}/api/auth/csrf`, {
@@ -433,7 +437,8 @@ async function signInLocalAccess(selectionId: string) {
       },
       body: new URLSearchParams({
         csrfToken,
-        selectionId,
+        email,
+        password: deriveLocalPassword(email),
         callbackUrl: `${webAppUrl}/`,
         json: "true",
       }),
@@ -664,8 +669,10 @@ describe("TypeScript Agent Template E2E", function () {
 
     const html = await pageResponse.text();
     expect(html).to.include("typescript-agent");
-    expect(html).to.include("Choose local access");
-    expect(html).to.include("Local access for development");
+    expect(html).to.include("Sign in");
+    expect(html).to.include("Mock accounts");
+    expect(html).to.include("user1@orgA.com");
+    expect(html).to.include("admin@templae.com");
 
     const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
@@ -705,8 +712,8 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should scope MCP tools to the caller organization", async function () {
-    const tenantAAuth = await signInLocalAccess("org_a");
-    const tenantBAuth = await signInLocalAccess("org_b");
+    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
+    const tenantBAuth = await signInLocalAccess("user2@orgB.com");
     const tenantAToken = tenantAAuth.session.idToken;
     const tenantBToken = tenantBAuth.session.idToken;
 
@@ -820,7 +827,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should create local org sessions and render organization-scoped dashboards", async function () {
-    const tenantAAuth = await signInLocalAccess("org_a");
+    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
     expect(tenantAAuth.session.user.orgId).to.equal("org_a");
     expect(tenantAAuth.session.user.accessRole).to.equal("tenant");
     expect(tenantAAuth.session.idToken).to.be.a("string");
@@ -851,7 +858,7 @@ describe("TypeScript Agent Template E2E", function () {
 
     const tenantAHtml = await tenantADashboardResponse.text();
     expect(tenantAHtml).to.include("Org A knowledge dashboard");
-    expect(tenantAHtml).to.include("Signed in as Org A");
+    expect(tenantAHtml).to.include("Signed in as user1@orgA.com");
     expect(tenantAHtml).to.include("Brake alerts increased by 14% this week");
     expect(tenantAHtml).to.include("Org A only");
     expect(tenantAHtml).to.include(
@@ -860,7 +867,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(tenantAHtml).to.not.include("Multi-agent reference flow");
     expect(tenantAHtml).to.not.include("Seattle hub utilization breached 92%");
 
-    const tenantBAuth = await signInLocalAccess("org_b");
+    const tenantBAuth = await signInLocalAccess("user2@orgB.com");
     expect(tenantBAuth.session.user.orgId).to.equal("org_b");
     expect(tenantBAuth.session.user.accessRole).to.equal("tenant");
     expect(tenantBAuth.session.idToken).to.be.a("string");
@@ -891,7 +898,7 @@ describe("TypeScript Agent Template E2E", function () {
 
     const tenantBHtml = await tenantBDashboardResponse.text();
     expect(tenantBHtml).to.include("Org B knowledge dashboard");
-    expect(tenantBHtml).to.include("Signed in as Org B");
+    expect(tenantBHtml).to.include("Signed in as user2@orgB.com");
     expect(tenantBHtml).to.include("Seattle hub utilization breached 92%");
     expect(tenantBHtml).to.include("Org B only");
     expect(tenantBHtml).to.include(
@@ -904,7 +911,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should allow Admin Debug to inspect cross-organization data", async function () {
-    const adminAuth = await signInLocalAccess("admin_debug");
+    const adminAuth = await signInLocalAccess("admin@templae.com");
     expect(adminAuth.session.user.accessRole).to.equal("admin_debug");
     expect(adminAuth.session.user.orgId).to.equal(undefined);
     expect(adminAuth.session.idToken).to.be.a("string");
@@ -962,7 +969,7 @@ describe("TypeScript Agent Template E2E", function () {
 
     const adminHtml = await adminDashboardResponse.text();
     expect(adminHtml).to.include("Debug dashboard across all seeded data");
-    expect(adminHtml).to.include("Signed in as Admin Debug");
+    expect(adminHtml).to.include("Signed in as admin@templae.com");
     expect(adminHtml).to.include("org_a");
     expect(adminHtml).to.include("org_b");
     expect(adminHtml).to.include("Brake alerts increased by 14% this week");
@@ -970,12 +977,12 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should clear stale dashboard sessions instead of crashing the page", async function () {
-    const tenantAAuth = await signInLocalAccess("org_a");
+    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
     const expiredToken = await signOrgJwt(
       {
         org_id: "org_a",
-        email: "org-a@example.local",
-        name: "Org A",
+        email: "user1@orgA.com",
+        name: "user1@orgA.com",
         access_role: "tenant",
         scope: "agent:query",
       },
@@ -986,14 +993,14 @@ describe("TypeScript Agent Template E2E", function () {
       projectDir,
       tenantAAuth.sessionCookieName,
       {
-        sub: "local-org_a",
-        userId: "local-org_a",
+        sub: "local-org-a-user-1",
+        userId: "local-org-a-user-1",
         accessRole: "tenant",
         orgId: "org_a",
         orgName: "Org A",
         provider: "local",
-        name: "Org A",
-        email: "org-a@example.local",
+        name: "user1@orgA.com",
+        email: "user1@orgA.com",
         idToken: expiredToken,
       },
     );
@@ -1045,7 +1052,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(landingResponse.status).to.equal(200);
 
     const landingHtml = await landingResponse.text();
-    expect(landingHtml).to.include("Choose local access");
+    expect(landingHtml).to.include("Sign in");
     expect(landingHtml).to.include("previous session expired");
   });
 
@@ -1067,7 +1074,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should surface MCP outages through status and chat errors", async function () {
-    const tenantAAuth = await signInLocalAccess("org_a");
+    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
 
     await stopChildProcess(mooseProcess, "moose service");
     mooseProcess = null;
