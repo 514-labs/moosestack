@@ -257,16 +257,6 @@ DictionaryLayout = Union[
 ]
 """Union of all 16 ClickHouse dictionary layout types."""
 
-_COMPLEX_KEY_LAYOUTS = {
-    "COMPLEX_KEY_HASHED",
-    "COMPLEX_KEY_SPARSE_HASHED",
-    "COMPLEX_KEY_HASHED_ARRAY",
-    "COMPLEX_KEY_RANGE_HASHED",
-    "COMPLEX_KEY_CACHE",
-    "COMPLEX_KEY_SSD_CACHE",
-    "COMPLEX_KEY_DIRECT",
-}
-
 # ─── External source types ────────────────────────────────────────────────────
 
 
@@ -478,7 +468,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
     kind: str = "OlapDictionary"
 
-    def __init__(self, name: str, config: OlapDictionaryConfig, **kwargs):
+    def __init__(self, name: str, config: OlapDictionaryConfig, **kwargs) -> None:
         t = self._get_type(kwargs)
         self._set_type(name, t)
         self.config = config
