@@ -771,19 +771,22 @@ pub fn get_project_from_file(path: &Path) -> Result<PythonProject, PythonParserE
 mod tests {
     use super::*;
 
+    fn test_data_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("python")
+    }
+
     fn get_simple_python_file_path() -> std::path::PathBuf {
-        let current_dir = std::env::current_dir().unwrap();
-        current_dir.join("tests/python/models/simple.py")
+        test_data_dir().join("models").join("simple.py")
     }
 
     fn get_jwt_python_file_path() -> std::path::PathBuf {
-        let current_dir = std::env::current_dir().unwrap();
-        current_dir.join("tests/python/models/jwt.py")
+        test_data_dir().join("models").join("jwt.py")
     }
 
     fn get_setup_python_file_path() -> std::path::PathBuf {
-        let current_dir = std::env::current_dir().unwrap();
-        current_dir.join("tests/python/project/setup.py")
+        test_data_dir().join("project").join("setup.py")
     }
 
     #[test]
@@ -924,9 +927,7 @@ mod tests {
     fn test_subscript_data_class() {
         // checks that all the parsed classes have the right number of attributes
 
-        let test_file = std::env::current_dir()
-            .unwrap()
-            .join("tests/python/models/complex.py");
+        let test_file = test_data_dir().join("models").join("complex.py");
 
         let models = extract_data_model_from_file(&test_file, "").unwrap().models;
 
