@@ -81,22 +81,23 @@ For context on what the Analytics Agent Harness is and when this approach is wor
 
 ### How to use this tutorial
 
-You can work through this tutorial manually, use your coding agent to execute each section, or a mix of both. Agent prompt blocks are included in each section — paste them directly into your coding agent when you want to hand off a step.
+You can work through this tutorial manually, use your coding agent to execute each section, or a mix of both. 
 
-To go agent-first from the start, paste this into your coding agent:
+To go agent-first from the start, try a prompt like this with your coding agent:
 
 ```text
 I want to build a production-ready analytics agent. Read the tutorial at
 https://docs.fiveonefour.com/guides/production-ready-analytics-agent/tutorial
-for context, then help me execute each section. Start by asking me about my
-use case, my data source, and what I want the agent to be able to answer.
+for context, then help me execute each section. Start by installing MooseStack 
+and getting the template running locally. Then customize by asking me about my
+use case, my data source, and what I want my analytics agent to be able to do. 
 ```
 
 ---
 
 ### Steps
 
-1. [Get Running](#1-get-running)
+1. [Get Running Locally](#1-get-running-locally)
 2. [Wire Up Observability](#2-wire-up-observability)
 3. [Get Your Data In](#3-get-your-data-in)
 4. [Build the Semantic Layer](#4-build-the-semantic-layer)
@@ -112,9 +113,9 @@ Join the MooseStack Slack — the team behind the Coding Agent Harness and this 
 
 ---
 
-## 1. Get Running
+## 1. Get Running Locally
 
-### Install the CLIs
+### Install the harness CLIs
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514,moose
