@@ -38,10 +38,7 @@ export function getProviderStatus(): ProviderStatus {
       providerReady,
       guardrailsConfigured: false,
       status: providerReady ? "ready" : "missing_key",
-      details:
-        providerReady ? undefined : (
-          "Set OPENAI_API_KEY before using the chat feature."
-        ),
+      details: providerReady ? undefined : "Set OPENAI_API_KEY before using the chat feature.",
     };
   }
 
@@ -66,33 +63,22 @@ export function getProviderStatus(): ProviderStatus {
     providerReady,
     guardrailsConfigured: false,
     status: providerReady ? "ready" : "missing_key",
-    details:
-      providerReady ? undefined : (
-        "Set ANTHROPIC_API_KEY before using the chat feature."
-      ),
+    details: providerReady ? undefined : "Set ANTHROPIC_API_KEY before using the chat feature.",
   };
 }
 
 function getMcpTimeoutSignal() {
-  if (
-    typeof AbortSignal !== "undefined" &&
-    typeof AbortSignal.timeout === "function"
-  ) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
     return AbortSignal.timeout(MCP_HEALTHCHECK_TIMEOUT_MS);
   }
 
   return undefined;
 }
 
-function formatMcpUnavailableMessage(
-  endpointUrl: string | null,
-  cause?: unknown,
-): string {
+function formatMcpUnavailableMessage(endpointUrl: string | null, cause?: unknown): string {
   const locationSuffix = endpointUrl ? ` at ${endpointUrl}` : "";
   const causeMessage =
-    cause instanceof Error && cause.message.trim().length > 0 ?
-      ` (${cause.message.trim()})`
-    : "";
+    cause instanceof Error && cause.message.trim().length > 0 ? ` (${cause.message.trim()})` : "";
 
   return (
     `Cannot connect to MCP server${locationSuffix}. Start the local stack with \`pnpm dev:start\`, or start just the Moose service with \`pnpm dev:moose\`, and verify the custom MCP tools endpoint is reachable.` +
@@ -153,8 +139,6 @@ export async function getChatProviderStatus(): Promise<ChatProviderStatus> {
 export function assertProviderReady() {
   const status = getProviderStatus();
   if (!status.providerReady) {
-    throw new Error(
-      status.details ?? `${status.providerLabel} is not configured.`,
-    );
+    throw new Error(status.details ?? `${status.providerLabel} is not configured.`);
   }
 }

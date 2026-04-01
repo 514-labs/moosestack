@@ -9,14 +9,12 @@ import { TenantKnowledgeTable } from "../ingest/models";
  */
 export const dashboardKnowledgeMetricsModel = defineQueryModel({
   name: "query_dashboard_knowledge_metrics",
-  description:
-    "Return the fixed dashboard metric cards within the current access scope.",
+  description: "Return the fixed dashboard metric cards within the current access scope.",
   table: TenantKnowledgeTable,
   metrics: {
     totalRecords: {
       agg: sql.fragment`count(*)`,
-      description:
-        "Total knowledge records visible to the current access scope.",
+      description: "Total knowledge records visible to the current access scope.",
     },
     highPriorityRecords: {
       agg: sql.fragment`countIf(
@@ -66,14 +64,7 @@ export const dashboardRecentKnowledgeModel = defineQueryModel({
   filters: {},
   sortable: ["timestamp", "category", "priority", "source"] as const,
   defaults: {
-    columns: [
-      "orgId",
-      "headline",
-      "category",
-      "priority",
-      "source",
-      "timestamp",
-    ],
+    columns: ["orgId", "headline", "category", "priority", "source", "timestamp"],
     orderBy: [["timestamp", "DESC"]],
     limit: 5,
     maxLimit: 5,

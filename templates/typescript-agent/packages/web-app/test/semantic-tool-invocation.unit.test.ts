@@ -20,8 +20,7 @@ vi.mock("@/components/ui/collapsible", () => ({
 }));
 
 vi.mock("@/lib/utils", () => ({
-  cn: (...classes: Array<string | undefined | null | false>) =>
-    classes.filter(Boolean).join(" "),
+  cn: (...classes: Array<string | undefined | null | false>) => classes.filter(Boolean).join(" "),
 }));
 
 describe("SemanticToolInvocationContent", () => {

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  matchesRouteRateLimitOverride,
-  shouldSkipDefaultRateLimit,
-} from "../http/rate-limit";
+import { matchesRouteRateLimitOverride, shouldSkipDefaultRateLimit } from "../http/rate-limit";
 
 describe("rate-limit helpers", () => {
   it("matches method-specific overrides", () => {

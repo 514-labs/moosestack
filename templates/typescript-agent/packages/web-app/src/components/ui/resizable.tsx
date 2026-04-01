@@ -13,10 +13,7 @@ function ResizablePanelGroup({
   return (
     <ResizablePrimitive.PanelGroup
       data-slot="resizable-panel-group"
-      className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
-        className,
-      )}
+      className={cn("flex h-full w-full data-[panel-group-direction=vertical]:flex-col", className)}
       {...props}
     />
   );
@@ -26,13 +23,7 @@ const ResizablePanel = React.forwardRef<
   React.ElementRef<typeof ResizablePrimitive.Panel>,
   React.ComponentPropsWithoutRef<typeof ResizablePrimitive.Panel>
 >(({ ...props }, ref) => {
-  return (
-    <ResizablePrimitive.Panel
-      ref={ref}
-      data-slot="resizable-panel"
-      {...props}
-    />
-  );
+  return <ResizablePrimitive.Panel ref={ref} data-slot="resizable-panel" {...props} />;
 });
 ResizablePanel.displayName = "ResizablePanel";
 

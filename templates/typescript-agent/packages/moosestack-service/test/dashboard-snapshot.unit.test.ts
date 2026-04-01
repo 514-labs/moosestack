@@ -22,9 +22,7 @@ describe("getDashboardSnapshot", () => {
   });
 
   it("builds dashboard reads from semantic models and preserves scoped readonly execution", async () => {
-    const { getDashboardSnapshot } = await import(
-      "../app/semantic/dashboard-snapshot"
-    );
+    const { getDashboardSnapshot } = await import("../app/semantic/dashboard-snapshot");
     const query = vi
       .fn()
       .mockResolvedValueOnce({

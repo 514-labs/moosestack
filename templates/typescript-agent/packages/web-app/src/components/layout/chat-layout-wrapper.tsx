@@ -9,9 +9,7 @@ interface ChatLayoutWrapperProps {
   children: ReactNode;
 }
 
-export function ChatLayoutWrapper({
-  children,
-}: ChatLayoutWrapperProps): JSX.Element {
+export function ChatLayoutWrapper({ children }: ChatLayoutWrapperProps): JSX.Element {
   return (
     <ResizableChatLayout className="h-screen">
       <div className="flex flex-col h-full overflow-y-auto">

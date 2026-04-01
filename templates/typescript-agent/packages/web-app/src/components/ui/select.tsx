@@ -143,16 +143,11 @@ function SelectSeparator({
 function SelectScrollUpButton({
   className,
   ...props
-}: React.ComponentProps<
-  typeof SelectPrimitive.ScrollUpButton
->): React.JSX.Element {
+}: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>): React.JSX.Element {
   return (
     <SelectPrimitive.ScrollUpButton
       data-slot="select-scroll-up-button"
-      className={cn(
-        "flex cursor-default items-center justify-center py-1",
-        className,
-      )}
+      className={cn("flex cursor-default items-center justify-center py-1", className)}
       {...props}
     >
       <ChevronUpIcon className="size-4" />
@@ -163,16 +158,11 @@ function SelectScrollUpButton({
 function SelectScrollDownButton({
   className,
   ...props
-}: React.ComponentProps<
-  typeof SelectPrimitive.ScrollDownButton
->): React.JSX.Element {
+}: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>): React.JSX.Element {
   return (
     <SelectPrimitive.ScrollDownButton
       data-slot="select-scroll-down-button"
-      className={cn(
-        "flex cursor-default items-center justify-center py-1",
-        className,
-      )}
+      className={cn("flex cursor-default items-center justify-center py-1", className)}
       {...props}
     >
       <ChevronDownIcon className="size-4" />

@@ -16,9 +16,7 @@ function normalizeMethods(method?: string | string[]): string[] | undefined {
     return undefined;
   }
 
-  return (Array.isArray(method) ? method : [method]).map((entry) =>
-    entry.toUpperCase(),
-  );
+  return (Array.isArray(method) ? method : [method]).map((entry) => entry.toUpperCase());
 }
 
 export function matchesRouteRateLimitOverride(
@@ -41,9 +39,7 @@ export function shouldSkipDefaultRateLimit(
   req: Pick<express.Request, "method" | "path">,
   overrides: RouteRateLimitOverride[],
 ): boolean {
-  return overrides.some((override) =>
-    matchesRouteRateLimitOverride(req, override),
-  );
+  return overrides.some((override) => matchesRouteRateLimitOverride(req, override));
 }
 
 function createRateLimitResponseHandler() {
@@ -55,9 +51,7 @@ function createRateLimitResponseHandler() {
   };
 }
 
-function createBaseRateLimit(
-  options?: RateLimitOptions,
-): express.RequestHandler {
+function createBaseRateLimit(options?: RateLimitOptions): express.RequestHandler {
   return rateLimit({
     windowMs: DEFAULT_WINDOW_MS,
     limit: DEFAULT_LIMIT,
@@ -77,13 +71,10 @@ export function createDefaultApiRateLimit(
   return createBaseRateLimit({
     ...options,
     skip: (req, res) =>
-      shouldSkipDefaultRateLimit(req, overrides) ||
-      callerSkip?.(req, res) === true,
+      shouldSkipDefaultRateLimit(req, overrides) || callerSkip?.(req, res) === true,
   });
 }
 
-export function createRouteRateLimit(
-  options?: RateLimitOptions,
-): express.RequestHandler {
+export function createRouteRateLimit(options?: RateLimitOptions): express.RequestHandler {
   return createBaseRateLimit(options);
 }

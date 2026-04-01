@@ -51,9 +51,7 @@ describe("executeReadonlyStatement", () => {
         }),
       }),
     );
-    expect(querySpy.mock.calls[0]?.[0]?.clickhouse_settings).not.toHaveProperty(
-      "limit",
-    );
+    expect(querySpy.mock.calls[0]?.[0]?.clickhouse_settings).not.toHaveProperty("limit");
   });
 
   it("formats Date query parameters as ClickHouse-compatible UTC timestamps", async () => {
@@ -69,11 +67,7 @@ describe("executeReadonlyStatement", () => {
     };
     const timestamp = new Date("2026-03-27T12:34:56.789-04:00");
 
-    await executeReadonlySql(
-      queryClient as never,
-      sql`SELECT ${timestamp} AS observed_at`,
-      25,
-    );
+    await executeReadonlySql(queryClient as never, sql`SELECT ${timestamp} AS observed_at`, 25);
 
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -100,11 +94,7 @@ describe("executeReadonlyStatement", () => {
       },
     };
 
-    await executeReadonlyStatement(
-      queryClient as never,
-      "SELECT org_id FROM tenant_knowledge",
-      10,
-    );
+    await executeReadonlyStatement(queryClient as never, "SELECT org_id FROM tenant_knowledge", 10);
 
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({

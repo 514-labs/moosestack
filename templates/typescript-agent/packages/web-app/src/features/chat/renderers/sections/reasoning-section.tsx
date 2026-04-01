@@ -1,10 +1,7 @@
 import { Code } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import {
-  getReasoningText,
-  type ReasoningPart,
-} from "../../types/message-parts";
+import { getReasoningText, type ReasoningPart } from "../../types/message-parts";
 
 type ReasoningSectionProps = {
   part: ReasoningPart;
@@ -26,9 +23,7 @@ export function ReasoningSection({ part }: ReasoningSectionProps) {
           Reasoning
         </Badge>
       </div>
-      <div className="text-sm leading-relaxed whitespace-pre-wrap">
-        {reasoningText}
-      </div>
+      <div className="text-sm leading-relaxed whitespace-pre-wrap">{reasoningText}</div>
     </div>
   );
 }

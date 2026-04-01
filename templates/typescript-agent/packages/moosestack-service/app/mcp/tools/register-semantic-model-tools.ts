@@ -1,8 +1,4 @@
-import {
-  createModelTool,
-  type MooseUtils,
-  type QueryModelBase,
-} from "@514labs/moose-lib";
+import { createModelTool, type MooseUtils, type QueryModelBase } from "@514labs/moose-lib";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { formatSemanticToolError } from "../errors/semantic-tool-errors";
 import { createSemanticToolSuccessResult } from "./semantic-tool-output";
@@ -52,9 +48,9 @@ export function registerSemanticModelTools(
       async (params: Record<string, unknown>) => {
         try {
           const limit =
-            typeof params.limit === "number" && !Number.isNaN(params.limit) ?
-              params.limit
-            : defaultLimit;
+            typeof params.limit === "number" && !Number.isNaN(params.limit)
+              ? params.limit
+              : defaultLimit;
           const request = tool.buildRequest({
             ...params,
             limit,

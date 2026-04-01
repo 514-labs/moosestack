@@ -6,10 +6,7 @@ interface CodeBlockProps {
   language?: string;
 }
 
-export function CodeBlock({
-  children,
-  language = "json",
-}: CodeBlockProps): JSX.Element {
+export function CodeBlock({ children, language = "json" }: CodeBlockProps): JSX.Element {
   return (
     <pre
       data-language={language}

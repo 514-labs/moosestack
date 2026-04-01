@@ -11,11 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ImperativePanelHandle } from "react-resizable-panels";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ChatPanel } from "@/features/chat";
 
 type ResizableChatLayoutProps = {
@@ -81,11 +77,7 @@ export default function ResizableChatLayout({
   const [isDragging, setIsDragging] = useState(false);
   const [lastChatSize, setLastChatSize] = useState<number | null>(null);
 
-  const viewportWidth = useSyncExternalStore(
-    subscribeToViewportWidth,
-    getViewportWidth,
-    () => 0,
-  );
+  const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, getViewportWidth, () => 0);
   const computedMinChatPercent =
     viewportWidth > 0 ? Math.max(0, (minChatWidthPX / viewportWidth) * 100) : 0;
   const minChatPercent = Math.min(maxChatWidthPercent, computedMinChatPercent);
@@ -136,20 +128,14 @@ export default function ResizableChatLayout({
           direction="horizontal"
           className={`relative ${!isDragging ? "panel-group-animated" : ""}`}
         >
-          <ResizablePanel
-            id="main-panel"
-            defaultSize={mainPanelDefaultSize}
-            order={1}
-          >
+          <ResizablePanel id="main-panel" defaultSize={mainPanelDefaultSize} order={1}>
             {children}
           </ResizablePanel>
 
           <ResizableHandle
             id="chat-handle"
             className={`transition-opacity duration-[300ms] ease-out w-[2px] ${
-              isChatOpen ?
-                "opacity-0 hover:opacity-100"
-              : "opacity-0 pointer-events-none"
+              isChatOpen ? "opacity-0 hover:opacity-100" : "opacity-0 pointer-events-none"
             }`}
             onDragging={setIsDragging}
           />

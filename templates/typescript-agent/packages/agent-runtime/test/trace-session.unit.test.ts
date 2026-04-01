@@ -65,9 +65,7 @@ describe("createTraceSession", () => {
   });
 
   it("treats collector failures as best-effort and still closes the runtime", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const traceCollector = {
       startTrace: vi.fn(() => "trace-2"),
       recordStep: vi.fn(() => {
@@ -123,9 +121,7 @@ describe("createTraceSession", () => {
   });
 
   it("falls back to a local trace id when the collector cannot start a trace", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const traceCollector = {
       startTrace: vi.fn(() => {
         throw new Error("start trace failed");

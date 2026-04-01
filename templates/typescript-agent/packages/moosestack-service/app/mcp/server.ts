@@ -3,14 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import {
+  type AuthenticatedAccessContext,
   assertAuthenticatedAccessContext,
   requireAuthenticatedMoose,
-  type AuthenticatedAccessContext,
 } from "../auth/access-context";
-import {
-  tenantKnowledgeMetricsModel,
-  tenantKnowledgeRecordsModel,
-} from "../semantic/knowledge";
+import { tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel } from "../semantic/knowledge";
 import { registerGetDataCatalogTool } from "./tools/get-data-catalog";
 import { registerSemanticModelTools } from "./tools/register-semantic-model-tools";
 
@@ -28,13 +25,9 @@ function createMcpServer(context: Pick<AuthenticatedAccessContext, "moose">) {
   // seeded TenantKnowledge demo model. Replace them when you swap out the
   // example data model, then search the repo for EXAMPLE_APP_ONLY to find the
   // downstream demo wiring.
-  registerSemanticModelTools(
-    server,
-    [tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel],
-    {
-      queryClient: context.moose.client.query,
-    },
-  );
+  registerSemanticModelTools(server, [tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel], {
+    queryClient: context.moose.client.query,
+  });
   registerGetDataCatalogTool(server);
 
   return server;
@@ -69,7 +62,6 @@ app.all("/", async (req, res) => {
 export const mcpServer = new WebApp("mcpServer", app, {
   mountPath: "/tools",
   metadata: {
-    description:
-      "MCP server exposing access-scoped semantic query tools via Express and WebApp",
+    description: "MCP server exposing access-scoped semantic query tools via Express and WebApp",
   },
 });

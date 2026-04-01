@@ -1,11 +1,5 @@
-import type {
-  AgentStepRecord,
-  AgentTraceSummary,
-} from "../observability-contract.js";
-import type {
-  AgentRuntime,
-  CreateAgentStreamOptions,
-} from "../runtime/types.js";
+import type { AgentStepRecord, AgentTraceSummary } from "../observability-contract.js";
+import type { AgentRuntime, CreateAgentStreamOptions } from "../runtime/types.js";
 
 type TraceSummaryInput = Omit<
   AgentTraceSummary,

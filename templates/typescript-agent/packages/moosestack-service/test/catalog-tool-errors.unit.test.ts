@@ -6,13 +6,9 @@ describe("catalog-tool-errors", () => {
   it("preserves safe validation messages", () => {
     expect(
       formatCatalogToolError(
-        new Error(
-          "Invalid component_type: widgets. Allowed values: tables, materialized_views.",
-        ),
+        new Error("Invalid component_type: widgets. Allowed values: tables, materialized_views."),
       ),
-    ).toBe(
-      "Invalid component_type: widgets. Allowed values: tables, materialized_views.",
-    );
+    ).toBe("Invalid component_type: widgets. Allowed values: tables, materialized_views.");
   });
 
   it("sanitizes unexpected failures", () => {

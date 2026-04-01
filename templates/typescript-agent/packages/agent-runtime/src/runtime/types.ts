@@ -1,11 +1,7 @@
 import type { stepCountIs, UIMessage } from "ai";
 import type { TraceCollector } from "../observability-contract.js";
 import type { AIProvider, GuardrailAdapter } from "../shared-types.js";
-import type {
-  AgentMessages,
-  AgentModel,
-  AgentTools,
-} from "../utils/sdk-types.js";
+import type { AgentMessages, AgentModel, AgentTools } from "../utils/sdk-types.js";
 
 export type AgentProviderConfig =
   | {

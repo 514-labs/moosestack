@@ -5,9 +5,7 @@ import { resolveMcpServerUrl } from "./urls.js";
 
 function shouldWrapMcpConnectionError(error: unknown): boolean {
   const message =
-    error instanceof Error ?
-      error.message.toLowerCase()
-    : String(error).toLowerCase();
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
 
   if (
     message.includes("401") ||
@@ -21,9 +19,7 @@ function shouldWrapMcpConnectionError(error: unknown): boolean {
   return true;
 }
 
-export async function closeMcpClient(client: {
-  close?: () => Promise<void>;
-}): Promise<void> {
+export async function closeMcpClient(client: { close?: () => Promise<void> }): Promise<void> {
   if (typeof client.close !== "function") {
     return;
   }

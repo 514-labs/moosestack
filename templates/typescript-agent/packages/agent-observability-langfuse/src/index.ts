@@ -1,9 +1,4 @@
-import type {
-  AgentStepRecord,
-  AgentTraceSummary,
-  AIProvider,
-  TraceCollector,
-} from "agent-runtime";
+import type { AgentStepRecord, AgentTraceSummary, AIProvider, TraceCollector } from "agent-runtime";
 import { Langfuse } from "langfuse";
 
 export interface LangfuseTraceCollectorConfig {
@@ -93,8 +88,6 @@ class LangfuseTraceCollector implements TraceCollector {
   }
 }
 
-export function createLangfuseTraceCollector(
-  config: LangfuseTraceCollectorConfig,
-): TraceCollector {
+export function createLangfuseTraceCollector(config: LangfuseTraceCollectorConfig): TraceCollector {
   return new LangfuseTraceCollector(config);
 }

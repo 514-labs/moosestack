@@ -1,19 +1,9 @@
 "use client";
 
-import {
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  Database,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronRight, Database, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import {
   extractTextContentParts,
@@ -30,19 +20,14 @@ type DataCatalogToolInvocationProps = {
   timing?: number;
 };
 
-export function DataCatalogToolInvocation({
-  part,
-  timing,
-}: DataCatalogToolInvocationProps) {
+export function DataCatalogToolInvocation({ part, timing }: DataCatalogToolInvocationProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const isLoading = part.state === "input-streaming";
 
   const getStatusIcon = () => {
     if (part.state === "input-streaming") {
-      return (
-        <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />
-      );
+      return <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />;
     }
     if (part.state === "output-error") {
       return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
@@ -51,9 +36,7 @@ export function DataCatalogToolInvocation({
       return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
     }
     if (part.state === "output-available") {
-      return (
-        <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
-      );
+      return <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />;
     }
     return null;
   };
@@ -94,8 +77,7 @@ export function DataCatalogToolInvocation({
   const input = part.input;
 
   const hasInput = !!input && Object.keys(input).length > 0;
-  const hasErrorText =
-    typeof part.errorText === "string" && part.errorText.length > 0;
+  const hasErrorText = typeof part.errorText === "string" && part.errorText.length > 0;
   const hasError = hasOutputError(part.output) && part.output.isError;
 
   return (
@@ -125,9 +107,7 @@ export function DataCatalogToolInvocation({
             <Database
               className={cn(
                 "w-4 h-4",
-                isLoading ?
-                  "text-muted-foreground"
-                : "text-purple-600 dark:text-purple-400",
+                isLoading ? "text-muted-foreground" : "text-purple-600 dark:text-purple-400",
               )}
             />
             <span
@@ -160,12 +140,8 @@ export function DataCatalogToolInvocation({
           >
             {hasInput && (
               <div>
-                <div className="text-sm text-muted-foreground mb-2">
-                  Parameters:
-                </div>
-                <CodeBlock language="json">
-                  {JSON.stringify(input, null, 2)}
-                </CodeBlock>
+                <div className="text-sm text-muted-foreground mb-2">Parameters:</div>
+                <CodeBlock language="json">{JSON.stringify(input, null, 2)}</CodeBlock>
               </div>
             )}
 
@@ -173,9 +149,7 @@ export function DataCatalogToolInvocation({
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  <span className="text-sm text-red-700 dark:text-red-300">
-                    Error:
-                  </span>
+                  <span className="text-sm text-red-700 dark:text-red-300">Error:</span>
                 </div>
                 <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30">
                   {(() => {
@@ -194,9 +168,7 @@ export function DataCatalogToolInvocation({
 
             {!hasError && catalogText && (
               <div>
-                <div className="text-sm text-muted-foreground mb-2">
-                  Output:
-                </div>
+                <div className="text-sm text-muted-foreground mb-2">Output:</div>
                 <div className="rounded-md border bg-muted/50 p-4">
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <TextFormatter text={catalogText} />
@@ -209,9 +181,7 @@ export function DataCatalogToolInvocation({
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  <span className="text-sm text-red-700 dark:text-red-300">
-                    Error:
-                  </span>
+                  <span className="text-sm text-red-700 dark:text-red-300">Error:</span>
                 </div>
                 <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30">
                   {part.errorText}

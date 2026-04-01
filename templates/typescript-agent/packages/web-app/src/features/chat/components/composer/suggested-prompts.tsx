@@ -20,9 +20,7 @@ export function SuggestedPrompts({
 }: SuggestedPromptsProps) {
   return (
     <div className="flex-none border-t border-border/60 px-4 py-3">
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        Suggested prompts
-      </div>
+      <div className="mb-2 text-xs font-medium text-muted-foreground">Suggested prompts</div>
       <Suggestions>
         {prompts.map((prompt, index) => (
           <Suggestion

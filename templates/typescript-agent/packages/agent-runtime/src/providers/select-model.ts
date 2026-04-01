@@ -3,12 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { AgentProviderConfig } from "../runtime/types.js";
 import type { AIProvider } from "../shared-types.js";
-import type {
-  AgentModel,
-  AnthropicModel,
-  BedrockModel,
-  OpenAIModel,
-} from "../utils/sdk-types.js";
+import type { AgentModel, AnthropicModel, BedrockModel, OpenAIModel } from "../utils/sdk-types.js";
 
 type ModelSelection = {
   provider: AIProvider;
@@ -16,9 +11,7 @@ type ModelSelection = {
   model: AgentModel;
 };
 
-function toAgentModel(
-  model: AnthropicModel | BedrockModel | OpenAIModel,
-): AgentModel {
+function toAgentModel(model: AnthropicModel | BedrockModel | OpenAIModel): AgentModel {
   return model as unknown as AgentModel;
 }
 

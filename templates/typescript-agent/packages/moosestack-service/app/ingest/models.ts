@@ -27,27 +27,18 @@ export interface TenantKnowledge {
   timestamp: Date;
 }
 
-export const TenantKnowledgeTable = new OlapTable<TenantKnowledge>(
-  "tenant_knowledge",
-  {
-    engine: ClickHouseEngines.ReplacingMergeTree,
-    orderByFields: ["org_id", "timestamp", "category", "record_id"],
-  },
-);
+export const TenantKnowledgeTable = new OlapTable<TenantKnowledge>("tenant_knowledge", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["org_id", "timestamp", "category", "record_id"],
+});
 
-export const TenantKnowledgeStream = new Stream<TenantKnowledge>(
-  "tenant_knowledge",
-  {
-    destination: TenantKnowledgeTable,
-  },
-);
+export const TenantKnowledgeStream = new Stream<TenantKnowledge>("tenant_knowledge", {
+  destination: TenantKnowledgeTable,
+});
 
-export const TenantKnowledgeIngestApi = new IngestApi<TenantKnowledge>(
-  "tenant_knowledge",
-  {
-    destination: TenantKnowledgeStream,
-  },
-);
+export const TenantKnowledgeIngestApi = new IngestApi<TenantKnowledge>("tenant_knowledge", {
+  destination: TenantKnowledgeStream,
+});
 
 export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
   tables: [TenantKnowledgeTable],

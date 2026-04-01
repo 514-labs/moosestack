@@ -1,19 +1,9 @@
 "use client";
 
-import {
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  Loader2,
-  Wrench,
-} from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronRight, Loader2, Wrench } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import {
   getToolName,
@@ -48,22 +38,17 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
   const isLoading = part.state === "input-streaming";
   const hasInput = !!part.input;
   const hasOutput = part.output !== undefined && part.output !== null;
-  const hasErrorText =
-    typeof part.errorText === "string" && part.errorText.length > 0;
+  const hasErrorText = typeof part.errorText === "string" && part.errorText.length > 0;
 
   const getStatusIcon = () => {
     if (part.state === "input-streaming") {
-      return (
-        <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />
-      );
+      return <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />;
     }
     if (part.state === "output-error") {
       return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
     }
     if (part.state === "output-available") {
-      return (
-        <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
-      );
+      return <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />;
     }
     return null;
   };
@@ -95,9 +80,7 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
             <Wrench
               className={cn(
                 "w-4 h-4",
-                isLoading ?
-                  "text-muted-foreground"
-                : "text-blue-600 dark:text-blue-400",
+                isLoading ? "text-muted-foreground" : "text-blue-600 dark:text-blue-400",
               )}
             />
             <span
@@ -130,9 +113,7 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
           >
             {part.providerExecuted !== undefined && (
               <div className="pt-3">
-                <div className="text-sm text-muted-foreground mb-1">
-                  Provider Executed:
-                </div>
+                <div className="text-sm text-muted-foreground mb-1">Provider Executed:</div>
                 <Badge variant="outline" className="text-xs">
                   {part.providerExecuted ? "Yes" : "No"}
                 </Badge>
@@ -140,39 +121,30 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
             )}
 
             {hasInput && (
-              <div
-                className={part.providerExecuted === undefined ? "pt-3" : ""}
-              >
+              <div className={part.providerExecuted === undefined ? "pt-3" : ""}>
                 <div className="text-sm text-muted-foreground mb-2">Input:</div>
-                <CodeBlock language="json">
-                  {JSON.stringify(part.input, null, 2)}
-                </CodeBlock>
+                <CodeBlock language="json">{JSON.stringify(part.input, null, 2)}</CodeBlock>
               </div>
             )}
 
             {hasOutput && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  {hasOutputError(part.output) && part.output.isError ?
+                  {hasOutputError(part.output) && part.output.isError ? (
                     <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  : <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                  }
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  )}
                   <span className="text-sm text-muted-foreground">Output:</span>
                 </div>
-                <CodeBlock
-                  language={typeof part.output === "string" ? "text" : "json"}
-                >
+                <CodeBlock language={typeof part.output === "string" ? "text" : "json"}>
                   {(() => {
                     if (
                       isObjectRecord(part.output) &&
                       "structuredContent" in part.output &&
                       part.output.structuredContent !== undefined
                     ) {
-                      return JSON.stringify(
-                        part.output.structuredContent,
-                        null,
-                        2,
-                      );
+                      return JSON.stringify(part.output.structuredContent, null, 2);
                     }
                     if (typeof part.output === "string") {
                       return part.output;
@@ -187,9 +159,7 @@ export function ToolInvocation({ part, timing }: ToolInvocationProps) {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  <span className="text-sm text-red-700 dark:text-red-300">
-                    Error:
-                  </span>
+                  <span className="text-sm text-red-700 dark:text-red-300">Error:</span>
                 </div>
                 <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30">
                   {part.errorText}

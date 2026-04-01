@@ -15,9 +15,7 @@ describe("semantic-tool-errors", () => {
   it("returns actionable guidance for invalid timestamp filters", () => {
     expect(
       formatSemanticToolError(
-        new Error(
-          "Cannot parse DateTime: while converting 'not-a-date' for query parameter 'p0'",
-        ),
+        new Error("Cannot parse DateTime: while converting 'not-a-date' for query parameter 'p0'"),
         "List Tenant Knowledge Records",
       ),
     ).toBe(
@@ -38,10 +36,7 @@ describe("semantic-tool-errors", () => {
 
   it("returns backend availability guidance for temporary failures", () => {
     expect(
-      formatSemanticToolError(
-        new Error("socket hang up"),
-        "List Tenant Knowledge Records",
-      ),
+      formatSemanticToolError(new Error("socket hang up"), "List Tenant Knowledge Records"),
     ).toBe(
       "List Tenant Knowledge Records is temporarily unavailable because the Moose service or ClickHouse backend is unreachable. Try again in a moment.",
     );
@@ -49,10 +44,7 @@ describe("semantic-tool-errors", () => {
 
   it("sanitizes unexpected failures", () => {
     expect(
-      formatSemanticToolError(
-        new Error("division by zero"),
-        "Query Tenant Knowledge Metrics",
-      ),
+      formatSemanticToolError(new Error("division by zero"), "Query Tenant Knowledge Metrics"),
     ).toBe(
       "Unable to execute Query Tenant Knowledge Metrics right now. Try again, or inspect the Moose service logs for details.",
     );

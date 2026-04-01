@@ -71,11 +71,7 @@ describe("message-parts guards", () => {
     expect(
       getReasoningText({
         type: "reasoning",
-        details: [
-          { type: "text", text: "hello" },
-          { type: "redacted" },
-          { type: "text" },
-        ],
+        details: [{ type: "text", text: "hello" }, { type: "redacted" }, { type: "text" }],
       }),
     ).toBe("hello<redacted>");
   });

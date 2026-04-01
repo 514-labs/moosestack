@@ -1,10 +1,7 @@
 import type { MooseUtils } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
 import { executeScopedSql } from "../../data/clickhouse/readonly-query";
-import {
-  dashboardKnowledgeMetricsModel,
-  dashboardRecentKnowledgeModel,
-} from "./dashboard";
+import { dashboardKnowledgeMetricsModel, dashboardRecentKnowledgeModel } from "./dashboard";
 
 /**
  * EXAMPLE_APP_ONLY:
@@ -37,14 +34,7 @@ export async function getDashboardSnapshot(
     }>(
       queryClient,
       dashboardRecentKnowledgeModel.toSql({
-        columns: [
-          "orgId",
-          "headline",
-          "category",
-          "priority",
-          "source",
-          "timestamp",
-        ],
+        columns: ["orgId", "headline", "category", "priority", "source", "timestamp"],
         orderBy: [["timestamp", "DESC"]],
         limit: 5,
       }),

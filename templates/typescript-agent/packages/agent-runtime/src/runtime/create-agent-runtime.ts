@@ -4,9 +4,7 @@ import { DEFAULT_AGENT_SYSTEM_PROMPT } from "../prompts/default-system.js";
 import { selectModel } from "../providers/select-model.js";
 import type { AgentRuntime, AgentRuntimeOptions } from "./types.js";
 
-export async function createAgentRuntime(
-  options: AgentRuntimeOptions,
-): Promise<AgentRuntime> {
+export async function createAgentRuntime(options: AgentRuntimeOptions): Promise<AgentRuntime> {
   const modelSelection = selectModel(options.providerConfig);
   const { mcpClient, tools, resolvedMcpServerUrl } = await createMcpTools({
     bearerToken: options.bearerToken,

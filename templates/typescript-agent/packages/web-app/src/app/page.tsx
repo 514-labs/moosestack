@@ -4,10 +4,7 @@ import { auth, signIn, signOut } from "@/auth";
 import { getSessionAccess } from "@/authz/session-access";
 import { LocalLoginForm } from "@/dev/local-login-form";
 import { getAiProvider, getAuthMode, getOidcConfig } from "@/env-vars";
-import {
-  DashboardSnapshotUnauthorizedError,
-  getDashboardSnapshot,
-} from "@/lib/moose-service";
+import { DashboardSnapshotUnauthorizedError, getDashboardSnapshot } from "@/lib/moose-service";
 
 // EXAMPLE_APP_ONLY: The seeded dashboard copy and prompts in this file assume
 // the TenantKnowledge demo model. Replace or remove them when you swap out the
@@ -48,18 +45,12 @@ function formatTimestamp(value: string | undefined): string {
   });
 }
 
-export default async function Home({
-  searchParams,
-}: HomePageProps): Promise<JSX.Element> {
+export default async function Home({ searchParams }: HomePageProps): Promise<JSX.Element> {
   const resolvedSearchParams = (await searchParams) ?? {};
   const sessionNotice =
-    typeof resolvedSearchParams.session === "string" ?
-      resolvedSearchParams.session
-    : undefined;
+    typeof resolvedSearchParams.session === "string" ? resolvedSearchParams.session : undefined;
   const loginStatus =
-    typeof resolvedSearchParams.login === "string" ?
-      resolvedSearchParams.login
-    : undefined;
+    typeof resolvedSearchParams.login === "string" ? resolvedSearchParams.login : undefined;
   const session = await auth();
   const authMode = getAuthMode();
   const oidcConfig = getOidcConfig();
@@ -73,29 +64,25 @@ export default async function Home({
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 typescript-agent
               </div>
-              <h1 className="text-[2rem] font-semibold tracking-tight">
-                Sign in
-              </h1>
+              <h1 className="text-[2rem] font-semibold tracking-tight">Sign in</h1>
               <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-                Use one of the local mock accounts below to access the seeded
-                dashboard and chat experience.
+                Use one of the local mock accounts below to access the seeded dashboard and chat
+                experience.
               </p>
             </div>
 
             <div className="mt-7 space-y-5">
               {sessionNotice === "expired" && (
                 <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950 dark:text-amber-100">
-                  Your previous session expired or is no longer valid. Sign in
-                  again to refresh access.
+                  Your previous session expired or is no longer valid. Sign in again to refresh
+                  access.
                 </div>
               )}
 
               {authMode === "local" && (
                 <LocalLoginForm
                   errorMessage={
-                    loginStatus === "invalid" ?
-                      "Invalid email or password."
-                    : undefined
+                    loginStatus === "invalid" ? "Invalid email or password." : undefined
                   }
                 />
               )}
@@ -138,16 +125,14 @@ export default async function Home({
   const aiProvider = getAiProvider();
   const adminView = access.kind === "admin";
   const latestUpdate = snapshot.recentKnowledge[0]?.timestamp;
-  const recentCategoryCount = new Set(
-    snapshot.recentKnowledge.map((row) => row.category),
-  ).size;
+  const recentCategoryCount = new Set(snapshot.recentKnowledge.map((row) => row.category)).size;
   const accessCardValue = access.kind === "admin" ? "All data" : access.orgName;
   const seedDatasetNote =
-    access.kind === "admin" ?
-      "Org A uses intentionally tiny counts (1 and 2), while Org B uses intentionally larger counts (50 and 1,024)."
-    : access.orgId === "org_a" ?
-      "This example organization uses intentionally tiny counts (1 and 2)."
-    : "This example organization uses intentionally larger counts (50 and 1,024).";
+    access.kind === "admin"
+      ? "Org A uses intentionally tiny counts (1 and 2), while Org B uses intentionally larger counts (50 and 1,024)."
+      : access.orgId === "org_a"
+        ? "This example organization uses intentionally tiny counts (1 and 2)."
+        : "This example organization uses intentionally larger counts (50 and 1,024).";
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_30%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.18))]">
@@ -159,13 +144,13 @@ export default async function Home({
             </div>
             <div>
               <h1 className="text-4xl font-semibold tracking-tight">
-                {access.kind === "admin" ?
-                  "Debug dashboard across all seeded data"
-                : `${access.orgName} knowledge dashboard`}
+                {access.kind === "admin"
+                  ? "Debug dashboard across all seeded data"
+                  : `${access.orgName} knowledge dashboard`}
               </h1>
               <p className="mt-2 max-w-3xl text-muted-foreground">
-                {access.scopeDescription} The dashboard and chat assistant share
-                this same authorization scope.
+                {access.scopeDescription} The dashboard and chat assistant share this same
+                authorization scope.
               </p>
             </div>
           </div>
@@ -176,10 +161,7 @@ export default async function Home({
               await signOut({ redirectTo: "/" });
             }}
           >
-            <button
-              type="submit"
-              className="rounded-full border px-4 py-2 text-sm font-medium"
-            >
+            <button type="submit" className="rounded-full border px-4 py-2 text-sm font-medium">
               Sign Out
             </button>
           </form>
@@ -205,9 +187,9 @@ export default async function Home({
             label="Access"
             value={accessCardValue}
             helper={
-              adminView ?
-                "Local debug authorization across all seeded records"
-              : "Organization-scoped authorization"
+              adminView
+                ? "Local debug authorization across all seeded records"
+                : "Organization-scoped authorization"
             }
           />
         </section>
@@ -218,10 +200,9 @@ export default async function Home({
               <div>
                 <h2 className="text-xl font-semibold">Recent knowledge</h2>
                 <p className="text-sm text-muted-foreground">
-                  {adminView ?
-                    `Latest seeded records across both organization datasets. ${seedDatasetNote}`
-                  : `Latest seeded records currently visible to this organization. ${seedDatasetNote}`
-                  }
+                  {adminView
+                    ? `Latest seeded records across both organization datasets. ${seedDatasetNote}`
+                    : `Latest seeded records currently visible to this organization. ${seedDatasetNote}`}
                 </p>
               </div>
             </div>
@@ -241,9 +222,7 @@ export default async function Home({
                     <span>•</span>
                     <span>{row.source}</span>
                   </div>
-                  <div className="mt-2 text-base font-medium">
-                    {row.headline}
-                  </div>
+                  <div className="mt-2 text-base font-medium">{row.headline}</div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {new Date(row.timestamp).toLocaleString()}
                   </div>
@@ -256,19 +235,14 @@ export default async function Home({
             <div className="rounded-3xl border bg-card/85 p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Ask the assistant</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Chat uses the same authenticated access scope as the dashboard.
-                The selected provider is currently{" "}
-                <span className="font-medium text-foreground">
-                  {aiProvider}
-                </span>
-                .
+                Chat uses the same authenticated access scope as the dashboard. The selected
+                provider is currently{" "}
+                <span className="font-medium text-foreground">{aiProvider}</span>.
               </p>
 
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    Current scope:
-                  </span>{" "}
+                  <span className="font-medium text-foreground">Current scope:</span>{" "}
                   {access.scopeBadge}
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
@@ -278,12 +252,11 @@ export default async function Home({
                   “Which knowledge categories changed most recently?”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  {adminView ?
-                    "\"Compare Org A's 1 and 2-count updates with Org B's 50 and 1,024-count spikes.\""
-                  : access.orgId === "org_a" ?
-                    '"Summarize why this example organization looks low-volume."'
-                  : '"Summarize why this example organization looks high-volume."'
-                  }
+                  {adminView
+                    ? "\"Compare Org A's 1 and 2-count updates with Org B's 50 and 1,024-count spikes.\""
+                    : access.orgId === "org_a"
+                      ? '"Summarize why this example organization looks low-volume."'
+                      : '"Summarize why this example organization looks high-volume."'}
                 </div>
                 <div className="rounded-2xl border bg-muted/40 p-3 text-sm text-muted-foreground">
                   Latest update in scope: {formatTimestamp(latestUpdate)}

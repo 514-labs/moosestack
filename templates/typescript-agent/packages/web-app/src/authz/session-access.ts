@@ -1,8 +1,4 @@
-import {
-  ACCESS_ROLE_ADMIN_DEBUG,
-  ACCESS_ROLE_TENANT,
-  type AccessRole,
-} from "agent-contracts";
+import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT, type AccessRole } from "agent-contracts";
 import type { Session } from "next-auth";
 
 interface BaseSessionAccess {
@@ -38,14 +34,12 @@ function resolveDisplayName(session: Session): string {
     return orgName;
   }
 
-  return session.user.accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
-      "Admin Debug"
+  return session.user.accessRole === ACCESS_ROLE_ADMIN_DEBUG
+    ? "Admin Debug"
     : "Organization access";
 }
 
-export function getSessionAccess(
-  session: Session | null | undefined,
-): SessionAccess | undefined {
+export function getSessionAccess(session: Session | null | undefined): SessionAccess | undefined {
   if (!session?.user) {
     return undefined;
   }

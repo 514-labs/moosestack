@@ -14,19 +14,16 @@ class DevelopmentMockGuardrailAdapter implements GuardrailAdapter {
     // Dev-only mock guardrails intentionally use simple regexes. They are easy to
     // evade via substitutions, Unicode confusables, or fuzzy phrasing and should
     // never be treated as production-grade prompt safety.
-    const flaggedPatterns = MOCK_GUARDRAIL_PATTERNS.filter((pattern) =>
-      pattern.test(prompt),
-    );
+    const flaggedPatterns = MOCK_GUARDRAIL_PATTERNS.filter((pattern) => pattern.test(prompt));
 
     return {
       action: flaggedPatterns.length > 0 ? "GUARDRAIL_INTERVENED" : "NONE",
       details:
-        flaggedPatterns.length > 0 ?
-          flaggedPatterns.map(
-            (pattern) =>
-              `Development mock guardrail blocked: ${pattern.source}`,
-          )
-        : [],
+        flaggedPatterns.length > 0
+          ? flaggedPatterns.map(
+              (pattern) => `Development mock guardrail blocked: ${pattern.source}`,
+            )
+          : [],
       latencyMs: Date.now() - start,
     };
   }

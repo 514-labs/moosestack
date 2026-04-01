@@ -1,9 +1,4 @@
-import {
-  type MooseUtils,
-  type RowPolicyOptions,
-  type Sql,
-  toQuery,
-} from "@514labs/moose-lib";
+import { type MooseUtils, type RowPolicyOptions, type Sql, toQuery } from "@514labs/moose-lib";
 
 type ScopedQueryClient = MooseUtils["client"]["query"];
 type ReadonlyQueryOptions = {
@@ -43,12 +38,12 @@ async function executeReadonlyQuery<T>(
     format: "JSONEachRow",
     clickhouse_settings: {
       ...rowPolicyOptions?.clickhouse_settings,
-      ...(typeof limit === "number" ?
-        {
-          max_result_rows: limit.toString(),
-          result_overflow_mode: "break",
-        }
-      : {}),
+      ...(typeof limit === "number"
+        ? {
+            max_result_rows: limit.toString(),
+            result_overflow_mode: "break",
+          }
+        : {}),
       readonly: "2",
     },
     ...(rowPolicyOptions && {
@@ -87,10 +82,7 @@ export async function executeReadonlyStatement<T>(
   );
 }
 
-export async function executeScopedSql<T>(
-  queryClient: ScopedQueryClient,
-  sql: Sql,
-): Promise<T[]> {
+export async function executeScopedSql<T>(queryClient: ScopedQueryClient, sql: Sql): Promise<T[]> {
   const internalQueryClient = queryClient as unknown as {
     client: {
       query: (params: {
