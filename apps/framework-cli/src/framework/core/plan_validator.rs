@@ -201,12 +201,21 @@ fn validate_dictionary_config(plan: &InfraPlan) -> Result<(), ValidationError> {
     for dict in plan.target_infra_map.olap_dictionaries.values() {
         // Validate Table source type
         if let DictionarySource::Table(ref ts) = dict.source {
-            // 1. Reject dict-to-dict: source must not be another dictionary
-            let is_dict_source = plan
-                .target_infra_map
-                .olap_dictionaries
-                .values()
-                .any(|d| d.name == ts.table);
+            // 1. Reject dict-to-dict: source must not be another dictionary.
+            // Only reject if a dictionary with that name exists AND no table with
+            // that name exists — a table and a dictionary may share a name in
+            // ClickHouse, and the user might legitimately source from the table.
+            let source_db_for_dict_check = ts.database.as_deref().unwrap_or(default_db);
+            let shadowed_by_table = plan.target_infra_map.tables.values().any(|t| {
+                t.name == ts.table
+                    && t.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
+            });
+            let is_dict_source = !shadowed_by_table
+                && plan
+                    .target_infra_map
+                    .olap_dictionaries
+                    .values()
+                    .any(|d| d.name == ts.table);
             if is_dict_source {
                 return Err(ValidationError::DictionaryValidation(format!(
                     "Dictionary '{}' cannot use dictionary '{}' as a source table. \
