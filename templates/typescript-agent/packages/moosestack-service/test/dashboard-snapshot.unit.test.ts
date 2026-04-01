@@ -21,7 +21,7 @@ describe("getDashboardSnapshot", () => {
     vi.resetModules();
   });
 
-  it("formats dashboard metric time bounds as ClickHouse DateTime strings", async () => {
+  it("builds dashboard reads from semantic models and preserves scoped readonly execution", async () => {
     const { getDashboardSnapshot } = await import(
       "../app/semantic/dashboard-snapshot"
     );
@@ -62,18 +62,21 @@ describe("getDashboardSnapshot", () => {
     expect(snapshot.recentKnowledge).toHaveLength(1);
 
     const metricsQuery = query.mock.calls[0]?.[0];
-    expect(metricsQuery?.query).toContain("toDateTime(");
-    expect(Object.values(metricsQuery?.query_params ?? {})).toHaveLength(2);
-    expect(
-      Object.values(metricsQuery?.query_params ?? {}).every(
-        (value: unknown) => typeof value === "string",
-      ),
-    ).toBe(true);
+    expect(metricsQuery?.query).toContain("count(*)");
+    expect(metricsQuery?.query).toContain("countIf(");
+    expect(metricsQuery?.query).toContain("subtractDays(now(), 7)");
+    expect(metricsQuery?.query_params).toEqual({ p0: 1 });
     expect(metricsQuery?.clickhouse_settings).toEqual(
       expect.objectContaining({
         SQL_moose_rls_org_id: "org_a",
         readonly: "2",
       }),
     );
+
+    const recentKnowledgeQuery = query.mock.calls[1]?.[0];
+    expect(recentKnowledgeQuery?.query).toContain("org_id");
+    expect(recentKnowledgeQuery?.query).toContain("ORDER BY");
+    expect(recentKnowledgeQuery?.query).toContain("LIMIT {p0:Int}");
+    expect(recentKnowledgeQuery?.query_params).toEqual({ p0: 5 });
   });
 });
