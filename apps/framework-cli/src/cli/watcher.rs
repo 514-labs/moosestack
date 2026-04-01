@@ -42,6 +42,7 @@ use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
     classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
 };
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -217,6 +218,7 @@ async fn watch(
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
     confirmation_policy: ConfirmationPolicy,
+    prompt_bridge: Option<PromptBridge>,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -242,7 +244,156 @@ async fn watch(
         .watch(app_dir.as_ref(), RecursiveMode::Recursive)
         .map_err(|e| Error::other(format!("Failed to watch file: {e}")))?;
 
-    tracing::debug!("Watcher setup complete, entering main loop");
+    tracing::debug!("Watcher setup complete, running initial plan pass");
+
+    // Run the initial plan before entering the watch loop. This handles the
+    // startup diff (current infra vs. project code) with the full confirm/execute
+    // pipeline, which also means the MCP server is available for --agent prompts.
+    {
+        let activate_spinner = {
+            use crate::utilities::constants::SHOW_TIMING;
+            use std::sync::atomic::Ordering;
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+        };
+
+        let result: anyhow::Result<bool> = with_spinner_completion_async(
+            "Processing initial infrastructure changes",
+            "Infrastructure changes processed successfully",
+            async |spinner_handle| {
+                let plan_result = with_timing_async("Planning", async {
+                    framework::core::plan::plan_changes(&**state_storage, &project).await
+                })
+                .await;
+
+                match plan_result {
+                    Ok((_, mut plan_result)) => {
+                        with_timing_async("Validation", async {
+                            framework::core::plan_validator::validate(&project, &plan_result)
+                        })
+                        .await?;
+
+                        spinner_handle.pause();
+                        let approved_drops = match rename_confirmation_gate(
+                            &mut plan_result.changes,
+                            &confirmation_policy,
+                            prompt_bridge.as_ref(),
+                        )
+                        .await?
+                        {
+                            Some(drops) => drops,
+                            None => return Ok(false),
+                        };
+
+                        let mut risk = classify_plan_risk(&plan_result.changes);
+                        risk.exclude_approved_drops(&approved_drops);
+                        let proceed = destructive_confirmation_gate(
+                            &risk,
+                            &confirmation_policy,
+                            prompt_bridge.as_ref(),
+                        )
+                        .await;
+                        if !proceed? {
+                            return Ok(false);
+                        }
+                        spinner_handle.resume();
+
+                        display::show_changes(&plan_result);
+                        let _processing_guard =
+                            processing_coordinator.begin_processing().await;
+                        let mut project_registries = project_registries.write().await;
+
+                        let execution_result = with_timing_async("Execution", async {
+                            framework::core::execute::execute_online_change(
+                                &project,
+                                &plan_result,
+                                route_update_channel.clone(),
+                                webapp_update_channel.clone(),
+                                &mut project_registries,
+                                metrics.clone(),
+                                &settings,
+                            )
+                            .await
+                        })
+                        .await;
+
+                        match execution_result {
+                            Ok(_) => {
+                                with_timing_async("Persist State", async {
+                                    state_storage
+                                        .store_infrastructure_map(
+                                            &plan_result.target_infra_map,
+                                        )
+                                        .await
+                                })
+                                .await?;
+
+                                with_timing_async("OpenAPI Gen", async {
+                                    openapi(&project, &plan_result.target_infra_map).await
+                                })
+                                .await?;
+
+                                let mut infra_ptr = infrastructure_map.write().await;
+                                *infra_ptr = plan_result.target_infra_map
+                            }
+                            Err(e) => {
+                                let error: anyhow::Error = e.into();
+                                show_message!(MessageType::Error, {
+                                    Message {
+                                        action: "\nFailed".to_string(),
+                                        details: format!(
+                                            "Executing changes to the infrastructure failed:\n{error:?}"
+                                        ),
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let error: anyhow::Error = e.into();
+                        show_message!(MessageType::Error, {
+                            Message {
+                                action: "\nFailed".to_string(),
+                                details: format!(
+                                    "Planning changes to the infrastructure failed:\n{error:?}"
+                                ),
+                            }
+                        });
+                    }
+                }
+                Ok(true)
+            },
+            activate_spinner,
+        )
+        .await;
+        match result {
+            Ok(true) => {
+                project
+                    .http_server_config
+                    .run_after_dev_server_reload_script()
+                    .await;
+            }
+            Ok(false) => {
+                show_message!(MessageType::Info, {
+                    Message {
+                        action: "Skipped".to_string(),
+                        details: "Destructive changes declined by user".to_string(),
+                    }
+                });
+            }
+            Err(e) => {
+                show_message!(MessageType::Error, {
+                    Message {
+                        action: "Failed".to_string(),
+                        details: format!(
+                            "Processing initial infrastructure changes failed:\n{e:?}"
+                        ),
+                    }
+                });
+            }
+        }
+    }
+
+    tracing::debug!("Initial plan pass complete, entering watch loop");
 
     loop {
         tokio::select! {
@@ -287,14 +438,14 @@ async fn watch(
                                     .await?;
 
                                     spinner_handle.pause();
-                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy).await? {
+                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy, prompt_bridge.as_ref()).await? {
                                         Some(drops) => drops,
                                         None => return Ok(false),
                                     };
 
                                     let mut risk = classify_plan_risk(&plan_result.changes);
                                     risk.exclude_approved_drops(&approved_drops);
-                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy, prompt_bridge.as_ref()).await;
                                     if !proceed? {
                                         return Ok(false);
                                     }
@@ -439,6 +590,7 @@ impl FileWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         confirmation_policy: ConfirmationPolicy,
+        prompt_bridge: Option<PromptBridge>,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
@@ -472,6 +624,7 @@ impl FileWatcher {
                 ignore_matcher,
                 app_dir,
                 confirmation_policy,
+                prompt_bridge,
             )
             .await
         };

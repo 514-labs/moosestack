@@ -3,8 +3,9 @@
 //! Before executing a migration, [`classify_plan_risk`] scans OLAP changes for
 //! operations that may cause data loss (table/column drops, recreates, view
 //! removals). [`destructive_confirmation_gate`] then enforces user confirmation
-//! via an interactive prompt (with a pinned terminal region in TTY mode) or via
-//! the `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE` overrides.
+//! via an interactive prompt (with a pinned terminal region in TTY mode), via
+//! the `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE` overrides, or via the
+//! MCP `respond_to_prompt` tool through a [`PromptBridge`].
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -25,6 +26,7 @@ use super::infrastructure_map::{
     apply_detected_renames, Change, ColumnChange, DetectedColumnRename, InfraChanges, OlapChange,
     PendingTableRenames, TableChange,
 };
+use super::prompt_bridge::{PendingPrompt, PromptBridge, PromptKind};
 
 /// A single destructive operation identified in a migration plan.
 #[derive(Debug, Clone)]
@@ -258,17 +260,25 @@ pub struct ConfirmationPolicy {
     pub accept_rename: bool,
     /// Whether we are running in dev mode (affects messaging).
     pub is_dev: bool,
+    /// When true, never read from stdin — only accept responses via the MCP
+    /// `respond_to_prompt` tool. Set by `--agent`.
+    pub agent: bool,
 }
 
 /// Gates execution on explicit user acknowledgment when the plan contains
 /// destructive operations.
 ///
+/// When a [`PromptBridge`] is provided the gate publishes the prompt so that an
+/// MCP client can respond via the `respond_to_prompt` tool. If stdin is also a
+/// TTY the gate races both channels (whichever answers first wins).
+///
 /// Returns `Ok(true)` to proceed, `Ok(false)` if the user cancelled (not an
 /// error — just skip execution), or `Err` for real failures (non-interactive
-/// without override).
+/// without override and no bridge).
 pub async fn destructive_confirmation_gate(
     risk: &PlanRisk,
     policy: &ConfirmationPolicy,
+    bridge: Option<&PromptBridge>,
 ) -> Result<bool, RoutineFailure> {
     if !risk.is_destructive() {
         return Ok(true);
@@ -291,13 +301,16 @@ pub async fn destructive_confirmation_gate(
         return Ok(true);
     }
 
-    if !std::io::stdin().is_terminal() {
+    let is_interactive = std::io::stdin().is_terminal() && !policy.agent;
+
+    if !is_interactive && bridge.is_none() {
         return Err(RoutineFailure::error(Message::new(
             "Destructive".to_string(),
             format!(
                 "Plan contains {} destructive operation(s) but running non-interactively.\n\
                  {}\n\n\
-                 To proceed, re-run with --yes-destructive (or --yes-all) or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                 To proceed, re-run with --yes-destructive (or --yes-all), set MOOSE_ACCEPT_DESTRUCTIVE=1, \
+                 or use --agent with MCP enabled",
                 risk.destructive_changes.len(),
                 summary
             ),
@@ -331,21 +344,17 @@ pub async fn destructive_confirmation_gate(
         );
     }
 
-    let accepted = if stdout().is_terminal() {
-        let text = format!(
-            " \x1b[1;33m⚠\x1b[0m  {} destructive change(s) — type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject",
-            risk.destructive_changes.len()
-        );
-        match PinnedSession::start() {
-            Ok(mut session) => {
-                let input = session.prompt(&text).await.unwrap_or_default();
-                matches!(input.as_str(), "y" | "yes")
-            }
-            Err(_) => plain_prompt().await?,
-        }
-    } else {
-        plain_prompt().await?
+    let prompt_info = PendingPrompt {
+        kind: PromptKind::Destructive {
+            change_count: risk.destructive_changes.len(),
+            summary: summary.clone(),
+        },
+        valid_responses: vec!["y".into(), "n".into()],
+        default_response: Some("n".into()),
     };
+
+    let input = get_response(is_interactive, bridge, prompt_info).await?;
+    let accepted = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
     if accepted {
         show_message!(
@@ -371,10 +380,70 @@ pub async fn destructive_confirmation_gate(
     }
 }
 
-async fn plain_prompt() -> Result<bool, RoutineFailure> {
-    let input =
-        prompt_user_async("\nProceed with destructive changes? [y/N]", Some("N"), None).await?;
-    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
+/// Collect a single-line response from whichever channel is available.
+///
+/// When both `is_interactive` (stdin is TTY) and a bridge exist, the two are
+/// raced with `tokio::select!`. When only one is available it is used
+/// exclusively.
+async fn get_response(
+    is_interactive: bool,
+    bridge: Option<&PromptBridge>,
+    info: PendingPrompt,
+) -> Result<String, RoutineFailure> {
+    match (is_interactive, bridge) {
+        (true, Some(bridge)) => {
+            let bridge_fut = bridge.prompt(info);
+            let stdin_fut = read_stdin_line();
+            tokio::select! {
+                biased;
+                line = stdin_fut => line,
+                resp = bridge_fut => resp.ok_or_else(|| RoutineFailure::error(
+                    Message::new("Prompt".to_string(), "Prompt bridge closed unexpectedly".to_string()),
+                )),
+            }
+        }
+        (true, None) => read_stdin_line().await,
+        (false, Some(bridge)) => {
+            show_message!(
+                MessageType::Info,
+                Message::new(
+                    "Waiting".to_string(),
+                    format!(
+                        "Use MCP tool `respond_to_prompt` at {} to accept or reject",
+                        bridge.mcp_url(),
+                    ),
+                )
+            );
+            bridge.prompt(info).await.ok_or_else(|| {
+                RoutineFailure::error(Message::new(
+                    "Prompt".to_string(),
+                    "Prompt bridge closed unexpectedly".to_string(),
+                ))
+            })
+        }
+        (false, None) => Err(RoutineFailure::error(Message::new(
+            "Prompt".to_string(),
+            "No interactive stdin and no MCP prompt bridge available".to_string(),
+        ))),
+    }
+}
+
+/// Read one line from stdin, using a pinned session when stdout is a TTY.
+async fn read_stdin_line() -> Result<String, RoutineFailure> {
+    if stdout().is_terminal() {
+        let text = " \x1b[1;33m⚠\x1b[0m  type \x1b[1my\x1b[0m to accept, \x1b[1mn\x1b[0m to reject"
+            .to_string();
+        match PinnedSession::start() {
+            Ok(mut session) => Ok(session.prompt(&text).await.unwrap_or_default()),
+            Err(_) => plain_prompt_line().await,
+        }
+    } else {
+        plain_prompt_line().await
+    }
+}
+
+async fn plain_prompt_line() -> Result<String, RoutineFailure> {
+    prompt_user_async("\nProceed with destructive changes? [y/N]", Some("N"), None).await
 }
 
 // ---------------------------------------------------------------------------
@@ -603,12 +672,16 @@ fn total_pending_rename_count(pending: &[PendingTableRenames]) -> usize {
 /// converts confirmed pairs to `ColumnChange::Renamed` via
 /// `apply_detected_renames`. Rejected renames remain as-is (destructive).
 ///
+/// When a [`PromptBridge`] is provided, each rename prompt is also published
+/// so an MCP client can respond.
+///
 /// Returns `Ok(Some(approved_drops))` to proceed (the set should be passed to
 /// `PlanRisk::exclude_approved_drops` so the destructive gate doesn't re-ask),
 /// or `Ok(None)` if the user cancelled.
 pub async fn rename_confirmation_gate(
     changes: &mut InfraChanges,
     policy: &ConfirmationPolicy,
+    bridge: Option<&PromptBridge>,
 ) -> Result<Option<HashSet<ApprovedColumnDrop>>, RoutineFailure> {
     let pending = std::mem::take(&mut changes.pending_column_renames);
     let total = total_pending_rename_count(&pending);
@@ -632,20 +705,23 @@ pub async fn rename_confirmation_gate(
         return Ok(Some(HashSet::new()));
     }
 
-    if !std::io::stdin().is_terminal() {
+    let is_interactive = std::io::stdin().is_terminal() && !policy.agent;
+
+    if !is_interactive && bridge.is_none() {
         return Err(RoutineFailure::error(Message::new(
             "Rename".to_string(),
             format!(
                 "Plan contains {} detected column rename(s) but running non-interactively.\n\
                  {}\n\n\
-                 To auto-accept, re-run with --yes-rename (or --yes-all) or set MOOSE_ACCEPT_RENAME=1",
+                 To auto-accept, re-run with --yes-rename (or --yes-all), set MOOSE_ACCEPT_RENAME=1, \
+                 or use --agent with MCP enabled",
                 total,
                 format_pending_renames_summary(&pending),
             ),
         )));
     }
 
-    let use_pinned = stdout().is_terminal();
+    let use_pinned = is_interactive && stdout().is_terminal();
     let mut session = if use_pinned {
         PinnedSession::start().ok()
     } else {
@@ -665,11 +741,66 @@ pub async fn rename_confirmation_gate(
                 rename,
             };
 
+            let prompt_info = PendingPrompt {
+                kind: PromptKind::Rename {
+                    current: prompt_idx,
+                    total,
+                    description: display.to_string(),
+                },
+                valid_responses: vec!["y".into(), "n".into(), "c".into()],
+                default_response: Some("y".into()),
+            };
+
             let input = if let Some(ref mut s) = session {
-                let text = format!(
-                    " Rename ({prompt_idx}/{total}): {display}  \x1b[1my\x1b[0m=rename  \x1b[1mn\x1b[0m=drop+create  \x1b[1mc\x1b[0m=cancel"
-                );
-                s.prompt(&text).await.unwrap_or_default()
+                match bridge {
+                    Some(bridge) => {
+                        let bridge_fut = bridge.prompt(prompt_info);
+                        let text = format!(
+                            " Rename ({prompt_idx}/{total}): {display}  \x1b[1my\x1b[0m=rename  \x1b[1mn\x1b[0m=drop+create  \x1b[1mc\x1b[0m=cancel"
+                        );
+                        let stdin_fut = s.prompt(&text);
+                        tokio::select! {
+                            biased;
+                            line = stdin_fut => line.unwrap_or_default(),
+                            resp = bridge_fut => resp.unwrap_or_default(),
+                        }
+                    }
+                    None => {
+                        let text = format!(
+                            " Rename ({prompt_idx}/{total}): {display}  \x1b[1my\x1b[0m=rename  \x1b[1mn\x1b[0m=drop+create  \x1b[1mc\x1b[0m=cancel"
+                        );
+                        s.prompt(&text).await.unwrap_or_default()
+                    }
+                }
+            } else if let Some(bridge) = bridge {
+                if !is_interactive {
+                    show_message!(
+                        MessageType::Info,
+                        Message::new(
+                            "Waiting".to_string(),
+                            format!(
+                                "Rename ({prompt_idx}/{total}): {display} — use MCP tool `respond_to_prompt` at {}",
+                                bridge.mcp_url(),
+                            ),
+                        )
+                    );
+                    bridge.prompt(prompt_info).await.unwrap_or_default()
+                } else {
+                    let text = format!(
+                        "Rename detected ({}/{}): {}\n  \
+                         [y] Yes, rename the column\n  \
+                         [n] No, drop + recreate instead\n  \
+                         [c] Cancel this change cycle",
+                        prompt_idx, total, display,
+                    );
+                    let bridge_fut = bridge.prompt(prompt_info);
+                    let stdin_fut = prompt_user_async(&text, Some("y"), None);
+                    tokio::select! {
+                        biased;
+                        line = stdin_fut => line?,
+                        resp = bridge_fut => resp.unwrap_or_default(),
+                    }
+                }
             } else {
                 let text = format!(
                     "Rename detected ({}/{}): {}\n  \

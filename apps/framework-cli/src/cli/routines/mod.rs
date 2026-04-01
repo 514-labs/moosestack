@@ -89,7 +89,6 @@
 use crate::cli::display::status::STATUS_ERROR;
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
 use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
-use crate::cli::routines::openapi::openapi;
 use crate::framework::core::execute::{execute_initial_infra_change, ExecutionContext};
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
@@ -98,6 +97,7 @@ use crate::framework::core::infrastructure_map::{
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_validator;
 use crate::framework::typescript::parser::get_compiled_index_path;
+use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use serde::Deserialize;
@@ -121,9 +121,8 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
-use crate::framework::core::plan_risk::{
-    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
-};
+use crate::framework::core::plan_risk::ConfirmationPolicy;
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -368,6 +367,7 @@ async fn process_pubsub_message(
 
 /// Creates local tables for EXTERNALLY_MANAGED tables.
 /// Uses remote mirroring if config available, otherwise creates from local schema.
+#[allow(dead_code)]
 async fn create_external_mirrors(
     project: &Project,
     infra_map: &InfrastructureMap,
@@ -548,7 +548,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, mut plan) = plan_changes(&*state_storage, &project).await?;
+    let (current_infra, plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -556,7 +556,7 @@ pub async fn start_development_mode(
         .values()
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
         .collect();
-    let remote_for_mirrors: Option<ClickHouseRemote> = if !externally_managed.is_empty() {
+    let _remote_for_mirrors: Option<ClickHouseRemote> = if !externally_managed.is_empty() {
         if !project.dev.externally_managed.tables.create_local_mirrors {
             show_message!(
                 MessageType::Highlight,
@@ -709,53 +709,32 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    let approved_drops =
-        match rename_confirmation_gate(&mut plan.changes, &confirmation_policy).await? {
-            Some(drops) => drops,
-            None => return Ok(()),
-        };
+    let prompt_bridge = if enable_mcp {
+        let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
+        Some(PromptBridge::new(mcp_url))
+    } else {
+        None
+    };
 
-    let mut risk = classify_plan_risk(&plan.changes);
-    risk.exclude_approved_drops(&approved_drops);
-    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
-        return Ok(());
-    }
-
-    let api_changes_channel = web_server
-        .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
-        .await;
-
-    let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
-
-    let process_registry = execute_initial_infra_change(ExecutionContext {
-        project: &project,
-        settings,
-        plan: &plan,
-        skip_olap: false,
-        api_changes_channel,
-        webapp_changes_channel,
-        metrics: metrics.clone(),
-    })
-    .await?;
-
-    let process_registry = Arc::new(RwLock::new(process_registry));
-
-    // Create mirrors after infra is set up (databases exist)
-    create_external_mirrors(
-        &project,
-        &plan.target_infra_map,
-        remote_for_mirrors.as_ref(),
-    )
-    .await;
-
-    let openapi_file = openapi(&project, &plan.target_infra_map).await?;
-
-    state_storage
-        .store_infrastructure_map(&plan.target_infra_map)
-        .await?;
+    // Infrastructure execution (confirmation gates + table creation) is handled by
+    // the watcher's initial pass rather than here. This ensures the MCP server is
+    // already listening when confirmation prompts fire, so both interactive (stdin)
+    // and agent-driven (MCP) workflows use the same code path.
+    use crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry;
+    let syncing = SyncingProcessesRegistry::new(
+        project.redpanda_config.clone(),
+        project.clickhouse_config.clone(),
+    );
+    let registries = ProcessRegistries::new(&project, settings, syncing);
+    let process_registry = Arc::new(RwLock::new(registries));
 
     let infra_map: &'static RwLock<InfrastructureMap> =
-        Box::leak(Box::new(RwLock::new(plan.target_infra_map)));
+        Box::leak(Box::new(RwLock::new(current_infra)));
+
+    let openapi_file = project
+        .internal_dir()
+        .ok()
+        .map(|d| d.join(crate::utilities::constants::OPENAPI_FILE));
 
     // Create processing coordinator to synchronize file watcher with MCP tools
     use crate::cli::processing_coordinator::ProcessingCoordinator;
@@ -786,6 +765,7 @@ pub async fn start_development_mode(
                 watcher_shutdown_rx,
                 ts_compile_handle,
                 confirmation_policy,
+                prompt_bridge.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -802,6 +782,7 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 confirmation_policy,
+                prompt_bridge.clone(),
             )?;
         }
     }
@@ -833,10 +814,11 @@ pub async fn start_development_mode(
             infra_map,
             project,
             metrics,
-            Some(openapi_file),
+            openapi_file,
             process_registry,
             enable_mcp,
             processing_coordinator,
+            prompt_bridge.clone(),
             Some(watcher_shutdown_tx),
         )
         .await;
@@ -1031,6 +1013,7 @@ pub async fn start_production_mode(
             Arc::new(RwLock::new(process_registry)),
             false, // MCP is disabled in production mode
             processing_coordinator,
+            None, // No prompt bridge in production mode
             None, // No file watcher in production mode
         )
         .await;

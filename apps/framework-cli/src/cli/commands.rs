@@ -155,6 +155,11 @@ pub enum Commands {
         /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
         #[arg(long)]
         yes_rename: bool,
+
+        /// Agent-driven mode: confirmation prompts are answered via the MCP
+        /// `respond_to_prompt` tool instead of stdin. Implies --mcp.
+        #[arg(long)]
+        agent: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

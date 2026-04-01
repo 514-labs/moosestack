@@ -2684,6 +2684,7 @@ impl Webserver {
         process_registry: Arc<RwLock<ProcessRegistries>>,
         enable_mcp: bool,
         processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
+        prompt_bridge: Option<crate::framework::core::prompt_bridge::PromptBridge>,
         watcher_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
     ) {
         //! Starts the local webserver
@@ -2782,6 +2783,7 @@ impl Webserver {
                 project.clickhouse_config.clone(),
                 Arc::new(project.redpanda_config.clone()),
                 processing_coordinator.clone(),
+                prompt_bridge.clone().unwrap_or_default(),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))

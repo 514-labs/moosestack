@@ -679,6 +679,7 @@ pub async fn top_command_handler(
             yes_all,
             yes_destructive,
             yes_rename,
+            agent,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -707,6 +708,7 @@ pub async fn top_command_handler(
                     || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
                 accept_rename: accept_all || *yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
                 is_dev: true,
+                agent: *agent || env_bool("MOOSE_AGENT"),
             };
 
             let project_arc = Arc::new(project);
@@ -767,7 +769,7 @@ pub async fn top_command_handler(
                 arc_metrics,
                 redis_client,
                 &settings,
-                *mcp,
+                *mcp || *agent,
                 confirmation_policy,
             )
             .await

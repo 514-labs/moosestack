@@ -1,6 +1,7 @@
 pub mod infra_issues;
 pub mod infra_map;
 pub mod logs;
+pub mod prompt;
 pub mod query_olap;
 pub mod sample_stream;
 
@@ -17,6 +18,7 @@ pub fn all_tool_definitions() -> Vec<Tool> {
         infra_issues::tool_definition(),
         query_olap::tool_definition(),
         sample_stream::tool_definition(),
+        prompt::tool_definition(),
     ]
 }
 

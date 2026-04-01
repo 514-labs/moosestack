@@ -42,6 +42,7 @@ use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
     classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
 };
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -293,6 +294,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
     confirmation_policy: ConfirmationPolicy,
+    prompt_bridge: Option<PromptBridge>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -366,6 +368,130 @@ async fn watch(
         }
     });
 
+    // Run the initial plan pass before entering the watch loop. The compiled TS
+    // output already exists (spawn_and_await_initial_compile ran earlier), so
+    // plan_changes can read the target infrastructure from it.
+    {
+        let activate_spinner = {
+            use crate::utilities::constants::SHOW_TIMING;
+            use std::sync::atomic::Ordering;
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+        };
+
+        let result: anyhow::Result<bool> = with_spinner_completion_async(
+            "Processing initial infrastructure changes",
+            "Infrastructure changes processed successfully",
+            async |spinner_handle| {
+                let plan_result = with_timing_async("Planning", async {
+                    framework::core::plan::plan_changes(&**state_storage, &project).await
+                })
+                .await;
+
+                match plan_result {
+                    Ok((_, mut plan_result)) => {
+                        with_timing_async("Validation", async {
+                            framework::core::plan_validator::validate(&project, &plan_result)
+                        })
+                        .await?;
+
+                        spinner_handle.pause();
+                        let approved_drops = match rename_confirmation_gate(
+                            &mut plan_result.changes,
+                            &confirmation_policy,
+                            prompt_bridge.as_ref(),
+                        )
+                        .await?
+                        {
+                            Some(drops) => drops,
+                            None => return Ok(false),
+                        };
+
+                        let mut risk = classify_plan_risk(&plan_result.changes);
+                        risk.exclude_approved_drops(&approved_drops);
+                        let proceed = destructive_confirmation_gate(
+                            &risk,
+                            &confirmation_policy,
+                            prompt_bridge.as_ref(),
+                        )
+                        .await;
+                        if !proceed? {
+                            return Ok(false);
+                        }
+                        spinner_handle.resume();
+
+                        display::show_changes(&plan_result);
+                        let _processing_guard = processing_coordinator.begin_processing().await;
+                        let mut project_registries = project_registries.write().await;
+
+                        let execution_result = with_timing_async("Execution", async {
+                            framework::core::execute::execute_online_change(
+                                &project,
+                                &plan_result,
+                                route_update_channel.clone(),
+                                webapp_update_channel.clone(),
+                                &mut project_registries,
+                                metrics.clone(),
+                                &settings,
+                            )
+                            .await
+                        })
+                        .await;
+
+                        match execution_result {
+                            Ok(_) => {
+                                with_timing_async("Persist State", async {
+                                    state_storage
+                                        .store_infrastructure_map(&plan_result.target_infra_map)
+                                        .await
+                                })
+                                .await?;
+
+                                with_timing_async("OpenAPI Gen", async {
+                                    openapi(&project, &plan_result.target_infra_map).await
+                                })
+                                .await?;
+
+                                let mut infra_ptr = infrastructure_map.write().await;
+                                *infra_ptr = plan_result.target_infra_map;
+                                Ok(true)
+                            }
+                            Err(e) => Err(e.into()),
+                        }
+                    }
+                    Err(e) => Err(e.into()),
+                }
+            },
+            activate_spinner,
+        )
+        .await;
+        match result {
+            Ok(true) => {
+                project
+                    .http_server_config
+                    .run_after_dev_server_reload_script()
+                    .await;
+            }
+            Ok(false) => {
+                show_message!(MessageType::Info, {
+                    Message {
+                        action: "Skipped".to_string(),
+                        details: "Destructive changes declined by user".to_string(),
+                    }
+                });
+            }
+            Err(e) => {
+                show_message!(MessageType::Error, {
+                    Message {
+                        action: "Failed".to_string(),
+                        details: format!(
+                            "Processing initial infrastructure changes failed:\n{e:?}"
+                        ),
+                    }
+                });
+            }
+        }
+    }
+
     // Track if we've seen the first compilation in this watcher session.
     // If initial_compilation_done is true, we start as "already seen first".
     let mut seen_first_compile = initial_compilation_done;
@@ -391,8 +517,6 @@ async fn watch(
                         match serde_json::from_str::<CompileEvent>(&line) {
                             Ok(event) => {
                                 if event.is_compile_start() {
-                                    // Always show "Compiling" for incremental builds
-                                    // (we skip it during initial startup which is handled separately)
                                     if seen_first_compile {
                                         show_message!(MessageType::Info, {
                                             Message {
@@ -403,20 +527,12 @@ async fn watch(
                                     }
                                 } else if event.is_compile_error() {
                                     display_compilation_errors(&event);
-                                    // Mark that we've seen the first compile event
                                     seen_first_compile = true;
                                 } else if event.is_compile_complete() {
-                                    // Skip processing for the very first compile_complete if we spawned
-                                    // tspc fresh (initial_compilation_done was false). In that case,
-                                    // start_development_mode already called plan_changes() after the
-                                    // initial compilation, so we don't want to trigger a duplicate.
-                                    //
-                                    // If initial_compilation_done was true (handle passed in),
-                                    // spawn_and_await_initial_compile() consumed the initial event,
-                                    // so ALL events here are incremental and should trigger plan_changes.
+                                    // Skip the first compile_complete if tspc was spawned fresh
+                                    // (initial_compilation_done was false). The initial plan was
+                                    // already handled by the pre-loop pass above.
                                     if !seen_first_compile {
-                                        // This is the first compile_complete in legacy mode.
-                                        // Display success but DON'T trigger plan_changes.
                                         display_compilation_success(&event);
                                         seen_first_compile = true;
                                         continue;
@@ -457,14 +573,14 @@ async fn watch(
                                                     .await?;
 
                                                     spinner_handle.pause();
-                                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy).await? {
+                                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy, prompt_bridge.as_ref()).await? {
                                                         Some(drops) => drops,
                                                         None => return Ok(false),
                                                     };
 
                                                     let mut risk = classify_plan_risk(&plan_result.changes);
                                                     risk.exclude_approved_drops(&approved_drops);
-                                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
+                                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy, prompt_bridge.as_ref()).await;
                                                     if !proceed? {
                                                         return Ok(false);
                                                     }
@@ -643,6 +759,7 @@ impl TsCompilationWatcher {
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
         confirmation_policy: ConfirmationPolicy,
+        prompt_bridge: Option<PromptBridge>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -659,6 +776,7 @@ impl TsCompilationWatcher {
                 shutdown_rx,
                 initial_handle,
                 confirmation_policy,
+                prompt_bridge,
             )
             .await
         };

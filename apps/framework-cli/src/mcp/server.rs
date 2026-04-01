@@ -13,10 +13,11 @@ use std::sync::Arc;
 use tracing::info;
 
 use super::tools::{
-    all_tool_definitions, create_error_result, infra_issues, infra_map, logs, query_olap,
+    all_tool_definitions, create_error_result, infra_issues, infra_map, logs, prompt, query_olap,
     sample_stream,
 };
 use crate::cli::processing_coordinator::ProcessingCoordinator;
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
@@ -30,6 +31,7 @@ pub struct MooseMcpHandler {
     clickhouse_config: ClickHouseConfig,
     kafka_config: Arc<KafkaConfig>,
     processing_coordinator: ProcessingCoordinator,
+    prompt_bridge: PromptBridge,
 }
 
 impl MooseMcpHandler {
@@ -41,6 +43,7 @@ impl MooseMcpHandler {
         clickhouse_config: ClickHouseConfig,
         kafka_config: Arc<KafkaConfig>,
         processing_coordinator: ProcessingCoordinator,
+        prompt_bridge: PromptBridge,
     ) -> Self {
         Self {
             server_name,
@@ -49,6 +52,7 @@ impl MooseMcpHandler {
             clickhouse_config,
             kafka_config,
             processing_coordinator,
+            prompt_bridge,
         }
     }
 }
@@ -124,6 +128,9 @@ impl ServerHandler for MooseMcpHandler {
                 self.kafka_config.clone(),
             )
             .await),
+            "respond_to_prompt" => {
+                Ok(prompt::handle_call(param.arguments.as_ref(), &self.prompt_bridge).await)
+            }
             _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
         }
     }
@@ -138,6 +145,7 @@ impl ServerHandler for MooseMcpHandler {
 /// * `clickhouse_config` - ClickHouse configuration for database access
 /// * `kafka_config` - Kafka configuration for streaming operations
 /// * `processing_coordinator` - Coordinator for synchronizing with file watcher
+/// * `prompt_bridge` - Bridge for MCP-driven prompt responses
 ///
 /// # Returns
 /// * `StreamableHttpService` - HTTP service that can handle MCP requests
@@ -148,6 +156,7 @@ pub fn create_mcp_http_service(
     clickhouse_config: ClickHouseConfig,
     kafka_config: Arc<KafkaConfig>,
     processing_coordinator: ProcessingCoordinator,
+    prompt_bridge: PromptBridge,
 ) -> StreamableHttpService<MooseMcpHandler, LocalSessionManager> {
     info!(
         "[MCP] Creating MCP HTTP service: {} v{}",
@@ -173,6 +182,7 @@ pub fn create_mcp_http_service(
                 clickhouse_config.clone(),
                 kafka_config.clone(),
                 processing_coordinator.clone(),
+                prompt_bridge.clone(),
             ))
         },
         session_manager,
@@ -198,25 +208,10 @@ mod tests {
 
     #[test]
     fn test_list_tools_count() {
-        // Test that all expected tools are returned
-        let logs_tool = logs::tool_definition();
-        let infra_tool = infra_map::tool_definition();
-        let infra_issues_tool = infra_issues::tool_definition();
-        let olap_tool = query_olap::tool_definition();
-        let stream_tool = sample_stream::tool_definition();
+        let all_tools = all_tool_definitions();
+        assert_eq!(all_tools.len(), 6);
 
-        // Ensure we have 5 tools
-        let all_tools = vec![
-            &logs_tool,
-            &infra_tool,
-            &infra_issues_tool,
-            &olap_tool,
-            &stream_tool,
-        ];
-        assert_eq!(all_tools.len(), 5);
-
-        // Verify each tool has required fields
-        for tool in all_tools {
+        for tool in &all_tools {
             assert!(!tool.name.is_empty());
             assert!(tool.description.is_some());
             assert!(!tool.input_schema.is_empty());
@@ -225,25 +220,19 @@ mod tests {
 
     #[test]
     fn test_tool_names_are_consistent() {
-        // Ensure tool names match between routing and definitions
         let expected_tools = [
             "get_logs",
             "get_infra_map",
+            "get_issues",
             "query_olap",
             "get_stream_sample",
-            "get_issues",
+            "respond_to_prompt",
         ];
 
-        let logs_tool = logs::tool_definition();
-        let infra_tool = infra_map::tool_definition();
-        let olap_tool = query_olap::tool_definition();
-        let stream_tool = sample_stream::tool_definition();
-        let infra_issues_tool = infra_issues::tool_definition();
-
-        assert_eq!(logs_tool.name, expected_tools[0]);
-        assert_eq!(infra_tool.name, expected_tools[1]);
-        assert_eq!(olap_tool.name, expected_tools[2]);
-        assert_eq!(stream_tool.name, expected_tools[3]);
-        assert_eq!(infra_issues_tool.name, expected_tools[4]);
+        let tools = all_tool_definitions();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        for expected in &expected_tools {
+            assert!(tool_names.contains(expected), "Missing tool: {expected}");
+        }
     }
 }
