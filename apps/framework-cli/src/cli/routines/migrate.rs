@@ -325,9 +325,8 @@ fn validate_table_databases_and_clusters(
     additional_databases: &[String],
     clusters: &Option<Vec<ClusterConfig>>,
 ) -> Result<()> {
-    let mut invalid_tables = Vec::new();
-    let mut invalid_clusters = Vec::new();
-    let mut malformed_cluster_macros = Vec::new();
+    let mut invalid_resources = Vec::new();
+    let mut invalid_resource_clusters = Vec::new();
 
     // Get configured cluster names
     let cluster_names: Vec<String> = clusters
@@ -337,46 +336,34 @@ fn validate_table_databases_and_clusters(
 
     tracing::info!("Configured cluster names: {:?}", cluster_names);
 
-    // Helper to validate database and cluster options
-    let mut validate = |db_opt: &Option<String>, cluster_opt: &Option<String>, table_name: &str| {
-        tracing::info!(
-            "Validating table '{}' with cluster: {:?}",
-            table_name,
-            cluster_opt
-        );
-        // Validate database
-        if let Some(db) = db_opt {
-            if db != primary_database && !additional_databases.contains(db) {
-                invalid_tables.push((table_name.to_string(), db.clone()));
-            }
-        }
-        // Validate cluster
-        if let Some(cluster) = cluster_opt {
+    // Helper to validate database and cluster options for any resource (table, dictionary, etc.)
+    let mut validate =
+        |db_opt: &Option<String>, cluster_opt: &Option<String>, resource_name: &str| {
             tracing::info!(
-                "Checking if cluster '{}' is in {:?}",
-                cluster,
-                cluster_names
+                "Validating resource '{}' with cluster: {:?}",
+                resource_name,
+                cluster_opt
             );
-
-            match macro_use_legal(cluster) {
-                Some(true) => {}
-                Some(false) => {
-                    tracing::info!(
-                        "Cluster '{}' uses malformed macro syntax for table '{}'",
-                        cluster,
-                        table_name
-                    );
-                    malformed_cluster_macros.push((table_name.to_string(), cluster.clone()));
-                }
-                None => {
-                    if cluster_names.is_empty() || !cluster_names.contains(cluster) {
-                        tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
-                        invalid_clusters.push((table_name.to_string(), cluster.clone()));
-                    }
+            // Validate database
+            if let Some(db) = db_opt {
+                if db != primary_database && !additional_databases.contains(db) {
+                    invalid_resources.push((resource_name.to_string(), db.clone()));
                 }
             }
-        }
-    };
+            // Validate cluster
+            if let Some(cluster) = cluster_opt {
+                tracing::info!(
+                    "Checking if cluster '{}' is in {:?}",
+                    cluster,
+                    cluster_names
+                );
+                // Fail if cluster is not in the configured list (or if list is empty)
+                if cluster_names.is_empty() || !cluster_names.contains(cluster) {
+                    tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
+                    invalid_resource_clusters.push((resource_name.to_string(), cluster.clone()));
+                }
+            }
+        };
 
     for operation in operations {
         match operation {
@@ -524,22 +511,20 @@ fn validate_table_databases_and_clusters(
     }
 
     // Build error message if we found any issues
-    let has_errors = !invalid_tables.is_empty()
-        || !invalid_clusters.is_empty()
-        || !malformed_cluster_macros.is_empty();
+    let has_errors = !invalid_resources.is_empty() || !invalid_resource_clusters.is_empty();
     if has_errors {
         let mut error_message = String::new();
 
         // Report database errors
-        if !invalid_tables.is_empty() {
+        if !invalid_resources.is_empty() {
             error_message.push_str(
-                "One or more tables specify databases that are not configured in moose.config.toml:\n\n",
+                "One or more resources specify databases that are not configured in moose.config.toml:\n\n",
             );
 
-            for (table_name, database) in &invalid_tables {
+            for (resource_name, database) in &invalid_resources {
                 error_message.push_str(&format!(
-                    "  • Table '{}' specifies database '{}'\n",
-                    table_name, database
+                    "  • Resource '{}' specifies database '{}'\n",
+                    resource_name, database
                 ));
             }
 
@@ -551,7 +536,7 @@ fn validate_table_databases_and_clusters(
             error_message.push_str("additional_databases = [");
 
             let mut all_databases: Vec<String> = additional_databases.to_vec();
-            for (_, db) in &invalid_tables {
+            for (_, db) in &invalid_resources {
                 if !all_databases.contains(db) {
                     all_databases.push(db.clone());
                 }
@@ -586,19 +571,19 @@ fn validate_table_databases_and_clusters(
         }
 
         // Report cluster errors
-        if !invalid_clusters.is_empty() {
-            if !invalid_tables.is_empty() || !malformed_cluster_macros.is_empty() {
+        if !invalid_resource_clusters.is_empty() {
+            if !invalid_resources.is_empty() {
                 error_message.push('\n');
             }
 
             error_message.push_str(
-                "One or more tables specify clusters that are not configured in moose.config.toml:\n\n",
+                "One or more resources specify clusters that are not configured in moose.config.toml:\n\n",
             );
 
-            for (table_name, cluster) in &invalid_clusters {
+            for (resource_name, cluster) in &invalid_resource_clusters {
                 error_message.push_str(&format!(
-                    "  • Table '{}' specifies cluster '{}'\n",
-                    table_name, cluster
+                    "  • Resource '{}' specifies cluster '{}'\n",
+                    resource_name, cluster
                 ));
             }
 
@@ -607,7 +592,7 @@ fn validate_table_databases_and_clusters(
             );
 
             // Only show the missing clusters in the error message, not the already configured ones
-            let mut missing_clusters: Vec<String> = invalid_clusters
+            let mut missing_clusters: Vec<String> = invalid_resource_clusters
                 .iter()
                 .map(|(_, cluster)| cluster.clone())
                 .collect();

@@ -2075,7 +2075,8 @@ async fn execute_create_dictionary(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_create_if_not_exists_sql();
-    tracing::debug!("Creating dictionary: {}", sql);
+    // Do not log the full SQL — source clauses may contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.)
+    tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -2092,7 +2093,8 @@ async fn execute_replace_dictionary(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_replace_sql();
-    tracing::debug!("Replacing dictionary: {}", sql);
+    // Do not log the full SQL — source clauses may contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.)
+    tracing::debug!("Replacing dictionary: {} (SQL redacted)", dict.name);
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -2109,7 +2111,7 @@ async fn execute_drop_dictionary(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_drop_sql();
-    tracing::debug!("Dropping dictionary: {}", sql);
+    tracing::debug!("Dropping dictionary: {}", dict.name);
     run_query(&sql, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
