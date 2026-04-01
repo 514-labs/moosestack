@@ -5,7 +5,7 @@ This module provides functions to access the registered resources.
 The actual registry dictionaries are maintained in _registry.py to avoid circular dependencies.
 """
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from .olap_table import OlapTable
 from .stream import Stream
 from .ingest_api import IngestApi
@@ -25,6 +25,7 @@ from ._registry import (
     _web_apps,
     _materialized_views,
     _views,
+    _olap_dictionaries,
 )
 from .materialized_view import MaterializedView
 from .view import View
@@ -135,6 +136,16 @@ def get_views() -> Dict[str, "View"]:
 def get_view(name: str) -> Optional["View"]:
     """Get a registered view by name."""
     return _views.get(name)
+
+
+def get_olap_dictionaries() -> dict:
+    """Get all registered OLAP dictionaries."""
+    return _olap_dictionaries
+
+
+def get_olap_dictionary(name: str) -> Optional[Any]:
+    """Get a registered OLAP dictionary by name."""
+    return _olap_dictionaries.get(name)
 
 
 # Backward compatibility aliases (deprecated)

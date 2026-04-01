@@ -9,4 +9,5 @@ from src.ingest import kafka_tests  # Import Kafka engine tests
 import src.apis.bar as bar_api
 from src.apis.webapp_bar import bar_fastapi_app
 import src.views.bar_aggregated as bar_view
+import src.views.dictionary_tests as dictionary_tests  # Dictionary E2E tests
 from src.workflows.generator import ingest_workflow, ingest_task

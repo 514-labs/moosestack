@@ -35,6 +35,11 @@ export {
   WebAppConfig,
   WebAppHandler,
   FrameworkApp,
+  OlapDictionary,
+  OlapDictionaryConfig,
+  DictionaryLayoutConfig,
+  DictionaryLifetimeConfig,
+  DictionarySourceConfig,
   // Registry functions
   getTables,
   getTable,
@@ -56,6 +61,8 @@ export {
   getMaterializedViews,
   getSelectRowPolicies,
   getSelectRowPolicy,
+  getDictionaries,
+  getDictionary,
 } from "./dmv2";
 
 export {

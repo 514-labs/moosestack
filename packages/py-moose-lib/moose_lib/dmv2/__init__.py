@@ -72,6 +72,10 @@ from .materialized_view import (
     MaterializedView,
 )
 
+from .olap_dictionary import (
+    OlapDictionary,
+)
+
 from .workflow import (
     TaskContext,
     TaskConfig,
@@ -115,6 +119,8 @@ from .registry import (
     get_materialized_view,
     get_views,
     get_view,
+    get_olap_dictionaries,
+    get_olap_dictionary,
     # Backward compatibility aliases
     get_consumption_apis,
     get_consumption_api,
@@ -165,6 +171,7 @@ __all__ = [
     "View",
     "MaterializedViewOptions",
     "MaterializedView",
+    "OlapDictionary",
     # Workflow
     "TaskContext",
     "TaskConfig",
@@ -199,6 +206,8 @@ __all__ = [
     "get_materialized_view",
     "get_views",
     "get_view",
+    "get_olap_dictionaries",
+    "get_olap_dictionary",
     # Backward compatibility aliases (deprecated)
     "get_consumption_apis",
     "get_consumption_api",

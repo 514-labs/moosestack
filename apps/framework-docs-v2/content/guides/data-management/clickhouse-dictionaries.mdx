@@ -1,0 +1,384 @@
+---
+title: Speed up enrichment lookups with ClickHouse Dictionaries
+description: Use OlapDictionary to replace expensive JOIN operations with fast in-memory lookups
+---
+
+import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+
+# Speed up enrichment lookups with ClickHouse Dictionaries
+
+ClickHouse Dictionaries are in-memory key-value stores that let you replace `JOIN` operations with instant `dictGet` lookups. This guide walks through a real-world pattern: enriching click events with product metadata from a catalog table, using `OlapDictionary` and a `MaterializedView`.
+
+<BulletPointsCard
+  title="What you will build"
+  bulletStyle="number"
+  compact
+  bullets={[
+    "A products catalog OlapTable as the dictionary source",
+    "An OlapDictionary with HASHED layout over the catalog",
+    "A MaterializedView that enriches raw click events with product names at write time",
+    "A COMPLEX_KEY_HASHED variant for composite keys with getOrDefault()"
+  ]}
+/>
+
+<Callout type="info" title="Prerequisites" compact>
+ClickHouse 22.4 or later is required. `OlapDictionary` uses `CREATE OR REPLACE DICTIONARY` for atomic updates.
+</Callout>
+
+## Step 1 — Create the source OlapTable
+
+Define the product catalog. This table will be the dictionary source.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ProductCatalog.ts" copy
+import { OlapTable, Key, ClickHouseInt } from "@514labs/moose-lib";
+
+interface Product {
+  productId: Key<string>;       // primary key → UInt64 not needed here since layout is HASHED by productId (string key → use COMPLEX_KEY_HASHED)
+  productName: string;
+  category: string;
+  priceUsd: number;
+  updatedAt: Date;
+}
+
+export const ProductCatalog = new OlapTable<Product>("product_catalog", {
+  orderByFields: ["productId"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="product_catalog.py" copy
+from moose_lib import OlapTable, OlapConfig, Key
+from pydantic import BaseModel
+from datetime import datetime
+
+class Product(BaseModel):
+    product_id: Key[str]
+    product_name: str
+    category: str
+    price_usd: float
+    updated_at: datetime
+
+product_catalog = OlapTable[Product]("product_catalog", OlapConfig(
+    order_by_fields=["product_id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Step 2 — Define an OlapDictionary over the catalog
+
+The dictionary caches product name and category in memory, keyed by `productId`. Because `productId` is a string (not a `UInt64`), we use `COMPLEX_KEY_HASHED`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ProductDict.ts" copy
+import { OlapDictionary } from "@514labs/moose-lib";
+import { ProductCatalog } from "./ProductCatalog";
+
+// Only expose the columns needed for lookups — keep the dictionary small
+interface ProductLookup {
+  productId: string;
+  productName: string;
+  category: string;
+}
+
+export const ProductDict = new OlapDictionary<ProductLookup>("dict_product_catalog", {
+  sourceTable: ProductCatalog,              // auto-tracks dependency
+  primaryKey: ["productId"],
+  layout: { type: "COMPLEX_KEY_HASHED" },  // string key → complex key layout
+  lifetime: { min: 60, max: 120 },         // refresh every 60–120 seconds
+  defaults: {
+    productName: "Unknown Product",
+    category: "Uncategorized",
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="product_dict.py" copy
+from moose_lib import OlapDictionary, OlapDictionaryConfig, ComplexKeyHashedLayout, DictionaryLifetime
+from pydantic import BaseModel
+from .product_catalog import product_catalog
+
+# Only expose the columns needed for lookups — keep the dictionary small
+class ProductLookup(BaseModel):
+    product_id: str
+    product_name: str
+    category: str
+
+product_dict = OlapDictionary[ProductLookup](
+    name="dict_product_catalog",
+    config=OlapDictionaryConfig(
+        source_table=product_catalog,             # auto-tracks dependency
+        primary_key=["product_id"],
+        layout=ComplexKeyHashedLayout(),          # string key → complex key layout
+        lifetime=DictionaryLifetime(min=60, max=120),
+        defaults={
+            "product_name": "Unknown Product",
+            "category": "Uncategorized",
+        },
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="HASHED vs. COMPLEX_KEY_HASHED" compact>
+Use `HASHED` only when your primary key is a single `UInt64` column. For string keys, composite keys, or any non-UInt64 type, use `COMPLEX_KEY_HASHED`. Moose validates this at startup and raises a clear error if the layout and key type are incompatible.
+</Callout>
+
+## Step 3 — Enrich click events in a MaterializedView
+
+The materialized view runs at write time: every row inserted into `RawClicks` triggers the SELECT and writes an enriched row to `EnrichedClicks`. The dictionary lookup is a single `dictGet` call — no JOIN, no network round-trip.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="EnrichClicksMV.ts" copy
+import { OlapTable, MaterializedView, Key, sql } from "@514labs/moose-lib";
+import { ProductDict } from "./ProductDict";
+
+// Source: raw click events
+interface RawClick {
+  clickId: Key<string>;
+  productId: string;
+  userId: string;
+  clickedAt: Date;
+}
+export const RawClicks = new OlapTable<RawClick>("raw_clicks", {
+  orderByFields: ["clickId"],
+});
+
+// Destination: enriched click events
+interface EnrichedClick {
+  clickId: string;
+  productId: string;
+  productName: string;
+  category: string;
+  userId: string;
+  clickedAt: Date;
+}
+export const EnrichedClicks = new OlapTable<EnrichedClick>("enriched_clicks", {
+  orderByFields: ["clickId"],
+});
+
+// Materialized view: enrich at write time using the dictionary
+export const EnrichClicksMV = new MaterializedView<EnrichedClick>({
+  selectStatement: sql`
+    SELECT
+      clickId,
+      productId,
+      ${ProductDict.get("productName", sql`productId`)} AS productName,
+      ${ProductDict.get("category",     sql`productId`)} AS category,
+      userId,
+      clickedAt
+    FROM ${RawClicks}
+  `,
+  selectTables: [RawClicks],
+  targetTable: EnrichedClicks,
+  materializedViewName: "mv_enrich_clicks",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="enrich_clicks_mv.py" copy
+from moose_lib import OlapTable, OlapConfig, MaterializedView, MaterializedViewOptions, Key, sql
+from pydantic import BaseModel
+from datetime import datetime
+from .product_dict import product_dict
+
+# Source: raw click events
+class RawClick(BaseModel):
+    click_id: Key[str]
+    product_id: str
+    user_id: str
+    clicked_at: datetime
+
+raw_clicks = OlapTable[RawClick]("raw_clicks", OlapConfig(
+    order_by_fields=["click_id"],
+))
+
+# Destination: enriched click events
+class EnrichedClick(BaseModel):
+    click_id: str
+    product_id: str
+    product_name: str
+    category: str
+    user_id: str
+    clicked_at: datetime
+
+enriched_clicks = OlapTable[EnrichedClick]("enriched_clicks", OlapConfig(
+    order_by_fields=["click_id"],
+))
+
+# Materialized view: enrich at write time using the dictionary
+enrich_clicks_mv = MaterializedView[EnrichedClick](MaterializedViewOptions(
+    select_statement=f"""
+        SELECT
+            click_id,
+            product_id,
+            {product_dict.get("product_name", "product_id")} AS product_name,
+            {product_dict.get("category",     "product_id")} AS category,
+            user_id,
+            clicked_at
+        FROM {raw_clicks}
+    """,
+    select_tables=[raw_clicks],
+    target_table=enriched_clicks,
+    materialized_view_name="mv_enrich_clicks",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Step 4 — Verify the enrichment
+
+After starting Moose dev (`moose dev`), insert a product and a click event, then query the enriched table.
+
+```sql
+-- 1. Insert a product into the catalog
+INSERT INTO product_catalog VALUES
+  ('prod-42', 'Wireless Keyboard', 'Electronics', 79.99, now());
+
+-- 2. Insert a raw click event
+INSERT INTO raw_clicks VALUES
+  ('click-001', 'prod-42', 'user-007', now());
+
+-- 3. Query enriched clicks — product name and category should appear
+SELECT click_id, product_id, product_name, category, clicked_at
+FROM enriched_clicks
+WHERE click_id = 'click-001';
+```
+
+Expected output:
+
+```
+click_id   │ product_id │ product_name       │ category    │ clicked_at
+───────────┼────────────┼────────────────────┼─────────────┼──────────────────────
+click-001  │ prod-42    │ Wireless Keyboard  │ Electronics │ 2026-04-01 12:00:00
+```
+
+<Callout type="info" title="Dictionary refresh lag" compact>
+The dictionary loads from the source table when ClickHouse starts, then refreshes on the configured `lifetime` schedule. If you insert a product and immediately insert a click, the dictionary may not yet contain the new product. The `defaults` values will be used until the next refresh. For instant consistency, set `lifetime: 0` (static) and reload manually, or use a `sourceQuery` with `FINAL` on a ReplacingMergeTree.
+</Callout>
+
+## Composite key variant — COMPLEX_KEY_HASHED with getOrDefault
+
+Some lookup tables use composite keys — for example, a partition routing table keyed on both table name and shard. Here is how to model that pattern with `getOrDefault()`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="PartitionStrategy.ts" copy
+import { OlapTable, OlapDictionary, MaterializedView, Key, sql } from "@514labs/moose-lib";
+
+// Source: partition routing config
+interface PartitionStrategy {
+  tableName: Key<string>;
+  shardId: Key<string>;
+  strategy: string; // e.g. "WEEK", "MONTH", "DAY"
+}
+
+export const PartitionStrategies = new OlapTable<PartitionStrategy>("partition_strategies", {
+  orderByFields: ["tableName", "shardId"],
+});
+
+// Dictionary schema mirrors the source
+interface PartitionLookup {
+  tableName: string;
+  shardId: string;
+  strategy: string;
+}
+
+export const PartitionDict = new OlapDictionary<PartitionLookup>("dict_partition_strategies", {
+  sourceTable: PartitionStrategies,
+  primaryKey: ["tableName", "shardId"],   // composite key
+  layout: { type: "COMPLEX_KEY_HASHED" },
+  lifetime: { min: 60, max: 300 },
+  defaults: { strategy: "WEEK" },          // default when key not found
+});
+
+// Use getOrDefault() in a materialized view CTE
+// The composite key is automatically wrapped in tuple()
+export const RoutedEventsMV = new MaterializedView<RoutedEvent>({
+  selectStatement: sql`
+    WITH
+      ${PartitionDict.getOrDefault("strategy", sql`tableName, shardId`, sql`'WEEK'`)} AS partitionStrategy
+    SELECT
+      eventId,
+      tableName,
+      shardId,
+      partitionStrategy,
+      payload,
+      eventAt
+    FROM ${RawEventsTable}
+  `,
+  selectTables: [RawEventsTable],
+  targetTable: RoutedEventsTable,
+  materializedViewName: "mv_routed_events",
+});
+// dictGetOrDefault('local.dict_partition_strategies', 'strategy', tuple(tableName, shardId), 'WEEK')
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="partition_strategy.py" copy
+from moose_lib import OlapTable, OlapConfig, OlapDictionary, OlapDictionaryConfig
+from moose_lib import MaterializedView, MaterializedViewOptions, Key
+from moose_lib import ComplexKeyHashedLayout, DictionaryLifetime
+from pydantic import BaseModel
+
+# Source: partition routing config
+class PartitionStrategy(BaseModel):
+    table_name: Key[str]
+    shard_id: Key[str]
+    strategy: str  # e.g. "WEEK", "MONTH", "DAY"
+
+partition_strategies = OlapTable[PartitionStrategy]("partition_strategies", OlapConfig(
+    order_by_fields=["table_name", "shard_id"],
+))
+
+# Dictionary schema mirrors the source
+class PartitionLookup(BaseModel):
+    table_name: str
+    shard_id: str
+    strategy: str
+
+partition_dict = OlapDictionary[PartitionLookup](
+    name="dict_partition_strategies",
+    config=OlapDictionaryConfig(
+        source_table=partition_strategies,
+        primary_key=["table_name", "shard_id"],   # composite key
+        layout=ComplexKeyHashedLayout(),
+        lifetime=DictionaryLifetime(min=60, max=300),
+        defaults={"strategy": "WEEK"},              # default when key not found
+    ),
+)
+
+# Use get_or_default() in a materialized view CTE
+# The composite key is automatically wrapped in tuple()
+routed_events_mv = MaterializedView[RoutedEvent](MaterializedViewOptions(
+    select_statement=f"""
+        WITH
+            {partition_dict.get_or_default("strategy", ("table_name", "shard_id"), "'WEEK'")} AS partition_strategy
+        SELECT
+            event_id,
+            table_name,
+            shard_id,
+            partition_strategy,
+            payload,
+            event_at
+        FROM {raw_events_table}
+    """,
+    select_tables=[raw_events_table],
+    target_table=routed_events_table,
+    materialized_view_name="mv_routed_events",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Next steps
+
+- Read the full [OlapDictionary SDK reference](/moosestack/olap/olap-dictionary) for all layout types, lifetime options, and external source configurations.
+- For dictionaries sourced from external systems (MySQL, MongoDB, HTTP), see the [external source examples](/moosestack/olap/olap-dictionary#externalsource--external_source--external-systems) in the SDK reference.
+- To reference a dictionary managed outside Moose, set `lifeCycle: LifeCycle.EXTERNALLY_MANAGED` and import it as a reference without creating it.

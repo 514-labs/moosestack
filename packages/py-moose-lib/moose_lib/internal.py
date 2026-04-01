@@ -26,6 +26,7 @@ from moose_lib.dmv2 import (
     get_web_apps,
     get_materialized_views,
     get_views,
+    get_olap_dictionaries,
     OlapTable,
     OlapConfig,
     SqlResource,
@@ -570,6 +571,7 @@ class InfrastructureMap(BaseModel):
         web_apps: Dictionary mapping WebApp names to their configurations.
         materialized_views: Dictionary mapping MV names to their structured configurations.
         views: Dictionary mapping view names to their structured configurations.
+        olap_dictionaries: Dictionary mapping OLAP dictionary names to their JSON configurations.
         unloaded_files: List of source files that exist but weren't loaded.
     """
 
@@ -584,6 +586,7 @@ class InfrastructureMap(BaseModel):
     web_apps: dict[str, WebAppJson]
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
+    olap_dictionaries: dict[str, Any] = {}
     unloaded_files: list[str] = []
 
 
@@ -994,6 +997,7 @@ def to_infra_map() -> dict:
     web_apps = {}
     materialized_views = {}
     views = {}
+    olap_dictionaries = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -1197,6 +1201,10 @@ def to_infra_map() -> dict:
             metadata=getattr(view, "metadata", None),
         )
 
+    # Serialize OLAP dictionaries
+    for name, dictionary in get_olap_dictionaries().items():
+        olap_dictionaries[name] = dictionary.to_json()
+
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
@@ -1207,6 +1215,7 @@ def to_infra_map() -> dict:
         web_apps=web_apps,
         materialized_views=materialized_views,
         views=views,
+        olap_dictionaries=olap_dictionaries,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)
