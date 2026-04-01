@@ -535,7 +535,7 @@ Export the `WebApp` from `app/index.ts` so MooseStack discovers it.
 
 ### Single agent vs multi-agent
 
-The template ships with a multi-agent flow: supervisor → specialist → narrator. Before customizing, decide whether to keep it or simplify to a single agent.
+The template ships with a single agent approach, and a multi-agent flow (supervisor → specialist → narrator). The template defaults to single agent (`createAgentStream`). To use the full multi-agent flow, switch to `createMultiAgentStream` in `packages/web-app/src/lib/chat-agent.ts`. The reference multi-agent implementation lives in `packages/agent-runtime/src/streams/create-multi-agent-stream.ts`.
 
 **Single agent** — one LLM call per message with all tools available. Lower latency, easier to debug. Good for most domain-specific analytics use cases where routing adds no value.
 
@@ -546,8 +546,6 @@ The template ships with a multi-agent flow: supervisor → specialist → narrat
 - Complex workflows where decomposition genuinely improves response quality
 
 For guidance on the tradeoffs, see Anthropic's [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) — particularly the sections on routing workflows vs autonomous agents.
-
-The template defaults to single agent (`createAgentStream`). To use the full multi-agent flow, switch to `createMultiAgentStream` in `packages/web-app/src/lib/chat-agent.ts`. The reference multi-agent implementation lives in `packages/agent-runtime/src/streams/create-multi-agent-stream.ts`.
 
 ### Edit the system prompt
 
@@ -707,7 +705,7 @@ The template is pre-configured for deployment to 514 hosting (MooseStack service
 
 ### Deploy the MooseStack service
 
-Go to [boreal.cloud](https://boreal.cloud), create a project, connect your GitHub repo, and set the project root to `packages/moosestack-service`.
+Go to [https://fiveonefour.boreal.cloud/sign-up](https://fiveonefour.boreal.cloud/sign-up), create a project, connect your GitHub repo, and set the project root to `packages/moosestack-service` or wherever your MooseStack service lives.
 
 Set environment variables in the 514 hosting project settings:
 
