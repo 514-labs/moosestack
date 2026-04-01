@@ -5,6 +5,7 @@
 
 use super::{RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint};
+use crate::infrastructure::olap::clickhouse::dictionary::DictionarySource;
 use crate::framework::core::infrastructure::function_process::FunctionProcess;
 use crate::framework::core::infrastructure::topic::Topic;
 use crate::framework::core::infrastructure::topic_sync_process::TopicToTableSyncProcess;
@@ -293,6 +294,32 @@ impl ResourceInfo for Vec<WebAppInfo> {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DictionaryInfo {
+    pub name: String,
+    pub source_type: String,
+    pub layout: String,
+}
+
+impl ResourceInfo for Vec<DictionaryInfo> {
+    fn show(&self) {
+        show_table(
+            "Dictionaries".to_string(),
+            vec![
+                "name".to_string(),
+                "source_type".to_string(),
+                "layout".to_string(),
+            ],
+            self.iter()
+                .map(|d| vec![d.name.clone(), d.source_type.clone(), d.layout.clone()])
+                .collect(),
+        )
+    }
+    fn to_json_string(&self) -> Result<String, Error> {
+        serde_json::to_string_pretty(&self)
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct ResourceListing {
     pub tables: Vec<TableInfo>,
     pub streams: Vec<StreamInfo>,
@@ -302,6 +329,7 @@ pub struct ResourceListing {
     pub stream_transformations: Vec<StreamTransformationInfo>,
     pub workflows: Vec<WorkflowInfo>,
     pub web_apps: Vec<WebAppInfo>,
+    pub dictionaries: Vec<DictionaryInfo>,
 }
 
 impl ResourceInfo for ResourceListing {
@@ -314,6 +342,7 @@ impl ResourceInfo for ResourceListing {
         self.stream_transformations.show();
         self.workflows.show();
         self.web_apps.show();
+        self.dictionaries.show();
     }
 
     fn to_json_string(&self) -> Result<String, Error> {
@@ -391,6 +420,24 @@ pub async fn ls(
             .filter(|app| name.is_none_or(|n| app.name.contains(n)))
             .map(Into::into)
             .collect(),
+        dictionaries: infra_map
+            .olap_dictionaries
+            .into_values()
+            .filter(|d| name.is_none_or(|n| d.name.contains(n)))
+            .map(|d| DictionaryInfo {
+                name: d.id(&default_database),
+                source_type: match &d.source {
+                    DictionarySource::Table(_) => "table".to_string(),
+                    DictionarySource::Query(_) => "query".to_string(),
+                    DictionarySource::External(_) => "external".to_string(),
+                },
+                layout: format!("{:?}", d.layout)
+                    .split(['{', ' '])
+                    .next()
+                    .unwrap_or("unknown")
+                    .to_string(),
+            })
+            .collect(),
     };
     let listing: &dyn ResourceInfo = match _type {
         None => &resources,
@@ -401,6 +448,7 @@ pub async fn ls(
         Some("consumption") => &resources.consumption_apis,
         Some("workflows") => &resources.workflows,
         Some("web_apps") => &resources.web_apps,
+        Some("dictionaries") => &resources.dictionaries,
         _ => {
             return Err(RoutineFailure::error(Message::new(
                 "Unknown".to_string(),
