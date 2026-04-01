@@ -309,7 +309,7 @@ pub enum DictionarySource {
     /// Read from an arbitrary SQL query on the local ClickHouse
     Query(DictionaryQuerySource),
     /// Read from an external system
-    External(ExternalDictionarySource),
+    External { source: ExternalDictionarySource },
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
@@ -1036,7 +1036,7 @@ impl OlapDictionary {
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
-            DictionarySource::External(ext) => match ext {
+            DictionarySource::External { source: ext } => match ext {
                 ExternalDictionarySource::Http(h) => {
                     let mut params =
                         vec![format!("URL '{}'", h.url), format!("FORMAT '{}'", h.format)];
@@ -1273,7 +1273,7 @@ impl OlapDictionary {
                     special_fields: Default::default(),
                 },
             )),
-            DictionarySource::External(ext) => {
+            DictionarySource::External { source: ext } => {
                 let external_t = match ext {
                     ExternalDictionarySource::Http(h) => {
                         dictionary_external_source::T::Http(ProtoDictionaryHttpSource {
@@ -1521,7 +1521,7 @@ impl OlapDictionary {
                         })
                     }
                 };
-                DictionarySource::External(ext_source)
+                DictionarySource::External { source: ext_source }
             }
             None => {
                 // Fallback: shouldn't happen in practice — proto is missing source field
@@ -1620,7 +1620,7 @@ impl DataLineage for OlapDictionary {
                     id: Self::table_reference_to_id(&table_ref, default_database),
                 }]
             }
-            DictionarySource::Query(_) | DictionarySource::External(_) => vec![],
+            DictionarySource::Query(_) | DictionarySource::External { .. } => vec![],
         }
     }
 
@@ -2046,12 +2046,12 @@ mod tests {
     fn test_data_lineage_external_source_no_deps() {
         let mut dict = simple_dict("my_dict");
         dict.source =
-            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+            DictionarySource::External { source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://example.com".to_string(),
                 format: "JSONEachRow".to_string(),
                 method: None,
                 where_clause: None,
-            }));
+            }) };
         assert!(dict.pulls_data_from("local").is_empty());
     }
 
@@ -2182,15 +2182,15 @@ mod tests {
     fn test_proto_round_trip_external_http_source() {
         let mut dict = simple_dict("my_dict");
         dict.source =
-            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+            DictionarySource::External { source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://data.example.com/dict".to_string(),
                 format: "CSV".to_string(),
                 method: Some("GET".to_string()),
                 where_clause: None,
-            }));
+            }) };
         let proto = dict.to_proto();
         let restored = OlapDictionary::from_proto(proto);
-        if let DictionarySource::External(ExternalDictionarySource::Http(h)) = &restored.source {
+        if let DictionarySource::External { source: ExternalDictionarySource::Http(h) } = &restored.source {
             assert_eq!(h.url, "http://data.example.com/dict");
             assert_eq!(h.format, "CSV");
             assert_eq!(h.method.as_deref(), Some("GET"));
@@ -2296,13 +2296,36 @@ mod tests {
         }
     }
 
+    // ─── External source JSON round-trip ───────────────────────────────────
+
+    #[test]
+    fn test_serde_external_source_json() {
+        let mut dict = simple_dict("my_dict");
+        dict.source =
+            DictionarySource::External { source: ExternalDictionarySource::Http(DictionaryHttpSource {
+                url: "http://data.example.com".to_string(),
+                format: "JSONEachRow".to_string(),
+                method: None,
+                where_clause: None,
+            }) };
+        let json = serde_json::to_string(&dict).unwrap();
+        // Verify the JSON uses a nested "source" field (no duplicate "type" keys)
+        assert!(json.contains(r#""type":"EXTERNAL""#));
+        assert!(json.contains(r#""source":{"type":"HTTP""#));
+        let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            restored.source,
+            DictionarySource::External { source: ExternalDictionarySource::Http(_) }
+        ));
+    }
+
     // ─── External sources DDL ──────────────────────────────────────────────
 
     #[test]
     fn test_mysql_source_ddl() {
         let mut dict = simple_dict("my_dict");
         dict.source =
-            DictionarySource::External(ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+            DictionarySource::External { source: ExternalDictionarySource::Mysql(DictionaryMysqlSource {
                 host: "mysql.example.com".to_string(),
                 port: 3306,
                 user: "user".to_string(),
@@ -2312,7 +2335,7 @@ mod tests {
                 query: None,
                 where_clause: None,
                 invalidate_query: None,
-            }));
+            }) };
         let sql = dict.to_create_if_not_exists_sql();
         assert!(sql.contains("SOURCE(MYSQL(HOST 'mysql.example.com' PORT 3306"));
     }
@@ -2321,12 +2344,12 @@ mod tests {
     fn test_s3_source_ddl() {
         let mut dict = simple_dict("my_dict");
         dict.source =
-            DictionarySource::External(ExternalDictionarySource::S3(DictionaryS3Source {
+            DictionarySource::External { source: ExternalDictionarySource::S3(DictionaryS3Source {
                 url: "s3://bucket/data.csv".to_string(),
                 format: "CSV".to_string(),
                 access_key_id: None,
                 secret_access_key: None,
-            }));
+            }) };
         let sql = dict.to_create_if_not_exists_sql();
         assert!(sql.contains("SOURCE(S3(URL 's3://bucket/data.csv' FORMAT 'CSV'))"));
     }

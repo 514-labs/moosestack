@@ -25,9 +25,11 @@ from ._registry import (
     _web_apps,
     _materialized_views,
     _views,
+    _olap_dictionaries,
 )
 from .materialized_view import MaterializedView
 from .view import View
+from .olap_dictionary import OlapDictionary
 
 
 def get_tables() -> Dict[str, OlapTable]:
@@ -135,6 +137,16 @@ def get_views() -> Dict[str, "View"]:
 def get_view(name: str) -> Optional["View"]:
     """Get a registered view by name."""
     return _views.get(name)
+
+
+def get_olap_dictionaries() -> Dict[str, OlapDictionary]:
+    """Get all registered OLAP dictionaries."""
+    return _olap_dictionaries
+
+
+def get_olap_dictionary(name: str) -> Optional[OlapDictionary]:
+    """Get a registered OLAP dictionary by name."""
+    return _olap_dictionaries.get(name)
 
 
 # Backward compatibility aliases (deprecated)
