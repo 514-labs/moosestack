@@ -980,7 +980,7 @@ pub async fn start_production_mode(
         migrate::execute_migration_plan(
             &project,
             &project.clickhouse_config,
-            &current_state.tables,
+            &current_state,
             &plan.target_infra_map,
             &*state_storage,
         )
