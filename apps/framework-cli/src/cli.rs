@@ -40,7 +40,7 @@ use routines::scripts::{
     cancel_workflow, get_workflow_status, list_workflows_history, pause_workflow, run_workflow,
     terminate_workflow, unpause_workflow,
 };
-use routines::templates::list_available_templates;
+use routines::templates::{list_available_templates, prompt_for_template_name};
 use tracing::{debug, info, warn};
 
 use settings::Settings;
@@ -466,47 +466,26 @@ pub async fn top_command_handler(
             template,
             no_fail_already_exists,
             from_remote,
-            language,
             custom_dockerfile,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}, custom_dockerfile: {}",
-                name, location, template, language, custom_dockerfile
+                "Running init command with name: {}, location: {:?}, template: {:?}, custom_dockerfile: {}",
+                name, location, template, custom_dockerfile
             );
 
-            // Determine template, prompting for language if needed (especially for --from-remote)
+            // Determine template, prompting when needed.
             let template = match template {
                 Some(t) => t.to_lowercase(),
-                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
-                    Some("typescript") => "typescript-empty".to_string(),
-                    Some("python") => "python-empty".to_string(),
-                    Some(lang) => {
-                        return Err(RoutineFailure::error(Message::new(
-                            "Unknown".to_string(),
-                            format!("language {lang}"),
-                        )));
-                    }
-                    None => {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message::new(
-                                "Init".to_string(),
-                                "Setting up your new Moose project".to_string(),
-                            ),
-                        );
-                        let input = prompt_user(
-                            "Select language [1] TypeScript [2] Python",
-                            Some("1"),
-                            None,
-                        )?
-                        .to_lowercase();
-
-                        match input.as_str() {
-                            "2" | "Python" | "py" => "python-empty".to_string(),
-                            _ => "typescript-empty".to_string(),
-                        }
-                    }
-                },
+                None => {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message::new(
+                            "Init".to_string(),
+                            "Setting up your new Moose project".to_string(),
+                        ),
+                    );
+                    prompt_for_template_name().await?
+                }
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));

@@ -17,12 +17,16 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ### Init
 Initializes a new Moose project.
 ```bash
-moose init <name> --template <template> [--location <location>] [--no-fail-already-exists]
+moose init <name> [template] [--location <location>] [--from-remote [<connection-string>]] [--custom-dockerfile] [--no-fail-already-exists]
 ```
 - `<name>`: Name of your app or service
-- `<template>`: Template to use for the project
+- `[template]`: Optional template to use for the project. Run `moose template list` to see the catalog.
 - `--location`: Optional location for your app or service
+- `--from-remote`: Optionally bootstrap the project from a remote ClickHouse database
+- `--custom-dockerfile`: Generate a custom Dockerfile at the project root for later customization
 - `--no-fail-already-exists`: Skip the directory existence check
+
+If you omit `template`, the CLI prompts you to pick one interactively.
 
 #### List Templates
 Lists available templates for project initialization.
