@@ -20,6 +20,7 @@ def clear_registries():
         _workflows,
         _views,
         _materialized_views,
+        _olap_dictionaries,
     )
 
     # Clear all registries
@@ -33,6 +34,7 @@ def clear_registries():
     _workflows.clear()
     _views.clear()
     _materialized_views.clear()
+    _olap_dictionaries.clear()
 
     yield
 
@@ -47,3 +49,4 @@ def clear_registries():
     _workflows.clear()
     _views.clear()
     _materialized_views.clear()
+    _olap_dictionaries.clear()
