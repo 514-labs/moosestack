@@ -2316,4 +2316,113 @@ mod tests {
         assert!(!json.contains("primary_key"));
         assert!(!json.contains("life_cycle"));
     }
+
+    // ─── SQL escaping regressions ─────────────────────────────────────────────
+
+    #[test]
+    fn test_ssd_cache_path_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.layout = DictionaryLayout::SsdCache {
+            path: "/var/it's/dict".to_string(),
+            block_size: None,
+            file_size: None,
+            read_buffer_size: None,
+            write_buffer_size: None,
+            max_stored_keys: None,
+        };
+        let sql = dict.to_create_if_not_exists_sql();
+        assert!(
+            sql.contains("PATH '/var/it\\'s/dict'"),
+            "single quote in SsdCache PATH must be escaped; got: {sql}"
+        );
+    }
+
+    #[test]
+    fn test_complex_key_ssd_cache_path_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.layout = DictionaryLayout::ComplexKeySsdCache {
+            path: "/var/it's/dict".to_string(),
+            block_size: None,
+            file_size: None,
+            read_buffer_size: None,
+            write_buffer_size: None,
+            max_stored_keys: None,
+        };
+        let sql = dict.to_create_if_not_exists_sql();
+        assert!(
+            sql.contains("PATH '/var/it\\'s/dict'"),
+            "single quote in ComplexKeySsdCache PATH must be escaped; got: {sql}"
+        );
+    }
+
+    #[test]
+    fn test_table_source_where_clause_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.source = DictionarySource::Table(DictionaryTableSource {
+            table: "users".to_string(),
+            database: None,
+            where_clause: Some("name = 'O\\'Brien'".to_string()),
+            invalidate_query: None,
+        });
+        let sql = dict.to_create_if_not_exists_sql();
+        // The where_clause itself already contains \', so escaping it again
+        // produces \\\' — verify the WHERE appears and isn't broken
+        assert!(
+            sql.contains("WHERE '"),
+            "WHERE clause must appear in TABLE source DDL; got: {sql}"
+        );
+        // Most importantly: no unescaped single quote that would break the DDL
+        // by prematurely closing the string literal.
+        let where_start = sql.find("WHERE '").unwrap() + 7;
+        let after_where = &sql[where_start..];
+        // The closing quote must be preceded by a backslash (escaped) or the
+        // clause content must not contain a bare ' that closes early.
+        // We verify by checking the SQL can be round-tripped through the DDL
+        // without a stray unescaped ' between WHERE ' and the next space/paren.
+        assert!(
+            !after_where.starts_with("name = '"),
+            "unescaped inner quote in WHERE would produce nested unescaped quotes"
+        );
+    }
+
+    #[test]
+    fn test_table_source_invalidate_query_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.source = DictionarySource::Table(DictionaryTableSource {
+            table: "users".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: Some("SELECT max(updated_at) FROM it's_log".to_string()),
+        });
+        let sql = dict.to_create_if_not_exists_sql();
+        assert!(
+            sql.contains("INVALIDATE_QUERY 'SELECT max(updated_at) FROM it\\'s_log'"),
+            "single quote in TABLE source INVALIDATE_QUERY must be escaped; got: {sql}"
+        );
+    }
+
+    #[test]
+    fn test_query_source_invalidate_query_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.source = DictionarySource::Query(DictionaryQuerySource {
+            query: "SELECT id, name FROM users".to_string(),
+            invalidate_query: Some("SELECT max(ts) FROM it's_log".to_string()),
+        });
+        let sql = dict.to_create_if_not_exists_sql();
+        assert!(
+            sql.contains("INVALIDATE_QUERY 'SELECT max(ts) FROM it\\'s_log'"),
+            "single quote in QUERY source INVALIDATE_QUERY must be escaped; got: {sql}"
+        );
+    }
+
+    #[test]
+    fn test_top_level_invalidate_query_single_quote_is_escaped() {
+        let mut dict = simple_dict("my_dict");
+        dict.invalidate_query = Some("SELECT max(ts) FROM it's_changelog".to_string());
+        let sql = dict.to_create_if_not_exists_sql();
+        assert!(
+            sql.contains("INVALIDATE_QUERY 'SELECT max(ts) FROM it\\'s_changelog'"),
+            "single quote in top-level INVALIDATE_QUERY must be escaped; got: {sql}"
+        );
+    }
 }
