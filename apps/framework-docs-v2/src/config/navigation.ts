@@ -1753,6 +1753,12 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Tutorial",
         languages: ["typescript"],
       },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/tutorial-v2",
+        title: "Tutorial v2",
+        languages: ["typescript"],
+      },
     ],
   },
   {
