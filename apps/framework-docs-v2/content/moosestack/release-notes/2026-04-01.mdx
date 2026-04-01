@@ -29,15 +29,7 @@ Moose gains first-class AI agent integration with a new `moose mcp` stdio proxy,
 **MCP proxy for AI agent integration** ([@LucioFranco](https://github.com/LucioFranco))
   A new `moose mcp` command runs a stdio-based MCP proxy server that connects AI agents — such as Claude Code or Codex — to a running Moose dev server. The proxy forwards tool calls (like querying the data catalog or executing ClickHouse queries) over stdio, which is the standard transport for editor-integrated agents. Host and port are auto-detected from your project config.
 
-  ```bash
-  # Start your dev server
-  moose dev
-
-  # In another terminal, or via your editor's MCP config:
-  moose mcp
-  ```
-
-  Configure it in your editor's MCP settings by pointing to `moose mcp` as the command. The proxy auto-connects to `localhost:4000/mcp` by default, or you can override with `--host` and `--port`.
+For more info check out the [moose mcp docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp#configure-your-ai-client)
 
 **VS Code onboarding extension** ([@callicles](https://github.com/callicles))
   A new "Fiveonefour" VS Code extension keeps the Moose and `514` CLIs installed and current. On every activation it runs the installer, detects CLI versions, and opens a Harness splash page with the current init command after a successful install or update. Supported on macOS, Linux, and VS Code Remote — WSL.
