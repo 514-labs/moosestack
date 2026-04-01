@@ -43,12 +43,13 @@ export const activeUserEvents = new View("active_user_events", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="BasicUsage.py" copy
-from moose_lib import View
+from moose_lib import View, ViewConfig
 from tables import users, events
 
 active_user_events = View(
     "active_user_events",
-    """
+    ViewConfig(
+        select_statement="""
     SELECT
       {events.columns.id}    AS event_id,
       {users.columns.id}     AS user_id,
@@ -58,7 +59,8 @@ active_user_events = View(
     JOIN {users} ON {events.columns.user_id} = {users.columns.id}
     WHERE {users.columns.active} = 1
     """,
-    [events, users],
+        base_tables=[events, users],
+    ),
 )
 ```
   </LanguageTabContent>
@@ -83,14 +85,16 @@ export const rawEvents = new View("raw_events", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="MultiDatabase.py" copy
-from moose_lib import View
+from moose_lib import View, ViewConfig
 from tables import events
 
 raw_events = View(
     "raw_events",
-    "SELECT * FROM {events}",
-    [events],
-    database="analytics",
+    ViewConfig(
+        select_statement="SELECT * FROM {events}",
+        base_tables=[events],
+        database="analytics",
+    ),
 )
 ```
   </LanguageTabContent>
@@ -113,12 +117,14 @@ new View("view_name", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="Signature.py" copy
-# View(name: str, select_statement: str, base_tables: list[OlapTable | View], database: str | None = None, metadata: dict | None = None)
+# View(name: str, config: ViewConfig)
 View(
     "view_name",
-    "SELECT ... FROM {someTable}",
-    [someTable],
-    database="optional_db",  # optional
+    ViewConfig(
+        select_statement="SELECT ... FROM {someTable}",
+        base_tables=[someTable],
+        database="optional_db",  # optional
+    ),
 )
 ```
   </LanguageTabContent>
