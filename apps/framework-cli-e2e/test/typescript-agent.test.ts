@@ -425,7 +425,7 @@ function getLocalPasswordEnvVar(email: string) {
   }
 }
 
-async function signInLocalAccess(email: string) {
+async function signInLocalAccess(projectDir: string, email: string) {
   const jar = new Map<string, string>();
 
   const csrfResponse = await fetch(`${webAppUrl}/api/auth/csrf`, {
@@ -724,8 +724,8 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should scope MCP tools to the caller organization", async function () {
-    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
-    const tenantBAuth = await signInLocalAccess("user2@orgB.com");
+    const tenantAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
+    const tenantBAuth = await signInLocalAccess(projectDir, "user2@orgB.com");
     const tenantAToken = tenantAAuth.session.idToken;
     const tenantBToken = tenantBAuth.session.idToken;
 
@@ -839,7 +839,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should create local org sessions and render organization-scoped dashboards", async function () {
-    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
+    const tenantAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
     expect(tenantAAuth.session.user.orgId).to.equal("org_a");
     expect(tenantAAuth.session.user.accessRole).to.equal("tenant");
     expect(tenantAAuth.session.idToken).to.be.a("string");
@@ -879,7 +879,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(tenantAHtml).to.not.include("Multi-agent reference flow");
     expect(tenantAHtml).to.not.include("Seattle hub utilization breached 92%");
 
-    const tenantBAuth = await signInLocalAccess("user2@orgB.com");
+    const tenantBAuth = await signInLocalAccess(projectDir, "user2@orgB.com");
     expect(tenantBAuth.session.user.orgId).to.equal("org_b");
     expect(tenantBAuth.session.user.accessRole).to.equal("tenant");
     expect(tenantBAuth.session.idToken).to.be.a("string");
@@ -923,7 +923,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should allow Admin Debug to inspect cross-organization data", async function () {
-    const adminAuth = await signInLocalAccess("admin@templae.com");
+    const adminAuth = await signInLocalAccess(projectDir, "admin@templae.com");
     expect(adminAuth.session.user.accessRole).to.equal("admin_debug");
     expect(adminAuth.session.user.orgId).to.equal(undefined);
     expect(adminAuth.session.idToken).to.be.a("string");
@@ -989,7 +989,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should clear stale dashboard sessions instead of crashing the page", async function () {
-    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
+    const tenantAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
     const expiredToken = await signOrgJwt(
       {
         org_id: "org_a",
@@ -1086,7 +1086,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should surface MCP outages through status and chat errors", async function () {
-    const tenantAAuth = await signInLocalAccess("user1@orgA.com");
+    const tenantAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
 
     await stopChildProcess(mooseProcess, "moose service");
     mooseProcess = null;
