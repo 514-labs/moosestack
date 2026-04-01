@@ -56,13 +56,13 @@ updates:
     labels:
       - "dependencies"
     groups:
-      npm-moose:
+      templates-examples-npm-moose:
         patterns:
           - "@514labs/moose-cli"
           - "@514labs/moose-lib"
-      npm-minor-patch:
+      templates-examples-npm-minor-patch:
         update-types: ["minor", "patch"]
-      npm-major:
+      templates-examples-npm-major:
         update-types: ["major"]
     ignore:
       # Keep @types/node at 20.x.x for backward compatibility
@@ -81,11 +81,11 @@ updates:
       - "dependencies"
       - "python"
     groups:
-      pip-moose:
+      templates-examples-pip-moose:
         patterns:
           - "moose-cli"
           - "moose-lib"
-      pip-minor-patch:
+      templates-examples-pip-minor-patch:
         update-types: ["minor", "patch"]
-      pip-major:
+      templates-examples-pip-major:
         update-types: ["major"]
