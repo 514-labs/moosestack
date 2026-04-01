@@ -3129,6 +3129,48 @@ impl OlapOperations for ConfiguredDBClient {
         Ok(policies)
     }
 
+    /// Retrieves the names of all dictionaries present in the given database.
+    ///
+    /// Queries `system.dictionaries` for existence/presence checks. Full schema
+    /// diffing is handled separately by comparing normalized DDL.
+    async fn list_dictionaries(&self, db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+        #[derive(clickhouse::Row, serde::Deserialize)]
+        struct DictionaryNameRow {
+            name: String,
+        }
+
+        debug!(
+            "Starting list_dictionaries operation for database: {}",
+            db_name
+        );
+
+        let query = format!(
+            "SELECT name FROM system.dictionaries WHERE database = '{}' ORDER BY name",
+            db_name
+        );
+
+        let mut cursor = self
+            .client
+            .query(&query)
+            .fetch::<DictionaryNameRow>()
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?;
+
+        let mut names = Vec::new();
+        while let Some(row) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            names.push(row.name);
+        }
+
+        debug!(
+            "Completed list_dictionaries operation, found {} dictionaries",
+            names.len()
+        );
+        Ok(names)
+    }
+
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
     ///
     /// This provides accurate SQL normalization that handles:
