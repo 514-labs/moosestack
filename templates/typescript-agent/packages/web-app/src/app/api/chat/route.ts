@@ -3,7 +3,7 @@ import {
   McpServerUnavailableError,
 } from "agent-runtime";
 import type { UIMessage } from "ai";
-import type { NextRequest } from "next/server";
+import type { NextAuthRequest } from "next-auth";
 import { auth } from "@/auth";
 import { getAgentResponse } from "@/lib/chat-agent";
 
@@ -53,9 +53,11 @@ function getChatErrorResponse(error: unknown) {
   };
 }
 
-export async function POST(request: NextRequest): Promise<Response> {
+export const POST = auth(async function POST(
+  request: NextAuthRequest,
+): Promise<Response> {
   try {
-    const session = await auth();
+    const session = request.auth;
     if (!session?.idToken || !session.user?.tenantId) {
       return createJsonResponse(
         {
@@ -102,4 +104,4 @@ export async function POST(request: NextRequest): Promise<Response> {
     console.error("Chat error:", error);
     return createJsonResponse(response.body, response.status);
   }
-}
+});

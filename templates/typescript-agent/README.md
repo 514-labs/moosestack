@@ -5,7 +5,7 @@ This template gives you a production-shaped TypeScript starter for building tena
 It combines:
 - a Moose service with JWT-backed RLS and MCP tools
 - a Next.js app with chat, local mock OIDC login, and dashboard views
-- a reference multi-agent chat flow with supervisor, specialist, and narrator handoffs
+- a single-agent chat experience by default, plus optional reference multi-agent runtime code
 - AI Elements primitives for the generic chat shell
 - Moose-owned app APIs backed by query-layer models
 - a shared agent runtime package for provider/model/tool orchestration
@@ -50,21 +50,21 @@ MooseStack Service
   └─ SelectRowPolicy on tenant_id
 ```
 
-## Multi-Agent Reference Flow
+## Optional Multi-Agent Reference Flow
 
-The generated chat route now demonstrates a simple multi-agent pattern out of the box:
+The runtime package still includes a simple multi-agent reference flow:
 
 - `supervisor` classifies the latest user request and selects one specialist
-- one specialist (`catalog-researcher`, `knowledge-analyst`, or `sql-investigator`) investigates with tenant-scoped MCP tools
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with tenant-scoped MCP tools
 - `narrator` rewrites the specialist's working notes into the final user-facing answer
 
-The streamed response includes lightweight handoff markers such as `[AGENT:supervisor]` and `[AGENT:narrator]` so teams can see where control moved while keeping the implementation simple.
+The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
 
 Start with these files if you want to customize the pattern:
 
-- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
-- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
-- `packages/web-app/src/app/page.tsx` - example prompts and UI copy that explain the default handoff flow
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference multi-agent orchestration
+- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the default single-agent runtime
+- `packages/web-app/src/app/page.tsx` - default landing-page copy and suggested prompts
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ Start with these files if you want to customize the pattern:
 - One local container runtime: Docker Desktop / Docker Engine, or Finch
 - Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials plus `BEDROCK_MODEL_ID`
 
-`pnpm dev:start` auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
+`pnpm dev:start` runs the workspace build first, then auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
 
 If you run `pnpm dev:moose` or `moose dev` directly with Finch, set `MOOSE_DEV__CONTAINER_CLI_PATH=finch` or add `[dev] container_cli_path = "finch"` to `~/.moose/config.toml`.
 
@@ -93,7 +93,7 @@ pnpm dev:start
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
-`pnpm dev:start` checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
+`pnpm dev:start` runs the workspace build, checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
 
 In a third terminal, seed starter data:
 
@@ -185,8 +185,8 @@ Then verify:
 - `http://localhost:3000` renders the landing page
 - local sign-in works for `acme` and `globex`
 - the dashboard changes by tenant
-- chat guidance mentions the supervisor -> specialist -> narrator flow
-- streamed chat responses include `[AGENT:...]` handoff markers
+- chat guidance focuses on tenant-scoped semantic queries
+- streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
 - chat tool calls stay tenant-scoped
 - `http://localhost:4000/tools` requires a bearer JWT with `tenant_id`
 
@@ -288,8 +288,8 @@ By default, the MCP surface is allowlisted:
 
 - `get_data_catalog` only returns the data components declared in `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts`
 - the default exposed table set is derived from `tenantIsolation.config.tables`
-- `query_clickhouse` only allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` against those exposed components
-- `system.*` metadata and undeclared tables are blocked by default
+- `query_tenant_knowledge_metrics` exposes tenant-scoped grouped metrics over the semantic layer
+- `list_tenant_knowledge_records` exposes tenant-scoped recent/detail records over the semantic layer
 
 ## External MCP Clients
 
@@ -323,11 +323,11 @@ Example:
 - `packages/moosestack-service/app/mcp/server.ts` — custom MCP transport and tool wiring
 - `packages/web-app/src/components/ai-elements/` — reusable AI Elements chat primitives
 - `packages/web-app/src/features/chat/` — Moose-specific wrappers, tool renderers, and chat panel wiring
-- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared multi-agent runtime
-- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog and SQL access policy
-- `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog and query validation
+- `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared default runtime
+- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog surface
+- `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog exposure and semantic tool wiring
 - `packages/moosestack-service/app/data/clickhouse/readonly-query.ts` — readonly ClickHouse access shared by semantic reads and MCP tools
-- `packages/agent-runtime/src/index.ts` — shared agent runtime, prompt, and reference supervisor -> specialist -> narrator execution flow
+- `packages/agent-runtime/src/index.ts` — shared agent runtime plus optional reference multi-agent execution flow
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
 - `packages/agent-contracts/` — shared contracts between frontend and service
@@ -365,8 +365,8 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 ## Notes
 
 - `pnpm env:prepare` creates local env files from the checked-in examples.
-- `pnpm dev:start` validates Docker or Finch, waits for readiness, and starts both services.
-- `pnpm dev` starts both the Moose service and the web app without the extra readiness checks.
+- `pnpm dev:start` runs the workspace build, validates Docker or Finch, waits for readiness, and starts both services.
+- `pnpm dev` runs the same workspace build, then starts both services without the extra readiness checks.
 - `pnpm build` uses Turbo to build the shared packages plus the Next app in dependency order.
 - `pnpm build:service` builds the Moose service docker image.
 - `pnpm test` uses Vitest at the workspace root and is safe to run before `pnpm dev`.

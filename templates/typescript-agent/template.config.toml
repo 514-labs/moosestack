@@ -28,11 +28,11 @@ Run this next:
     3. If you are using an existing ClickHouse instance, fill in the `MOOSE_CLICKHOUSE_CONFIG__*` overrides in `packages/moosestack-service/.env.local`.
     4. Optionally configure Langfuse and Bedrock Guardrails in `packages/web-app/.env.local`.
 
+🚀 Build and start both services:
+    $ pnpm dev:start
+
 🌱 Seed starter data:
     $ pnpm seed
-
-🚀 Start both services:
-    $ pnpm dev:start
 
 Or start each service separately:
     $ pnpm dev:moose    # Start MooseStack service first

@@ -1,9 +1,11 @@
 import {
   type ClickHouseDefault,
   ClickHouseEngines,
-  IngestPipeline,
+  IngestApi,
   type LowCardinality,
+  OlapTable,
   SelectRowPolicy,
+  Stream,
 } from "@514labs/moose-lib";
 import type { tags } from "typia";
 import {
@@ -22,27 +24,27 @@ export interface TenantKnowledge {
   timestamp: Date;
 }
 
-export const TenantKnowledgePipeline = new IngestPipeline<TenantKnowledge>(
+export const TenantKnowledgeTable = new OlapTable<TenantKnowledge>(
   "tenant_knowledge",
   {
-    table: {
-      engine: ClickHouseEngines.ReplacingMergeTree,
-      orderByFields: ["tenant_id", "timestamp", "category", "record_id"],
-    },
-    stream: true,
-    ingestApi: true,
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["tenant_id", "timestamp", "category", "record_id"],
   },
 );
 
-const tenantKnowledgeTable = TenantKnowledgePipeline.table;
+export const TenantKnowledgeStream = new Stream<TenantKnowledge>(
+  "tenant_knowledge",
+  {
+    destination: TenantKnowledgeTable,
+  },
+);
 
-if (!tenantKnowledgeTable) {
-  throw new Error(
-    "TenantKnowledgePipeline must define an OLAP table for tenant isolation.",
-  );
-}
-
-export const TenantKnowledgeTable = tenantKnowledgeTable;
+export const TenantKnowledgeIngestApi = new IngestApi<TenantKnowledge>(
+  "tenant_knowledge",
+  {
+    destination: TenantKnowledgeStream,
+  },
+);
 
 export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
   tables: [TenantKnowledgeTable],
