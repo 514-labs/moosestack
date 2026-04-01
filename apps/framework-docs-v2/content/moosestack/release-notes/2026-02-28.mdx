@@ -86,36 +86,6 @@ This week Moose ships the new `moose add` command for streamlined component inst
 
   Docs: [Semantic Layer](/moosestack/apis/semantic-layer)
 
-**Seed filtering configuration for OLAP tables** ([@phiSgr](https://github.com/phiSgr))
-  OLAP tables can specify `seedFilter` with `limit` and `where` clauses to control data seeding from remote sources. CLI flags `--limit` and `--all` override table-level settings.
-
-  ```typescript
-  import { OlapTable } from "@514labs/moose-lib";
-  
-  interface GitCommit {
-    hash: string;
-    author: string;
-    files_added: number;
-    message: string;
-    timestamp: Date;
-  }
-  
-  export const commitsTable = new OlapTable<GitCommit>("commits", {
-    orderByFields: ["hash"],
-    seedFilter: {
-      limit: 100,
-      where: "author = 'torvalds' AND files_added > 5"
-    }
-  });
-  
-  // CLI usage:
-  // moose seed clickhouse --table commits                    # Uses seedFilter config
-  // moose seed clickhouse --table commits --limit 50        # Overrides limit to 50
-  // moose seed clickhouse --table commits --all             # Ignores all limits
-  ```
-
-  Docs: [Model Table](/moosestack/olap/model-table)
-
 **ClickHouse projection support with `_part_offset`** ([@LucioFranco](https://github.com/LucioFranco))
   Adds projection support for alternative data ordering within table parts. Projections store data in different sort orders or pre-aggregated forms to speed up queries on non-primary-key columns.
 

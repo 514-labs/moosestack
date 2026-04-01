@@ -104,7 +104,15 @@ describe("createAgentRuntime", () => {
     mocks.experimentalCreateMcpClientMock.mockReset();
 
     mocks.mcpToolsMock.mockResolvedValue({
-      query_clickhouse: { description: "Run read-only SQL" },
+      query_tenant_knowledge_metrics: {
+        description: "Summarize organization-scoped knowledge metrics.",
+      },
+      list_tenant_knowledge_records: {
+        description: "List organization-scoped knowledge records.",
+      },
+      get_data_catalog: {
+        description: "Inspect the exposed data surface.",
+      },
     });
     mocks.convertToModelMessagesMock.mockImplementation(
       async (messages) => messages,
@@ -155,7 +163,15 @@ describe("createAgentRuntime", () => {
     expect(runtime.modelId).toBe("claude-haiku-4-5");
     expect(runtime.system).toBe(DEFAULT_AGENT_SYSTEM_PROMPT);
     expect(runtime.tools).toEqual({
-      query_clickhouse: { description: "Run read-only SQL" },
+      query_tenant_knowledge_metrics: {
+        description: "Summarize organization-scoped knowledge metrics.",
+      },
+      list_tenant_knowledge_records: {
+        description: "List organization-scoped knowledge records.",
+      },
+      get_data_catalog: {
+        description: "Inspect the exposed data surface.",
+      },
     });
 
     await runtime.close();
@@ -348,7 +364,7 @@ describe("createAgentRuntime", () => {
     const narratorUiStream = { name: "narrator-ui-stream" };
     const workerResult = {
       toUIMessageStream: vi.fn(() => workerUiStream),
-      text: Promise.resolve("Worker notes from the sql investigator."),
+      text: Promise.resolve("Worker notes from the metrics investigator."),
       totalUsage: Promise.resolve({
         inputTokens: 11,
         outputTokens: 7,
@@ -363,7 +379,7 @@ describe("createAgentRuntime", () => {
     };
 
     mocks.generateTextMock.mockResolvedValue({
-      text: "sql-investigator",
+      text: "metrics-investigator",
       totalUsage: {
         inputTokens: 2,
         outputTokens: 1,
@@ -376,7 +392,7 @@ describe("createAgentRuntime", () => {
     await createMultiAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -411,9 +427,9 @@ describe("createAgentRuntime", () => {
     expect(mocks.streamTextMock).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        system: expect.stringContaining("sql-investigator"),
+        system: expect.stringContaining("metrics-investigator"),
         tools: expect.objectContaining({
-          query_clickhouse: expect.anything(),
+          query_tenant_knowledge_metrics: expect.anything(),
         }),
       }),
     );
@@ -441,12 +457,12 @@ describe("createAgentRuntime", () => {
       .map(([part]) => ("delta" in part ? part.delta : ""))
       .join("");
     expect(emittedText).toContain("[AGENT:supervisor]");
-    expect(emittedText).toContain("[AGENT:sql-investigator]");
+    expect(emittedText).toContain("[AGENT:metrics-investigator]");
     expect(emittedText).toContain("[AGENT:narrator]");
 
     expect(
       traceCollector.recordStep.mock.calls.map(([, step]) => step.toolName),
-    ).toEqual(["supervisor", "sql-investigator", "narrator"]);
+    ).toEqual(["supervisor", "metrics-investigator", "narrator"]);
     expect(traceCollector.endTrace).toHaveBeenCalledWith(
       "trace-1",
       expect.objectContaining({
@@ -475,7 +491,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -506,7 +522,7 @@ describe("createAgentRuntime", () => {
       expect.objectContaining({
         system: DEFAULT_AGENT_SYSTEM_PROMPT,
         tools: expect.objectContaining({
-          query_clickhouse: expect.anything(),
+          query_tenant_knowledge_metrics: expect.anything(),
         }),
       }),
     );
@@ -549,7 +565,7 @@ describe("createAgentRuntime", () => {
     await createAgentStream({
       messages: userMessages,
       bearerToken: "tenant-token",
-      tenantId: "acme",
+      accessScopeId: "org_a",
       mcpServerUrl: "http://localhost:4000",
       providerConfig: {
         provider: "anthropic",
@@ -595,7 +611,7 @@ describe("createAgentRuntime", () => {
       createAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "acme",
+        accessScopeId: "org_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",
@@ -631,7 +647,7 @@ describe("createAgentRuntime", () => {
       createMultiAgentStream({
         messages: userMessages,
         bearerToken: "tenant-token",
-        tenantId: "acme",
+        accessScopeId: "org_a",
         mcpServerUrl: "http://localhost:4000",
         providerConfig: {
           provider: "anthropic",

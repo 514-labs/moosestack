@@ -1,7 +1,12 @@
+import {
+  ACCESS_ROLE_ADMIN_DEBUG,
+  ACCESS_ROLE_TENANT,
+  type AccessRole,
+} from "agent-contracts";
 import NextAuth, { type NextAuthConfig } from "next-auth";
-import { createLocalTenantProvider } from "@/dev/local-auth";
-import { getAuthMode, getOidcConfig, getOidcTenantClaim } from "@/env-vars";
-import { extractTenantIdFromIdToken } from "@/lib/id-token";
+import { createLocalAccessProvider } from "@/dev/local-auth";
+import { getAuthMode, getOidcConfig, getOidcOrgClaim } from "@/env-vars";
+import { extractOrgIdFromIdToken } from "@/lib/id-token";
 
 type AuthProvider = NonNullable<NextAuthConfig["providers"]>[number];
 const SESSION_MAX_AGE_SECONDS = 60 * 60;
@@ -9,7 +14,7 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60;
 const providers: AuthProvider[] = [];
 
 if (getAuthMode() === "local") {
-  providers.push(createLocalTenantProvider());
+  providers.push(createLocalAccessProvider());
 }
 
 const oidcConfig = getOidcConfig();
@@ -38,7 +43,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   providers,
   callbacks: {
     async signIn({ account, user }) {
-      if (account?.provider === "local-tenant") {
+      if (account?.provider === "local-access") {
         return true;
       }
 
@@ -46,10 +51,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return false;
       }
 
-      const tenantId = extractTenantIdFromIdToken(account.id_token);
-      if (!tenantId) {
+      const orgId = extractOrgIdFromIdToken(account.id_token);
+      if (!orgId) {
         console.error(
-          `OIDC sign-in rejected: missing ${getOidcTenantClaim()} claim`,
+          `OIDC sign-in rejected: missing ${getOidcOrgClaim()} claim`,
         );
         return false;
       }
@@ -59,17 +64,25 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user, account }) {
       if (user) {
         token.userId = user.id;
-        token.tenantId = user.tenantId;
-        token.tenantName = user.tenantName ?? user.name ?? "";
+        token.accessRole = resolveAccessRole(user.accessRole);
+        token.orgId = user.orgId;
+        token.orgName = user.orgName ?? user.name ?? user.orgId ?? "";
         token.provider = user.provider ?? account?.provider;
         token.idToken = user.idToken;
         token.idTokenExpiresAt = user.idTokenExpiresAt;
       }
 
       if (account?.id_token) {
+        const orgId = extractOrgIdFromIdToken(account.id_token);
         token.idToken = account.id_token;
         token.provider = account.provider;
-        token.tenantId = extractTenantIdFromIdToken(account.id_token);
+        token.accessRole = ACCESS_ROLE_TENANT;
+        token.orgId = orgId;
+        token.orgName =
+          typeof token.orgName === "string" && token.orgName.trim() ?
+            token.orgName
+          : typeof token.name === "string" && token.name.trim() ? token.name
+          : (orgId ?? "");
         token.idTokenExpiresAt =
           typeof account.expires_at === "number" ?
             account.expires_at * 1000
@@ -81,10 +94,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = String(token.userId ?? token.sub ?? "");
-        session.user.tenantId = String(token.tenantId ?? "");
-        session.user.tenantName = String(
-          token.tenantName ?? session.user.name ?? "",
-        );
+        session.user.accessRole = resolveAccessRole(token.accessRole);
+        session.user.orgId =
+          typeof token.orgId === "string" && token.orgId.trim() ?
+            token.orgId
+          : undefined;
+        session.user.orgName =
+          typeof token.orgName === "string" && token.orgName.trim() ?
+            token.orgName
+          : undefined;
         session.user.provider = String(token.provider ?? "unknown");
       }
 
@@ -100,3 +118,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     },
   },
 });
+
+function resolveAccessRole(value: unknown): AccessRole {
+  return value === ACCESS_ROLE_ADMIN_DEBUG ?
+      ACCESS_ROLE_ADMIN_DEBUG
+    : ACCESS_ROLE_TENANT;
+}

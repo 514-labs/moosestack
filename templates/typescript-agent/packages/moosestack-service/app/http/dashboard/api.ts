@@ -1,30 +1,49 @@
 import { WebApp } from "@514labs/moose-lib";
 import express from "express";
+import {
+  assertAuthenticatedAccessContext,
+  requireAuthenticatedMoose,
+} from "../../auth/access-context";
 import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
 import {
-  assertTenantMooseContext,
-  requireTenantMoose,
-} from "../context/tenant-context";
+  createDefaultApiRateLimit,
+  createRouteRateLimit,
+  type RouteRateLimitOverride,
+} from "../../../http/rate-limit";
 
 const app = express();
+const routeRateLimitOverrides = [
+  {
+    method: "GET",
+    path: "/dashboard/snapshot",
+  },
+] satisfies RouteRateLimitOverride[];
 
-app.use(requireTenantMoose);
-
-app.get("/dashboard/snapshot", async (req, res, next) => {
-  try {
-    const context = assertTenantMooseContext(req);
-
-    const snapshot = await getDashboardSnapshot(
-      context.moose.client.query,
-      context.tenantId,
-      context.rowPolicyOptions,
-    );
-
-    res.json(snapshot);
-  } catch (error) {
-    next(error);
-  }
+const dashboardSnapshotRateLimit = createRouteRateLimit({
+  limit: 30,
 });
+
+app.use(createDefaultApiRateLimit(routeRateLimitOverrides));
+
+app.use(requireAuthenticatedMoose);
+
+app.get(
+  "/dashboard/snapshot",
+  dashboardSnapshotRateLimit,
+  async (req, res, next) => {
+    try {
+      const context = assertAuthenticatedAccessContext(req);
+
+      // Moose injects a request-scoped QueryClient here; organization-scoped
+      // requests already carry their row-policy settings on this client.
+      const snapshot = await getDashboardSnapshot(context.moose.client.query);
+
+      res.json(snapshot);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.use(
   (
@@ -44,6 +63,6 @@ app.use(
 export const dashboardApi = new WebApp("dashboardApi", app, {
   mountPath: "/app",
   metadata: {
-    description: "Tenant-scoped app APIs for dashboard and frontend reads",
+    description: "Authenticated app APIs for dashboard and frontend reads",
   },
 });

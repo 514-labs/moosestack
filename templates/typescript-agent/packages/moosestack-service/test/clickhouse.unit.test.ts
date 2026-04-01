@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   executeReadonlySql,
   executeReadonlyStatement,
-} from "../app/data/clickhouse/readonly-query";
+  executeScopedSql,
+} from "../data/clickhouse/readonly-query";
 
 describe("executeReadonlyStatement", () => {
   it("uses max_result_rows instead of the legacy limit setting", async () => {
     const querySpy = vi.fn(async () => {
       return {
-        json: async () => [{ tenant_id: "acme" }],
+        json: async () => [{ org_id: "org_a" }],
       };
     });
     const queryClient = {
@@ -28,19 +29,19 @@ describe("executeReadonlyStatement", () => {
       },
     };
 
-    const rows = await executeReadonlyStatement<{ tenant_id: string }>(
+    const rows = await executeReadonlyStatement<{ org_id: string }>(
       queryClient as never,
-      "SELECT tenant_id FROM tenant_knowledge LIMIT 1",
+      "SELECT org_id FROM tenant_knowledge LIMIT 1",
       {
         limit: 100,
         rowPolicyOptions,
       },
     );
 
-    expect(rows).toEqual([{ tenant_id: "acme" }]);
+    expect(rows).toEqual([{ org_id: "org_a" }]);
     expect(querySpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "SELECT tenant_id FROM tenant_knowledge LIMIT 1",
+        query: "SELECT org_id FROM tenant_knowledge LIMIT 1",
         role: "tenant_reader",
         clickhouse_settings: expect.objectContaining({
           readonly: "2",
@@ -101,7 +102,7 @@ describe("executeReadonlyStatement", () => {
 
     await executeReadonlyStatement(
       queryClient as never,
-      "SELECT tenant_id FROM tenant_knowledge",
+      "SELECT org_id FROM tenant_knowledge",
       10,
     );
 
@@ -109,6 +110,42 @@ describe("executeReadonlyStatement", () => {
       expect.objectContaining({
         clickhouse_settings: expect.objectContaining({
           max_result_rows: "10",
+          readonly: "2",
+        }),
+      }),
+    );
+  });
+
+  it("keeps scoped queries readonly by wrapping the scoped QueryClient", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [{ org_id: "org_a" }],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+      query_id_prefix: "scoped-prefix",
+      rowPolicyOptions: {
+        role: "tenant_reader",
+        clickhouse_settings: {
+          SQL_moose_rls_org_id: "org_a",
+        },
+      },
+    };
+
+    const rows = await executeScopedSql<{ org_id: string }>(
+      queryClient as never,
+      sql`SELECT org_id FROM tenant_knowledge LIMIT 1`,
+    );
+
+    expect(rows).toEqual([{ org_id: "org_a" }]);
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "tenant_reader",
+        clickhouse_settings: expect.objectContaining({
+          SQL_moose_rls_org_id: "org_a",
           readonly: "2",
         }),
       }),

@@ -3,6 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractJsonRowsFromOutput } from "./seed-output.mjs";
 
+// EXAMPLE_APP_ONLY: This seed script reports on the seeded TenantKnowledge demo
+// data. Replace or remove it when you swap out the example data model, then
+// search the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(currentDir, "..");
 const seedDir = join(currentDir, "..", "seed");
@@ -45,16 +48,20 @@ runMooseQuery(["-f", join(seedDir, seedFileName)], `apply ${seedFileName}`);
 console.log(`- Applied ${seedFileName}`);
 
 const totalAfter = queryCount("SELECT count() AS total FROM tenant_knowledge");
-const totalsByTenant = queryJsonRows(`
-  SELECT tenant_id, count() AS total
+const totalsByOrg = queryJsonRows(`
+  SELECT org_id, count() AS total
   FROM tenant_knowledge
-  GROUP BY tenant_id
-  ORDER BY tenant_id
+  GROUP BY org_id
+  ORDER BY org_id
 `);
 
 console.log(`- Inserted ${Math.max(0, totalAfter - totalBefore)} records into tenant_knowledge`);
-console.log("- Current totals by tenant:");
+console.log("- Current totals by org:");
 
-for (const row of totalsByTenant) {
-  console.log(`  ${row.tenant_id}: ${row.total}`);
+for (const row of totalsByOrg) {
+  console.log(`  ${row.org_id}: ${row.total}`);
 }
+
+console.log(
+  "- Example contrast: org_a uses intentionally tiny headline counts (1 and 2); org_b uses intentionally larger counts (50 and 1,024).",
+);

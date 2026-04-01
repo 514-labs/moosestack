@@ -34,15 +34,18 @@ export class QueryClient {
   client: ClickHouseClient;
   query_id_prefix: string;
   private rowPolicyOptions?: RowPolicyOptions;
+  private readonlyMode: boolean;
 
   constructor(
     client: ClickHouseClient,
     query_id_prefix: string,
     rowPolicyOptions?: RowPolicyOptions,
+    readonlyMode: boolean = false,
   ) {
     this.client = client;
     this.query_id_prefix = query_id_prefix;
     this.rowPolicyOptions = rowPolicyOptions;
+    this.readonlyMode = readonlyMode;
   }
 
   async execute<T = any>(
@@ -63,6 +66,7 @@ export class QueryClient {
         asterisk_include_materialized_columns: 1,
         asterisk_include_alias_columns: 1,
         ...this.rowPolicyOptions?.clickhouse_settings,
+        ...(this.readonlyMode && { readonly: "2" }),
       },
       ...(this.rowPolicyOptions && {
         role: this.rowPolicyOptions.role,

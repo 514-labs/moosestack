@@ -35,7 +35,7 @@ Run a query N times and return server-side profiling data with percentile summar
 import { getMooseUtils } from "@514labs/moose-lib";
 import { profileBenchmark } from "@514labs/moose-lib/testing";
 
-const { client, sql } = await getMooseUtils();
+const { client, sql } = await getMooseUtils({ readonly: true });
 const query = sql`SELECT count() FROM MyTable WHERE status = 'active'`;
 
 const { profiles, p50, p95 } = await profileBenchmark(client.query, query, 12);

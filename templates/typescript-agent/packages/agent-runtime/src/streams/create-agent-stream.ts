@@ -35,7 +35,7 @@ export async function createAgentStream(
     traceSession.recordStep({
       stepId: crypto.randomUUID(),
       traceId: traceSession.traceId,
-      tenantId: options.tenantId,
+      accessScopeId: options.accessScopeId,
       stepType: "guardrail",
       toolName: "",
       status: "blocked",
@@ -67,7 +67,7 @@ export async function createAgentStream(
           Object.keys(runtime.tools).length > 0 ?
             wrapTools({
               runtimeTools: runtime.tools,
-              tenantId: options.tenantId,
+              accessScopeId: options.accessScopeId,
               traceId: traceSession.traceId,
               toolCallTimings,
               getStepNumber: () => stepCount + 1,

@@ -42,6 +42,9 @@ This package does not own:
 - Prefer calling Moose-owned APIs instead of reaching into data/query logic from the frontend.
 - Keep host-specific runtime assembly here and shared orchestration in `agent-runtime`.
 - Do not commit `.env.local`; derive it from `.env.example`.
+- Search for `EXAMPLE_APP_ONLY:` when replacing the seeded demo model. Those
+  markers show which frontend files are coupled to the example dashboard and
+  prompts.
 
 ## Testing
 
