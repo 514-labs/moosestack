@@ -965,6 +965,10 @@ mod tests {
         ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
             Ok(self.row_policies.clone())
         }
+
+        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+            Ok(vec![])
+        }
     }
 
     // Helper function to create a test project
