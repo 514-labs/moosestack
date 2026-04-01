@@ -26,7 +26,7 @@ pub enum RemoteBootstrapSource {
 pub struct ProjectInitOptions<'a> {
     /// Template slug to scaffold, such as `typescript` or `python-empty`.
     pub template: &'a str,
-    /// Project name used for template generation and credential storage.
+    /// Project name used for template generation.
     pub project_name: &'a str,
     /// Destination directory where the project should be created.
     pub dir_path: &'a Path,
@@ -77,7 +77,6 @@ pub async fn initialize_project(
     )
     .await?;
     let project_dir = resolve_project_dir(options.dir_path)?;
-    let effective_project_name = effective_project_name(options.project_name, &project_dir);
 
     match &options.remote_bootstrap {
         RemoteBootstrapSource::None => {}
@@ -86,40 +85,19 @@ pub async fn initialize_project(
             let _guard = CurrentDirGuard::capture();
             let connection_string = prompt_user_for_remote_ch_http()?;
             db_to_dmv2(&connection_string, &bootstrap_project_dir).await?;
-            configure_remote_clickhouse(
-                &effective_project_name,
-                &bootstrap_project_dir,
-                &connection_string,
-            )?;
+            configure_remote_clickhouse(&bootstrap_project_dir, &connection_string)?;
         }
         RemoteBootstrapSource::ConnectionString(connection_string) => {
             let bootstrap_project_dir = resolve_bootstrap_project_dir(&project_dir)?;
             let _guard = CurrentDirGuard::capture();
             db_to_dmv2(connection_string, &bootstrap_project_dir).await?;
-            configure_remote_clickhouse(
-                &effective_project_name,
-                &bootstrap_project_dir,
-                connection_string,
-            )?;
+            configure_remote_clickhouse(&bootstrap_project_dir, connection_string)?;
         }
     }
 
     Ok(ProjectInitOutcome {
         post_install_message,
     })
-}
-
-fn effective_project_name(project_name: &str, dir_path: &Path) -> String {
-    if project_name == "." {
-        dir_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .unwrap_or("moose-project")
-            .to_string()
-    } else {
-        project_name.to_string()
-    }
 }
 
 fn resolve_project_dir(dir_path: &Path) -> Result<PathBuf, RoutineFailure> {
@@ -211,8 +189,7 @@ fn collect_nested_project_dirs(
         }
 
         if path.join(PROJECT_CONFIG_FILE).is_file() {
-            candidates.push(path);
-            continue;
+            candidates.push(path.clone());
         }
 
         collect_nested_project_dirs(&path, candidates)?;
@@ -222,13 +199,11 @@ fn collect_nested_project_dirs(
 }
 
 fn configure_remote_clickhouse(
-    project_name: &str,
     dir_path: &Path,
     connection_string: &str,
 ) -> Result<(), RoutineFailure> {
     let repo = KeyringSecretRepository;
     configure_remote_clickhouse_with(
-        project_name,
         dir_path,
         connection_string,
         &repo,
@@ -237,7 +212,6 @@ fn configure_remote_clickhouse(
 }
 
 fn configure_remote_clickhouse_with<R, F>(
-    project_name: &str,
     dir_path: &Path,
     connection_string: &str,
     url_store: &R,
@@ -266,6 +240,7 @@ where
         })?;
 
     let mut project = load_project_dev()?;
+    let stored_project_name = project.name();
     project.dev.remote_clickhouse = Some(RemoteClickHouseConfig {
         protocol: ClickHouseProtocol::Http,
         host: Some(parsed.config.host.clone()),
@@ -295,7 +270,11 @@ where
         )
     );
 
-    if let Err(e) = store_credentials(project_name, &parsed.config.user, &parsed.config.password) {
+    if let Err(e) = store_credentials(
+        &stored_project_name,
+        &parsed.config.user,
+        &parsed.config.password,
+    ) {
         show_message!(
             MessageType::Warning,
             Message::new(
@@ -305,7 +284,11 @@ where
         );
     }
 
-    if let Err(e) = url_store.store(project_name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+    if let Err(e) = url_store.store(
+        &stored_project_name,
+        KEY_REMOTE_CLICKHOUSE_URL,
+        connection_string,
+    ) {
         show_message!(
             MessageType::Warning,
             Message::new(
@@ -438,6 +421,25 @@ mod tests {
             .message
             .details
             .contains("moose db pull --clickhouse-url <connection-string>"));
+    }
+
+    #[test]
+    fn resolve_bootstrap_project_dir_nested_configs_in_same_branch_returns_actionable_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let project_dir = temp_dir.path().join("project");
+        let parent_service = project_dir.join("services");
+        let nested_service = parent_service.join("alpha");
+        std::fs::create_dir_all(&nested_service).unwrap();
+        std::fs::write(parent_service.join(PROJECT_CONFIG_FILE), "").unwrap();
+        std::fs::write(nested_service.join(PROJECT_CONFIG_FILE), "").unwrap();
+
+        let error = resolve_bootstrap_project_dir(&project_dir).unwrap_err();
+        assert!(error.message.details.contains("services"));
+        assert!(error.message.details.contains("services/alpha"));
+        assert!(error
+            .message
+            .details
+            .contains("cannot choose one automatically"));
     }
 
     #[tokio::test]
@@ -578,9 +580,7 @@ mod tests {
 
         let stored_credentials = Mutex::new(Vec::new());
         let url_store = MockSecretRepository::default();
-        let project_name = effective_project_name(".", &project_dir);
         configure_remote_clickhouse_with(
-            &project_name,
             &project_dir,
             "http://user:pass@127.0.0.1:8123/default",
             &url_store,
@@ -602,6 +602,69 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("http://user:pass@127.0.0.1:8123/default")
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(project_init)]
+    async fn configure_remote_clickhouse_uses_loaded_nested_project_name_for_storage() {
+        ensure_test_environment();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let caller_dir = temp_dir.path().join("caller");
+        let project_dir = temp_dir.path().join("project");
+        std::fs::create_dir_all(&caller_dir).unwrap();
+
+        let _guard = CurrentDirGuard::capture();
+        std::env::set_current_dir(&caller_dir).unwrap();
+
+        initialize_project(&ProjectInitOptions {
+            template: "typescript-agent",
+            project_name: "agent-remote-app",
+            dir_path: &project_dir,
+            no_fail_already_exists: false,
+            custom_dockerfile: false,
+            remote_bootstrap: RemoteBootstrapSource::None,
+        })
+        .await
+        .unwrap();
+
+        let bootstrap_project_dir = resolve_bootstrap_project_dir(&project_dir).unwrap();
+        let stored_credentials = Mutex::new(Vec::new());
+        let url_store = MockSecretRepository::default();
+
+        configure_remote_clickhouse_with(
+            &bootstrap_project_dir,
+            "http://user:pass@127.0.0.1:8123/default",
+            &url_store,
+            |project_name, user, password| {
+                stored_credentials.lock().unwrap().push((
+                    project_name.to_string(),
+                    user.to_string(),
+                    password.to_string(),
+                ));
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            stored_credentials.lock().unwrap()[0].0,
+            "moosestack-service"
+        );
+        assert_eq!(
+            url_store
+                .get("moosestack-service", KEY_REMOTE_CLICKHOUSE_URL)
+                .unwrap()
+                .as_deref(),
+            Some("http://user:pass@127.0.0.1:8123/default")
+        );
+        assert_eq!(
+            url_store
+                .get("agent-remote-app", KEY_REMOTE_CLICKHOUSE_URL)
+                .unwrap()
+                .as_deref(),
+            None
         );
     }
 }
