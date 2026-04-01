@@ -98,9 +98,10 @@ Moose gains first-class AI agent integration with a new `moose mcp` stdio proxy,
   514 clickhouse seed events --limit 10000
 
   # Seed from a specific branch with a filter
-  514 clickhouse seed --table users \
-    --from-branch staging \
+  514 clickhouse seed users \
+    --from staging \
     --where "created_at > '2026-01-01'"
+    --limit 10000
   ```
 
   Docs: [Branch Data Seeding](/hosting/workflow/branch-data-seeding)
