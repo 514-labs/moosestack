@@ -122,7 +122,8 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
-    confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
+    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
+    ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
@@ -973,6 +974,29 @@ pub async fn start_production_mode(
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
+
+    if project.migration_config.require_plan_for_destructive {
+        let risk = classify_plan_risk(&plan.changes);
+        if risk.is_destructive() && !execute_migration_yaml {
+            let summary = risk
+                .destructive_changes
+                .iter()
+                .map(|c| format!("  - {c}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(anyhow::anyhow!(
+                "Production startup blocked: the computed infrastructure diff contains {} \
+                 destructive operation(s) but no plan.yaml was found.\n\
+                 {}\n\n\
+                 To proceed, either:\n  \
+                 1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
+                 2. Set `require_plan_for_destructive = false` under [migration_config] \
+                 in moose.config.toml to allow unplanned destructive changes.",
+                risk.destructive_changes.len(),
+                summary,
+            ));
+        }
+    }
 
     if execute_migration_yaml {
         migrate::execute_migration_plan(

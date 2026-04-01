@@ -66,6 +66,31 @@ Planned migrations are active whenever a `plan.yaml` file exists in the `migrati
 olap = true
 ```
 
+### Production Safety Gate
+
+By default, `moose prod` **refuses to start** if the computed infrastructure diff contains destructive operations (table drops, column drops, table recreates, view removals) and no `plan.yaml` is present. This prevents accidental data loss when deploying schema changes that haven't been reviewed.
+
+```toml filename="moose.config.toml"
+[migration_config]
+# Default: true — require a reviewed plan.yaml for destructive changes
+require_plan_for_destructive = true
+```
+
+| Scenario | Behavior |
+| :--- | :--- |
+| No destructive changes | `moose prod` starts normally regardless of `plan.yaml`. |
+| Destructive changes + `plan.yaml` present | `moose prod` applies the reviewed plan and starts normally. |
+| Destructive changes + no `plan.yaml` | `moose prod` **refuses to start** with an error listing the destructive operations. |
+
+When startup is blocked, the error message lists every destructive operation and suggests two remediation paths:
+
+1. Run `moose generate migration --save` to create a reviewed `plan.yaml`.
+2. Set `require_plan_for_destructive = false` in `moose.config.toml` (or `MOOSE_MIGRATION_CONFIG__REQUIRE_PLAN_FOR_DESTRUCTIVE=false` as an environment variable) to opt out of the safety gate.
+
+<Callout type="warning" title="Opting out">
+  Setting `require_plan_for_destructive = false` restores the pre-safety-gate behavior where `moose prod` applies destructive changes without a plan file. Only do this if you accept the risk of unreviewed destructive schema changes in production.
+</Callout>
+
 ## Command Options
 
 The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).

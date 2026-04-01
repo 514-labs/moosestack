@@ -328,6 +328,10 @@ enforce_on_all_ingest_apis = false
 # Useful for managing TTL changes outside of Moose or when you don't want
 # migration failures due to TTL drift
 # ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+# When true (default), `moose prod` refuses to start if the computed diff
+# contains destructive operations and no plan.yaml is present.
+# Set to false to allow unplanned destructive changes in production.
+# require_plan_for_destructive = true
 
 # Feature flags
 [features]
@@ -399,6 +403,11 @@ MOOSE_FEATURES__APIS=true
 MOOSE_LOGGER__LEVEL=info
 MOOSE_LOGGER__STDOUT=true
 MOOSE_LOGGER__FORMAT=Json
+```
+
+### Migrations
+```bash
+MOOSE_MIGRATION_CONFIG__REQUIRE_PLAN_FOR_DESTRUCTIVE=true
 ```
 
 ### Docker

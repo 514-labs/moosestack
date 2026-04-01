@@ -157,6 +157,10 @@ impl Default for TypescriptConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_package_manager() -> String {
     "npm".to_string()
 }
@@ -245,6 +249,12 @@ pub struct MigrationConfig {
     /// Operations to ignore during migration plan generation
     #[serde(default)]
     pub ignore_operations: Vec<IgnorableOperation>,
+    /// When true (default), production mode refuses to start if the computed
+    /// infra diff contains destructive operations and no `plan.yaml` is present.
+    /// Set to `false` to allow auto-applying destructive changes in production
+    /// without a pre-approved migration plan.
+    #[serde(default = "default_true")]
+    pub require_plan_for_destructive: bool,
 }
 
 /// Configuration for development mode behavior with externally managed tables
