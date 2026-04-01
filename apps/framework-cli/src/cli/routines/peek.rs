@@ -423,6 +423,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         }
     }
 
