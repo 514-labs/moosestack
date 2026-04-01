@@ -8,9 +8,9 @@
 
 ## What this PR adds (~600 lines)
 
-- NEW: `packages/ts-moose-lib/src/dmv2/sdk/olapDictionary.ts` — `OlapDictionary<T>` class, `sourceTable`/`sourceQuery`/`externalSource` (mutually exclusive), all 16 layout types, all 12 external source types, `get()`/`getOrDefault()`/`has()` helpers, self-registers into `getMooseInternal().olapDictionaries`
+- NEW: `packages/ts-moose-lib/src/dmv2/sdk/olapDictionary.ts` — `OlapDictionary<T>` class, `sourceTable`/`sourceQuery`/`externalSource` (mutually exclusive), all 16 layout types, all 8 external source types, `get()`/`getOrDefault()`/`has()` helpers, self-registers into `getMooseInternal().olapDictionaries`
 - `dmv2/internal.ts` — `olapDictionaries` registry + serialization
-- `dmv2/dataModelMetadata.ts` — `["OlapDictionary", 1]` in `typesToArgsLength`
+- `dmv2/dataModelMetadata.ts` — `["OlapDictionary", 2]` in `typesToArgsLength`
 - `sqlHelpers.ts` — `OlapDictionary` interpolation + consumer-side dependency recording
 - `dmv2/index.ts`, `browserCompatible.ts` — exports
 
