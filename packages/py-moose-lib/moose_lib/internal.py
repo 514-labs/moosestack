@@ -881,9 +881,9 @@ def _serialize_dict_source(config) -> dict:
         elif isinstance(src, View):
             database = getattr(src, "database", None)
         return {"type": "TABLE", "table": src.name, "database": database}
-    elif config.source_query is not None:
+    if config.source_query is not None:
         return {"type": "QUERY", "query": config.source_query}
-    elif config.external_source is not None:
+    if config.external_source is not None:
         ext = config.external_source.model_dump(exclude_none=True)
         return {"type": "EXTERNAL", "source": ext}
     raise ValueError("OlapDictionaryConfig has no source set")
