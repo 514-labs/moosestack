@@ -315,6 +315,21 @@ pub enum SerializableOlapOperation {
     CreateRowPolicy { policy: SelectRowPolicy },
     /// Drop row policies from one or more tables.
     DropRowPolicy { policy: SelectRowPolicy },
+    /// Create a dictionary (CREATE DICTIONARY IF NOT EXISTS)
+    CreateDictionary {
+        /// The dictionary to create
+        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    },
+    /// Replace a dictionary (CREATE OR REPLACE DICTIONARY)
+    ReplaceDictionary {
+        /// The dictionary state after update
+        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    },
+    /// Drop a dictionary (DROP DICTIONARY IF EXISTS)
+    DropDictionary {
+        /// The dictionary to drop
+        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -460,7 +475,10 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::CreateView { .. }
         | AtomicOlapOperation::DropView { .. }
         | AtomicOlapOperation::CreateRowPolicy { .. }
-        | AtomicOlapOperation::DropRowPolicy { .. } => None,
+        | AtomicOlapOperation::DropRowPolicy { .. }
+        | AtomicOlapOperation::CreateDictionary { .. }
+        | AtomicOlapOperation::ReplaceDictionary { .. }
+        | AtomicOlapOperation::DropDictionary { .. } => None,
     }
 }
 
@@ -720,6 +738,15 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         }
         SerializableOlapOperation::DropRowPolicy { policy } => {
             format!("Dropping row policy '{}'", policy.name)
+        }
+        SerializableOlapOperation::CreateDictionary { dict } => {
+            format!("Creating dictionary '{}'", dict.name)
+        }
+        SerializableOlapOperation::ReplaceDictionary { dict } => {
+            format!("Replacing dictionary '{}'", dict.name)
+        }
+        SerializableOlapOperation::DropDictionary { dict } => {
+            format!("Dropping dictionary '{}'", dict.name)
         }
     }
 }
@@ -1055,6 +1082,15 @@ pub async fn execute_atomic_operation(
         }
         SerializableOlapOperation::DropRowPolicy { policy } => {
             execute_drop_row_policy(db_name, policy, client).await?;
+        }
+        SerializableOlapOperation::CreateDictionary { dict } => {
+            execute_create_dictionary(db_name, dict, client).await?;
+        }
+        SerializableOlapOperation::ReplaceDictionary { dict } => {
+            execute_replace_dictionary(db_name, dict, client).await?;
+        }
+        SerializableOlapOperation::DropDictionary { dict } => {
+            execute_drop_dictionary(db_name, dict, client).await?;
         }
     }
     Ok(())
@@ -2008,6 +2044,57 @@ async fn execute_drop_row_policy(
                 resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
             })?;
     }
+    Ok(())
+}
+
+/// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
+async fn execute_create_dictionary(
+    _db_name: &str,
+    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_create_if_not_exists_sql();
+    tracing::debug!("Creating dictionary: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
+    Ok(())
+}
+
+/// Execute a CREATE OR REPLACE DICTIONARY operation.
+async fn execute_replace_dictionary(
+    _db_name: &str,
+    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_replace_sql();
+    tracing::debug!("Replacing dictionary: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
+    Ok(())
+}
+
+/// Execute a DROP DICTIONARY IF EXISTS operation.
+async fn execute_drop_dictionary(
+    _db_name: &str,
+    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_drop_sql();
+    tracing::debug!("Dropping dictionary: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
     Ok(())
 }
 
