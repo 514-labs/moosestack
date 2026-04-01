@@ -173,9 +173,9 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
     Ok(())
 }
 
-/// Returns `true` if `layout` requires a single-column primary key.
+/// Returns `true` if `layout` supports multi-column primary keys.
 ///
-/// COMPLEX_KEY_* layouts support multi-column keys; all other layouts do not.
+/// Only COMPLEX_KEY_* layouts support multi-column keys; all other layouts require exactly one.
 fn is_complex_key_layout(layout: &DictionaryLayout) -> bool {
     matches!(
         layout,
