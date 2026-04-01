@@ -35,7 +35,7 @@ Define the product catalog. This table will be the dictionary source.
 import { OlapTable, Key, ClickHouseInt } from "@514labs/moose-lib";
 
 interface Product {
-  productId: Key<string>;       // primary key → UInt64 not needed here since layout is HASHED by productId (string key → use COMPLEX_KEY_HASHED)
+  productId: Key<string>;       // string key → use COMPLEX_KEY_HASHED layout (HASHED requires UInt64)
   productName: string;
   category: string;
   priceUsd: number;
