@@ -11,7 +11,7 @@ type ReadonlyQueryOptions = {
   rowPolicyOptions?: RowPolicyOptions;
 };
 
-function formatClickHouseDateTime(value: Date): string {
+export function formatClickHouseDateTime(value: Date): string {
   return value.toISOString().slice(0, 19).replace("T", " ");
 }
 

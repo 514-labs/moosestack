@@ -1,11 +1,10 @@
 import { type MooseUtils, sql } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
-import { executeScopedSql } from "../../data/clickhouse/readonly-query";
+import {
+  executeScopedSql,
+  formatClickHouseDateTime,
+} from "../../data/clickhouse/readonly-query";
 import { TenantKnowledgeTable } from "../ingest/models";
-
-function formatClickHouseDateTime(value: Date): string {
-  return value.toISOString().slice(0, 19).replace("T", " ");
-}
 
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
