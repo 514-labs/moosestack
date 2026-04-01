@@ -1809,4 +1809,76 @@ mod tests {
         assert_eq!(sf.limit, Some(20));
         assert_eq!(sf.where_clause, None);
     }
+
+    /// Regression: normalize_all_metadata_paths() must also normalize source paths
+    /// on olap_dictionaries. Previously only tables/topics/views/etc. were covered.
+    #[test]
+    fn test_normalize_all_metadata_paths_normalizes_dictionary_source_file() {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+        use std::collections::HashMap;
+        use std::path::Path;
+
+        let abs_path = "/home/user/myproject/app/datamodels/UserDict.ts".to_string();
+        let project_root = Path::new("/home/user/myproject");
+
+        let dict = OlapDictionary {
+            name: "user_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            metadata: Some(Metadata {
+                description: None,
+                source: Some(SourceLocation {
+                    file: abs_path.clone(),
+                }),
+            }),
+        };
+
+        let dict_id = dict.id("local");
+        let mut infra_map = crate::framework::core::infrastructure_map::InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+        infra_map.olap_dictionaries.insert(dict_id.clone(), dict);
+
+        normalize_all_metadata_paths(&mut infra_map, project_root);
+
+        let normalized_file = infra_map.olap_dictionaries[&dict_id]
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| s.file.as_str())
+            .unwrap_or("");
+
+        assert_eq!(
+            normalized_file, "app/datamodels/UserDict.ts",
+            "dictionary source path should be normalized to relative; got: {normalized_file}"
+        );
+    }
 }

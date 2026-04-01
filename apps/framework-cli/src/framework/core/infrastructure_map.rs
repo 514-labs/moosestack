@@ -9810,6 +9810,57 @@ mod diff_select_row_policy_tests {
         }
     }
 
+    /// Regression: uses_olap() must return true when only dictionaries are present.
+    /// Previously the check was missing, causing ClickHouse bootstrap to be skipped
+    /// for dictionary-only projects.
+    #[test]
+    fn test_uses_olap_true_when_only_dictionaries_present() {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+
+        let dict = OlapDictionary {
+            name: "d".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "t".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            metadata: None,
+        };
+
+        let mut infra_map = InfrastructureMap::default();
+        assert!(!infra_map.uses_olap(), "empty map should not use OLAP");
+
+        infra_map.olap_dictionaries.insert(dict.id("local"), dict);
+        assert!(
+            infra_map.uses_olap(),
+            "map with only dictionaries must report uses_olap() == true"
+        );
+    }
+
     /// Regression test: olap_dictionaries must survive a JSON round-trip via
     /// save_to_json() → load_from_json(). The custom serde shadow struct was
     /// previously missing this field, causing silent data loss on every persist.
