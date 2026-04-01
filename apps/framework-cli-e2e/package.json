@@ -20,7 +20,7 @@
     "@types/node": "catalog:",
     "axios": "catalog:",
     "chai": "catalog:",
-    "jose": "5.9.2",
+    "jose": "6.2.2",
     "js-yaml": "catalog:",
     "mocha": "catalog:",
     "posthog-node": "catalog:",

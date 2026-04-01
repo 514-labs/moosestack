@@ -19,12 +19,12 @@
     "build": "tsc"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "eslint": "^8.46.0",
+    "@types/node": "^25",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^10.1.0",
     "@repo/ts-config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.2"
   },
   "optionalDependencies": {
     "@514labs/moose-cli-darwin-arm64": "0.3.205",
