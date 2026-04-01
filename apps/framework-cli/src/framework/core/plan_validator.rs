@@ -1,3 +1,4 @@
+use crate::framework::core::infrastructure::dictionary::{DictionaryLayout, DictionarySource};
 use crate::{infrastructure::stream, project::Project};
 
 use super::infrastructure_map::{OlapChange, TableChange};
@@ -16,6 +17,9 @@ pub enum ValidationError {
 
     #[error("Row policy validation failed: {0}")]
     RowPolicyValidation(String),
+
+    #[error("Dictionary validation failed: {0}")]
+    DictionaryValidation(String),
 }
 
 /// Validates that all tables with cluster_name reference clusters defined in the config
@@ -155,6 +159,88 @@ fn validate_row_policy_columns(plan: &InfraPlan) -> Result<(), ValidationError> 
     Ok(())
 }
 
+/// Returns `true` if `layout` requires a single-column primary key.
+///
+/// COMPLEX_KEY_* layouts support multi-column keys; all other layouts do not.
+fn is_complex_key_layout(layout: &DictionaryLayout) -> bool {
+    matches!(
+        layout,
+        DictionaryLayout::ComplexKeyHashed { .. }
+            | DictionaryLayout::ComplexKeySparseHashed { .. }
+            | DictionaryLayout::ComplexKeyHashedArray { .. }
+            | DictionaryLayout::ComplexKeyCache { .. }
+            | DictionaryLayout::ComplexKeySsdCache { .. }
+            | DictionaryLayout::ComplexKeyDirect
+    )
+}
+
+/// Validates dictionary configurations in the plan.
+///
+/// Checks:
+/// 1. Source table exists in the infra map (for Table source type).
+/// 2. Primary key columns are present in the dictionary's column list.
+/// 3. Layout-key compatibility: non-COMPLEX_KEY layouts require exactly one key column.
+/// 4. Dict-to-dict source rejection: dictionaries cannot source from other dictionaries.
+fn validate_dictionary_config(plan: &InfraPlan) -> Result<(), ValidationError> {
+    let default_db = plan.target_infra_map.default_database.as_str();
+
+    for dict in plan.target_infra_map.olap_dictionaries.values() {
+        // Validate Table source type
+        if let DictionarySource::Table(ref ts) = dict.source {
+            // 1. Reject dict-to-dict: source must not be another dictionary
+            let is_dict_source = plan
+                .target_infra_map
+                .olap_dictionaries
+                .values()
+                .any(|d| d.name == ts.table);
+            if is_dict_source {
+                return Err(ValidationError::DictionaryValidation(format!(
+                    "Dictionary '{}' cannot use dictionary '{}' as a source table. \
+                     Dictionary-to-dictionary chaining is not supported by ClickHouse.",
+                    dict.name, ts.table
+                )));
+            }
+
+            // 2. Source table must exist in the infra map
+            let source_db = ts.database.as_deref().unwrap_or(default_db);
+            let table_exists = plan.target_infra_map.tables.values().any(|t| {
+                t.name == ts.table && t.database.as_deref().unwrap_or(default_db) == source_db
+            });
+            if !table_exists {
+                return Err(ValidationError::DictionaryValidation(format!(
+                    "Dictionary '{}' references source table '{}' which does not exist \
+                     in the infrastructure map.",
+                    dict.name, ts.table
+                )));
+            }
+        }
+
+        // 2. Primary key columns exist in the column list
+        for pk_col in &dict.primary_key {
+            if !dict.columns.iter().any(|c| &c.name == pk_col) {
+                return Err(ValidationError::DictionaryValidation(format!(
+                    "Dictionary '{}': primaryKey column '{}' is not listed in the \
+                     dictionary's column definitions.",
+                    dict.name, pk_col
+                )));
+            }
+        }
+
+        // 3. Layout-key compatibility
+        if dict.primary_key.len() > 1 && !is_complex_key_layout(&dict.layout) {
+            return Err(ValidationError::DictionaryValidation(format!(
+                "Dictionary '{}' has {} primary key columns but uses a layout that only \
+                 supports a single key column. Use a COMPLEX_KEY_* layout (e.g. \
+                 COMPLEX_KEY_HASHED) for multi-column keys.",
+                dict.name,
+                dict.primary_key.len()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationError> {
     stream::validate_changes(project, &plan.changes.streaming_engine_changes)?;
 
@@ -163,6 +249,9 @@ pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationErr
 
     // Validate row policy table/column references
     validate_row_policy_columns(plan)?;
+
+    // Validate dictionary source and key configuration
+    validate_dictionary_config(plan)?;
 
     // Check for validation errors in OLAP changes
     for change in &plan.changes.olap_changes {
@@ -575,6 +664,248 @@ mod tests {
                 claim: "org_id".to_string(),
             },
         );
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(result.is_ok());
+    }
+
+    // ─── Dictionary validation tests ────────────────────────────────────────
+
+    use crate::framework::core::infrastructure::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionaryQuerySource,
+        DictionarySource, DictionaryTableSource, OlapDictionary,
+    };
+
+    fn make_dict(
+        name: &str,
+        source: DictionarySource,
+        primary_key: Vec<String>,
+        columns: Vec<DictionaryColumn>,
+        layout: DictionaryLayout,
+    ) -> OlapDictionary {
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source,
+            primary_key,
+            columns,
+            layout,
+            lifetime: DictionaryLifetime::Single { seconds: 300 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            metadata: None,
+        }
+    }
+
+    fn make_dict_column(name: &str) -> DictionaryColumn {
+        DictionaryColumn {
+            name: name.to_string(),
+            type_string: "String".to_string(),
+            default_value: None,
+            expression: None,
+            is_injective: None,
+            is_hierarchical: None,
+            is_object_id: None,
+            comment: None,
+        }
+    }
+
+    fn table_source(table: &str) -> DictionarySource {
+        DictionarySource::Table(DictionaryTableSource {
+            table: table.to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        })
+    }
+
+    fn query_source() -> DictionarySource {
+        DictionarySource::Query(DictionaryQuerySource {
+            query: "SELECT id, val FROM src".to_string(),
+            invalidate_query: None,
+        })
+    }
+
+    #[test]
+    fn test_dictionary_source_table_missing_error() {
+        // Dictionary references a source table that's not in the infra map
+        let dict = make_dict(
+            "dict_x",
+            table_source("nonexistent_table"),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_x".to_string(), dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(matches!(
+            result,
+            Err(ValidationError::DictionaryValidation(msg))
+                if msg.contains("nonexistent_table")
+        ));
+    }
+
+    #[test]
+    fn test_dictionary_invalid_primary_key_column_error() {
+        // Primary key column not listed in columns
+        let dict = make_dict(
+            "dict_x",
+            query_source(),
+            vec!["bad_key".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_x".to_string(), dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(matches!(
+            result,
+            Err(ValidationError::DictionaryValidation(msg))
+                if msg.contains("bad_key")
+        ));
+    }
+
+    #[test]
+    fn test_dictionary_hashed_with_multi_key_error() {
+        // HASHED layout does not support multi-column keys
+        let dict = make_dict(
+            "dict_x",
+            query_source(),
+            vec!["k1".to_string(), "k2".to_string()],
+            vec![
+                make_dict_column("k1"),
+                make_dict_column("k2"),
+                make_dict_column("val"),
+            ],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_x".to_string(), dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(matches!(
+            result,
+            Err(ValidationError::DictionaryValidation(msg))
+                if msg.contains("COMPLEX_KEY")
+        ));
+    }
+
+    #[test]
+    fn test_dictionary_complex_key_hashed_with_multi_key_ok() {
+        // COMPLEX_KEY_HASHED layout supports multi-column keys
+        let dict = make_dict(
+            "dict_x",
+            query_source(),
+            vec!["k1".to_string(), "k2".to_string()],
+            vec![
+                make_dict_column("k1"),
+                make_dict_column("k2"),
+                make_dict_column("val"),
+            ],
+            DictionaryLayout::ComplexKeyHashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_x".to_string(), dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dictionary_dict_to_dict_source_error() {
+        // Dictionary that sources from another dictionary — not allowed
+        let src_dict = make_dict(
+            "dict_src",
+            query_source(),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let consumer_dict = make_dict(
+            "dict_consumer",
+            table_source("dict_src"), // references the other dictionary by name
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_src".to_string(), src_dict);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_consumer".to_string(), consumer_dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(matches!(
+            result,
+            Err(ValidationError::DictionaryValidation(msg))
+                if msg.contains("dict_src") && msg.contains("chaining")
+        ));
+    }
+
+    #[test]
+    fn test_dictionary_valid_config_succeeds() {
+        // A well-formed dictionary with a valid source table
+        let source_table = create_test_table("products", None);
+        let dict = make_dict(
+            "dict_products",
+            table_source("products"),
+            vec!["id".to_string()],
+            vec![make_dict_column("id"), make_dict_column("name")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![source_table]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_products".to_string(), dict);
 
         let project = create_test_project(None);
         let result = validate(&project, &plan);

@@ -86,6 +86,13 @@ pub struct InfraDiscrepancies {
     pub missing_row_policies: Vec<String>,
     /// Row policies that exist in both but have differences
     pub mismatched_row_policies: Vec<OlapChange>,
+    /// Dictionaries that exist in reality but are not in the map
+    pub unmapped_dictionaries: Vec<String>,
+    /// Dictionaries that are in the map but don't exist in reality
+    pub missing_dictionaries: Vec<String>,
+    /// Dictionaries that exist in both but have structural differences.
+    /// Currently unused (presence/absence only via list_dictionaries).
+    pub mismatched_dictionaries: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -106,6 +113,9 @@ impl InfraDiscrepancies {
             && self.unmapped_row_policies.is_empty()
             && self.missing_row_policies.is_empty()
             && self.mismatched_row_policies.is_empty()
+            && self.unmapped_dictionaries.is_empty()
+            && self.missing_dictionaries.is_empty()
+            && self.mismatched_dictionaries.is_empty()
     }
 }
 
@@ -864,6 +874,48 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             mismatched_row_policies.len()
         );
 
+        // Fetch and compare dictionaries (presence/absence only)
+        debug!("Fetching actual dictionary names from OLAP databases");
+
+        let mut actual_dictionary_names: HashSet<String> = HashSet::new();
+        for database in &all_databases {
+            debug!("Fetching dictionaries from database: {}", database);
+            let db_names = self.olap_client.list_dictionaries(database).await?;
+            actual_dictionary_names.extend(db_names);
+        }
+
+        debug!(
+            "Found {} dictionaries across all databases",
+            actual_dictionary_names.len()
+        );
+
+        let unmapped_dictionaries: Vec<String> = actual_dictionary_names
+            .iter()
+            .filter(|name| {
+                !infra_map
+                    .olap_dictionaries
+                    .values()
+                    .any(|d| &d.name == *name)
+            })
+            .cloned()
+            .collect();
+
+        let missing_dictionaries: Vec<String> = infra_map
+            .olap_dictionaries
+            .values()
+            .filter(|d| !actual_dictionary_names.contains(&d.name))
+            .map(|d| d.name.clone())
+            .collect();
+
+        // Structural comparison (mismatched) is deferred — list_dictionaries returns names only.
+        let mismatched_dictionaries: Vec<OlapChange> = Vec::new();
+
+        debug!(
+            "Found {} unmapped, {} missing dictionaries",
+            unmapped_dictionaries.len(),
+            missing_dictionaries.len()
+        );
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
@@ -880,6 +932,9 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             unmapped_row_policies,
             missing_row_policies,
             mismatched_row_policies,
+            unmapped_dictionaries,
+            missing_dictionaries,
+            mismatched_dictionaries,
         };
 
         debug!(
@@ -887,7 +942,8 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources, \
             {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
             {} unmapped views, {} missing views, {} mismatched views, \
-            {} unmapped row policies, {} missing row policies, {} mismatched row policies",
+            {} unmapped row policies, {} missing row policies, {} mismatched row policies, \
+            {} unmapped dictionaries, {} missing dictionaries",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),
@@ -902,7 +958,9 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             discrepancies.mismatched_views.len(),
             discrepancies.unmapped_row_policies.len(),
             discrepancies.missing_row_policies.len(),
-            discrepancies.mismatched_row_policies.len()
+            discrepancies.mismatched_row_policies.len(),
+            discrepancies.unmapped_dictionaries.len(),
+            discrepancies.missing_dictionaries.len()
         );
 
         if discrepancies.is_empty() {
@@ -936,6 +994,7 @@ mod tests {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
         row_policies: Vec<SelectRowPolicy>,
+        dictionaries: Vec<String>,
     }
 
     #[async_trait]
@@ -967,7 +1026,7 @@ mod tests {
         }
 
         async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
-            Ok(vec![])
+            Ok(self.dictionaries.clone())
         }
     }
 
@@ -1069,6 +1128,7 @@ mod tests {
             }],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         // Create empty infrastructure map
@@ -1147,6 +1207,7 @@ mod tests {
             }],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1230,6 +1291,7 @@ mod tests {
             }],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1303,6 +1365,7 @@ mod tests {
             }],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1378,6 +1441,7 @@ mod tests {
             }],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1469,6 +1533,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![actual_resource.clone()],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1677,6 +1742,7 @@ mod tests {
             tables: vec![actual_table.clone()],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1747,6 +1813,7 @@ mod tests {
             tables: vec![actual_table.clone()],
             sql_resources: vec![],
             row_policies: vec![],
+            dictionaries: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1910,5 +1977,168 @@ mod tests {
             views_are_equivalent(&view1, &view2, default_db),
             "Pre-normalized Views should be equivalent"
         );
+    }
+
+    // ─── Dictionary discrepancy tests ───────────────────────────────────────
+
+    fn make_empty_infra_map() -> InfrastructureMap {
+        InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            dmv1_views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
+            select_row_policies: HashMap::new(),
+            moose_version: None,
+            olap_dictionaries: Default::default(),
+        }
+    }
+
+    fn make_simple_mock(dictionaries: Vec<String>) -> MockOlapClient {
+        MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+            row_policies: vec![],
+            dictionaries,
+        }
+    }
+
+    fn make_simple_dict(
+        name: &str,
+    ) -> crate::framework::core::infrastructure::dictionary::OlapDictionary {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 300 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dictionary_unmapped_detected() {
+        // dict exists in reality but NOT in the infra map → unmapped
+        let mock_client = make_simple_mock(vec!["dict_products".to_string()]);
+        let infra_map = make_empty_infra_map();
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let discrepancies = checker
+            .check_reality(&create_test_project(), &infra_map)
+            .await
+            .unwrap();
+
+        assert_eq!(discrepancies.unmapped_dictionaries.len(), 1);
+        assert_eq!(discrepancies.unmapped_dictionaries[0], "dict_products");
+        assert!(discrepancies.missing_dictionaries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_dictionary_missing_detected() {
+        // dict is in the infra map but NOT in reality → missing
+        let mock_client = make_simple_mock(vec![]);
+        let mut infra_map = make_empty_infra_map();
+        let dict = make_simple_dict("dict_products");
+        infra_map
+            .olap_dictionaries
+            .insert(format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name), dict);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let discrepancies = checker
+            .check_reality(&create_test_project(), &infra_map)
+            .await
+            .unwrap();
+
+        assert!(discrepancies.unmapped_dictionaries.is_empty());
+        assert_eq!(discrepancies.missing_dictionaries.len(), 1);
+        assert_eq!(discrepancies.missing_dictionaries[0], "dict_products");
+    }
+
+    #[test]
+    fn test_is_empty_false_with_unmapped_dictionary() {
+        let discrepancies = InfraDiscrepancies {
+            unmapped_tables: vec![],
+            missing_tables: vec![],
+            mismatched_tables: vec![],
+            unmapped_sql_resources: vec![],
+            missing_sql_resources: vec![],
+            mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec!["dict_x".to_string()],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
+        };
+        assert!(!discrepancies.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty_false_with_missing_dictionary() {
+        let discrepancies = InfraDiscrepancies {
+            unmapped_tables: vec![],
+            missing_tables: vec![],
+            mismatched_tables: vec![],
+            unmapped_sql_resources: vec![],
+            missing_sql_resources: vec![],
+            mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec!["dict_y".to_string()],
+            mismatched_dictionaries: vec![],
+        };
+        assert!(!discrepancies.is_empty());
     }
 }
