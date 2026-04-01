@@ -380,6 +380,22 @@ function serializeLifetime(
 }
 
 /**
+ * Serialize a DictionaryLayout to the JSON shape Rust expects.
+ * The variant discriminant (type) uses SCREAMING_SNAKE_CASE; field names within
+ * each variant are snake_case (Rust default — no rename_all on fields).
+ */
+function serializeLayout(layout: DictionaryLayout): Record<string, unknown> {
+  const { type, ...rest } = layout as { type: string; [k: string]: unknown };
+  const snakeCaseFields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === undefined) continue;
+    const snake = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+    snakeCaseFields[snake] = value;
+  }
+  return { type, ...snakeCaseFields };
+}
+
+/**
  * Serialize the external source type string to SCREAMING_SNAKE_CASE for Rust.
  */
 function externalTypeToRust(type: ExternalSource["type"]): string {
@@ -567,11 +583,24 @@ export class OlapDictionary<T> {
       );
     }
 
-    // Validate: primaryKey must be non-empty
+    // Validate: primaryKey count must match layout type
     if (!config.primaryKey.length) {
       throw new Error(
         `OlapDictionary '${name}': primaryKey must contain at least one column name.`,
       );
+    }
+    if (COMPLEX_KEY_LAYOUTS.has(config.layout.type)) {
+      if (config.primaryKey.length < 2) {
+        throw new Error(
+          `OlapDictionary '${name}': layout '${config.layout.type}' requires at least 2 primary key columns (got ${config.primaryKey.length}).`,
+        );
+      }
+    } else {
+      if (config.primaryKey.length !== 1) {
+        throw new Error(
+          `OlapDictionary '${name}': layout '${config.layout.type}' requires exactly 1 primary key column (got ${config.primaryKey.length}). Use a COMPLEX_KEY_* layout for multi-column keys.`,
+        );
+      }
     }
 
     // Build serialized columns (name + typeString + per-column attributes)
@@ -616,6 +645,11 @@ export class OlapDictionary<T> {
    * Strings are treated as SQL identifiers, numbers as literals.
    */
   private formatKeyArgs(keys: Array<Sql | string | number>): string {
+    if (keys.length !== this.config.primaryKey.length) {
+      throw new Error(
+        `OlapDictionary '${this.name}': expected ${this.config.primaryKey.length} key argument(s) but got ${keys.length}.`,
+      );
+    }
     const parts = keys.map((k) => {
       if (typeof k === "object" && "strings" in k) {
         // Sql fragment — use toStaticQuery (throws if parameterized)
@@ -682,7 +716,7 @@ export class OlapDictionary<T> {
       };
       defaultExpr = toStaticQuery(defaultVal as Sql);
     } else if (typeof defaultVal === "string") {
-      defaultExpr = `'${defaultVal}'`;
+      defaultExpr = `'${defaultVal.replace(/'/g, "''")}'`;
     } else {
       defaultExpr = String(defaultVal);
     }
@@ -725,7 +759,7 @@ export class OlapDictionary<T> {
       source,
       primaryKey: this.config.primaryKey,
       columns: this.serializedColumns,
-      layout: this.config.layout,
+      layout: serializeLayout(this.config.layout),
       lifetime: serializeLifetime(this.config.lifetime),
       settings: this.config.settings ?? {},
       lifeCycle: this.config.lifeCycle ?? LifeCycle.FULLY_MANAGED,
