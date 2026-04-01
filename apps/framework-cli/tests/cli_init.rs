@@ -2,6 +2,10 @@ use assert_cmd::Command;
 use assert_fs::prelude::*;
 use predicates::prelude::*; // Used for writing assertions
 
+mod test_utils;
+
+use test_utils::ensure_test_environment;
+
 #[test]
 #[serial_test::serial(init)]
 fn cannot_run_cli_init_without_args() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +22,8 @@ fn cannot_run_cli_init_without_args() -> Result<(), Box<dyn std::error::Error>> 
 #[test]
 #[serial_test::serial(init)]
 fn can_run_cli_init() -> Result<(), Box<dyn std::error::Error>> {
+    ensure_test_environment();
+
     let temp = assert_fs::TempDir::new().unwrap();
     std::fs::remove_dir(&temp)?;
     let dir: &str = temp.path().to_str().unwrap();
@@ -45,6 +51,56 @@ fn can_run_cli_init() -> Result<(), Box<dyn std::error::Error>> {
     temp.child("app").assert(predicate::path::exists());
     temp.child("moose.config.toml")
         .assert(predicate::path::exists());
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(init)]
+fn can_run_cli_init_without_template_by_prompting() -> Result<(), Box<dyn std::error::Error>> {
+    ensure_test_environment();
+
+    let temp = assert_fs::TempDir::new().unwrap();
+    std::fs::remove_dir(&temp)?;
+    let dir: &str = temp.path().to_str().unwrap();
+
+    temp.child("package.json")
+        .assert(predicate::path::missing());
+    temp.child("app").assert(predicate::path::missing());
+    temp.child("moose.config.toml")
+        .assert(predicate::path::missing());
+
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
+
+    cmd.arg("init")
+        .arg("prompted-app")
+        .arg("-l")
+        .arg(dir)
+        .write_stdin("typescript\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Select template"));
+
+    temp.child("package.json").assert(predicate::path::exists());
+    temp.child("app").assert(predicate::path::exists());
+    temp.child("moose.config.toml")
+        .assert(predicate::path::exists());
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(init)]
+fn init_help_does_not_list_language_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
+
+    cmd.arg("init")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--language").not())
+        .stdout(predicate::str::contains("[TEMPLATE]"));
 
     Ok(())
 }
