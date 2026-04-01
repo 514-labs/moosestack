@@ -1170,6 +1170,7 @@ def to_infra_map() -> dict:
     for name, view in get_views().items():
         views[name] = ViewJson(
             name=view.name,
+            database=getattr(view, "database", None),
             select_sql=view.select_sql,
             source_tables=view.source_tables,
             metadata=getattr(view, "metadata", None),
