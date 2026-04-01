@@ -413,7 +413,7 @@ def test_source_mongodb_serialization():
 
 
 @pytest.mark.parametrize(
-    "layout,expected_type",
+    ("layout", "expected_type"),
     [
         (FlatLayout(), "FLAT"),
         (HashedLayout(), "HASHED"),
