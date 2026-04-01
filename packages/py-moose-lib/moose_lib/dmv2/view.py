@@ -13,19 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from .olap_table import OlapTable
 from ._registry import _views
 from ._source_capture import get_source_file_from_stack
-
-
-def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
-    """Helper function to format a table reference as `database`.`table` or just `table`"""
-    if isinstance(table, OlapTable):
-        database = table.config.database
-    elif hasattr(table, "database"):
-        database = table.database
-    else:
-        database = None
-    if database:
-        return f"`{database}`.`{table.name}`"
-    return f"`{table.name}`"
+from ._table_reference_utils import format_table_reference
 
 
 class ViewConfig(BaseModel):
@@ -101,7 +89,7 @@ class View:
         self.name = name
         self.database = config.database
         self.select_sql = config.select_statement
-        self.source_tables = [_format_table_reference(t) for t in config.base_tables]
+        self.source_tables = [format_table_reference(t) for t in config.base_tables]
 
         # Initialize metadata, preserving user-provided metadata if any
         if config.metadata:
