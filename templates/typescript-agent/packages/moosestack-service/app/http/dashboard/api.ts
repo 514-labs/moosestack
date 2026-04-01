@@ -5,24 +5,45 @@ import {
   requireAuthenticatedMoose,
 } from "../../auth/access-context";
 import { getDashboardSnapshot } from "../../semantic/dashboard-snapshot";
+import {
+  createDefaultApiRateLimit,
+  createRouteRateLimit,
+  type RouteRateLimitOverride,
+} from "../../../http/rate-limit";
 
 const app = express();
+const routeRateLimitOverrides = [
+  {
+    method: "GET",
+    path: "/dashboard/snapshot",
+  },
+] satisfies RouteRateLimitOverride[];
+
+const dashboardSnapshotRateLimit = createRouteRateLimit({
+  limit: 30,
+});
+
+app.use(createDefaultApiRateLimit(routeRateLimitOverrides));
 
 app.use(requireAuthenticatedMoose);
 
-app.get("/dashboard/snapshot", async (req, res, next) => {
-  try {
-    const context = assertAuthenticatedAccessContext(req);
+app.get(
+  "/dashboard/snapshot",
+  dashboardSnapshotRateLimit,
+  async (req, res, next) => {
+    try {
+      const context = assertAuthenticatedAccessContext(req);
 
-    // Moose injects a request-scoped QueryClient here; organization-scoped
-    // requests already carry their row-policy settings on this client.
-    const snapshot = await getDashboardSnapshot(context.moose.client.query);
+      // Moose injects a request-scoped QueryClient here; organization-scoped
+      // requests already carry their row-policy settings on this client.
+      const snapshot = await getDashboardSnapshot(context.moose.client.query);
 
-    res.json(snapshot);
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json(snapshot);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.use(
   (

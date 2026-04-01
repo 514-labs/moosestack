@@ -16,7 +16,7 @@ type ExecutableQueryModel = QueryModelBase & {
   query(
     request: Record<string, unknown>,
     queryClient: MooseUtils["client"]["query"],
-  ): Promise<Array<Record<string, unknown>>>;
+  ): Promise<unknown[]>;
 };
 
 function titleFromName(name: string): string {
@@ -65,7 +65,7 @@ export function registerSemanticModelTools(
             toolName,
             toolTitle,
             model,
-            rows,
+            rows as Record<string, unknown>[],
           );
         } catch (error) {
           console.error(`${toolName} failed:`, error);

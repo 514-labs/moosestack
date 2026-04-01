@@ -21,7 +21,8 @@ This package owns:
 | `app/auth/` | JWT claim names plus tenant/admin access-context helpers. |
 | `app/ingest/` | `IngestPipeline` declarations plus explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
-| `app/data/clickhouse/` | Low-level readonly ClickHouse helpers. |
+| `data/clickhouse/` | Low-level readonly ClickHouse helpers. |
+| `http/` | Shared HTTP middleware such as rate limiting. |
 | `app/http/` | Frontend-facing Express APIs. |
 | `app/mcp/` | MCP transport, tool registration, allowlist policy, and tool-specific parsers/errors. |
 | `seed/` | Starter SQL seed files. |

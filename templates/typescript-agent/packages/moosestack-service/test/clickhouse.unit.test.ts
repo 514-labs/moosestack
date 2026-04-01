@@ -117,16 +117,22 @@ describe("executeReadonlyStatement", () => {
   });
 
   it("keeps scoped queries readonly by wrapping the scoped QueryClient", async () => {
-    const executeSpy = vi.fn(async () => {
+    const querySpy = vi.fn(async () => {
       return {
         json: async () => [{ org_id: "org_a" }],
       };
     });
-    const readonlyClient = {
-      execute: executeSpy,
-    };
     const queryClient = {
-      withReadonly: vi.fn(() => readonlyClient),
+      client: {
+        query: querySpy,
+      },
+      query_id_prefix: "scoped-prefix",
+      rowPolicyOptions: {
+        role: "tenant_reader",
+        clickhouse_settings: {
+          SQL_moose_rls_org_id: "org_a",
+        },
+      },
     };
 
     const rows = await executeScopedSql<{ org_id: string }>(
@@ -135,7 +141,14 @@ describe("executeReadonlyStatement", () => {
     );
 
     expect(rows).toEqual([{ org_id: "org_a" }]);
-    expect(queryClient.withReadonly).toHaveBeenCalledTimes(1);
-    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "tenant_reader",
+        clickhouse_settings: expect.objectContaining({
+          SQL_moose_rls_org_id: "org_a",
+          readonly: "2",
+        }),
+      }),
+    );
   });
 });

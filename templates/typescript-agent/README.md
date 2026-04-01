@@ -349,7 +349,7 @@ Example:
 - `packages/web-app/src/lib/chat-agent.ts` — Next-hosted adapter around the shared default runtime
 - `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts` — allowlisted MCP catalog surface
 - `packages/moosestack-service/test/` — unit tests for Moose-owned helpers like catalog exposure and semantic tool wiring
-- `packages/moosestack-service/app/data/clickhouse/readonly-query.ts` — readonly ClickHouse access shared by semantic reads and MCP tools
+- `packages/moosestack-service/data/clickhouse/readonly-query.ts` — readonly ClickHouse access shared by semantic reads and MCP tools
 - `packages/agent-runtime/src/index.ts` — shared agent runtime plus optional reference multi-agent execution flow
 - `packages/agent-runtime/test/` — integration tests for shared runtime assembly and provider/tool wiring
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation

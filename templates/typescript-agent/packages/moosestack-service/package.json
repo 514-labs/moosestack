@@ -13,6 +13,7 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "agent-contracts": "workspace:*",
     "express": "catalog:",
+    "express-rate-limit": "^8.2.1",
     "typia": "catalog:",
     "zod": "catalog:zod3"
   },

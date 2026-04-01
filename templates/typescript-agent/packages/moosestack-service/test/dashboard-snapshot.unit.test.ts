@@ -25,7 +25,7 @@ describe("getDashboardSnapshot", () => {
     const { getDashboardSnapshot } = await import(
       "../app/semantic/dashboard-snapshot"
     );
-    const execute = vi
+    const query = vi
       .fn()
       .mockResolvedValueOnce({
         json: async () => [{ totalRecords: 2, highPriorityRecords: 1 }],
@@ -44,10 +44,15 @@ describe("getDashboardSnapshot", () => {
       });
 
     const snapshot = await getDashboardSnapshot({
-      withReadonly: vi.fn(function () {
-        return this;
-      }),
-      execute,
+      client: {
+        query,
+      },
+      rowPolicyOptions: {
+        role: "tenant_reader",
+        clickhouse_settings: {
+          SQL_moose_rls_org_id: "org_a",
+        },
+      },
     } as never);
 
     expect(snapshot.knowledgeMetrics).toEqual({
@@ -56,11 +61,19 @@ describe("getDashboardSnapshot", () => {
     });
     expect(snapshot.recentKnowledge).toHaveLength(1);
 
-    const metricsQuery = execute.mock.calls[0]?.[0];
-    expect(metricsQuery?.strings.join("?")).toContain("toDateTime(");
-    expect(metricsQuery?.values).toHaveLength(2);
+    const metricsQuery = query.mock.calls[0]?.[0];
+    expect(metricsQuery?.query).toContain("toDateTime(");
+    expect(Object.values(metricsQuery?.query_params ?? {})).toHaveLength(2);
     expect(
-      metricsQuery?.values.every((value: unknown) => typeof value === "string"),
+      Object.values(metricsQuery?.query_params ?? {}).every(
+        (value: unknown) => typeof value === "string",
+      ),
     ).toBe(true);
+    expect(metricsQuery?.clickhouse_settings).toEqual(
+      expect.objectContaining({
+        SQL_moose_rls_org_id: "org_a",
+        readonly: "2",
+      }),
+    );
   });
 });
