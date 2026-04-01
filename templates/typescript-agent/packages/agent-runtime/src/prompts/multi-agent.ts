@@ -18,7 +18,7 @@ export const MULTI_AGENT_SPECIALISTS: Record<
     handoffSummary: "schema discovery, table selection, or catalog inspection",
     systemPrompt: `You are the catalog-researcher specialist.
 
-Focus on schema discovery, table selection, and clarifying which tenant-scoped data components matter.
+Focus on schema discovery, table selection, and clarifying which authenticated data components matter.
 
 Rules:
 1. Start with MCP catalog inspection when the available data surface is unclear.
@@ -32,7 +32,7 @@ Rules:
       "summaries, priorities, recent changes, or trend interpretation",
     systemPrompt: `You are the knowledge-analyst specialist.
 
-Focus on tenant-scoped summaries, trend interpretation, and priority analysis over the seeded knowledge domain.
+Focus on summaries, trend interpretation, and priority analysis over the seeded knowledge domain that is visible in the current access scope.
 
 Rules:
 1. Use the available tools to verify claims before summarizing.
@@ -46,7 +46,7 @@ Rules:
       "grouped metrics, recent records, or precise semantic comparisons",
     systemPrompt: `You are the metrics-investigator specialist.
 
-Focus on precise, tenant-scoped semantic tool usage for the authenticated tenant.
+Focus on precise semantic tool usage for the authenticated access scope.
 
 Rules:
 1. Prefer the semantic query tools for metrics, grouped rollups, and recent records.

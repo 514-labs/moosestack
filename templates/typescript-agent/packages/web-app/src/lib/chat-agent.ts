@@ -17,7 +17,7 @@ import { assertProviderReady } from "@/lib/provider-status";
 interface AgentResponseOptions {
   messages: UIMessage[];
   bearerToken: string;
-  tenantId: string;
+  accessScopeId: string;
 }
 
 function getProviderConfig(): AgentProviderConfig {
@@ -49,14 +49,14 @@ function getProviderConfig(): AgentProviderConfig {
 export async function getAgentResponse({
   messages,
   bearerToken,
-  tenantId,
+  accessScopeId,
 }: AgentResponseOptions): Promise<Response> {
   const provider = getAiProvider();
   assertProviderReady();
   const stream = await createAgentStream({
     messages,
     bearerToken,
-    tenantId,
+    accessScopeId,
     mcpServerUrl: getMcpServerUrl(),
     providerConfig: getProviderConfig(),
     guardrailAdapter: createGuardrailAdapter(provider),

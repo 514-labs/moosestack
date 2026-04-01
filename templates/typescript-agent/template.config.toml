@@ -3,11 +3,11 @@ description = "TypeScript agent starter with MCP tools, Moose-owned dashboard AP
 frameworks = ["Next.js", "MCP", "Agents"]
 features = ["Moose OLAP", "Moose APIs", "Frontend", "MCP", "Auth", "Agents"]
 post_install_print = """
-Deploy on Boreal
+Deploy with 514 Hosting
 
-Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-https://boreal.cloud
+https://fiveonefour.boreal.cloud
 
 ---------------------------------------------------------
 
@@ -44,7 +44,7 @@ default_sloan_telemetry = "standard"
 [boreal]
 enabled = true
 display_name = "TypeScript Agent Starter"
-short_description = "Build tenant-scoped TypeScript agents with MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
+short_description = "Build TypeScript agents with local debug auth, organization-aware data access, MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
 featured = true
 
 # Env vars user must provide
@@ -94,7 +94,7 @@ description = "Optional Bedrock guardrail version"
 
 [[boreal.env_vars]]
 name = "BEDROCK_MODEL_ID"
-description = "Required when AI_PROVIDER=bedrock"
+description = "Optional override when AI_PROVIDER=bedrock; defaults to us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 [[boreal.env_vars]]
 name = "LANGFUSE_BASE_URL"
@@ -133,8 +133,8 @@ name = "OIDC_CLIENT_SECRET"
 description = "Production OIDC client secret"
 
 [[boreal.env_vars]]
-name = "OIDC_TENANT_CLAIM"
-description = "OIDC claim name that carries tenant_id"
+name = "OIDC_ORG_CLAIM"
+description = "OIDC claim name that carries org_id"
 
 [[boreal.env_vars]]
 name = "OPENAI_API_KEY"

@@ -84,6 +84,10 @@ generate_auth_secret() {
   node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'
 }
 
+generate_local_mock_password() {
+  node -e 'console.log(require("node:crypto").randomBytes(12).toString("base64url"))'
+}
+
 generate_local_jwt_keypair() {
   node -e 'const { generateKeyPairSync } = require("node:crypto"); const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }); console.log(JSON.stringify({ privateKey: privateKey.replace(/\n/g, "\\n"), publicKey: publicKey.replace(/\n/g, "\\n") }));'
 }
@@ -173,11 +177,36 @@ seed_local_jwt_keys() {
   fi
 }
 
+seed_local_mock_passwords() {
+  local variable_names=(
+    "LOCAL_MOCK_PASSWORD_ORG_A_USER"
+    "LOCAL_MOCK_PASSWORD_ORG_B_USER"
+    "LOCAL_MOCK_PASSWORD_ADMIN"
+  )
+  local generated_any=false
+
+  for variable_name in "${variable_names[@]}"; do
+    local existing_value=""
+    existing_value="$(read_env_value "${WEB_ENV_LOCAL}" "${variable_name}" || true)"
+    if [[ -n "${existing_value}" ]]; then
+      continue
+    fi
+
+    set_env_value "${WEB_ENV_LOCAL}" "${variable_name}" "$(generate_local_mock_password)"
+    generated_any=true
+  done
+
+  if [[ "${generated_any}" == true ]]; then
+    log "Generated local mock account passwords in packages/web-app/.env.local"
+  fi
+}
+
 ensure_env_files() {
   copy_if_missing "${SERVICE_ENV_EXAMPLE}" "${SERVICE_ENV_LOCAL}"
   copy_if_missing "${WEB_ENV_EXAMPLE}" "${WEB_ENV_LOCAL}"
   seed_web_auth_secret
   seed_local_jwt_keys
+  seed_local_mock_passwords
 }
 
 read_env_value() {

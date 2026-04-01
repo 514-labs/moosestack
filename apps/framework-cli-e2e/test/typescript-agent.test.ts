@@ -131,7 +131,7 @@ function cookieHeader(jar: Map<string, string>) {
     .join("; ");
 }
 
-async function signTenantJwt(
+async function signOrgJwt(
   claims: Record<string, string>,
   expirationTime: string | number = "1h",
 ): Promise<string> {
@@ -140,7 +140,7 @@ async function signTenantJwt(
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer(JWT_ISSUER)
     .setAudience(JWT_AUDIENCE)
-    .setSubject(`local-${claims.tenant_id ?? "missing-tenant"}`)
+    .setSubject(`local-${claims.org_id ?? "missing-org"}`)
     .setExpirationTime(expirationTime)
     .sign(privateKey);
 }
@@ -412,7 +412,20 @@ async function callMcpToolText(
   };
 }
 
-async function signInLocalTenant(tenantId: string) {
+function getLocalPasswordEnvVar(email: string) {
+  switch (email) {
+    case "user1@orgA.com":
+      return "LOCAL_MOCK_PASSWORD_ORG_A_USER";
+    case "user2@orgB.com":
+      return "LOCAL_MOCK_PASSWORD_ORG_B_USER";
+    case "admin@template.com":
+      return "LOCAL_MOCK_PASSWORD_ADMIN";
+    default:
+      throw new Error(`No mock password env var is defined for ${email}`);
+  }
+}
+
+async function signInLocalAccess(projectDir: string, email: string) {
   const jar = new Map<string, string>();
 
   const csrfResponse = await fetch(`${webAppUrl}/api/auth/csrf`, {
@@ -423,7 +436,7 @@ async function signInLocalTenant(tenantId: string) {
   const { csrfToken } = (await csrfResponse.json()) as { csrfToken: string };
 
   const callbackResponse = await fetch(
-    `${webAppUrl}/api/auth/callback/local-tenant`,
+    `${webAppUrl}/api/auth/callback/local-access`,
     {
       method: "POST",
       redirect: "manual",
@@ -433,7 +446,11 @@ async function signInLocalTenant(tenantId: string) {
       },
       body: new URLSearchParams({
         csrfToken,
-        tenantId,
+        email,
+        password: readEnvValue(
+          path.join(projectDir, "packages", "web-app", ".env.local"),
+          getLocalPasswordEnvVar(email),
+        ),
         callbackUrl: `${webAppUrl}/`,
         json: "true",
       }),
@@ -584,8 +601,8 @@ describe("TypeScript Agent Template E2E", function () {
     expect(seedResult.stdout).to.contain(
       "Inserted 4 records into tenant_knowledge",
     );
-    expect(seedResult.stdout).to.contain("acme: 2");
-    expect(seedResult.stdout).to.contain("globex: 2");
+    expect(seedResult.stdout).to.contain("org_a: 2");
+    expect(seedResult.stdout).to.contain("org_b: 2");
 
     await waitForDBWrite(
       mooseProcess,
@@ -664,8 +681,10 @@ describe("TypeScript Agent Template E2E", function () {
 
     const html = await pageResponse.text();
     expect(html).to.include("typescript-agent");
-    expect(html).to.include("Choose a tenant");
-    expect(html).to.include("Production-shaped agent starter");
+    expect(html).to.include("Sign in");
+    expect(html).to.include("Mock accounts");
+    expect(html).to.include("user1@orgA.com");
+    expect(html).to.include("admin@template.com");
 
     const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
@@ -704,16 +723,16 @@ describe("TypeScript Agent Template E2E", function () {
     expect(chatResponse.status).to.equal(401);
   });
 
-  it("should scope MCP tools to the caller tenant", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
-    const globexAuth = await signInLocalTenant("globex");
-    const acmeToken = acmeAuth.session.idToken;
-    const globexToken = globexAuth.session.idToken;
+  it("should scope MCP tools to the caller organization", async function () {
+    const orgAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
+    const orgBAuth = await signInLocalAccess(projectDir, "user2@orgB.com");
+    const orgAToken = orgAAuth.session.idToken;
+    const orgBToken = orgBAuth.session.idToken;
 
-    expect(acmeToken).to.be.a("string");
-    expect(globexToken).to.be.a("string");
+    expect(orgAToken).to.be.a("string");
+    expect(orgBToken).to.be.a("string");
 
-    const listResponse = await callMcp(acmeToken, {
+    const listResponse = await callMcp(orgAToken, {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/list",
@@ -730,60 +749,72 @@ describe("TypeScript Agent Template E2E", function () {
     expect(toolNames).to.include("get_data_catalog");
     expect(toolNames).to.not.include("query_clickhouse");
 
-    const acmeMetrics = await callMcpTool<{
+    const orgAMetrics = await callMcpTool<{
       rows: Array<{ totalRecords: number; highPriorityRecords: number }>;
       rowCount: number;
-    }>(acmeToken, "query_tenant_knowledge_metrics", {
+    }>(orgAToken, "query_tenant_knowledge_metrics", {
       metrics: ["totalRecords", "highPriorityRecords"],
       limit: 10,
     });
 
-    expect(acmeMetrics.rowCount).to.equal(1);
-    expect(acmeMetrics.rows[0]?.totalRecords).to.equal(2);
-    expect(acmeMetrics.rows[0]?.highPriorityRecords).to.equal(1);
+    expect(orgAMetrics.rowCount).to.equal(1);
+    expect(orgAMetrics.rows[0]?.totalRecords).to.equal(2);
+    expect(orgAMetrics.rows[0]?.highPriorityRecords).to.equal(1);
 
-    const acmeRows = await callMcpTool<{
+    const orgARecords = await callMcpTool<{
       rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "list_tenant_knowledge_records", {
+    }>(orgAToken, "list_tenant_knowledge_records", {
       columns: ["headline", "priority"],
       limit: 10,
     });
 
-    expect(acmeRows.rowCount).to.equal(2);
-    expect(acmeRows.rows.map((row) => row.headline).join(" ")).to.include(
-      "Brake alerts increased by 14% this week",
+    expect(orgARecords.rowCount).to.equal(2);
+    expect(orgARecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "1 brake alert opened this week",
+    );
+    expect(
+      orgARecords.rows.some((row) =>
+        row.headline.includes("1,024 packages stalled at the Seattle hub"),
+      ),
+    ).to.equal(false);
+
+    const orgAHighPriorityRecords = await callMcpTool<{
+      rows: Array<{ headline: string; priority: string }>;
+      rowCount: number;
+    }>(orgAToken, "list_tenant_knowledge_records", {
+      columns: ["headline", "priority"],
+      priority_in: ["high"],
+      limit: 10,
+    });
+
+    expect(orgAHighPriorityRecords.rowCount).to.equal(1);
+    expect(orgAHighPriorityRecords.rows[0]?.headline).to.include(
+      "1 brake alert",
     );
 
-    const acmeHighPriorityRows = await callMcpTool<{
+    const orgBRecords = await callMcpTool<{
       rows: Array<{ headline: string; priority: string }>;
       rowCount: number;
-    }>(acmeToken, "list_tenant_knowledge_records", {
-      columns: ["headline", "priority"],
-      priority: "high",
-      limit: 10,
-    });
-
-    expect(acmeHighPriorityRows.rowCount).to.equal(1);
-    expect(acmeHighPriorityRows.rows[0]?.headline).to.include("Brake alerts");
-
-    const globexRows = await callMcpTool<{
-      rows: Array<{ headline: string; priority: string }>;
-      rowCount: number;
-    }>(globexToken, "list_tenant_knowledge_records", {
+    }>(orgBToken, "list_tenant_knowledge_records", {
       columns: ["headline", "priority"],
       limit: 10,
     });
 
-    expect(globexRows.rowCount).to.equal(2);
-    expect(globexRows.rows.map((row) => row.headline).join(" ")).to.include(
-      "Seattle hub utilization breached 92%",
+    expect(orgBRecords.rowCount).to.equal(2);
+    expect(orgBRecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "1,024 packages stalled at the Seattle hub",
     );
+    expect(
+      orgBRecords.rows.some((row) =>
+        row.headline.includes("1 brake alert opened this week"),
+      ),
+    ).to.equal(false);
 
     const catalog = await callMcpTool<{
       tables?: Record<string, unknown>;
       materialized_views?: Record<string, unknown>;
-    }>(acmeToken, "get_data_catalog", {
+    }>(orgAToken, "get_data_catalog", {
       format: "detailed",
       component_type: "tables",
     });
@@ -794,7 +825,7 @@ describe("TypeScript Agent Template E2E", function () {
     ]);
 
     const filteredCatalog = await callMcpToolText(
-      acmeToken,
+      orgAToken,
       "get_data_catalog",
       {
         format: "summary",
@@ -807,93 +838,180 @@ describe("TypeScript Agent Template E2E", function () {
     );
   });
 
-  it("should create local tenant sessions and render tenant-scoped dashboards", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
-    expect(acmeAuth.session.user.tenantId).to.equal("acme");
-    expect(acmeAuth.session.idToken).to.be.a("string");
+  it("should create local org sessions and render organization-scoped dashboards", async function () {
+    const orgAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
+    expect(orgAAuth.session.user.orgId).to.equal("org_a");
+    expect(orgAAuth.session.user.accessRole).to.equal("tenant");
+    expect(orgAAuth.session.idToken).to.be.a("string");
 
-    const acmeSnapshotResponse = await fetch(
+    const orgASnapshotResponse = await fetch(
       `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
       {
         headers: {
-          Authorization: `Bearer ${acmeAuth.session.idToken}`,
+          Authorization: `Bearer ${orgAAuth.session.idToken}`,
         },
       },
     );
-    expect(acmeSnapshotResponse.status).to.equal(200);
-    const acmeSnapshot = await acmeSnapshotResponse.json();
-    expect(acmeSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
+    expect(orgASnapshotResponse.status).to.equal(200);
+    const orgASnapshot = await orgASnapshotResponse.json();
+    expect(orgASnapshot.knowledgeMetrics.totalRecords).to.equal(2);
     expect(
-      acmeSnapshot.recentKnowledge.some((row: { headline: string }) =>
-        row.headline.includes("Brake alerts increased by 14% this week"),
+      orgASnapshot.recentKnowledge.map((row: { orgId: string }) => row.orgId),
+    ).to.deep.equal(["org_a", "org_a"]);
+    expect(
+      orgASnapshot.recentKnowledge.some((row: { headline: string }) =>
+        row.headline.includes("1 brake alert opened this week"),
       ),
     ).to.equal(true);
+    expect(
+      orgASnapshot.recentKnowledge.some(
+        (row: { orgId: string }) => row.orgId === "org_b",
+      ),
+    ).to.equal(false);
 
-    const acmeDashboardResponse = await fetch(webAppUrl, {
+    const orgADashboardResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: acmeAuth.cookie,
+        Cookie: orgAAuth.cookie,
       },
     });
-    expect(acmeDashboardResponse.status).to.equal(200);
+    expect(orgADashboardResponse.status).to.equal(200);
 
-    const acmeHtml = await acmeDashboardResponse.text();
-    expect(acmeHtml).to.include("Tenant-scoped agent dashboard");
-    expect(acmeHtml).to.include("ACME Fleet");
-    expect(acmeHtml).to.include("Brake alerts increased by 14% this week");
-    expect(acmeHtml).to.include("answers with tenant-scoped semantic tools");
-    expect(acmeHtml).to.include(
-      "Break down the high-priority records by category for this tenant.",
+    const orgAHtml = await orgADashboardResponse.text();
+    expect(orgAHtml).to.include("Org A knowledge dashboard");
+    expect(orgAHtml).to.include("Signed in as user1@orgA.com");
+    expect(orgAHtml).to.include("1 brake alert opened this week");
+    expect(orgAHtml).to.include("Org A only");
+    expect(orgAHtml).to.include(
+      "Which knowledge categories changed most recently?",
     );
-    expect(acmeHtml).to.not.include("Multi-agent reference flow");
-    expect(acmeHtml).to.not.include("Seattle hub utilization breached 92%");
+    expect(orgAHtml).to.not.include("Multi-agent reference flow");
+    expect(orgAHtml).to.not.include(
+      "1,024 packages stalled at the Seattle hub",
+    );
 
-    const globexAuth = await signInLocalTenant("globex");
-    expect(globexAuth.session.user.tenantId).to.equal("globex");
-    expect(globexAuth.session.idToken).to.be.a("string");
+    const orgBAuth = await signInLocalAccess(projectDir, "user2@orgB.com");
+    expect(orgBAuth.session.user.orgId).to.equal("org_b");
+    expect(orgBAuth.session.user.accessRole).to.equal("tenant");
+    expect(orgBAuth.session.idToken).to.be.a("string");
 
-    const globexSnapshotResponse = await fetch(
+    const orgBSnapshotResponse = await fetch(
       `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
       {
         headers: {
-          Authorization: `Bearer ${globexAuth.session.idToken}`,
+          Authorization: `Bearer ${orgBAuth.session.idToken}`,
         },
       },
     );
-    expect(globexSnapshotResponse.status).to.equal(200);
-    const globexSnapshot = await globexSnapshotResponse.json();
-    expect(globexSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
+    expect(orgBSnapshotResponse.status).to.equal(200);
+    const orgBSnapshot = await orgBSnapshotResponse.json();
+    expect(orgBSnapshot.knowledgeMetrics.totalRecords).to.equal(2);
     expect(
-      globexSnapshot.recentKnowledge.some((row: { headline: string }) =>
-        row.headline.includes("Seattle hub utilization breached 92%"),
+      orgBSnapshot.recentKnowledge.map((row: { orgId: string }) => row.orgId),
+    ).to.deep.equal(["org_b", "org_b"]);
+    expect(
+      orgBSnapshot.recentKnowledge.some((row: { headline: string }) =>
+        row.headline.includes("1,024 packages stalled at the Seattle hub"),
+      ),
+    ).to.equal(true);
+    expect(
+      orgBSnapshot.recentKnowledge.some(
+        (row: { orgId: string }) => row.orgId === "org_a",
+      ),
+    ).to.equal(false);
+
+    const orgBDashboardResponse = await fetch(webAppUrl, {
+      headers: {
+        Cookie: orgBAuth.cookie,
+      },
+    });
+    expect(orgBDashboardResponse.status).to.equal(200);
+
+    const orgBHtml = await orgBDashboardResponse.text();
+    expect(orgBHtml).to.include("Org B knowledge dashboard");
+    expect(orgBHtml).to.include("Signed in as user2@orgB.com");
+    expect(orgBHtml).to.include("1,024 packages stalled at the Seattle hub");
+    expect(orgBHtml).to.include("Org B only");
+    expect(orgBHtml).to.include(
+      "Which knowledge categories changed most recently?",
+    );
+    expect(orgBHtml).to.not.include("Multi-agent reference flow");
+    expect(orgBHtml).to.not.include("1 brake alert opened this week");
+  });
+
+  it("should allow Admin Debug to inspect cross-organization data", async function () {
+    const adminAuth = await signInLocalAccess(projectDir, "admin@template.com");
+    expect(adminAuth.session.user.accessRole).to.equal("admin_debug");
+    expect(adminAuth.session.user.orgId).to.equal(undefined);
+    expect(adminAuth.session.idToken).to.be.a("string");
+
+    const adminMetrics = await callMcpTool<{
+      rows: Array<{ totalRecords: number; highPriorityRecords: number }>;
+      rowCount: number;
+    }>(adminAuth.session.idToken, "query_tenant_knowledge_metrics", {
+      metrics: ["totalRecords", "highPriorityRecords"],
+      limit: 10,
+    });
+
+    expect(adminMetrics.rowCount).to.equal(1);
+    expect(adminMetrics.rows[0]?.totalRecords).to.equal(4);
+
+    const adminRecords = await callMcpTool<{
+      rows: Array<{ headline: string }>;
+      rowCount: number;
+    }>(adminAuth.session.idToken, "list_tenant_knowledge_records", {
+      columns: ["headline"],
+      limit: 10,
+    });
+
+    expect(adminRecords.rowCount).to.equal(4);
+    expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "1 brake alert opened this week",
+    );
+    expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
+      "1,024 packages stalled at the Seattle hub",
+    );
+
+    const adminSnapshotResponse = await fetch(
+      `${SERVER_CONFIG.url}${DASHBOARD_SNAPSHOT_PATH}`,
+      {
+        headers: {
+          Authorization: `Bearer ${adminAuth.session.idToken}`,
+        },
+      },
+    );
+    expect(adminSnapshotResponse.status).to.equal(200);
+    const adminSnapshot = await adminSnapshotResponse.json();
+    expect(adminSnapshot.knowledgeMetrics.totalRecords).to.equal(4);
+    expect(
+      adminSnapshot.recentKnowledge.every(
+        (row: { orgId: string }) => typeof row.orgId === "string",
       ),
     ).to.equal(true);
 
-    const globexDashboardResponse = await fetch(webAppUrl, {
+    const adminDashboardResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: globexAuth.cookie,
+        Cookie: adminAuth.cookie,
       },
     });
-    expect(globexDashboardResponse.status).to.equal(200);
+    expect(adminDashboardResponse.status).to.equal(200);
 
-    const globexHtml = await globexDashboardResponse.text();
-    expect(globexHtml).to.include("Tenant-scoped agent dashboard");
-    expect(globexHtml).to.include("Globex Mobility");
-    expect(globexHtml).to.include("Seattle hub utilization breached 92%");
-    expect(globexHtml).to.include(
-      "Break down the high-priority records by category for this tenant.",
-    );
-    expect(globexHtml).to.not.include(
-      "Brake alerts increased by 14% this week",
-    );
+    const adminHtml = await adminDashboardResponse.text();
+    expect(adminHtml).to.include("Debug dashboard across all seeded data");
+    expect(adminHtml).to.include("Signed in as admin@template.com");
+    expect(adminHtml).to.include("org_a");
+    expect(adminHtml).to.include("org_b");
+    expect(adminHtml).to.include("1 brake alert opened this week");
+    expect(adminHtml).to.include("1,024 packages stalled at the Seattle hub");
   });
 
   it("should clear stale dashboard sessions instead of crashing the page", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
-    const expiredToken = await signTenantJwt(
+    const orgAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
+    const expiredToken = await signOrgJwt(
       {
-        tenant_id: "acme",
-        email: "ops@acme.example",
-        name: "ACME Fleet",
+        org_id: "org_a",
+        email: "user1@orgA.com",
+        name: "user1@orgA.com",
+        access_role: "tenant",
         scope: "agent:query",
       },
       Math.floor(Date.now() / 1000) - 10,
@@ -901,28 +1019,29 @@ describe("TypeScript Agent Template E2E", function () {
 
     const staleSessionCookie = await encodeSessionCookie(
       projectDir,
-      acmeAuth.sessionCookieName,
+      orgAAuth.sessionCookieName,
       {
-        sub: "local-acme",
-        userId: "local-acme",
-        tenantId: "acme",
-        tenantName: "ACME Fleet",
-        providerName: "local",
-        name: "ACME Fleet",
-        email: "ops@acme.example",
+        sub: "local-org-a-user-1",
+        userId: "local-org-a-user-1",
+        accessRole: "tenant",
+        orgId: "org_a",
+        orgName: "Org A",
+        provider: "local",
+        name: "user1@orgA.com",
+        email: "user1@orgA.com",
         idToken: expiredToken,
       },
     );
 
     replaceSessionCookie(
-      acmeAuth.cookieJar,
-      acmeAuth.sessionCookieName,
+      orgAAuth.cookieJar,
+      orgAAuth.sessionCookieName,
       staleSessionCookie,
     );
 
     const redirectResponse = await fetch(webAppUrl, {
       headers: {
-        Cookie: cookieHeader(acmeAuth.cookieJar),
+        Cookie: cookieHeader(orgAAuth.cookieJar),
       },
       redirect: "manual",
     });
@@ -936,7 +1055,7 @@ describe("TypeScript Agent Template E2E", function () {
       new URL(redirectResponse.headers.get("location") ?? "", webAppUrl),
       {
         headers: {
-          Cookie: cookieHeader(acmeAuth.cookieJar),
+          Cookie: cookieHeader(orgAAuth.cookieJar),
         },
         redirect: "manual",
       },
@@ -947,26 +1066,26 @@ describe("TypeScript Agent Template E2E", function () {
       "session=expired",
     );
 
-    updateCookieJar(acmeAuth.cookieJar, clearSessionResponse);
-    expect(acmeAuth.cookieJar.has(acmeAuth.sessionCookieName)).to.equal(false);
+    updateCookieJar(orgAAuth.cookieJar, clearSessionResponse);
+    expect(orgAAuth.cookieJar.has(orgAAuth.sessionCookieName)).to.equal(false);
 
     const landingResponse = await fetch(`${webAppUrl}/?session=expired`, {
       headers: {
-        Cookie: cookieHeader(acmeAuth.cookieJar),
+        Cookie: cookieHeader(orgAAuth.cookieJar),
       },
     });
 
     expect(landingResponse.status).to.equal(200);
 
     const landingHtml = await landingResponse.text();
-    expect(landingHtml).to.include("Choose a tenant");
+    expect(landingHtml).to.include("Sign in");
     expect(landingHtml).to.include("previous session expired");
   });
 
-  it("should reject JWTs that omit tenant_id", async function () {
-    const invalidToken = await signTenantJwt({
+  it("should reject JWTs that omit org_id", async function () {
+    const invalidToken = await signOrgJwt({
       email: "ops@example.com",
-      name: "Missing Tenant",
+      name: "Missing Org",
       scope: "agent:query",
     });
 
@@ -981,7 +1100,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should surface MCP outages through status and chat errors", async function () {
-    const acmeAuth = await signInLocalTenant("acme");
+    const orgAAuth = await signInLocalAccess(projectDir, "user1@orgA.com");
 
     await stopChildProcess(mooseProcess, "moose service");
     mooseProcess = null;
@@ -999,7 +1118,7 @@ describe("TypeScript Agent Template E2E", function () {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: acmeAuth.cookie,
+        Cookie: orgAAuth.cookie,
       },
       body: JSON.stringify({
         messages: [

@@ -383,6 +383,9 @@ importers:
       express:
         specifier: 'catalog:'
         version: 5.2.1
+      express-rate-limit:
+        specifier: ^8.2.1
+        version: 8.2.1(express@5.2.1)
       typia:
         specifier: 'catalog:'
         version: 9.7.2(@types/node@20.19.37)(typescript@5.9.3)

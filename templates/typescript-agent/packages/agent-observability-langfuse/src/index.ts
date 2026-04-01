@@ -21,7 +21,7 @@ class LangfuseTraceCollector implements TraceCollector {
   }
 
   startTrace(metadata: {
-    tenantId: string;
+    accessScopeId: string;
     provider: AIProvider;
     modelId: string;
     prompt: string;
@@ -29,10 +29,10 @@ class LangfuseTraceCollector implements TraceCollector {
     const traceId = crypto.randomUUID();
     const trace = this.langfuse.trace({
       id: traceId,
-      name: `agent:${metadata.tenantId}`,
+      name: `agent:${metadata.accessScopeId}`,
       input: metadata.prompt,
       metadata: {
-        tenantId: metadata.tenantId,
+        accessScopeId: metadata.accessScopeId,
         provider: metadata.provider,
         modelId: metadata.modelId,
       },

@@ -202,7 +202,7 @@ export function ChatThread({
           <ConversationEmptyState
             icon={<MessageSquareMore className="size-5" />}
             title="Start a conversation..."
-            description="Ask questions, inspect the catalog, or query tenant-scoped data."
+            description="Ask questions about the data that is currently in scope for this session."
           />
         : messages.map((message) => {
             if (message.role === "user") {

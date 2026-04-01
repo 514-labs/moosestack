@@ -5,6 +5,7 @@ import {
 import type { UIMessage } from "ai";
 import type { NextAuthRequest } from "next-auth";
 import { auth } from "@/auth";
+import { getSessionAccess } from "@/authz/session-access";
 import { getAgentResponse } from "@/lib/chat-agent";
 
 interface ChatBody {
@@ -58,11 +59,14 @@ export const POST = auth(async function POST(
 ): Promise<Response> {
   try {
     const session = request.auth;
-    if (!session?.idToken || !session.user?.tenantId) {
+    const access = getSessionAccess(session);
+
+    if (!session?.idToken || !access) {
       return createJsonResponse(
         {
           error: "Unauthorized",
-          details: "Sign in before using the agent chat.",
+          details:
+            "Sign in with a local mock account or your OIDC provider before using the agent chat.",
         },
         401,
       );
@@ -96,7 +100,7 @@ export const POST = auth(async function POST(
     return await getAgentResponse({
       messages,
       bearerToken: session.idToken,
-      tenantId: session.user.tenantId,
+      accessScopeId: access.accessScopeId,
     });
   } catch (error) {
     const response = getChatErrorResponse(error);

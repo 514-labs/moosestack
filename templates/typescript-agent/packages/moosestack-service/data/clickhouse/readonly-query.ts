@@ -5,7 +5,7 @@ import {
   toQuery,
 } from "@514labs/moose-lib";
 
-type QueryClient = MooseUtils["client"]["query"];
+type ScopedQueryClient = MooseUtils["client"]["query"];
 type ReadonlyQueryOptions = {
   limit?: number;
   rowPolicyOptions?: RowPolicyOptions;
@@ -26,7 +26,7 @@ function normalizeReadonlyQueryOptions(
 }
 
 async function executeReadonlyQuery<T>(
-  queryClient: QueryClient,
+  queryClient: ScopedQueryClient,
   query: string,
   queryParams: Record<string, unknown>,
   options: ReadonlyQueryOptions,
@@ -61,7 +61,7 @@ async function executeReadonlyQuery<T>(
 }
 
 export async function executeReadonlySql<T>(
-  queryClient: QueryClient,
+  queryClient: ScopedQueryClient,
   sql: Sql,
   limitOrOptions?: number | ReadonlyQueryOptions,
 ): Promise<T[]> {
@@ -75,7 +75,7 @@ export async function executeReadonlySql<T>(
 }
 
 export async function executeReadonlyStatement<T>(
-  queryClient: QueryClient,
+  queryClient: ScopedQueryClient,
   query: string,
   limitOrOptions?: number | ReadonlyQueryOptions,
 ): Promise<T[]> {
@@ -85,4 +85,41 @@ export async function executeReadonlyStatement<T>(
     {},
     normalizeReadonlyQueryOptions(limitOrOptions),
   );
+}
+
+export async function executeScopedSql<T>(
+  queryClient: ScopedQueryClient,
+  sql: Sql,
+): Promise<T[]> {
+  const internalQueryClient = queryClient as unknown as {
+    client: {
+      query: (params: {
+        query: string;
+        query_params: Record<string, unknown>;
+        format: "JSONEachRow";
+        clickhouse_settings: Record<string, string | number>;
+        role?: string;
+      }) => Promise<{
+        json: () => Promise<unknown>;
+      }>;
+    };
+    rowPolicyOptions?: RowPolicyOptions;
+  };
+  const [query, queryParams] = toQuery(sql);
+  const result = await internalQueryClient.client.query({
+    query,
+    query_params: queryParams,
+    format: "JSONEachRow",
+    clickhouse_settings: {
+      asterisk_include_materialized_columns: 1,
+      asterisk_include_alias_columns: 1,
+      ...internalQueryClient.rowPolicyOptions?.clickhouse_settings,
+      readonly: "2",
+    },
+    ...(internalQueryClient.rowPolicyOptions && {
+      role: internalQueryClient.rowPolicyOptions.role,
+    }),
+  });
+  const data = await result.json();
+  return Array.isArray(data) ? (data as T[]) : [];
 }

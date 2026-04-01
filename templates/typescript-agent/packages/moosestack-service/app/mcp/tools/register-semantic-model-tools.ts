@@ -2,19 +2,22 @@ import {
   createModelTool,
   type MooseUtils,
   type QueryModelBase,
-  type RowPolicyOptions,
 } from "@514labs/moose-lib";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { executeReadonlySql } from "../../data/clickhouse/readonly-query";
 import { formatSemanticToolError } from "../errors/semantic-tool-errors";
 import { createSemanticToolSuccessResult } from "./semantic-tool-output";
 
 interface SemanticModelContext {
   queryClient: MooseUtils["client"]["query"];
-  rowPolicyOptions: RowPolicyOptions;
 }
 
 type McpToolSchema = Parameters<McpServer["tool"]>[2];
+type ExecutableQueryModel = QueryModelBase & {
+  query(
+    request: Record<string, unknown>,
+    queryClient: MooseUtils["client"]["query"],
+  ): Promise<unknown[]>;
+};
 
 function titleFromName(name: string): string {
   return name
@@ -26,7 +29,7 @@ function titleFromName(name: string): string {
 
 export function registerSemanticModelTools(
   server: McpServer,
-  models: QueryModelBase[],
+  models: ExecutableQueryModel[],
   context: SemanticModelContext,
 ): void {
   for (const model of models) {
@@ -48,25 +51,21 @@ export function registerSemanticModelTools(
       { title: toolTitle },
       async (params: Record<string, unknown>) => {
         try {
-          const request = tool.buildRequest(params);
           const limit =
             typeof params.limit === "number" && !Number.isNaN(params.limit) ?
               params.limit
             : defaultLimit;
-          const rows = await executeReadonlySql<Record<string, unknown>>(
-            context.queryClient,
-            model.toSql(request),
-            {
-              limit,
-              rowPolicyOptions: context.rowPolicyOptions,
-            },
-          );
+          const request = tool.buildRequest({
+            ...params,
+            limit,
+          });
+          const rows = await model.query(request, context.queryClient);
 
           return createSemanticToolSuccessResult(
             toolName,
             toolTitle,
             model,
-            rows,
+            rows as Record<string, unknown>[],
           );
         } catch (error) {
           console.error(`${toolName} failed:`, error);

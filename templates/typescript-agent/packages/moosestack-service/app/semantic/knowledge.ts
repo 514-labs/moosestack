@@ -1,10 +1,16 @@
 import { defineQueryModel, sql } from "@514labs/moose-lib";
 import { TenantKnowledgeTable } from "../ingest/models";
 
+/**
+ * EXAMPLE_APP_ONLY:
+ * These semantic models are coupled to the seeded TenantKnowledge demo model.
+ * Replace or remove them when you swap out the example data model, then search
+ * the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
+ */
 export const tenantKnowledgeMetricsModel = defineQueryModel({
   name: "query_tenant_knowledge_metrics",
   description:
-    "Summarize tenant-scoped knowledge metrics and grouped rollups. Use for counts, priorities, categories, and source-level trends.",
+    "Summarize knowledge metrics and grouped rollups within the current access scope. Use for counts, priorities, categories, and source-level trends.",
   table: TenantKnowledgeTable,
   dimensions: {
     category: {
@@ -23,11 +29,11 @@ export const tenantKnowledgeMetricsModel = defineQueryModel({
   metrics: {
     totalRecords: {
       agg: sql.fragment`count(*)`,
-      description: "Total tenant knowledge records",
+      description: "Total knowledge records in scope",
     },
     highPriorityRecords: {
       agg: sql.fragment`countIf(${TenantKnowledgeTable.columns.priority} = 'high')`,
-      description: "High-priority records for the tenant",
+      description: "High-priority records in scope",
     },
   },
   filters: {
@@ -63,7 +69,7 @@ export const tenantKnowledgeMetricsModel = defineQueryModel({
 export const tenantKnowledgeRecordsModel = defineQueryModel({
   name: "list_tenant_knowledge_records",
   description:
-    "List tenant-scoped knowledge records for recent changes or detail inspection. Use for latest headlines, category filters, and priority-specific records.",
+    "List knowledge records visible in the current access scope. Use for latest headlines, category filters, and priority-specific records.",
   table: TenantKnowledgeTable,
   columns: {
     recordId: {

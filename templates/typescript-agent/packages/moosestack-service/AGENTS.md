@@ -6,7 +6,8 @@ MooseStack backend package for the TypeScript agent template.
 
 This package owns:
 
-- tenant-scoped ingest models and row policies
+- organization-scoped ingest models and row policies
+- JWT claim parsing and request-level access context
 - Moose semantic/query models for frontend and tool reads
 - frontend-facing HTTP APIs mounted through `WebApp`
 - custom MCP tools and the MCP allowlist policy
@@ -26,7 +27,8 @@ This package does not own:
 | `app/ingest/` | Explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and read-model composition. |
 | `app/data/clickhouse/` | Low-level readonly ClickHouse execution helpers. |
-| `app/http/` | Frontend-facing HTTP APIs and shared request context/auth helpers. |
+| `app/auth/` | JWT claim names plus org/admin access-context helpers. |
+| `app/http/` | Frontend-facing HTTP APIs. |
 | `app/mcp/` | MCP server transport, tool registration, tool parsing, and allowlist policy. |
 | `seed/` | Seed SQL for local/demo data. |
 | `test/` | Service-local unit tests for pure helpers and read-model composition. |
@@ -35,8 +37,10 @@ This package does not own:
 
 - Put `defineQueryModel()` declarations in `app/semantic/`, not beside HTTP or MCP transport code.
 - Keep direct ClickHouse client calls inside `app/data/clickhouse/` so readonly settings and row-policy propagation stay centralized.
-- Keep Express transport code in `app/http/` or `app/mcp/`. Shared auth/context helpers belong in `app/http/context/`, not beside individual routes.
+- Keep Express transport code in `app/http/` or `app/mcp/`. Shared auth/context helpers belong in `app/auth/`, not beside individual routes.
 - Keep MCP allowlist and SQL validation logic in `app/mcp/tool-access/`. Do not mix policy code into the transport file.
+- Search for `EXAMPLE_APP_ONLY:` when replacing the seeded demo model. Those
+  markers show which service files are safe to delete or rewrite first.
 - If you change schemas, query patterns, or ClickHouse settings, use the ClickHouse Best Practices Skill and validate the resulting table/query shape.
 
 ## Testing

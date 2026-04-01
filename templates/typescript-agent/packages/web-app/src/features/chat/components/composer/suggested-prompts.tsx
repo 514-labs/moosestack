@@ -1,9 +1,12 @@
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 
+// EXAMPLE_APP_ONLY: These prompts assume the seeded TenantKnowledge demo model.
+// Replace or remove them when you swap out the example data model, then search
+// the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
 const SUGGESTED_PROMPTS = [
-  "Summarize the highest-priority signals for this tenant.",
-  "Break down the highest-priority records by category for this tenant.",
-  "Which knowledge categories changed most recently for this tenant?",
+  "Summarize the highest-priority signals in view.",
+  "Which knowledge categories changed most recently?",
+  "Which headlines show the smallest counts versus the largest spikes?",
 ];
 
 type SuggestedPromptsProps = {
