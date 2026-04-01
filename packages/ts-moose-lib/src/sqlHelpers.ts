@@ -1,6 +1,8 @@
 // source https://github.com/blakeembrey/sql-template-tag/blob/main/src/index.ts
 import { Column } from "./dataModels/dataModelTypes";
 import { OlapTable, View } from "./dmv2";
+import { OlapDictionary } from "./dmv2/sdk/olapDictionary";
+
 import { AggregationFunction } from "./dataModels/typeConvert";
 
 /**
@@ -12,7 +14,7 @@ export const quoteIdentifier = (name: string): string => {
 };
 
 const isTable = (
-  value: RawValue | Column | OlapTable<any> | View,
+  value: RawValue | Column | OlapTable<any> | View | OlapDictionary<any>,
 ): value is OlapTable<any> =>
   typeof value === "object" &&
   value !== null &&
@@ -20,12 +22,20 @@ const isTable = (
   value.kind === "OlapTable";
 
 const isView = (
-  value: RawValue | Column | OlapTable<any> | View,
+  value: RawValue | Column | OlapTable<any> | View | OlapDictionary<any>,
 ): value is View =>
   typeof value === "object" &&
   value !== null &&
   "kind" in value &&
   value.kind === "View";
+
+const isDictionary = (
+  value: RawValue | Column | OlapTable<any> | View | OlapDictionary<any>,
+): value is OlapDictionary<any> =>
+  typeof value === "object" &&
+  value !== null &&
+  "kind" in value &&
+  (value as any).kind === "OlapDictionary";
 
 export type IdentifierBrandedString = string & {
   readonly __identifier_brand?: unique symbol;
@@ -50,7 +60,7 @@ export type Value =
 export type RawValue = Value | Sql;
 
 const isColumn = (
-  value: RawValue | Column | OlapTable<any> | View,
+  value: RawValue | Column | OlapTable<any> | View | OlapDictionary<any>,
 ): value is Column =>
   typeof value === "object" &&
   value !== null &&
@@ -67,7 +77,13 @@ export interface SqlTemplateTag {
    */
   (
     strings: readonly string[],
-    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+    ...values: readonly (
+      | RawValue
+      | Column
+      | OlapTable<any>
+      | View
+      | OlapDictionary<any>
+    )[]
   ): Sql;
 
   /**
@@ -76,7 +92,13 @@ export interface SqlTemplateTag {
    */
   statement(
     strings: readonly string[],
-    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+    ...values: readonly (
+      | RawValue
+      | Column
+      | OlapTable<any>
+      | View
+      | OlapDictionary<any>
+    )[]
   ): Sql;
 
   /**
@@ -85,7 +107,13 @@ export interface SqlTemplateTag {
    */
   fragment(
     strings: readonly string[],
-    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+    ...values: readonly (
+      | RawValue
+      | Column
+      | OlapTable<any>
+      | View
+      | OlapDictionary<any>
+    )[]
   ): Sql;
 
   /**
@@ -104,7 +132,13 @@ export interface SqlTemplateTag {
 
 function sqlImpl(
   strings: readonly string[],
-  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+  ...values: readonly (
+    | RawValue
+    | Column
+    | OlapTable<any>
+    | View
+    | OlapDictionary<any>
+  )[]
 ): Sql {
   return new Sql(strings, values);
 }
@@ -113,20 +147,32 @@ export const sql: SqlTemplateTag = sqlImpl as SqlTemplateTag;
 
 sql.statement = function (
   strings: readonly string[],
-  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+  ...values: readonly (
+    | RawValue
+    | Column
+    | OlapTable<any>
+    | View
+    | OlapDictionary<any>
+  )[]
 ): Sql {
   return new Sql(strings, values, false);
 };
 
 sql.fragment = function (
   strings: readonly string[],
-  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
+  ...values: readonly (
+    | RawValue
+    | Column
+    | OlapTable<any>
+    | View
+    | OlapDictionary<any>
+  )[]
 ): Sql {
   return new Sql(strings, values, true);
 };
 
 const instanceofSql = (
-  value: RawValue | Column | OlapTable<any> | View,
+  value: RawValue | Column | OlapTable<any> | View | OlapDictionary<any>,
 ): value is Sql =>
   typeof value === "object" && "values" in value && "strings" in value;
 
@@ -140,7 +186,14 @@ export class Sql {
 
   constructor(
     rawStrings: readonly string[],
-    rawValues: readonly (RawValue | Column | OlapTable<any> | View | Sql)[],
+    rawValues: readonly (
+      | RawValue
+      | Column
+      | OlapTable<any>
+      | View
+      | OlapDictionary<any>
+      | Sql
+    )[],
     isFragment?: boolean,
   ) {
     if (rawStrings.length - 1 !== rawValues.length) {
@@ -156,10 +209,25 @@ export class Sql {
     }
 
     const valuesLength = rawValues.reduce<number>(
-      (len: number, value: RawValue | Column | OlapTable<any> | View | Sql) =>
+      (
+        len: number,
+        value:
+          | RawValue
+          | Column
+          | OlapTable<any>
+          | View
+          | OlapDictionary<any>
+          | Sql,
+      ) =>
         len +
         (instanceofSql(value) ? value.values.length
-        : isColumn(value) || isTable(value) || isView(value) ? 0
+        : (
+          isColumn(value) ||
+          isTable(value) ||
+          isView(value) ||
+          isDictionary(value)
+        ) ?
+          0
         : 1),
       0,
     );
@@ -223,6 +291,11 @@ export class Sql {
         } else {
           this.strings[pos] += `\`${child.name}\``;
         }
+        this.strings[pos] += rawString;
+      } else if (isDictionary(child)) {
+        // Interpolating a dictionary renders as the string-literal form used in dictGet().
+        // e.g. sql`dictGet(${ProductDict}, 'attr', id)` → dictGet('db.dict_name', 'attr', id)
+        this.strings[pos] += `'${child.getQualifiedName()}'`;
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;
