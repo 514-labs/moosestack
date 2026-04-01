@@ -1,0 +1,100 @@
+---
+title: clickhouse seed
+description: Copy rows from one branch's ClickHouse table into another.
+order: 2
+---
+
+import { Callout } from "@/components/mdx";
+
+# 514 clickhouse seed
+
+Use `514 clickhouse seed` to copy rows from a source branch's ClickHouse database into the current branch. This is useful for populating a feature branch with realistic data from production or another branch.
+
+## Usage
+
+```bash
+514 clickhouse seed [OPTIONS] <TABLE>
+```
+
+## Arguments
+
+- `<TABLE>`: Name of the ClickHouse table to seed.
+
+## Options
+
+- `-l, --limit <LIMIT>`: Maximum number of rows to copy. Pass `0` for no limit.
+- `-w, --where <CLAUSE>`: SQL `WHERE` clause to filter which rows are copied.
+- `-f, --from <BRANCH>`: Source branch to copy data from. Defaults to the project's production branch.
+- `-b, --branch <BRANCH>`: Target branch name. Defaults to the current git branch.
+- `--project <PROJECT>`: Project reference: `<org>/<project>`, project name, project ID, or URL.
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## How It Works
+
+The command executes an `INSERT INTO ... SELECT * FROM` between two branch databases within the same ClickHouse cluster. Both the source and target tables must already exist — deploy your branch first to create the schema.
+
+<Callout type="info" title="Source branch default">
+When `--from` is omitted, the source defaults to the project's production (default) branch.
+</Callout>
+
+## Validation
+
+The command validates inputs before executing:
+
+| Check | Error |
+|-------|-------|
+| Source and target are the same branch | "Cannot seed a branch from itself" |
+| Source and target resolve to the same database | "Source and target branches resolve to the same database — seeding would duplicate rows" |
+| Table not found in source branch | "Table not found in source database" |
+| Table not found in target branch | "Table not found in target database. Deploy the branch first to create the schema." |
+| No ClickHouse credentials for branch | "No ClickHouse credentials configured" |
+
+## Examples
+
+Seed the `events` table from production into your current branch:
+
+```bash
+514 clickhouse seed events
+```
+
+Seed with a row limit:
+
+```bash
+514 clickhouse seed events --limit 1000
+```
+
+Seed only recent rows from a specific branch:
+
+```bash
+514 clickhouse seed events --from staging --where "timestamp > now() - INTERVAL 7 DAY"
+```
+
+Seed with explicit project and branch:
+
+```bash
+514 clickhouse seed events --project acme/analytics --branch feature/dashboard --from main --limit 5000
+```
+
+### JSON Output
+
+Use `--json` for machine-readable output:
+
+```bash
+514 clickhouse seed events --limit 100 --json
+```
+
+```json
+{
+  "table": "events",
+  "rows_inserted": 100,
+  "elapsed_ms": 1250
+}
+```
+
+## Related
+
+- [`514 clickhouse`](/hosting/cli/clickhouse)
+- [Branch Data Seeding](/hosting/workflow/branch-data-seeding) — automatic seeding during branch deploys
+- [Seed Filter (OlapTable config)](/moosestack/olap/model-table#seed-filter) — per-table seed filter configuration
+- [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) — seed a local development database from a remote source

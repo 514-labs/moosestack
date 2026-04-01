@@ -1310,6 +1310,20 @@ const hostingNavigationConfig: NavigationConfig = [
       },
     ],
   },
+  {
+    type: "page",
+    slug: "hosting/cli/clickhouse",
+    title: "clickhouse",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/clickhouse/seed",
+        title: "seed",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
   { type: "separator" },
   { type: "label", title: "Resource Commands" },
   {
