@@ -38,7 +38,10 @@ function formatTimestamp(value: string | undefined): string {
     return "No recent updates";
   }
 
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 export default async function Home({

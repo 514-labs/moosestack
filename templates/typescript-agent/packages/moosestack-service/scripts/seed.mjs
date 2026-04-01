@@ -52,8 +52,10 @@ const totalsByOrg = queryJsonRows(`
   ORDER BY org_id
 `);
 
-console.log(`- Inserted ${Math.max(0, totalAfter - totalBefore)} records into tenant_knowledge`);
-console.log("- Current totals by tenant:");
+console.log(
+  `- Inserted ${Math.max(0, totalAfter - totalBefore)} records into tenant_knowledge`,
+);
+console.log("- Current totals by org:");
 
 for (const row of totalsByOrg) {
   console.log(`  ${row.org_id}: ${row.total}`);

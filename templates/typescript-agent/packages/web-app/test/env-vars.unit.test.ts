@@ -19,6 +19,8 @@ describe("env-vars", () => {
     delete process.env.OIDC_ISSUER;
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
+    delete process.env.OIDC_ORG_CLAIM;
+    delete process.env.OIDC_TENANT_CLAIM;
   });
 
   afterEach(() => {
@@ -90,5 +92,13 @@ describe("env-vars", () => {
       clientId: "client-id",
       clientSecret: "client-secret",
     });
+  });
+
+  it("falls back to the legacy OIDC_TENANT_CLAIM env var", async () => {
+    process.env.OIDC_TENANT_CLAIM = "tenant_id";
+
+    const { getOidcOrgClaim } = await loadEnvVarsModule();
+
+    expect(getOidcOrgClaim()).toBe("tenant_id");
   });
 });

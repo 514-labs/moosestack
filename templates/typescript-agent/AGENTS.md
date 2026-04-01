@@ -238,7 +238,7 @@ Key patterns from this template:
 - Use `executeReadonlyStatement()` or `executeReadonlySql()` for DB access so readonly mode and row-policy settings are preserved
 - Keep the MCP schema surface explicit in `app/mcp/tool-access/exposed-surface.ts`; do not expose `system.*` metadata by default
 - Validate and constrain user-supplied SQL before execution
-- Expect `moose.jwt.org_id` to exist before serving custom tool requests
+- Expect `moose.jwt.org_id` for organization-scoped tool requests; the local-only `admin_debug` path is the exception and carries `access_role=admin_debug`
 - Return errors via `{ content: [...], isError: true }`, not by throwing
 
 ### Do / Don't
@@ -314,7 +314,7 @@ This template uses JWT auth, not static API tokens.
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | `packages/web-app/.env.local` | Optional Langfuse tracing |
 | `OIDC_*` | `packages/web-app/.env.local` | External OIDC configuration |
 
-For local dev, the web app issues short-lived JWTs carrying `org_id`. Moose verifies those JWTs using `MOOSE_JWT__SECRET` from `packages/moosestack-service/.env.local`, while `packages/moosestack-service/moose.config.toml` keeps the expected issuer and audience.
+For local dev, organization-scoped identities issue short-lived JWTs carrying `org_id`; the local Admin Debug identity intentionally omits `org_id` and relies on `access_role=admin_debug`. Moose verifies those JWTs using `MOOSE_JWT__SECRET` from `packages/moosestack-service/.env.local`, while `packages/moosestack-service/moose.config.toml` keeps the expected issuer and audience.
 
 ## Documentation
 

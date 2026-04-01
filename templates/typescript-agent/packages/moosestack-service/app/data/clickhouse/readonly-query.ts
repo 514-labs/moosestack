@@ -86,3 +86,12 @@ export async function executeReadonlyStatement<T>(
     normalizeReadonlyQueryOptions(limitOrOptions),
   );
 }
+
+export async function executeScopedSql<T>(
+  queryClient: QueryClient,
+  sql: Sql,
+): Promise<T[]> {
+  const result = await queryClient.execute<T>(sql);
+  const data = await result.json();
+  return Array.isArray(data) ? (data as T[]) : [];
+}

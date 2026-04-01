@@ -1,4 +1,4 @@
-import { ACCESS_ROLE_ADMIN_DEBUG } from "agent-contracts";
+import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT } from "agent-contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +13,7 @@ describe("access-context", () => {
     const context = getAuthenticatedAccessContext({
       moose: {
         jwt: {
+          access_role: ACCESS_ROLE_TENANT,
           org_id: "  org_a  ",
         },
       },
@@ -23,14 +24,20 @@ describe("access-context", () => {
       expect.objectContaining({
         kind: "org",
         orgId: "org_a",
-        rowPolicyOptions: {
-          role: "moose_rls_role",
-          clickhouse_settings: {
-            SQL_moose_rls_org_id: "  org_a  ",
-          },
-        },
       }),
     );
+  });
+
+  it("requires an explicit tenant role for organization-scoped access", () => {
+    expect(
+      getAuthenticatedAccessContext({
+        moose: {
+          jwt: {
+            org_id: "org_a",
+          },
+        },
+      } as never),
+    ).toBeUndefined();
   });
 
   it("returns admin debug access when the debug role is present", () => {
@@ -55,6 +62,7 @@ describe("access-context", () => {
       getAuthenticatedAccessContext({
         moose: {
           jwt: {
+            access_role: ACCESS_ROLE_TENANT,
             org_id: "   ",
           },
         },
@@ -67,6 +75,7 @@ describe("access-context", () => {
       getAuthenticatedAccessContext({
         moose: {
           jwt: {
+            access_role: ACCESS_ROLE_TENANT,
             org_id: 123,
           },
         },
@@ -117,6 +126,7 @@ describe("access-context", () => {
       {
         moose: {
           jwt: {
+            access_role: ACCESS_ROLE_TENANT,
             org_id: "org_a",
           },
         },
@@ -163,6 +173,7 @@ describe("access-context", () => {
       assertAuthenticatedAccessContext({
         moose: {
           jwt: {
+            access_role: ACCESS_ROLE_TENANT,
             org_id: "org_a",
           },
         },

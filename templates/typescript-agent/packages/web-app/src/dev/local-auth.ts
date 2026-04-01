@@ -49,6 +49,16 @@ export type LocalMockUser = (typeof LOCAL_MOCK_USERS)[number];
 
 let localPrivateKeyPromise: Promise<CryptoKey> | undefined;
 
+export function isAdminDebugEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+function isLocalMockUserEnabled(mockUser: LocalMockUser): boolean {
+  return (
+    mockUser.accessRole !== ACCESS_ROLE_ADMIN_DEBUG || isAdminDebugEnabled()
+  );
+}
+
 function getLocalPrivateKeyPem(): string {
   const value = process.env.LOCAL_DEV_JWT_PRIVATE_KEY;
   if (!value) {
@@ -87,8 +97,14 @@ export function getLocalMockUser(email: string): LocalMockUser | undefined {
   const normalizedEmail = normalizeEmail(email);
 
   return LOCAL_MOCK_USERS.find(
-    (mockUser) => normalizeEmail(mockUser.email) === normalizedEmail,
+    (mockUser) =>
+      isLocalMockUserEnabled(mockUser) &&
+      normalizeEmail(mockUser.email) === normalizedEmail,
   );
+}
+
+export function getVisibleLocalMockUsers(): LocalMockUser[] {
+  return LOCAL_MOCK_USERS.filter(isLocalMockUserEnabled);
 }
 
 function isValidLocalPassword(

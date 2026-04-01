@@ -3,7 +3,7 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import type { JSX } from "react";
 import { signIn } from "@/auth";
-import { LOCAL_MOCK_USERS } from "./local-auth";
+import { getVisibleLocalMockUsers } from "./local-auth";
 
 interface LocalLoginFormProps {
   errorMessage?: string;
@@ -12,6 +12,8 @@ interface LocalLoginFormProps {
 export function LocalLoginForm({
   errorMessage,
 }: LocalLoginFormProps): JSX.Element {
+  const localMockUsers = getVisibleLocalMockUsers();
+
   return (
     <div className="space-y-7">
       <form
@@ -110,7 +112,7 @@ export function LocalLoginForm({
         </div>
 
         <div className="mt-5 space-y-3 text-sm">
-          {LOCAL_MOCK_USERS.map((mockUser) => {
+          {localMockUsers.map((mockUser) => {
             const scopeLabel =
               mockUser.accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
                 "Admin access"

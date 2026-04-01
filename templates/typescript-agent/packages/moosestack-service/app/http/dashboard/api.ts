@@ -14,6 +14,8 @@ app.get("/dashboard/snapshot", async (req, res, next) => {
   try {
     const context = assertAuthenticatedAccessContext(req);
 
+    // Moose injects a request-scoped QueryClient here; organization-scoped
+    // requests already carry their row-policy settings on this client.
     const snapshot = await getDashboardSnapshot(context.moose.client.query);
 
     res.json(snapshot);

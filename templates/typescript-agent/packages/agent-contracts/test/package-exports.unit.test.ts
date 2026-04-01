@@ -26,14 +26,15 @@ function readManifest(
 }
 
 describe("internal package exports", () => {
-  it("publish import-style entry points with a default fallback", () => {
-    for (const manifestPath of PACKAGE_MANIFESTS) {
+  it.each(PACKAGE_MANIFESTS)(
+    "%s publishes import-style entry points with a default fallback",
+    (manifestPath) => {
       const manifest = readManifest(manifestPath);
       expect(manifest.exports?.["."]).toEqual({
         types: "./dist/index.d.ts",
         import: "./dist/index.js",
         default: "./dist/index.js",
       });
-    }
-  });
+    },
+  );
 });

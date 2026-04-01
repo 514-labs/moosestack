@@ -205,7 +205,9 @@ export function getOidcConfig():
 }
 
 export function getOidcOrgClaim(): string {
-  return process.env.OIDC_ORG_CLAIM ?? "org_id";
+  return (
+    process.env.OIDC_ORG_CLAIM ?? process.env.OIDC_TENANT_CLAIM ?? "org_id"
+  );
 }
 
 export function getLangfuseConfig():

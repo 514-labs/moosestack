@@ -1,5 +1,6 @@
 import { type MooseUtils, sql } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
+import { executeScopedSql } from "../data/clickhouse/readonly-query";
 import { TenantKnowledgeTable } from "../ingest/models";
 
 function formatClickHouseDateTime(value: Date): string {
@@ -15,11 +16,12 @@ export async function getDashboardSnapshot(
   const knowledgeMetricsQuery = sql.statement`
     SELECT
       count(*) AS totalRecords,
-      countIf(${TenantKnowledgeTable.columns.priority} = 'high') AS highPriorityRecords
+      countIf(
+        ${TenantKnowledgeTable.columns.priority} = 'high'
+        AND ${TenantKnowledgeTable.columns.timestamp} >= toDateTime(${formatClickHouseDateTime(weekAgo)})
+        AND ${TenantKnowledgeTable.columns.timestamp} <= toDateTime(${formatClickHouseDateTime(now)})
+      ) AS highPriorityRecords
     FROM ${TenantKnowledgeTable}
-    WHERE ${TenantKnowledgeTable.columns.timestamp} >= toDateTime(${formatClickHouseDateTime(weekAgo)})
-      AND ${TenantKnowledgeTable.columns.timestamp} <= toDateTime(${formatClickHouseDateTime(now)})
-    LIMIT 50
   `;
 
   const recentKnowledgeQuery = sql.statement`
@@ -35,33 +37,20 @@ export async function getDashboardSnapshot(
     LIMIT 5
   `;
 
-  const [knowledgeMetricsResult, recentKnowledgeResult] = await Promise.all([
-    queryClient.execute<{
+  const [knowledgeMetrics, recentKnowledge] = await Promise.all([
+    executeScopedSql<{
       totalRecords: number;
       highPriorityRecords: number;
-    }>(knowledgeMetricsQuery),
-    queryClient.execute<{
+    }>(queryClient, knowledgeMetricsQuery),
+    executeScopedSql<{
       orgId: string;
       headline: string;
       category: string;
       priority: string;
       source: string;
       timestamp: string;
-    }>(recentKnowledgeQuery),
+    }>(queryClient, recentKnowledgeQuery),
   ]);
-
-  const knowledgeMetrics = (await knowledgeMetricsResult.json()) as Array<{
-    totalRecords: number;
-    highPriorityRecords: number;
-  }>;
-  const recentKnowledge = (await recentKnowledgeResult.json()) as Array<{
-    orgId: string;
-    headline: string;
-    category: string;
-    priority: string;
-    source: string;
-    timestamp: string;
-  }>;
 
   return {
     knowledgeMetrics: knowledgeMetrics[0] ?? {

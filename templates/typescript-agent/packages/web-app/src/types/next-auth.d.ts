@@ -1,8 +1,7 @@
+import type { AccessRole } from "agent-contracts";
 import type { DefaultSession } from "next-auth";
 import "next-auth";
 import "next-auth/jwt";
-
-type AccessRole = "tenant" | "admin_debug";
 
 declare module "next-auth" {
   interface Session {
@@ -17,7 +16,7 @@ declare module "next-auth" {
   }
 
   interface User {
-    accessRole?: AccessRole;
+    accessRole: AccessRole;
     orgId?: string;
     orgName?: string;
     provider?: string;

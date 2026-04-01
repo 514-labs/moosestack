@@ -1,36 +1,23 @@
-import {
-  buildRowPolicyOptionsFromClaims,
-  MOOSE_RLS_SETTING_PREFIX,
-  type MooseUtils,
-  type RowPolicyOptions,
-} from "@514labs/moose-lib";
+import { type MooseUtils } from "@514labs/moose-lib";
 import {
   ACCESS_ROLE_ADMIN_DEBUG,
   ACCESS_ROLE_TENANT,
   type AccessRole,
 } from "agent-contracts";
 import type express from "express";
-import { ORG_ROW_POLICY_CONFIG } from "../security/tenant-isolation";
 import { ACCESS_ROLE_CLAIM, ORG_ID_CLAIM } from "./claims";
-
-const ROW_POLICY_CONFIG = Object.freeze({
-  [`${MOOSE_RLS_SETTING_PREFIX}${ORG_ROW_POLICY_CONFIG.column}`]:
-    ORG_ROW_POLICY_CONFIG.claim,
-});
 
 export type MooseRequest = express.Request & { moose?: MooseUtils };
 
 interface BaseAccessContext {
   moose: MooseUtils;
   accessRole: AccessRole;
-  rowPolicyOptions?: RowPolicyOptions;
 }
 
 export interface OrgAccessContext extends BaseAccessContext {
   kind: "org";
   accessRole: typeof ACCESS_ROLE_TENANT;
   orgId: string;
-  rowPolicyOptions: RowPolicyOptions;
 }
 
 export interface AdminDebugAccessContext extends BaseAccessContext {
@@ -53,8 +40,17 @@ function getOrgIdFromJwt(moose: MooseUtils): string | undefined {
   return orgId.length > 0 ? orgId : undefined;
 }
 
-function isAdminDebugJwt(moose: MooseUtils): boolean {
-  return moose.jwt?.[ACCESS_ROLE_CLAIM] === ACCESS_ROLE_ADMIN_DEBUG;
+function getAccessRoleFromJwt(moose: MooseUtils): AccessRole | undefined {
+  const accessRole = moose.jwt?.[ACCESS_ROLE_CLAIM];
+
+  if (
+    accessRole !== ACCESS_ROLE_TENANT &&
+    accessRole !== ACCESS_ROLE_ADMIN_DEBUG
+  ) {
+    return undefined;
+  }
+
+  return accessRole;
 }
 
 export function getAuthenticatedAccessContext(
@@ -65,21 +61,18 @@ export function getAuthenticatedAccessContext(
     return undefined;
   }
 
+  const accessRole = getAccessRoleFromJwt(moose);
   const orgId = getOrgIdFromJwt(moose);
-  if (orgId) {
+  if (accessRole === ACCESS_ROLE_TENANT && orgId) {
     return {
       kind: "org",
       accessRole: ACCESS_ROLE_TENANT,
       moose,
       orgId,
-      rowPolicyOptions: buildRowPolicyOptionsFromClaims(
-        ROW_POLICY_CONFIG,
-        moose.jwt,
-      ),
     };
   }
 
-  if (isAdminDebugJwt(moose)) {
+  if (accessRole === ACCESS_ROLE_ADMIN_DEBUG) {
     return {
       kind: "admin",
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,

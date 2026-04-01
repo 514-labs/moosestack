@@ -91,7 +91,7 @@ describe("getDashboardSnapshot", () => {
     );
   });
 
-  it("parses tenant ids on dashboard rows for admin debug views", async () => {
+  it("parses org ids on dashboard rows for admin debug views", async () => {
     const snapshot = {
       knowledgeMetrics: {
         totalRecords: 4,

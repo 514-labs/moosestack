@@ -68,7 +68,6 @@ flowchart LR
   Query --> Data
 ```
 
-## Optional Multi-Agent Reference Flow
 Authentication establishes identity. Authorization determines whether the request is organization-scoped (`org_id`) or uses the local-only `Admin Debug` bypass for troubleshooting.
 
 ## Optional Multi-Agent Reference Flow

@@ -29,7 +29,7 @@ function titleFromName(name: string): string {
 
 export function registerSemanticModelTools(
   server: McpServer,
-  models: QueryModelBase[],
+  models: ExecutableQueryModel[],
   context: SemanticModelContext,
 ): void {
   for (const model of models) {
@@ -37,7 +37,6 @@ export function registerSemanticModelTools(
       continue;
     }
 
-    const executableModel = model as ExecutableQueryModel;
     const toolName = model.name;
     const toolTitle = titleFromName(toolName);
     const toolDescription = model.description ?? toolName;
@@ -60,10 +59,7 @@ export function registerSemanticModelTools(
             ...params,
             limit,
           });
-          const rows = await executableModel.query(
-            request,
-            context.queryClient,
-          );
+          const rows = await model.query(request, context.queryClient);
 
           return createSemanticToolSuccessResult(
             toolName,

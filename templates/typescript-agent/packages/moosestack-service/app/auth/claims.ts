@@ -1,2 +1,1 @@
-export const ORG_ID_CLAIM = "org_id";
-export const ACCESS_ROLE_CLAIM = "access_role";
+export { ACCESS_ROLE_CLAIM, ORG_ID_CLAIM } from "agent-contracts";
