@@ -1737,12 +1737,6 @@ const guidesNavigationConfig: NavigationConfig = [
     children: [
       {
         type: "page",
-        slug: "guides/production-ready-analytics-agent/overview",
-        title: "Overview",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
         slug: "guides/production-ready-analytics-agent/dev-approach",
         title: "Dev Approach",
         languages: ["typescript"],
@@ -2240,6 +2234,7 @@ export interface SerializableGuideSection {
  */
 const iconToNameMap = new Map<TablerIcon, string>([
   [IconChartLine, "IconChartLine"],
+  [IconRobot, "IconRobot"],
   [IconMessageChatbot, "IconMessageChatbot"],
   [IconFileReport, "IconFileReport"],
   [IconCloudUpload, "IconCloudUpload"],

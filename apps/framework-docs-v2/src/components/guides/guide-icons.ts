@@ -17,6 +17,7 @@ import {
   IconDatabase,
   IconServer,
   IconRocket,
+  IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -42,6 +43,7 @@ export const guideIconMap: Record<string, React.ComponentType<IconProps>> = {
   IconDatabase,
   IconServer,
   IconRocket,
+  IconRobot,
 };
 
 export function getGuideIcon(
