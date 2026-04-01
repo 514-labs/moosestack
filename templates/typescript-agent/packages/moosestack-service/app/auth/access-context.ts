@@ -53,6 +53,10 @@ function getAccessRoleFromJwt(moose: MooseUtils): AccessRole | undefined {
   return accessRole;
 }
 
+function isAdminDebugEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 export function getAuthenticatedAccessContext(
   req: express.Request,
 ): AuthenticatedAccessContext | undefined {
@@ -72,7 +76,7 @@ export function getAuthenticatedAccessContext(
     };
   }
 
-  if (accessRole === ACCESS_ROLE_ADMIN_DEBUG) {
+  if (accessRole === ACCESS_ROLE_ADMIN_DEBUG && isAdminDebugEnabled()) {
     return {
       kind: "admin",
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,
