@@ -45,17 +45,17 @@
   },
   "dependencies": {
     "@514labs/kafka-javascript": "1.7.1-patch",
-    "@clickhouse/client": "1.8.1",
-    "@clickhouse/client-web": "1.5.0",
+    "@clickhouse/client": "1.18.2",
+    "@clickhouse/client-web": "1.18.2",
     "@kafkajs/confluent-schema-registry": "3.9.0",
-    "@temporalio/activity": "^1.11.7",
-    "@temporalio/client": "^1.11.7",
-    "@temporalio/common": "^1.11.7",
-    "@temporalio/worker": "^1.11.7",
-    "@temporalio/workflow": "^1.11.7",
+    "@temporalio/activity": "^1.15.0",
+    "@temporalio/client": "^1.15.0",
+    "@temporalio/common": "^1.15.0",
+    "@temporalio/worker": "^1.15.0",
+    "@temporalio/workflow": "^1.15.0",
     "commander": "^13.1.0",
     "csv-parse": "^5.5.5",
-    "fastq": "1.17.1",
+    "fastq": "1.20.1",
     "jose": "5.9.2",
     "redis": "^4.6.13",
     "toml": "3.0.0",
@@ -63,7 +63,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@repo/ts-config": "workspace:*",
     "@types/chai": "^4.3.5",
     "@types/mocha": "^10.0.1",
@@ -74,7 +74,7 @@
     "eslint": "^8.46.0",
     "mocha": "^10.2.0",
     "ts-node": "^10.9.1",
-    "tsup": "^8.4.0"
+    "tsup": "^8.5.1"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

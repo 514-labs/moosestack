@@ -12,15 +12,15 @@
     "format": "prettier --write './apps/**/*.{ts,tsx}'"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.6",
+    "@biomejs/biome": "2.4.10",
     "@repo/eslint-config-custom": "workspace:*",
     "@repo/ts-config": "workspace:*",
     "eslint": "^9.33.0",
     "husky": "^8.0.3",
-    "lint-staged": "16.2.0",
-    "prettier": "^3.6.2",
-    "prettier-plugin-tailwindcss": "^0.1.13",
-    "turbo": "^2.5.5"
+    "lint-staged": "16.4.0",
+    "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "turbo": "^2.9.3"
   },
   "packageManager": "pnpm@9.9.0",
   "pnpm": {
