@@ -194,3 +194,18 @@ export const URL_SYNCABLE_SETTINGS: Set<string> = new Set(
     (config) => "syncToUrl" in config && config.syncToUrl === true,
   ).map((config) => config.id),
 );
+
+/**
+ * Guides where the global "Your Stack" panel and first-visit customizer are hidden
+ * (path after `/guides/`, e.g. `production-ready-analytics-agent/overview` → prefix `production-ready-analytics-agent`).
+ */
+export const GUIDE_SETTINGS_UI_EXCLUDED_PREFIXES: readonly string[] = [
+  "production-ready-analytics-agent",
+];
+
+export function isGuidePathExcludedFromSettingsUi(pathname: string): boolean {
+  const normalized = pathname.replace(/\/$/, "");
+  return GUIDE_SETTINGS_UI_EXCLUDED_PREFIXES.some((prefix) =>
+    normalized.startsWith(`/guides/${prefix}`),
+  );
+}

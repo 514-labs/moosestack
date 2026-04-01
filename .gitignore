@@ -81,4 +81,7 @@ content-generation.mdc
 
 # auto-generated sitemaps
 **/public/sitemap*.xml
+
+# Claude local marketing context
+.claude/marketing-context/
 .pnpm-store

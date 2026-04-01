@@ -1,0 +1,130 @@
+---
+title: Overview
+description: Why analytics agents need an analytics agent harness to reach production, and what this approach provides
+languages: ["typescript"]
+---
+
+import { BulletPointsCard } from "@/components/mdx";
+
+# Overview
+
+## What is an Analytics Agent
+
+An analytics agent is an AI agent that does analytics ;) The agent inspects available data sources, queries and aggregates data, interprets results, extracts insights, and presents or even acts on findings. Analytics agents are often paired with a chat interface to enable users to ask questions in natural language and get custom insights, instead of pre-built dashboards or reports.
+
+This completely changes the world of the possible in data, analytics and BI. LLMs can mine data for correlations and insights that you didn't even know to look for. Non-technical stakeholders can explore data freely, instead of waiting on data specialists like analysts and data engineers. End users can explore their own data in-app with innovative experiences that drive up engagement and retention.
+
+## Why build your own Analytics Agent
+
+Many BI and Data Platform providers offer off-the-shelf analytics agents. Here's why you might build your own as well:
+
+- **You own the code and the full logic.** No black box. Every decision about how queries are constructed, how results are explained, and how the agent behaves is yours to inspect, modify, and improve.
+- **Embed in your software.** Integrate natively into your internal or end-user facing applications. Use your software frameworks of choice. Custom the interfaces for your brand, your users and your use cases.
+- **Custom security and auth.** Your tenancy model, your JWT flow, your row-level policies — enforced exactly how your product requires, not how a vendor decided to implement it.
+- **Custom semantics.** Your definition of "revenue", "active users", or "churn" — not a vendor's approximation. The agent speaks your domain, with the exact metric definitions your business relies on.
+- **Performance you can optimize.** You control the query layer, the database schema, the caching strategy. You can tune for your data shape, your query patterns, your scale — not a generic workload.
+
+<BulletPointsCard
+  title="Common use cases"
+  bulletStyle="number"
+  bullets={[
+    {
+      title: "Enterprise analytics agent",
+      description:
+        "Internal BI replacement or augmentation. Executives ask follow-ups on metrics without waiting on analysts. Business users generate ad-hoc cuts without learning SQL. The agent queries the same tables as the dashboards.",
+    },
+    {
+      title: "Customer-facing analytics product",
+      description:
+        "Blow your users away with natural language interfaces to explore their data. Each customer sees only their data. The chat interface adapts to their questions without requiring a bespoke dashboard per role.",
+    },
+    {
+      title: "Operational workflow agent",
+      description:
+        "Support, supply chain, DevOps chatops. Rapid, auditable data lookup: the agent shows what it queried and why. The structured data layer means answers can be verified, not just trusted.",
+    },
+    {
+      title: "Automated operations agent",
+      description:
+        "Real-time operational data in, automated decisions out. Manufacturing lines adjusting from live sensor readings. Customer 360 personalization updating as behavioral signals arrive. The agent acts, not just reports.",
+    },
+  ]}
+/>
+
+## The Challenge: the Analytics Agent + "Everything Else"
+
+An analytics agent prototype is usually straightforward to build. Point your agent at your source data, give it some basic text-to-SQL skills, and you're off to the races.
+
+But if you want your analytics agent to be safe, reliable and performant in production, then there is usually a lot more to the build besides the analytics agent itself. You need a whole layer of analytical infrastructure and middleware to enable the agent:
+
+<BulletPointsCard
+  title="Infrastructure and Middleware needed to enable your analytics agent"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Performance: Analytical Infrastructure",
+      description:
+        "Transactional databases fail under real analytical workloads. Production analytics agents need a purpose-built OLAP engine — one where queries that would time out elsewhere return in milliseconds.",
+      examples: ["ClickHouse", "StarRocks", "DuckDB"],
+    },
+    {
+      title: "Data Ingest: Streaming and Batch",
+      description:
+        "An OLAP engine is only as good as the data flowing into it. You need pipelines that can get data in reliably at scale — from transactional databases, event streams, or third-party sources — in real time or on a schedule.",
+      examples: ["Redpanda / Kafka (streaming)", "Temporal (batch workflows)", "CDC from OLTP"],
+    },
+    {
+      title: "Security: Auth and Access",
+      description:
+        "Application-layer tenant isolation can be bypassed by a bug or prompt injection. Robust isolation needs to be enforced at the database layer — so the database itself rejects cross-tenant queries.",
+      examples: ["JWT auth", "Row-level security", "DB-layer tenant isolation"],
+    },
+    {
+      title: "Observability: Tracing and Troubleshooting",
+      description:
+        "Without agent traces you can't tune prompts or debug incidents. Every tool call, model decision, SQL query, cost, and latency needs to be captured per request — wired in from the start, not added after an incident.",
+      examples: ["Langfuse", "OTEL"],
+    },
+    {
+      title: "Consistency: Semantic layer",
+      description:
+        "Metrics defined in multiple places drift. Every surface — chat, APIs, dashboards, MCP tools — needs a single definition of each metric. 'Revenue' should mean the same thing everywhere.",
+      examples: ["Express APIs & MCPs", "MooseStack Query Models"],
+    },
+    {
+      title: "Compliance: Policies and Guardrails",
+      description:
+        "Content policy bolted on after an incident is hard to audit. Guardrails need to be deliberate, testable, and always on — built in before you ship, not retrofitted after.",
+      examples: ["AWS BedRock", "AWS Guardrails"],
+    },
+  ]}
+/>
+
+## Bringing it all together: the Analytics Agent Harness
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                      Your Analytics Agent App                                     │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+In the world of AI agents, the infrastructure and middleware that surrounds the agent and enables it to be safe/successful/performant is often called a "Harness". In this case, all that "Everything Else" you need along with your analytics agent could be called your "Analytics Agent Harness". It's essentially the layer of infrastructure and middleware that makes the analytics agent production-ready. Source data flows in, gets stored in a high performance OLAP database, and is exposed to the analytics agent through APIs and MCP tools. The harness enforces tenant security, captures traces, keeps metrics consistent, and applies guardrails.
+
+## When this approach is worth it
+
+Building all of this in addition to your analytics agent is no small task. When is it worth it?
+
+Build the full agent harness when the stakes are real: data volumes or query complexity that would choke a transactional database, users who need to trust the answers, tenants whose data must never bleed into each other, or a production incident that you need to debug after the fact.
+
+This is real infrastructure. You're standing up an OLAP database, a multi-agent runtime, auth, tracing, and a semantic layer. That's the right tradeoff when your analytics agent needs to work reliably at scale, in front of real users, with real data.
+
+If you're building a prototype or a proof of concept where none of that matters yet, start simpler. Add in more layers of the harness as they are needed.

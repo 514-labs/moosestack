@@ -39,6 +39,7 @@ import {
   IconTrendingUp,
   IconSearch,
   IconFlask,
+  IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -1727,6 +1728,29 @@ const guidesNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "guides/production-ready-analytics-agent/overview",
+    title: "Custom analytics agents",
+    description:
+      "Get a multi-tenant, observable, analytics agent running from a production-shaped template.",
+    icon: IconRobot,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/dev-approach",
+        title: "Dev Approach",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
+      },
+    ],
+  },
+  {
+    type: "page",
     slug: "guides/customer-data-platform",
     title: "Customer Data Platform (CDP)",
     icon: IconUsers,
@@ -2210,6 +2234,7 @@ export interface SerializableGuideSection {
  */
 const iconToNameMap = new Map<TablerIcon, string>([
   [IconChartLine, "IconChartLine"],
+  [IconRobot, "IconRobot"],
   [IconMessageChatbot, "IconMessageChatbot"],
   [IconFileReport, "IconFileReport"],
   [IconCloudUpload, "IconCloudUpload"],
