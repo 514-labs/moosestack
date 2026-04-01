@@ -44,25 +44,25 @@ updates:
         update-types: ["major"]
 
   # =============================================================================
-  # Templates
+  # Templates & Examples
   # =============================================================================
   - package-ecosystem: "npm"
     directories:
       - "/templates/**"
+      - "/examples/**"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-      - "templates"
     groups:
-      templates-npm-moose:
+      npm-moose:
         patterns:
           - "@514labs/moose-cli"
           - "@514labs/moose-lib"
-      templates-minor-patch:
+      npm-minor-patch:
         update-types: ["minor", "patch"]
-      templates-major:
+      npm-major:
         update-types: ["major"]
     ignore:
       # Keep @types/node at 20.x.x for backward compatibility
@@ -73,66 +73,19 @@ updates:
   - package-ecosystem: "pip"
     directories:
       - "/templates/**"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "templates"
-      - "python"
-    groups:
-      templates-pip-moose:
-        patterns:
-          - "moose-cli"
-          - "moose-lib"
-      templates-pip-minor-patch:
-        update-types: ["minor", "patch"]
-      templates-pip-major:
-        update-types: ["major"]
-
-  # =============================================================================
-  # Examples
-  # =============================================================================
-  - package-ecosystem: "npm"
-    directories:
       - "/examples/**"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-      - "examples"
-    groups:
-      examples-npm-moose:
-        patterns:
-          - "@514labs/moose-cli"
-          - "@514labs/moose-lib"
-      examples-minor-patch:
-        update-types: ["minor", "patch"]
-      examples-major:
-        update-types: ["major"]
-    ignore:
-      # Keep @types/node at 20.x.x for backward compatibility
-      # Node.js 20 is LTS and we want to ensure compatibility
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "pip"
-    directories:
-      - "/examples/**"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "examples"
       - "python"
     groups:
-      examples-pip-moose:
+      pip-moose:
         patterns:
           - "moose-cli"
           - "moose-lib"
-      examples-pip-minor-patch:
+      pip-minor-patch:
         update-types: ["minor", "patch"]
-      examples-pip-major:
+      pip-major:
         update-types: ["major"]
