@@ -14,7 +14,10 @@ app.get("/dashboard/snapshot", async (req, res, next) => {
   try {
     const context = assertAuthenticatedAccessContext(req);
 
-    const snapshot = await getDashboardSnapshot(context.moose.client.query);
+    const snapshot = await getDashboardSnapshot(
+      context.moose.client.query,
+      context.rowPolicyOptions,
+    );
 
     res.json(snapshot);
   } catch (error) {
