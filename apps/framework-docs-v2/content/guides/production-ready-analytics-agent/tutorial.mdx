@@ -128,7 +128,7 @@ For prerequisites, platform-specific instructions, and troubleshooting, see the 
 
 ```bash
 moose harness init \
-  --name <project-name> \
+  --name my-analytics-agent-app \
   --agent claude-code \
   --agent cursor \
   --agent kiro \
@@ -142,21 +142,25 @@ This scaffolds the project, installs 514 agent skills, configures MCP for your c
 
 Follow the **Quickstart** section in the [template README](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent#quickstart) to install dependencies, prepare environment files (`pnpm env:prepare` creates `.env.local` files, generates `AUTH_SECRET`, and creates a local RSA keypair for the JWT flow), configure your AI provider, and start the dev environment.
 
+<Callout type="info" title="AI provider vs. coding agent">
+The AI provider you configure here is for the **analytics agents running inside the application** — they respond to user queries in the chat UI. This is separate from the coding agent (Claude Code, Cursor, etc.) you're using to build the app.
+</Callout>
+
+<Callout type="info" title="Bedrock tool schema note">
+When writing custom MCP tools backed by Bedrock, prefer `z.string()` with explicit allowed-value descriptions over `z.enum()`. Bedrock's tool-schema validation is stricter than Anthropic/OpenAI, and `z.enum()` types can cause silent failures. The template's built-in tools are already on this pattern.
+</Callout>
+
 `pnpm dev:start` requires Docker Desktop or Docker Engine running. It's a long-running process — keep it in its own terminal.
 
 ![Docker containers after pnpm dev:start](/guides/production-ready-analytics-agent/docker-containers.png)
 
 Once the dev server is running and you've seeded the demo data, **restart your coding agent** so it picks up the MooseDev MCP server. Your coding agent now has live ClickHouse introspection for the rest of the tutorial.
 
-Open `http://localhost:3000` — you should see the landing page with a demo tenant picker.
-
-![Landing page with tenant picker](/guides/production-ready-analytics-agent/agent-2.png)
-
-Sign in as one of the demo tenants. The dashboard shows tenant-scoped demo metrics.
+Open `http://localhost:3000` and sign in as one of the demo tenants. The dashboard shows tenant-scoped demo metrics.
 
 ![Dashboard after sign-in with seeded data](/guides/production-ready-analytics-agent/agent-3.png)
 
-Try the chat, then sign out and sign in as the other tenant — you should see different data. This confirms tenant-scoped row-level security is working before you invest time customizing.
+Try the chat - click the chat icon in the bottom right, and ask something of the analytics agent (Eg. "Tell me about high priority events"). Then sign out and sign in as the other tenant — you should see different data. This confirms tenant-scoped row-level security is working before you invest time customizing.
 
 ![Chat panel showing tool calls with seeded data](/guides/production-ready-analytics-agent/agent-4.png)
 
@@ -172,27 +176,7 @@ If you see "Port 4000 already in use" after restarting, a stale `moose-cli` proc
 
 ## 2. Wire Up Observability
 
-Configure your AI provider and Langfuse before you start customizing — you want traces from your first real query, not after you've already shipped.
-
-<Callout type="info" title="AI provider vs. coding agent">
-The AI provider you configure here is for the **analytics agents running inside the application** — the supervisor, specialist, and narrator that respond to user queries. This is separate from the coding agent (Claude Code, Cursor, etc.) you're using to build the app.
-</Callout>
-
-### Connect your AI provider
-
-Edit `packages/web-app/.env.local`:
-
-| Provider | Variables |
-|---|---|
-| Anthropic | `AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=sk-ant-...`, optional `ANTHROPIC_MODEL_ID` |
-| OpenAI | `AI_PROVIDER=openai`, `OPENAI_API_KEY=sk-...`, optional `OPENAI_MODEL_ID` |
-| AWS Bedrock | `AI_PROVIDER=bedrock`, `AWS_REGION=us-east-1`, `BEDROCK_MODEL_ID=...`, and either `AWS_PROFILE` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` |
-
-Restart after editing: `Ctrl-C` then `pnpm dev:start`.
-
-<Callout type="info" title="Bedrock tool schema note">
-When writing custom MCP tools backed by Bedrock, prefer `z.string()` with explicit allowed-value descriptions over `z.enum()`. Bedrock's tool-schema validation is stricter than Anthropic/OpenAI, and `z.enum()` types can cause silent failures. The template's built-in tools are already on this pattern.
-</Callout>
+Wire up Langfuse before you start customizing — you want traces from your first real query, not after you've already shipped.
 
 ### Create a Langfuse project
 
