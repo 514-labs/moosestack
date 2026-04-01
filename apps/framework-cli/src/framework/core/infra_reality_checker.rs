@@ -1087,6 +1087,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         // Create reality checker
@@ -1163,6 +1164,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1245,6 +1247,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1317,6 +1320,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1391,6 +1395,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1481,6 +1486,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1688,6 +1694,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1757,6 +1764,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
