@@ -682,56 +682,91 @@ message DictionaryLifetime {
 
 // DictionaryHttpSource — external HTTP source
 message DictionaryHttpSource {
+  // Full URL of the HTTP endpoint serving dictionary data
   string url = 1;
+  // ClickHouse input format (e.g. CSV, JSONEachRow, TSV)
   string format = 2;
+  // HTTP method override; defaults to GET when absent
   optional string method = 3;
+  // Optional SQL WHERE clause appended to the source query
   optional string where_clause = 4;
 }
 
 // DictionaryClickHouseSource — remote ClickHouse server as source
 message DictionaryClickHouseSource {
+  // Hostname or IP of the remote ClickHouse server
   string host = 1;
+  // TCP port of the remote ClickHouse server
   uint32 port = 2;
+  // Username for authentication
   string user = 3;
+  // Password for authentication (stored as-is; mask before display)
   string password = 4;
+  // Database name on the remote server
   string db = 5;
+  // Table name on the remote server
   string table = 6;
+  // Custom SQL query; overrides table when present
   optional string query = 7;
+  // SQL WHERE clause appended to the generated SELECT
   optional string where_clause = 8;
+  // Query whose result change triggers dictionary reload
   optional string invalidate_query = 9;
 }
 
 // DictionaryMysqlSource — MySQL database as source
 message DictionaryMysqlSource {
+  // Hostname or IP of the MySQL server
   string host = 1;
+  // TCP port of the MySQL server
   uint32 port = 2;
+  // Username for authentication
   string user = 3;
+  // Password for authentication (stored as-is; mask before display)
   string password = 4;
+  // Database name
   string db = 5;
+  // Table name
   string table = 6;
+  // Custom SQL query; overrides table when present
   optional string query = 7;
+  // SQL WHERE clause appended to the generated SELECT
   optional string where_clause = 8;
+  // Query whose result change triggers dictionary reload
   optional string invalidate_query = 9;
 }
 
 // DictionaryPostgresqlSource — PostgreSQL database as source
 message DictionaryPostgresqlSource {
+  // Hostname or IP of the PostgreSQL server
   string host = 1;
+  // TCP port of the PostgreSQL server
   uint32 port = 2;
+  // Username for authentication
   string user = 3;
+  // Password for authentication (stored as-is; mask before display)
   string password = 4;
+  // Database name
   string db = 5;
+  // Table name
   string table = 6;
+  // Custom SQL query; overrides table when present
   optional string query = 7;
+  // SQL WHERE clause appended to the generated SELECT
   optional string where_clause = 8;
+  // Query whose result change triggers dictionary reload
   optional string invalidate_query = 9;
 }
 
 // DictionaryRedisSource — Redis as source
 message DictionaryRedisSource {
+  // Hostname or IP of the Redis server
   string host = 1;
+  // TCP port of the Redis server
   uint32 port = 2;
+  // Optional password for Redis AUTH command
   optional string password = 3;
+  // Redis database index (0-based); defaults to 0 when absent
   optional uint32 db_index = 4;
   // Storage type: simple, hash, range_hashed, etc.
   string storage_type = 5;
@@ -739,26 +774,39 @@ message DictionaryRedisSource {
 
 // DictionaryMongoDbSource — MongoDB as source
 message DictionaryMongoDbSource {
+  // Hostname or IP of the MongoDB server
   string host = 1;
+  // TCP port of the MongoDB server
   uint32 port = 2;
+  // Username for authentication
   string user = 3;
+  // Password for authentication (stored as-is; mask before display)
   string password = 4;
+  // Database name
   string db = 5;
+  // Collection name
   string collection = 6;
 }
 
 // DictionaryExecutableSource — external executable as source
 message DictionaryExecutableSource {
+  // Shell command to execute; must emit records on stdout
   string command = 1;
+  // ClickHouse input format of the executable output (e.g. TabSeparated)
   string format = 2;
+  // When true, the first column is used implicitly as the dictionary key
   optional bool implicit_key = 3;
 }
 
 // DictionaryS3Source — S3 object storage as source
 message DictionaryS3Source {
+  // S3 URL (s3://bucket/path or https://endpoint/bucket/path)
   string url = 1;
+  // ClickHouse input format of the S3 object (e.g. Parquet, CSV)
   string format = 2;
+  // AWS access key ID; omit to use instance profile / environment credentials
   optional string access_key_id = 3;
+  // AWS secret access key (stored as-is; mask before display)
   optional string secret_access_key = 4;
 }
 

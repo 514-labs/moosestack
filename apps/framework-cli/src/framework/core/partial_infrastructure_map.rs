@@ -1562,6 +1562,12 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
             *source_file = normalize_path_string(source_file, project_root);
         }
     }
+
+    for dict in infra_map.olap_dictionaries.values_mut() {
+        if let Some(metadata) = &mut dict.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
 }
 
 #[cfg(test)]

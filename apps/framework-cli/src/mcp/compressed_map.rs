@@ -788,6 +788,81 @@ mod tests {
     }
 
     #[test]
+    fn test_dictionary_component_and_pulls_from_edge() {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        let mut infra_map = InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+
+        let dict = OlapDictionary {
+            name: "user_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![
+                DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+                DictionaryColumn {
+                    name: "name".to_string(),
+                    type_string: "String".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+            ],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: Default::default(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            metadata: None,
+        };
+        let dict_id = dict.id("local");
+        infra_map.olap_dictionaries.insert(dict_id.clone(), dict);
+
+        let compressed = build_compressed_map(&infra_map);
+
+        // Dictionary component should be present
+        assert!(compressed
+            .get_component(&dict_id)
+            .is_some_and(|c| c.component_type == ComponentType::OlapDictionary));
+
+        // PullsFrom edge: source table → dictionary
+        assert!(compressed.connections().iter().any(|c| {
+            c.from == "local_users"
+                && c.to == dict_id
+                && c.connection_type == ConnectionType::PullsFrom
+        }));
+    }
+
+    #[test]
     fn test_webapp_lineage_connections_are_included() {
         let mut infra_map = InfrastructureMap::default();
         let web_app = WebApp {

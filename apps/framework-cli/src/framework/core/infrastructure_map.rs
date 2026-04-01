@@ -3700,6 +3700,7 @@ impl InfrastructureMap {
             || !self.sql_resources.is_empty()
             || !self.materialized_views.is_empty()
             || !self.views.is_empty()
+            || !self.olap_dictionaries.is_empty()
     }
 
     pub fn uses_streaming(&self) -> bool {
@@ -4624,6 +4625,7 @@ impl serde::Serialize for InfrastructureMap {
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
             select_row_policies: &'a HashMap<String, SelectRowPolicy>,
+            olap_dictionaries: &'a HashMap<String, OlapDictionary>,
             #[serde(skip_serializing_if = "Option::is_none")]
             moose_version: &'a Option<String>,
         }
@@ -4649,6 +4651,7 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
             select_row_policies: &masked_inframap.select_row_policies,
+            olap_dictionaries: &masked_inframap.olap_dictionaries,
             moose_version: &masked_inframap.moose_version,
         };
 
