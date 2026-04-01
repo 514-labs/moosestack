@@ -898,6 +898,45 @@ mod tests {
     }
 
     #[test]
+    fn test_dictionary_table_and_dict_share_name_allows_table_source() {
+        // Regression test for false-positive dict-to-dict rejection:
+        // When both a table "products" and a dictionary "products" exist,
+        // a new dictionary sourcing from the TABLE "products" must be allowed.
+        let source_table = create_test_table("products", None);
+        let existing_dict = make_dict(
+            "products", // dictionary with same name as the table
+            query_source(),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let consumer_dict = make_dict(
+            "dict_consumer",
+            table_source("products"), // intends to source from the TABLE, not the dict
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![source_table]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_products".to_string(), existing_dict);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_dict_consumer".to_string(), consumer_dict);
+
+        let project = create_test_project(None);
+        // Should succeed: "products" resolves to a table, not a dict-to-dict chain
+        assert!(validate(&project, &plan).is_ok());
+    }
+
+    #[test]
     fn test_dictionary_valid_config_succeeds() {
         // A well-formed dictionary with a valid source table
         let source_table = create_test_table("products", None);
