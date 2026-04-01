@@ -172,12 +172,21 @@ fn collect_nested_project_dirs(
                 e,
             )
         })?;
-        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Failure".to_string(),
+                    format!("reading project directory {}", root_dir.display()),
+                ),
+                e,
+            )
+        })?;
 
-        if !path.is_dir() {
+        if !file_type.is_dir() || file_type.is_symlink() {
             continue;
         }
 
+        let path = entry.path();
         let Some(dir_name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
@@ -440,6 +449,24 @@ mod tests {
             .message
             .details
             .contains("cannot choose one automatically"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_bootstrap_project_dir_ignores_symlinked_directories() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let project_dir = temp_dir.path().join("project");
+        let actual_service = project_dir.join("services").join("alpha");
+        let symlinked_service = project_dir.join("linked-service");
+
+        std::fs::create_dir_all(&actual_service).unwrap();
+        std::fs::write(actual_service.join(PROJECT_CONFIG_FILE), "").unwrap();
+        std::os::unix::fs::symlink(&actual_service, &symlinked_service).unwrap();
+
+        assert_eq!(
+            resolve_bootstrap_project_dir(&project_dir).unwrap(),
+            actual_service
+        );
     }
 
     #[tokio::test]
