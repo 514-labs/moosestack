@@ -1,10 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v3";
 import { formatCatalogToolError } from "../errors/catalog-tool-errors";
-import {
-  parseCatalogComponentType,
-  parseCatalogFormat,
-} from "../parsers/catalog-params";
+import { parseCatalogComponentType, parseCatalogFormat } from "../parsers/catalog-params";
 import {
   formatExposedCatalogDetailed,
   formatExposedCatalogSummary,
@@ -25,31 +22,23 @@ export function registerGetDataCatalogTool(server: McpServer): void {
           .describe(
             "Optional component type filter. Allowed values: tables or materialized_views.",
           ),
-        search: z
-          .string()
-          .optional()
-          .describe("Regex pattern to search for in component names"),
+        search: z.string().optional().describe("Regex pattern to search for in component names"),
         format: z
           .string()
           .optional()
-          .describe(
-            "Optional output format. Allowed values: summary or detailed.",
-          ),
+          .describe("Optional output format. Allowed values: summary or detailed."),
       },
     },
     async ({ component_type, search, format = "summary" }) => {
       try {
         const resolvedComponentType = parseCatalogComponentType(component_type);
         const resolvedFormat = parseCatalogFormat(format);
-        const { tables, materializedViews } = getExposedDataCatalog(
-          resolvedComponentType,
-          search,
-        );
+        const { tables, materializedViews } = getExposedDataCatalog(resolvedComponentType, search);
 
         const output =
-          resolvedFormat === "detailed" ?
-            formatExposedCatalogDetailed(tables, materializedViews)
-          : formatExposedCatalogSummary(tables, materializedViews);
+          resolvedFormat === "detailed"
+            ? formatExposedCatalogDetailed(tables, materializedViews)
+            : formatExposedCatalogSummary(tables, materializedViews);
 
         return {
           content: [

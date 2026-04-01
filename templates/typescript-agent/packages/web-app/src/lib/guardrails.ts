@@ -1,12 +1,5 @@
-import {
-  ApplyGuardrailCommand,
-  BedrockRuntimeClient,
-} from "@aws-sdk/client-bedrock-runtime";
-import type {
-  AIProvider,
-  GuardrailAdapter,
-  GuardrailResult,
-} from "agent-runtime";
+import { ApplyGuardrailCommand, BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import type { AIProvider, GuardrailAdapter, GuardrailResult } from "agent-runtime";
 import { createDevelopmentMockGuardrailAdapter } from "@/dev/mock-guardrails";
 import { getBedrockGuardrailConfig } from "@/env-vars";
 
@@ -56,8 +49,7 @@ class BedrockGuardrailAdapter implements GuardrailAdapter {
             items.push(`Topic ${topic.name}: ${topic.action}`);
           }
 
-          for (const entity of assessment.sensitiveInformationPolicy
-            ?.piiEntities ?? []) {
+          for (const entity of assessment.sensitiveInformationPolicy?.piiEntities ?? []) {
             items.push(`PII ${entity.type}: ${entity.action}`);
           }
 
@@ -65,10 +57,7 @@ class BedrockGuardrailAdapter implements GuardrailAdapter {
         }) ?? [];
 
       return {
-        action:
-          response.action === "GUARDRAIL_INTERVENED" ?
-            "GUARDRAIL_INTERVENED"
-          : "NONE",
+        action: response.action === "GUARDRAIL_INTERVENED" ? "GUARDRAIL_INTERVENED" : "NONE",
         details,
         latencyMs: Date.now() - start,
       };

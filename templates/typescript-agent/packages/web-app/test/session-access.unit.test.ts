@@ -3,10 +3,7 @@ import type { Session } from "next-auth";
 import { describe, expect, it } from "vitest";
 import { getSessionAccess } from "../src/authz/session-access";
 
-function createSession(
-  overrides: Partial<Session["user"]>,
-  idToken = "signed-token",
-): Session {
+function createSession(overrides: Partial<Session["user"]>, idToken = "signed-token"): Session {
   return {
     idToken,
     expires: "2099-01-01T00:00:00.000Z",

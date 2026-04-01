@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  extractJsonRowsFromOutput,
-  stripAnsiSequences,
-} from "../scripts/seed-output.mjs";
+import { extractJsonRowsFromOutput, stripAnsiSequences } from "../scripts/seed-output.mjs";
 
 describe("seed output parsing", () => {
   it("strips ANSI escape sequences from CLI output", () => {

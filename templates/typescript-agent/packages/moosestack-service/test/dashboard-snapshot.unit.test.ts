@@ -22,9 +22,7 @@ describe("getDashboardSnapshot", () => {
   });
 
   it("formats dashboard metric time bounds as ClickHouse DateTime strings", async () => {
-    const { getDashboardSnapshot } = await import(
-      "../app/semantic/dashboard-snapshot"
-    );
+    const { getDashboardSnapshot } = await import("../app/semantic/dashboard-snapshot");
     const execute = vi
       .fn()
       .mockResolvedValueOnce({
@@ -56,8 +54,6 @@ describe("getDashboardSnapshot", () => {
     const metricsQuery = execute.mock.calls[0]?.[0];
     expect(metricsQuery?.strings.join("?")).toContain("toDateTime(");
     expect(metricsQuery?.values).toHaveLength(2);
-    expect(
-      metricsQuery?.values.every((value: unknown) => typeof value === "string"),
-    ).toBe(true);
+    expect(metricsQuery?.values.every((value: unknown) => typeof value === "string")).toBe(true);
   });
 });

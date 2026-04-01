@@ -94,11 +94,7 @@ describe("access-context", () => {
       json: vi.fn(() => response),
     };
 
-    const result = requireAuthenticatedMoose(
-      {} as never,
-      response as never,
-      next,
-    );
+    const result = requireAuthenticatedMoose({} as never, response as never, next);
 
     expect(response.status).toHaveBeenCalledWith(401);
     expect(response.json).toHaveBeenCalledWith(

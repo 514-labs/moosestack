@@ -12,8 +12,8 @@ describe("formatAgentRuntimeErrorMessage", () => {
   });
 
   it("preserves other runtime error messages", () => {
-    expect(
-      formatAgentRuntimeErrorMessage(new Error("Something else broke")),
-    ).toBe("Something else broke");
+    expect(formatAgentRuntimeErrorMessage(new Error("Something else broke"))).toBe(
+      "Something else broke",
+    );
   });
 });

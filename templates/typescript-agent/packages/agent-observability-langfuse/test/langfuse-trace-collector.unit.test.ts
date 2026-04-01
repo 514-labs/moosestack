@@ -55,10 +55,7 @@ describe("createLangfuseTraceCollector", () => {
       modelId: "claude-haiku-4-5",
       prompt: "Show tenant records",
     });
-    const traces = Reflect.get(collector as object, "traces") as Map<
-      string,
-      unknown
-    >;
+    const traces = Reflect.get(collector as object, "traces") as Map<string, unknown>;
 
     expect(traces.size).toBe(1);
 
@@ -110,10 +107,7 @@ describe("createLangfuseTraceCollector", () => {
       modelId: "claude-haiku-4-5",
       prompt: "Show tenant records",
     });
-    const traces = Reflect.get(collector as object, "traces") as Map<
-      string,
-      unknown
-    >;
+    const traces = Reflect.get(collector as object, "traces") as Map<string, unknown>;
 
     await expect(
       collector.endTrace(traceId, {

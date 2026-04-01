@@ -13,10 +13,7 @@ vi.mock("@/env-vars", () => {
   };
 });
 
-import {
-  DashboardSnapshotUnauthorizedError,
-  getDashboardSnapshot,
-} from "../src/lib/moose-service";
+import { DashboardSnapshotUnauthorizedError, getDashboardSnapshot } from "../src/lib/moose-service";
 
 describe("getDashboardSnapshot", () => {
   afterEach(() => {
@@ -42,21 +39,16 @@ describe("getDashboardSnapshot", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getDashboardSnapshot("tenant-token")).resolves.toEqual(
-      snapshot,
-    );
+    await expect(getDashboardSnapshot("tenant-token")).resolves.toEqual(snapshot);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://moose.local/app/dashboard/snapshot",
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-          Authorization: "Bearer tenant-token",
-        },
+    expect(fetchMock).toHaveBeenCalledWith("http://moose.local/app/dashboard/snapshot", {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer tenant-token",
       },
-    );
+    });
   });
 
   it("throws a descriptive error when the dashboard API fails", async () => {
@@ -119,8 +111,6 @@ describe("getDashboardSnapshot", () => {
       }),
     );
 
-    await expect(getDashboardSnapshot("admin-token")).resolves.toEqual(
-      snapshot,
-    );
+    await expect(getDashboardSnapshot("admin-token")).resolves.toEqual(snapshot);
   });
 });

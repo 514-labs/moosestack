@@ -1,18 +1,12 @@
 import type { UIMessage } from "ai";
 import type { ExecutableTool } from "./sdk-types.js";
 
-export function isObjectRecord(
-  value: unknown,
-): value is Record<string, unknown> {
+export function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 function isTextPart(part: unknown): part is { type: "text"; text: string } {
-  return (
-    isObjectRecord(part) &&
-    part.type === "text" &&
-    typeof part.text === "string"
-  );
+  return isObjectRecord(part) && part.type === "text" && typeof part.text === "string";
 }
 
 export function hasExecutableTool(tool: unknown): tool is ExecutableTool {
@@ -28,9 +22,7 @@ export function getToolCallId(context: unknown): string | undefined {
 }
 
 export function extractUserPrompt(messages: UIMessage[]): string {
-  const lastUserMessage = [...messages]
-    .reverse()
-    .find((message) => message.role === "user");
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
 
   return (
     lastUserMessage?.parts

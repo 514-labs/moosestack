@@ -32,10 +32,7 @@ const SCHEMA_DRIFT_ERROR_PATTERNS = [
   /NOT_FOUND_COLUMN_IN_BLOCK/i,
 ] as const;
 
-export function formatSemanticToolError(
-  error: unknown,
-  toolTitle: string,
-): string {
+export function formatSemanticToolError(error: unknown, toolTitle: string): string {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
   if (

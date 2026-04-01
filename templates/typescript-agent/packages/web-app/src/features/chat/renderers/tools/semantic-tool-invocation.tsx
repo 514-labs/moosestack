@@ -1,19 +1,9 @@
 "use client";
 
-import {
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  Database,
-  Loader2,
-} from "lucide-react";
-import { useState, type JSX } from "react";
+import { AlertCircle, CheckCircle, ChevronRight, Database, Loader2 } from "lucide-react";
+import { type JSX, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import {
   extractTextContentParts,
@@ -67,11 +57,7 @@ function getOutputText(output: ToolPart["output"]): string {
   return JSON.stringify(output, null, 2) ?? "";
 }
 
-function MetricResults({
-  payload,
-}: {
-  payload: SemanticToolPayload;
-}): JSX.Element {
+function MetricResults({ payload }: { payload: SemanticToolPayload }): JSX.Element {
   const columns = getMetricColumns(payload.rows);
 
   if (payload.rows.length === 0) {
@@ -99,15 +85,9 @@ function MetricResults({
         </thead>
         <tbody className="[&_tr:last-child]:border-0">
           {payload.rows.map((row, rowIndex) => (
-            <tr
-              key={rowIndex}
-              className="border-b transition-colors hover:bg-muted/50"
-            >
+            <tr key={rowIndex} className="border-b transition-colors hover:bg-muted/50">
               {columns.map((column) => (
-                <td
-                  key={column}
-                  className="p-1.5 align-middle font-mono text-xs whitespace-nowrap"
-                >
+                <td key={column} className="p-1.5 align-middle font-mono text-xs whitespace-nowrap">
                   {formatSemanticValue(row[column])}
                 </td>
               ))}
@@ -119,16 +99,10 @@ function MetricResults({
   );
 }
 
-function RecordResults({
-  payload,
-}: {
-  payload: SemanticToolPayload;
-}): JSX.Element {
+function RecordResults({ payload }: { payload: SemanticToolPayload }): JSX.Element {
   if (payload.rows.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground">
-        No records matched the current filters.
-      </div>
+      <div className="text-sm text-muted-foreground">No records matched the current filters.</div>
     );
   }
 
@@ -140,21 +114,13 @@ function RecordResults({
         const details = typeof row.details === "string" ? row.details : null;
 
         return (
-          <div
-            key={`${title}:${index}`}
-            className="rounded-md border bg-muted/30 p-3 space-y-2"
-          >
+          <div key={`${title}:${index}`} className="rounded-md border bg-muted/30 p-3 space-y-2">
             <div className="flex flex-wrap items-start gap-2 justify-between">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground">
-                  {title}
-                </div>
-                {typeof row.recordId === "string" &&
-                  row.recordId.length > 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      ID: {row.recordId}
-                    </div>
-                  )}
+                <div className="text-sm font-medium text-foreground">{title}</div>
+                {typeof row.recordId === "string" && row.recordId.length > 0 && (
+                  <div className="text-xs text-muted-foreground">ID: {row.recordId}</div>
+                )}
               </div>
               {metaFields.length > 0 && (
                 <div className="flex flex-wrap gap-1 justify-end">
@@ -171,9 +137,7 @@ function RecordResults({
               )}
             </div>
             {details && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                {details}
-              </p>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{details}</p>
             )}
           </div>
         );
@@ -187,20 +151,16 @@ export function SemanticToolInvocationContent({
   payload,
 }: SemanticToolInvocationContentProps): JSX.Element {
   const toolName = getToolName(part);
-  const details =
-    payload ? getSemanticToolDetails(payload.toolName, part.input) : [];
+  const details = payload ? getSemanticToolDetails(payload.toolName, part.input) : [];
   const hasOutput = part.output !== undefined && part.output !== null;
-  const hasErrorText =
-    typeof part.errorText === "string" && part.errorText.length > 0;
+  const hasErrorText = typeof part.errorText === "string" && part.errorText.length > 0;
   const hasError = hasOutputError(part.output) && part.output.isError;
 
   return (
     <div className="max-w-[400px] min-w-full px-3 pb-3 pt-2 space-y-3 border-t border-border/50 overflow-hidden">
       {part.providerExecuted !== undefined && (
         <div className="pt-1">
-          <div className="text-sm text-muted-foreground mb-1">
-            Provider Executed:
-          </div>
+          <div className="text-sm text-muted-foreground mb-1">Provider Executed:</div>
           <Badge variant="outline" className="text-xs">
             {part.providerExecuted ? "Yes" : "No"}
           </Badge>
@@ -212,16 +172,11 @@ export function SemanticToolInvocationContent({
           <div className="text-sm text-muted-foreground mb-2">Parameters:</div>
           <div className="rounded-md border bg-muted/30 divide-y">
             {details.map((detail) => (
-              <div
-                key={`${toolName}:${detail.label}`}
-                className="px-3 py-2 text-sm"
-              >
+              <div key={`${toolName}:${detail.label}`} className="px-3 py-2 text-sm">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
                   {detail.label}
                 </div>
-                <div className="text-foreground break-words">
-                  {detail.value}
-                </div>
+                <div className="text-foreground break-words">{detail.value}</div>
               </div>
             ))}
           </div>
@@ -232,9 +187,7 @@ export function SemanticToolInvocationContent({
         <div>
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-            <span className="text-sm text-red-700 dark:text-red-300">
-              Error:
-            </span>
+            <span className="text-sm text-red-700 dark:text-red-300">Error:</span>
           </div>
           <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30 whitespace-pre-wrap">
             {getOutputText(part.output)}
@@ -248,9 +201,11 @@ export function SemanticToolInvocationContent({
             <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
             <span className="text-sm text-muted-foreground">Results:</span>
           </div>
-          {payload.kind === "metrics" ?
+          {payload.kind === "metrics" ? (
             <MetricResults payload={payload} />
-          : <RecordResults payload={payload} />}
+          ) : (
+            <RecordResults payload={payload} />
+          )}
         </div>
       )}
 
@@ -260,9 +215,7 @@ export function SemanticToolInvocationContent({
             <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
             <span className="text-sm text-muted-foreground">Output:</span>
           </div>
-          <CodeBlock
-            language={typeof part.output === "string" ? "text" : "json"}
-          >
+          <CodeBlock language={typeof part.output === "string" ? "text" : "json"}>
             {getOutputText(part.output)}
           </CodeBlock>
         </div>
@@ -272,9 +225,7 @@ export function SemanticToolInvocationContent({
         <div>
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-            <span className="text-sm text-red-700 dark:text-red-300">
-              Error:
-            </span>
+            <span className="text-sm text-red-700 dark:text-red-300">Error:</span>
           </div>
           <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30">
             {part.errorText}
@@ -285,37 +236,25 @@ export function SemanticToolInvocationContent({
   );
 }
 
-export function SemanticToolInvocation({
-  part,
-  timing,
-}: SemanticToolInvocationProps): JSX.Element {
+export function SemanticToolInvocation({ part, timing }: SemanticToolInvocationProps): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const toolName = getToolName(part);
   const payload = parseSemanticToolPayload(toolName, part.output);
-  const semanticToolName =
-    payload?.toolName ?? (isSemanticToolName(toolName) ? toolName : null);
-  const title =
-    semanticToolName ?
-      getSemanticToolTitle(semanticToolName)
+  const semanticToolName = payload?.toolName ?? (isSemanticToolName(toolName) ? toolName : null);
+  const title = semanticToolName
+    ? getSemanticToolTitle(semanticToolName)
     : toolName || "Semantic Tool";
   const isLoading = part.state === "input-streaming";
 
   const getStatusIcon = () => {
     if (part.state === "input-streaming") {
-      return (
-        <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />
-      );
+      return <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />;
     }
-    if (
-      part.state === "output-error" ||
-      (hasOutputError(part.output) && part.output.isError)
-    ) {
+    if (part.state === "output-error" || (hasOutputError(part.output) && part.output.isError)) {
       return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
     }
     if (part.state === "output-available") {
-      return (
-        <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
-      );
+      return <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />;
     }
     return null;
   };
@@ -347,9 +286,7 @@ export function SemanticToolInvocation({
             <Database
               className={cn(
                 "w-4 h-4",
-                isLoading ?
-                  "text-muted-foreground"
-                : "text-emerald-600 dark:text-emerald-400",
+                isLoading ? "text-muted-foreground" : "text-emerald-600 dark:text-emerald-400",
               )}
             />
             <span
@@ -365,8 +302,7 @@ export function SemanticToolInvocation({
 
             {payload && (
               <Badge variant="outline" className="text-xs mr-2">
-                {payload.rowCount}{" "}
-                {payload.rowCount === 1 ? "result" : "results"}
+                {payload.rowCount} {payload.rowCount === 1 ? "result" : "results"}
               </Badge>
             )}
 

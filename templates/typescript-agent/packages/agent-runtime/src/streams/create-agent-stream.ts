@@ -64,16 +64,16 @@ export async function createAgentStream(
         const toolCallTimings = new Map<string, ToolTiming>();
         let stepCount = 0;
         const tools =
-          Object.keys(runtime.tools).length > 0 ?
-            wrapTools({
-              runtimeTools: runtime.tools,
-              accessScopeId: options.accessScopeId,
-              traceId: traceSession.traceId,
-              toolCallTimings,
-              getStepNumber: () => stepCount + 1,
-              recordStep: traceSession.recordStep,
-            })
-          : runtime.tools;
+          Object.keys(runtime.tools).length > 0
+            ? wrapTools({
+                runtimeTools: runtime.tools,
+                accessScopeId: options.accessScopeId,
+                traceId: traceSession.traceId,
+                toolCallTimings,
+                getStepNumber: () => stepCount + 1,
+                recordStep: traceSession.recordStep,
+              })
+            : runtime.tools;
 
         const result = streamText({
           model: runtime.model,

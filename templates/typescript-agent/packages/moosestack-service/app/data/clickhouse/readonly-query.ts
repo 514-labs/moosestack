@@ -1,9 +1,4 @@
-import {
-  type MooseUtils,
-  type RowPolicyOptions,
-  type Sql,
-  toQuery,
-} from "@514labs/moose-lib";
+import { type MooseUtils, type RowPolicyOptions, type Sql, toQuery } from "@514labs/moose-lib";
 
 type QueryClient = MooseUtils["client"]["query"];
 type ReadonlyQueryOptions = {
@@ -43,12 +38,12 @@ async function executeReadonlyQuery<T>(
     format: "JSONEachRow",
     clickhouse_settings: {
       ...rowPolicyOptions?.clickhouse_settings,
-      ...(typeof limit === "number" ?
-        {
-          max_result_rows: limit.toString(),
-          result_overflow_mode: "break",
-        }
-      : {}),
+      ...(typeof limit === "number"
+        ? {
+            max_result_rows: limit.toString(),
+            result_overflow_mode: "break",
+          }
+        : {}),
       readonly: "2",
     },
     ...(rowPolicyOptions && {
@@ -90,8 +85,17 @@ export async function executeReadonlyStatement<T>(
 export async function executeScopedSql<T>(
   queryClient: QueryClient,
   sql: Sql,
+  rowPolicyOptions?: RowPolicyOptions,
 ): Promise<T[]> {
-  const result = await queryClient.execute<T>(sql);
+  const result = await queryClient.execute<T>(sql, {
+    clickhouse_settings: {
+      ...rowPolicyOptions?.clickhouse_settings,
+      readonly: "2",
+    },
+    ...(rowPolicyOptions && {
+      role: rowPolicyOptions.role,
+    }),
+  });
   const data = await result.json();
   return Array.isArray(data) ? (data as T[]) : [];
 }

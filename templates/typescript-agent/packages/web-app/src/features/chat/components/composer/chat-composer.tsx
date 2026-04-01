@@ -55,7 +55,7 @@ function ChatComposerFrame({
 
       <PromptInputFooter className="items-center gap-3 border-t border-border/70 px-3 py-2">
         <PromptInputTools>
-          {onClear && hasMessages ?
+          {onClear && hasMessages ? (
             <PromptInputButton
               disabled={isStreaming}
               onClick={onClear}
@@ -63,7 +63,7 @@ function ChatComposerFrame({
             >
               <Trash2 className="size-4" />
             </PromptInputButton>
-          : null}
+          ) : null}
         </PromptInputTools>
 
         <div className="flex items-center gap-3">

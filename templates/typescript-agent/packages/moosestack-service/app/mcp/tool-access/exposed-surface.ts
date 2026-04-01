@@ -1,9 +1,5 @@
 import { tenantIsolation } from "../../ingest/models";
-import {
-  createToolAccessPolicy,
-  type DataCatalogResponse,
-  type RuntimeTable,
-} from "./policy";
+import { createToolAccessPolicy, type DataCatalogResponse, type RuntimeTable } from "./policy";
 
 function isRuntimeTable(value: unknown): value is RuntimeTable {
   if (typeof value !== "object" || value === null) {
@@ -26,9 +22,7 @@ const configuredTables = tenantIsolation.config.tables;
 const EXPOSED_TABLES = configuredTables.filter(isRuntimeTable);
 
 if (EXPOSED_TABLES.length !== configuredTables.length) {
-  throw new Error(
-    "All exposed tables must define columnArray and generateTableName().",
-  );
+  throw new Error("All exposed tables must define columnArray and generateTableName().");
 }
 
 const toolAccessPolicy = createToolAccessPolicy(EXPOSED_TABLES);

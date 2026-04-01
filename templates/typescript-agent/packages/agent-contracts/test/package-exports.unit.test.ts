@@ -18,23 +18,20 @@ const PACKAGE_MANIFESTS = [
   "../../agent-observability-langfuse/package.json",
 ] as const;
 
-function readManifest(
-  relativePath: (typeof PACKAGE_MANIFESTS)[number],
-): PackageManifest {
+function readManifest(relativePath: (typeof PACKAGE_MANIFESTS)[number]): PackageManifest {
   const manifestPath = path.resolve(import.meta.dirname, relativePath);
   return JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest;
 }
 
 describe("internal package exports", () => {
-  it.each(PACKAGE_MANIFESTS)(
-    "%s publishes import-style entry points with a default fallback",
-    (manifestPath) => {
-      const manifest = readManifest(manifestPath);
-      expect(manifest.exports?.["."]).toEqual({
-        types: "./dist/index.d.ts",
-        import: "./dist/index.js",
-        default: "./dist/index.js",
-      });
-    },
-  );
+  it.each(
+    PACKAGE_MANIFESTS,
+  )("%s publishes import-style entry points with a default fallback", (manifestPath) => {
+    const manifest = readManifest(manifestPath);
+    expect(manifest.exports?.["."]).toEqual({
+      types: "./dist/index.d.ts",
+      import: "./dist/index.js",
+      default: "./dist/index.js",
+    });
+  });
 });

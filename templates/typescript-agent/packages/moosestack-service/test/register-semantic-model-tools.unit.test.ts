@@ -6,10 +6,7 @@ import { registerSemanticModelTools } from "../app/mcp/tools/register-semantic-m
 
 describe("registerSemanticModelTools", () => {
   it("returns structured content for semantic tool results", async () => {
-    const handlers: Record<
-      string,
-      (params: Record<string, unknown>) => Promise<unknown>
-    > = {};
+    const handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {};
     const server = {
       tool: vi.fn(
         (
@@ -25,9 +22,7 @@ describe("registerSemanticModelTools", () => {
     } as unknown as McpServer;
 
     const queryClient = {};
-    const queryMock = vi.fn(async () => [
-      { category: "incident", totalRecords: 3 },
-    ]);
+    const queryMock = vi.fn(async () => [{ category: "incident", totalRecords: 3 }]);
     const fakeModel: QueryModelBase = {
       name: "query_test_metrics",
       description: "Test semantic metrics tool",
@@ -82,10 +77,7 @@ describe("registerSemanticModelTools", () => {
   });
 
   it("returns sanitized backend errors for semantic tools", async () => {
-    const handlers: Record<
-      string,
-      (params: Record<string, unknown>) => Promise<unknown>
-    > = {};
+    const handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {};
     const server = {
       tool: vi.fn(
         (
@@ -145,13 +137,8 @@ describe("registerSemanticModelTools", () => {
   });
 
   it("falls back to the model default limit when params.limit is NaN", async () => {
-    const handlers: Record<
-      string,
-      (params: Record<string, unknown>) => Promise<unknown>
-    > = {};
-    const querySpy = vi.fn(async () => [
-      { category: "incident", totalRecords: 3 },
-    ]);
+    const handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {};
+    const querySpy = vi.fn(async () => [{ category: "incident", totalRecords: 3 }]);
     const server = {
       tool: vi.fn(
         (

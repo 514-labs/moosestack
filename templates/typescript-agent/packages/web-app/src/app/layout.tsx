@@ -29,9 +29,7 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider>
-            {session ?
-              <ChatLayoutWrapper>{children}</ChatLayoutWrapper>
-            : children}
+            {session ? <ChatLayoutWrapper>{children}</ChatLayoutWrapper> : children}
           </TooltipProvider>
         </ThemeProvider>
       </body>

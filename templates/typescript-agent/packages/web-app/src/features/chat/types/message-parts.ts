@@ -2,11 +2,7 @@ import type { UIMessage } from "ai";
 
 export type ChatMessagePart = NonNullable<UIMessage["parts"]>[number];
 
-export type ToolState =
-  | "input-streaming"
-  | "input-available"
-  | "output-available"
-  | "output-error";
+export type ToolState = "input-streaming" | "input-available" | "output-available" | "output-error";
 
 export interface TextPart {
   type: "text";
@@ -64,26 +60,18 @@ export interface ToolTimingEvent {
 export function getReasoningText(part: ReasoningPart): string {
   return (
     part.details
-      ?.map((detail) =>
-        detail.type === "text" ? (detail.text ?? "") : "<redacted>",
-      )
+      ?.map((detail) => (detail.type === "text" ? (detail.text ?? "") : "<redacted>"))
       .join("")
       .trim() ?? ""
   );
 }
 
-export function isObjectRecord(
-  value: unknown,
-): value is Record<string, unknown> {
+export function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 export function isTextPart(part: unknown): part is TextPart {
-  return (
-    isObjectRecord(part) &&
-    part.type === "text" &&
-    typeof part.text === "string"
-  );
+  return isObjectRecord(part) && part.type === "text" && typeof part.text === "string";
 }
 
 export function isReasoningPart(part: unknown): part is ReasoningPart {
@@ -103,10 +91,7 @@ export function isReasoningPart(part: unknown): part is ReasoningPart {
 }
 
 export function isSourcePart(part: unknown): part is SourcePart {
-  return (
-    isObjectRecord(part) &&
-    (part.type === "source-url" || part.type === "source-document")
-  );
+  return isObjectRecord(part) && (part.type === "source-url" || part.type === "source-document");
 }
 
 export function isToolPart(part: unknown): part is ToolPart {
@@ -168,10 +153,7 @@ export function hasOutputError(
 }
 
 export function getToolName(part: ToolPart) {
-  return (
-    part.toolName ??
-    (part.type.startsWith("tool-") ? part.type.slice(5) : part.type)
-  );
+  return part.toolName ?? (part.type.startsWith("tool-") ? part.type.slice(5) : part.type);
 }
 
 export function createMessagePartKeyFactory(messageId: string) {

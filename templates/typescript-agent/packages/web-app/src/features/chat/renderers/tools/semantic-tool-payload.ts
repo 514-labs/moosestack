@@ -1,8 +1,4 @@
-import {
-  extractTextContentParts,
-  isObjectRecord,
-  type ToolPart,
-} from "../../types/message-parts";
+import { extractTextContentParts, isObjectRecord, type ToolPart } from "../../types/message-parts";
 
 const METRIC_COLUMN_ORDER = [
   "category",
@@ -12,12 +8,7 @@ const METRIC_COLUMN_ORDER = [
   "highPriorityRecords",
 ] as const;
 
-const RECORD_META_FIELDS = [
-  "category",
-  "priority",
-  "source",
-  "timestamp",
-] as const;
+const RECORD_META_FIELDS = ["category", "priority", "source", "timestamp"] as const;
 
 export type SemanticToolName = `query_${string}` | `list_${string}`;
 export type SemanticToolKind = "metrics" | "records";
@@ -43,13 +34,8 @@ export interface SemanticToolDetail {
   value: string;
 }
 
-export function isSemanticToolName(
-  name: string | undefined,
-): name is SemanticToolName {
-  return (
-    typeof name === "string" &&
-    (name.startsWith("query_") || name.startsWith("list_"))
-  );
+export function isSemanticToolName(name: string | undefined): name is SemanticToolName {
+  return typeof name === "string" && (name.startsWith("query_") || name.startsWith("list_"));
 }
 
 export function getSemanticToolTitle(toolName: SemanticToolName): string {
@@ -97,11 +83,7 @@ export function parseSemanticToolPayload(
   toolName: string | undefined,
   output: ToolPart["output"],
 ): SemanticToolPayload | null {
-  if (
-    !isSemanticToolName(toolName) ||
-    output === undefined ||
-    output === null
-  ) {
+  if (!isSemanticToolName(toolName) || output === undefined || output === null) {
     return null;
   }
 
@@ -115,18 +97,15 @@ export function parseSemanticToolPayload(
   return {
     toolName,
     title:
-      typeof structured.title === "string" && structured.title.length > 0 ?
-        structured.title
-      : getSemanticToolTitle(toolName),
+      typeof structured.title === "string" && structured.title.length > 0
+        ? structured.title
+        : getSemanticToolTitle(toolName),
     kind:
-      structured.kind === "metrics" || structured.kind === "records" ?
-        structured.kind
-      : getSemanticToolKind(toolName),
+      structured.kind === "metrics" || structured.kind === "records"
+        ? structured.kind
+        : getSemanticToolKind(toolName),
     rows,
-    rowCount:
-      typeof structured.rowCount === "number" ?
-        structured.rowCount
-      : rows.length,
+    rowCount: typeof structured.rowCount === "number" ? structured.rowCount : rows.length,
   };
 }
 
@@ -174,27 +153,21 @@ export function getSemanticToolDetails(
   if (Array.isArray(input.metrics) && input.metrics.length > 0) {
     details.push({
       label: "Metrics",
-      value: input.metrics
-        .map((value) => formatSemanticValue(value))
-        .join(", "),
+      value: input.metrics.map((value) => formatSemanticValue(value)).join(", "),
     });
   }
 
   if (Array.isArray(input.dimensions) && input.dimensions.length > 0) {
     details.push({
       label: "Group By",
-      value: input.dimensions
-        .map((value) => formatSemanticValue(value))
-        .join(", "),
+      value: input.dimensions.map((value) => formatSemanticValue(value)).join(", "),
     });
   }
 
   if (Array.isArray(input.columns) && input.columns.length > 0) {
     details.push({
       label: "Columns",
-      value: input.columns
-        .map((value) => formatSemanticValue(value))
-        .join(", "),
+      value: input.columns.map((value) => formatSemanticValue(value)).join(", "),
     });
   }
 
@@ -206,10 +179,7 @@ export function getSemanticToolDetails(
     details.push({
       label: "Filters",
       value: filterEntries
-        .map(
-          ([key, value]) =>
-            `${humanizeFilterName(key)} ${formatSemanticValue(value)}`,
-        )
+        .map(([key, value]) => `${humanizeFilterName(key)} ${formatSemanticValue(value)}`)
         .join(" • "),
     });
   }
@@ -223,12 +193,8 @@ export function getSemanticToolDetails(
 
   if (details.length === 0) {
     details.push({
-      label:
-        toolName === "query_tenant_knowledge_metrics" ? "Selection" : "View",
-      value:
-        toolName === "query_tenant_knowledge_metrics" ? "Default metrics" : (
-          "Recent records"
-        ),
+      label: toolName === "query_tenant_knowledge_metrics" ? "Selection" : "View",
+      value: toolName === "query_tenant_knowledge_metrics" ? "Default metrics" : "Recent records",
     });
   }
 
@@ -237,18 +203,14 @@ export function getSemanticToolDetails(
 
 export function getMetricColumns(rows: Record<string, unknown>[]): string[] {
   const rowKeys = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  const orderedKeys = METRIC_COLUMN_ORDER.filter((key) =>
-    rowKeys.includes(key),
-  );
+  const orderedKeys = METRIC_COLUMN_ORDER.filter((key) => rowKeys.includes(key));
   const remainingKeys = rowKeys.filter(
     (key) => !orderedKeys.includes(key as (typeof METRIC_COLUMN_ORDER)[number]),
   );
   return [...orderedKeys, ...remainingKeys];
 }
 
-export function getRecordMetaFields(
-  row: Record<string, unknown>,
-): SemanticToolDetail[] {
+export function getRecordMetaFields(row: Record<string, unknown>): SemanticToolDetail[] {
   return RECORD_META_FIELDS.flatMap((field) => {
     const value = row[field];
     if (value === undefined || value === null || value === "") {
@@ -264,10 +226,7 @@ export function getRecordMetaFields(
   });
 }
 
-export function getRecordTitle(
-  row: Record<string, unknown>,
-  index: number,
-): string {
+export function getRecordTitle(row: Record<string, unknown>, index: number): string {
   const headline = row.headline;
   if (typeof headline === "string" && headline.length > 0) {
     return headline;

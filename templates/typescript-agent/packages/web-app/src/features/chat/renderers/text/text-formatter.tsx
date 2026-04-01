@@ -14,38 +14,24 @@ export function TextFormatter({ text }: TextFormatterProps): JSX.Element {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => (
-            <h1 className="text-xl font-semibold mt-4 mb-2">{children}</h1>
-          ),
-          h2: ({ children }) => (
-            <h2 className="text-lg font-semibold mt-3 mb-2">{children}</h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>
-          ),
-          p: ({ children }) => (
-            <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-          ),
+          h1: ({ children }) => <h1 className="text-xl font-semibold mt-4 mb-2">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-lg font-semibold mt-3 mb-2">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>,
+          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
           ul: ({ children }) => (
-            <ul className="list-disc list-inside mb-2 space-y-1 ml-2">
-              {children}
-            </ul>
+            <ul className="list-disc list-inside mb-2 space-y-1 ml-2">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal list-inside mb-2 space-y-1 ml-2">
-              {children}
-            </ol>
+            <ol className="list-decimal list-inside mb-2 space-y-1 ml-2">{children}</ol>
           ),
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
           code: ({ className, children, node, ...props }) => {
             const rawChildren = String(children);
             const match = /language-(\w+)/.exec(className || "");
-            const hasMultipleLines =
-              node?.position ?
-                node.position.start.line !== node.position.end.line
+            const hasMultipleLines = node?.position
+              ? node.position.start.line !== node.position.end.line
               : rawChildren.includes("\n");
-            const isInline =
-              !match && !hasMultipleLines && !rawChildren.endsWith("\n");
+            const isInline = !match && !hasMultipleLines && !rawChildren.endsWith("\n");
 
             if (isInline) {
               return (
@@ -85,31 +71,21 @@ export function TextFormatter({ text }: TextFormatterProps): JSX.Element {
           hr: () => <hr className="my-4 border-border" />,
           table: ({ children }) => (
             <div className="overflow-x-auto my-2">
-              <table className="min-w-full border-collapse border border-border">
-                {children}
-              </table>
+              <table className="min-w-full border-collapse border border-border">{children}</table>
             </div>
           ),
-          thead: ({ children }) => (
-            <thead className="bg-muted">{children}</thead>
-          ),
+          thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
           tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => (
-            <tr className="border-b border-border">{children}</tr>
-          ),
+          tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
           th: ({ children }) => (
             <th className="border border-border px-3 py-2 text-left font-semibold text-sm">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="border border-border px-3 py-2 text-sm">
-              {children}
-            </td>
+            <td className="border border-border px-3 py-2 text-sm">{children}</td>
           ),
-          strong: ({ children }) => (
-            <strong className="font-semibold">{children}</strong>
-          ),
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
         }}
       >

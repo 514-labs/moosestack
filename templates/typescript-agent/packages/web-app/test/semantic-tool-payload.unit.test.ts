@@ -53,9 +53,7 @@ describe("semantic-tool-payload", () => {
     expect(getSemanticToolTitle("query_customer_health_rollups")).toBe(
       "Query Customer Health Rollups",
     );
-    expect(getSemanticToolTitle("list_recent_support_cases")).toBe(
-      "List Recent Support Cases",
-    );
+    expect(getSemanticToolTitle("list_recent_support_cases")).toBe("List Recent Support Cases");
   });
 
   it("summarizes semantic tool parameters for the UI", () => {

@@ -52,9 +52,11 @@ function normalizeMcpServerUrl(value: string, envVarName: string): string {
   const pathname = normalizePathname(url.pathname);
 
   url.pathname =
-    pathname === "/" ? MCP_ENDPOINT_PATH
-    : pathname.endsWith(MCP_ENDPOINT_PATH) ? pathname
-    : `${pathname}${MCP_ENDPOINT_PATH}`;
+    pathname === "/"
+      ? MCP_ENDPOINT_PATH
+      : pathname.endsWith(MCP_ENDPOINT_PATH)
+        ? pathname
+        : `${pathname}${MCP_ENDPOINT_PATH}`;
 
   return formatUrl(url);
 }
@@ -175,9 +177,7 @@ export function getOidcConfig():
     ["OIDC_CLIENT_ID", clientId],
     ["OIDC_CLIENT_SECRET", clientSecret],
   ] as const;
-  const populatedEntries = configuredEntries.filter(([, value]) =>
-    Boolean(value),
-  );
+  const populatedEntries = configuredEntries.filter(([, value]) => Boolean(value));
 
   if (populatedEntries.length === 0) {
     return undefined;
@@ -205,9 +205,7 @@ export function getOidcConfig():
 }
 
 export function getOidcOrgClaim(): string {
-  return (
-    process.env.OIDC_ORG_CLAIM ?? process.env.OIDC_TENANT_CLAIM ?? "org_id"
-  );
+  return process.env.OIDC_ORG_CLAIM ?? process.env.OIDC_TENANT_CLAIM ?? "org_id";
 }
 
 export function getLangfuseConfig():

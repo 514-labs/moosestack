@@ -51,16 +51,12 @@ export function useChatProviderStatus() {
           signal: abortController.signal,
         });
         if (!response.ok) {
-          throw new Error(
-            `Failed to fetch chat status: ${response.statusText}`,
-          );
+          throw new Error(`Failed to fetch chat status: ${response.statusText}`);
         }
 
         const status = await response.json();
         if (!isChatProviderStatus(status)) {
-          throw new Error(
-            "Chat status response did not match the expected shape.",
-          );
+          throw new Error("Chat status response did not match the expected shape.");
         }
 
         setData(status);
@@ -79,8 +75,7 @@ export function useChatProviderStatus() {
           mcpReady: false,
           mcpStatus: "unavailable",
           mcpUrl: null,
-          mcpDetails:
-            "Failed to load chat status. Check the web app and Moose service logs.",
+          mcpDetails: "Failed to load chat status. Check the web app and Moose service logs.",
         });
       } finally {
         if (!abortController.signal.aborted) {

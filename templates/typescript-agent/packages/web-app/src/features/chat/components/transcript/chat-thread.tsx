@@ -9,22 +9,9 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from "@/components/ai-elements/message";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from "@/components/ai-elements/sources";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
+import { Source, Sources, SourcesContent, SourcesTrigger } from "@/components/ai-elements/sources";
 import { cn } from "@/lib/utils";
 import { ToolInvocation } from "../../renderers/tools/tool-invocation";
 import {
@@ -76,10 +63,7 @@ function MessageSources({ parts }: { parts: SourcePart[] }) {
   );
 }
 
-function collectParts<T>(
-  parts: readonly unknown[],
-  predicate: (part: unknown) => part is T,
-) {
+function collectParts<T>(parts: readonly unknown[], predicate: (part: unknown) => part is T) {
   const collected: T[] = [];
 
   for (const part of parts) {
@@ -136,21 +120,10 @@ function AssistantBubble({
       })}
 
       <MessageContent className="w-full max-w-full space-y-3">
-        {text ?
-          <MessageResponse>{text}</MessageResponse>
-        : null}
+        {text ? <MessageResponse>{text}</MessageResponse> : null}
         {toolParts.map((part) => {
-          const timing =
-            part.toolCallId ?
-              toolTimings[part.toolCallId]?.duration
-            : undefined;
-          return (
-            <ToolInvocation
-              key={getPartKey(part)}
-              part={part}
-              timing={timing}
-            />
-          );
+          const timing = part.toolCallId ? toolTimings[part.toolCallId]?.duration : undefined;
+          return <ToolInvocation key={getPartKey(part)} part={part} timing={timing} />;
         })}
       </MessageContent>
     </Message>
@@ -186,43 +159,30 @@ function ErrorBubble({ message }: { message: string }) {
   );
 }
 
-export function ChatThread({
-  messages,
-  status,
-  errorMessage,
-  toolTimings = {},
-}: ChatThreadProps) {
-  const showLoading =
-    (status === "submitted" || status === "streaming") && messages.length > 0;
+export function ChatThread({ messages, status, errorMessage, toolTimings = {} }: ChatThreadProps) {
+  const showLoading = (status === "submitted" || status === "streaming") && messages.length > 0;
 
   return (
     <Conversation className="h-full min-h-0">
       <ConversationContent className="gap-6 px-4 py-5" scrollClassName="h-full">
-        {messages.length === 0 ?
+        {messages.length === 0 ? (
           <ConversationEmptyState
             icon={<MessageSquareMore className="size-5" />}
             title="Start a conversation..."
             description="Ask questions about the data that is currently in scope for this session."
           />
-        : messages.map((message) => {
+        ) : (
+          messages.map((message) => {
             if (message.role === "user") {
               return <UserBubble key={message.id} message={message} />;
             }
 
-            return (
-              <AssistantBubble
-                key={message.id}
-                message={message}
-                toolTimings={toolTimings}
-              />
-            );
+            return <AssistantBubble key={message.id} message={message} toolTimings={toolTimings} />;
           })
-        }
+        )}
 
         {showLoading && <StreamingIndicator />}
-        {errorMessage ?
-          <ErrorBubble message={errorMessage} />
-        : null}
+        {errorMessage ? <ErrorBubble message={errorMessage} /> : null}
       </ConversationContent>
       <ConversationScrollButton
         className={cn(

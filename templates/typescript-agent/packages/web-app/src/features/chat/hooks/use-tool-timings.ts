@@ -10,9 +10,7 @@ interface UseToolTimingsResult {
 }
 
 export function useToolTimings(): UseToolTimingsResult {
-  const [toolTimings, setToolTimings] = useState<
-    Record<string, ToolTimingPayload>
-  >({});
+  const [toolTimings, setToolTimings] = useState<Record<string, ToolTimingPayload>>({});
 
   const handleToolTimingData = ({
     toolCallId,

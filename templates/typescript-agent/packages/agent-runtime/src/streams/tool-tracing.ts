@@ -1,10 +1,6 @@
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { AgentStepRecord } from "../observability-contract.js";
-import {
-  getToolCallId,
-  hasExecutableTool,
-  isObjectRecord,
-} from "../utils/message-parts.js";
+import { getToolCallId, hasExecutableTool, isObjectRecord } from "../utils/message-parts.js";
 import type { AgentTools, ToolTiming } from "../utils/sdk-types.js";
 
 function formatToolArgs(args: unknown): string {
@@ -79,8 +75,7 @@ export function wrapTools(options: {
             stepType: "tool",
             toolName,
             status: "failed",
-            notes:
-              error instanceof Error ? error.message : "Unknown tool error",
+            notes: error instanceof Error ? error.message : "Unknown tool error",
             startedAt,
             durationMs: duration,
             inputTokens: 0,

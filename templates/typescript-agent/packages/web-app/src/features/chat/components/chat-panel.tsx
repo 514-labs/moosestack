@@ -6,29 +6,20 @@ import { AlertTriangle, MessageSquare, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatChatUiErrorMessage } from "@/lib/chat-ui-errors";
-import {
-  type ChatProviderStatus,
-  useChatProviderStatus,
-} from "../hooks/use-chat-provider-status";
+import { type ChatProviderStatus, useChatProviderStatus } from "../hooks/use-chat-provider-status";
 import { useToolTimings } from "../hooks/use-tool-timings";
 import { isToolTimingEvent } from "../types/message-parts";
 import { ChatComposer } from "./composer/chat-composer";
 import { SuggestedPrompts } from "./composer/suggested-prompts";
 import { ChatThread } from "./transcript/chat-thread";
 
-function ChatUnavailableMessage({
-  status,
-}: {
-  status: ChatProviderStatus | null;
-}) {
+function ChatUnavailableMessage({ status }: { status: ChatProviderStatus | null }) {
   const providerUnavailable = !!status && !status.providerReady;
-  const title =
-    providerUnavailable ?
-      `${status?.providerLabel ?? "LLM Provider"} Configuration Missing`
+  const title = providerUnavailable
+    ? `${status?.providerLabel ?? "LLM Provider"} Configuration Missing`
     : "Moose MCP Server Unavailable";
-  const description =
-    providerUnavailable ?
-      (status?.details ??
+  const description = providerUnavailable
+    ? (status?.details ??
       "Configure the selected provider environment variables before using the chat feature.")
     : (status?.mcpDetails ??
       "Start the local stack with `pnpm dev:start`, or start just the Moose service with `pnpm dev:moose`, before using the chat feature.");
@@ -49,10 +40,8 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const { data: providerStatus, isLoading: isStatusLoading } =
-    useChatProviderStatus();
-  const { toolTimings, handleToolTimingData, resetToolTimings } =
-    useToolTimings();
+  const { data: providerStatus, isLoading: isStatusLoading } = useChatProviderStatus();
+  const { toolTimings, handleToolTimingData, resetToolTimings } = useToolTimings();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { messages, sendMessage, status, setMessages, stop } = useChat({
@@ -122,9 +111,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         />
       </div>
 
-      {isEmptyState && (
-        <SuggestedPrompts onPromptClick={handleSuggestedPromptClick} />
-      )}
+      {isEmptyState && <SuggestedPrompts onPromptClick={handleSuggestedPromptClick} />}
 
       <div className="flex-none border-t border-border/60 bg-sidebar/95 px-4 py-4 backdrop-blur">
         <ChatComposer
@@ -136,9 +123,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         />
       </div>
 
-      {showUnavailableOverlay && (
-        <ChatUnavailableMessage status={providerStatus} />
-      )}
+      {showUnavailableOverlay && <ChatUnavailableMessage status={providerStatus} />}
     </div>
   );
 }

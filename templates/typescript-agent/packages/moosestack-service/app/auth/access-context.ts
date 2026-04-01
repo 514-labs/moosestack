@@ -1,9 +1,5 @@
-import { type MooseUtils } from "@514labs/moose-lib";
-import {
-  ACCESS_ROLE_ADMIN_DEBUG,
-  ACCESS_ROLE_TENANT,
-  type AccessRole,
-} from "agent-contracts";
+import type { MooseUtils } from "@514labs/moose-lib";
+import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT, type AccessRole } from "agent-contracts";
 import type express from "express";
 import { ACCESS_ROLE_CLAIM, ORG_ID_CLAIM } from "./claims";
 
@@ -25,9 +21,7 @@ export interface AdminDebugAccessContext extends BaseAccessContext {
   accessRole: typeof ACCESS_ROLE_ADMIN_DEBUG;
 }
 
-export type AuthenticatedAccessContext =
-  | OrgAccessContext
-  | AdminDebugAccessContext;
+export type AuthenticatedAccessContext = OrgAccessContext | AdminDebugAccessContext;
 
 function getOrgIdFromJwt(moose: MooseUtils): string | undefined {
   const orgIdValue = moose.jwt?.[ORG_ID_CLAIM];
@@ -43,10 +37,7 @@ function getOrgIdFromJwt(moose: MooseUtils): string | undefined {
 function getAccessRoleFromJwt(moose: MooseUtils): AccessRole | undefined {
   const accessRole = moose.jwt?.[ACCESS_ROLE_CLAIM];
 
-  if (
-    accessRole !== ACCESS_ROLE_TENANT &&
-    accessRole !== ACCESS_ROLE_ADMIN_DEBUG
-  ) {
+  if (accessRole !== ACCESS_ROLE_TENANT && accessRole !== ACCESS_ROLE_ADMIN_DEBUG) {
     return undefined;
   }
 
@@ -83,9 +74,7 @@ export function getAuthenticatedAccessContext(
   return undefined;
 }
 
-export function assertAuthenticatedAccessContext(
-  req: express.Request,
-): AuthenticatedAccessContext {
+export function assertAuthenticatedAccessContext(req: express.Request): AuthenticatedAccessContext {
   const context = getAuthenticatedAccessContext(req);
 
   if (!context) {

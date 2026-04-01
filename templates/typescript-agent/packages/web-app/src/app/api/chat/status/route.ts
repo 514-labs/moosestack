@@ -17,8 +17,7 @@ export async function GET(): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: "Failed to load chat status",
-        details:
-          error instanceof Error ? error.message : "Unknown chat status error.",
+        details: error instanceof Error ? error.message : "Unknown chat status error.",
       }),
       {
         status: 500,

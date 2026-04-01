@@ -12,11 +12,7 @@ import type { GuardrailResult } from "../shared-types.js";
 import { extractUserPrompt } from "../utils/message-parts.js";
 import type { StreamTextTools, ToolTiming } from "../utils/sdk-types.js";
 import { createGuardrailBlockedStream } from "./create-guardrail-blocked-stream.js";
-import {
-  getInputTokens,
-  getOutputTokens,
-  writeAgentMarker,
-} from "./helpers.js";
+import { getInputTokens, getOutputTokens, writeAgentMarker } from "./helpers.js";
 import { emitToolTimings, wrapTools } from "./tool-tracing.js";
 import { createTraceSession } from "./trace-session.js";
 
@@ -86,10 +82,7 @@ export async function createMultiAgentStream(
           system: MULTI_AGENT_SUPERVISOR_PROMPT,
           messages: runtime.messages,
         });
-        const specialist =
-          MULTI_AGENT_SPECIALISTS[
-            parseSpecialistSelection(supervisorResult.text)
-          ];
+        const specialist = MULTI_AGENT_SPECIALISTS[parseSpecialistSelection(supervisorResult.text)];
 
         traceSession.recordStep({
           stepId: crypto.randomUUID(),
@@ -117,16 +110,16 @@ export async function createMultiAgentStream(
         );
 
         const tools =
-          Object.keys(runtime.tools).length > 0 ?
-            wrapTools({
-              runtimeTools: runtime.tools,
-              accessScopeId: options.accessScopeId,
-              traceId: traceSession.traceId,
-              toolCallTimings,
-              getStepNumber: () => stepCount + 1,
-              recordStep: traceSession.recordStep,
-            })
-          : runtime.tools;
+          Object.keys(runtime.tools).length > 0
+            ? wrapTools({
+                runtimeTools: runtime.tools,
+                accessScopeId: options.accessScopeId,
+                traceId: traceSession.traceId,
+                toolCallTimings,
+                getStepNumber: () => stepCount + 1,
+                recordStep: traceSession.recordStep,
+              })
+            : runtime.tools;
         const workerStartedAt = new Date().toISOString();
         const workerStartedAtMs = Date.now();
         let workerFailed = false;
@@ -192,11 +185,7 @@ export async function createMultiAgentStream(
           });
         }
 
-        writeAgentMarker(
-          writer,
-          "narrator",
-          "Turning the specialist notes into the final answer.",
-        );
+        writeAgentMarker(writer, "narrator", "Turning the specialist notes into the final answer.");
 
         const narratorStartedAt = new Date().toISOString();
         const narratorStartedAtMs = Date.now();

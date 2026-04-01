@@ -8,9 +8,7 @@ const mocks = vi.hoisted(() => {
   const bedrockModelFactory = vi.fn((modelId: string) => {
     return { provider: "bedrock", modelId };
   });
-  const convertToModelMessagesMock = vi.fn(
-    async (messages: unknown) => messages,
-  );
+  const convertToModelMessagesMock = vi.fn(async (messages: unknown) => messages);
   const openAiModelFactory = vi.fn((modelId: string) => {
     return { provider: "openai", modelId };
   });
@@ -114,9 +112,7 @@ describe("createAgentRuntime", () => {
         description: "Inspect the exposed data surface.",
       },
     });
-    mocks.convertToModelMessagesMock.mockImplementation(
-      async (messages) => messages,
-    );
+    mocks.convertToModelMessagesMock.mockImplementation(async (messages) => messages);
     mocks.experimentalCreateMcpClientMock.mockResolvedValue({
       tools: mocks.mcpToolsMock,
       close: mocks.mcpCloseMock,
@@ -146,9 +142,7 @@ describe("createAgentRuntime", () => {
     expect(mocks.createAnthropicMock).toHaveBeenCalledWith({
       apiKey: "anthropic-key",
     });
-    expect(mocks.anthropicModelFactory).toHaveBeenCalledWith(
-      "claude-haiku-4-5",
-    );
+    expect(mocks.anthropicModelFactory).toHaveBeenCalledWith("claude-haiku-4-5");
     expect(mocks.experimentalCreateMcpClientMock).toHaveBeenCalledWith({
       name: "moose-mcp-server",
       transport: {
@@ -241,9 +235,7 @@ describe("createAgentRuntime", () => {
   });
 
   it("wraps MCP connection failures with startup guidance", async () => {
-    mocks.experimentalCreateMcpClientMock.mockRejectedValueOnce(
-      new Error("fetch failed"),
-    );
+    mocks.experimentalCreateMcpClientMock.mockRejectedValueOnce(new Error("fetch failed"));
 
     const runtimePromise = createAgentRuntime({
       messages: userMessages,
@@ -271,15 +263,11 @@ describe("createAgentRuntime", () => {
       }),
     );
 
-    await expect(runtimePromise).rejects.toBeInstanceOf(
-      McpServerUnavailableError,
-    );
+    await expect(runtimePromise).rejects.toBeInstanceOf(McpServerUnavailableError);
   });
 
   it("closes the MCP client if message conversion fails after tool discovery", async () => {
-    mocks.convertToModelMessagesMock.mockRejectedValueOnce(
-      new Error("Invalid message payload"),
-    );
+    mocks.convertToModelMessagesMock.mockRejectedValueOnce(new Error("Invalid message payload"));
 
     await expect(
       createAgentRuntime({
@@ -340,15 +328,9 @@ describe("createAgentRuntime", () => {
   });
 
   it("normalizes MCP URLs from either a base service URL or a full endpoint", () => {
-    expect(resolveMcpServerUrl("http://localhost:4000")).toBe(
-      "http://localhost:4000/tools",
-    );
-    expect(resolveMcpServerUrl("http://localhost:4000/")).toBe(
-      "http://localhost:4000/tools",
-    );
-    expect(resolveMcpServerUrl("http://localhost:4000/tools")).toBe(
-      "http://localhost:4000/tools",
-    );
+    expect(resolveMcpServerUrl("http://localhost:4000")).toBe("http://localhost:4000/tools");
+    expect(resolveMcpServerUrl("http://localhost:4000/")).toBe("http://localhost:4000/tools");
+    expect(resolveMcpServerUrl("http://localhost:4000/tools")).toBe("http://localhost:4000/tools");
     expect(resolveMcpServerUrl("http://localhost:4000/custom")).toBe(
       "http://localhost:4000/custom/tools",
     );
@@ -385,9 +367,7 @@ describe("createAgentRuntime", () => {
         outputTokens: 1,
       },
     });
-    mocks.streamTextMock
-      .mockReturnValueOnce(workerResult)
-      .mockReturnValueOnce(narratorResult);
+    mocks.streamTextMock.mockReturnValueOnce(workerResult).mockReturnValueOnce(narratorResult);
 
     await createMultiAgentStream({
       messages: userMessages,
@@ -460,9 +440,11 @@ describe("createAgentRuntime", () => {
     expect(emittedText).toContain("[AGENT:metrics-investigator]");
     expect(emittedText).toContain("[AGENT:narrator]");
 
-    expect(
-      traceCollector.recordStep.mock.calls.map(([, step]) => step.toolName),
-    ).toEqual(["supervisor", "metrics-investigator", "narrator"]);
+    expect(traceCollector.recordStep.mock.calls.map(([, step]) => step.toolName)).toEqual([
+      "supervisor",
+      "metrics-investigator",
+      "narrator",
+    ]);
     expect(traceCollector.endTrace).toHaveBeenCalledWith(
       "trace-1",
       expect.objectContaining({

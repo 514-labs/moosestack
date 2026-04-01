@@ -32,7 +32,5 @@ export function parseCatalogFormat(value: string | undefined): CatalogFormat {
     return value as CatalogFormat;
   }
 
-  throw new Error(
-    `Invalid format: ${value}. Allowed values: ${CATALOG_FORMATS.join(", ")}.`,
-  );
+  throw new Error(`Invalid format: ${value}. Allowed values: ${CATALOG_FORMATS.join(", ")}.`);
 }

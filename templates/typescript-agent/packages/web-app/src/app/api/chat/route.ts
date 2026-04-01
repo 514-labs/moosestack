@@ -1,7 +1,4 @@
-import {
-  formatAgentRuntimeErrorMessage,
-  McpServerUnavailableError,
-} from "agent-runtime";
+import { formatAgentRuntimeErrorMessage, McpServerUnavailableError } from "agent-runtime";
 import type { UIMessage } from "ai";
 import type { NextAuthRequest } from "next-auth";
 import { auth } from "@/auth";
@@ -26,17 +23,16 @@ function getChatErrorResponse(error: unknown) {
       body: {
         error: "MCP server unavailable",
         details:
-          process.env.NODE_ENV === "production" ?
-            "Start the Moose service and verify the custom MCP tools endpoint is reachable."
-          : error.message,
+          process.env.NODE_ENV === "production"
+            ? "Start the Moose service and verify the custom MCP tools endpoint is reachable."
+            : error.message,
       },
     };
   }
 
   const details = formatAgentRuntimeErrorMessage(error);
-  const errorLabel =
-    details.startsWith("Model access denied.") ?
-      "Bedrock model access denied"
+  const errorLabel = details.startsWith("Model access denied.")
+    ? "Bedrock model access denied"
     : "Internal server error";
 
   return {
@@ -44,19 +40,14 @@ function getChatErrorResponse(error: unknown) {
     body: {
       error: errorLabel,
       details:
-        (
-          process.env.NODE_ENV !== "production" ||
-          errorLabel === "Bedrock model access denied"
-        ) ?
-          details
-        : "Check the web app logs for details.",
+        process.env.NODE_ENV !== "production" || errorLabel === "Bedrock model access denied"
+          ? details
+          : "Check the web app logs for details.",
     },
   };
 }
 
-export const POST = auth(async function POST(
-  request: NextAuthRequest,
-): Promise<Response> {
+export const POST = auth(async function POST(request: NextAuthRequest): Promise<Response> {
   try {
     const session = request.auth;
     const access = getSessionAccess(session);

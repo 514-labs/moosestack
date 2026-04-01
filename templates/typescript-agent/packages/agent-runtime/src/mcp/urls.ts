@@ -22,10 +22,9 @@ export function resolveMcpServerUrl(value: string): string {
     return formatUrl(url);
   }
 
-  url.pathname =
-    pathname.endsWith(MCP_ENDPOINT_PATH) ? pathname : (
-      `${pathname}${MCP_ENDPOINT_PATH}`
-    );
+  url.pathname = pathname.endsWith(MCP_ENDPOINT_PATH)
+    ? pathname
+    : `${pathname}${MCP_ENDPOINT_PATH}`;
 
   return formatUrl(url);
 }

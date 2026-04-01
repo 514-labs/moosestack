@@ -1,7 +1,4 @@
-type SpecialistId =
-  | "catalog-researcher"
-  | "knowledge-analyst"
-  | "metrics-investigator";
+type SpecialistId = "catalog-researcher" | "knowledge-analyst" | "metrics-investigator";
 
 type SpecialistDefinition = {
   label: string;
@@ -9,10 +6,7 @@ type SpecialistDefinition = {
   systemPrompt: string;
 };
 
-export const MULTI_AGENT_SPECIALISTS: Record<
-  SpecialistId,
-  SpecialistDefinition
-> = {
+export const MULTI_AGENT_SPECIALISTS: Record<SpecialistId, SpecialistDefinition> = {
   "catalog-researcher": {
     label: "catalog-researcher",
     handoffSummary: "schema discovery, table selection, or catalog inspection",
@@ -28,8 +22,7 @@ Rules:
   },
   "knowledge-analyst": {
     label: "knowledge-analyst",
-    handoffSummary:
-      "summaries, priorities, recent changes, or trend interpretation",
+    handoffSummary: "summaries, priorities, recent changes, or trend interpretation",
     systemPrompt: `You are the knowledge-analyst specialist.
 
 Focus on summaries, trend interpretation, and priority analysis over the seeded knowledge domain that is visible in the current access scope.
@@ -42,8 +35,7 @@ Rules:
   },
   "metrics-investigator": {
     label: "metrics-investigator",
-    handoffSummary:
-      "grouped metrics, recent records, or precise semantic comparisons",
+    handoffSummary: "grouped metrics, recent records, or precise semantic comparisons",
     systemPrompt: `You are the metrics-investigator specialist.
 
 Focus on precise semantic tool usage for the authenticated access scope.
@@ -87,8 +79,8 @@ export function parseSpecialistSelection(text: string): SpecialistId {
   }
 
   throw new Error(
-    matches.length > 1 ?
-      `Supervisor returned an ambiguous specialist route: ${text || "<empty>"}.`
-    : `Supervisor returned an unknown specialist route: ${text || "<empty>"}`,
+    matches.length > 1
+      ? `Supervisor returned an ambiguous specialist route: ${text || "<empty>"}.`
+      : `Supervisor returned an unknown specialist route: ${text || "<empty>"}`,
   );
 }

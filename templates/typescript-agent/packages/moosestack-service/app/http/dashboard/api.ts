@@ -25,12 +25,7 @@ app.get("/dashboard/snapshot", async (req, res, next) => {
 });
 
 app.use(
-  (
-    error: unknown,
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction,
-  ) => {
+  (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error("[App API] Failed to handle request:", error);
 
     if (!res.headersSent) {

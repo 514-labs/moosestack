@@ -4,9 +4,9 @@ import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createLocalAccessProvider,
-  getVisibleLocalMockUsers,
   getLocalMockPassword,
   getLocalMockUser,
+  getVisibleLocalMockUsers,
 } from "../src/dev/local-auth";
 
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
@@ -137,9 +137,7 @@ describe("local mock user helpers", () => {
 
     expect(getLocalMockUser("admin@templae.com")).toBeUndefined();
     expect(
-      getVisibleLocalMockUsers().some(
-        (mockUser) => mockUser.email === "admin@templae.com",
-      ),
+      getVisibleLocalMockUsers().some((mockUser) => mockUser.email === "admin@templae.com"),
     ).toBe(false);
   });
 });

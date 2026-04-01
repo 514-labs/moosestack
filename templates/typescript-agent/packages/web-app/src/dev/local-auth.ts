@@ -1,8 +1,4 @@
-import {
-  ACCESS_ROLE_ADMIN_DEBUG,
-  ACCESS_ROLE_TENANT,
-  type AccessRole,
-} from "agent-contracts";
+import { ACCESS_ROLE_ADMIN_DEBUG, ACCESS_ROLE_TENANT, type AccessRole } from "agent-contracts";
 import { importPKCS8, SignJWT } from "jose";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
@@ -40,8 +36,7 @@ export const LOCAL_MOCK_USERS = [
     email: "admin@templae.com",
     passwordEnvVar: "LOCAL_MOCK_PASSWORD_ADMIN",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
-    description:
-      "Local-only admin access with read visibility across both seeded organizations.",
+    description: "Local-only admin access with read visibility across both seeded organizations.",
   },
 ] as const;
 
@@ -54,9 +49,7 @@ export function isAdminDebugEnabled(): boolean {
 }
 
 function isLocalMockUserEnabled(mockUser: LocalMockUser): boolean {
-  return (
-    mockUser.accessRole !== ACCESS_ROLE_ADMIN_DEBUG || isAdminDebugEnabled()
-  );
+  return mockUser.accessRole !== ACCESS_ROLE_ADMIN_DEBUG || isAdminDebugEnabled();
 }
 
 function getLocalPrivateKeyPem(): string {
@@ -98,8 +91,7 @@ export function getLocalMockUser(email: string): LocalMockUser | undefined {
 
   return LOCAL_MOCK_USERS.find(
     (mockUser) =>
-      isLocalMockUserEnabled(mockUser) &&
-      normalizeEmail(mockUser.email) === normalizedEmail,
+      isLocalMockUserEnabled(mockUser) && normalizeEmail(mockUser.email) === normalizedEmail,
   );
 }
 
@@ -107,25 +99,17 @@ export function getVisibleLocalMockUsers(): LocalMockUser[] {
   return LOCAL_MOCK_USERS.filter(isLocalMockUserEnabled);
 }
 
-function isValidLocalPassword(
-  mockUser: LocalMockUser,
-  password: string,
-): boolean {
+function isValidLocalPassword(mockUser: LocalMockUser, password: string): boolean {
   return password === getLocalMockPassword(mockUser);
 }
 
 function getLocalAccessScope(accessRole: AccessRole): string {
-  return accessRole === ACCESS_ROLE_ADMIN_DEBUG ?
-      "agent:query admin:debug"
-    : "agent:query";
+  return accessRole === ACCESS_ROLE_ADMIN_DEBUG ? "agent:query admin:debug" : "agent:query";
 }
 
 async function issueLocalAccessToken(mockUser: LocalMockUser): Promise<string> {
   const privateKey = await getLocalPrivateKey();
-  const orgClaims =
-    mockUser.accessRole === ACCESS_ROLE_TENANT ?
-      { org_id: mockUser.orgId }
-    : {};
+  const orgClaims = mockUser.accessRole === ACCESS_ROLE_TENANT ? { org_id: mockUser.orgId } : {};
 
   return await new SignJWT({
     ...orgClaims,
@@ -169,12 +153,12 @@ export function createLocalAccessProvider() {
         id: `local-${mockUser.id}`,
         name: mockUser.name,
         email: mockUser.email,
-        ...(mockUser.accessRole === ACCESS_ROLE_TENANT ?
-          {
-            orgId: mockUser.orgId,
-            orgName: mockUser.orgName,
-          }
-        : {}),
+        ...(mockUser.accessRole === ACCESS_ROLE_TENANT
+          ? {
+              orgId: mockUser.orgId,
+              orgName: mockUser.orgName,
+            }
+          : {}),
         provider: "local",
         accessRole: mockUser.accessRole,
         idToken: await issueLocalAccessToken(mockUser),

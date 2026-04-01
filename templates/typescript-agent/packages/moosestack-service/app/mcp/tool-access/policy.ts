@@ -54,14 +54,8 @@ export interface ToolAccessPolicy {
     componentType?: "tables" | "materialized_views",
     searchPattern?: string,
   ): ToolAccessCatalog;
-  formatExposedCatalogSummary(
-    tables: TableInfo[],
-    materializedViews: TableInfo[],
-  ): string;
-  formatExposedCatalogDetailed(
-    tables: TableInfo[],
-    materializedViews: TableInfo[],
-  ): string;
+  formatExposedCatalogSummary(tables: TableInfo[], materializedViews: TableInfo[]): string;
+  formatExposedCatalogDetailed(tables: TableInfo[], materializedViews: TableInfo[]): string;
   validateExposedReadonlyQuery(rawQuery: string): string;
 }
 
@@ -103,9 +97,7 @@ function getTableEngine(table: RuntimeTable): string {
   return typeof engine === "string" ? engine : "MergeTree";
 }
 
-function isNullableType(
-  dataType: RuntimeDataType,
-): dataType is { nullable: RuntimeDataType } {
+function isNullableType(dataType: RuntimeDataType): dataType is { nullable: RuntimeDataType } {
   return (
     typeof dataType === "object" &&
     dataType !== null &&
@@ -114,9 +106,7 @@ function isNullableType(
   );
 }
 
-function isEnumType(
-  dataType: RuntimeDataType,
-): dataType is { values: RuntimeEnumValue[] } {
+function isEnumType(dataType: RuntimeDataType): dataType is { values: RuntimeEnumValue[] } {
   return (
     typeof dataType === "object" &&
     dataType !== null &&
@@ -128,11 +118,7 @@ function isEnumType(
 function isArrayType(
   dataType: RuntimeDataType,
 ): dataType is { elementType: RuntimeDataType; elementNullable: boolean } {
-  return (
-    typeof dataType === "object" &&
-    dataType !== null &&
-    "elementType" in dataType
-  );
+  return typeof dataType === "object" && dataType !== null && "elementType" in dataType;
 }
 
 function isNestedType(
@@ -190,9 +176,7 @@ function renderEnumType(values: RuntimeEnumValue[]): string {
     const min = Math.min(...numbers);
     const max = Math.max(...numbers);
     const enumType = min >= -128 && max <= 127 ? "Enum8" : "Enum16";
-    const members = values
-      .map((entry) => `'${entry.name}' = ${entry.value.Int}`)
-      .join(", ");
+    const members = values.map((entry) => `'${entry.name}' = ${entry.value.Int}`).join(", ");
     return `${enumType}(${members})`;
   }
 
@@ -222,9 +206,8 @@ function renderRuntimeDataType(dataType: RuntimeDataType): string {
   }
 
   if (isArrayType(dataType)) {
-    const elementType =
-      dataType.elementNullable ?
-        `Nullable(${renderRuntimeDataType(dataType.elementType)})`
+    const elementType = dataType.elementNullable
+      ? `Nullable(${renderRuntimeDataType(dataType.elementType)})`
       : renderRuntimeDataType(dataType.elementType);
     return `Array(${elementType})`;
   }
@@ -288,8 +271,7 @@ function shouldFallbackToSubstringSearch(searchPattern: string): boolean {
     return true;
   }
 
-  const regexMetacharacterCount = (searchPattern.match(/[\\()[\]{}+*?]/g) ?? [])
-    .length;
+  const regexMetacharacterCount = (searchPattern.match(/[\\()[\]{}+*?]/g) ?? []).length;
   return regexMetacharacterCount > MAX_SEARCH_PATTERN_METACHARACTERS;
 }
 
@@ -361,9 +343,7 @@ function maskSqlStringLiterals(query: string): string {
 
 function normalizeIdentifier(identifier: string): string {
   const normalizedIdentifier = identifier.trim().replace(/;+$/, "");
-  const unquotedIdentifier = normalizedIdentifier
-    .replace(/^["`]/, "")
-    .replace(/["`]$/, "");
+  const unquotedIdentifier = normalizedIdentifier.replace(/^["`]/, "").replace(/["`]$/, "");
 
   if (unquotedIdentifier.includes(".")) {
     throw new Error(
@@ -399,10 +379,7 @@ function tokenizeSql(query: string): SqlToken[] {
 
     if (char === "," || char === "." || char === "(" || char === ")") {
       tokens.push({
-        kind:
-          char === "," ? "comma"
-          : char === "." ? "dot"
-          : "paren",
+        kind: char === "," ? "comma" : char === "." ? "dot" : "paren",
         value: char,
       });
       index += 1;
@@ -488,17 +465,12 @@ function skipOptionalAlias(tokens: SqlToken[], startIndex: number): number {
   }
 
   if (token.kind === "word" && token.value.toLowerCase() === "as") {
-    return isIdentifierToken(tokens[startIndex + 1]) ?
-        startIndex + 2
-      : startIndex + 1;
+    return isIdentifierToken(tokens[startIndex + 1]) ? startIndex + 2 : startIndex + 1;
   }
 
   if (
     isIdentifierToken(token) &&
-    !(
-      token.kind === "word" &&
-      TABLE_REFERENCE_BOUNDARY_KEYWORDS.has(token.value.toLowerCase())
-    )
+    !(token.kind === "word" && TABLE_REFERENCE_BOUNDARY_KEYWORDS.has(token.value.toLowerCase()))
   ) {
     return startIndex + 1;
   }
@@ -506,15 +478,11 @@ function skipOptionalAlias(tokens: SqlToken[], startIndex: number): number {
   return startIndex;
 }
 
-export function createToolAccessPolicy(
-  exposedTables: readonly RuntimeTable[],
-): ToolAccessPolicy {
+export function createToolAccessPolicy(exposedTables: readonly RuntimeTable[]): ToolAccessPolicy {
   const exposedComponentNames = new Set(
     exposedTables.map((table) => table.generateTableName().toLowerCase()),
   );
-  const availableComponentList = Array.from(exposedComponentNames)
-    .sort()
-    .join(", ");
+  const availableComponentList = Array.from(exposedComponentNames).sort().join(", ");
 
   function assertExposedIdentifier(identifier: string) {
     if (!exposedComponentNames.has(identifier)) {
@@ -525,9 +493,7 @@ export function createToolAccessPolicy(
   }
 
   function validateDescribeQuery(query: string) {
-    const match = query.match(
-      /^\s*(?:describe|desc)(?:\s+table)?\s+([`"\w.]+)/i,
-    );
+    const match = query.match(/^\s*(?:describe|desc)(?:\s+table)?\s+([`"\w.]+)/i);
 
     if (!match) {
       throw new Error(
@@ -561,10 +527,7 @@ export function createToolAccessPolicy(
         continue;
       }
 
-      if (
-        tokens[index + 1]?.kind === "paren" &&
-        tokens[index + 1]?.value === "("
-      ) {
+      if (tokens[index + 1]?.kind === "paren" && tokens[index + 1]?.value === "(") {
         continue;
       }
 
@@ -575,10 +538,7 @@ export function createToolAccessPolicy(
 
       identifiers.push(normalizeIdentifier(tableReference.identifier));
 
-      if (
-        tokens[skipOptionalAlias(tokens, tableReference.nextIndex)]?.kind ===
-        "comma"
-      ) {
+      if (tokens[skipOptionalAlias(tokens, tableReference.nextIndex)]?.kind === "comma") {
         throw new Error(
           "Comma-separated FROM and JOIN target lists are not allowed. Use explicit JOIN syntax against exposed data components.",
         );
@@ -605,11 +565,11 @@ export function createToolAccessPolicy(
       materializedViews: TableInfo[];
     } {
       const tables =
-        componentType === "materialized_views" ?
-          []
-        : exposedTables
-            .map(toTableInfo)
-            .filter((table) => matchesSearchPattern(table.name, searchPattern));
+        componentType === "materialized_views"
+          ? []
+          : exposedTables
+              .map(toTableInfo)
+              .filter((table) => matchesSearchPattern(table.name, searchPattern));
 
       return {
         tables,
@@ -617,10 +577,7 @@ export function createToolAccessPolicy(
       };
     },
 
-    formatExposedCatalogSummary(
-      tables: TableInfo[],
-      materializedViews: TableInfo[],
-    ): string {
+    formatExposedCatalogSummary(tables: TableInfo[], materializedViews: TableInfo[]): string {
       if (tables.length === 0 && materializedViews.length === 0) {
         return "No data components found matching the specified filters.";
       }
@@ -646,16 +603,11 @@ export function createToolAccessPolicy(
       return output;
     },
 
-    formatExposedCatalogDetailed(
-      tables: TableInfo[],
-      materializedViews: TableInfo[],
-    ): string {
+    formatExposedCatalogDetailed(tables: TableInfo[], materializedViews: TableInfo[]): string {
       const catalog: DataCatalogResponse = {};
 
       if (tables.length > 0) {
-        catalog.tables = Object.fromEntries(
-          tables.map((table) => [table.name, table]),
-        );
+        catalog.tables = Object.fromEntries(tables.map((table) => [table.name, table]));
       }
 
       if (materializedViews.length > 0) {
