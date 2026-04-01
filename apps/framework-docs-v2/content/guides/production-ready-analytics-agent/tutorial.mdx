@@ -42,9 +42,9 @@ For context on what the Analytics Agent Harness is and when this approach is wor
   bulletStyle="check"
   bullets={[
     {
-      title: "A running multi-agent analytics agent backed by ClickHouse",
+      title: "A running analytics agent backed by ClickHouse",
       description:
-        "A supervisor → specialist → narrator pipeline that routes questions, runs targeted ClickHouse queries, and returns accurate, well-explained answers.",
+        "A single-agent or multi-agent pipeline that runs targeted ClickHouse queries and returns accurate, well-explained answers.",
     },
     {
       title: "Your domain data in ClickHouse and queryable by the agent",
@@ -547,7 +547,7 @@ The template ships with a multi-agent flow: supervisor → specialist → narrat
 
 For guidance on the tradeoffs, see Anthropic's [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) — particularly the sections on routing workflows vs autonomous agents.
 
-The template defaults to multi-agent (`createMultiAgentStream`). To simplify to single agent, switch to `createAgentStream` in `packages/web-app/src/lib/chat-agent.ts`. The reference multi-agent implementation lives in `packages/agent-runtime/src/streams/create-multi-agent-stream.ts`.
+The template defaults to single agent (`createAgentStream`). To use the full multi-agent flow, switch to `createMultiAgentStream` in `packages/web-app/src/lib/chat-agent.ts`. The reference multi-agent implementation lives in `packages/agent-runtime/src/streams/create-multi-agent-stream.ts`.
 
 ### Edit the system prompt
 
