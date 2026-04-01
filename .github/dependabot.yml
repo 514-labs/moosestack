@@ -1,7 +1,25 @@
 version: 2
 updates:
-  # Rust toolchain version (rust-toolchain.toml)
-  # This replaces the custom rust-update.yaml workflow
+  # =============================================================================
+  # Root workspace - pnpm catalog pins + root lockfile
+  # =============================================================================
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "workspace"
+    groups:
+      workspace-minor-patch:
+        update-types: ["minor", "patch"]
+      workspace-major:
+        update-types: ["major"]
+
+  # =============================================================================
+  # Rust
+  # =============================================================================
   - package-ecosystem: "rust-toolchain"
     directory: "/"
     schedule:
@@ -11,11 +29,23 @@ updates:
       - "rust"
       - "toolchain"
 
-  # =============================================================================
-  # Templates - Monitor all dependencies using glob patterns
-  # =============================================================================
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "rust"
+      - "dependencies"
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+      cargo-major:
+        update-types: ["major"]
 
-  # TypeScript templates (any package.json in templates/)
+  # =============================================================================
+  # Templates
+  # =============================================================================
   - package-ecosystem: "npm"
     directories:
       - "/templates/**"
@@ -23,21 +53,23 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
-      - "typescript"
-      - "templates"
       - "dependencies"
+      - "templates"
     groups:
-      moose:
+      templates-npm-moose:
         patterns:
           - "@514labs/moose-cli"
           - "@514labs/moose-lib"
+      templates-minor-patch:
+        update-types: ["minor", "patch"]
+      templates-major:
+        update-types: ["major"]
     ignore:
       # Keep @types/node at 20.x.x for backward compatibility
       # Node.js 20 is LTS and we want to ensure compatibility
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # Python templates (any requirements.txt in templates/)
   - package-ecosystem: "pip"
     directories:
       - "/templates/**"
@@ -45,20 +77,22 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
-      - "python"
-      - "templates"
       - "dependencies"
+      - "templates"
+      - "python"
     groups:
-      moose:
+      templates-pip-moose:
         patterns:
           - "moose-cli"
           - "moose-lib"
+      templates-pip-minor-patch:
+        update-types: ["minor", "patch"]
+      templates-pip-major:
+        update-types: ["major"]
 
   # =============================================================================
-  # Examples - Monitor dependencies (these manage their own versions)
+  # Examples
   # =============================================================================
-
-  # TypeScript examples (any package.json in examples/)
   - package-ecosystem: "npm"
     directories:
       - "/examples/**"
@@ -66,19 +100,23 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
-      - "typescript"
-      - "examples"
       - "dependencies"
+      - "examples"
     groups:
-      moose:
+      examples-npm-moose:
         patterns:
           - "@514labs/moose-cli"
           - "@514labs/moose-lib"
+      examples-minor-patch:
+        update-types: ["minor", "patch"]
+      examples-major:
+        update-types: ["major"]
     ignore:
+      # Keep @types/node at 20.x.x for backward compatibility
+      # Node.js 20 is LTS and we want to ensure compatibility
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # Python examples (any requirements.txt in examples/)
   - package-ecosystem: "pip"
     directories:
       - "/examples/**"
@@ -86,11 +124,15 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
-      - "python"
-      - "examples"
       - "dependencies"
+      - "examples"
+      - "python"
     groups:
-      moose:
+      examples-pip-moose:
         patterns:
           - "moose-cli"
           - "moose-lib"
+      examples-pip-minor-patch:
+        update-types: ["minor", "patch"]
+      examples-pip-major:
+        update-types: ["major"]
