@@ -11,7 +11,10 @@ import {
   GUIDE_SETTINGS_LABELS,
   GUIDE_SETTINGS_CHIP_LABELS,
 } from "@/lib/guide-settings";
-import { GUIDE_SETTINGS_CONFIG } from "@/config/guide-settings-config";
+import {
+  GUIDE_SETTINGS_CONFIG,
+  isGuidePathExcludedFromSettingsUi,
+} from "@/config/guide-settings-config";
 
 /**
  * GlobalGuideSettingsPanel - Persistent settings panel for guide customization
@@ -47,6 +50,11 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
 
   // Don't show on guides index or non-guide pages
   if (isGuidesIndex || !isGuidePage) {
+    return null;
+  }
+
+  // Guides that don't use stack customization (TypeScript-only paths, no conditional MDX)
+  if (isGuidePathExcludedFromSettingsUi(normalizedPath)) {
     return null;
   }
 
