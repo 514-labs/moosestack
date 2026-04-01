@@ -1,6 +1,11 @@
-import { type MooseUtils, sql } from "@514labs/moose-lib";
+import {
+  type MooseUtils,
+  type RowPolicyOptions,
+  sql,
+} from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
 import { TenantKnowledgeTable } from "../ingest/models";
+import { executeReadonlySql } from "../data/clickhouse/readonly-query";
 
 function formatClickHouseDateTime(value: Date): string {
   return value.toISOString().slice(0, 19).replace("T", " ");
@@ -8,6 +13,7 @@ function formatClickHouseDateTime(value: Date): string {
 
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
+  rowPolicyOptions?: RowPolicyOptions,
 ): Promise<DashboardSnapshot> {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -35,33 +41,20 @@ export async function getDashboardSnapshot(
     LIMIT 5
   `;
 
-  const [knowledgeMetricsResult, recentKnowledgeResult] = await Promise.all([
-    queryClient.execute<{
+  const [knowledgeMetrics, recentKnowledge] = await Promise.all([
+    executeReadonlySql<{
       totalRecords: number;
       highPriorityRecords: number;
-    }>(knowledgeMetricsQuery),
-    queryClient.execute<{
+    }>(queryClient, knowledgeMetricsQuery, { rowPolicyOptions }),
+    executeReadonlySql<{
       orgId: string;
       headline: string;
       category: string;
       priority: string;
       source: string;
       timestamp: string;
-    }>(recentKnowledgeQuery),
+    }>(queryClient, recentKnowledgeQuery, { rowPolicyOptions }),
   ]);
-
-  const knowledgeMetrics = (await knowledgeMetricsResult.json()) as Array<{
-    totalRecords: number;
-    highPriorityRecords: number;
-  }>;
-  const recentKnowledge = (await recentKnowledgeResult.json()) as Array<{
-    orgId: string;
-    headline: string;
-    category: string;
-    priority: string;
-    source: string;
-    timestamp: string;
-  }>;
 
   return {
     knowledgeMetrics: knowledgeMetrics[0] ?? {

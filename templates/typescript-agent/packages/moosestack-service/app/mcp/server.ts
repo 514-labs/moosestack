@@ -18,7 +18,7 @@ const app = express();
 app.use(express.json());
 app.use(requireAuthenticatedMoose);
 
-function createMcpServer(context: Pick<AuthenticatedAccessContext, "moose">) {
+function createMcpServer(context: AuthenticatedAccessContext) {
   const server = new McpServer({
     name: "moosestack-mcp-tools",
     version: "1.0.0",
@@ -29,6 +29,8 @@ function createMcpServer(context: Pick<AuthenticatedAccessContext, "moose">) {
     [tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel],
     {
       queryClient: context.moose.client.query,
+      rowPolicyOptions:
+        context.kind === "org" ? context.rowPolicyOptions : undefined,
     },
   );
   registerGetDataCatalogTool(server);
