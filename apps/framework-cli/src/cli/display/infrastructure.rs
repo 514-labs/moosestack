@@ -676,6 +676,15 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         OlapChange::SelectRowPolicy(Change::Updated { before: _, after }) => {
             infra_updated(&format!("Row policy '{}'", after.name));
         }
+        OlapChange::OlapDictionary(Change::Added(dict)) => {
+            infra_added(&format!("Dictionary '{}'", dict.name));
+        }
+        OlapChange::OlapDictionary(Change::Removed(dict)) => {
+            infra_removed(&format!("Dictionary '{}'", dict.name));
+        }
+        OlapChange::OlapDictionary(Change::Updated { before: _, after }) => {
+            infra_updated(&format!("Dictionary '{}'", after.name));
+        }
     });
 }
 

@@ -22,6 +22,7 @@ use std::hash::Hash;
 
 pub mod api_endpoint;
 pub mod consumption_webserver;
+pub mod dictionary;
 pub mod function_process;
 pub mod materialized_view;
 pub mod orchestration_worker;
@@ -61,6 +62,8 @@ pub enum InfrastructureSignature {
     View { id: String },
     /// Row policy infrastructure component
     SelectRowPolicy { id: String },
+    /// ClickHouse Dictionary infrastructure component
+    OlapDictionary { id: String },
 }
 
 impl InfrastructureSignature {
@@ -75,7 +78,8 @@ impl InfrastructureSignature {
             | Self::SqlResource { id }
             | Self::MaterializedView { id }
             | Self::View { id }
-            | Self::SelectRowPolicy { id } => id,
+            | Self::SelectRowPolicy { id }
+            | Self::OlapDictionary { id } => id,
         }
     }
 
@@ -126,6 +130,11 @@ impl InfrastructureSignature {
                 proto.set_select_row_policy_id(id.clone());
                 proto
             }
+            InfrastructureSignature::OlapDictionary { id } => {
+                let mut proto = ProtoInfrastructureSignature::new();
+                proto.set_olap_dictionary_id(id.clone());
+                proto
+            }
         }
     }
 
@@ -157,6 +166,9 @@ impl InfrastructureSignature {
             }
             Some(infrastructure_signature::Signature::SelectRowPolicyId(id)) => {
                 InfrastructureSignature::SelectRowPolicy { id }
+            }
+            Some(infrastructure_signature::Signature::OlapDictionaryId(id)) => {
+                InfrastructureSignature::OlapDictionary { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");
