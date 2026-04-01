@@ -9910,4 +9910,76 @@ mod diff_select_row_policy_tests {
             _ => panic!("Expected SelectRowPolicy Updated"),
         }
     }
+
+    /// Regression test: olap_dictionaries must survive a JSON round-trip via
+    /// save_to_json() → load_from_json(). The custom serde shadow struct was
+    /// previously missing this field, causing silent data loss on every persist.
+    #[test]
+    fn test_json_round_trip_preserves_olap_dictionaries() {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+
+        let dict = OlapDictionary {
+            name: "user_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            metadata: None,
+        };
+
+        let dict_id = dict.id("local");
+        let mut infra_map = InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+        infra_map
+            .olap_dictionaries
+            .insert(dict_id.clone(), dict.clone());
+
+        // Serialize to JSON and back using the same path as save_to_json/load_from_json
+        let json = serde_json::to_string(&infra_map).expect("serialization failed");
+        let restored: InfrastructureMap =
+            serde_json::from_str(&json).expect("deserialization failed");
+
+        assert!(
+            restored.olap_dictionaries.contains_key(&dict_id),
+            "olap_dictionaries dropped during JSON round-trip: key '{dict_id}' missing"
+        );
+        assert_eq!(
+            restored.olap_dictionaries[&dict_id].name, dict.name,
+            "dictionary name changed during JSON round-trip"
+        );
+        assert_eq!(
+            restored.olap_dictionaries[&dict_id].primary_key,
+            dict.primary_key,
+        );
+    }
 }
