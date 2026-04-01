@@ -1,6 +1,6 @@
 import { type MooseUtils, sql } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
-import { executeScopedSql } from "../data/clickhouse/readonly-query";
+import { executeScopedSql } from "../../data/clickhouse/readonly-query";
 import { TenantKnowledgeTable } from "../ingest/models";
 
 function formatClickHouseDateTime(value: Date): string {

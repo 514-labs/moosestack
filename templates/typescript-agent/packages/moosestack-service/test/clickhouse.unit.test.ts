@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   executeReadonlySql,
   executeReadonlyStatement,
-} from "../app/data/clickhouse/readonly-query";
+  executeScopedSql,
+} from "../data/clickhouse/readonly-query";
 
 describe("executeReadonlyStatement", () => {
   it("uses max_result_rows instead of the legacy limit setting", async () => {
@@ -113,5 +114,28 @@ describe("executeReadonlyStatement", () => {
         }),
       }),
     );
+  });
+
+  it("keeps scoped queries readonly by wrapping the scoped QueryClient", async () => {
+    const executeSpy = vi.fn(async () => {
+      return {
+        json: async () => [{ org_id: "org_a" }],
+      };
+    });
+    const readonlyClient = {
+      execute: executeSpy,
+    };
+    const queryClient = {
+      withReadonly: vi.fn(() => readonlyClient),
+    };
+
+    const rows = await executeScopedSql<{ org_id: string }>(
+      queryClient as never,
+      sql`SELECT org_id FROM tenant_knowledge LIMIT 1`,
+    );
+
+    expect(rows).toEqual([{ org_id: "org_a" }]);
+    expect(queryClient.withReadonly).toHaveBeenCalledTimes(1);
+    expect(executeSpy).toHaveBeenCalledTimes(1);
   });
 });

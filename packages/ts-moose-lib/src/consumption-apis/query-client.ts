@@ -48,6 +48,19 @@ export class QueryClient {
     this.readonlyMode = readonlyMode;
   }
 
+  withReadonly(): QueryClient {
+    if (this.readonlyMode) {
+      return this;
+    }
+
+    return new QueryClient(
+      this.client,
+      this.query_id_prefix,
+      this.rowPolicyOptions,
+      true,
+    );
+  }
+
   async execute<T = any>(
     sql: Sql,
   ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {

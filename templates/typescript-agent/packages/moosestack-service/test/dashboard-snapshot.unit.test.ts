@@ -44,6 +44,9 @@ describe("getDashboardSnapshot", () => {
       });
 
     const snapshot = await getDashboardSnapshot({
+      withReadonly: vi.fn(function () {
+        return this;
+      }),
       execute,
     } as never);
 
