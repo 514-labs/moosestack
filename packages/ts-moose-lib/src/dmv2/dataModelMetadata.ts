@@ -22,6 +22,7 @@ const typesToArgsLength = new Map([
   ["Api", 2],
   ["MaterializedView", 1],
   ["Task", 2],
+  ["OlapDictionary", 2],
 ]);
 
 export const isNewMooseResourceWithTypeParam = (
