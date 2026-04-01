@@ -942,13 +942,40 @@ impl OlapDictionary {
         }
     }
 
-    /// Builds the column list DDL fragment
+    /// Builds the column list DDL fragment.
+    ///
+    /// All columns — including primary keys — must appear in the ClickHouse column list.
+    /// Primary key columns are sorted to appear first (ClickHouse convention), followed
+    /// by attribute columns in the order they were declared.
+    ///
+    /// Primary key columns must be present in `self.columns` with their type defined.
     fn columns_ddl(&self) -> String {
-        // Primary key columns appear first — they're listed as plain type only
-        // Attribute columns follow with their full attribute set
-        let mut col_lines: Vec<String> = self.columns.iter().map(|c| c.to_ddl()).collect();
+        let pk_set: std::collections::HashSet<&str> =
+            self.primary_key.iter().map(|k| k.as_str()).collect();
 
-        // If columns is empty, generate placeholder (shouldn't happen in valid use)
+        // Primary key columns first (in declaration order), then attribute columns
+        let mut pk_lines: Vec<String> = Vec::new();
+        let mut attr_lines: Vec<String> = Vec::new();
+
+        for col in &self.columns {
+            if pk_set.contains(col.name.as_str()) {
+                pk_lines.push(col.to_ddl());
+            } else {
+                attr_lines.push(col.to_ddl());
+            }
+        }
+
+        // Preserve declared order of primary key columns
+        let mut ordered_pks: Vec<String> = Vec::with_capacity(self.primary_key.len());
+        for key in &self.primary_key {
+            if let Some(col) = self.columns.iter().find(|c| &c.name == key) {
+                ordered_pks.push(col.to_ddl());
+            }
+        }
+
+        let mut col_lines = ordered_pks;
+        col_lines.extend(attr_lines);
+
         if col_lines.is_empty() {
             col_lines.push("`id` UInt64".to_string());
         }
@@ -1525,17 +1552,35 @@ impl OlapDictionary {
     }
 }
 
+impl OlapDictionary {
+    /// Converts a table reference string (e.g. `` `db`.`table` `` or `table`) to the
+    /// canonical `Table::id()` format (`"database_tablename"`), matching the format used
+    /// by `MaterializedView::table_reference_to_id`.
+    fn table_reference_to_id(table_ref: &str, default_database: &str) -> String {
+        let cleaned = table_ref.replace('`', "");
+        let parts: Vec<&str> = cleaned.split('.').collect();
+        match parts.as_slice() {
+            [table] => format!("{}_{}", default_database, table),
+            [database, table] => format!("{}_{}", database, table),
+            _ => format!("{}_{}", default_database, cleaned),
+        }
+    }
+}
+
 impl DataLineage for OlapDictionary {
     /// Returns the table(s) this dictionary pulls data from.
-    /// For table sources: the source table.
+    /// For table sources: the source table (resolved via `table_reference_to_id`).
     /// For query sources: no structured dependency (query may reference multiple tables).
     /// For external sources: no local dependency.
     fn pulls_data_from(&self, default_database: &str) -> Vec<InfrastructureSignature> {
         match &self.source {
             DictionarySource::Table(t) => {
-                let db = t.database.as_deref().unwrap_or(default_database);
+                let table_ref = match &t.database {
+                    Some(db) => format!("{}.{}", db, t.table),
+                    None => t.table.clone(),
+                };
                 vec![InfrastructureSignature::Table {
-                    id: format!("{}_{}", db, t.table),
+                    id: Self::table_reference_to_id(&table_ref, default_database),
                 }]
             }
             DictionarySource::Query(_) | DictionarySource::External(_) => vec![],
@@ -1565,16 +1610,30 @@ mod tests {
                 invalidate_query: None,
             }),
             primary_key: vec!["id".to_string()],
-            columns: vec![DictionaryColumn {
-                name: "value".to_string(),
-                type_string: "String".to_string(),
-                default_value: None,
-                expression: None,
-                is_injective: None,
-                is_hierarchical: None,
-                is_object_id: None,
-                comment: None,
-            }],
+            // All columns — including primary key columns — must be listed here.
+            // Primary key columns appear first in the generated DDL.
+            columns: vec![
+                DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+                DictionaryColumn {
+                    name: "value".to_string(),
+                    type_string: "String".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+            ],
             layout: DictionaryLayout::Hashed {
                 initial_array_size: None,
                 max_load_factor: None,
