@@ -78,6 +78,8 @@ pub enum ComponentType {
     TopicTableSync,
     /// Topic-to-topic transformation process
     TopicTopicSync,
+    /// ClickHouse Dictionary
+    OlapDictionary,
 }
 
 /// Type of connection between components
@@ -504,6 +506,33 @@ fn add_topic_topic_syncs(compressed: &mut CompressedInfraMap, infra_map: &Infras
     }
 }
 
+/// Add all OLAP dictionaries to the compressed map
+fn add_olap_dictionaries(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
+    use crate::framework::core::infrastructure::DataLineage;
+
+    for (key, dict) in &infra_map.olap_dictionaries {
+        compressed.add_component(ComponentNode {
+            id: key.clone(),
+            component_type: ComponentType::OlapDictionary,
+            name: dict.name.clone(),
+            source_file: extract_source_file(dict.metadata.as_ref()),
+        });
+
+        // Dictionary pulls from its source table (if table source)
+        let default_db = dict
+            .database
+            .as_deref()
+            .unwrap_or(&infra_map.default_database);
+        for source in dict.pulls_data_from(default_db) {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+    }
+}
+
 /// Build a compressed infrastructure map from the full InfrastructureMap
 pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap {
     let mut compressed = CompressedInfraMap::new();
@@ -518,6 +547,7 @@ pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap
     add_web_apps(&mut compressed, infra_map);
     add_topic_table_syncs(&mut compressed, infra_map);
     add_topic_topic_syncs(&mut compressed, infra_map);
+    add_olap_dictionaries(&mut compressed, infra_map);
 
     compressed
 }
