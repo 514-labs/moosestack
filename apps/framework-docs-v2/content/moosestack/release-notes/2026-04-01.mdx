@@ -79,7 +79,7 @@ Moose gains first-class AI agent integration with a new `moose mcp` stdio proxy,
 
 - Alternative container runtime support: `moose dev` now works with Finch, Podman, and nerdctl in addition to Docker. Temporal versions are baked into compose files to work around nerdctl's lack of env var substitution. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Dev Environment](/moosestack/configuration/dev-environment)
 - Read-only query clients: `getMooseUtils({ readonly: true })` now enforces ClickHouse `readonly=2` on all queries, preventing accidental writes from consumption APIs and testing utilities. ([@LucioFranco](https://github.com/LucioFranco))
-- Improved `typescript-agent` template: typed query model tools replace raw `query_clickhouse`, workspace prebuild steps ensure dependencies are ready before dev entrypoints, and init output now shows start commands before seed commands. ([@callicles](https://github.com/callicles))
+- released `typescript-agent` template: Template that combines MooseStack and NextJS to build production ready analytics agents. ([@callicles](https://github.com/callicles))
 
 ### Bug Fixes
 
