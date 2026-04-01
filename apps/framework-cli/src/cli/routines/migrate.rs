@@ -467,6 +467,11 @@ fn validate_table_databases_and_clusters(
             | SerializableOlapOperation::DropRowPolicy { .. } => {
                 // Row policies reference tables but don't need cluster validation
             }
+            SerializableOlapOperation::CreateDictionary { .. }
+            | SerializableOlapOperation::ReplaceDictionary { .. }
+            | SerializableOlapOperation::DropDictionary { .. } => {
+                // Dictionary cluster info is embedded in the DDL SQL, skip validation
+            }
         }
     }
 

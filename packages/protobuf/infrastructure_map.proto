@@ -38,6 +38,9 @@ message InfrastructureMap {
 
   // Row-level security policies
   map<string, SelectRowPolicy> select_row_policies = 20;
+
+  // ClickHouse Dictionaries
+  map<string, OlapDictionary> olap_dictionaries = 21;
 }
 
 message SourceLocation {
@@ -546,6 +549,7 @@ message InfrastructureSignature {
     string materialized_view_id = 7;
     string view_id = 8;
     string select_row_policy_id = 9;
+    string olap_dictionary_id = 10;
   }
 }
 
@@ -590,4 +594,235 @@ message SelectRowPolicy {
   string column = 3;
   // JWT claim name that provides the filter value
   string claim = 4;
+}
+
+// --- ClickHouse Dictionary support ---
+
+// DictionaryColumn represents an attribute/column in a ClickHouse dictionary
+message DictionaryColumn {
+  // Column name
+  string name = 1;
+  // ClickHouse type string (e.g., "UInt64", "String", "Nullable(String)")
+  string type_string = 2;
+  // Default value expression (DEFAULT)
+  optional string default_value = 3;
+  // Computed expression (EXPRESSION)
+  optional string expression = 4;
+  // IS_INJECTIVE attribute for optimized GROUP BY
+  optional bool is_injective = 5;
+  // IS_HIERARCHICAL attribute for parent-child lookups
+  optional bool is_hierarchical = 6;
+  // IS_OBJECT_ID attribute (MongoDB only)
+  optional bool is_object_id = 7;
+  // Column comment
+  optional string comment = 8;
+}
+
+// DictionaryTableSource — dictionary reads from a ClickHouse table
+message DictionaryTableSource {
+  // Source table name
+  string table = 1;
+  // Source database (empty = default database)
+  optional string database = 2;
+  // Optional WHERE clause for row filtering
+  optional string where_clause = 3;
+  // Optional query for checking if data has changed (triggers reload)
+  optional string invalidate_query = 4;
+}
+
+// DictionaryQuerySource — dictionary reads from an arbitrary SQL query
+message DictionaryQuerySource {
+  // The SELECT query
+  string query = 1;
+  // Optional query for checking if data has changed (triggers reload)
+  optional string invalidate_query = 2;
+}
+
+// DictionaryLayout — memory layout and storage model for the dictionary
+message DictionaryLayout {
+  enum Type {
+    FLAT = 0;
+    HASHED = 1;
+    SPARSE_HASHED = 2;
+    HASHED_ARRAY = 3;
+    RANGE_HASHED = 4;
+    CACHE = 5;
+    SSD_CACHE = 6;
+    DIRECT = 7;
+    IP_TRIE = 8;
+    COMPLEX_KEY_HASHED = 9;
+    COMPLEX_KEY_SPARSE_HASHED = 10;
+    COMPLEX_KEY_HASHED_ARRAY = 11;
+    COMPLEX_KEY_CACHE = 12;
+    COMPLEX_KEY_SSD_CACHE = 13;
+    COMPLEX_KEY_DIRECT = 14;
+  }
+  Type type = 1;
+  // Hashed / SparseHashed / ComplexKeyHashed / ComplexKeySparseHashed
+  optional uint64 initial_array_size = 2;
+  optional double max_load_factor = 3;
+  // HashedArray / ComplexKeyHashedArray
+  optional uint32 shards = 4;
+  // Cache / SsdCache / ComplexKeyCache / ComplexKeySsdCache
+  optional uint64 size_in_cells = 5;
+  optional uint32 max_threads_for_updates = 6;
+  // SsdCache / ComplexKeySsdCache
+  optional string ssd_path = 7;
+  optional uint64 block_size = 8;
+  optional uint64 file_size = 9;
+  optional uint64 read_buffer_size = 10;
+  optional uint64 write_buffer_size = 11;
+  optional uint64 max_stored_keys = 12;
+  // IpTrie
+  optional bool access_to_key_from_attributes = 13;
+  // RangeHashed
+  optional string range_lookup_strategy = 14;
+}
+
+// DictionaryRangeLifetime — min/max seconds for range-based refresh
+message DictionaryRangeLifetime {
+  uint64 min = 1;
+  uint64 max = 2;
+}
+
+// DictionaryLifetime — how often dictionary data is refreshed
+message DictionaryLifetime {
+  oneof t {
+    // Static: LIFETIME(0) — never automatically refresh
+    bool static_lifetime = 1;
+    // Single: LIFETIME(N) — refresh every N seconds
+    uint64 single = 2;
+    // Range: LIFETIME(MIN N MAX M) — refresh between min and max seconds
+    DictionaryRangeLifetime range = 3;
+  }
+}
+
+// DictionaryHttpSource — external HTTP source
+message DictionaryHttpSource {
+  string url = 1;
+  string format = 2;
+  optional string method = 3;
+  optional string where_clause = 4;
+}
+
+// DictionaryClickHouseSource — remote ClickHouse server as source
+message DictionaryClickHouseSource {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  string password = 4;
+  string db = 5;
+  string table = 6;
+  optional string query = 7;
+  optional string where_clause = 8;
+  optional string invalidate_query = 9;
+}
+
+// DictionaryMysqlSource — MySQL database as source
+message DictionaryMysqlSource {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  string password = 4;
+  string db = 5;
+  string table = 6;
+  optional string query = 7;
+  optional string where_clause = 8;
+  optional string invalidate_query = 9;
+}
+
+// DictionaryPostgresqlSource — PostgreSQL database as source
+message DictionaryPostgresqlSource {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  string password = 4;
+  string db = 5;
+  string table = 6;
+  optional string query = 7;
+  optional string where_clause = 8;
+  optional string invalidate_query = 9;
+}
+
+// DictionaryRedisSource — Redis as source
+message DictionaryRedisSource {
+  string host = 1;
+  uint32 port = 2;
+  optional string password = 3;
+  optional uint32 db_index = 4;
+  // Storage type: simple, hash, range_hashed, etc.
+  string storage_type = 5;
+}
+
+// DictionaryMongoDbSource — MongoDB as source
+message DictionaryMongoDbSource {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  string password = 4;
+  string db = 5;
+  string collection = 6;
+}
+
+// DictionaryExecutableSource — external executable as source
+message DictionaryExecutableSource {
+  string command = 1;
+  string format = 2;
+  optional bool implicit_key = 3;
+}
+
+// DictionaryS3Source — S3 object storage as source
+message DictionaryS3Source {
+  string url = 1;
+  string format = 2;
+  optional string access_key_id = 3;
+  optional string secret_access_key = 4;
+}
+
+// DictionaryExternalSource — union of all supported external sources
+message DictionaryExternalSource {
+  oneof t {
+    DictionaryHttpSource http = 1;
+    DictionaryClickHouseSource clickhouse = 2;
+    DictionaryMysqlSource mysql = 3;
+    DictionaryPostgresqlSource postgresql = 4;
+    DictionaryRedisSource redis = 5;
+    DictionaryMongoDbSource mongodb = 6;
+    DictionaryExecutableSource executable = 7;
+    DictionaryS3Source s3 = 8;
+  }
+}
+
+// OlapDictionary — a ClickHouse Dictionary definition
+message OlapDictionary {
+  // Dictionary name
+  string name = 1;
+  // Database where the dictionary is created (empty = default database)
+  optional string database = 2;
+  // Optional ON CLUSTER name for distributed deployments
+  optional string cluster_name = 3;
+  // Source: exactly one must be set
+  oneof source {
+    DictionaryTableSource table_source = 4;
+    DictionaryQuerySource query_source = 5;
+    DictionaryExternalSource external_source = 6;
+  }
+  // Primary key column names (single-column = simple key, multi-column = complex key)
+  repeated string primary_key = 7;
+  // Dictionary attribute columns
+  repeated DictionaryColumn columns = 8;
+  // Layout type and configuration
+  DictionaryLayout layout = 9;
+  // Lifetime / refresh policy
+  DictionaryLifetime lifetime = 10;
+  // Optional invalidation query (checked before reload; if unchanged, skip)
+  optional string invalidate_query = 11;
+  // Dictionary-level settings map
+  map<string, string> settings = 12;
+  // Optional COMMENT clause
+  optional string comment = 13;
+  // Lifecycle management policy
+  LifeCycle life_cycle = 14;
+  // Optional metadata (description, source file)
+  optional Metadata metadata = 15;
 }
