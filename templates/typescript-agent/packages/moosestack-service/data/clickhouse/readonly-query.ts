@@ -108,7 +108,12 @@ export async function executeScopedSql<T>(
   const [query, queryParams] = toQuery(sql);
   const result = await internalQueryClient.client.query({
     query,
-    query_params: queryParams,
+    query_params: Object.fromEntries(
+      Object.entries(queryParams).map(([key, value]) => [
+        key,
+        value instanceof Date ? formatClickHouseDateTime(value) : value,
+      ]),
+    ),
     format: "JSONEachRow",
     clickhouse_settings: {
       asterisk_include_materialized_columns: 1,

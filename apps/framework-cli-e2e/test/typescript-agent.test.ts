@@ -1082,6 +1082,7 @@ describe("TypeScript Agent Template E2E", function () {
 
   it("should reject JWTs that omit org_id", async function () {
     const invalidToken = await signOrgJwt({
+      access_role: "tenant",
       email: "ops@example.com",
       name: "Missing Org",
       scope: "agent:query",
