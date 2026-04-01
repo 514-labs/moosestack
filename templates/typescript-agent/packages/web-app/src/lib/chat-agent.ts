@@ -1,7 +1,4 @@
-import {
-  type AgentProviderConfig,
-  createMultiAgentStream,
-} from "agent-runtime";
+import { type AgentProviderConfig, createAgentStream } from "agent-runtime";
 import { createUIMessageStreamResponse, type UIMessage } from "ai";
 import {
   getAiProvider,
@@ -20,7 +17,7 @@ import { assertProviderReady } from "@/lib/provider-status";
 interface AgentResponseOptions {
   messages: UIMessage[];
   bearerToken: string;
-  tenantId: string;
+  accessScopeId: string;
 }
 
 function getProviderConfig(): AgentProviderConfig {
@@ -52,14 +49,14 @@ function getProviderConfig(): AgentProviderConfig {
 export async function getAgentResponse({
   messages,
   bearerToken,
-  tenantId,
+  accessScopeId,
 }: AgentResponseOptions): Promise<Response> {
   const provider = getAiProvider();
   assertProviderReady();
-  const stream = await createMultiAgentStream({
+  const stream = await createAgentStream({
     messages,
     bearerToken,
-    tenantId,
+    accessScopeId,
     mcpServerUrl: getMcpServerUrl(),
     providerConfig: getProviderConfig(),
     guardrailAdapter: createGuardrailAdapter(provider),

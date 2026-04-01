@@ -12,47 +12,15 @@ When you push a feature branch, 514 Hosting creates an isolated ClickHouse datab
 
 ## Zero Configuration Required
 
-Branch seeding runs automatically — no setup needed. Every table discovered in the parent branch's infrastructure map is seeded into the new branch's database with a default limit of **10,000 rows per table**. You only need to add configuration if you want to customize the row limit or filter rows for specific tables.
+Branch seeding runs automatically — no setup needed. Every table discovered in the parent branch's infrastructure map is seeded into the new branch's database with a default limit of **10,000 rows per table**.
 
 ## How It Works
 
 1. **Merge base detection** — when a branch deploys for the first time, the platform identifies the merge base (common ancestor commit) between your branch and the deployed parent.
-2. **Infrastructure map lookup** — the platform reads the infrastructure map from the merge base deploy to discover which tables exist and their configured seed filters.
+2. **Infrastructure map lookup** — the platform reads the infrastructure map from the merge base deploy to discover which tables exist.
 3. **Table creation and data copy** — for each table in the infrastructure map, the platform creates the table in the new branch's database and copies rows from the parent database using `INSERT INTO ... SELECT * FROM`.
 
 Seeding runs automatically during the `INITIALIZE_BRANCH_SCHEMA` phase of the first deployment. Subsequent pushes to the same branch do not re-seed.
-
-## Configuring Seed Filters (Optional)
-
-By default, each table is seeded with up to 10,000 rows and no row filtering. To customize this behavior, declare a `seedFilter` on your `OlapTable` configuration. The same seed filters used by [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) apply to hosted branch seeding.
-
-```ts filename="app/tables/events.ts" copy
-import { OlapTable, Key } from "@514labs/moose-lib";
-
-interface UserEvent {
-  id: Key<string>;
-  user_id: number;
-  timestamp: Date;
-  event_type: string;
-}
-
-const events = new OlapTable<UserEvent>("user_events", {
-  orderByFields: ["id", "timestamp"],
-  seedFilter: {
-    limit: 500,
-    where: "timestamp > now() - INTERVAL 7 DAY",
-  },
-});
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `limit` | `number` | Maximum rows to copy for this table. Falls back to the global default of 10,000 when not set. |
-| `where` | `string` | ClickHouse SQL `WHERE` expression to filter which rows are copied. |
-
-<Callout type="info" title="Per-table limits override the global default">
-If a table declares `seedFilter.limit`, that value is used. Tables without a configured limit fall back to the platform default of 10,000 rows per table.
-</Callout>
 
 ## Deployment Status
 
@@ -90,6 +58,6 @@ Seeding is skipped in the following cases:
 
 ## Related
 
-- [Seed Filter (OlapTable config)](/moosestack/olap/model-table#seed-filter) — per-table seed filter reference.
+- [`514 clickhouse seed`](/hosting/cli/clickhouse/seed) — manually seed a table between branches on 514 Hosting.
 - [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) — CLI command for seeding local development databases from a remote source.
 - [Fiveonefour to local setup](/hosting/workflow/fiveonefour-to-local-setup) — end-to-end local development workflow.

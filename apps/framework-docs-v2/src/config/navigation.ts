@@ -39,6 +39,7 @@ import {
   IconTrendingUp,
   IconSearch,
   IconFlask,
+  IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -1309,6 +1310,20 @@ const hostingNavigationConfig: NavigationConfig = [
       },
     ],
   },
+  {
+    type: "page",
+    slug: "hosting/cli/clickhouse",
+    title: "clickhouse",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/clickhouse/seed",
+        title: "seed",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
   { type: "separator" },
   { type: "label", title: "Resource Commands" },
   {
@@ -1722,6 +1737,35 @@ const guidesNavigationConfig: NavigationConfig = [
         slug: "guides/chat-in-your-app/tutorial",
         title: "Tutorial",
         languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
+    slug: "guides/production-ready-analytics-agent",
+    title: "Custom analytics agents",
+    description:
+      "Get a multi-tenant, observable, analytics agent running from a production-shaped template.",
+    icon: IconRobot,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/overview",
+        title: "Overview",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/dev-approach",
+        title: "Dev Approach",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
       },
     ],
   },
@@ -2210,6 +2254,7 @@ export interface SerializableGuideSection {
  */
 const iconToNameMap = new Map<TablerIcon, string>([
   [IconChartLine, "IconChartLine"],
+  [IconRobot, "IconRobot"],
   [IconMessageChatbot, "IconMessageChatbot"],
   [IconFileReport, "IconFileReport"],
   [IconCloudUpload, "IconCloudUpload"],

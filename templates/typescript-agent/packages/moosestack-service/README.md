@@ -4,7 +4,8 @@ MooseStack backend for the template.
 
 This package owns:
 
-- tenant-scoped data models
+- organization-scoped data models
+- JWT claim parsing and request-level authorization
 - JWT-backed row-level security
 - Moose semantic/query models
 - app-facing HTTP APIs
@@ -17,10 +18,12 @@ This package owns:
 | Path | Purpose |
 | --- | --- |
 | `app/index.ts` | Public entrypoint. Export Moose-discovered primitives here. |
-| `app/ingest/` | `IngestPipeline` declarations, tables, and row policies. |
+| `app/auth/` | JWT claim names plus org/admin access-context helpers. |
+| `app/ingest/` | `IngestPipeline` declarations plus explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
-| `app/data/clickhouse/` | Low-level readonly ClickHouse helpers. |
-| `app/http/` | Frontend-facing Express APIs and shared request auth/context. |
+| `data/clickhouse/` | Low-level readonly ClickHouse helpers. |
+| `http/` | Shared HTTP middleware such as rate limiting. |
+| `app/http/` | Frontend-facing Express APIs. |
 | `app/mcp/` | MCP transport, tool registration, allowlist policy, and tool-specific parsers/errors. |
 | `seed/` | Starter SQL seed files. |
 | `test/` | Service-local unit tests. |
@@ -36,11 +39,12 @@ pnpm seed
 pnpm test:unit -- packages/moosestack-service/test
 ```
 
-`pnpm seed` applies the starter SQL and then prints inserted-record counts plus current totals by tenant.
+`pnpm seed` applies the starter SQL and then prints inserted-record counts plus current totals by organization.
 
 ## Notes
 
-- Keep tenant boundaries enforced here, not in the web app.
+- Keep organization boundaries enforced here, not in the web app.
+- Keep authentication and authorization helpers in `app/auth/` so route files stay thin.
 - Keep Moose semantic models in `app/semantic/` so the read layer is visible.
 - Keep the MCP schema surface allowlisted by default in `app/mcp/tool-access/`.
 - Use `packages/moosestack-service/.env.local` with `MOOSE_CLICKHOUSE_CONFIG__*` overrides when you want this template to connect to an existing ClickHouse instance instead of the local Docker defaults.

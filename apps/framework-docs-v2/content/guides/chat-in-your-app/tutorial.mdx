@@ -113,11 +113,48 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
 <ConditionalContent whenId="starting-point" whenValue="scratch">
 
 ```shell
-moose init <project-name> typescript-agent
+moose init <project-name> typescript-mcp
 cd <project-name>
 ```
 
-Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you. The `typescript-agent` starter includes local mock auth for development, optional production OIDC wiring, and a reference supervisor -> specialist -> narrator chat flow.
+Follow the post-init instructions printed by the CLI, or ask your AI copilot to complete them for you.
+
+If you want the richer `typescript-agent` starter instead of the leaner MCP-only path, it includes mock email/password users for development, optional production OIDC wiring, and the auth/access model below.
+
+```mermaid
+flowchart LR
+  subgraph Access["Authentication"]
+    TenantA["Org A"]
+    TenantB["Org B"]
+    Admin["Admin Debug<br/>local only"]
+    OIDC["External OIDC"]
+  end
+
+  subgraph Web["Next.js host app"]
+    Auth["Auth.js session"]
+    UI["Dashboard UI"]
+    Chat["Chat API route"]
+  end
+
+  subgraph Moose["MooseStack service"]
+    AppAPI["/app dashboard API"]
+    MCP["/tools MCP server"]
+    Query["Semantic/query layer"]
+    Data["tenant_knowledge<br/>ClickHouse + RLS"]
+  end
+
+  TenantA --> Auth
+  TenantB --> Auth
+  Admin --> Auth
+  OIDC --> Auth
+  Auth -->|org_id or access_role| UI
+  Auth -->|Bearer JWT| Chat
+  UI -->|Bearer JWT| AppAPI
+  Chat -->|Bearer JWT| MCP
+  AppAPI --> Query
+  MCP --> Query
+  Query --> Data
+```
 
 <ToggleBlock openText="Show post-init instructions" closeText="Hide post-init instructions">
 
@@ -126,23 +163,21 @@ Follow the post-init instructions printed by the CLI, or ask your AI copilot to 
 pnpm install
 ```
 
-2. Create environment files:
+2. Create environment files and API auth tokens:
 ```shell
 cp packages/moosestack-service/.env.{example,local}
 cp packages/web-app/.env.{example,local}
+cd packages/moosestack-service
+moose generate hash-token
 ```
 
 3. Set environment variables:
-   - Keep `MOOSE_AUTH_MODE=local` in `packages/web-app/.env.local` for the built-in tenant picker during local development
-   - Set `AUTH_SECRET` in `packages/web-app/.env.local`
+   - Set `MCP_API_KEY` in `packages/moosestack-service/.env.local` to the **ENV API Key** value
+   - Set `MCP_API_TOKEN` in `packages/web-app/.env.local` to the **Bearer Token** value
    - Set `AI_PROVIDER` plus the matching provider credentials in `packages/web-app/.env.local`
    - If `AI_PROVIDER=anthropic`, set `ANTHROPIC_API_KEY`
    - If `AI_PROVIDER=openai`, set `OPENAI_API_KEY`
    - If `AI_PROVIDER=bedrock`, set `AWS_REGION` and either `AWS_PROFILE` or AWS access keys, plus `BEDROCK_MODEL_ID`
-
-<Callout type="info" title="Need the leaner MCP-only starter?">
-Use `typescript-mcp` if you want the minimal chat + MCP template without auth, tenant row policies, or the query-layer dashboard.
-</Callout>
 
 </ToggleBlock>
 
@@ -161,7 +196,7 @@ Use `typescript-mcp` if you want the minimal chat + MCP template without auth, t
 - You are using Express for your APIs (other frameworks work, but aren't covered here)
 </Callout>
 
-**Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-agent](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent)
+**Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
 
 <Callout type="info" title="Don't have a MooseStack service yet?">
 <ToggleBlock openText="Show instructions to create one" closeText="Hide instructions">

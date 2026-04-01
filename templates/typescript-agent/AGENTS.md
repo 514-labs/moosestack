@@ -9,8 +9,8 @@ Two MCP servers run on the same host:
 
 This starter is opinionated for production-shaped agent work:
 
-- OIDC-compatible auth with a local tenant picker in development
-- JWT-backed tenant isolation on `tenant_id`
+- OIDC-compatible auth with mock email/password users in development
+- JWT-backed org isolation on `org_id`
 - Moose-owned dashboard APIs backed by query-layer models
 - Shared agent runtime in `packages/agent-runtime`
 - Shared Langfuse collector in `packages/agent-observability-langfuse`
@@ -41,7 +41,7 @@ The user knows their data and use case; if the ClickHouse Best Practices Skill i
 
 ### 3. Agent tools available
 
-1. **Dev server** — Prefer `pnpm dev:start` from the template root. It prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
+1. **Dev server** — Prefer `pnpm dev:start` from the template root. It runs the workspace build, prepares local env files, validates Docker or Finch, waits for Moose readiness, and then starts the web app. Use `pnpm dev:moose` / `pnpm dev:web` separately only when you need split terminals.
 
 2. **MooseDev MCP** — Primary tool for inspecting the project (see Available Tools below).
 
@@ -75,8 +75,8 @@ Every workspace package has a package-local `AGENTS.md`. Start with the guide fo
 | File | Purpose | Docs |
 | --- | --- | --- |
 | `AGENTS.md` | Package-local ownership rules and source layout | |
-| `app/ingest/models.ts` | Data models (interfaces + IngestPipeline declarations) | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
-| `app/semantic/` | Moose semantic/query models and tenant-scoped dashboard read composition | |
+| `app/ingest/models.ts` | Data models plus explicit `OlapTable`, `Stream`, and `IngestApi` declarations | [Data Modeling](https://docs.fiveonefour.com/moosestack/data-modeling) |
+| `app/semantic/` | Moose semantic/query models and access-scoped dashboard read composition | |
 | `app/http/dashboard/api.ts` | Frontend-facing HTTP endpoint for dashboard reads | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
 | `app/mcp/server.ts` | Custom MCP server transport and tool wiring for `/tools` | [BYO API with Express](https://docs.fiveonefour.com/moosestack/app-api-frameworks/express) |
 | `app/mcp/tool-access/exposed-surface.ts` | Allowlisted schema surface and SQL access policy for MCP tools. The default exposed table set is derived from `tenantIsolation.config.tables`. | |
@@ -107,7 +107,7 @@ Every workspace package has a package-local `AGENTS.md`. Start with the guide fo
 | --- | --- |
 | `AGENTS.md` | Package-local ownership rules and source layout |
 | `src/auth.ts` | Production auth wiring and provider/session setup |
-| `src/dev/` | Development-only local tenant auth and mock guardrails |
+| `src/dev/` | Development-only mock users and guardrail stubs |
 | `src/components/ai-elements/` | Generic chat UI primitives imported from AI Elements |
 | `src/lib/id-token.ts` | Shared ID token claim parsing for OIDC/local auth |
 | `src/lib/chat-agent.ts` | Next-hosted adapter that injects env/config into the shared agent runtime |
@@ -126,13 +126,23 @@ Every workspace package has a package-local `AGENTS.md`. Start with the guide fo
 
 ## Common Tasks
 
+### Replacing the seeded example model
+
+- Search the repo for `EXAMPLE_APP_ONLY:`. That marker identifies code coupled
+  to the seeded `TenantKnowledge` demo model and dashboard.
+- Start with `packages/moosestack-service/app/ingest/models.ts`, then follow the
+  `EXAMPLE_APP_ONLY` markers through the semantic layer, MCP surface, seed
+  files, and frontend dashboard copy.
+- Replace or remove the marked files first, then add your own data model,
+  semantic models, and UI copy.
+
 ### Adding a data model
 
-MooseStack's core pattern: define a TypeScript interface once, then configure an `IngestPipeline` to create your data pipeline.
+MooseStack's core pattern: define a TypeScript interface once, then wire explicit component objects for the table, stream, and ingest API.
 
 ```typescript
 // app/ingest/models.ts
-import { IngestPipeline } from "@514labs/moose-lib";
+import { IngestApi, OlapTable, Stream } from "@514labs/moose-lib";
 
 export interface PageView {
   viewId: string;
@@ -142,16 +152,20 @@ export interface PageView {
   durationMs: number;
 }
 
-// IngestPipeline configures table, stream, and API in one declaration.
-// The first argument is the actual ClickHouse table name, so prefer snake_case.
-export const PageViewPipeline = new IngestPipeline<PageView>("page_views", {
-  table: { orderByFields: ["userId", "timestamp"] },
-  stream: true,
-  ingestApi: true, // POST /ingest/page_views
+export const PageViewTable = new OlapTable<PageView>("page_views", {
+  orderByFields: ["userId", "timestamp"],
+});
+
+export const PageViewStream = new Stream<PageView>("page_views", {
+  destination: PageViewTable,
+});
+
+export const PageViewIngestApi = new IngestApi<PageView>("page_views", {
+  destination: PageViewStream, // POST /ingest/page_views
 });
 ```
 
-The `table` field accepts either a boolean (`true` for defaults, `false` to skip table creation) or an object with `orderByFields` for explicit ordering. Use `orderByFields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering for the user's query patterns.
+Use `orderByFields` when you need control over ClickHouse table ordering (put your most-filtered columns first). If you have the ClickHouse Best Practices Skill installed, use it to choose the right ordering for the user's query patterns.
 
 For advanced table configuration (engines, indexes, projections), see `moose docs moosestack/olap/model-table`.
 
@@ -234,7 +248,7 @@ Key patterns from this template:
 - Use `executeReadonlyStatement()` or `executeReadonlySql()` for DB access so readonly mode and row-policy settings are preserved
 - Keep the MCP schema surface explicit in `app/mcp/tool-access/exposed-surface.ts`; do not expose `system.*` metadata by default
 - Validate and constrain user-supplied SQL before execution
-- Expect `moose.jwt.tenant_id` to exist before serving custom tool requests
+- Expect `moose.jwt.org_id` for organization-scoped tool requests; the local-only `admin_debug` path is the exception and carries `access_role=admin_debug`
 - Return errors via `{ content: [...], isError: true }`, not by throwing
 
 ### Do / Don't
@@ -242,15 +256,15 @@ Key patterns from this template:
 - **DO** specify `orderByFields` for production tables. **DON'T** rely on default ordering for performance-sensitive queries — specify based on query patterns.
 - **DO** keep the MCP catalog and SQL surface allowlisted in `app/mcp/tool-access/exposed-surface.ts`. **DON'T** expose `system.tables`, `system.columns`, or undeclared tables by default.
 - **DO** use `executeReadonlyStatement()` / `executeReadonlySql()` for MCP tool DB access. **DON'T** use `client.query.client.query()` directly without readonly settings and row-policy propagation.
-- **DO** use `IngestPipeline` for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
-- **DO** keep tenant-scoped tables consistent on a shared `tenant_id` column. **DON'T** mix tenant claim names across auth, tables, and row policies.
+- **DO** use explicit `OlapTable`, `Stream`, and `IngestApi` component objects for new data models. **DON'T** write raw CREATE TABLE DDL — MooseStack generates tables from your models.
+- **DO** keep organization-scoped tables consistent on a shared `org_id` column. **DON'T** mix tenant claim names across auth, tables, and row policies.
 - **DO** return user-friendly error messages in MCP tool responses. **DON'T** expose internal error details or stack traces.
 - **DO** export new primitives from `app/index.ts`. **DON'T** forget to export — MooseStack won't discover unexported primitives.
 - **DO** place pure helper tests in `packages/*/test/**/*.unit.test.ts`. **DON'T** put package-crossing integration coverage in the unit project.
 - **DO** place runtime wiring tests in `packages/*/test/**/*.integration.test.ts`. **DON'T** require a prebuilt `dist/` tree; the Vitest workspace aliases package imports to source.
 - **DO** use the ClickHouse Best Practices Skill (if installed) for schema decisions. **DON'T** guess at ClickHouse data types or engine choices.
 - **DO** keep reusable chat shell pieces in `packages/web-app/src/components/ai-elements/`. **DON'T** re-build generic conversation/message/input primitives inside `src/features/chat/`.
-- **DO** keep Moose-specific behavior in `packages/web-app/src/features/chat/`. **DON'T** put tenant-aware tool rendering into the shared AI Elements layer.
+- **DO** keep Moose-specific behavior in `packages/web-app/src/features/chat/`. **DON'T** put organization-aware tool rendering into the shared AI Elements layer.
 - **DO** run `pnpm env:prepare` before local development so package env files exist. **DON'T** commit `.env.local`.
 
 ## Available Tools
@@ -273,8 +287,9 @@ These are the tools exposed to the chat UI and external MCP clients. Edit them u
 
 | Tool | What it does | Parameters |
 | --- | --- | --- |
-| `query_clickhouse` | Read-only SQL against the explicit allowlist in `app/mcp/tool-access/exposed-surface.ts`. Allows `SELECT`, `DESCRIBE`, and `EXPLAIN SELECT` only. Blocks writes, DDL, `SHOW`, `system.*`, and undeclared tables by default. | `query` (required), `limit` (optional, default 100, max 1000) |
 | `get_data_catalog` | Discover only the tables and materialized views explicitly exposed in `app/mcp/tool-access/exposed-surface.ts`. | `component_type` (tables/materialized_views), `search` (regex), `format` (summary/detailed) |
+| `query_tenant_knowledge_metrics` | Query organization-scoped knowledge metrics through the semantic layer for counts, grouped rollups, and priority/category breakdowns. | `metrics`, `dimensions`, semantic filter params such as `timestamp_gte`, `category`, `priority`, `source`, plus `limit` |
+| `list_tenant_knowledge_records` | List organization-scoped knowledge records through the semantic layer for recent changes or detail inspection. | `columns`, semantic filter params such as `timestamp_gte`, `category`, `priority`, `headline_ilike`, plus `limit` |
 
 ### ClickHouse Best Practices Skill (optional)
 
@@ -300,16 +315,16 @@ This template uses JWT auth, not static API tokens.
 | Variable | File | Purpose |
 | --- | --- | --- |
 | `AUTH_SECRET` | `packages/web-app/.env.local` | Auth.js session secret |
-| `MOOSE_AUTH_MODE` | `packages/web-app/.env.local` | `local` for the built-in tenant picker, `oidc` for external OIDC |
+| `MOOSE_AUTH_MODE` | `packages/web-app/.env.local` | `local` for the built-in mock email/password login, `oidc` for external OIDC |
 | `AI_PROVIDER` | `packages/web-app/.env.local` | `anthropic`, `openai`, or `bedrock` |
 | `MOOSE_SERVICE_URL` | `packages/web-app/.env.local` | Base Moose service URL for dashboard APIs and, by default, the custom MCP tools endpoint |
 | `MCP_SERVER_URL` | `packages/web-app/.env.local` | Optional override for the custom MCP tools endpoint (`/tools`) when it differs from `MOOSE_SERVICE_URL` |
-| `LOCAL_DEV_JWT_PRIVATE_KEY` | `packages/web-app/.env.local` | Generated by `pnpm env:prepare` for the local tenant picker flow |
-| `MOOSE_JWT__SECRET` | `packages/moosestack-service/.env.local` | Generated by `pnpm env:prepare`; Moose uses it to verify the local tenant JWTs |
+| `LOCAL_DEV_JWT_PRIVATE_KEY` | `packages/web-app/.env.local` | Generated by `pnpm env:prepare` for the local mock login flow |
+| `MOOSE_JWT__SECRET` | `packages/moosestack-service/.env.local` | Generated by `pnpm env:prepare`; Moose uses it to verify the local mock JWTs |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | `packages/web-app/.env.local` | Optional Langfuse tracing |
 | `OIDC_*` | `packages/web-app/.env.local` | External OIDC configuration |
 
-For local dev, the web app issues short-lived JWTs carrying `tenant_id`. Moose verifies those JWTs using `MOOSE_JWT__SECRET` from `packages/moosestack-service/.env.local`, while `packages/moosestack-service/moose.config.toml` keeps the expected issuer and audience.
+For local dev, organization-scoped identities issue short-lived JWTs carrying `org_id`; the local Admin Debug identity intentionally omits `org_id` and relies on `access_role=admin_debug`. Moose verifies those JWTs using `MOOSE_JWT__SECRET` from `packages/moosestack-service/.env.local`, while `packages/moosestack-service/moose.config.toml` keeps the expected issuer and audience.
 
 ## Documentation
 

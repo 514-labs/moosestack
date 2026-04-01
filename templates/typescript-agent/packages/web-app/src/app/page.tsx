@@ -1,18 +1,18 @@
 import { redirect } from "next/navigation";
 import type { JSX } from "react";
 import { auth, signIn, signOut } from "@/auth";
-import { LocalTenantPicker } from "@/dev/local-tenant-picker";
-import {
-  getAiProvider,
-  getAuthMode,
-  getLangfuseConfig,
-  getOidcConfig,
-} from "@/env-vars";
+import { getSessionAccess } from "@/authz/session-access";
+import { LocalLoginForm } from "@/dev/local-login-form";
+import { getAiProvider, getAuthMode, getOidcConfig } from "@/env-vars";
 import {
   DashboardSnapshotUnauthorizedError,
   getDashboardSnapshot,
 } from "@/lib/moose-service";
 
+// EXAMPLE_APP_ONLY: The seeded dashboard copy and prompts in this file assume
+// the TenantKnowledge demo model. Replace or remove them when you swap out the
+// example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+// downstream demo wiring.
 interface MetricCardProps {
   label: string;
   value: string;
@@ -37,6 +37,17 @@ function clearStaleSession(): never {
   redirect("/auth/session-expired");
 }
 
+function formatTimestamp(value: string | undefined): string {
+  if (!value) {
+    return "No recent updates";
+  }
+
+  return new Date(value).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export default async function Home({
   searchParams,
 }: HomePageProps): Promise<JSX.Element> {
@@ -45,103 +56,73 @@ export default async function Home({
     typeof resolvedSearchParams.session === "string" ?
       resolvedSearchParams.session
     : undefined;
+  const loginStatus =
+    typeof resolvedSearchParams.login === "string" ?
+      resolvedSearchParams.login
+    : undefined;
   const session = await auth();
   const authMode = getAuthMode();
   const oidcConfig = getOidcConfig();
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.16),_transparent_38%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.2))] text-foreground">
-        <main className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-16">
-          <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-            <section className="space-y-6">
-              <div className="inline-flex rounded-full border px-3 py-1 text-sm text-muted-foreground">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.035),_transparent_28%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.12))] text-foreground">
+        <main className="mx-auto flex min-h-screen max-w-lg items-center justify-center px-5 py-12 sm:px-6 sm:py-16">
+          <section className="w-full rounded-[1.9rem] border border-border/70 bg-card/96 px-7 py-7 shadow-[0_22px_70px_rgba(0,0,0,0.28)] sm:px-8 sm:py-8">
+            <div className="space-y-3">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 typescript-agent
               </div>
-              <div className="space-y-4">
-                <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
-                  Production-shaped agent starter with tenant RLS, MCP tools,
-                  and Langfuse tracing built in.
-                </h1>
-                <p className="max-w-2xl text-lg text-muted-foreground">
-                  Sign in as a seeded tenant to explore Moose-owned dashboard
-                  APIs, tenant-scoped metrics, and the chat-over-data workflow.
-                  Swap the local login for your OIDC provider when you move to
-                  production.
-                </p>
-              </div>
+              <h1 className="text-[2rem] font-semibold tracking-tight">
+                Sign in
+              </h1>
+              <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+                Use one of the local mock accounts below to access the seeded
+                dashboard and chat experience.
+              </p>
+            </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <MetricCard
-                  label="Chat Surface"
-                  value="MCP"
-                  helper="JWT-scoped tool calls against ClickHouse."
-                />
-                <MetricCard
-                  label="Auth"
-                  value="OIDC"
-                  helper="Local mock issuer for dev, generic OIDC for prod."
-                />
-                <MetricCard
-                  label="Tracing"
-                  value="Langfuse"
-                  helper="Trace model and tool activity in Langfuse."
-                />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border bg-card/85 p-6 shadow-xl backdrop-blur">
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-xl font-semibold">Choose a tenant</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Local dev mode signs a short-lived JWT carrying the
-                    `tenant_id` claim used by Moose row policies.
-                  </p>
+            <div className="mt-7 space-y-5">
+              {sessionNotice === "expired" && (
+                <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950 dark:text-amber-100">
+                  Your previous session expired or is no longer valid. Sign in
+                  again to refresh access.
                 </div>
+              )}
 
-                {sessionNotice === "expired" && (
-                  <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
-                    Your previous session expired or is no longer valid. Sign in
-                    again to refresh the tenant-scoped token.
-                  </div>
-                )}
+              {authMode === "local" && (
+                <LocalLoginForm
+                  errorMessage={
+                    loginStatus === "invalid" ?
+                      "Invalid email or password."
+                    : undefined
+                  }
+                />
+              )}
 
-                {authMode === "local" && <LocalTenantPicker />}
-
-                {authMode === "oidc" && oidcConfig && (
-                  <form
-                    action={async () => {
-                      "use server";
-                      await signIn("oidc", { redirectTo: "/" });
-                    }}
+              {authMode === "oidc" && oidcConfig && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("oidc", { redirectTo: "/" });
+                  }}
+                >
+                  <button
+                    type="submit"
+                    className="h-11 w-full rounded-xl border px-4 text-sm font-medium"
                   >
-                    <button
-                      type="submit"
-                      className="w-full rounded-full border px-4 py-3 text-sm font-medium"
-                    >
-                      Sign In With Your OIDC Provider
-                    </button>
-                  </form>
-                )}
-
-                <div className="rounded-2xl bg-muted/60 p-4 text-sm text-muted-foreground">
-                  Default provider:{" "}
-                  <span className="font-medium text-foreground">
-                    {getAiProvider()}
-                  </span>
-                  . Run `pnpm env:prepare` to create local env files, then edit
-                  `.env.local` values to switch LLMs, enable Langfuse, or
-                  connect Bedrock Guardrails.
-                </div>
-              </div>
-            </section>
-          </div>
+                    Sign in with your OIDC provider
+                  </button>
+                </form>
+              )}
+            </div>
+          </section>
         </main>
       </div>
     );
   }
 
+  const access = getSessionAccess(session) ?? clearStaleSession();
   const idToken = session.idToken ?? clearStaleSession();
   let snapshot: Awaited<ReturnType<typeof getDashboardSnapshot>>;
   try {
@@ -155,7 +136,18 @@ export default async function Home({
   }
 
   const aiProvider = getAiProvider();
-  const langfuseEnabled = !!getLangfuseConfig();
+  const adminView = access.kind === "admin";
+  const latestUpdate = snapshot.recentKnowledge[0]?.timestamp;
+  const recentCategoryCount = new Set(
+    snapshot.recentKnowledge.map((row) => row.category),
+  ).size;
+  const accessCardValue = access.kind === "admin" ? "All data" : access.orgName;
+  const seedDatasetNote =
+    access.kind === "admin" ?
+      "Org A uses intentionally tiny counts (1 and 2), while Org B uses intentionally larger counts (50 and 1,024)."
+    : access.orgId === "org_a" ?
+      "This example organization uses intentionally tiny counts (1 and 2)."
+    : "This example organization uses intentionally larger counts (50 and 1,024).";
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_30%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.18))]">
@@ -163,16 +155,17 @@ export default async function Home({
         <section className="flex flex-col gap-6 rounded-3xl border bg-card/85 p-8 shadow-lg lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <div className="inline-flex rounded-full border px-3 py-1 text-sm text-muted-foreground">
-              Signed in as {session.user.tenantName}
+              Signed in as {access.displayName}
             </div>
             <div>
               <h1 className="text-4xl font-semibold tracking-tight">
-                Tenant-scoped agent dashboard
+                {access.kind === "admin" ?
+                  "Debug dashboard across all seeded data"
+                : `${access.orgName} knowledge dashboard`}
               </h1>
               <p className="mt-2 max-w-3xl text-muted-foreground">
-                Moose-owned dashboard APIs and MCP chat tool calls share the
-                same tenant-scoped data contract. Langfuse captures traces
-                externally when configured.
+                {access.scopeDescription} The dashboard and chat assistant share
+                this same authorization scope.
               </p>
             </div>
           </div>
@@ -194,9 +187,9 @@ export default async function Home({
 
         <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            label="Knowledge Records"
+            label="Visible Records"
             value={String(snapshot.knowledgeMetrics.totalRecords)}
-            helper="Seeded records available to the dashboard and MCP tools"
+            helper="Records currently authorized for this access scope"
           />
           <MetricCard
             label="High Priority"
@@ -204,17 +197,17 @@ export default async function Home({
             helper="Signals marked high priority in the last 7 days"
           />
           <MetricCard
-            label="AI Provider"
-            value={aiProvider}
-            helper="Switch providers with `AI_PROVIDER` in `.env.local` after running `pnpm env:prepare`"
+            label="Recent Categories"
+            value={String(recentCategoryCount)}
+            helper="Distinct categories represented in the recent feed"
           />
           <MetricCard
-            label="Langfuse"
-            value={langfuseEnabled ? "Enabled" : "Optional"}
+            label="Access"
+            value={accessCardValue}
             helper={
-              langfuseEnabled ?
-                "Tracing keys detected for external observability"
-              : "Add Langfuse keys to capture traces outside Moose"
+              adminView ?
+                "Local debug authorization across all seeded records"
+              : "Organization-scoped authorization"
             }
           />
         </section>
@@ -223,12 +216,12 @@ export default async function Home({
           <div className="rounded-3xl border bg-card/85 p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">
-                  Recent tenant knowledge
-                </h2>
+                <h2 className="text-xl font-semibold">Recent knowledge</h2>
                 <p className="text-sm text-muted-foreground">
-                  Seeded starter data available through both the dashboard and
-                  MCP tools.
+                  {adminView ?
+                    `Latest seeded records across both organization datasets. ${seedDatasetNote}`
+                  : `Latest seeded records currently visible to this organization. ${seedDatasetNote}`
+                  }
                 </p>
               </div>
             </div>
@@ -236,10 +229,12 @@ export default async function Home({
             <div className="space-y-4">
               {snapshot.recentKnowledge.map((row) => (
                 <div
-                  key={`${row.category}-${row.timestamp}-${row.headline}`}
+                  key={`${row.orgId}-${row.category}-${row.timestamp}-${row.headline}`}
                   className="rounded-2xl border p-4"
                 >
                   <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    {adminView && <span>{row.orgId}</span>}
+                    {adminView && <span>•</span>}
                     <span>{row.category}</span>
                     <span>•</span>
                     <span>{row.priority}</span>
@@ -259,27 +254,39 @@ export default async function Home({
 
           <div className="space-y-6">
             <div className="rounded-3xl border bg-card/85 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold">Try in chat</h2>
+              <h2 className="text-xl font-semibold">Ask the assistant</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                The chat runtime uses the same tenant JWT as the dashboard. If
-                Langfuse is configured, model and tool traces are emitted there.
+                Chat uses the same authenticated access scope as the dashboard.
+                The selected provider is currently{" "}
+                <span className="font-medium text-foreground">
+                  {aiProvider}
+                </span>
+                .
               </p>
 
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Multi-agent reference flow: supervisor -&gt; specialist -&gt;
-                  narrator, with streamed <code>[AGENT:...]</code> handoff
-                  markers.
+                  <span className="font-medium text-foreground">
+                    Current scope:
+                  </span>{" "}
+                  {access.scopeBadge}
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  “Summarize the highest-priority signals for this tenant.”
+                  “Summarize the highest-priority signals in view.”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  “Use the multi-agent flow to inspect the data catalog, route
-                  to the right specialist, then summarize the result.”
+                  “Which knowledge categories changed most recently?”
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
-                  “Which categories changed most recently for this tenant?”
+                  {adminView ?
+                    "\"Compare Org A's 1 and 2-count updates with Org B's 50 and 1,024-count spikes.\""
+                  : access.orgId === "org_a" ?
+                    '"Summarize why this example organization looks low-volume."'
+                  : '"Summarize why this example organization looks high-volume."'
+                  }
+                </div>
+                <div className="rounded-2xl border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Latest update in scope: {formatTimestamp(latestUpdate)}
                 </div>
               </div>
             </div>

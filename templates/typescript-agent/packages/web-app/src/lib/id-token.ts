@@ -1,10 +1,8 @@
 import { decodeJwt } from "jose";
-import { getOidcTenantClaim } from "@/env-vars";
+import { getOidcOrgClaim } from "@/env-vars";
 
-export function extractTenantIdFromIdToken(
-  idToken: string,
-): string | undefined {
-  const claim = getOidcTenantClaim();
+export function extractOrgIdFromIdToken(idToken: string): string | undefined {
+  const claim = getOidcOrgClaim();
   try {
     const claims = decodeJwt(idToken);
     const value = claims[claim];

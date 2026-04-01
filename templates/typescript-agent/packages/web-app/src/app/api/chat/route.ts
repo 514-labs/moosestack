@@ -3,8 +3,9 @@ import {
   McpServerUnavailableError,
 } from "agent-runtime";
 import type { UIMessage } from "ai";
-import type { NextRequest } from "next/server";
+import type { NextAuthRequest } from "next-auth";
 import { auth } from "@/auth";
+import { getSessionAccess } from "@/authz/session-access";
 import { getAgentResponse } from "@/lib/chat-agent";
 
 interface ChatBody {
@@ -53,14 +54,19 @@ function getChatErrorResponse(error: unknown) {
   };
 }
 
-export async function POST(request: NextRequest): Promise<Response> {
+export const POST = auth(async function POST(
+  request: NextAuthRequest,
+): Promise<Response> {
   try {
-    const session = await auth();
-    if (!session?.idToken || !session.user?.tenantId) {
+    const session = request.auth;
+    const access = getSessionAccess(session);
+
+    if (!session?.idToken || !access) {
       return createJsonResponse(
         {
           error: "Unauthorized",
-          details: "Sign in before using the agent chat.",
+          details:
+            "Sign in with a local mock account or your OIDC provider before using the agent chat.",
         },
         401,
       );
@@ -94,7 +100,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return await getAgentResponse({
       messages,
       bearerToken: session.idToken,
-      tenantId: session.user.tenantId,
+      accessScopeId: access.accessScopeId,
     });
   } catch (error) {
     const response = getChatErrorResponse(error);
@@ -102,4 +108,4 @@ export async function POST(request: NextRequest): Promise<Response> {
     console.error("Chat error:", error);
     return createJsonResponse(response.body, response.status);
   }
-}
+});

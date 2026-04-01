@@ -50,6 +50,8 @@ export function runWithRequestContext<T>(
 export interface GetMooseUtilsOptions {
   /** Map of JWT claim names to their values for row policy scoping */
   rlsContext?: Record<string, string>;
+  /** When true, enforce ClickHouse readonly mode on all queries (SELECTs/EXPLAINs). */
+  readonly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,14 +147,36 @@ export async function getMooseUtils(
   // Check if running in Moose runtime
   const runtimeContext = (globalThis as any)._mooseRuntimeContext;
   if (runtimeContext) {
-    return resolveRuntimeUtils(runtimeContext, options);
+    return resolveRuntimeUtils(
+      runtimeContext,
+      options,
+      Boolean(options?.readonly),
+    );
   }
 
   // Standalone path — outside Moose (cron job, separate server, ad-hoc script)
   await ensureStandaloneInit();
 
   if (options?.rlsContext) {
-    return createStandaloneRlsUtils(options.rlsContext);
+    return createStandaloneRlsUtils(
+      options.rlsContext,
+      Boolean(options?.readonly),
+    );
+  }
+
+  if (options?.readonly) {
+    const baseClient = standaloneUtils!.client.query.client;
+    const readonlyQueryClient = new QueryClient(
+      baseClient,
+      "standalone-ro",
+      undefined,
+      true,
+    );
+    return {
+      client: new MooseClient(readonlyQueryClient),
+      sql: sql,
+      jwt: undefined,
+    };
   }
 
   return standaloneUtils!;
@@ -173,6 +197,7 @@ export async function getMooseUtils(
 function resolveRuntimeUtils(
   runtimeContext: any,
   options?: GetMooseUtilsOptions,
+  readonlyMode: boolean = false,
 ): MooseUtils {
   const reqCtx = requestContextStorage.getStore();
   const jwt = reqCtx?.jwt ?? runtimeContext.jwt;
@@ -200,9 +225,27 @@ function resolveRuntimeUtils(
       rlsClient,
       "rls-scoped",
       rowPolicyOpts,
+      readonlyMode,
     );
     return {
       client: new MooseClient(scopedQueryClient, runtimeContext.temporalClient),
+      sql: sql,
+      jwt,
+    };
+  }
+
+  if (readonlyMode) {
+    const readonlyQueryClient = new QueryClient(
+      runtimeContext.clickhouseClient,
+      "runtime-ro",
+      undefined,
+      true,
+    );
+    return {
+      client: new MooseClient(
+        readonlyQueryClient,
+        runtimeContext.temporalClient,
+      ),
       sql: sql,
       jwt,
     };
@@ -267,6 +310,7 @@ async function ensureStandaloneInit(): Promise<void> {
 /** Build RLS-scoped MooseUtils for standalone mode. */
 function createStandaloneRlsUtils(
   rlsContext: Record<string, string>,
+  readonlyMode: boolean = false,
 ): MooseUtils {
   const rowPoliciesConfig = getRowPoliciesConfigFromRegistry();
   if (!rowPoliciesConfig) {
@@ -297,6 +341,7 @@ function createStandaloneRlsUtils(
     rlsClient,
     "rls-scoped",
     rowPolicyOpts,
+    readonlyMode,
   );
   return {
     client: new MooseClient(scopedQueryClient),

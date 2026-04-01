@@ -692,6 +692,28 @@ dockerfile_path = "./Dockerfile"
 mod tests {
     use super::*;
     use crate::test_utils::ensure_test_environment;
+    use serde_json::Value as JsonValue;
+    use std::fs;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+    }
+
+    fn read_toml_file(relative_path: &str) -> Value {
+        let file_path = repo_root().join(relative_path);
+        let content =
+            fs::read_to_string(&file_path).expect("template config fixture should be readable");
+        toml::from_str(&content).expect("template config fixture should parse")
+    }
+
+    fn read_json_file(relative_path: &str) -> JsonValue {
+        let file_path = repo_root().join(relative_path);
+        let content =
+            fs::read_to_string(&file_path).expect("template package fixture should be readable");
+        serde_json::from_str(&content).expect("template package fixture should parse")
+    }
 
     #[tokio::test]
     async fn test_list_available_templates_local() {
@@ -847,5 +869,43 @@ mod tests {
         let templates_table = manifest["templates"].as_table().unwrap();
         assert!(templates_table.contains_key("typescript"));
         assert!(templates_table.contains_key("python"));
+    }
+
+    #[test]
+    fn test_typescript_agent_post_install_print_starts_before_seed() {
+        let manifest = read_toml_file("templates/typescript-agent/template.config.toml");
+        let config = TemplateConfig::from_toml(&manifest)
+            .expect("typescript-agent template config should be valid");
+        let start_index = config
+            .post_install_print
+            .find("pnpm dev:start")
+            .expect("post-install print should mention pnpm dev:start");
+        let seed_index = config
+            .post_install_print
+            .find("pnpm seed")
+            .expect("post-install print should mention pnpm seed");
+
+        assert!(
+            start_index < seed_index,
+            "pnpm dev:start should be printed before pnpm seed",
+        );
+    }
+
+    #[test]
+    fn test_typescript_agent_dev_entrypoints_prebuild_workspace() {
+        let package_json = read_json_file("templates/typescript-agent/package.json");
+        let scripts = package_json
+            .get("scripts")
+            .and_then(JsonValue::as_object)
+            .expect("typescript-agent package.json should define scripts");
+
+        assert_eq!(
+            scripts.get("predev").and_then(JsonValue::as_str),
+            Some("pnpm build"),
+        );
+        assert_eq!(
+            scripts.get("predev:start").and_then(JsonValue::as_str),
+            Some("pnpm build"),
+        );
     }
 }

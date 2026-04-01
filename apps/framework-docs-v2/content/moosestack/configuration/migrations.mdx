@@ -12,11 +12,15 @@ Control how Moose handles database migrations and schema changes.
 [migration_config]
 # Operations to ignore during migration plan generation and drift detection
 # ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl", "ModifyPartitionBy", "IgnoreStringLowCardinalityDifferences"]
+
+# Allow destructive changes in production without a reviewed plan.yaml (default: false)
+# prod_auto_allow_destructive = false
 ```
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
-| `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | [] | List of migration operations to ignore during plan generation. |
+| `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | `[]` | List of migration operations to ignore during plan generation. |
+| `prod_auto_allow_destructive` | `MOOSE_MIGRATION_CONFIG__PROD_AUTO_ALLOW_DESTRUCTIVE` | `false` | When `false`, `moose prod` refuses to start if the computed infrastructure diff contains destructive operations (table drops, column drops, view removals, table recreates) and no `plan.yaml` is present. Set to `true` to allow unplanned destructive changes in production. |
 
 ## Available Operations
 

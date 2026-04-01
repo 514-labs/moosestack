@@ -1,59 +1,58 @@
-import {
-  type MooseUtils,
-  type RowPolicyOptions,
-  sql,
-} from "@514labs/moose-lib";
+import type { MooseUtils } from "@514labs/moose-lib";
 import type { DashboardSnapshot } from "agent-contracts";
-import { executeReadonlySql } from "../data/clickhouse/readonly-query";
-import { TenantKnowledgeTable } from "../ingest/models";
-import { knowledgeMetricsModel } from "./knowledge";
+import { executeScopedSql } from "../../data/clickhouse/readonly-query";
+import {
+  dashboardKnowledgeMetricsModel,
+  dashboardRecentKnowledgeModel,
+} from "./dashboard";
 
+/**
+ * EXAMPLE_APP_ONLY:
+ * This dashboard snapshot composition is coupled to the seeded TenantKnowledge
+ * demo dashboard. Replace or remove it when you swap out the example data
+ * model, then search the repo for EXAMPLE_APP_ONLY to find the downstream demo
+ * wiring.
+ */
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
-  tenantId: string,
-  rowPolicyOptions?: RowPolicyOptions,
 ): Promise<DashboardSnapshot> {
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const knowledgeMetricsQuery = knowledgeMetricsModel.toSql({
-    dimensions: [],
-    metrics: ["totalRecords", "highPriorityRecords"],
-    filters: {
-      timestamp: { gte: weekAgo, lte: now },
-      tenantId: { eq: tenantId },
-    },
-  });
-
-  const recentKnowledgeQuery = sql.statement`
-    SELECT
-      ${TenantKnowledgeTable.columns.headline},
-      ${TenantKnowledgeTable.columns.category},
-      ${TenantKnowledgeTable.columns.priority},
-      ${TenantKnowledgeTable.columns.source},
-      ${TenantKnowledgeTable.columns.timestamp}
-    FROM ${TenantKnowledgeTable}
-    WHERE ${TenantKnowledgeTable.columns.tenant_id} = ${tenantId}
-    ORDER BY ${TenantKnowledgeTable.columns.timestamp} DESC
-    LIMIT 5
-  `;
-
-  const [[knowledgeMetrics], recentKnowledge] = await Promise.all([
-    executeReadonlySql<{
+  const [knowledgeMetrics, recentKnowledge] = await Promise.all([
+    executeScopedSql<{
       totalRecords: number;
       highPriorityRecords: number;
-    }>(queryClient, knowledgeMetricsQuery, { rowPolicyOptions }),
-    executeReadonlySql<{
+    }>(
+      queryClient,
+      dashboardKnowledgeMetricsModel.toSql({
+        metrics: ["totalRecords", "highPriorityRecords"],
+        limit: 1,
+      }),
+    ),
+    executeScopedSql<{
+      orgId: string;
       headline: string;
       category: string;
       priority: string;
       source: string;
       timestamp: string;
-    }>(queryClient, recentKnowledgeQuery, { rowPolicyOptions }),
+    }>(
+      queryClient,
+      dashboardRecentKnowledgeModel.toSql({
+        columns: [
+          "orgId",
+          "headline",
+          "category",
+          "priority",
+          "source",
+          "timestamp",
+        ],
+        orderBy: [["timestamp", "DESC"]],
+        limit: 5,
+      }),
+    ),
   ]);
 
   return {
-    knowledgeMetrics: knowledgeMetrics ?? {
+    knowledgeMetrics: knowledgeMetrics[0] ?? {
       totalRecords: 0,
       highPriorityRecords: 0,
     },

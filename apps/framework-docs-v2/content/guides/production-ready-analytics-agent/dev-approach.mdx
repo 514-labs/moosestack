@@ -1,0 +1,139 @@
+---
+title: Dev Approach
+description: How to set your coding agent up for success building a production analytics agent
+languages: ["typescript"]
+---
+
+import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
+
+# Dev Approach
+
+This guide assumes you'll be using a coding agent (Claude Code, Cursor, Kiro, Codex, etc) to accelerate your build of your new analytics agent and all the infra and middleware needed to support it.
+
+In addition, we recommend two approaches to further accelerate the build and ensure success:
+1. **Use a template:** Start from a proven open source template with analytical infra & middleware built in, instead of rolling your own from scratch.
+2. **Use a specialized coding agent harness:** MooseStack is your open source, vertically-integrated coding agent harness, specialized in data engineering workloads, so you don't have to cobble together your own.
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       Typescript-agent Template --> Your Analytics Agent App                      │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │          Coding Agent Harness  (514 / MooseStack)          │
+                     └────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
+                     └────────────────────────────────────────────────────────────┘
+```
+
+## Start from a template, not from scratch
+
+You could have your coding agent try to build all your infra and middleware (along with your analytics agent itself) from scratch. ClickHouse config, streaming pipelines, auth middleware, observability wiring, semantic layer, guardrails — all assembled from nothing. Two weeks later, you might have something that works.
+
+The problem isn't that it's hard. It's that none of it is yours. It's all standard patterns, boilerplate, plumbing and wiring. Every hour spent on it is an hour not spent on the thing that's actually differentiated: your data, your domain logic, your agent behavior. Every token spent on boilerplate is a token wasted.
+
+Start from a template instead. Look for open source, battle-tested, and all the middleware pre-wired: ClickHouse + Redpanda + Temporal + Langfuse, JWT auth, row-level security, multi-agent orchestration, semantic layer, guardrails. You want to inherit months of work in one command. Then your coding agent customizes it for your domain — and that's where the interesting work actually is.
+
+This guide uses the open source [`typescript-agent` template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent) from Fiveonefour.
+
+## Specialize your coding agent with a harness
+
+Once the template is in place, you need to customize for your use case. Your coding agent can be great here, but analytical infrastructure is specialized territory. Without the right setup, your agent will write schemas that perform fine in dev and fall apart at scale, make changes without understanding what they break downstream, and have no way to read errors from the stack it's supposed to be building.
+
+In the end, you might get what you want, but it will take weeks. We want you shipping in days, or even hours. In order to maximize the effectiveness of your coding agent on this stack, here's what you'll want to have in place:
+
+<BulletPointsCard
+  bulletStyle="number"
+  examplesLabel="DIY:"
+  bullets={[
+    {
+      title: "Analytical infra in local dev",
+      description:
+        "Picking ClickHouse, Redpanda, and Temporal is the easy part. Wiring them together end-to-end is where the time goes — and this infra defaults to cloud. You want the full stack running locally so the agent can break things, read what broke, and fix it in the same loop.",
+      examples: ["Docker containers for ClickHouse + Redpanda + Temporal, wired up and integrated manually or by your agent"],
+    },
+    {
+      title: "Code-based interfaces",
+      description:
+        "Coding agents are great at code. Not usually infra and middleware. ClickHouse, Redpanda, Temporal, Langfuse, etc weren't built for coding agents. Without agent-friendly interfaces, your agent guesses at infrastructure state instead of reading it.",
+      examples: ["Install each infra and middleware components' CLI, point the agent to the docs, try to condense the context to fit in the window"],
+    },
+    {
+      title: "Schema management and data modeling",
+      description:
+        "When the agent changes a data model, the change needs to propagate through the stack — database schema, API layer, MCP tools, type system. Without it, changes silently fall out of sync.",
+      examples: ["agent-issued DDLs against each infrastructure component, and/or TypeScript ORM for code-based interfaces for schema mgmt (limited options for OLAP)"],
+    },
+    {
+      title: "Logs and errors as agent context",
+      description:
+        "Application errors are easy. Infrastructure errors — bad queries, failed workflows, schema mismatches — are harder to surface. If the agent can't read the stack, it can't fix it.",
+      examples: ["SQL LSP, separate MCPs per component, or manual log-feeding per iteration"],
+    },
+    {
+      title: "Specialized agent skills",
+      description:
+        "Each infra component has its own best practices. So does data modeling, schema design, and OLAP query patterns. Without skills that encode this knowledge, the agent starts from scratch every time. A custom AGENTS.md can tie it together, but writing and maintaining one across ClickHouse, Redpanda, Temporal, and data engineering conventions is its own project.",
+      examples: ["Skills per infra component, data engineering best-practice skill files, hand-written AGENTS.md"],
+    },
+  ]}
+/>
+
+## Why MooseStack by 514?
+
+MooseStack is a vertically integrated coding agent harness, specialized in data engineering workloads. Everything your coding agent needs to build on analytical infrastructure — out of the box, already wired together and ready to go.
+
+<BulletPointsCard
+  title="What you get"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Best-in-class OSS infrastructure",
+      description:
+        "ClickHouse, Redpanda, Temporal, Langfuse — pre-wired and running. Your agent starts with the right stack. You don't pick components or figure out how to connect them.",
+    },
+    {
+      title: "MooseStack TypeScript Framework",
+      description:
+        "Schemas, materialized views, ingest pipelines, and APIs as typed TypeScript objects. The full stack is readable and writable by your coding agent without any database-specific tooling.",
+    },
+    {
+      title: "MooseStack CLI",
+      description:
+        "Unified CLI for all your analytical infra. Agent-friendly command-line interface for running queries, inspecting tables, and validating infrastructure state. Built to work in agentic loops, not just human terminals.",
+    },
+    {
+      title: "Local Dev Server",
+      description:
+        "The full stack running locally in Docker. Edit a data model, the table schema updates, the MCP tools reflect the change. The agent iterates against a live system, not a guess about what a live system would do.",
+    },
+    {
+      title: "MCP Server + SQL Language Server",
+      description:
+        "Live schema introspection, query execution, log access, SQL validation — all surfaced to the agent without leaving the editor. The agent reads the running stack, not just the source files.",
+    },
+    {
+      title: "Agent Skills",
+      description:
+        "ClickHouse and data engineering best practices packaged as invocable skills: primary key design, LowCardinality usage, ORDER BY strategy, materialized view patterns. The expertise your agent needs, already written down.",
+    },
+  ]}
+/>
+
+Setting up the MooseStack coding agent harness in the first step of the tutorial is what makes every subsequent section agent-executable in real time. Let's proceed..
+
+<CommunityCallout title="Need live support?">
+Join the MooseStack Slack — the team behind the Coding Agent Harness and this template is there.
+[Join the community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+</CommunityCallout>

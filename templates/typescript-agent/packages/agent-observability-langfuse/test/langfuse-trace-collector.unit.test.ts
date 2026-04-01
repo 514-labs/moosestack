@@ -50,7 +50,7 @@ describe("createLangfuseTraceCollector", () => {
       baseUrl: "https://langfuse.example.com",
     });
     const traceId = collector.startTrace({
-      tenantId: "acme",
+      accessScopeId: "org_a",
       provider: "anthropic",
       modelId: "claude-haiku-4-5",
       prompt: "Show tenant records",
@@ -64,7 +64,7 @@ describe("createLangfuseTraceCollector", () => {
 
     await collector.endTrace(traceId, {
       traceId,
-      tenantId: "acme",
+      accessScopeId: "org_a",
       provider: "anthropic",
       modelId: "claude-haiku-4-5",
       prompt: "Show tenant records",
@@ -105,7 +105,7 @@ describe("createLangfuseTraceCollector", () => {
       baseUrl: "https://langfuse.example.com",
     });
     const traceId = collector.startTrace({
-      tenantId: "acme",
+      accessScopeId: "org_a",
       provider: "anthropic",
       modelId: "claude-haiku-4-5",
       prompt: "Show tenant records",
@@ -118,7 +118,7 @@ describe("createLangfuseTraceCollector", () => {
     await expect(
       collector.endTrace(traceId, {
         traceId,
-        tenantId: "acme",
+        accessScopeId: "org_a",
         provider: "anthropic",
         modelId: "claude-haiku-4-5",
         prompt: "Show tenant records",

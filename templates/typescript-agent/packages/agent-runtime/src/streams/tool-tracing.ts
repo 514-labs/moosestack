@@ -13,7 +13,7 @@ function formatToolArgs(args: unknown): string {
 
 export function wrapTools(options: {
   runtimeTools: AgentTools;
-  tenantId: string;
+  accessScopeId: string;
   traceId: string;
   toolCallTimings: Map<string, ToolTiming>;
   getStepNumber: () => number;
@@ -49,7 +49,7 @@ export function wrapTools(options: {
           options.recordStep({
             stepId: crypto.randomUUID(),
             traceId: options.traceId,
-            tenantId: options.tenantId,
+            accessScopeId: options.accessScopeId,
             stepType: "tool",
             toolName,
             status: "completed",
@@ -75,7 +75,7 @@ export function wrapTools(options: {
           options.recordStep({
             stepId: crypto.randomUUID(),
             traceId: options.traceId,
-            tenantId: options.tenantId,
+            accessScopeId: options.accessScopeId,
             stepType: "tool",
             toolName,
             status: "failed",

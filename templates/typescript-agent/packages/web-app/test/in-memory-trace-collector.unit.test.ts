@@ -5,7 +5,7 @@ describe("createInMemoryTraceCollector", () => {
   it("implements the trace collector contract without throwing", async () => {
     const collector = createInMemoryTraceCollector();
     const traceId = collector.startTrace({
-      tenantId: "acme",
+      accessScopeId: "org_a",
       provider: "anthropic",
       modelId: "claude-haiku-4-5",
       prompt: "Show me the latest records.",
@@ -14,11 +14,11 @@ describe("createInMemoryTraceCollector", () => {
     collector.recordStep(traceId, {
       stepId: "step-1",
       traceId,
-      tenantId: "acme",
+      accessScopeId: "org_a",
       stepType: "agent",
       toolName: "supervisor",
       status: "completed",
-      notes: "routed_to=sql-investigator",
+      notes: "routed_to=metrics-investigator",
       startedAt: new Date().toISOString(),
       durationMs: 12,
       inputTokens: 3,
@@ -27,11 +27,11 @@ describe("createInMemoryTraceCollector", () => {
     collector.recordStep("missing-trace", {
       stepId: "step-2",
       traceId: "missing-trace",
-      tenantId: "acme",
+      accessScopeId: "org_a",
       stepType: "tool",
-      toolName: "query_clickhouse",
+      toolName: "query_tenant_knowledge_metrics",
       status: "completed",
-      notes: "SELECT 1",
+      notes: "queried tenant metrics",
       startedAt: new Date().toISOString(),
       durationMs: 4,
       inputTokens: 0,
@@ -41,7 +41,7 @@ describe("createInMemoryTraceCollector", () => {
     await expect(
       collector.endTrace(traceId, {
         traceId,
-        tenantId: "acme",
+        accessScopeId: "org_a",
         provider: "anthropic",
         modelId: "claude-haiku-4-5",
         prompt: "Show me the latest records.",

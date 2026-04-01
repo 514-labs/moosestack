@@ -28,7 +28,7 @@ Row-level security lands in Moose with the new `SelectRowPolicy` primitive, plus
   Moose now supports row-level security (RLS) through a new `SelectRowPolicy` primitive. Define restrictive policies on any table that filter rows based on JWT claims — perfect for multi-tenant applications where each customer should only see their own data. Policies use ClickHouse's native row policy mechanism with `getSetting()`, support AND semantics when multiple policies are applied to the same table, propagate through views automatically, and work across multiple databases.
 
   ```typescript
-  import { SelectRowPolicy, OlapTable, sql } from "@514labs/moose-lib";
+  import { SelectRowPolicy, OlapTable } from "@514labs/moose-lib";
 
   interface TenantEvent {
     eventId: string;
@@ -40,10 +40,10 @@ Row-level security lands in Moose with the new `SelectRowPolicy` primitive, plus
   const TenantEvents = new OlapTable<TenantEvent>("TenantEvent");
 
   // Only return rows where org_id matches the JWT claim
-  const tenantIsolation = new SelectRowPolicy({
-    table: TenantEvents,
-    name: "tenant_isolation",
-    filter: (table) => sql`${table.columns.org_id} = getSetting('org_id')`,
+  export const tenantIsolation = new SelectRowPolicy("tenant_isolation", {
+    tables: [TenantEvents],
+    column: "org_id",
+    claim: "org_id",
   });
   ```
 
@@ -75,7 +75,7 @@ Row-level security lands in Moose with the new `SelectRowPolicy` primitive, plus
   Destructive Plan contains 1 destructive operation(s) that may cause data loss:
     - DROP + RECREATE `Bar` (schema change requires drop + recreate)
               Tip For production, consider a versioned-table migration instead:
-    1. Create a *_v2 table with the new schema
+    1. Set version: "0.1" in your OlapTable config for the new schema
     2. Cut readers/writers over
     3. Validate parity
     4. Retire the old table later

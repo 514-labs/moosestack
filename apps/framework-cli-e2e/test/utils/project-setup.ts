@@ -8,6 +8,7 @@ const projectSetupLogger = logger.scope("utils:project-setup");
 
 export interface ProjectSetupOptions {
   logger?: ScopedLogger;
+  onInitComplete?: (result: { stdout: string; stderr: string }) => void;
 }
 
 const execAsync = promisify(require("child_process").exec);
@@ -102,6 +103,10 @@ export const setupTypeScriptProject = async (
     if (result.stderr) {
       log.debug("CLI init stderr", { stderr: result.stderr });
     }
+    options.onInitComplete?.({
+      stdout: result.stdout,
+      stderr: result.stderr ?? "",
+    });
   } catch (error: any) {
     log.error("CLI init failed", error);
     throw error;
