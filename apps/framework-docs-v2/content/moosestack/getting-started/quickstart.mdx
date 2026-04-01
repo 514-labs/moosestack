@@ -10,12 +10,14 @@ import { Callout, ToggleBlock, BulletPointsCard, IconBadge, CTACards, CTACard, L
 # Quickstart
 
 <div className="flex items-center gap-4 my-8 flex-wrap">
-<IconBadge Icon="Robot" label="Agent-ready in 5 min" variant="moose" />
+<IconBadge Icon="Robot" label="Coding agent-ready in 5 min" variant="moose" />
 <IconBadge Icon="DeviceLaptop" label="Local ClickHouse, Redpanda & Temporal" variant="moose" />
-<IconBadge Icon="Sparkles" label="Claude Code, Cursor, Kiro" variant="moose" />
+<IconBadge Icon="Sparkles" label="Claude Code, Cursor, Kiro, Codex" variant="moose" />
 </div>
 
-MooseStack is the dev harness for ClickHouse. Set it up once — your coding agent builds and ships analytical infrastructure from there.
+MooseStack is an open source, vertically-integrated coding agent harness for building on ClickHouse and realtime analytical infrastructure. It gives generalist coding agents (Claude Code, Cursor, Kiro, Codex, etc.) everything they need to build, iterate, and ship on analytical infrastructure — quickly, safely, and effectively.
+
+This quickstart sets up the coding agent harness and gets you and your agent running against a local project with a live stack.
 
 ## Prerequisites
 
@@ -39,7 +41,7 @@ MooseStack is the dev harness for ClickHouse. Set it up once — your coding age
     },
     {
       title: "A coding agent",
-      description: "Claude Code, Cursor, Kiro, or any MCP-compatible agent"
+      description: "Claude Code, Cursor, Kiro, Codex, or any MCP-compatible agent"
     },
     {
       title: "macOS/Linux",
@@ -76,7 +78,7 @@ docker ps
     },
     {
       title: "A coding agent",
-      description: "Claude Code, Cursor, Kiro, or any MCP-compatible agent"
+      description: "Claude Code, Cursor, Kiro, Codex, or any MCP-compatible agent"
     },
     {
       title: "macOS/Linux",
@@ -97,81 +99,61 @@ docker ps
 </LanguageTabs>
 
 <Callout type="warning" title="Docker Desktop Memory Requirements" compact={true}>
-Make sure Docker Desktop has at least **2.5GB of memory allocated**. To check or change this setting, open Docker Desktop, go to Settings → Resources → Memory, and adjust the slider if needed. [Learn more about Docker Desktop settings →](https://docs.docker.com/desktop/settings/)
+Make sure Docker Desktop has at least **2.5GB of memory allocated**. Open Docker Desktop → Settings → Resources → Memory. [Learn more →](https://docs.docker.com/desktop/settings/)
 </Callout>
 
 <br />
 
-## Step 1: Install Moose
-
-### Run the installation script
+## Step 1: Install MooseStack
 
 ```bash filename="Terminal" copy
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-You should see: `Moose vX.X.X installed successfully!`
-
-If you see an error instead, check [Troubleshooting](#need-help) below.
-
-### Reload your shell configuration
-
-**This step is required.** Your current terminal doesn't know about the `moose` command yet.
-
-<Tabs defaultValue="zsh">
-<TabsList>
-<TabsTrigger value="zsh">Zsh (most macOS)</TabsTrigger>
-<TabsTrigger value="bash">Bash (most Linux)</TabsTrigger>
-</TabsList>
-<TabsContent value="zsh">
-
-```bash filename="Terminal" copy
+<Callout type="warning" title="Reload your shell configuration" compact={true}>
+**Zsh (most macOS):**
+```bash
 source ~/.zshrc
 ```
-
-</TabsContent>
-<TabsContent value="bash">
-
-If `echo $SHELL` showed `/bin/bash` or `/usr/bin/bash`:
-
-```bash filename="Terminal" copy
+**Bash (most Linux):**
+```bash
 source ~/.bashrc
 ```
-
-</TabsContent>
-</Tabs>
-
-### Verify moose command works
-
-```bash filename="Terminal" copy
-moose --version
-```
-
-You should see:
-```txt
-moose X.X.X
-```
-
-<Callout type="warning" title="If you see 'command not found'" compact={true}>
-
-**Try these steps in order:**
-
-1. Re-run the correct `source` command for your shell
-2. Close this terminal completely and open a new terminal window
-3. Run `moose --version` again
-4. If still failing, see [Troubleshooting](#need-help)
-
+Or close and reopen your terminal, then try again.
 </Callout>
 
 <Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-You should see the moose version number. Do not proceed to Step 2 until `moose --version` works.
+`moose --version` shows a version number. Do not proceed until this works.
 </Callout>
+
+If you see an error, check [Troubleshooting](#need-help) below.
 
 <br />
 
 ## Step 2: Create your project
 
-Pick how you want to start. The wizard configures the rest — MCP server, agent context files, and ClickHouse best practices skills.
+<LanguageTabs>
+<LanguageTabContent value="typescript">
+
+<BulletPointsCard
+  title="Choose your starting point"
+  bulletStyle="number"
+  divider={false}
+  bullets={[
+    {
+      title: "Play with ClickHouse data",
+      description: "Connect to the public ClickHouse Playground. Give your coding agent access to real data to play with."
+    },
+    {
+      title: "Use your ClickHouse cluster",
+      description: "Your database cluster is completely safe. Nothing will be written or modified in your database — Moose reads your schema to generate local typed code."
+    },
+    {
+      title: "Start from scratch",
+      description: "Empty project. The right starting point if you want to build everything up with your coding agent."
+    }
+  ]}
+/>
 
 <Tabs defaultValue="playground">
 <TabsList>
@@ -182,67 +164,68 @@ Pick how you want to start. The wizard configures the rest — MCP server, agent
 
 <TabsContent value="playground">
 
-Uses the public ClickHouse playground — a live cluster with real datasets. No credentials needed.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
+`typescript-mcp` is a TypeScript monorepo with a Next.js chat frontend and a custom MCP server for querying your ClickHouse data. The following command connects it to the ClickHouse Playground:
 
 ```bash filename="Terminal" copy
 moose harness init my-app typescript-mcp \
   --from-remote "https://explorer:@play.clickhouse.com:443/?database=default"
 ```
 
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
+Or use the setup wizard to customize your setup:
 
 ```bash filename="Terminal" copy
-moose harness init my-app python-fastapi \
-  --from-remote "https://explorer:@play.clickhouse.com:443/?database=default"
+moose harness init
 ```
 
-  </LanguageTabContent>
-</LanguageTabs>
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
 
-<Callout type="info" title="Read-only" compact={true}>
-Moose introspects the playground schema to generate your data models. Nothing is written to the playground.
-</Callout>
+The wizard lets you configure:
+- **Template** — defaults to `typescript-mcp`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — bootstrap from an existing cluster; skipped by default
+
+</ToggleBlock>
 
 </TabsContent>
 
 <TabsContent value="remote">
 
-Moose introspects your cluster schema to bootstrap typed data models. Nothing is written to your database.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
+`typescript-mcp` is a TypeScript monorepo with a Next.js chat frontend and a custom MCP server for querying your ClickHouse data. The following command bootstraps it from your own cluster — replace the connection string with your own:
 
 ```bash filename="Terminal" copy
 moose harness init my-app typescript-mcp \
   --from-remote "https://user:pass@host:port/?database=name"
 ```
 
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-
-```bash filename="Terminal" copy
-moose harness init my-app python-fastapi \
-  --from-remote "https://user:pass@host:port/?database=name"
-```
-
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="success" title="Safe to run against production" icon="Check" compact={true}>
-The `--from-remote` flag is read-only — it introspects your schema and generates local code. No data is modified or moved.
+<Callout type="success" title="Your cluster is safe" icon="Check" compact={true}>
+`--from-remote` is read-only. Moose introspects your schema to generate local typed code. Nothing is written or modified in your database.
 </Callout>
 
-<ToggleBlock openText="Connection string format" closeText="Hide connection string format">
+Or use the setup wizard:
+
+```bash filename="Terminal" copy
+moose harness init
+```
+
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
+
+The wizard lets you configure:
+- **Template** — defaults to `typescript-mcp`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — the wizard will prompt for your connection string
+
+</ToggleBlock>
+
+<ToggleBlock openText="Connection string format" closeText="Hide">
 
 ```txt
 https://username:password@host:port/?database=database_name
 ```
 
-For ClickHouse Cloud, your host looks like `abc123.us-east-1.aws.clickhouse.cloud` on port `8443`. For self-hosted ClickHouse, use port `8123` (HTTP) or `8443` (HTTPS).
+- **ClickHouse Cloud**: host like `abc123.us-east-1.aws.clickhouse.cloud`, port `8443`
+- **Self-hosted**: port `8123` (HTTP) or `8443` (HTTPS)
 
 </ToggleBlock>
 
@@ -250,45 +233,173 @@ For ClickHouse Cloud, your host looks like `abc123.us-east-1.aws.clickhouse.clou
 
 <TabsContent value="scratch">
 
-Start with a clean project. Your coding agent builds from here.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
+`typescript-mcp` is a TypeScript monorepo with a Next.js chat frontend and a custom MCP server for querying your ClickHouse data. The following command scaffolds an empty project:
 
 ```bash filename="Terminal" copy
 moose harness init my-app typescript-mcp
 ```
 
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
+Or use the setup wizard to customize your setup:
+
+```bash filename="Terminal" copy
+moose harness init
+```
+
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
+
+The wizard lets you configure:
+- **Template** — defaults to `typescript-mcp`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — bootstrap from an existing cluster; skipped by default
+
+</ToggleBlock>
+
+</TabsContent>
+</Tabs>
+
+</LanguageTabContent>
+<LanguageTabContent value="python">
+
+<BulletPointsCard
+  title="Choose your starting point"
+  bulletStyle="number"
+  divider={false}
+  bullets={[
+    {
+      title: "Play with ClickHouse data",
+      description: "Connect to the public ClickHouse Playground. Give your coding agent access to real data to play with."
+    },
+    {
+      title: "Use your ClickHouse cluster",
+      description: "Your database cluster is completely safe. Nothing will be written or modified in your database — Moose reads your schema to generate local typed code."
+    },
+    {
+      title: "Start from scratch",
+      description: "Empty project. The right starting point if you want to build everything up with your coding agent."
+    }
+  ]}
+/>
+
+<Tabs defaultValue="playground">
+<TabsList>
+<TabsTrigger value="playground">Play with ClickHouse data</TabsTrigger>
+<TabsTrigger value="remote">Use your ClickHouse cluster</TabsTrigger>
+<TabsTrigger value="scratch">Start from scratch</TabsTrigger>
+</TabsList>
+
+<TabsContent value="playground">
+
+`python-fastapi` is a Python project with a FastAPI analytical API layer on top of ClickHouse. The following command connects it to the ClickHouse Playground:
+
+```bash filename="Terminal" copy
+moose harness init my-app python-fastapi \
+  --from-remote "https://explorer:@play.clickhouse.com:443/?database=default"
+```
+
+Or use the setup wizard to customize your setup:
+
+```bash filename="Terminal" copy
+moose harness init
+```
+
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
+
+The wizard lets you configure:
+- **Template** — defaults to `python-fastapi`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — bootstrap from an existing cluster; skipped by default
+
+</ToggleBlock>
+
+</TabsContent>
+
+<TabsContent value="remote">
+
+`python-fastapi` is a Python project with a FastAPI analytical API layer on top of ClickHouse. The following command bootstraps it from your own cluster — replace the connection string with your own:
+
+```bash filename="Terminal" copy
+moose harness init my-app python-fastapi \
+  --from-remote "https://user:pass@host:port/?database=name"
+```
+
+<Callout type="success" title="Your cluster is safe" icon="Check" compact={true}>
+`--from-remote` is read-only. Moose introspects your schema to generate local typed code. Nothing is written or modified in your database.
+</Callout>
+
+Or use the setup wizard:
+
+```bash filename="Terminal" copy
+moose harness init
+```
+
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
+
+The wizard lets you configure:
+- **Template** — defaults to `python-fastapi`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — the wizard will prompt for your connection string
+
+</ToggleBlock>
+
+<ToggleBlock openText="Connection string format" closeText="Hide">
+
+```txt
+https://username:password@host:port/?database=database_name
+```
+
+- **ClickHouse Cloud**: host like `abc123.us-east-1.aws.clickhouse.cloud`, port `8443`
+- **Self-hosted**: port `8123` (HTTP) or `8443` (HTTPS)
+
+</ToggleBlock>
+
+</TabsContent>
+
+<TabsContent value="scratch">
+
+`python-fastapi` is a Python project with a FastAPI analytical API layer on top of ClickHouse. The following command scaffolds an empty project:
 
 ```bash filename="Terminal" copy
 moose harness init my-app python-fastapi
 ```
 
-  </LanguageTabContent>
-</LanguageTabs>
+Or use the setup wizard to customize your setup:
+
+```bash filename="Terminal" copy
+moose harness init
+```
+
+<ToggleBlock openText="What you can customize with the wizard" closeText="Hide">
+
+The wizard lets you configure:
+- **Template** — defaults to `python-fastapi`; choose any available template
+- **Coding agent** — defaults to auto-detected; pick Claude Code, Cursor, Kiro, Codex, or all
+- **LSP** — MooseStack Language Server; installed by default
+- **Remote ClickHouse** — bootstrap from an existing cluster; skipped by default
+
+</ToggleBlock>
 
 </TabsContent>
 </Tabs>
 
-<Callout type="info" title="What the wizard configures" compact={true}>
-Follow the prompts to pick your coding agent. The wizard sets up: **MooseDev MCP server** (live ClickHouse introspection), **Context7 MCP server** (up-to-date docs), **AGENTS.md / CLAUDE.md** (project context files), and **ClickHouse best practices skills**.
-</Callout>
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-
-<Callout type="info" title="TypeScript vs Python" compact={true}>
-The TypeScript path (`typescript-mcp`) includes a **Next.js chat frontend** and a **custom MCP server** for querying your data. The Python path (`python-fastapi`) includes a **FastAPI analytical API** — no chat frontend.
-</Callout>
-
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-  </LanguageTabContent>
+</LanguageTabContent>
 </LanguageTabs>
 
-### Install dependencies
+<Callout type="info" title="What the harness configures" compact={true}>
+The wizard sets up your coding agent and configures: **MooseDev MCP server** (live ClickHouse introspection), **Context7 MCP server** (up-to-date docs), **AGENTS.md / CLAUDE.md** (project context files), and **ClickHouse best practices skills**.
+</Callout>
+
+<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
+`moose harness init` completed successfully. Follow the instructions it printed to continue.
+</Callout>
+
+<br />
+
+## Step 3: Start the harness
+
+**Install dependencies:**
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -300,7 +411,7 @@ cd my-app && npm install
   </LanguageTabContent>
   <LanguageTabContent value="python">
 
-<Callout type="info" title="Recommended: Create a virtual environment" compact={true}>
+<Callout type="info" title="Recommended: create a virtual environment first" compact={true}>
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 ```
@@ -313,78 +424,56 @@ cd my-app && pip install -r requirements.txt
   </LanguageTabContent>
 </LanguageTabs>
 
-<Callout type="info" title="Want a different starting point?" compact={true}>
-Browse [templates](/templates) for other starters, or pick a [guide](/guides) to follow a specific use case.
-</Callout>
-
-<Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-Dependencies installed with no errors. Ready to start the harness.
-</Callout>
-
-<br />
-
-## Step 3: Start the harness
+**Start the dev server:**
 
 ```bash filename="Terminal" copy
 moose dev
 ```
 
-For AI assistants or when you need a second terminal:
-```bash
-nohup moose dev &
-```
-
-<Callout type="info" title="This may take a minute the first time." compact={true}>
-Moose is downloading Docker images for ClickHouse, Redpanda, and Temporal, starting containers, and initializing the MCP server.
-</Callout>
-
-Wait for the `Started Webserver` message before proceeding:
+Wait for the `Started Webserver` message:
 
 ```txt
-       Created docker compose file
-⡗ Starting local infrastructure
   Successfully started containers
      Validated clickhousedb-1 docker container
      Validated redpanda-1 docker container
   Successfully validated red panda cluster
      Validated temporal docker container
   Successfully ran local infrastructure
-      Node Id: my-app::b15efaca-0c23-42b2-9b0c-642105f9c437
       Starting development mode
-      Watching "/path/to/my-app/app"
-       Started Webserver.  👈 WAIT FOR THIS
+       Started Webserver.  👈 wait for this
 ```
 
 <Callout type="success" title="Checkpoint" icon="Check" compact={true}>
-Keep this terminal running. Your MCP server is live at `localhost:4000/mcp`. Open a new terminal for the next step.
+The dev server is running. Keep this terminal open and move to Step 4.
 </Callout>
 
 <br />
 
 ## Step 4: Use your agent
 
-Your harness is running. Open your coding agent — the MCP server is connected, skills are loaded, and your project context is in place. Give it a task.
+Open your coding agent. Copy one of these prompts to try:
 
-<BulletPointsCard
-  title="Starter prompts to try"
-  bulletStyle="check"
-  compact={true}
-  divider={false}
-  bullets={[
-    { title: "Add a new data source to the project" },
-    { title: "Add a new metric to the semantic layer" },
-    { title: "Add a new API endpoint" },
-    { title: "Add a new MCP tool" }
-  ]}
-/>
+```txt filename="Prompt" copy
+Use the MooseStack harness to create a new ingest pipeline that pulls flight tracking data from the OpenSky API and stores it in ClickHouse
+```
 
-Your agent has live schema introspection via MCP, ClickHouse best practices via skills, and full project context via AGENTS.md. It will do the right thing.
+```txt filename="Prompt" copy
+Use the MooseStack harness to add a daily active users metric to the semantic layer and expose it as an API endpoint
+```
+
+```txt filename="Prompt" copy
+Use the MooseStack harness to add an API endpoint that returns the top 10 events by volume over the last 24 hours
+```
+
+```txt filename="Prompt" copy
+Use the MooseStack harness to add an MCP tool that queries recent events and returns a structured summary
+```
 
 <br />
 
 ## What's next
 
-<CTACards columns={3}>
+<CTACards columns={2}>
   <CTACard
     title="Browse Templates"
     description="Complete starting points for analytics apps, chat with data, semantic layers, and more."
@@ -392,16 +481,10 @@ Your agent has live schema introspection via MCP, ClickHouse best practices via 
     ctaLabel="Browse templates"
   />
   <CTACard
-    title="Guides"
+    title="Browse Guides"
     description="Step-by-step guides for building on ClickHouse — dashboards, pipelines, agents, and more."
     ctaLink="/guides"
     ctaLabel="Explore guides"
-  />
-  <CTACard
-    title="Existing ClickHouse"
-    description="Deeper guide for bootstrapping from your own ClickHouse cluster, including seeding local data."
-    ctaLink="/moosestack/getting-started/from-clickhouse"
-    ctaLabel="Read the guide"
   />
 </CTACards>
 
@@ -410,7 +493,6 @@ Your agent has live schema introspection via MCP, ClickHouse best practices via 
 ## Need Help?
 
 <ToggleBlock openText="Docker Not Running" closeText="Docker Not Running">
-Make sure Docker is running:
 ```bash filename="Terminal" copy
 # macOS
 open -a Docker
@@ -418,67 +500,52 @@ open -a Docker
 # Linux
 sudo systemctl start docker
 
-# Verify Docker is running
+# Verify
 docker ps
 ```
 
-If Docker is running but you're still having issues, try clearing your Docker cache:
+If Docker is running but you're still having issues:
 ```bash filename="Terminal" copy
 docker system prune -a
 ```
 </ToggleBlock>
 
 <ToggleBlock openText="Outdated Language Version" closeText="Outdated Language Version">
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-Make sure you're using Node.js 20 or later:
+
+**TypeScript — Node.js 20+ required:**
 ```bash filename="Terminal" copy
-# Check version
 node -v
 
 # Install Node 20+ with nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-nvm install 20
-nvm use 20
+nvm install 20 && nvm use 20
 ```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-Make sure you're using Python 3.12 or later:
+
+**Python — Python 3.12+ required:**
 ```bash filename="Terminal" copy
-# Check version
 python3 --version
 
 # Install Python 3.12+ with pyenv
 curl https://pyenv.run | bash
-pyenv install 3.12
-pyenv local 3.12
+pyenv install 3.12 && pyenv local 3.12
 ```
-  </LanguageTabContent>
-</LanguageTabs>
 </ToggleBlock>
 
 <ToggleBlock openText="Port Conflicts" closeText="Port Conflicts">
-Use one of the following options to resolve a "Port 4000 already in use" error (or any other port conflict):
 
-**Option 1: Kill the process**
+**Kill the conflicting process:**
 ```bash filename="Terminal" copy
-# Find what's using port 4000
 lsof -i :4000
-
-# Kill the process (replace PID)
 kill -9 <PID>
 ```
 
-**Option 2: Use a different port**
-Set a different port in `moose.config.toml` in your project root:
+**Or use a different port** in `moose.config.toml`:
 ```toml filename="moose.config.toml" copy
 [http_server_config]
 port = 4001
 ```
 
-Restart `moose dev` after saving.
-
-<Callout type="info" title="Customizing Ports for Local Infrastructure" compact={true}>
+<Callout type="info" title="Customizing all ports" compact={true}>
 You can also customize ClickHouse, Redpanda, and Temporal ports. See the [Configuration Reference](/moosestack/configuration#mooseconfigtoml-reference).
 </Callout>
 </ToggleBlock>
