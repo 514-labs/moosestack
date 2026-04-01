@@ -17,6 +17,7 @@ import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import { SelectRowPolicy } from "./sdk/selectRowPolicy";
+import { OlapDictionary } from "./sdk/olapDictionary";
 import { getMooseInternal } from "./internal";
 
 /**
@@ -228,4 +229,23 @@ export function getSelectRowPolicies(): Map<string, SelectRowPolicy> {
  */
 export function getSelectRowPolicy(name: string): SelectRowPolicy | undefined {
   return getMooseInternal().selectRowPolicies.get(name);
+}
+
+/**
+ * Get all registered OLAP dictionaries.
+ * @returns A Map of dictionary name to OlapDictionary instance
+ */
+export function getOlapDictionaries(): Map<string, OlapDictionary<any>> {
+  return getMooseInternal().olapDictionaries;
+}
+
+/**
+ * Get a registered OLAP dictionary by name.
+ * @param name - The name of the dictionary
+ * @returns The OlapDictionary instance or undefined if not found
+ */
+export function getOlapDictionary(
+  name: string,
+): OlapDictionary<any> | undefined {
+  return getMooseInternal().olapDictionaries.get(name);
 }
