@@ -3,11 +3,11 @@ description = "TypeScript agent starter with MCP tools, Moose-owned dashboard AP
 frameworks = ["Next.js", "MCP", "Agents"]
 features = ["Moose OLAP", "Moose APIs", "Frontend", "MCP", "Auth", "Agents"]
 post_install_print = """
-Deploy on Boreal
+Deploy with 514 Hosting
 
-Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-https://boreal.cloud
+https://fiveonefour.boreal.cloud
 
 ---------------------------------------------------------
 

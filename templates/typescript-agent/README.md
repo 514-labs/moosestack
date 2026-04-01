@@ -124,7 +124,7 @@ pnpm seed
 
 `pnpm seed` prints a short summary showing how many records were inserted and the current totals per tenant.
 
-Open `http://localhost:3000`, sign in with one of the local mock accounts, then use the dashboard and chat panel.
+Open `http://localhost:3000`, sign in with one of the local mock accounts, look up the generated password in `packages/web-app/.env.local`, then use the dashboard and chat panel.
 
 Before committing, run:
 
@@ -222,9 +222,9 @@ Local development uses the built-in local mock login flow:
 - the admin mock user bypasses tenant scoping for local troubleshooting only
 
 Local mock accounts included by default:
-- `user1@orgA.com` / `user1`
-- `user2@orgB.com` / `user2`
-- `admin@templae.com` / `admin`
+- `user1@orgA.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_A_USER`
+- `user2@orgB.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_B_USER`
+- `admin@templae.com` with password stored in `LOCAL_MOCK_PASSWORD_ADMIN`
 
 ## Environment Variables
 

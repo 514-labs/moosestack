@@ -59,23 +59,25 @@ export default async function Home({
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.12))] text-foreground">
-        <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-16">
-          <section className="w-full rounded-3xl border bg-card p-8 shadow-lg">
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.035),_transparent_28%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.12))] text-foreground">
+        <main className="mx-auto flex min-h-screen max-w-lg items-center justify-center px-5 py-12 sm:px-6 sm:py-16">
+          <section className="w-full rounded-[1.9rem] border border-border/70 bg-card/96 px-7 py-7 shadow-[0_22px_70px_rgba(0,0,0,0.28)] sm:px-8 sm:py-8">
+            <div className="space-y-3">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 typescript-agent
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-              <p className="text-sm text-muted-foreground">
+              <h1 className="text-[2rem] font-semibold tracking-tight">
+                Sign in
+              </h1>
+              <p className="max-w-sm text-sm leading-6 text-muted-foreground">
                 Use one of the local mock accounts below to access the seeded
                 dashboard and chat experience.
               </p>
             </div>
 
-            <div className="mt-6 space-y-4">
+            <div className="mt-7 space-y-5">
               {sessionNotice === "expired" && (
-                <div className="rounded-xl border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+                <div className="rounded-2xl border border-amber-400/60 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950 dark:text-amber-100">
                   Your previous session expired or is no longer valid. Sign in
                   again to refresh access.
                 </div>

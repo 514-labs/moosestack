@@ -18,6 +18,7 @@ export const LOCAL_MOCK_USERS = [
     id: "org-a-user-1",
     name: "user1@orgA.com",
     email: "user1@orgA.com",
+    passwordEnvVar: "LOCAL_MOCK_PASSWORD_ORG_A_USER",
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_a",
     orgName: "Org A",
@@ -27,6 +28,7 @@ export const LOCAL_MOCK_USERS = [
     id: "org-b-user-2",
     name: "user2@orgB.com",
     email: "user2@orgB.com",
+    passwordEnvVar: "LOCAL_MOCK_PASSWORD_ORG_B_USER",
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_b",
     orgName: "Org B",
@@ -36,6 +38,7 @@ export const LOCAL_MOCK_USERS = [
     id: "admin",
     name: "admin@templae.com",
     email: "admin@templae.com",
+    passwordEnvVar: "LOCAL_MOCK_PASSWORD_ADMIN",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
     description:
       "Local-only admin access with read visibility across both seeded organizations.",
@@ -43,7 +46,6 @@ export const LOCAL_MOCK_USERS = [
 ] as const;
 
 export type LocalMockUser = (typeof LOCAL_MOCK_USERS)[number];
-export const LOCAL_PASSWORD_RULE = "Use the part before @ as the password.";
 
 let localPrivateKeyPromise: Promise<CryptoKey> | undefined;
 
@@ -70,15 +72,15 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function deriveLocalPassword(email: string): string | undefined {
-  const normalizedEmail = normalizeEmail(email);
-  const atIndex = normalizedEmail.indexOf("@");
-
-  if (atIndex <= 0) {
-    return undefined;
+export function getLocalMockPassword(mockUser: LocalMockUser): string {
+  const value = process.env[mockUser.passwordEnvVar]?.trim();
+  if (!value) {
+    throw new Error(
+      `${mockUser.passwordEnvVar} is not set. Run \`pnpm env:prepare\` to generate local mock passwords.`,
+    );
   }
 
-  return normalizedEmail.slice(0, atIndex);
+  return value;
 }
 
 export function getLocalMockUser(email: string): LocalMockUser | undefined {
@@ -89,9 +91,11 @@ export function getLocalMockUser(email: string): LocalMockUser | undefined {
   );
 }
 
-function isValidLocalPassword(email: string, password: string): boolean {
-  const expectedPassword = deriveLocalPassword(email);
-  return Boolean(expectedPassword && password === expectedPassword);
+function isValidLocalPassword(
+  mockUser: LocalMockUser,
+  password: string,
+): boolean {
+  return password === getLocalMockPassword(mockUser);
 }
 
 function getLocalAccessScope(accessRole: AccessRole): string {
@@ -141,7 +145,7 @@ export function createLocalAccessProvider() {
         return null;
       }
 
-      if (!isValidLocalPassword(mockUser.email, parsed.data.password)) {
+      if (!isValidLocalPassword(mockUser, parsed.data.password)) {
         return null;
       }
 

@@ -3,7 +3,7 @@ import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createLocalAccessProvider,
-  deriveLocalPassword,
+  getLocalMockPassword,
   getLocalMockUser,
 } from "../src/dev/local-auth";
 
@@ -55,10 +55,16 @@ describe("createLocalAccessProvider", () => {
       "\n",
       "\\n",
     );
+    process.env.LOCAL_MOCK_PASSWORD_ORG_A_USER = "org-a-test-password";
+    process.env.LOCAL_MOCK_PASSWORD_ORG_B_USER = "org-b-test-password";
+    process.env.LOCAL_MOCK_PASSWORD_ADMIN = "admin-test-password";
   });
 
   afterEach(() => {
     delete process.env.LOCAL_DEV_JWT_PRIVATE_KEY;
+    delete process.env.LOCAL_MOCK_PASSWORD_ORG_A_USER;
+    delete process.env.LOCAL_MOCK_PASSWORD_ORG_B_USER;
+    delete process.env.LOCAL_MOCK_PASSWORD_ADMIN;
   });
 
   it("issues organization-scoped local sessions for seeded org users", async () => {
@@ -66,7 +72,7 @@ describe("createLocalAccessProvider", () => {
 
     const user = await authorize?.({
       email: "user1@orgA.com",
-      password: "user1",
+      password: "org-a-test-password",
     });
 
     expect(user).toMatchObject({
@@ -87,7 +93,7 @@ describe("createLocalAccessProvider", () => {
 
     const user = await authorize?.({
       email: "admin@templae.com",
-      password: "admin",
+      password: "admin-test-password",
     });
 
     expect(user).toMatchObject({
@@ -116,15 +122,19 @@ describe("createLocalAccessProvider", () => {
 });
 
 describe("local mock user helpers", () => {
-  it("derives the password from the email local-part", () => {
-    expect(deriveLocalPassword("user1@orgA.com")).toBe("user1");
-    expect(deriveLocalPassword("admin@templae.com")).toBe("admin");
+  it("reads the generated password from the configured env var", () => {
+    process.env.LOCAL_MOCK_PASSWORD_ORG_A_USER = "org-a-test-password";
+    const orgAUser = getLocalMockUser("user1@orgA.com");
+
+    expect(orgAUser).toBeDefined();
+    expect(getLocalMockPassword(orgAUser!)).toBe("org-a-test-password");
   });
 
   it("looks up mock users case-insensitively", () => {
     expect(getLocalMockUser("USER2@ORGB.COM")).toMatchObject({
       email: "user2@orgB.com",
       orgId: "org_b",
+      passwordEnvVar: "LOCAL_MOCK_PASSWORD_ORG_B_USER",
     });
   });
 });

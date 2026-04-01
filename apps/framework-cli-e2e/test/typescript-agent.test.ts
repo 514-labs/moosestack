@@ -412,8 +412,17 @@ async function callMcpToolText(
   };
 }
 
-function deriveLocalPassword(email: string) {
-  return email.split("@")[0] ?? "";
+function getLocalPasswordEnvVar(email: string) {
+  switch (email) {
+    case "user1@orgA.com":
+      return "LOCAL_MOCK_PASSWORD_ORG_A_USER";
+    case "user2@orgB.com":
+      return "LOCAL_MOCK_PASSWORD_ORG_B_USER";
+    case "admin@templae.com":
+      return "LOCAL_MOCK_PASSWORD_ADMIN";
+    default:
+      throw new Error(`No mock password env var is defined for ${email}`);
+  }
 }
 
 async function signInLocalAccess(email: string) {
@@ -438,7 +447,10 @@ async function signInLocalAccess(email: string) {
       body: new URLSearchParams({
         csrfToken,
         email,
-        password: deriveLocalPassword(email),
+        password: readEnvValue(
+          path.join(projectDir, "packages", "web-app", ".env.local"),
+          getLocalPasswordEnvVar(email),
+        ),
         callbackUrl: `${webAppUrl}/`,
         json: "true",
       }),
