@@ -49,6 +49,7 @@ use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
+use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::core::lifecycle_filter;
@@ -408,6 +409,8 @@ pub enum OlapChange {
     View(Change<View>),
     /// Change to a row policy
     SelectRowPolicy(Change<SelectRowPolicy>),
+    /// Change to a ClickHouse dictionary
+    OlapDictionary(Change<OlapDictionary>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -609,6 +612,10 @@ pub struct InfrastructureMap {
     #[serde(default)]
     pub select_row_policies: HashMap<String, SelectRowPolicy>,
 
+    /// Collection of ClickHouse dictionaries indexed by dictionary ID
+    #[serde(default)]
+    pub olap_dictionaries: HashMap<String, OlapDictionary>,
+
     /// Version of Moose CLI that created or last updated this infrastructure map.
     /// Populated automatically during storage operations.
     /// None for maps created by older CLI versions (pre-version-tracking).
@@ -652,6 +659,7 @@ impl InfrastructureMap {
             materialized_views: Default::default(),
             views: Default::default(),
             select_row_policies: Default::default(),
+            olap_dictionaries: Default::default(),
             moose_version: None,
         }
     }
@@ -759,6 +767,11 @@ impl InfrastructureMap {
                 self.select_row_policies.values().map(|policy| {
                     OlapChange::SelectRowPolicy(Change::Added(Box::new(policy.clone())))
                 }),
+            )
+            .chain(
+                self.olap_dictionaries
+                    .values()
+                    .map(|dict| OlapChange::OlapDictionary(Change::Added(Box::new(dict.clone())))),
             )
             .collect()
     }
@@ -943,6 +956,20 @@ impl InfrastructureMap {
         );
         let row_policy_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("Row policy changes detected: {}", row_policy_changes);
+
+        // Dictionaries
+        tracing::info!("Analyzing changes in Dictionaries...");
+        let olap_changes_len_before = changes.olap_changes.len();
+        Self::diff_dictionaries(
+            &self.olap_dictionaries,
+            &target_map.olap_dictionaries,
+            &self.default_database,
+            &mut changes.olap_changes,
+            &mut changes.filtered_olap_changes,
+            respect_life_cycle,
+        );
+        let dict_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("Dictionary changes detected: {}", dict_changes);
 
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
@@ -1976,6 +2003,108 @@ impl InfrastructureMap {
         }
     }
 
+    /// Compare dictionaries between two infrastructure maps and compute differences.
+    ///
+    /// Dictionary updates use `CREATE OR REPLACE DICTIONARY` (zero-downtime) rather than
+    /// DROP+CREATE. Lifecycle policies are respected: drop-protected dictionaries block
+    /// removal and updates; externally-managed dictionaries block creation too.
+    pub fn diff_dictionaries(
+        self_dicts: &HashMap<String, OlapDictionary>,
+        target_dicts: &HashMap<String, OlapDictionary>,
+        _default_database: &str,
+        olap_changes: &mut Vec<OlapChange>,
+        filtered_changes: &mut Vec<FilteredChange>,
+        respect_life_cycle: bool,
+    ) {
+        let mut dict_additions = 0;
+        let mut dict_removals = 0;
+        let mut dict_updates = 0;
+
+        for (id, dict) in self_dicts {
+            if let Some(target_dict) = target_dicts.get(id) {
+                if dict != target_dict {
+                    tracing::debug!("Dictionary '{}' has differences", id);
+                    if respect_life_cycle && target_dict.life_cycle.is_drop_protected() {
+                        tracing::warn!(
+                            "Blocking update of {:?} dictionary '{}' (update requires CREATE OR REPLACE)",
+                            target_dict.life_cycle,
+                            id
+                        );
+                        filtered_changes.push(FilteredChange {
+                            reason: format!(
+                                "Dictionary '{}' has {:?} lifecycle - UPDATE (CREATE OR REPLACE) blocked",
+                                dict.name, target_dict.life_cycle
+                            ),
+                            change: OlapChange::OlapDictionary(Change::Updated {
+                                before: Box::new(dict.clone()),
+                                after: Box::new(target_dict.clone()),
+                            }),
+                        });
+                    } else {
+                        dict_updates += 1;
+                        olap_changes.push(OlapChange::OlapDictionary(Change::Updated {
+                            before: Box::new(dict.clone()),
+                            after: Box::new(target_dict.clone()),
+                        }));
+                    }
+                }
+            } else {
+                tracing::debug!("Dictionary '{}' removed", id);
+                if respect_life_cycle && dict.life_cycle.is_drop_protected() {
+                    tracing::warn!(
+                        "Blocking removal of {:?} dictionary '{}'",
+                        dict.life_cycle,
+                        id
+                    );
+                    filtered_changes.push(FilteredChange {
+                        reason: format!(
+                            "Dictionary '{}' has {:?} lifecycle - DROP blocked",
+                            dict.name, dict.life_cycle
+                        ),
+                        change: OlapChange::OlapDictionary(Change::Removed(Box::new(dict.clone()))),
+                    });
+                } else {
+                    dict_removals += 1;
+                    olap_changes.push(OlapChange::OlapDictionary(Change::Removed(Box::new(
+                        dict.clone(),
+                    ))));
+                }
+            }
+        }
+
+        for (id, dict) in target_dicts {
+            if !self_dicts.contains_key(id) {
+                tracing::debug!("Dictionary '{}' added", id);
+                if respect_life_cycle && dict.life_cycle.is_any_modification_protected() {
+                    tracing::warn!(
+                        "Blocking creation of {:?} dictionary '{}'",
+                        dict.life_cycle,
+                        id
+                    );
+                    filtered_changes.push(FilteredChange {
+                        reason: format!(
+                            "Dictionary '{}' has {:?} lifecycle - CREATE blocked",
+                            dict.name, dict.life_cycle
+                        ),
+                        change: OlapChange::OlapDictionary(Change::Added(Box::new(dict.clone()))),
+                    });
+                } else {
+                    dict_additions += 1;
+                    olap_changes.push(OlapChange::OlapDictionary(Change::Added(Box::new(
+                        dict.clone(),
+                    ))));
+                }
+            }
+        }
+
+        tracing::info!(
+            "Dictionary changes: {} added, {} removed, {} updated",
+            dict_additions,
+            dict_removals,
+            dict_updates
+        );
+    }
+
     /// Compare tables between two infrastructure maps and compute the differences
     ///
     /// This method identifies added, removed, and updated tables by comparing
@@ -2852,6 +2981,11 @@ impl InfrastructureMap {
                     )
                 })
                 .collect(),
+            olap_dictionaries: self
+                .olap_dictionaries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             moose_version: self.moose_version.clone().unwrap_or_default(),
             special_fields: Default::default(),
         }
@@ -3023,6 +3157,11 @@ impl InfrastructureMap {
                         },
                     )
                 })
+                .collect(),
+            olap_dictionaries: proto
+                .olap_dictionaries
+                .into_iter()
+                .map(|(k, v)| (k, OlapDictionary::from_proto(v)))
                 .collect(),
             moose_version: if proto.moose_version.is_empty() {
                 None // Backward compat: empty string = not set
@@ -4449,6 +4588,7 @@ impl Default for InfrastructureMap {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None, // Not set until storage
+            olap_dictionaries: Default::default(),
         }
     }
 }

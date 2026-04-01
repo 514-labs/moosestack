@@ -601,6 +601,9 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     select_row_policies:
         HashMap<String, crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
+    #[serde(default)]
+    olap_dictionaries:
+        HashMap<String, crate::framework::core::infrastructure::dictionary::OlapDictionary>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -750,6 +753,7 @@ impl PartialInfrastructureMap {
             materialized_views: self.materialized_views,
             views: self.views,
             select_row_policies: self.select_row_policies,
+            olap_dictionaries: self.olap_dictionaries,
             moose_version: None,
         };
 
