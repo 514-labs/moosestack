@@ -3887,6 +3887,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3915,6 +3918,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3959,6 +3965,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
