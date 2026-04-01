@@ -402,13 +402,13 @@ The query model's `required: true` filters (e.g., `studioId`) carry through to t
 ```ts filename="apis/mcp.ts" copy
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { registerModelTools } from "@514labs/moose-lib";
+import { registerModelTools, getMooseUtils } from "@514labs/moose-lib";
 import { visitMetrics } from "../query-layer/visits-model";
 import { revenueMetrics } from "../query-layer/revenue-model";
 import { clientMetrics } from "../query-layer/client-model";
-import { client } from "../db"; // your ClickHouse client instance
 
 export default async function handler(req, res) {
+  const { client } = await getMooseUtils();
   const server = new McpServer({
     name: "my-analytics",
     version: "1.0.0",
@@ -417,13 +417,7 @@ export default async function handler(req, res) {
   registerModelTools(
     server,
     [visitMetrics, revenueMetrics, clientMetrics],
-    async (model, request, limit) => {
-      const sql = model.toSql({ ...request, limit });
-      const rows = await client.query(sql);
-      return {
-        content: [{ type: "text", text: JSON.stringify(rows) }],
-      };
-    },
+    client.query,
   );
 
   const transport = new StreamableHTTPServerTransport({

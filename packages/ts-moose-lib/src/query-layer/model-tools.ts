@@ -11,7 +11,12 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toQuery, type Sql } from "../sqlHelpers";
 import { QueryClient } from "../consumption-apis/helpers";
-import type { FilterInputTypeHint, SortDir } from "./types";
+import type {
+  DimensionDef,
+  FilterInputTypeHint,
+  MetricDef,
+  SortDir,
+} from "./types";
 
 export const DEFAULT_LIMIT = 1000;
 
@@ -48,8 +53,8 @@ export interface QueryModelBase {
   };
   readonly filters: Record<string, QueryModelFilter>;
   readonly sortable: readonly string[];
-  readonly dimensions?: Record<string, { description?: string }>;
-  readonly metrics?: Record<string, { description?: string }>;
+  readonly dimensions?: Record<string, DimensionDef>;
+  readonly metrics?: Record<string, MetricDef>;
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
