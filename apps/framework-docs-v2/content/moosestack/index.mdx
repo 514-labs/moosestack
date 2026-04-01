@@ -1,13 +1,11 @@
 ---
 title: Overview
-description: MooseStack is the OLAP-native agent harness for designing, validating, and shipping analytical systems as code
+description: MooseStack is the open source dev harness for ClickHouse
 order: 1
 category: getting-started
 ---
 
-import { IconBadge, CTACard, CTACards, StaggeredCard, StaggeredCards, StaggeredContent, StaggeredCode, Callout, LanguageTabs, LanguageTabContent, CodeEditorWrapper } from "@/components/mdx";
-import { Separator } from "@/components/ui/separator";
-import { PathConfig } from "@/lib/path-config";
+import { IconBadge, CTACard, CTACards, Callout, LanguageTabs, LanguageTabContent, CodeEditorWrapper, BulletPointsCard } from "@/components/mdx";
 
 # MooseStack
 
@@ -17,9 +15,114 @@ import { PathConfig } from "@/lib/path-config";
   <IconBadge Icon="DeviceLaptop" label="Hot-reload development" variant="moose" />
 </div>
 
-MooseStack is the OLAP-native agent harness for designing, validating, and shipping analytical systems as code.
+MooseStack is an open source coding agent harness for building on ClickHouse and realtime analytical infrastructure. It gives coding agents the context, interfaces, and tooling they need to build on analytical infrastructure — out of the box, already wired together.
 
-Iteratively define schemas, materialized views, streams, workflows, and APIs as code in a local dev runtime, then plan, test, and apply migrations to your production OLAP system.
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                         Your App                                                  │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │          Coding Agent Harness  (514 / MooseStack)          │
+                     └────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
+                     └────────────────────────────────────────────────────────────┘
+```
+
+## Why a Harness?
+
+Analytical infrastructure is specialized territory. Without the right setup, a coding agent writes schemas that work in dev and fall apart at scale, makes changes without understanding downstream effects, and can't read errors from the stack it's supposed to be building. A harness provides the specialized interfaces, context, and tooling that a generalist coding agent lacks — pre-wired, so you don't have to assemble it yourself.
+
+## What the Harness Provides
+
+A coding agent harness for data engineering needs five capabilities that raw coding agents don't have. Each can be assembled DIY — or you get them out of the box with MooseStack.
+
+<BulletPointsCard
+  bulletStyle="number"
+  examplesLabel="DIY:"
+  bullets={[
+    {
+      title: "Analytical infra in local dev",
+      description:
+        "Picking ClickHouse, Redpanda, and Temporal is the easy part. Wiring them together end-to-end is where the time goes — and this infra defaults to cloud. You want the full stack running locally so the agent can break things, read what broke, and fix it in the same loop.",
+      examples: ["Docker containers for ClickHouse + Redpanda + Temporal, wired up and integrated manually or by your agent"],
+    },
+    {
+      title: "Code-based interfaces",
+      description:
+        "Coding agents are great at code. Not usually infra and middleware. ClickHouse, Redpanda, Temporal, Langfuse weren't built for coding agents. Without agent-friendly interfaces, your agent guesses at infrastructure state instead of reading it.",
+      examples: ["Install each infra component's CLI, point the agent to the docs, try to condense the context to fit in the window"],
+    },
+    {
+      title: "Schema management and data modeling",
+      description:
+        "When the agent changes a data model, the change needs to propagate through the stack — database schema, API layer, MCP tools, type system. Without it, changes silently fall out of sync.",
+      examples: ["Agent-issued DDLs against each infrastructure component, and/or TypeScript ORM for schema management (limited options for OLAP)"],
+    },
+    {
+      title: "Logs and errors as agent context",
+      description:
+        "Application errors are easy. Infrastructure errors — bad queries, failed workflows, schema mismatches — are harder to surface. If the agent can't read the stack, it can't fix it.",
+      examples: ["SQL LSP, separate MCPs per component, or manual log-feeding per iteration"],
+    },
+    {
+      title: "Specialized agent skills",
+      description:
+        "Each infra component has its own best practices. So does data modeling, schema design, and OLAP query patterns. Without skills that encode this knowledge, the agent starts from scratch every time.",
+      examples: ["Skills per infra component, data engineering best-practice skill files, hand-written AGENTS.md"],
+    },
+  ]}
+/>
+
+## What's Included
+
+<BulletPointsCard
+  title="What you get"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Best-in-class OSS infrastructure",
+      description:
+        "ClickHouse, Redpanda, Temporal, Langfuse — pre-wired and running. Your agent starts with the right stack. You don't pick components or figure out how to connect them.",
+    },
+    {
+      title: "MooseStack TypeScript/Python Framework",
+      description:
+        "Schemas, materialized views, ingest pipelines, and APIs as typed TypeScript or Python objects. The full stack is readable and writable by your coding agent without any database-specific tooling.",
+    },
+    {
+      title: "MooseStack CLI",
+      description:
+        "Unified CLI for all your analytical infra. Agent-friendly command-line interface for running queries, inspecting tables, and validating infrastructure state. Built to work in agentic loops, not just human terminals.",
+    },
+    {
+      title: "Local Dev Server",
+      description:
+        "The full stack running locally in Docker. Edit a data model, the table schema updates, the MCP tools reflect the change. The agent iterates against a live system, not a guess about what a live system would do.",
+    },
+    {
+      title: "MCP Server + SQL Language Server",
+      description:
+        "Live schema introspection, query execution, log access, SQL validation — all surfaced to the agent without leaving the editor. The agent reads the running stack, not just the source files.",
+    },
+    {
+      title: "Agent Skills",
+      description:
+        "ClickHouse and data engineering best practices packaged as invocable skills: primary key design, LowCardinality usage, ORDER BY strategy, materialized view patterns. The expertise your agent needs, already written down.",
+    },
+  ]}
+/>
 
 ## Get Started
 
@@ -37,32 +140,32 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
     orientation="horizontal"
   />
   <CTACard
-    title="Start with your existing ClickHouse database"
-    description="Works with your current data - zero migration required"
-    ctaLink="/moosestack/getting-started/from-clickhouse"
-    Icon="Database"
+    title="Templates"
+    description="Start from a battle-tested template with all infra and middleware pre-wired"
+    ctaLink="/templates"
+    Icon="Template"
     variant="default"
     orientation="horizontal"
   />
   <CTACard
-    title="Bootstrap with a Reference Application"
-    description="Start with a reference application for integrating Moose with complex microservices architectures"
-    ctaLink="https://github.com/514-labs/area-code"
-    Icon="BrandGithub"
+    title="Guides"
+    description="Step-by-step guides for building production analytical applications"
+    ctaLink="/guides"
+    Icon="BookOpen"
     variant="default"
     orientation="horizontal"
   />
 </CTACards>
 
-## Everything as Code
+## The Framework
 
-Declare all infrastructure (e.g. ClickHouse tables, Redpanda streams, APIs, etc.) and pipelines in pure TypeScript or Python. Your code auto-wires everything together, so no integration boilerplate needed.
+The TypeScript/Python framework is how you define your analytical infrastructure as code — schemas, materialized views, streams, workflows, and APIs as typed objects. Your code auto-wires everything together; no integration boilerplate needed.
 
 <LanguageTabs items={["TypeScript", "Python"]}>
   <LanguageTabContent value="typescript">
 ```typescript
 import { Key, OlapTable, Stream, IngestApi, Api } from "@514labs/moose-lib";
- 
+
 interface DataModel {
   primaryKey: Key<string>;
   name: string;
@@ -70,23 +173,23 @@ interface DataModel {
 
 // Create a ClickHouse table
 export const clickhouseTable = new OlapTable<DataModel>("TableName");
- 
+
 // Create a Redpanda streaming topic
 export const redpandaTopic = new Stream<DataModel>("TopicName", {
   destination: clickhouseTable,
 });
- 
+
 // Create an ingest API endpoint
 export const ingestApi = new IngestApi<DataModel>("post-api-route", {
   destination: redpandaTopic,
 });
- 
+
 // Create analytics API endpoint
 interface QueryParams {
   limit?: number;
 }
 
-export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route", 
+export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route",
   async ({limit = 10}: QueryParams, {client, sql}) => {
     const result = await client.query.execute(sql.statement`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`);
     return await result.json();
@@ -98,326 +201,98 @@ export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route",
 ```python
 from moose_lib import Key, OlapTable, Stream, StreamConfig, IngestApi, IngestApiConfig, Api
 from pydantic import BaseModel
- 
+
 class DataModel(BaseModel):
     primary_key: Key[str]
     name: str
- 
+
 # Create a ClickHouse table
 clickhouse_table = OlapTable[DataModel]("TableName")
- 
+
 # Create a Redpanda streaming topic
 redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
     destination=clickhouse_table,
 ))
- 
+
 # Create an ingest API endpoint
 ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
     destination=redpanda_topic,
 ))
- 
+
 # Create a analytics API endpoint
 class QueryParams(BaseModel):
     limit: int = 10
- 
+
 def handler(client, params: QueryParams):
     return client.query.execute("SELECT * FROM {table: Identifier} LIMIT {limit: Int32}", {
         "table": clickhouse_table.name,
         "limit": params.limit,
     })
- 
+
 analytics_api = Api[QueryParams, DataModel]("get-api-route", query_function=handler)
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-## Core Concepts
+The framework covers four module categories and two tooling commands:
 
-<StaggeredCards>
-  <StaggeredCard>
-    <StaggeredContent
-      title="Data Modeling"
-      description="Model all of your infrastructure in native TypeScript or Python. Share the same types across all components."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/data-modeling",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="ts"
-        filename="models.ts"
-        variant="ide"
-        className="h-[320px]"
-      >
-{[
-  "interface Event {",
-  "  id: Key<string>;",
-  "  name: string;",
-  "  createdAt: Date;",
-  "}",
-  "",
-  "interface AggregatedEvent {",
-  "  count: number;",
-  "  name: string;",
-  "}",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-  <Separator />
-  <StaggeredCard>
-    <StaggeredContent
-      title="Local Development Environment"
-      description="Run your entire analytical backend on your laptop, hot reloading schema migrations as you work."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/local-dev-environment",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="bash"
-        filename="Terminal"
-        variant="terminal"
-        className="h-[320px]"
-      >
-{[
-  "# Start local dev server",
-  "moose dev",
-  "",
-  "⡏ Starting local infrastructure",
-  "  Successfully started containers",
-  "  Validated clickhousedb-1 docker container",
-  "  Validated redpanda-1 docker container",
-  "  Successfully validated red panda cluster",
-  "  Validated temporal docker container",
-  "  Successfully ran local infrastructure",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-</StaggeredCards>
-
-## Modules
-
-<StaggeredCards>
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="OLAP"
-      description="Store and query data with ClickHouse's columnar engine—100x faster than traditional databases for analytics. Manage tables, materialized views, and data migrations in code."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/olap",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="ts"
-        filename="olap.ts"
-        variant="ide"
-        className="h-[320px]"
-      >
-{[
-  "const table = new OlapTable<Event>(\"events\");",
-  "",
-  "const mv = new MaterializedView<AggregatedEvent>({",
-  "  selectStatement: sql.statement`",
-  "    SELECT count(*) as count, name",
-  "    FROM ${table}",
-  "    GROUP BY name",
-  "  `,",
-  "  selectTables: [table],",
-  "  tableName: \"events\",",
-  "  materializedViewName: \"aggregated_events\"",
-  "});",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-  <Separator />
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="Streaming"
-      description="Build real-time data pipelines with Kafka/Redpanda streams and transformations in code."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/streaming",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="ts"
-        filename="streaming.ts"
-        variant="ide"
-        className="h-[320px]"
-      >
-{[
-  "const stream = new Stream<Event>(\"events\", {",
-  "  destination: table,",
-  "});",
-  "",
-  "stream.addConsumer((event) => {",
-  "  console.log(event);",
-  "});",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-  <Separator />
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="Workflows"
-      description="Build ETL pipelines and task orchestration with in-memory workflow code."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/workflows",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="ts"
-        filename="workflows.ts"
-        variant="ide"
-        className="h-[320px]"
-      >
-{[
-  "const etl = new Workflow(\"my_etl\", {",
-  "  startingTask: startEtl,",
-  "  schedule: \"@every 1h\",",
-  "  retries: 3,",
-  "});",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-  <Separator />
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="APIs"
-      description="Type-safe ingestion and query endpoints with auto-generated OpenAPI docs."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/apis",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="ts"
-        filename="apis.ts"
-        variant="ide" 
-        className="h-[320px]"
-      >
-{[
-  "const postEvent = new IngestApi<Event>(\"post-event\", {",
-  "  destination: stream,",
-  "});",
-  "",
-  "const getEvents = new Api<Params, Event>(\"get-events\", {",
-  "  async handler({limit = 10}, {client, sql}) {",
-  "    // query database and return results",
-  "    return await client.query.execute(sql.statement`",
-  "      SELECT * FROM events LIMIT ${limit}",
-  "    `);",
-  "  }",
-  "});",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-</StaggeredCards>
-
-<Callout title="Modular Design" type="info">
-  Each module is independent and can be used on its own. You can start with one capability and incrementally adopt more over time.
-</Callout>
-
-## Tooling
-
-<StaggeredCards>
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="Build"
-      description="Easily package up your application for deploying to production."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/deploying",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="bash"
-        filename="Terminal"
-        variant="terminal"
-        className="h-[320px]"
-      >
-{[
-  "# Build for production",
-  "moose build",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-  <Separator />
-  <StaggeredCard>
-    <StaggeredContent
-      isMooseModule={true}
-      title="Migrate"
-      description="Preview and validate infrastructure changes before deployment with detailed schema diffs, migration planning, and rollback capabilities."
-      cta={{
-        label: "Learn more",
-        href: "/moosestack/migrate",
-        variant: "outline",
-      }}
-    />
-    <StaggeredCode>
-      <CodeEditorWrapper
-        language="bash"
-        filename="Terminal"
-        variant="terminal"  
-        className="h-[320px]"
-      >
-{[
-  "# Create a plan",
-  "moose plan",
-  "",
-  "# Example plan output:",
-  "  ~ Table events with column changes: [",
-  "    Added(",
-  "      Column { ",
-  "        name: \"status\", ",
-  "        data_type: String,",
-  "        required: true, ",
-  "        unique: false, ",
-  "        primary_key: false, ",
-  "        default: None ",
-  "      })] ",
-  "    and order by changes: OrderByChange { ",
-  "      before: [], after: [] ",
-  "    }",
-].join("\n")}
-      </CodeEditorWrapper>
-    </StaggeredCode>
-  </StaggeredCard>
-</StaggeredCards>
+<CTACards rows={3} columns={2}>
+  <CTACard
+    title="OLAP"
+    description="ClickHouse tables, materialized views, and data migrations"
+    ctaLink="/moosestack/olap"
+    Icon="Database"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Streaming"
+    description="Real-time ingest pipelines with Kafka/Redpanda"
+    ctaLink="/moosestack/streaming"
+    Icon="Activity"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Workflows"
+    description="ETL pipelines and task orchestration via Temporal"
+    ctaLink="/moosestack/workflows"
+    Icon="GitBranch"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="APIs"
+    description="Type-safe ingestion and query endpoints"
+    ctaLink="/moosestack/apis"
+    Icon="Api"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Build"
+    description="Package your application for production deployment"
+    ctaLink="/moosestack/deploying"
+    Icon="Package"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Migrate"
+    description="Preview and apply schema changes safely"
+    ctaLink="/moosestack/migrate"
+    Icon="ArrowRight"
+    variant="default"
+    orientation="horizontal"
+  />
+</CTACards>
 
 ## Technology Partners
 
 - [ClickHouse](https://clickhouse.com/) (Online Analytical Processing (OLAP) Database)
 - [Redpanda](https://redpanda.com/) (Streaming)
 - [Temporal](https://temporal.io/) (Workflow Orchestration)
-- [Redis](https://redis.io/) (Internal State Management) 
+- [Redis](https://redis.io/) (Internal State Management)
 
 <Callout type="info" title="Managed MooseStack in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Fiveonefour hosting" compact>
   Want this managed in production for you? Check out Fiveonefour hosting (from the makers of MooseStack).
