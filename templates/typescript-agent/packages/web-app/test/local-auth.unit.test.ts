@@ -74,12 +74,12 @@ describe("createLocalAccessProvider", () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      email: "admin@templae.com",
+      email: "admin@template.com",
       password: "admin-test-password",
     });
 
     expect(user).toMatchObject({
-      email: "admin@templae.com",
+      email: "admin@template.com",
       accessRole: ACCESS_ROLE_ADMIN_DEBUG,
       provider: "local",
     });
@@ -107,7 +107,7 @@ describe("createLocalAccessProvider", () => {
     const authorize = getProviderAuthorize();
 
     const user = await authorize?.({
-      email: "admin@templae.com",
+      email: "admin@template.com",
       password: "admin-test-password",
     });
 
@@ -135,10 +135,10 @@ describe("local mock user helpers", () => {
   it("hides the admin debug account outside local development", () => {
     process.env.NODE_ENV = "production";
 
-    expect(getLocalMockUser("admin@templae.com")).toBeUndefined();
+    expect(getLocalMockUser("admin@template.com")).toBeUndefined();
     expect(
       getVisibleLocalMockUsers().some(
-        (mockUser) => mockUser.email === "admin@templae.com",
+        (mockUser) => mockUser.email === "admin@template.com",
       ),
     ).toBe(false);
   });

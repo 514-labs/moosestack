@@ -418,7 +418,7 @@ function getLocalPasswordEnvVar(email: string) {
       return "LOCAL_MOCK_PASSWORD_ORG_A_USER";
     case "user2@orgB.com":
       return "LOCAL_MOCK_PASSWORD_ORG_B_USER";
-    case "admin@templae.com":
+    case "admin@template.com":
       return "LOCAL_MOCK_PASSWORD_ADMIN";
     default:
       throw new Error(`No mock password env var is defined for ${email}`);
@@ -684,7 +684,7 @@ describe("TypeScript Agent Template E2E", function () {
     expect(html).to.include("Sign in");
     expect(html).to.include("Mock accounts");
     expect(html).to.include("user1@orgA.com");
-    expect(html).to.include("admin@templae.com");
+    expect(html).to.include("admin@template.com");
 
     const statusResponse = await fetch(`${webAppUrl}/api/chat/status`);
     expect(statusResponse.status).to.equal(200);
@@ -937,7 +937,7 @@ describe("TypeScript Agent Template E2E", function () {
   });
 
   it("should allow Admin Debug to inspect cross-organization data", async function () {
-    const adminAuth = await signInLocalAccess(projectDir, "admin@templae.com");
+    const adminAuth = await signInLocalAccess(projectDir, "admin@template.com");
     expect(adminAuth.session.user.accessRole).to.equal("admin_debug");
     expect(adminAuth.session.user.orgId).to.equal(undefined);
     expect(adminAuth.session.idToken).to.be.a("string");
@@ -995,7 +995,7 @@ describe("TypeScript Agent Template E2E", function () {
 
     const adminHtml = await adminDashboardResponse.text();
     expect(adminHtml).to.include("Debug dashboard across all seeded data");
-    expect(adminHtml).to.include("Signed in as admin@templae.com");
+    expect(adminHtml).to.include("Signed in as admin@template.com");
     expect(adminHtml).to.include("org_a");
     expect(adminHtml).to.include("org_b");
     expect(adminHtml).to.include("Brake alerts increased by 14% this week");

@@ -215,7 +215,7 @@ Local development uses the built-in local mock login flow:
 
 - `MOOSE_AUTH_MODE=local` enables the mock email/password sign-in page in the web app
 - org-scoped mock users sign in with short-lived JWTs carrying `org_id`
-- `admin@templae.com` signs in with a short-lived JWT carrying `access_role=admin_debug`
+- `admin@template.com` signs in with a short-lived JWT carrying `access_role=admin_debug`
 - Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
 - org-scoped users stay limited by the same row policy across dashboard APIs and MCP tools
 - the admin mock user bypasses tenant scoping for local troubleshooting only
@@ -223,7 +223,7 @@ Local development uses the built-in local mock login flow:
 Local mock accounts included by default:
 - `user1@orgA.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_A_USER`
 - `user2@orgB.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_B_USER`
-- `admin@templae.com` with password stored in `LOCAL_MOCK_PASSWORD_ADMIN`
+- `admin@template.com` with password stored in `LOCAL_MOCK_PASSWORD_ADMIN`
 
 ## Environment Variables
 

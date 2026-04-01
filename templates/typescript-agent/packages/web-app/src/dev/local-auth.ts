@@ -36,8 +36,8 @@ export const LOCAL_MOCK_USERS = [
   },
   {
     id: "admin",
-    name: "admin@templae.com",
-    email: "admin@templae.com",
+    name: "admin@template.com",
+    email: "admin@template.com",
     passwordEnvVar: "LOCAL_MOCK_PASSWORD_ADMIN",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
     description:
