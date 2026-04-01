@@ -132,9 +132,10 @@ def get_views() -> Dict[str, "View"]:
     return _views
 
 
-def get_view(name: str) -> Optional["View"]:
-    """Get a registered view by name."""
-    return _views.get(name)
+def get_view(name: str, database: Optional[str] = None) -> Optional["View"]:
+    """Get a registered view by name, optionally scoped to a database."""
+    key = f"{database}::{name}" if database else name
+    return _views.get(key)
 
 
 # Backward compatibility aliases (deprecated)
