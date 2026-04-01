@@ -1,6 +1,7 @@
 import "server-only";
 
 const MCP_ENDPOINT_PATH = "/tools";
+const DEFAULT_BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 function missingEnvError(envVarName: string, guidance: string): Error {
   return new Error(`${envVarName} is not set. ${guidance}`);
@@ -141,16 +142,7 @@ export function getAwsRegion(): string {
 }
 
 export function getBedrockModelId(): string {
-  const value = process.env.BEDROCK_MODEL_ID;
-
-  if (!value) {
-    throw missingEnvError(
-      "BEDROCK_MODEL_ID",
-      "Add it to `packages/web-app/.env.local` when `AI_PROVIDER=bedrock`.",
-    );
-  }
-
-  return value;
+  return process.env.BEDROCK_MODEL_ID ?? DEFAULT_BEDROCK_MODEL_ID;
 }
 
 export function getAuthMode(): "local" | "oidc" {

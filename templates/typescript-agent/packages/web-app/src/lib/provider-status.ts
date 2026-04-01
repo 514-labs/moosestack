@@ -24,10 +24,6 @@ function getBedrockReadinessDetails() {
     return "Set AWS_REGION before using Amazon Bedrock.";
   }
 
-  if (!process.env.BEDROCK_MODEL_ID) {
-    return "Set BEDROCK_MODEL_ID before using Amazon Bedrock.";
-  }
-
   return undefined;
 }
 

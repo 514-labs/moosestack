@@ -84,9 +84,3 @@ export function getSessionAccess(
 
   return undefined;
 }
-
-export function isAdminSessionAccess(
-  access: SessionAccess,
-): access is AdminDebugSessionAccess {
-  return access.kind === "admin";
-}

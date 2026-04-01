@@ -16,6 +16,7 @@ describe("env-vars", () => {
     delete process.env.MCP_SERVER_URL;
     delete process.env.ANTHROPIC_MODEL_ID;
     delete process.env.OPENAI_MODEL_ID;
+    delete process.env.BEDROCK_MODEL_ID;
     delete process.env.OIDC_ISSUER;
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
@@ -65,10 +66,14 @@ describe("env-vars", () => {
     process.env.ANTHROPIC_MODEL_ID = "claude-custom";
     process.env.OPENAI_MODEL_ID = "gpt-custom";
 
-    const { getAnthropicModelId, getOpenAiModelId } = await loadEnvVarsModule();
+    const { getAnthropicModelId, getOpenAiModelId, getBedrockModelId } =
+      await loadEnvVarsModule();
 
     expect(getAnthropicModelId()).toBe("claude-custom");
     expect(getOpenAiModelId()).toBe("gpt-custom");
+    expect(getBedrockModelId()).toBe(
+      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    );
   });
 
   it("fails fast when OIDC configuration is partial", async () => {

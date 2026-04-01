@@ -18,7 +18,7 @@ This package owns:
 | Path | Purpose |
 | --- | --- |
 | `app/index.ts` | Public entrypoint. Export Moose-discovered primitives here. |
-| `app/auth/` | JWT claim names plus tenant/admin access-context helpers. |
+| `app/auth/` | JWT claim names plus org/admin access-context helpers. |
 | `app/ingest/` | `IngestPipeline` declarations plus explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and dashboard/read-model composition. |
 | `data/clickhouse/` | Low-level readonly ClickHouse helpers. |
@@ -43,7 +43,7 @@ pnpm test:unit -- packages/moosestack-service/test
 
 ## Notes
 
-- Keep tenant boundaries enforced here, not in the web app.
+- Keep organization boundaries enforced here, not in the web app.
 - Keep authentication and authorization helpers in `app/auth/` so route files stay thin.
 - Keep Moose semantic models in `app/semantic/` so the read layer is visible.
 - Keep the MCP schema surface allowlisted by default in `app/mcp/tool-access/`.

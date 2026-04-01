@@ -57,7 +57,7 @@
       "required": false
     },
     "BEDROCK_MODEL_ID": {
-      "description": "Required when AI_PROVIDER=bedrock",
+      "description": "Optional override when AI_PROVIDER=bedrock; defaults to us.anthropic.claude-haiku-4-5-20251001-v1:0",
       "required": false
     },
     "BEDROCK_GUARDRAIL_ID": {

@@ -24,7 +24,7 @@ This template is intentionally not "just Next.js with a few route handlers."
 That split matters once your app needs more than a thin UI over an existing API:
 
 - you want typed ingest models that become real tables and services instead of hand-written backend glue
-- you want row-level security and tenant scoping enforced close to the data
+- you want row-level security and org scoping enforced close to the data
 - you want a semantic layer for metrics, filters, and read models instead of burying analytics logic inside route handlers
 - you want the same backend surface to power dashboards, chat tools, and external MCP clients
 - you want the data plane to stay usable even if the frontend changes
@@ -93,7 +93,7 @@ Start with these files if you want to customize the pattern:
 - `pnpm` `10.33+`
 - `curl` for startup readiness checks
 - One local container runtime: Docker Desktop / Docker Engine, or Finch
-- Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials plus `BEDROCK_MODEL_ID`
+- Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials. `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
 
 `pnpm dev:start` runs the workspace build first, then auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
 
@@ -204,7 +204,7 @@ Then verify:
 
 - `http://localhost:3000` renders the landing page
 - local email/password sign-in works for the seeded mock users
-- org-scoped users only see their own records, while the local admin can inspect both tenants
+- org-scoped users only see their own records, while the local admin can inspect both organizations
 - streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
 - chat tool calls follow the same authenticated access scope as the dashboard
 - `http://localhost:4000/tools` requires a bearer JWT with `org_id`, or the local admin debug JWT with `access_role=admin_debug`
@@ -218,7 +218,7 @@ Local development uses the built-in local mock login flow:
 - `admin@template.com` signs in with a short-lived JWT carrying `access_role=admin_debug`
 - Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
 - org-scoped users stay limited by the same row policy across dashboard APIs and MCP tools
-- the admin mock user bypasses tenant scoping for local troubleshooting only
+- the admin mock user bypasses organization scoping for local troubleshooting only
 
 Local mock accounts included by default:
 - `user1@orgA.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_A_USER`
@@ -262,9 +262,9 @@ For local work, start with `pnpm env:prepare`, then update the provider-specific
 | --- | --- |
 | Anthropic | `ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL_ID` |
 | OpenAI | `OPENAI_API_KEY`, optional `OPENAI_MODEL_ID` |
-| Bedrock | `AWS_REGION`, `BEDROCK_MODEL_ID`, optional `AWS_PROFILE` |
+| Bedrock | `AWS_REGION`, optional `BEDROCK_MODEL_ID`, optional `AWS_PROFILE` |
 
-If `AI_PROVIDER=bedrock`, local development also needs AWS credential hints such as `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Otherwise the template marks Bedrock as unavailable and the chat panel stays disabled instead of failing silently.
+If `AI_PROVIDER=bedrock`, local development also needs AWS credential hints such as `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-haiku-4-5-20251001-v1:0`, so you only need to set it when overriding the default.
 
 When authoring custom MCP tools for Bedrock-backed chats, prefer `z.string()` plus explicit allowed-value descriptions over `z.enum()` in tool input schemas. Bedrock tool-schema compatibility is stricter than Anthropic/OpenAI, and this template keeps its built-in MCP tools on the safer string-based path.
 
@@ -330,7 +330,7 @@ Example:
       "transport": "http",
       "url": "http://localhost:4000/tools",
       "headers": {
-        "Authorization": "Bearer <tenant_jwt>"
+        "Authorization": "Bearer <org_or_admin_jwt>"
       }
     }
   }
@@ -339,7 +339,7 @@ Example:
 
 ## Files to Start With
 
-- `packages/moosestack-service/app/auth/` — JWT claim parsing plus tenant/admin access context helpers
+- `packages/moosestack-service/app/auth/` — JWT claim parsing plus org/admin access context helpers
 - `packages/moosestack-service/app/ingest/models.ts` — organization-scoped tables and row policies
 - `packages/moosestack-service/app/semantic/` — Moose semantic models and dashboard read composition
 - `packages/moosestack-service/app/http/dashboard/api.ts` — app-facing dashboard API endpoint
@@ -355,7 +355,7 @@ Example:
 - `packages/agent-observability-langfuse/src/index.ts` — reusable Langfuse trace collector implementation
 - `packages/agent-contracts/` — shared contracts between frontend and service
 - `packages/web-app/src/auth.ts` — authentication provider wiring plus optional OIDC
-- `packages/web-app/src/authz/` — session-level authorization helpers for tenant vs admin debug access
+- `packages/web-app/src/authz/` — session-level authorization helpers for org vs admin debug access
 - `packages/web-app/src/lib/id-token.ts` — shared ID token claim parsing
 - `packages/web-app/src/dev/` — development-only mock login users and guardrail stubs
 - `packages/web-app/src/lib/moose-service.ts` — authenticated service client for frontend reads
@@ -397,4 +397,4 @@ The workspace aliases point package imports like `agent-runtime`, `agent-contrac
 - `pnpm seed` requires the Moose service to be running.
 - `pnpm lint` runs Biome across the template and ESLint in the Next app.
 - `pnpm format` runs Biome formatting across the template.
-- The chat and dashboard follow the same authenticated access scope; org-scoped mock users see one tenant, while the admin mock user sees the seeded dataset across tenants.
+- The chat and dashboard follow the same authenticated access scope; org-scoped mock users see one organization, while the admin mock user sees the seeded dataset across organizations.

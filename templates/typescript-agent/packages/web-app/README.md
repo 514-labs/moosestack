@@ -22,7 +22,7 @@ It should not own:
 ## Key Areas
 
 - `src/auth.ts` — auth provider setup
-- `src/authz/` — authorization helpers for tenant vs admin-debug access
+- `src/authz/` — authorization helpers for org vs admin-debug access
 - `src/dev/` — development-only auth and guardrail mocks
 - `src/components/ai-elements/` — reusable conversation, message, prompt, reasoning, and source primitives
 - `src/features/chat/` — Moose-specific wrappers, tool renderers, and panel composition

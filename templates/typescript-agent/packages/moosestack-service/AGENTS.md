@@ -27,7 +27,7 @@ This package does not own:
 | `app/ingest/` | Explicit `OlapTable`, `Stream`, `IngestApi`, and row-policy declarations. |
 | `app/semantic/` | Moose `defineQueryModel()` declarations and read-model composition. |
 | `app/data/clickhouse/` | Low-level readonly ClickHouse execution helpers. |
-| `app/auth/` | JWT claim names plus tenant/admin access-context helpers. |
+| `app/auth/` | JWT claim names plus org/admin access-context helpers. |
 | `app/http/` | Frontend-facing HTTP APIs. |
 | `app/mcp/` | MCP server transport, tool registration, tool parsing, and allowlist policy. |
 | `seed/` | Seed SQL for local/demo data. |
