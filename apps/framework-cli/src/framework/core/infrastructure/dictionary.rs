@@ -497,7 +497,7 @@ impl DictionaryLayout {
                 write_buffer_size,
                 max_stored_keys,
             } => {
-                let mut params = vec![format!("PATH '{}'", path)];
+                let mut params = vec![format!("PATH '{}'", path.replace('\'', "\\'"))];
                 if let Some(v) = block_size {
                     params.push(format!("BLOCK_SIZE {}", v));
                 }
@@ -576,7 +576,7 @@ impl DictionaryLayout {
                 write_buffer_size,
                 max_stored_keys,
             } => {
-                let mut params = vec![format!("PATH '{}'", path)];
+                let mut params = vec![format!("PATH '{}'", path.replace('\'', "\\'"))];
                 if let Some(v) = block_size {
                     params.push(format!("BLOCK_SIZE {}", v));
                 }
@@ -1008,17 +1008,17 @@ impl OlapDictionary {
                 }
                 params.push(format!("TABLE '{}'", t.table));
                 if let Some(ref w) = t.where_clause {
-                    params.push(format!("WHERE '{}'", w));
+                    params.push(format!("WHERE '{}'", w.replace('\'', "\\'")));
                 }
                 if let Some(ref iq) = t.invalidate_query {
-                    params.push(format!("INVALIDATE_QUERY '{}'", iq));
+                    params.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
             DictionarySource::Query(q) => {
                 let mut params = vec![format!("QUERY '{}'", q.query.replace('\'', "\\'"))];
                 if let Some(ref iq) = q.invalidate_query {
-                    params.push(format!("INVALIDATE_QUERY '{}'", iq));
+                    params.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
@@ -1193,7 +1193,7 @@ impl OlapDictionary {
         ];
 
         if let Some(ref iq) = self.invalidate_query {
-            parts.push(format!("INVALIDATE_QUERY '{}'", iq));
+            parts.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
         }
 
         if let Some(settings) = self.settings_ddl() {
@@ -1490,7 +1490,10 @@ impl OlapDictionary {
                 DictionarySource::External(ext_source)
             }
             None => {
-                // Fallback: shouldn't happen in practice
+                // Fallback: shouldn't happen in practice — proto is missing source field
+                tracing::warn!(
+                    "OlapDictionary proto missing source field; defaulting to empty Table source"
+                );
                 DictionarySource::Table(DictionaryTableSource {
                     table: String::new(),
                     database: None,
@@ -2211,6 +2214,14 @@ mod tests {
                 size_in_cells: 1000,
                 max_threads_for_updates: None,
             },
+            DictionaryLayout::SsdCache {
+                path: "/var/lib/clickhouse/dict".to_string(),
+                block_size: None,
+                file_size: None,
+                read_buffer_size: None,
+                write_buffer_size: None,
+                max_stored_keys: None,
+            },
             DictionaryLayout::Direct,
             DictionaryLayout::IpTrie {
                 access_to_key_from_attributes: None,
@@ -2227,6 +2238,14 @@ mod tests {
             DictionaryLayout::ComplexKeyCache {
                 size_in_cells: 1000,
                 max_threads_for_updates: None,
+            },
+            DictionaryLayout::ComplexKeySsdCache {
+                path: "/var/lib/clickhouse/dict".to_string(),
+                block_size: None,
+                file_size: None,
+                read_buffer_size: None,
+                write_buffer_size: None,
+                max_stored_keys: None,
             },
             DictionaryLayout::ComplexKeyDirect,
         ];
