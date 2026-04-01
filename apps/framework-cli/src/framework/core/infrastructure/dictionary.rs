@@ -474,7 +474,10 @@ impl DictionaryLayout {
                 range_lookup_strategy,
             } => {
                 if let Some(v) = range_lookup_strategy {
-                    format!("LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY '{}'))", v)
+                    format!(
+                        "LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY '{}'))",
+                        escape_clickhouse_string(v)
+                    )
                 } else {
                     "LAYOUT(RANGE_HASHED())".to_string()
                 }
@@ -1040,6 +1043,9 @@ impl OlapDictionary {
                     if let Some(ref m) = h.method {
                         params.push(format!("METHOD '{}'", m));
                     }
+                    if let Some(ref w) = h.where_clause {
+                        params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
+                    }
                     format!("SOURCE(HTTP({}))", params.join(" "))
                 }
                 ExternalDictionarySource::ClickHouse(c) => {
@@ -1079,6 +1085,12 @@ impl OlapDictionary {
                     if let Some(ref w) = m.where_clause {
                         params.push(format!("WHERE '{}'", w));
                     }
+                    if let Some(ref iq) = m.invalidate_query {
+                        params.push(format!(
+                            "INVALIDATE_QUERY '{}'",
+                            escape_clickhouse_string(iq)
+                        ));
+                    }
                     format!("SOURCE(MYSQL({}))", params.join(" "))
                 }
                 ExternalDictionarySource::Postgresql(p) => {
@@ -1096,6 +1108,12 @@ impl OlapDictionary {
                     }
                     if let Some(ref w) = p.where_clause {
                         params.push(format!("WHERE '{}'", w));
+                    }
+                    if let Some(ref iq) = p.invalidate_query {
+                        params.push(format!(
+                            "INVALIDATE_QUERY '{}'",
+                            escape_clickhouse_string(iq)
+                        ));
                     }
                     format!("SOURCE(POSTGRESQL({}))", params.join(" "))
                 }
@@ -1230,9 +1248,7 @@ impl OlapDictionary {
     pub fn expanded_display(&self) -> String {
         format!(
             "OlapDictionary: {} (layout: {:?}, lifetime: {:?})",
-            self.name,
-            std::mem::discriminant(&self.layout),
-            std::mem::discriminant(&self.lifetime)
+            self.name, &self.layout, &self.lifetime
         )
     }
 
