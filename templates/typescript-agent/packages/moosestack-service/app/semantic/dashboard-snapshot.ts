@@ -6,6 +6,13 @@ import {
   dashboardRecentKnowledgeModel,
 } from "./dashboard";
 
+/**
+ * EXAMPLE_APP_ONLY:
+ * This dashboard snapshot composition is coupled to the seeded TenantKnowledge
+ * demo dashboard. Replace or remove it when you swap out the example data
+ * model, then search the repo for EXAMPLE_APP_ONLY to find the downstream demo
+ * wiring.
+ */
 export async function getDashboardSnapshot(
   queryClient: MooseUtils["client"]["query"],
 ): Promise<DashboardSnapshot> {

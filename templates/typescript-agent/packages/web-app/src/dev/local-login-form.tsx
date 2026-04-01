@@ -134,6 +134,9 @@ export function LocalLoginForm({
                   {" · "}
                   {scopeLabel}
                 </div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {mockUser.description}
+                </div>
               </div>
             );
           })}

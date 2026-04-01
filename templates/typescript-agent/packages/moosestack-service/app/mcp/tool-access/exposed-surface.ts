@@ -23,6 +23,10 @@ function isRuntimeTable(value: unknown): value is RuntimeTable {
 }
 
 const configuredTables = tenantIsolation.config.tables;
+// EXAMPLE_APP_ONLY: The exposed table set is derived from the seeded
+// TenantKnowledge demo model's row policy. Replace this when you swap out the
+// example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+// downstream demo wiring.
 const EXPOSED_TABLES = configuredTables.filter(isRuntimeTable);
 
 if (EXPOSED_TABLES.length !== configuredTables.length) {

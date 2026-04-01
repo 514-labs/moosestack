@@ -7,6 +7,10 @@ import { importPKCS8, SignJWT } from "jose";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
+// EXAMPLE_APP_ONLY: These local mock users mirror the seeded TenantKnowledge
+// demo organizations. Replace or remove them when you swap out the example data
+// model, then search the repo for EXAMPLE_APP_ONLY to find the downstream demo
+// wiring.
 const localCredentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -22,7 +26,8 @@ export const LOCAL_MOCK_USERS = [
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_a",
     orgName: "Org A",
-    description: "Organization-scoped access for Org A.",
+    description:
+      "Organization-scoped access for Org A with intentionally tiny demo counts (1 and 2).",
   },
   {
     id: "org-b-user-2",
@@ -32,7 +37,8 @@ export const LOCAL_MOCK_USERS = [
     accessRole: ACCESS_ROLE_TENANT,
     orgId: "org_b",
     orgName: "Org B",
-    description: "Organization-scoped access for Org B.",
+    description:
+      "Organization-scoped access for Org B with intentionally larger demo counts (50 and 1,024).",
   },
   {
     id: "admin",
@@ -41,7 +47,7 @@ export const LOCAL_MOCK_USERS = [
     passwordEnvVar: "LOCAL_MOCK_PASSWORD_ADMIN",
     accessRole: ACCESS_ROLE_ADMIN_DEBUG,
     description:
-      "Local-only admin access with read visibility across both seeded organizations.",
+      "Local-only admin access with read visibility across both the tiny and large seeded organizations.",
   },
 ] as const;
 

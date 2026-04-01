@@ -9,6 +9,10 @@ import {
   getDashboardSnapshot,
 } from "@/lib/moose-service";
 
+// EXAMPLE_APP_ONLY: The seeded dashboard copy and prompts in this file assume
+// the TenantKnowledge demo model. Replace or remove them when you swap out the
+// example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+// downstream demo wiring.
 interface MetricCardProps {
   label: string;
   value: string;
@@ -138,6 +142,12 @@ export default async function Home({
     snapshot.recentKnowledge.map((row) => row.category),
   ).size;
   const accessCardValue = access.kind === "admin" ? "All data" : access.orgName;
+  const seedDatasetNote =
+    access.kind === "admin" ?
+      "Org A uses intentionally tiny counts (1 and 2), while Org B uses intentionally larger counts (50 and 1,024)."
+    : access.orgId === "org_a" ?
+      "This example organization uses intentionally tiny counts (1 and 2)."
+    : "This example organization uses intentionally larger counts (50 and 1,024).";
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_30%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)/0.18))]">
@@ -209,8 +219,8 @@ export default async function Home({
                 <h2 className="text-xl font-semibold">Recent knowledge</h2>
                 <p className="text-sm text-muted-foreground">
                   {adminView ?
-                    "Latest seeded records across both organization datasets."
-                  : "Latest seeded records currently visible to this organization."
+                    `Latest seeded records across both organization datasets. ${seedDatasetNote}`
+                  : `Latest seeded records currently visible to this organization. ${seedDatasetNote}`
                   }
                 </p>
               </div>
@@ -269,8 +279,10 @@ export default async function Home({
                 </div>
                 <div className="rounded-2xl border p-3 text-sm text-muted-foreground">
                   {adminView ?
-                    "“Compare the newest signals across Org A and Org B.”"
-                  : "“Compare the newest support updates with the fleet health changes.”"
+                    "\"Compare Org A's 1 and 2-count updates with Org B's 50 and 1,024-count spikes.\""
+                  : access.orgId === "org_a" ?
+                    '"Summarize why this example organization looks low-volume."'
+                  : '"Summarize why this example organization looks high-volume."'
                   }
                 </div>
                 <div className="rounded-2xl border bg-muted/40 p-3 text-sm text-muted-foreground">

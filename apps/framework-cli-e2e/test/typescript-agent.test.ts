@@ -771,11 +771,11 @@ describe("TypeScript Agent Template E2E", function () {
 
     expect(orgARecords.rowCount).to.equal(2);
     expect(orgARecords.rows.map((row) => row.headline).join(" ")).to.include(
-      "Brake alerts increased by 14% this week",
+      "1 brake alert opened this week",
     );
     expect(
       orgARecords.rows.some((row) =>
-        row.headline.includes("Seattle hub utilization breached 92%"),
+        row.headline.includes("1,024 packages stalled at the Seattle hub"),
       ),
     ).to.equal(false);
 
@@ -790,7 +790,7 @@ describe("TypeScript Agent Template E2E", function () {
 
     expect(orgAHighPriorityRecords.rowCount).to.equal(1);
     expect(orgAHighPriorityRecords.rows[0]?.headline).to.include(
-      "Brake alerts",
+      "1 brake alert",
     );
 
     const orgBRecords = await callMcpTool<{
@@ -803,11 +803,11 @@ describe("TypeScript Agent Template E2E", function () {
 
     expect(orgBRecords.rowCount).to.equal(2);
     expect(orgBRecords.rows.map((row) => row.headline).join(" ")).to.include(
-      "Seattle hub utilization breached 92%",
+      "1,024 packages stalled at the Seattle hub",
     );
     expect(
       orgBRecords.rows.some((row) =>
-        row.headline.includes("Brake alerts increased by 14% this week"),
+        row.headline.includes("1 brake alert opened this week"),
       ),
     ).to.equal(false);
 
@@ -860,7 +860,7 @@ describe("TypeScript Agent Template E2E", function () {
     ).to.deep.equal(["org_a", "org_a"]);
     expect(
       orgASnapshot.recentKnowledge.some((row: { headline: string }) =>
-        row.headline.includes("Brake alerts increased by 14% this week"),
+        row.headline.includes("1 brake alert opened this week"),
       ),
     ).to.equal(true);
     expect(
@@ -879,13 +879,15 @@ describe("TypeScript Agent Template E2E", function () {
     const orgAHtml = await orgADashboardResponse.text();
     expect(orgAHtml).to.include("Org A knowledge dashboard");
     expect(orgAHtml).to.include("Signed in as user1@orgA.com");
-    expect(orgAHtml).to.include("Brake alerts increased by 14% this week");
+    expect(orgAHtml).to.include("1 brake alert opened this week");
     expect(orgAHtml).to.include("Org A only");
     expect(orgAHtml).to.include(
       "Which knowledge categories changed most recently?",
     );
     expect(orgAHtml).to.not.include("Multi-agent reference flow");
-    expect(orgAHtml).to.not.include("Seattle hub utilization breached 92%");
+    expect(orgAHtml).to.not.include(
+      "1,024 packages stalled at the Seattle hub",
+    );
 
     const orgBAuth = await signInLocalAccess(projectDir, "user2@orgB.com");
     expect(orgBAuth.session.user.orgId).to.equal("org_b");
@@ -908,7 +910,7 @@ describe("TypeScript Agent Template E2E", function () {
     ).to.deep.equal(["org_b", "org_b"]);
     expect(
       orgBSnapshot.recentKnowledge.some((row: { headline: string }) =>
-        row.headline.includes("Seattle hub utilization breached 92%"),
+        row.headline.includes("1,024 packages stalled at the Seattle hub"),
       ),
     ).to.equal(true);
     expect(
@@ -927,13 +929,13 @@ describe("TypeScript Agent Template E2E", function () {
     const orgBHtml = await orgBDashboardResponse.text();
     expect(orgBHtml).to.include("Org B knowledge dashboard");
     expect(orgBHtml).to.include("Signed in as user2@orgB.com");
-    expect(orgBHtml).to.include("Seattle hub utilization breached 92%");
+    expect(orgBHtml).to.include("1,024 packages stalled at the Seattle hub");
     expect(orgBHtml).to.include("Org B only");
     expect(orgBHtml).to.include(
       "Which knowledge categories changed most recently?",
     );
     expect(orgBHtml).to.not.include("Multi-agent reference flow");
-    expect(orgBHtml).to.not.include("Brake alerts increased by 14% this week");
+    expect(orgBHtml).to.not.include("1 brake alert opened this week");
   });
 
   it("should allow Admin Debug to inspect cross-organization data", async function () {
@@ -963,10 +965,10 @@ describe("TypeScript Agent Template E2E", function () {
 
     expect(adminRecords.rowCount).to.equal(4);
     expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
-      "Brake alerts increased by 14% this week",
+      "1 brake alert opened this week",
     );
     expect(adminRecords.rows.map((row) => row.headline).join(" ")).to.include(
-      "Seattle hub utilization breached 92%",
+      "1,024 packages stalled at the Seattle hub",
     );
 
     const adminSnapshotResponse = await fetch(
@@ -998,8 +1000,8 @@ describe("TypeScript Agent Template E2E", function () {
     expect(adminHtml).to.include("Signed in as admin@template.com");
     expect(adminHtml).to.include("org_a");
     expect(adminHtml).to.include("org_b");
-    expect(adminHtml).to.include("Brake alerts increased by 14% this week");
-    expect(adminHtml).to.include("Seattle hub utilization breached 92%");
+    expect(adminHtml).to.include("1 brake alert opened this week");
+    expect(adminHtml).to.include("1,024 packages stalled at the Seattle hub");
   });
 
   it("should clear stale dashboard sessions instead of crashing the page", async function () {

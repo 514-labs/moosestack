@@ -1,6 +1,12 @@
 import { defineQueryModel, sql } from "@514labs/moose-lib";
 import { TenantKnowledgeTable } from "../ingest/models";
 
+/**
+ * EXAMPLE_APP_ONLY:
+ * These dashboard read models are coupled to the seeded TenantKnowledge demo
+ * model. Replace or remove them when you swap out the example data model, then
+ * search the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
+ */
 export const dashboardKnowledgeMetricsModel = defineQueryModel({
   name: "query_dashboard_knowledge_metrics",
   description:

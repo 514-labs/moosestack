@@ -24,6 +24,10 @@ function createMcpServer(context: Pick<AuthenticatedAccessContext, "moose">) {
     version: "1.0.0",
   });
 
+  // EXAMPLE_APP_ONLY: These registered semantic models are coupled to the
+  // seeded TenantKnowledge demo model. Replace them when you swap out the
+  // example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+  // downstream demo wiring.
   registerSemanticModelTools(
     server,
     [tenantKnowledgeMetricsModel, tenantKnowledgeRecordsModel],

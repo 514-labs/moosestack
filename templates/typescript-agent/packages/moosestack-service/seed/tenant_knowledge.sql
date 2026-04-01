@@ -1,3 +1,6 @@
+-- EXAMPLE_APP_ONLY: Starter records for the seeded TenantKnowledge demo model.
+-- Replace or remove this file when you swap out the example data model, then
+-- search the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
 INSERT INTO tenant_knowledge
   (record_id, org_id, category, priority, headline, details, source, timestamp)
 VALUES
@@ -6,8 +9,8 @@ VALUES
     'org_a',
     'fleet_health',
     'high',
-    'Brake alerts increased by 14% this week',
-    'North-east delivery vans show higher fault counts after the last maintenance cycle.',
+    '1 brake alert opened this week',
+    'Only 1 van reported a brake fault after maintenance in the north-east route.',
     'seed',
     now() - toIntervalHour(18)
   ),
@@ -16,8 +19,8 @@ VALUES
     'org_a',
     'support',
     'normal',
-    'Late-return tickets cluster around Toronto',
-    'Customer messages reference route congestion and delivery-window overflow.',
+    '2 late-return tickets opened in Toronto',
+    'Support logged 2 route-delay complaints tied to downtown traffic.',
     'seed',
     now() - toIntervalHour(8)
   ),
@@ -26,8 +29,8 @@ VALUES
     'org_b',
     'fleet_health',
     'normal',
-    'Cold-start battery incidents trending down',
-    'Battery replacement rollout reduced incidents across the western region.',
+    '50 cold-start battery incidents logged this month',
+    'Battery replacements reduced repeats, but 50 incidents still hit the western region.',
     'seed',
     now() - toIntervalHour(11)
   ),
@@ -36,8 +39,8 @@ VALUES
     'org_b',
     'operations',
     'high',
-    'Seattle hub utilization breached 92%',
-    'Dock turnover remains healthy, but staging delays are increasing during peak hours.',
+    '1,024 packages stalled at the Seattle hub',
+    'Dock turnover is steady, but 1,024 packages are waiting in overflow staging.',
     'seed',
     now() - toIntervalHour(3)
   );

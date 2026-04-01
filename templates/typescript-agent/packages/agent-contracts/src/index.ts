@@ -7,6 +7,10 @@ export type AccessRole =
   | typeof ACCESS_ROLE_TENANT
   | typeof ACCESS_ROLE_ADMIN_DEBUG;
 
+// EXAMPLE_APP_ONLY: These dashboard DTOs are coupled to the seeded
+// TenantKnowledge demo dashboard. Replace or remove them when you swap out the
+// example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+// downstream demo wiring.
 export interface KnowledgeMetrics {
   totalRecords: number;
   highPriorityRecords: number;

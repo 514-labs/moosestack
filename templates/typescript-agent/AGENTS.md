@@ -10,7 +10,7 @@ Two MCP servers run on the same host:
 This starter is opinionated for production-shaped agent work:
 
 - OIDC-compatible auth with mock email/password users in development
-- JWT-backed tenant isolation on `org_id`
+- JWT-backed org isolation on `org_id`
 - Moose-owned dashboard APIs backed by query-layer models
 - Shared agent runtime in `packages/agent-runtime`
 - Shared Langfuse collector in `packages/agent-observability-langfuse`
@@ -125,6 +125,16 @@ Every workspace package has a package-local `AGENTS.md`. Start with the guide fo
 | `vitest.config.ts` | Root Vitest config, project split, and source aliases |
 
 ## Common Tasks
+
+### Replacing the seeded example model
+
+- Search the repo for `EXAMPLE_APP_ONLY:`. That marker identifies code coupled
+  to the seeded `TenantKnowledge` demo model and dashboard.
+- Start with `packages/moosestack-service/app/ingest/models.ts`, then follow the
+  `EXAMPLE_APP_ONLY` markers through the semantic layer, MCP surface, seed
+  files, and frontend dashboard copy.
+- Replace or remove the marked files first, then add your own data model,
+  semantic models, and UI copy.
 
 ### Adding a data model
 

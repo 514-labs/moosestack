@@ -39,6 +39,8 @@ This package does not own:
 - Keep direct ClickHouse client calls inside `app/data/clickhouse/` so readonly settings and row-policy propagation stay centralized.
 - Keep Express transport code in `app/http/` or `app/mcp/`. Shared auth/context helpers belong in `app/auth/`, not beside individual routes.
 - Keep MCP allowlist and SQL validation logic in `app/mcp/tool-access/`. Do not mix policy code into the transport file.
+- Search for `EXAMPLE_APP_ONLY:` when replacing the seeded demo model. Those
+  markers show which service files are safe to delete or rewrite first.
 - If you change schemas, query patterns, or ClickHouse settings, use the ClickHouse Best Practices Skill and validate the resulting table/query shape.
 
 ## Testing

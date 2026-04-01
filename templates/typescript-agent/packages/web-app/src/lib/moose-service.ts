@@ -5,6 +5,10 @@ import {
 import { z } from "zod";
 import { getMooseServiceUrl } from "@/env-vars";
 
+// EXAMPLE_APP_ONLY: This dashboard snapshot schema is coupled to the seeded
+// TenantKnowledge demo dashboard. Replace or remove it when you swap out the
+// example data model, then search the repo for EXAMPLE_APP_ONLY to find the
+// downstream demo wiring.
 const DashboardSnapshotSchema = z.object({
   knowledgeMetrics: z.object({
     totalRecords: z.number(),

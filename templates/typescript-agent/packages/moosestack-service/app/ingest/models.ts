@@ -10,6 +10,12 @@ import {
 import type { tags } from "typia";
 import { ORG_ID_CLAIM, ORG_ID_COLUMN } from "../security/tenant-isolation";
 
+/**
+ * EXAMPLE_APP_ONLY:
+ * This file defines the seeded TenantKnowledge demo model and its Moose
+ * components. Replace or remove it when you swap out the example data model,
+ * then search the repo for EXAMPLE_APP_ONLY to find the downstream demo wiring.
+ */
 export interface TenantKnowledge {
   record_id: string & tags.Format<"uuid">;
   org_id: string & LowCardinality;

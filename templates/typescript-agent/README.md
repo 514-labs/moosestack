@@ -121,7 +121,7 @@ In a third terminal, seed starter data:
 pnpm seed
 ```
 
-`pnpm seed` prints a short summary showing how many records were inserted and the current totals per tenant.
+`pnpm seed` prints a short summary showing how many records were inserted and the current totals per organization.
 
 Open `http://localhost:3000`, sign in with one of the local mock accounts, look up the generated password in `packages/web-app/.env.local`, then use the dashboard and chat panel.
 
@@ -303,6 +303,8 @@ If `AI_PROVIDER=bedrock`:
 `pnpm seed` inserts:
 
 - organization-scoped knowledge records for `org_a` and `org_b` in `tenant_knowledge`
+- `org_a` uses intentionally tiny headline counts (`1`, `2`) so org-scoped reads look obviously small
+- `org_b` uses intentionally larger headline counts (`50`, `1,024`) so admin and cross-org comparisons look obviously different
 
 The dashboard reads Moose-owned app APIs over that table, and the chat UI can inspect it through MCP. Langfuse remains the observability destination for chat/model traces.
 
@@ -312,6 +314,32 @@ By default, the MCP surface is allowlisted:
 - the default exposed table set is derived from `tenantIsolation.config.tables`
 - `query_tenant_knowledge_metrics` exposes organization-scoped grouped metrics over the semantic layer
 - `list_tenant_knowledge_records` exposes organization-scoped recent/detail records over the semantic layer
+
+## Replacing the Seeded Example Model
+
+Search the repo for `EXAMPLE_APP_ONLY:`. That marker identifies code coupled to
+the seeded `TenantKnowledge` demo model and dashboard. When you replace the demo
+model with your own schema, those marked files are the places to delete or
+rewrite first.
+
+Start with this removal checklist:
+
+- `packages/moosestack-service/app/ingest/models.ts`
+- `packages/moosestack-service/app/semantic/knowledge.ts`
+- `packages/moosestack-service/app/semantic/dashboard.ts`
+- `packages/moosestack-service/app/semantic/dashboard-snapshot.ts`
+- `packages/moosestack-service/app/mcp/server.ts`
+- `packages/moosestack-service/app/mcp/tool-access/exposed-surface.ts`
+- `packages/moosestack-service/app/index.ts`
+- `packages/moosestack-service/seed/tenant_knowledge.sql`
+- `packages/moosestack-service/scripts/seed.mjs`
+- `packages/agent-contracts/src/index.ts`
+- `packages/web-app/src/lib/moose-service.ts`
+- `packages/web-app/src/app/page.tsx`
+- `packages/web-app/src/features/chat/components/composer/suggested-prompts.tsx`
+
+The template infrastructure can stay in place while you swap out the
+example-specific pieces above.
 
 ## External MCP Clients
 

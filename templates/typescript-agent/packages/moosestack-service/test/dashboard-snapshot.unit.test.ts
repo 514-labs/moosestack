@@ -34,8 +34,8 @@ describe("getDashboardSnapshot", () => {
         json: async () => [
           {
             orgId: "org_a",
-            headline: "Brake alerts increased by 14% this week",
-            category: "operations",
+            headline: "1 brake alert opened this week",
+            category: "fleet_health",
             priority: "high",
             source: "seed",
             timestamp: "2026-03-31 12:00:00",
@@ -59,7 +59,16 @@ describe("getDashboardSnapshot", () => {
       totalRecords: 2,
       highPriorityRecords: 1,
     });
-    expect(snapshot.recentKnowledge).toHaveLength(1);
+    expect(snapshot.recentKnowledge).toEqual([
+      {
+        orgId: "org_a",
+        headline: "1 brake alert opened this week",
+        category: "fleet_health",
+        priority: "high",
+        source: "seed",
+        timestamp: "2026-03-31 12:00:00",
+      },
+    ]);
 
     const metricsQuery = query.mock.calls[0]?.[0];
     expect(metricsQuery?.query).toContain("count(*)");
