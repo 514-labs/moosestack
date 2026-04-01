@@ -1,0 +1,124 @@
+---
+title: April 1, 2026
+description: Release notes for April 1, 2026
+commits:
+  moosestack: e2303ff47f45df628cc1feaab31cb2594643da2a
+  commercial: fa5607e844e1a36d37eced58f396d8268f7224f1
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# April 1, 2026
+
+Moose gains first-class AI agent integration with a new `moose mcp` stdio proxy, a VS Code onboarding extension, and the `moose harness init` scaffolding command. The query layer ships `getModelSchema()` for dynamic report-builder UIs, and the 514 CLI adds `clickhouse seed`, `deployment redeploy`, and `deployment wait` commands.
+
+<Callout type="info" title="Highlights">
+* **New:** `moose mcp` stdio proxy for AI agent integration (Claude Code, Codex, etc.)
+* **New:** VS Code extension for automatic CLI installation and Harness onboarding
+* **New:** `moose harness init` interactive scaffolding command
+* **New:** `getModelSchema()` — extract query model schemas for dynamic UI generation
+* **New:** `514 clickhouse seed` — seed preview branch tables from production
+* **Improved:** Finch, Podman, and nerdctl container runtime support in `moose dev`
+</Callout>
+
+## Moose
+
+### New Features
+
+**MCP proxy for AI agent integration** ([@LucioFranco](https://github.com/LucioFranco))
+  A new `moose mcp` command runs a stdio-based MCP proxy server that connects AI agents — such as Claude Code or Codex — to a running Moose dev server. The proxy forwards tool calls (like querying the data catalog or executing ClickHouse queries) over stdio, which is the standard transport for editor-integrated agents. Host and port are auto-detected from your project config.
+
+  ```bash
+  # Start your dev server
+  moose dev
+
+  # In another terminal, or via your editor's MCP config:
+  moose mcp
+  ```
+
+  Configure it in your editor's MCP settings by pointing to `moose mcp` as the command. The proxy auto-connects to `localhost:4000/mcp` by default, or you can override with `--host` and `--port`.
+
+**VS Code onboarding extension** ([@callicles](https://github.com/callicles))
+  A new "Fiveonefour" VS Code extension keeps the Moose and `514` CLIs installed and current. On every activation it runs the installer, detects CLI versions, and opens a Harness splash page with the current init command after a successful install or update. Supported on macOS, Linux, and VS Code Remote — WSL.
+
+**`moose harness init` scaffolding command** ([@callicles](https://github.com/callicles))
+  New `moose harness init` command for creating Moose Harness projects. Supports both an interactive wizard (zero-arg) and a fully non-interactive arg-driven mode for CI/CD. Templates include the new `typescript-agent` template with typed query model tools, prebuild steps, and improved onboarding output.
+
+  ```bash
+  # Interactive wizard
+  moose harness init
+
+  # Non-interactive
+  moose harness init my-project typescript-agent \
+    --location ./my-project \
+    --agent none \
+    --no-lsp
+  ```
+
+**Query model schema extraction with `getModelSchema`** ([@georgevanderson](https://github.com/georgevanderson))
+  A new `getModelSchema()` function extracts a JSON-serializable schema from any `QueryModel`, describing its metrics, dimensions, filters (with operators and optional distinct values), sortable fields, and defaults. Frontends can use this to dynamically build report-builder UIs, form controls, and filter panels without hardcoding model structure.
+
+  ```typescript
+  import { getModelSchema, getMooseUtils } from "@514labs/moose-lib";
+
+  // In a consumption API handler:
+  const { client } = await getMooseUtils();
+
+  // Extract schema with distinct filter values
+  const schema = await getModelSchema(myQueryModel, { client: client.query });
+
+  // schema.metrics → [{ id: "totalOrders", label: "totalOrders" }, ...]
+  // schema.dimensions → [{ id: "region", label: "region" }, ...]
+  // schema.filters → [{ id: "status", operators: ["eq", "in"], values: [...] }]
+  ```
+
+  Docs: [Semantic Layer](/moosestack/apis/semantic-layer)
+
+### Improvements
+
+- Alternative container runtime support: `moose dev` now works with Finch, Podman, and nerdctl in addition to Docker. Temporal versions are baked into compose files to work around nerdctl's lack of env var substitution. ([@LucioFranco](https://github.com/LucioFranco)) Docs: [Dev Environment](/moosestack/configuration/dev-environment)
+- Read-only query clients: `getMooseUtils({ readonly: true })` now enforces ClickHouse `readonly=2` on all queries, preventing accidental writes from consumption APIs and testing utilities. ([@LucioFranco](https://github.com/LucioFranco))
+- Improved `typescript-agent` template: typed query model tools replace raw `query_clickhouse`, workspace prebuild steps ensure dependencies are ready before dev entrypoints, and init output now shows start commands before seed commands. ([@callicles](https://github.com/callicles))
+
+### Bug Fixes
+
+- Fix materialized view migration failures when source tables span multiple ClickHouse databases — the CLI now correctly normalizes backtick-qualified table names during infra map comparison. ([@LucioFranco](https://github.com/LucioFranco))
+- Include the `migrations/` directory in Docker builds, fixing deployment failures for projects using SQL migrations. ([@phiSgr](https://github.com/phiSgr))
+- Fix the ordering of instructions shown after `moose init` — start commands now appear before seed commands. ([@callicles](https://github.com/callicles))
+
+## Fiveonefour Hosting
+
+### New Features
+
+**`514 clickhouse seed` command** ([@onelesd](https://github.com/onelesd))
+  Seed ClickHouse tables on preview branches from production or another source branch. Supports configurable row limits and WHERE clauses for targeted seeding.
+
+  ```bash
+  # Seed from production with a row limit
+  514 clickhouse seed --table events --limit 10000
+
+  # Seed from a specific branch with a filter
+  514 clickhouse seed --table users \
+    --from-branch staging \
+    --where "created_at > '2026-01-01'"
+  ```
+
+  Docs: [Branch Data Seeding](/hosting/workflow/branch-data-seeding)
+
+**`514 deployment redeploy` command** ([@onelesd](https://github.com/onelesd))
+  Re-trigger a deployment from the CLI with a progress spinner. Useful for recovering from transient failures without pushing a new commit.
+
+**`514 deployment wait` command** ([@onelesd](https://github.com/onelesd))
+  Block until a deployment reaches a terminal state, with a progress bar showing elapsed time. Designed for CI/CD pipelines that need to gate on deployment completion.
+
+### Improvements
+
+- `514 env list` now auto-detects the current git branch when no `--branch` flag is provided. The `--all` flag is replaced with `--platform` for showing platform-managed variables (ClickHouse, Redis credentials). ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- New guided project creation path for users building on existing ClickHouse, with step-by-step CLI installation and `moose init --from-clickhouse` instructions. ([@groy-514](https://github.com/groy-514))
+- Branch deployment limits removed for Bring Your Own Cloud (BYOC) organizations. ([@LucioFranco](https://github.com/LucioFranco))
+
+### Bug Fixes
+
+- Fix incorrect build and deployment status display when viewing a new branch of an existing project. ([@groy-514](https://github.com/groy-514))
+- Fix `514 link` showing the organization slug instead of the display name in confirmation and success messages. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
