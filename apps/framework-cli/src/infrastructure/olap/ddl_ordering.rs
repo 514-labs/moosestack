@@ -1,3 +1,4 @@
+use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
@@ -239,6 +240,29 @@ pub enum AtomicOlapOperation {
     DropRowPolicy {
         /// The row policy to drop
         policy: SelectRowPolicy,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Create a new ClickHouse dictionary (CREATE DICTIONARY IF NOT EXISTS)
+    CreateDictionary {
+        /// The dictionary to create
+        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Replace an existing dictionary (CREATE OR REPLACE DICTIONARY — zero-downtime update)
+    ReplaceDictionary {
+        /// Dictionary state before the update
+        before: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        /// Dictionary state after the update
+        after: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop an existing dictionary (DROP DICTIONARY IF EXISTS)
+    DropDictionary {
+        /// The dictionary to drop
+        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -512,6 +536,17 @@ impl AtomicOlapOperation {
                     policy: policy.clone(),
                 }
             }
+            AtomicOlapOperation::CreateDictionary { dict, .. } => {
+                SerializableOlapOperation::CreateDictionary { dict: dict.clone() }
+            }
+            AtomicOlapOperation::ReplaceDictionary { after, .. } => {
+                SerializableOlapOperation::ReplaceDictionary {
+                    dict: after.clone(),
+                }
+            }
+            AtomicOlapOperation::DropDictionary { dict, .. } => {
+                SerializableOlapOperation::DropDictionary { dict: dict.clone() }
+            }
         }
     }
 
@@ -623,6 +658,21 @@ impl AtomicOlapOperation {
                     id: policy.name.clone(),
                 }
             }
+            AtomicOlapOperation::CreateDictionary { dict, .. } => {
+                InfrastructureSignature::OlapDictionary {
+                    id: dict.id(default_database),
+                }
+            }
+            AtomicOlapOperation::ReplaceDictionary { after, .. } => {
+                InfrastructureSignature::OlapDictionary {
+                    id: after.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropDictionary { dict, .. } => {
+                InfrastructureSignature::OlapDictionary {
+                    id: dict.id(default_database),
+                }
+            }
         }
     }
 
@@ -708,6 +758,15 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropRowPolicy {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateDictionary {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ReplaceDictionary {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropDictionary {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -1673,6 +1732,44 @@ fn handle_view_update(before: &View, after: &View, default_database: &str) -> Op
     plan
 }
 
+/// Handles adding a dictionary operation
+fn handle_dictionary_add(dict: &OlapDictionary, default_database: &str) -> OperationPlan {
+    let pulls_from = dict.pulls_data_from(default_database);
+    let pushes_to = dict.pushes_data_to(default_database);
+    let setup_op = AtomicOlapOperation::CreateDictionary {
+        dict: dict.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+    OperationPlan::setup(vec![setup_op])
+}
+
+/// Handles removing a dictionary operation
+fn handle_dictionary_remove(dict: &OlapDictionary, default_database: &str) -> OperationPlan {
+    let pulls_from = dict.pulls_data_from(default_database);
+    let pushes_to = dict.pushes_data_to(default_database);
+    let teardown_op = AtomicOlapOperation::DropDictionary {
+        dict: dict.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+    OperationPlan::teardown(vec![teardown_op])
+}
+
+/// Handles updating a dictionary operation
+fn handle_dictionary_update(
+    before: &OlapDictionary,
+    after: &OlapDictionary,
+    default_database: &str,
+) -> OperationPlan {
+    let pulls_from = after.pulls_data_from(default_database);
+    let pushes_to = after.pushes_data_to(default_database);
+    let setup_op = AtomicOlapOperation::ReplaceDictionary {
+        before: before.clone(),
+        after: after.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+    OperationPlan::setup(vec![setup_op])
+}
+
 /// Resolve table dependencies for a SelectRowPolicy by matching each
 /// TableReference against the known tables map.
 fn resolve_policy_table_deps(
@@ -1897,6 +1994,15 @@ pub fn order_olap_changes(
                     dependency_info,
                 });
                 plan
+            }
+            OlapChange::OlapDictionary(Change::Added(dict)) => {
+                handle_dictionary_add(dict, default_database)
+            }
+            OlapChange::OlapDictionary(Change::Removed(dict)) => {
+                handle_dictionary_remove(dict, default_database)
+            }
+            OlapChange::OlapDictionary(Change::Updated { before, after }) => {
+                handle_dictionary_update(before, after, default_database)
             }
         };
 
