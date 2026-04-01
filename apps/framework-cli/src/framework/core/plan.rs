@@ -46,6 +46,7 @@ pub struct ReconciliationFilter {
     pub materialized_view_ids: HashSet<String>,
     pub view_ids: HashSet<String>,
     pub select_row_policy_ids: HashSet<String>,
+    pub dictionary_ids: HashSet<String>,
 }
 
 impl ReconciliationFilter {
@@ -61,6 +62,7 @@ impl ReconciliationFilter {
             materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
             view_ids: infra_map.views.keys().cloned().collect(),
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
+            dictionary_ids: infra_map.olap_dictionaries.keys().cloned().collect(),
         }
     }
 }
@@ -564,6 +566,39 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
 
+    // Handle Dictionary reconciliation (presence/absence only)
+    debug!("Reconciling Dictionaries");
+
+    // Remove missing dictionaries (in map but don't exist in reality)
+    for missing_dict_name in discrepancies.missing_dictionaries {
+        debug!(
+            "Removing missing dictionary from infrastructure map: {}",
+            missing_dict_name
+        );
+        // Dictionaries are keyed by id (database_name), find by name
+        if let Some(id) = reconciled_map
+            .olap_dictionaries
+            .iter()
+            .find(|(_, d)| d.name == missing_dict_name)
+            .map(|(id, _)| id.clone())
+        {
+            reconciled_map.olap_dictionaries.remove(&id);
+        }
+    }
+
+    // Unmapped dictionaries (exist in database but not in the current infrastructure map) are
+    // skipped: list_dictionaries() returns names only, so we cannot reconstruct a full
+    // OlapDictionary to adopt. The diff against the target map will produce an Added change
+    // which will re-create the dictionary on the next apply.
+    if !discrepancies.unmapped_dictionaries.is_empty() {
+        debug!(
+            "Skipping {} unmapped dictionaries — cannot adopt without full schema",
+            discrepancies.unmapped_dictionaries.len()
+        );
+    }
+
+    // Dictionaries have no mismatched entries (presence/absence only).
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -1007,6 +1042,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
@@ -1034,6 +1070,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 2: Non-empty filter = only include if in set
@@ -1099,6 +1136,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Reconcile the infrastructure map
@@ -1183,6 +1221,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1244,6 +1283,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1308,6 +1348,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1370,6 +1411,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1477,6 +1519,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1541,6 +1584,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1595,6 +1639,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1648,6 +1693,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1708,6 +1754,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
