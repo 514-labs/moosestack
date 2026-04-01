@@ -54,12 +54,14 @@ def _data_type_to_string(dt: DataType) -> str:
         return f"Map({key_str}, {val_str})"
     if isinstance(dt, DataEnum):
         if dt.values:
-            first = dt.values[0]
-            is_int_enum = isinstance(first.value, int)
-            enum_type = "Enum8" if is_int_enum else "Enum16"
+            enum_type = "Enum8" if len(dt.values) <= 255 else "Enum16"
             entries = ", ".join(
-                f"'{v.name}' = {v.value}" if isinstance(v.value, int) else f"'{v.name}'"
-                for v in dt.values
+                (
+                    f"'{v.name}' = {v.value}"
+                    if isinstance(v.value, int)
+                    else f"'{v.name}' = {i}"
+                )
+                for i, v in enumerate(dt.values)
             )
             return f"{enum_type}({entries})"
         return "String"
@@ -167,7 +169,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
         cluster_name: Optional[str] = None,
         metadata: Optional[dict] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
 

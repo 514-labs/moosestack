@@ -138,7 +138,7 @@ def get_view(name: str) -> Optional["View"]:
     return _views.get(name)
 
 
-def get_olap_dictionaries() -> dict:
+def get_olap_dictionaries() -> Dict[str, Any]:
     """Get all registered OLAP dictionaries."""
     return _olap_dictionaries
 

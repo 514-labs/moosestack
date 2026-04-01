@@ -110,7 +110,7 @@ before(async function () {
 
 describe("OlapDictionary E2E Tests", function () {
   describe("Plan output — dictionary creation", function () {
-    it("should generate Added operation for new OlapDictionary with HASHED layout", async function () {
+    it("should generate Added operation for new OlapDictionary with COMPLEX_KEY_HASHED layout", async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const { testProjectDir, cleanup } =
@@ -137,7 +137,7 @@ interface Lookup { label: string }
 export const LookupDict = new OlapDictionary<Lookup>("dict_e2e_hashed", {
   sourceTable: SourceTable,
   primaryKey: ["id"],
-  layout: { type: "HASHED" },
+  layout: { type: "COMPLEX_KEY_HASHED" },
   lifetime: { min: 10, max: 60 },
 });
 `.trim(),
@@ -175,13 +175,13 @@ export const LookupDict = new OlapDictionary<Lookup>("dict_e2e_hashed", {
         );
         const content = fs.readFileSync(dictTestsPath, "utf-8");
         const modified = content.replace(
-          `layout: { type: "HASHED" },\n  lifetime: { min: 10, max: 60 },`,
-          `layout: { type: "SPARSE_HASHED" },\n  lifetime: { min: 10, max: 60 },`,
+          /layout:\s*\{\s*type:\s*"COMPLEX_KEY_HASHED"\s*\}/,
+          `layout: { type: "COMPLEX_KEY_SPARSE_HASHED" }`,
         );
         if (content === modified) {
-          // If the exact string isn't found, skip layout-change assertions
+          // If the pattern isn't found, skip layout-change assertions
           console.log(
-            "⚠ Could not find HASHED layout string — skipping update assertion",
+            "⚠ Could not find COMPLEX_KEY_HASHED layout pattern — skipping update assertion",
           );
           return;
         }

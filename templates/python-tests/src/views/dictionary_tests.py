@@ -59,7 +59,7 @@ regions_table = OlapTable[Region](
 )
 
 
-# ─── Simple HASHED dictionary (single key) ────────────────────────────────────
+# ─── COMPLEX_KEY_HASHED dictionary (single string key) ───────────────────────
 
 
 class ProductLookup(BaseModel):
@@ -74,7 +74,7 @@ product_dict = OlapDictionary[ProductLookup](
     "dict_test_products_dict_py",
     source_table=products_table,
     primary_key=["product_id"],
-    layout={"type": "HASHED"},
+    layout={"type": "COMPLEX_KEY_HASHED"},
     lifetime={"min": 10, "max": 60},
     defaults={"category": "Unknown", "price_level": 0},
 )
@@ -139,7 +139,7 @@ protected_dict = OlapDictionary[ProductLookup](
     "dict_test_protected_py",
     source_table=products_table,
     primary_key=["product_id"],
-    layout={"type": "HASHED"},
+    layout={"type": "COMPLEX_KEY_HASHED"},
     lifetime=3600,
     life_cycle=LifeCycle.DELETION_PROTECTED,
 )

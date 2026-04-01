@@ -64,7 +64,7 @@ export const ProductDict = new OlapDictionary<ProductLookup>(
   {
     sourceTable: ProductsTable,
     primaryKey: ["productId"],
-    layout: { type: "HASHED" },
+    layout: { type: "COMPLEX_KEY_HASHED" },
     lifetime: { min: 10, max: 60 },
     defaults: { category: "Unknown", priceLevel: 0 },
   },
@@ -133,7 +133,7 @@ export const ProtectedDict = new OlapDictionary<ProductLookup>(
   {
     sourceTable: ProductsTable,
     primaryKey: ["productId"],
-    layout: { type: "HASHED" },
+    layout: { type: "COMPLEX_KEY_HASHED" },
     lifetime: 3600,
     lifeCycle: LifeCycle.DELETION_PROTECTED,
   },

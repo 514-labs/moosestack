@@ -61,7 +61,7 @@ interface ProductLookup {
 export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
   sourceTable: ProductsTable,      // auto-tracked dependency
   primaryKey: ["productId"],
-  layout: { type: "HASHED" },
+  layout: { type: "COMPLEX_KEY_HASHED" }, // string key → complex key layout
   lifetime: { min: 10, max: 15 }, // refresh every 10–15 seconds
   defaults: { category: "Unknown", priceLevel: 0 },
 });
@@ -69,8 +69,8 @@ export const ProductDict = new OlapDictionary<ProductLookup>("dict_products", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python filename="product_dictionary.py" copy
-from moose_lib import OlapTable, OlapConfig, OlapDictionary, OlapDictionaryConfig
-from moose_lib import HashedLayout, DictionaryLifetime
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.dmv2 import OlapDictionary
 from pydantic import BaseModel
 from typing import Annotated
 from moose_lib import ClickHouseInt
@@ -94,14 +94,12 @@ class ProductLookup(BaseModel):
     price_level: Annotated[int, ClickHouseInt("Int32")]
 
 product_dict = OlapDictionary[ProductLookup](
-    name="dict_products",
-    config=OlapDictionaryConfig(
-        source_table=products_table,       # auto-tracked dependency
-        primary_key=["product_id"],
-        layout=HashedLayout(),
-        lifetime=DictionaryLifetime(min=10, max=15),
-        defaults={"category": "Unknown", "price_level": 0},
-    ),
+    "dict_products",
+    source_table=products_table,       # auto-tracked dependency
+    primary_key=["product_id"],
+    layout={"type": "COMPLEX_KEY_HASHED"},  # string key → complex key layout
+    lifetime={"min": 10, "max": 15},        # refresh every 10–15 seconds
+    defaults={"category": "Unknown", "price_level": 0},
 )
 ```
   </LanguageTabContent>
