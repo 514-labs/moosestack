@@ -647,12 +647,16 @@ This is also the right moment to refine your chat example prompts — watch what
 
 ## 7. Configure Multitenancy & Row-Level Security
 
-If your app needs tenant isolation, the template has a working reference implementation. If your data is public or single-tenant, you can simplify — the easiest path is to keep one tenant and ignore the other rather than ripping auth out.
+The template's auth infrastructure (JWT-backed OIDC) is always in place. If your data is public or single-tenant, you can simplify — the easiest path is to keep one tenant and ignore the other rather than ripping auth out.
 
-- **Row policy definition**: `SelectRowPolicy` in `app/ingest/models.ts` — ties a table column to a JWT claim. Tables in the policy are automatically scoped in MCP tool queries and dashboard APIs
+If your app needs tenant isolation, the template has a working reference implementation:
+
+- **Row policy definition**: `SelectRowPolicy` in the template's `app/ingest/models.ts` — ties a table column to a JWT claim. Tables in the policy are automatically scoped in MCP tool queries and dashboard APIs
 - **Tenant context middleware**: `app/http/context/tenant-context.ts` extracts the tenant ID from the JWT and passes `rowPolicyOptions` to ClickHouse queries
 - **JWT configuration**: see the [JWT Authentication docs](https://docs.fiveonefour.com/moosestack/apis/auth) for setting up `moose.config.toml` with your identity provider's public key, issuer, and audience
 - **Local dev flow**: `packages/web-app/src/dev/local-auth.ts` mints short-lived JWTs for the local tenant picker
+
+> **ADS-B example:** ADS-B data is public — the agent-adsb app simplified to a single tenant ("NORAD Watch") and removed `SelectRowPolicy`. The JWT auth infrastructure remains in place.
 
 For production OIDC, set `MOOSE_AUTH_MODE=oidc`, update the `[jwt]` issuer/audience in `packages/moosestack-service/moose.config.toml`, and set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_TENANT_CLAIM`.
 
@@ -665,13 +669,35 @@ For production OIDC, set `MOOSE_AUTH_MODE=oidc`, update the `[jwt]` issuer/audie
 
 ## 8. Configure Guardrails
 
-Guardrails are Bedrock-only in this template. Set `BEDROCK_GUARDRAIL_ID` (and optionally `BEDROCK_GUARDRAIL_VERSION`) in `packages/web-app/.env.local`. Non-Bedrock providers (`anthropic`, `openai`) use `NoopGuardrailAdapter` — a silent pass-through.
+The template has built-in Bedrock Guardrails support. When `AI_PROVIDER=bedrock` and `BEDROCK_GUARDRAIL_ID` is set, every user prompt is checked via `ApplyGuardrailCommand` before the agent runs.
 
-Custom guardrail logic for any provider can be added by implementing the `GuardrailAdapter` interface from `packages/agent-runtime` (one method: `assessPrompt(prompt: string): Promise<GuardrailResult>`) and wiring it into `packages/web-app/src/lib/guardrails.ts`.
+### Set up Bedrock Guardrails
+
+1. In AWS Console, navigate to **Amazon Bedrock → Guardrails** and create a guardrail
+2. Configure content filters (toxicity, violence, etc.), topic policies, and PII detection
+3. Set environment variables in `packages/web-app/.env.local`:
+
+```bash
+AI_PROVIDER=bedrock
+BEDROCK_GUARDRAIL_ID=your-guardrail-id
+BEDROCK_GUARDRAIL_VERSION=DRAFT
+```
+
+### How it works
+
+The guardrail adapter in `packages/web-app/src/lib/guardrails.ts` selects the right implementation at startup:
+
+- **Bedrock + guardrail ID set**: `BedrockGuardrailAdapter` — checks every prompt via `ApplyGuardrailCommand` before the agent runs
+- **Bedrock without guardrail ID**: falls back to a development mock adapter
+- **Non-Bedrock provider** (`anthropic`, `openai`): `NoopGuardrailAdapter` — silent pass-through
+
+Custom guardrail logic for any provider can be added by implementing the `GuardrailAdapter` interface (one method: `assessPrompt(prompt: string): Promise<GuardrailResult>`).
 
 ### Verify
 
-Send a message that should trigger your content policy. Confirm the blocked response comes from the guardrail (`action: "GUARDRAIL_INTERVENED"` in the Langfuse trace), not the model.
+Restart the web app and check the chat status response for `guardrailsConfigured: true`. Test with a prompt designed to trigger your content policy — confirm the blocked response comes from the guardrail before model execution, and that the assessment is recorded in the Langfuse trace.
+
+![Guardrails configured and blocking a harmful prompt](/guides/production-ready-analytics-agent/agent-9.png)
 
 ---
 
