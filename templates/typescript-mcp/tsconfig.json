@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/moosestack-service" },
+    { "path": "packages/web-app" }
+  ]
+}

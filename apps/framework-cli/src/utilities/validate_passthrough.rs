@@ -1171,6 +1171,11 @@ impl<'a> DataModelVisitor<'a> {
             if let Some((column, state)) = self.columns.get_mut(&key) {
                 state.seen = true;
 
+                if column.materialized.is_some() || column.alias.is_some() {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                    continue;
+                }
+
                 map_serializer
                     .serialize_key(&key)
                     .map_err(A::Error::custom)?;
@@ -1199,7 +1204,12 @@ impl<'a> DataModelVisitor<'a> {
         }
         let mut missing_fields: Vec<String> = Vec::new();
         for (column, state) in self.columns.values_mut() {
-            if !state.seen && column.required && column.default.is_none() {
+            if !state.seen
+                && column.required
+                && column.default.is_none()
+                && column.materialized.is_none()
+                && column.alias.is_none()
+            {
                 let parent_path = parent_context_to_string(self.parent_context);
                 let path = add_path_component(parent_path, Either::Left(&column.name));
 
@@ -2661,5 +2671,138 @@ mod tests {
             .deserialize_any(&mut DataModelVisitor::new(&columns, None))
             .unwrap_err();
         assert!(err.to_string().contains("Invalid enum value"));
+    }
+
+    #[test]
+    fn test_materialized_and_alias_columns_not_required_in_payload() {
+        let columns = vec![
+            Column {
+                name: "timestamp".to_string(),
+                data_type: ColumnType::DateTime { precision: None },
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            },
+            Column {
+                name: "user_id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            },
+            Column {
+                name: "event_date".to_string(),
+                data_type: ColumnType::Date,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: Some("toDate(timestamp)".to_string()),
+                alias: None,
+            },
+            Column {
+                name: "user_hash".to_string(),
+                data_type: ColumnType::Int(IntType::UInt64),
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: Some("cityHash64(user_id)".to_string()),
+            },
+        ];
+
+        let json = r#"
+        {
+            "timestamp": "2024-09-10T17:34:51+00:00",
+            "user_id": "abc123"
+        }
+        "#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap();
+        let output: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert!(output.get("timestamp").is_some());
+        assert!(output.get("user_id").is_some());
+        assert!(
+            output.get("event_date").is_none(),
+            "MATERIALIZED column should be stripped"
+        );
+        assert!(
+            output.get("user_hash").is_none(),
+            "ALIAS column should be stripped"
+        );
+    }
+
+    #[test]
+    fn test_materialized_and_alias_values_stripped_when_provided() {
+        let columns = vec![
+            Column {
+                name: "timestamp".to_string(),
+                data_type: ColumnType::DateTime { precision: None },
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            },
+            Column {
+                name: "event_date".to_string(),
+                data_type: ColumnType::Date,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: Some("toDate(timestamp)".to_string()),
+                alias: None,
+            },
+        ];
+
+        let json = r#"
+        {
+            "timestamp": "2024-09-10T17:34:51+00:00",
+            "event_date": "2024-09-10"
+        }
+        "#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap();
+        let output: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert!(output.get("timestamp").is_some());
+        assert!(
+            output.get("event_date").is_none(),
+            "MATERIALIZED column value should be stripped even when provided"
+        );
     }
 }

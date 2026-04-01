@@ -85,9 +85,8 @@ function createBuildTsconfig(
       skipDefaultLibCheck: true,
       // Additional settings to handle module resolution conflicts
       allowSyntheticDefaultImports: true,
-      // In watch mode, we want to block on errors (noEmitOnError: true)
-      // In build mode, we allow emission with errors for Docker builds
-      noEmitOnError: watchMode,
+      // Block emission on errors so build and dev behave consistently
+      noEmitOnError: true,
       // Enable incremental compilation for faster rebuilds
       incremental: true,
       tsBuildInfoFile: path.join(outDir, ".tsbuildinfo"),
@@ -101,8 +100,6 @@ function createBuildTsconfig(
 function runSingleCompilation(moduleSystem: ModuleSystem): void {
   const moduleOptions = getModuleOptions(moduleSystem);
   const buildTsconfig = createBuildTsconfig(moduleOptions);
-  // Override noEmitOnError for single compilation (allow errors)
-  buildTsconfig.compilerOptions.noEmitOnError = false;
 
   writeFileSync(tempTsconfigPath, JSON.stringify(buildTsconfig, null, 2));
   console.log("Created temporary tsconfig with moose plugins...");
@@ -121,61 +118,11 @@ function runSingleCompilation(moduleSystem: ModuleSystem): void {
     tspcArgs.push("--outDir", outDir);
   }
 
-  try {
-    execFileSync("npx", tspcArgs, {
-      stdio: "inherit",
-      cwd: projectRoot,
-    });
-    console.log("TypeScript compilation complete.");
-  } catch (compileError: any) {
-    // TypeScript might exit with non-zero code even when noEmitOnError: false
-    // Check if output files were actually created
-    const sourceDir = getSourceDir();
-    const outputIndexPath = path.join(
-      projectRoot,
-      outDir,
-      sourceDir,
-      "index.js",
-    );
-
-    if (existsSync(outputIndexPath)) {
-      console.warn("");
-      console.warn("BUILD SAFETY WARNING");
-      console.warn(
-        "===============================================================",
-      );
-      console.warn(
-        "TypeScript detected type errors but JavaScript was still emitted.",
-      );
-      console.warn("");
-      console.warn(
-        "IMPORTANT: Type errors can indicate code that will fail at runtime.",
-      );
-      console.warn(
-        "While this build will succeed, the resulting code may crash when:",
-      );
-      console.warn("  - Functions receive unexpected argument types");
-      console.warn(
-        "  - Properties are accessed on potentially null/undefined values",
-      );
-      console.warn("  - Incorrect types flow through your application logic");
-      console.warn("");
-      console.warn(
-        "RECOMMENDATION: Run `npx tsc --noEmit` to review type errors before",
-      );
-      console.warn(
-        "deploying to production. Fix any errors that could cause runtime issues.",
-      );
-      console.warn(
-        "===============================================================",
-      );
-      console.warn("");
-      console.log("TypeScript compilation complete (with type warnings).");
-    } else {
-      console.error("Compilation failed - no output files generated.");
-      throw compileError;
-    }
-  }
+  execFileSync("npx", tspcArgs, {
+    stdio: "inherit",
+    cwd: projectRoot,
+  });
+  console.log("TypeScript compilation complete.");
 
   // Post-process ESM output to add .js extensions to relative imports
   if (moduleSystem === "esm") {

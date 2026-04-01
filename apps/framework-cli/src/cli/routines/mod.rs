@@ -121,6 +121,9 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -171,6 +174,7 @@ pub mod docker_packager;
 pub(crate) mod docs;
 pub mod feedback;
 pub mod format_query;
+pub mod harness;
 pub mod kafka_pull;
 pub mod logs;
 pub mod ls;
@@ -178,6 +182,7 @@ pub mod metrics_console;
 pub mod migrate;
 pub mod openapi;
 pub mod peek;
+pub mod project_init;
 pub mod ps;
 pub mod query;
 pub mod scripts;
@@ -468,6 +473,7 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    confirmation_policy: ConfirmationPolicy,
 ) -> anyhow::Result<()> {
     // Set global flag so ensure_typescript_compiled knows to skip
     // (tspc --watch handles compilation in dev mode)
@@ -542,7 +548,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, plan) = plan_changes(&*state_storage, &project).await?;
+    let (_, mut plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -703,6 +709,18 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
+    let approved_drops =
+        match rename_confirmation_gate(&mut plan.changes, &confirmation_policy).await? {
+            Some(drops) => drops,
+            None => return Ok(()),
+        };
+
+    let mut risk = classify_plan_risk(&plan.changes);
+    risk.exclude_approved_drops(&approved_drops);
+    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
+        return Ok(());
+    }
+
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
@@ -767,6 +785,7 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 ts_compile_handle,
+                confirmation_policy,
             )?;
         }
         SupportedLanguages::Python => {
@@ -782,6 +801,7 @@ pub async fn start_development_mode(
                 settings.clone(),
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
+                confirmation_policy,
             )?;
         }
     }
@@ -956,7 +976,7 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
+    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
     if execute_migration_yaml {
         migrate::execute_migration_plan(

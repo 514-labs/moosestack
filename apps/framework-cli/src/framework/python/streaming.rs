@@ -9,12 +9,14 @@ use super::executor;
 use crate::framework::python::executor::add_optional_arg;
 use crate::project::Project;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     project: &Project,
     project_location: &Path,
     kafka_config: &KafkaConfig,
     source_topic: &StreamConfig,
     target_topic: Option<&StreamConfig>,
+    dlq_topic: Option<&StreamConfig>,
     function_path: &Path,
     is_prod: bool,
 ) -> Result<Child, std::io::Error> {
@@ -42,6 +44,8 @@ pub fn run(
 
     let target_topic_str = target_topic.map(|t| t.as_json_string());
     add_optional_arg(&mut args, "--target_topic_json", &target_topic_str);
+    let dlq_topic_str = dlq_topic.map(|t| t.as_json_string());
+    add_optional_arg(&mut args, "--dlq_topic_json", &dlq_topic_str);
     add_optional_arg(&mut args, "--sasl_username", &kafka_config.sasl_username);
     add_optional_arg(&mut args, "--sasl_password", &kafka_config.sasl_password);
     add_optional_arg(&mut args, "--sasl_mechanism", &kafka_config.sasl_mechanism);

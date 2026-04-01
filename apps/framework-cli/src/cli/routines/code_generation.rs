@@ -8,7 +8,7 @@ use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
 use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
-use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
+use crate::infrastructure::olap::clickhouse::{create_readonly_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
@@ -123,7 +123,7 @@ pub async fn create_client_and_db(
         config.db_name = db_name.clone();
     }
 
-    Ok((create_client(config), db_name))
+    Ok((create_readonly_client(config), db_name))
 }
 
 fn write_external_models_file(
@@ -218,7 +218,6 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     project.features.olap = true;
     project.features.streaming_engine = false;
     project.features.workflows = false;
-    project.features.ddl_plan = false;
 
     // Persist updated features to moose.config.toml
     project.write_to_disk().map_err(|e| {

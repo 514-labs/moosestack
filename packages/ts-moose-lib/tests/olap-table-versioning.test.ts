@@ -6,7 +6,8 @@
  */
 
 import { expect } from "chai";
-import { OlapTable, Key, ClickHouseEngines } from "../src/index";
+import { OlapTable, Key, ClickHouseEngines, sql } from "../src/index";
+import { toStaticQuery } from "../src/sqlHelpers";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { Column } from "../src/dataModels/dataModelTypes";
 import type { IJsonSchemaCollection } from "typia";
@@ -29,6 +30,7 @@ const createMockColumns = (fields: string[]): Column[] =>
     ttl: null,
     codec: null,
     materialized: null,
+    alias: null,
     annotations: [],
     comment: null,
   }));
@@ -322,6 +324,67 @@ describe("OlapTable Versioning", () => {
         "sessionId",
         "timestamp",
       ]);
+    });
+  });
+
+  describe("SQL Generation with Versioned Tables", () => {
+    it("should use versioned table name in sql template literals", () => {
+      const table = createTestOlapTable<UserEvent>("Events", {
+        version: "0.1",
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["userId"],
+      });
+
+      const query = sql`SELECT * FROM ${table}`;
+      const queryString = toStaticQuery(query);
+
+      expect(queryString).to.include("`Events_0_1`");
+      expect(queryString).to.not.match(/`Events`(?!_)/);
+    });
+
+    it("should use base name when no version is set", () => {
+      const table = createTestOlapTable<UserEvent>("PlainEvents", {
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["userId"],
+      });
+
+      const query = sql`SELECT * FROM ${table}`;
+      const queryString = toStaticQuery(query);
+
+      expect(queryString).to.include("`PlainEvents`");
+    });
+
+    it("should use versioned name with database prefix", () => {
+      const table = createTestOlapTable<UserEvent>("DbEvents", {
+        version: "2.0",
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["userId"],
+        database: "analytics",
+      });
+
+      const query = sql`SELECT * FROM ${table}`;
+      const queryString = toStaticQuery(query);
+
+      expect(queryString).to.include("`analytics`.`DbEvents_2_0`");
+    });
+
+    it("generateTableName should return versioned name", () => {
+      const table = createTestOlapTable<UserEvent>("MyTable", {
+        version: "0.1",
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["userId"],
+      });
+
+      expect(table.generateTableName()).to.equal("MyTable_0_1");
+    });
+
+    it("generateTableName should return base name without version", () => {
+      const table = createTestOlapTable<UserEvent>("MyPlainTable", {
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["userId"],
+      });
+
+      expect(table.generateTableName()).to.equal("MyPlainTable");
     });
   });
 });

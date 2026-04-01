@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": [
+    "benchmark.config.ts",
+    "benchmark/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

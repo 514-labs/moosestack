@@ -143,6 +143,18 @@ pub enum Commands {
         /// Log payloads at ingest API and streaming functions for debugging
         #[arg(long)]
         log_payloads: bool,
+
+        /// Skip all confirmation prompts (renames and destructive operations)
+        #[arg(long)]
+        yes_all: bool,
+
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        #[arg(long)]
+        yes_destructive: bool,
+
+        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        #[arg(long)]
+        yes_rename: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]
@@ -194,6 +206,8 @@ pub enum Commands {
     /// Manage templates
     #[command(visible_alias = "t")]
     Template(TemplateCommands),
+    /// Initialize a Moose project and developer harness
+    Harness(HarnessCommands),
     #[command(
         about = "[EXPERIMENTAL] Manage components",
         long_about = "Manage components\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases."
@@ -232,6 +246,16 @@ pub enum Commands {
         /// Number of most recent rows to delete per table. Omit to delete all rows.
         #[arg(long)]
         rows: Option<u64>,
+    },
+    /// Run a stdio MCP proxy server for AI agent integration (e.g., Claude Code)
+    Mcp {
+        /// Host of the dev server to proxy to (auto-detected from project config if omitted)
+        #[arg(long)]
+        host: Option<String>,
+
+        /// Port of the dev server to proxy to (auto-detected from project config if omitted)
+        #[arg(long)]
+        port: Option<u16>,
     },
     /// Manage Kafka-related operations
     #[command(visible_alias = "k")]
@@ -284,7 +308,7 @@ pub enum Commands {
         visible_alias = "a",
         about = "[EXPERIMENTAL] Add a component to your project",
         long_about = "Add a component to your project\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases.",
-        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app"
+        after_help = "Examples:\n  moose add mcp-server --dir packages/moosestack-service\n  moose add chat --dir packages/web-app\n  moose add benchmark --dir moose"
     )]
     Add {
         #[command(subcommand)]
@@ -305,6 +329,11 @@ pub enum AddComponent {
         after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a Next.js project\n  - Project must use App Router\n  - shadcn/ui must be initialized (components.json must exist)\n  - An MCP server must be set up first: moose add mcp-server --help\n\nExample:\n  moose add chat --dir packages/web-app"
     )]
     Chat(AddArgs),
+    /// Query benchmark package for a TypeScript Moose project
+    #[command(
+        after_help = "Requirements:\n  - Must be run from (or pointed at with --dir) a TypeScript Moose project\n\nExample:\n  moose add benchmark --dir moose"
+    )]
+    Benchmark(AddArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -467,11 +496,110 @@ pub struct TemplateCommands {
     pub command: Option<TemplateSubCommands>,
 }
 
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct HarnessCommands {
+    #[command(subcommand)]
+    pub command: HarnessSubCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HarnessSubCommands {
+    /// Initialize a Moose project plus the developer harness
+    #[command(visible_alias = "i")]
+    Init(HarnessInitArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HarnessInitAction {
+    /// Show the machine-readable input contract for `moose harness init`
+    Schema {
+        /// Output schema in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = "Examples:
+  moose harness init
+  moose harness init my-app typescript --agent codex
+  moose harness init --name schema --template typescript --agent none
+  moose harness init my-app python-empty --location ./sandbox
+  moose harness init --input request.json
+  cat request.json | moose harness init --input -
+  moose harness init schema --json
+
+Arg-driven mode is non-interactive. When any flags, positionals, or --input are provided,
+omitted optional values resolve to defaults and the command does not prompt.")]
+pub struct HarnessInitArgs {
+    #[command(subcommand)]
+    pub action: Option<HarnessInitAction>,
+
+    /// Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`
+    #[arg(long = "name", value_name = "NAME", conflicts_with = "name")]
+    pub name_option: Option<String>,
+
+    /// Explicit template name. Use this with `--name` when positional parsing would be ambiguous
+    #[arg(
+        long = "template",
+        value_name = "TEMPLATE",
+        conflicts_with = "template"
+    )]
+    pub template_option: Option<String>,
+
+    /// Name of your app or service
+    pub name: Option<String>,
+
+    /// Template to use for the project
+    pub template: Option<String>,
+
+    /// Location of your app or service
+    #[arg(short, long)]
+    pub location: Option<String>,
+
+    /// Disable the existing-directory guard when reusing a location
+    #[arg(long)]
+    pub no_fail_already_exists: bool,
+
+    /// Initialize from a remote ClickHouse database using an explicit connection string
+    #[arg(long, value_name = "CONNECTION_STRING")]
+    pub from_remote: Option<String>,
+
+    /// Generate a custom Dockerfile at project root for customization
+    #[arg(long)]
+    pub custom_dockerfile: bool,
+
+    /// Target specific coding agents instead of auto-detecting (repeatable)
+    #[arg(long = "agent")]
+    pub agents: Vec<String>,
+
+    /// Install and configure MooseStack LSP where supported (default behavior)
+    #[arg(long, conflicts_with = "no_lsp")]
+    pub lsp: bool,
+
+    /// Skip MooseStack LSP installation/configuration
+    #[arg(long, conflicts_with = "lsp")]
+    pub no_lsp: bool,
+
+    /// Git branch of the agent-skills repo to install from (default: main)
+    #[arg(long)]
+    pub branch: Option<String>,
+
+    /// Read structured JSON input from a file, or use `-` to read from stdin
+    #[arg(long)]
+    pub input: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum TemplateSubCommands {
     /// List available templates
     #[command(visible_alias = "l")]
-    List {},
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Args)]

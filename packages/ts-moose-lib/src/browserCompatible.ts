@@ -24,6 +24,8 @@ export {
   SqlResource,
   View,
   MaterializedView,
+  SelectRowPolicy,
+  SelectRowPolicyConfig,
   Task,
   Workflow,
   ETLPipeline,
@@ -52,6 +54,8 @@ export {
   getViews,
   getMaterializedView,
   getMaterializedViews,
+  getSelectRowPolicies,
+  getSelectRowPolicy,
 } from "./dmv2";
 
 export {
@@ -88,6 +92,7 @@ export {
   UInt64,
   Decimal,
 } from "./dataModels/types";
+export type { Insertable } from "./dataModels/types";
 
 export type { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 

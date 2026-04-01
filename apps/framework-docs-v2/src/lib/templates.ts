@@ -62,6 +62,7 @@ function inferCategory(name: string): "starter" | "framework" | "example" {
     "python-fastapi",
     "next-app-empty",
     "typescript-mcp",
+    "typescript-agent",
     "python-fastapi-client-only",
   ];
 
@@ -95,6 +96,9 @@ function inferFrameworks(name: string): string[] {
   if (name.includes("mcp")) {
     frameworks.push("MCP");
   }
+  if (name.includes("agent")) {
+    frameworks.push("Agents");
+  }
 
   return frameworks;
 }
@@ -114,6 +118,10 @@ function inferFeatures(name: string, description: string): string[] {
   if (lowerName.includes("mcp")) {
     features.push("MCP");
   }
+  if (lowerName.includes("agent")) {
+    features.push("Auth");
+    features.push("Agents");
+  }
   if (lowerName.includes("frontend") || lowerName.includes("next")) {
     features.push("Frontend");
   }
@@ -128,6 +136,18 @@ function inferFeatures(name: string, description: string): string[] {
   }
 
   return features;
+}
+
+function readStringArray(values: unknown): string[] | undefined {
+  if (!Array.isArray(values)) {
+    return undefined;
+  }
+
+  return values.filter((value): value is string => typeof value === "string");
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 /**
@@ -172,8 +192,11 @@ export function getAllTemplates(): TemplateMetadata[] {
       }
 
       const category = inferCategory(templateName);
-      const frameworks = inferFrameworks(templateName);
-      const features = inferFeatures(templateName, config.description);
+      const frameworks =
+        readStringArray(config.frameworks) ?? inferFrameworks(templateName);
+      const features =
+        readStringArray(config.features) ??
+        inferFeatures(templateName, config.description);
 
       // Generate GitHub URL
       const githubUrl = `https://github.com/514-labs/moosestack/tree/main/templates/${templateName}`;
@@ -188,8 +211,8 @@ export function getAllTemplates(): TemplateMetadata[] {
         description: config.description,
         visible: config.visible ?? true,
         category,
-        frameworks,
-        features,
+        frameworks: uniqueValues(frameworks),
+        features: uniqueValues(features),
         githubUrl,
         initCommand,
         type: "template",

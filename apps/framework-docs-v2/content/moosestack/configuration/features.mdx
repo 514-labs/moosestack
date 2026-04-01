@@ -24,8 +24,6 @@ workflows = false
 olap = true
 # Enable Analytics APIs server (Default: true)
 apis = true
-# Enable DDL plan execution (Default: false)
-ddl_plan = false
 ```
 
 | Flag | Env Variable | Default | Description |
@@ -34,4 +32,3 @@ ddl_plan = false
 | `workflows` | `MOOSE_FEATURES__WORKFLOWS` | false | Enables Temporal workflow integration. |
 | `olap` | `MOOSE_FEATURES__OLAP` | true | Enables ClickHouse integration and management. |
 | `apis` | `MOOSE_FEATURES__APIS` | true | Enables the API server for ingestion and consumption endpoints. |
-| `ddl_plan` | `MOOSE_FEATURES__DDL_PLAN` | false | Requires explicit approval for DDL changes. |

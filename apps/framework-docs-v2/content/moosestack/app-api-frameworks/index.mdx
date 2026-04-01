@@ -131,7 +131,7 @@ Your frameworks can now access your OLAP database through MooseStack's injected 
 ```ts copy
 import { getMooseUtils } from "@514labs/moose-lib";
 
-const { client, sql, jwt } = getMooseUtils(req);
+const { client, sql, jwt } = await getMooseUtils();
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">

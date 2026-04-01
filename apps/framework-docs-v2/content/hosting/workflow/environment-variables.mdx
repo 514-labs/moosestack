@@ -1,0 +1,95 @@
+---
+title: Manage environment variables
+description: Add, override, and apply environment variables in Fiveonefour Hosting.
+order: 2
+---
+
+import { Callout } from "@/components/mdx";
+
+# Manage environment variables
+
+Use this guide to add or change environment variables in Fiveonefour Hosting. Choose the right scope first, then update the matching settings page so the correct project or branch deployment picks up the new value.
+
+Before you start, make sure you know:
+- whether the value should apply to an entire org, one project, or one branch
+- which project or branch you want to affect
+- that a new deployment is required before the change takes effect
+
+## 1. Choose the right settings page
+
+| Settings page | Use it when you want to | What it shows |
+| --- | --- | --- |
+| Organization settings | Set a default inherited across the org | Only org-scoped vars |
+| Project settings | Set a project default or verify the effective project value | The resolved `org + project` set for that project |
+| Branch settings | Override one branch or inspect override state | The `org + project + branch` variants together |
+
+The UI labels these rows as `Org setting`, `Project setting`, and `Branch setting`.
+
+## 2. Pick the right scope
+
+Hosting has three scopes:
+- `org` applies across the organization
+- `project` applies to one project and all of its branch deployments
+- `branch` applies to one branch and overrides the same key for that branch only
+
+Precedence is `branch > project > org`.
+
+Use `org` when most projects should share the same value.
+
+Use `project` when one project needs a different default than the org value.
+
+Use `branch` when one preview branch needs a temporary override without changing the rest of the project.
+
+Example:
+- Set `CLICKHOUSE_HOST` at `org` if most projects should share the same default.
+- Set `CLICKHOUSE_HOST` at `project` if one project needs a different value than the org default.
+- Set `CLICKHOUSE_HOST` at `branch` if one preview branch needs a temporary override without changing the rest of the project.
+
+## 3. Enter a valid key and value
+
+- Keys must match `^[A-Z][A-Z0-9_]*$`
+- Keys must start with a letter
+- Keys can contain only uppercase letters, numbers, and underscores
+- Keys are capped at 255 characters
+- Values are required
+- Values are capped at 10 KB encoded size
+
+Examples:
+- `API_URL` is valid
+- `apiUrl` is invalid
+- `1PASSWORD_KEY` is invalid because it starts with a number
+
+## 4. Manage overrides deliberately
+
+- The same key can exist at `org`, `project`, and `branch` scope at the same time.
+- A project-scoped variable is inherited by every branch deployment for that project unless a branch-scoped variable with the same key overrides it.
+- Org-scoped variables are inherited everywhere unless a project or branch override replaces them.
+- Updates keep the variable in its existing scope. To move a key between scopes, create it at the new scope and delete it from the old one.
+
+If the same key exists at multiple scopes, the project page shows the effective value after org and project inheritance are resolved. The branch page shows all three scoped variants together so you can see which row is overriding another.
+
+## 5. Redeploy to apply the change
+
+Fiveonefour resolves environment variables at deploy start, not when you open the settings page.
+
+For a branch deployment, Fiveonefour resolves the final env-var set for that branch and sends the resolved `{name, value}` list downstream. That means:
+- branch-scoped vars are stored as branch settings and apply to future deployments for that branch
+- project-scoped vars keep flowing into branch deployments unless overridden
+- changing a value affects new deployments, not historical ones
+
+<Callout type="warning" title="Changed-since-deploy checks are project-wide">
+When Hosting says environment variables changed since a deployment, that check includes org-scoped vars, project-scoped vars, and all branch-scoped vars under the same project. It is not limited to the current branch.
+</Callout>
+
+## Recommended workflow
+
+- Put shared defaults at `org`.
+- Put project-specific values at `project`.
+- Use `branch` for preview-only or temporary branch-specific overrides.
+- After changing environment variables, start a new deployment for the project or branch that should pick them up.
+
+## Related
+
+- [Vercel](/hosting/integrations/vercel)
+- [`514 deployment list`](/hosting/cli/deployment/list)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

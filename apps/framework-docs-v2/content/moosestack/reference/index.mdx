@@ -509,7 +509,25 @@ active_user_events = View(
     """,
     [events, users]
 )
+
+# With a specific database (multi-database support)
+analytics_view = View(
+    "analytics_events",
+    "SELECT * FROM {events}",
+    [events],
+    database="analytics",
+)
 ```
+
+**Constructor:** `View(name, select_statement, base_tables, database=None, metadata=None)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Name of the view |
+| `select_statement` | `str` | SELECT SQL defining the view |
+| `base_tables` | `list[OlapTable \| View]` | Source tables/views for dependency tracking |
+| `database` | `str` (optional) | ClickHouse database to create the view in. When set, the view is created as `` `database`.`view_name` `` |
+| `metadata` | `dict` (optional) | Optional metadata |
 
 **Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
   </LanguageTabContent>

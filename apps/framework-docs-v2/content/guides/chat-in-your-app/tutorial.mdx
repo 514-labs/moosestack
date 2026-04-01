@@ -19,7 +19,7 @@ This tutorial walks you through building a chat-over-data application with Moose
     {
       title: "Chat UI with MCP-backed data access",
       description:
-        "A resizable chat panel in your Next.js app, powered by Claude, that queries your ClickHouse data through MCP tools.",
+        "A resizable chat panel in your Next.js app, powered by your chosen model provider, that queries your ClickHouse data through MCP tools.",
     },
     {
       title: "MooseStack backend with MCP server",
@@ -85,8 +85,11 @@ Ensure you have the following installed:
 
 - [Node.js v20+](https://nodejs.org)
 - [pnpm v8+](https://pnpm.io)
-- [Docker Desktop](https://docker.com/get-started) (must be running for local development)
-- [Claude API key](https://console.anthropic.com/) (for chat functionality)
+- [Docker Desktop](https://docker.com/get-started) or [Finch](https://runfinch.com/) (one container runtime must be running for local development)
+- AI provider credentials for your chosen `AI_PROVIDER`
+  - [Anthropic API key](https://console.anthropic.com/)
+  - [OpenAI API key](https://platform.openai.com/api-keys)
+  - AWS credentials or profile for Bedrock
 
 <ConditionalContent whenId="starting-point" whenValue="existing-nextjs">
 
@@ -219,7 +222,10 @@ This installs all chat UI components, API routes, layout components, npm depende
 After `moose add chat` completes, follow the printed "Next steps":
 
 1. Paste the **Bearer Token** from `moose generate hash-token` into `.env.local` as `MCP_API_TOKEN`
-2. Add your Anthropic API key to `.env.local` as `ANTHROPIC_API_KEY` (from [console.anthropic.com](https://console.anthropic.com))
+2. Set `AI_PROVIDER` and add the matching provider credentials in `.env.local`
+   - Anthropic: `ANTHROPIC_API_KEY`
+   - OpenAI: `OPENAI_API_KEY`
+   - Bedrock: `AWS_REGION`, `BEDROCK_MODEL_ID`, and either `AWS_PROFILE` or AWS access keys
 3. Add `ChatLayoutWrapper` to your root layout:
 
 ```tsx
@@ -249,7 +255,7 @@ export default function RootLayout({ children }) {
 514 agent init
 ```
 
-This sets up [MooseStack Skills](https://github.com/514-labs/agent-skills) and the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server), giving your coding agent access to MooseStack-specific actions and language intelligence.
+This installs [MooseStack Skills](https://github.com/514-labs/agent-skills) and configures the [MooseStack LSP](https://docs.fiveonefour.com/moosestack/language-server) for supported coding agents without rerunning project scaffolding.
 
 <Callout type="info" title="Dev harness complete">
 With `moose init` and `514 agent init`, your development harness is fully set up. Your agent now has access to several [skills](https://github.com/514-labs/agent-skills) including data modeling with [ClickHouse best practices](https://github.com/514-labs/agent-skills), performance optimization, and deployment workflows. We'll use the data modeling skill in the next section.
@@ -261,7 +267,7 @@ With `moose init` and `514 agent init`, your development harness is fully set up
 
 <GuideStepper.Step id="local-dev" number={2} title="Run Locally" summary="Start Docker, run the stack, and verify the chat UI loads">
 <GuideStepper.WhatYouNeed>
-    - Docker Desktop installed and running
+    - Docker Desktop or Finch installed and running
     - Completed project setup from Step 1
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -270,10 +276,12 @@ With `moose init` and `514 agent init`, your development harness is fully set up
     - Dev harness connected: coding agent has MooseStack Dev Server access via MCP
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint id="verify-docker" title="Make sure Docker Desktop is running">
+<GuideStepper.Checkpoint id="verify-docker" title="Verify your container runtime">
 
 ```shell
-docker version
+docker version   # Docker Desktop
+# or
+finch version    # Finch
 ```
 
 </GuideStepper.Checkpoint>
@@ -435,12 +443,20 @@ export interface AmazonReview {
  * Filter columns (marketplace, product_category, review_date) are placed first
  * per `schema-pk-prioritize-filters` so WHERE clauses hit the sparse index.
  */
-export const AmazonReviewTable = new OlapTable<AmazonReview>("AmazonReview", {
-  orderByFields: ["marketplace", "product_category", "review_date", "review_id"],
-});
+export const AmazonReviewTable = new OlapTable<AmazonReview>(
+  "amazon_reviews",
+  {
+    orderByFields: [
+      "marketplace",
+      "product_category",
+      "review_date",
+      "review_id",
+    ],
+  },
+);
 ```
 
-Note how `LowCardinality` is used for `marketplace` (~5 values) and `product_category` (~40 values), tight unsigned integer types match the data range, and the `orderBy` puts common filter columns first for efficient sparse index pruning.
+Note how `LowCardinality` is used for `marketplace` (~5 values) and `product_category` (~40 values), tight unsigned integer types match the data range, and the `orderBy` puts common filter columns first for efficient sparse index pruning. The first string you pass to `OlapTable` is the actual ClickHouse table name, so prefer explicit snake_case names like `amazon_reviews`.
 
 </ToggleBlock>
 
@@ -493,7 +509,7 @@ In production, you can use `514 query` to run the same SQL against your hosted C
 <ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
 ```sql
 -- load-data.sql
-INSERT INTO local.AmazonReviews
+INSERT INTO local.amazon_reviews
   SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet',
     'Parquet'
@@ -1147,7 +1163,11 @@ From your Fiveonefour project **Overview** page, scroll to the **Integrations** 
 3. Set the following environment variables in Vercel:
 
 ```text
-ANTHROPIC_API_KEY=<your Anthropic API key>
+AI_PROVIDER=<anthropic|openai|bedrock>
+ANTHROPIC_API_KEY=<set when AI_PROVIDER=anthropic>
+OPENAI_API_KEY=<set when AI_PROVIDER=openai>
+AWS_REGION=<set when AI_PROVIDER=bedrock>
+BEDROCK_MODEL_ID=<set when AI_PROVIDER=bedrock>
 NEXT_PUBLIC_API_URL=<your Fiveonefour endpoint URL, e.g. https://your-project.boreal.cloud>
 API_KEY=<the bearer token from your MOOSE_WEB_APP_API_KEYS>
 ```
@@ -1200,7 +1220,7 @@ SELECT * FROM s3(
 
 <ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closedText="Hide Amazon dataset example">
 ```bash
-514 clickhouse "INSERT INTO AmazonReviews
+514 clickhouse "INSERT INTO amazon_reviews
 SELECT * FROM s3(
   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet',
   'Parquet'
@@ -1228,4 +1248,3 @@ Check your Fiveonefour project overview — you should see storage populated, th
 </GuideStepper.Step>
 
 </GuideStepper>
-

@@ -1,0 +1,126 @@
+import { defineQueryModel, sql } from "@514labs/moose-lib";
+import { TenantKnowledgeTable } from "../ingest/models";
+
+export const tenantKnowledgeMetricsModel = defineQueryModel({
+  name: "query_tenant_knowledge_metrics",
+  description:
+    "Summarize tenant-scoped knowledge metrics and grouped rollups. Use for counts, priorities, categories, and source-level trends.",
+  table: TenantKnowledgeTable,
+  dimensions: {
+    category: {
+      column: "category",
+      description: "Knowledge entry category",
+    },
+    priority: {
+      column: "priority",
+      description: "Priority label for the knowledge entry",
+    },
+    source: {
+      column: "source",
+      description: "Origin of the knowledge entry",
+    },
+  },
+  metrics: {
+    totalRecords: {
+      agg: sql.fragment`count(*)`,
+      description: "Total tenant knowledge records",
+    },
+    highPriorityRecords: {
+      agg: sql.fragment`countIf(${TenantKnowledgeTable.columns.priority} = 'high')`,
+      description: "High-priority records for the tenant",
+    },
+  },
+  filters: {
+    timestamp: {
+      column: "timestamp",
+      operators: ["gte", "lte"] as const,
+      description: "Time range filter",
+    },
+    category: {
+      column: "category",
+      operators: ["eq", "in"] as const,
+      description: "Category filter",
+    },
+    priority: {
+      column: "priority",
+      operators: ["eq", "in"] as const,
+      description: "Priority filter",
+    },
+    source: {
+      column: "source",
+      operators: ["eq", "in"] as const,
+      description: "Source filter",
+    },
+  },
+  sortable: ["totalRecords", "highPriorityRecords"] as const,
+  defaults: {
+    metrics: ["totalRecords"],
+    limit: 50,
+    maxLimit: 500,
+  },
+});
+
+export const tenantKnowledgeRecordsModel = defineQueryModel({
+  name: "list_tenant_knowledge_records",
+  description:
+    "List tenant-scoped knowledge records for recent changes or detail inspection. Use for latest headlines, category filters, and priority-specific records.",
+  table: TenantKnowledgeTable,
+  columns: {
+    recordId: {
+      column: "record_id",
+      as: "recordId",
+    },
+    category: {
+      column: "category",
+    },
+    priority: {
+      column: "priority",
+    },
+    headline: {
+      column: "headline",
+    },
+    details: {
+      column: "details",
+    },
+    source: {
+      column: "source",
+    },
+    timestamp: {
+      column: "timestamp",
+    },
+  },
+  filters: {
+    timestamp: {
+      column: "timestamp",
+      operators: ["gte", "lte"] as const,
+      description: "Inclusive time range filter",
+    },
+    category: {
+      column: "category",
+      operators: ["eq", "in"] as const,
+      description: "Category filter",
+    },
+    priority: {
+      column: "priority",
+      operators: ["eq", "in"] as const,
+      description: "Priority filter",
+    },
+    source: {
+      column: "source",
+      operators: ["eq", "in"] as const,
+      description: "Source filter",
+    },
+    headline: {
+      column: "headline",
+      operators: ["like", "ilike"] as const,
+      description: "Headline search filter",
+    },
+  },
+  sortable: ["timestamp", "category", "priority", "source"] as const,
+  defaults: {
+    columns: ["headline", "category", "priority", "source", "timestamp"],
+    orderBy: [["timestamp", "DESC"]],
+    limit: 5,
+    maxLimit: 100,
+  },
+});

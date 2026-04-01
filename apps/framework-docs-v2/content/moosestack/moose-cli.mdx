@@ -30,6 +30,56 @@ Lists available templates for project initialization.
 moose template list
 ```
 
+For editor integrations and other automation, you can request machine-readable output:
+
+```bash
+moose template list --json
+```
+
+The JSON payload is versioned for backwards-compatible tooling. It includes:
+
+- `schema_version`: version of the JSON response schema
+- `template_version`: version of the template manifest being listed
+- `templates`: visible templates available for initialization
+
+### Harness Init
+Initializes a Moose project and sets up the developer harness in one flow.
+
+```bash
+moose harness init
+moose harness init <name> <template> [--location <location>] [--agent <agent>] [--from-remote <connection-string>] [--lsp | --no-lsp] [--branch <name>] [--no-fail-already-exists] [--custom-dockerfile]
+```
+
+- Zero-arg `moose harness init` starts the interactive wizard.
+  Template selection is presented as a validated numbered list, so typos are caught before initialization continues.
+- `moose harness init` scaffolds a project and configures the harness in one flow. For existing projects, use `514 agent init` to install shared skills without rerunning project initialization.
+- MooseStack MCP is configured through the `moose mcp` stdio proxy where the target coding agent supports local stdio servers, avoiding a hard-coded `localhost:4000/mcp` dependency in those agent configs.
+- Arg-driven mode is non-interactive: if you pass flags or positionals, omitted optional values fall back to defaults instead of prompting. MooseStack LSP installation defaults to on.
+- `--agent`: Repeat to target specific coding agents. Omit to auto-detect supported agents.
+- `--name <name>`: Explicitly set the project name when it would otherwise collide with a harness subcommand such as `schema`.
+- `--template <template>`: Explicitly set the template. Combine with `--name` for collision-safe invocations like `moose harness init --name schema --template typescript`.
+- `--from-remote <connection-string>`: Bootstrap the project from a remote ClickHouse cluster.
+- `--lsp`: Install and configure the MooseStack LSP where supported. This is the default behavior.
+- `--no-lsp`: Skip MooseStack LSP installation and configuration explicitly.
+- `--branch <name>`: Install harness skills from a specific `agent-skills` Git branch instead of `main`.
+- `--no-fail-already-exists`: Reuse an existing target directory instead of treating it as an error.
+- `--custom-dockerfile`: Generate a customizable Dockerfile at the scaffolded project root.
+- `--input <path>`: Read structured JSON input from a file. Use `--input -` to read JSON from stdin.
+
+For automation and editor integrations, you can inspect the versioned input contract:
+
+```bash
+moose harness init schema --json
+```
+
+Additional examples:
+
+```bash
+moose harness init my-app typescript --branch nico/eng-2598 --agent codex
+moose harness init my-app typescript --no-lsp --agent none
+moose harness init my-app typescript --no-fail-already-exists --custom-dockerfile
+```
+
 ### Component
 Lists available components you can add to your project.
 
@@ -40,7 +90,7 @@ moose component list
 ```
 
 ### Add
-Adds a pre-built component to an existing project. Downloads the component files from a registry and installs dependencies.
+Adds a pre-built component to an existing project. Downloads the component files from a registry. Some components also install dependencies; others copy a self-contained package and print the manual follow-up steps.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -56,6 +106,10 @@ moose add mcp-server [--dir <moose-project-dir>]
 
 # Add a chat UI to a Next.js app
 moose add chat [--dir <nextjs-app-dir>]
+
+# Add a standalone benchmark package to a new directory
+mkdir query-benchmarks
+moose add benchmark --dir ./query-benchmarks
 ```
 
 **Flags:**
@@ -68,9 +122,12 @@ moose add chat [--dir <nextjs-app-dir>]
 # From a monorepo root with moose/ and web/ packages
 moose add mcp-server --dir moose
 moose add chat --dir web
+mkdir query-benchmarks && moose add benchmark --dir query-benchmarks
 ```
 
 After installing, follow the printed "Next steps" to wire up environment variables and start the services.
+
+The `benchmark` component scaffolds a standalone benchmark package into the directory specified by `--dir`. Dependencies are installed automatically. After scaffolding, edit `benchmark.config.ts` to import your compiled query model from your Moose project, define the base query and scenarios, run `moose build` in your Moose project, then run the benchmark scripts (`npm test`, `npm run bench`).
 
 ### Build
 Builds your Moose project.
@@ -89,13 +146,14 @@ Starts a local development environment with hot reload and automatic infrastruct
 - **Python**: `pip install -r requirements.txt`
 
 ```bash
-moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
+moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes-destructive]
 ```
 - `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp) for details.
 - `--no-infra`: Skip starting docker containers for infrastructure
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
+- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via the `MOOSE_ACCEPT_DESTRUCTIVE=1` environment variable.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
@@ -367,11 +425,10 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
 - Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
 - Omit `--save` to output to stdout without writing files
-- Requires these feature flags in `moose.config.toml`:
+- Requires OLAP to be enabled in `moose.config.toml`:
   ```toml filename="moose.config.toml" copy
   [features]
   olap = true
-  ddl_plan = true
   ```
 
 ### DB Pull (External Tables)

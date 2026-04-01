@@ -24,6 +24,19 @@ If a table column is modeled as optional in your app type but has a ClickHouse d
 </LanguageTabs>
 </Callout>
 
+<Callout type="info" title="Computed columns are excluded from inserts">
+[ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns are automatically excluded from all insert paths — you should never supply values for them. ClickHouse computes MATERIALIZED values at insert time and ALIAS values at query time.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+`OlapTable.insert()` accepts `Insertable<T>[]`, which automatically omits ALIAS/MATERIALIZED fields and makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself — the method signature handles it.
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Fields annotated with `ClickHouseAlias` or `ClickHouseMaterialized` are automatically optional at Pydantic construction time — you can omit them when creating model instances or passing dicts to `insert()`.
+  </LanguageTabContent>
+</LanguageTabs>
+</Callout>
+
 ## From a Stream (Streaming Ingest)
 
 When you need to stream data into your ClickHouse tables, you can set the `Stream.destination` as a reference to the `OlapTable` you want to insert into. This will automatically provision a synchronization process that batches and inserts data into the table.  
