@@ -22,13 +22,6 @@ interface ProductLookup {
   PriceLevel: number & ClickHouseInt<"int32">;
 }
 
-interface RangeLookup {
-  Id: number & ClickHouseInt<"uint64">;
-  RangeStart: number & ClickHouseInt<"uint64">;
-  RangeEnd: number & ClickHouseInt<"uint64">;
-  Value: string;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Clear all registry maps before each test to avoid cross-test pollution */
@@ -222,6 +215,30 @@ describe("OlapDictionary", () => {
       }).to.throw("primaryKey must contain at least one column");
     });
 
+    it("should throw when simple layout has more than 1 primary key", () => {
+      const source = makeSourceTable();
+      expect(() => {
+        new OlapDictionary<ProductLookup>("dict_pk_multi", {
+          sourceTable: source,
+          primaryKey: ["ProductId", "Category"],
+          layout: { type: "HASHED" },
+          lifetime: 3600,
+        });
+      }).to.throw("requires exactly 1 primary key column");
+    });
+
+    it("should throw when COMPLEX_KEY layout has only 1 primary key", () => {
+      const source = makeSourceTable();
+      expect(() => {
+        new OlapDictionary<ProductLookup>("dict_ck_single", {
+          sourceTable: source,
+          primaryKey: ["ProductId"],
+          layout: { type: "COMPLEX_KEY_HASHED" },
+          lifetime: 3600,
+        });
+      }).to.throw("requires at least 2 primary key columns");
+    });
+
     it("should throw when registering a duplicate name", () => {
       const source = makeSourceTable();
       new OlapDictionary<ProductLookup>("dict_dup", {
@@ -379,7 +396,7 @@ describe("OlapDictionary", () => {
       const source = makeSourceTable();
       const dict = new OlapDictionary<ProductLookup>("dict_layout_case", {
         sourceTable: source,
-        primaryKey: ["ProductId"],
+        primaryKey: ["ProductId", "Category"],
         layout: { type: "COMPLEX_KEY_HASHED" },
         lifetime: 3600,
       });
@@ -388,8 +405,8 @@ describe("OlapDictionary", () => {
       expect((json.layout as any).type).to.equal("COMPLEX_KEY_HASHED");
     });
 
-    it("should serialize camelCase keys (not snake_case)", () => {
-      const dict = new OlapDictionary<ProductLookup>("dict_camel", {
+    it("should serialize layout fields as snake_case for Rust", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_snakecase", {
         externalSource: { type: "http", url: "http://x.com", format: "CSV" },
         primaryKey: ["ProductId"],
         layout: { type: "CACHE", sizeInCells: 10000, maxThreadsForUpdates: 4 },
@@ -398,10 +415,13 @@ describe("OlapDictionary", () => {
 
       const json = dict.toJson();
       const jsonStr = JSON.stringify(json);
-      // Should use camelCase, not snake_case
-      expect(jsonStr).to.include("sizeInCells");
+      // Layout fields must be snake_case for Rust deserialization
+      expect(jsonStr).to.include("size_in_cells");
+      expect(jsonStr).to.include("max_threads_for_updates");
+      expect(jsonStr).not.to.include("sizeInCells");
+      expect(jsonStr).not.to.include("maxThreadsForUpdates");
+      // Top-level dictionary keys remain camelCase
       expect(jsonStr).to.include("primaryKey");
-      expect(jsonStr).not.to.include("size_in_cells");
       expect(jsonStr).not.to.include("primary_key");
     });
   });
@@ -431,9 +451,10 @@ describe("OlapDictionary", () => {
     layouts.forEach((layout, idx) => {
       it(`should serialize layout type ${layout.type}`, () => {
         const source = makeSourceTable();
+        const isComplex = COMPLEX_KEY_LAYOUTS.has(layout.type);
         const dict = new OlapDictionary<ProductLookup>(`dict_layout_${idx}`, {
           sourceTable: source,
-          primaryKey: ["ProductId"],
+          primaryKey: isComplex ? ["ProductId", "Category"] : ["ProductId"],
           layout,
           lifetime: 3600,
         });
@@ -502,6 +523,23 @@ describe("OlapDictionary", () => {
       const fragment = dict.getOrDefault("ProductName", "Unknown", "ProductId");
       expect(fragment.strings.join("")).to.include("dictGetOrDefault");
       expect(fragment.strings.join("")).to.include("Unknown");
+    });
+
+    it("getOrDefault() should escape single quotes in string defaults", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_getdef_escape", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      const fragment = dict.getOrDefault(
+        "ProductName",
+        "O'Reilly",
+        "ProductId",
+      );
+      expect(fragment.strings.join("")).to.include("O''Reilly");
     });
 
     it("has() should produce dictHas SQL fragment", () => {
