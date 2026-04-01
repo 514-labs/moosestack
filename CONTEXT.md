@@ -5,7 +5,7 @@
 **Stack**: PR 1 (#3885) → **PR 2 (this)** → PR 3 → PR 4 → PR 5
 **Base branch**: `514Ben/3853-clickhouse-dictionary-rust-core`
 
-## What this PR adds (~400 lines)
+## What this PR adds
 
 - `plan_risk.rs` — `DestructiveChange::DictionaryDrop` + `OperationalRisk::DictionaryReplace`
 - `plan_validator.rs` — source table exists, primaryKey valid, layout-key compatibility, cluster refs, reject dict-to-dict, reject Named Collections
@@ -15,13 +15,16 @@
 - `olap/mod.rs` — `list_dictionaries()` on `OlapOperations` trait (existence/status only)
 - `display/infrastructure.rs` — plan display for dictionary changes (already partially done in PR 1)
 
-## Unit tests to add (inline `#[cfg(test)]`)
+## Unit tests added in this PR (inline `#[cfg(test)]`)
 
-- `plan_risk.rs`: dictionary drop → `DestructiveChange`, dictionary replace (CACHE layout) → `OperationalRisk`, dictionary replace (HASHED) → low risk
-- `plan_validator.rs`: source table missing → error, invalid primaryKey column → error, HASHED with multi-column key → error, COMPLEX_KEY_HASHED with multi-column key → ok, Named Collection reference → error, dict-to-dict source → error
-- `ddl_ordering.rs`: dictionary ordered after source table, dictionary ordered before dependent MV, cycle detection → error
-- `infra_reality_checker.rs`: unmapped/missing/mismatched dictionary discrepancies, `is_empty()` with dictionary fields
-- `plan.rs`: SQL normalization stability for dictionary source queries
+- `plan_risk.rs`: dictionary drop → `DestructiveChange`, dictionary replace (CACHE layout) → `OperationalRisk`, dictionary replace (HASHED) → low risk, dictionary add → not destructive
+- `plan_validator.rs`: source table missing → error, invalid primaryKey column → error, HASHED with multi-column key → error, COMPLEX_KEY_HASHED with multi-column key → ok, dict-to-dict source → error, valid config → ok
+- `infra_reality_checker.rs`: unmapped/missing dictionary discrepancies, `is_empty()` with dictionary fields
+
+## Unit tests deferred to later PRs
+
+- `ddl_ordering.rs`: dictionary ordered after source table, dictionary ordered before dependent MV, cycle detection → error (PR 3)
+- `plan.rs`: SQL normalization stability for dictionary source queries (PR 3)
 
 ## Key conventions
 

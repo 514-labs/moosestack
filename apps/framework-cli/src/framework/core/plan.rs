@@ -888,6 +888,7 @@ mod tests {
     struct MockOlapClient {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
+        dictionaries: Vec<String>,
     }
 
     #[async_trait]
@@ -919,7 +920,7 @@ mod tests {
         }
 
         async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
-            Ok(vec![])
+            Ok(self.dictionaries.clone())
         }
     }
 
@@ -1015,6 +1016,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create empty infrastructure map (no tables)
@@ -1054,6 +1056,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1082,6 +1085,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1100,6 +1104,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with one table
@@ -1128,6 +1133,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1182,6 +1188,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -1213,6 +1220,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1248,6 +1256,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the same table
@@ -1275,6 +1284,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1340,6 +1350,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1403,6 +1414,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1501,6 +1513,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table_from_reality],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1566,6 +1579,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![reality_table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table
@@ -1627,6 +1641,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![sql_resource.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1679,6 +1694,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![view_a.clone(), view_b.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1737,6 +1753,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![reality_view.clone()],
+            dictionaries: vec![],
         };
 
         // Create infra map with the existing view
