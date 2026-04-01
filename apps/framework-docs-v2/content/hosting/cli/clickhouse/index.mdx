@@ -1,0 +1,52 @@
+---
+title: clickhouse
+description: Run queries and seed data in your project's ClickHouse databases.
+order: 10
+---
+
+# 514 clickhouse
+
+Use `514 clickhouse` to interact with your project's ClickHouse databases on 514 Hosting.
+
+## Usage
+
+```bash
+514 clickhouse [OPTIONS] <COMMAND>
+```
+
+## Subcommands
+
+### query
+
+Execute a SQL query against a branch's ClickHouse database.
+
+```bash
+514 clickhouse query [OPTIONS] [QUERY]
+```
+
+### seed
+
+Copy rows from one branch's ClickHouse table into another.
+
+```bash
+514 clickhouse seed [OPTIONS] <TABLE>
+```
+
+See the full command reference: [`514 clickhouse seed`](/hosting/cli/clickhouse/seed).
+
+## Options
+
+:::include /shared/hosting/cli/global-options.mdx
+
+## Examples
+
+```bash
+514 clickhouse query "SELECT count() FROM events"
+514 clickhouse seed events --from main --limit 1000
+```
+
+## Related
+
+- [`514 --help`](/hosting/cli)
+- [`514 clickhouse seed`](/hosting/cli/clickhouse/seed)
+- [Branch Data Seeding](/hosting/workflow/branch-data-seeding)
