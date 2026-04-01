@@ -20,6 +20,7 @@ use tokio::io::AsyncBufReadExt;
 use crate::cli::display::{terminal_lock, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
+use crate::framework::versions::{version_to_string, Version};
 
 use super::infrastructure_map::{
     apply_detected_renames, Change, ColumnChange, DetectedColumnRename, InfraChanges, OlapChange,
@@ -31,18 +32,20 @@ use super::infrastructure_map::{
 pub enum DestructiveChange {
     TableDrop {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
+        version: Option<Version>,
     },
     ColumnDrop {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
         column_name: String,
     },
     /// A table that must be dropped and recreated (ORDER BY, PARTITION BY, engine, etc.)
     TableRecreate {
         database: Option<String>,
-        table_name: String,
+        table_name_with_suffix: String,
         reason: String,
+        version: Option<Version>,
     },
     ViewDrop {
         database: Option<String>,
@@ -66,26 +69,28 @@ impl fmt::Display for DestructiveChange {
         match self {
             DestructiveChange::TableDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
+                ..
             } => {
                 write!(f, "DROP TABLE ")?;
-                fmt_qualified(f, database, table_name)
+                fmt_qualified(f, database, table_name_with_suffix)
             }
             DestructiveChange::ColumnDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 column_name,
             } => {
                 write!(f, "DROP COLUMN `{column_name}` FROM ")?;
-                fmt_qualified(f, database, table_name)
+                fmt_qualified(f, database, table_name_with_suffix)
             }
             DestructiveChange::TableRecreate {
                 database,
-                table_name,
+                table_name_with_suffix,
                 reason,
+                ..
             } => {
                 write!(f, "DROP + RECREATE ")?;
-                fmt_qualified(f, database, table_name)?;
+                fmt_qualified(f, database, table_name_with_suffix)?;
                 write!(f, " ({reason})")
             }
             DestructiveChange::ViewDrop {
@@ -133,13 +138,13 @@ impl PlanRisk {
         self.destructive_changes.retain(|dc| {
             if let DestructiveChange::ColumnDrop {
                 database,
-                table_name,
+                table_name_with_suffix,
                 column_name,
             } = dc
             {
                 !approved.contains(&ApprovedColumnDrop {
                     database: database.clone(),
-                    table_name: table_name.clone(),
+                    table_name_with_suffix: table_name_with_suffix.clone(),
                     column_name: column_name.clone(),
                 })
             } else {
@@ -154,7 +159,7 @@ impl PlanRisk {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ApprovedColumnDrop {
     pub database: Option<String>,
-    pub table_name: String,
+    pub table_name_with_suffix: String,
     pub column_name: String,
 }
 
@@ -201,13 +206,15 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                 if recreated_table_keys.contains(&key) {
                     destructive_changes.push(DestructiveChange::TableRecreate {
                         database: table.database.clone(),
-                        table_name: table.name.clone(),
+                        table_name_with_suffix: table.name.clone(),
                         reason: "schema change requires drop + recreate".to_string(),
+                        version: table.version.clone(),
                     });
                 } else {
                     destructive_changes.push(DestructiveChange::TableDrop {
                         database: table.database.clone(),
-                        table_name: table.name.clone(),
+                        table_name_with_suffix: table.name.clone(),
+                        version: table.version.clone(),
                     });
                 }
             }
@@ -220,7 +227,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                     if let ColumnChange::Removed(col) = col_change {
                         destructive_changes.push(DestructiveChange::ColumnDrop {
                             database: before.database.clone(),
-                            table_name: before.name.clone(),
+                            table_name_with_suffix: before.name.clone(),
                             column_name: col.name.clone(),
                         });
                     }
@@ -291,7 +298,7 @@ pub async fn destructive_confirmation_gate(
         return Ok(true);
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
         return Err(RoutineFailure::error(Message::new(
             "Destructive".to_string(),
             format!(
@@ -546,6 +553,246 @@ fn format_destructive_summary(risk: &PlanRisk) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Shared confirmation pipeline (rename gate + risk classification)
+// ---------------------------------------------------------------------------
+
+/// Runs the rename confirmation gate, classifies risk, and excludes
+/// already-approved column drops so the destructive gate doesn't re-ask.
+///
+/// Returns `Ok(Some(risk))` to proceed (caller should run their
+/// mode-specific destructive gate next), or `Ok(None)` if the user
+/// cancelled during rename confirmation.
+pub async fn confirm_renames_and_classify(
+    changes: &mut InfraChanges,
+    policy: &ConfirmationPolicy,
+) -> Result<Option<PlanRisk>, RoutineFailure> {
+    let approved_drops = match rename_confirmation_gate(changes, policy).await? {
+        Some(drops) => drops,
+        None => return Ok(None),
+    };
+
+    let mut risk = classify_plan_risk(changes);
+    risk.exclude_approved_drops(&approved_drops);
+    Ok(Some(risk))
+}
+
+// ---------------------------------------------------------------------------
+// Migration-generation specific destructive gate
+// ---------------------------------------------------------------------------
+
+/// Information about a table that was destructively changed, with the
+/// computed next safe version name.
+#[derive(Debug, Clone)]
+pub struct DestructiveTableInfo {
+    pub table_name: String,
+    pub database: Option<String>,
+    pub next_version_name: String,
+    /// Dot-separated version string for user guidance (e.g. `"0.1"`, `"2.0"`).
+    pub next_version_string: String,
+}
+
+/// Default version string assigned to previously-unversioned tables.
+const FIRST_VERSION: &str = "0.1";
+
+/// Increments the major component of `version`, or returns the default
+/// first version when `None` is given.
+fn increment_version(version: Option<&Version>) -> Version {
+    match version {
+        Some(v) => {
+            let mut parsed = v.parsed().to_vec();
+            if let Some(first) = parsed.first_mut() {
+                *first += 1;
+            }
+            Version::from_string(version_to_string(&parsed))
+        }
+        None => Version::from_string(FIRST_VERSION.to_string()),
+    }
+}
+
+/// Computes a suggested next versioned ClickHouse table name.
+///
+/// Uses the `Table.version` field rather than parsing the table name.
+///
+/// `("Events",     None)                 -> "Events_0_1"`
+/// `("Events_3",   Some(Version("3")))   -> "Events_4"`
+/// `("Events_1_0", Some(Version("1.0"))) -> "Events_2_0"`
+pub fn derive_next_version(table_name: &str, version: Option<&Version>) -> String {
+    let next = increment_version(version);
+    let base = match version {
+        Some(v) => {
+            let suffix = format!("_{}", v.as_suffix());
+            table_name.strip_suffix(&suffix).unwrap_or(table_name)
+        }
+        None => table_name,
+    };
+    format!("{base}_{}", next.as_suffix())
+}
+
+/// Returns the suggested `version` string (dot-separated) for the next version.
+///
+/// `None`                 -> `"0.1"`
+/// `Some(Version("3"))`   -> `"4"`
+/// `Some(Version("1.0"))` -> `"2.0"`
+pub fn derive_next_version_string(version: Option<&Version>) -> String {
+    version_to_string(increment_version(version).parsed())
+}
+
+/// Collects [`DestructiveTableInfo`] for every table recreate / drop in the
+/// risk assessment.  Used by the rejection path to generate safe snippets.
+fn collect_destructive_table_info(risk: &PlanRisk) -> Vec<DestructiveTableInfo> {
+    risk.destructive_changes
+        .iter()
+        .filter_map(|c| match c {
+            DestructiveChange::TableRecreate {
+                database,
+                table_name_with_suffix,
+                version,
+                ..
+            }
+            | DestructiveChange::TableDrop {
+                database,
+                table_name_with_suffix,
+                version,
+            } => Some(DestructiveTableInfo {
+                table_name: table_name_with_suffix.clone(),
+                database: database.clone(),
+                next_version_name: derive_next_version(table_name_with_suffix, version.as_ref()),
+                next_version_string: derive_next_version_string(version.as_ref()),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Migration-generation specific destructive gate.
+///
+/// Differs from [`destructive_confirmation_gate`] (used by `moose dev`):
+///
+/// * DANGER-prefixed prompt with default **No** (`[y/N]`).
+/// * On rejection returns `Ok(MigrationGateOutcome::Rejected { .. })` with
+///   the table info needed to print safe-snippet guidance.
+/// * Non-interactive without override returns `Err` with actionable text.
+pub async fn migration_destructive_gate(
+    risk: &PlanRisk,
+    policy: &ConfirmationPolicy,
+) -> Result<MigrationGateOutcome, RoutineFailure> {
+    if !risk.is_destructive() {
+        return Ok(MigrationGateOutcome::NoDestructiveChanges);
+    }
+
+    let summary = format_destructive_summary(risk);
+
+    if policy.accept_destructive {
+        show_message!(
+            MessageType::Warning,
+            Message::new(
+                "Destructive".to_string(),
+                format!(
+                    "Auto-approved {} destructive operation(s) via override:\n{}",
+                    risk.destructive_changes.len(),
+                    summary
+                )
+            )
+        );
+        return Ok(MigrationGateOutcome::Accepted);
+    }
+
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
+        return Err(RoutineFailure::error(Message::new(
+            "Destructive".to_string(),
+            format!(
+                "Plan contains {} destructive operation(s) but running non-interactively.\n\
+                 {}\n\n\
+                 To proceed, re-run with --yes-destructive or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                risk.destructive_changes.len(),
+                summary
+            ),
+        )));
+    }
+
+    // DANGER banner
+    show_message!(
+        MessageType::Error,
+        Message::new(
+            "DANGER".to_string(),
+            format!(
+                "The generated migration plan contains {} destructive operation(s) that may cause data loss:\n{}",
+                risk.destructive_changes.len(),
+                summary
+            )
+        )
+    );
+    show_message!(
+        MessageType::Highlight,
+        Message::new(
+            "Safer option".to_string(),
+            "Generate the next versioned table and migrate gradually.".to_string()
+        )
+    );
+
+    let input =
+        prompt_user_async("Are you sure you want to continue? [y/N]", Some("N"), None).await?;
+    let accepted = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
+
+    if accepted {
+        Ok(MigrationGateOutcome::Accepted)
+    } else {
+        Ok(MigrationGateOutcome::Rejected {
+            tables: collect_destructive_table_info(risk),
+        })
+    }
+}
+
+/// Outcome of [`migration_destructive_gate`].
+#[derive(Debug)]
+pub enum MigrationGateOutcome {
+    /// Plan has no destructive changes — proceed.
+    NoDestructiveChanges,
+    /// User (or override) accepted destructive changes.
+    Accepted,
+    /// User rejected; includes info for the safe-snippet guidance.
+    Rejected { tables: Vec<DestructiveTableInfo> },
+}
+
+/// Prints the safe-path guidance shown when the user rejects destructive
+/// migration generation.
+pub fn print_migration_rejected_guidance(
+    tables: &[DestructiveTableInfo],
+    language: &crate::framework::languages::SupportedLanguages,
+) {
+    use crate::framework::languages::SupportedLanguages;
+
+    println!("\nMigration generation aborted.");
+    println!(
+        "Safer next step: create a new version of the table in your model code, \
+         export it from your root module, then regenerate migration.\n"
+    );
+
+    for info in tables {
+        println!(
+            "  {0} → {1}  (version: \"{2}\")",
+            info.table_name, info.next_version_name, info.next_version_string
+        );
+    }
+
+    let (root_file, version_hint) = match language {
+        SupportedLanguages::Typescript => (
+            "index.ts",
+            "Set `version: \"<version>\"` in your OlapTable config",
+        ),
+        SupportedLanguages::Python => (
+            "__init__.py or models directory",
+            "Set `version=\"<version>\"` in your OlapTable config",
+        ),
+    };
+
+    println!("\nNext Steps");
+    println!("  1. {version_hint}");
+    println!("  2. Export the new table from root `{root_file}`");
+    println!("  3. Run `moose generate migration` again");
+}
+
+// ---------------------------------------------------------------------------
 // Column-rename confirmation gate (forward-only)
 // ---------------------------------------------------------------------------
 //
@@ -632,7 +879,7 @@ pub async fn rename_confirmation_gate(
         return Ok(Some(HashSet::new()));
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
         return Err(RoutineFailure::error(Message::new(
             "Rename".to_string(),
             format!(
@@ -702,7 +949,7 @@ pub async fn rename_confirmation_gate(
                     );
                     approved_drops.insert(ApprovedColumnDrop {
                         database: table_renames.database.clone(),
-                        table_name: table_renames.table_name.clone(),
+                        table_name_with_suffix: table_renames.table_name.clone(),
                         column_name: rename.before.name.clone(),
                     });
                 }
@@ -844,7 +1091,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableDrop { database: None, table_name } if table_name == "events"
+            DestructiveChange::TableDrop { database: None, table_name_with_suffix, .. } if table_name_with_suffix == "events"
         ));
     }
 
@@ -872,8 +1119,8 @@ mod tests {
         assert!(risk.is_destructive());
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::ColumnDrop { database: None, table_name, column_name }
-                if table_name == "events" && column_name == "old_col"
+            DestructiveChange::ColumnDrop { database: None, table_name_with_suffix, column_name }
+                if table_name_with_suffix == "events" && column_name == "old_col"
         ));
     }
 
@@ -894,7 +1141,7 @@ mod tests {
         assert_eq!(risk.destructive_changes.len(), 1);
         assert!(matches!(
             &risk.destructive_changes[0],
-            DestructiveChange::TableRecreate { database: None, table_name, .. } if table_name == "events"
+            DestructiveChange::TableRecreate { database: None, table_name_with_suffix, .. } if table_name_with_suffix == "events"
         ));
     }
 
@@ -1117,10 +1364,90 @@ mod tests {
 
         let approved = HashSet::from([ApprovedColumnDrop {
             database: None,
-            table_name: "events".to_string(),
+            table_name_with_suffix: "events".to_string(),
             column_name: "old_name".to_string(),
         }]);
         risk.exclude_approved_drops(&approved);
         assert!(!risk.is_destructive());
+    }
+
+    // ---------------------------------------------------------------
+    // derive_next_version tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn next_version_from_unversioned_table() {
+        assert_eq!(derive_next_version("Events", None), "Events_0_1");
+    }
+
+    #[test]
+    fn next_version_from_v3() {
+        let v = Version::from_string("3".to_string());
+        assert_eq!(derive_next_version("Events_3", Some(&v)), "Events_4");
+    }
+
+    #[test]
+    fn next_version_from_v1() {
+        let v = Version::from_string("1".to_string());
+        assert_eq!(derive_next_version("Events_1", Some(&v)), "Events_2");
+    }
+
+    #[test]
+    fn next_version_from_multi_component() {
+        let v = Version::from_string("1.0".to_string());
+        assert_eq!(derive_next_version("Events_1_0", Some(&v)), "Events_2_0");
+    }
+
+    #[test]
+    fn collect_destructive_info_for_recreate() {
+        let v = Version::from_string("3".to_string());
+        let risk = PlanRisk {
+            destructive_changes: vec![DestructiveChange::TableRecreate {
+                database: None,
+                table_name_with_suffix: "Events_3".to_string(),
+                reason: "order by changed".to_string(),
+                version: Some(v),
+            }],
+        };
+        let info = collect_destructive_table_info(&risk);
+        assert_eq!(info.len(), 1);
+        assert_eq!(info[0].table_name, "Events_3");
+        assert_eq!(info[0].next_version_name, "Events_4");
+    }
+
+    #[test]
+    fn collect_destructive_info_for_drop() {
+        let risk = PlanRisk {
+            destructive_changes: vec![DestructiveChange::TableDrop {
+                database: Some("analytics".to_string()),
+                table_name_with_suffix: "Users".to_string(),
+                version: None,
+            }],
+        };
+        let info = collect_destructive_table_info(&risk);
+        assert_eq!(info.len(), 1);
+        assert_eq!(info[0].table_name, "Users");
+        assert_eq!(info[0].next_version_name, "Users_0_1");
+        assert_eq!(info[0].next_version_string, "0.1");
+        assert_eq!(info[0].database, Some("analytics".to_string()));
+    }
+
+    #[test]
+    fn collect_skips_non_table_destructive_changes() {
+        let risk = PlanRisk {
+            destructive_changes: vec![
+                DestructiveChange::ViewDrop {
+                    database: None,
+                    view_name: "my_view".to_string(),
+                },
+                DestructiveChange::ColumnDrop {
+                    database: None,
+                    table_name_with_suffix: "events".to_string(),
+                    column_name: "old_col".to_string(),
+                },
+            ],
+        };
+        let info = collect_destructive_table_info(&risk);
+        assert!(info.is_empty());
     }
 }

@@ -95,7 +95,7 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
     compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
 };
-use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
+use crate::framework::core::migration_plan::MigrationPlanWithBeforeAfter;
 use crate::framework::core::plan_validator;
 use crate::framework::typescript::parser::get_compiled_index_path;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -122,7 +122,8 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
-    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
+    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
+    ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
@@ -709,14 +710,10 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    let approved_drops =
-        match rename_confirmation_gate(&mut plan.changes, &confirmation_policy).await? {
-            Some(drops) => drops,
-            None => return Ok(()),
-        };
-
-    let mut risk = classify_plan_risk(&plan.changes);
-    risk.exclude_approved_drops(&approved_drops);
+    let risk = match confirm_renames_and_classify(&mut plan.changes, &confirmation_policy).await? {
+        Some(risk) => risk,
+        None => return Ok(()),
+    };
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
         return Ok(());
     }
@@ -977,6 +974,29 @@ pub async fn start_production_mode(
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
+
+    if !project.migration_config.prod_auto_allow_destructive {
+        let risk = classify_plan_risk(&plan.changes);
+        if risk.is_destructive() && !execute_migration_yaml {
+            let summary = risk
+                .destructive_changes
+                .iter()
+                .map(|c| format!("  - {c}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(anyhow::anyhow!(
+                "Production startup blocked: the computed infrastructure diff contains {} \
+                 destructive operation(s) but no plan.yaml was found.\n\
+                 {}\n\n\
+                 To proceed, either:\n  \
+                 1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
+                 2. Set `prod_auto_allow_destructive = true` under [migration_config] \
+                 in moose.config.toml to allow unplanned destructive changes.",
+                risk.destructive_changes.len(),
+                summary,
+            ));
+        }
+    }
 
     if execute_migration_yaml {
         migrate::execute_migration_plan(
@@ -1533,13 +1553,11 @@ pub async fn remote_gen_migration(
 
     plan_validator::validate(project, &plan)?;
 
-    let db_migration =
-        MigrationPlan::from_infra_plan(&plan.changes, &project.clickhouse_config.db_name)?;
-
     Ok(MigrationPlanWithBeforeAfter {
         remote_state: remote_infra_map,
         local_infra_map,
-        db_migration,
+        changes: plan.changes,
+        default_database: project.clickhouse_config.db_name.clone(),
     })
 }
 
