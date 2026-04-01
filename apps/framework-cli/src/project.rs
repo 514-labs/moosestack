@@ -157,10 +157,6 @@ impl Default for TypescriptConfig {
     }
 }
 
-fn default_true() -> bool {
-    true
-}
-
 fn default_package_manager() -> String {
     "npm".to_string()
 }
@@ -249,12 +245,12 @@ pub struct MigrationConfig {
     /// Operations to ignore during migration plan generation
     #[serde(default)]
     pub ignore_operations: Vec<IgnorableOperation>,
-    /// When true (default), production mode refuses to start if the computed
-    /// infra diff contains destructive operations and no `plan.yaml` is present.
-    /// Set to `false` to allow auto-applying destructive changes in production
-    /// without a pre-approved migration plan.
-    #[serde(default = "default_true")]
-    pub require_plan_for_destructive: bool,
+    /// When true, production mode auto-applies destructive changes (table
+    /// drops, column drops, recreates, view removals) even without a reviewed
+    /// `plan.yaml`. When false (default), `moose prod` refuses to start if
+    /// destructive operations are detected and no `plan.yaml` is present.
+    #[serde(default)]
+    pub prod_auto_allow_destructive: bool,
 }
 
 /// Configuration for development mode behavior with externally managed tables
@@ -751,5 +747,23 @@ pub mod tests {
 
         assert_eq!(project.language, SupportedLanguages::Python);
         assert_eq!(project.name(), "test_project");
+    }
+
+    #[test]
+    fn migration_config_default_blocks_destructive() {
+        let config = MigrationConfig::default();
+        assert!(
+            !config.prod_auto_allow_destructive,
+            "MigrationConfig::default() must not auto-allow destructive changes"
+        );
+    }
+
+    #[test]
+    fn migration_config_deserialized_without_field_blocks_destructive() {
+        let config: MigrationConfig = toml::from_str("").unwrap();
+        assert!(
+            !config.prod_auto_allow_destructive,
+            "Deserializing an empty [migration_config] must not auto-allow destructive changes"
+        );
     }
 }

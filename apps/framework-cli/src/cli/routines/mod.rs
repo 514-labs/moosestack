@@ -975,7 +975,7 @@ pub async fn start_production_mode(
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
-    if project.migration_config.require_plan_for_destructive {
+    if !project.migration_config.prod_auto_allow_destructive {
         let risk = classify_plan_risk(&plan.changes);
         if risk.is_destructive() && !execute_migration_yaml {
             let summary = risk
@@ -990,7 +990,7 @@ pub async fn start_production_mode(
                  {}\n\n\
                  To proceed, either:\n  \
                  1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
-                 2. Set `require_plan_for_destructive = false` under [migration_config] \
+                 2. Set `prod_auto_allow_destructive = true` under [migration_config] \
                  in moose.config.toml to allow unplanned destructive changes.",
                 risk.destructive_changes.len(),
                 summary,

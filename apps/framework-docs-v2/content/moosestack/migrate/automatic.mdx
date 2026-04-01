@@ -29,7 +29,7 @@ While technically possible to use automatic migrations in production environment
 
 Production deployments should always use [Planned Migrations](/moosestack/migrate/planned-migrations) to ensure schema changes are reviewed, tested, and safe.
 
-By default, `moose prod` blocks startup when destructive changes are detected without a reviewed `plan.yaml`. See [Production Safety Gate](/moosestack/migrate/planned-migrations#production-safety-gate) for details. To override at runtime without changing config, set `MOOSE_MIGRATION_CONFIG__REQUIRE_PLAN_FOR_DESTRUCTIVE=false`.
+By default, `moose prod` blocks startup when destructive changes are detected without a reviewed `plan.yaml`. See [Production Safety Gate](/moosestack/migrate/planned-migrations#production-safety-gate) for details. To override at runtime without changing config, set `MOOSE_MIGRATION_CONFIG__PROD_AUTO_ALLOW_DESTRUCTIVE=true`.
 
 ## Behavior
 
