@@ -121,6 +121,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
+use crate::framework::core::plan::{load_reconciled_infrastructure, load_target_infrastructure};
 use crate::framework::core::plan_risk::{classify_plan_risk, ConfirmationPolicy};
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorageBuilder;
@@ -547,10 +548,15 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (current_infra, plan) = plan_changes(&*state_storage, &project).await?;
+    // Only load the target and current maps — the full diff/plan is deferred to
+    // the watcher's initial pass, which runs after the MCP server is available.
+    let target_infra_map = load_target_infrastructure(&project).await?;
+    let olap_client = create_client(project.clickhouse_config.clone());
+    let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
+    let current_infra =
+        load_reconciled_infrastructure(&project, &*state_storage, olap_client, &filter).await?;
 
-    let externally_managed: Vec<_> = plan
-        .target_infra_map
+    let externally_managed: Vec<_> = target_infra_map
         .tables
         .values()
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
@@ -707,8 +713,6 @@ pub async fn start_development_mode(
     };
 
     maybe_warmup_connections(&project, &redis_client).await;
-
-    plan_validator::validate(&project, &plan)?;
 
     let prompt_bridge = if enable_mcp {
         let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
