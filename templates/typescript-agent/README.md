@@ -14,6 +14,8 @@ It combines:
 - Langfuse-compatible tracing from the web app
 - optional Bedrock provider and Guardrails wiring
 
+![Template Architecture](Template-architecture.png)
+
 ## Why Moose + Next.js
 
 This template is intentionally not "just Next.js with a few route handlers."
@@ -31,7 +33,23 @@ That split matters once your app needs more than a thin UI over an existing API:
 
 If you only need a simple UI over an existing backend, plain Next.js is often enough. This template is for the case where the application also needs a real data service: modeled data, organization-aware reads, analytics-style queries, and tool-accessible APIs.
 
-## Overview
+## Optional Multi-Agent Reference Flow
+
+The runtime package includes a simple multi-agent reference flow:
+
+- `supervisor` classifies the latest user request and selects one specialist
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with the authenticated MCP tools
+- `narrator` rewrites the specialist's working notes into the final user-facing answer
+
+The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
+
+Start with these files if you want to customize the pattern:
+
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
+- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
+- `packages/agent-runtime/src/prompts/multi-agent.ts` - reference supervisor/specialist/narrator prompts
+
+## Auth Overview
 
 ```mermaid
 flowchart LR
@@ -69,22 +87,6 @@ flowchart LR
 ```
 
 Authentication establishes identity. Authorization determines whether the request is organization-scoped (`org_id`) or uses the local-only `Admin Debug` bypass for troubleshooting.
-
-## Optional Multi-Agent Reference Flow
-
-The runtime package still includes a simple multi-agent reference flow:
-
-- `supervisor` classifies the latest user request and selects one specialist
-- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with the authenticated MCP tools
-- `narrator` rewrites the specialist's working notes into the final user-facing answer
-
-The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
-
-Start with these files if you want to customize the pattern:
-
-- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
-- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
-- `packages/agent-runtime/src/prompts/multi-agent.ts` - reference supervisor/specialist/narrator prompts
 
 ## Prerequisites
 
