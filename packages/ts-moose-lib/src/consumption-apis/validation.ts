@@ -38,14 +38,6 @@ export class BadRequestError extends Error {
   }
 }
 
-/** Error thrown when a resource is not found */
-export class NotFoundError extends Error {
-  constructor(message = "Not Found") {
-    super(message);
-    this.name = "NotFoundError";
-  }
-}
-
 /** Assert validation result, throw BadRequestError if invalid */
 export function assertValid<T>(result: IValidation<T>): T {
   if (!result.success) {

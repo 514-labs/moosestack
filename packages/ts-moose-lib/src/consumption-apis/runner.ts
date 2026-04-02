@@ -18,7 +18,6 @@ import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
 import { getSourceDir, getOutDir } from "../compiler-config";
 import { setupStructuredConsole } from "../utils/structured-logging";
-import { NotFoundError } from "./validation";
 
 interface ClickhouseConfig {
   database: string;
@@ -288,7 +287,7 @@ const apiHandler = async (
         }
 
         if (!userFuncModule || matchedApiName === undefined) {
-          throw new NotFoundError();
+          return;
         }
 
         // Cache both the module and API name for future requests
@@ -367,10 +366,6 @@ const apiHandler = async (
       } else if (error?.name === "BadRequestError") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify(error.toJSON?.() ?? { error: error.message }));
-        httpLogger(req, res, start, matchedApiName);
-      } else if (error?.name === "NotFoundError") {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Not Found" }));
         httpLogger(req, res, start, matchedApiName);
       } else if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -518,7 +513,7 @@ const createMainRouter = async (
         },
       );
       await apiRequestHandler(modifiedReq as http.IncomingMessage, res);
-      return;
+      if (res.headersSent) return;
     }
 
     res.writeHead(404, { "Content-Type": "application/json" });
