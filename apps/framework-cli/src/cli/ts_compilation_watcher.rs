@@ -44,6 +44,7 @@ use crate::framework::core::plan_risk::{
 };
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorage;
+use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
 use crate::project::Project;
@@ -295,6 +296,7 @@ async fn watch(
     initial_handle: Option<InitialCompileHandle>,
     confirmation_policy: ConfirmationPolicy,
     prompt_bridge: Option<PromptBridge>,
+    remote_for_mirrors: Option<ClickHouseRemote>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -447,6 +449,13 @@ async fn watch(
                                     openapi(&project, &plan_result.target_infra_map).await
                                 })
                                 .await?;
+
+                                crate::cli::routines::create_external_mirrors(
+                                    &project,
+                                    &plan_result.target_infra_map,
+                                    remote_for_mirrors.as_ref(),
+                                )
+                                .await;
 
                                 let mut infra_ptr = infrastructure_map.write().await;
                                 *infra_ptr = plan_result.target_infra_map;
@@ -753,6 +762,7 @@ impl TsCompilationWatcher {
         initial_handle: Option<InitialCompileHandle>,
         confirmation_policy: ConfirmationPolicy,
         prompt_bridge: Option<PromptBridge>,
+        remote_for_mirrors: Option<ClickHouseRemote>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -770,6 +780,7 @@ impl TsCompilationWatcher {
                 initial_handle,
                 confirmation_policy,
                 prompt_bridge,
+                remote_for_mirrors,
             )
             .await
         };

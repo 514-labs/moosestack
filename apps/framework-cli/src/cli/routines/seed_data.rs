@@ -701,7 +701,6 @@ pub async fn seed_clickhouse_tables(
 // =============================================================================
 
 /// Context for mirror table operations
-#[allow(dead_code)]
 struct MirrorContext<'a> {
     local_client: &'a ClickHouseClient,
     local_db: String,
@@ -713,7 +712,6 @@ struct MirrorContext<'a> {
 /// Orchestrates create/drop/seed for a single mirror table.
 ///
 /// Returns a status string using format_success/warning/error.
-#[allow(dead_code)]
 async fn create_single_mirror(ctx: &MirrorContext<'_>, table: &Table) -> String {
     let table_name = &table.name;
     let remote_db = table.database.as_deref().unwrap_or(&ctx.remote.database);
@@ -808,7 +806,6 @@ async fn create_single_mirror(ctx: &MirrorContext<'_>, table: &Table) -> String 
 ///
 /// # Returns
 /// A vector of status messages for each table processed
-#[allow(dead_code)]
 pub async fn create_external_table_mirrors(
     project: &Project,
     infra_map: &InfrastructureMap,
@@ -863,7 +860,6 @@ pub async fn create_external_table_mirrors(
 ///
 /// # Returns
 /// A vector of status messages for each table processed
-#[allow(dead_code)]
 pub async fn create_external_tables_from_local_schema(
     project: &Project,
     infra_map: &InfrastructureMap,

@@ -403,6 +403,11 @@ pub enum GenerateCommand {
         /// Disable automatic backfill SQL generation for versioned tables
         #[arg(long)]
         no_auto_backfill_sql: bool,
+
+        /// Agent-driven mode: confirmation prompts are answered via the MCP
+        /// `respond_to_prompt` tool instead of stdin.
+        #[arg(long)]
+        agent: bool,
     },
 }
 

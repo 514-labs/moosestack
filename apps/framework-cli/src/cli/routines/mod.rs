@@ -367,8 +367,7 @@ async fn process_pubsub_message(
 
 /// Creates local tables for EXTERNALLY_MANAGED tables.
 /// Uses remote mirroring if config available, otherwise creates from local schema.
-#[allow(dead_code)]
-async fn create_external_mirrors(
+pub(crate) async fn create_external_mirrors(
     project: &Project,
     infra_map: &InfrastructureMap,
     remote: Option<&ClickHouseRemote>,
@@ -556,7 +555,7 @@ pub async fn start_development_mode(
         .values()
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
         .collect();
-    let _remote_for_mirrors: Option<ClickHouseRemote> = if !externally_managed.is_empty() {
+    let remote_for_mirrors: Option<ClickHouseRemote> = if !externally_managed.is_empty() {
         if !project.dev.externally_managed.tables.create_local_mirrors {
             show_message!(
                 MessageType::Highlight,
@@ -766,6 +765,7 @@ pub async fn start_development_mode(
                 ts_compile_handle,
                 confirmation_policy,
                 prompt_bridge.clone(),
+                remote_for_mirrors.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -783,6 +783,7 @@ pub async fn start_development_mode(
                 watcher_shutdown_rx,
                 confirmation_policy,
                 prompt_bridge.clone(),
+                remote_for_mirrors,
             )?;
         }
     }

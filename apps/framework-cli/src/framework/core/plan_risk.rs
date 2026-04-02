@@ -745,6 +745,7 @@ fn collect_destructive_table_info(risk: &PlanRisk) -> Vec<DestructiveTableInfo> 
 pub async fn migration_destructive_gate(
     risk: &PlanRisk,
     policy: &ConfirmationPolicy,
+    bridge: Option<&PromptBridge>,
 ) -> Result<MigrationGateOutcome, RoutineFailure> {
     if !risk.is_destructive() {
         return Ok(MigrationGateOutcome::NoDestructiveChanges);
@@ -767,13 +768,16 @@ pub async fn migration_destructive_gate(
         return Ok(MigrationGateOutcome::Accepted);
     }
 
-    if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
+    let is_interactive = std::io::stdin().is_terminal() && stdout().is_terminal() && !policy.agent;
+
+    if !is_interactive && bridge.is_none() {
         return Err(RoutineFailure::error(Message::new(
             "Destructive".to_string(),
             format!(
                 "Plan contains {} destructive operation(s) but running non-interactively.\n\
                  {}\n\n\
-                 To proceed, re-run with --yes-destructive or set MOOSE_ACCEPT_DESTRUCTIVE=1",
+                 To proceed, re-run with --yes-destructive, set MOOSE_ACCEPT_DESTRUCTIVE=1, \
+                 or use --agent with MCP enabled",
                 risk.destructive_changes.len(),
                 summary
             ),
@@ -800,8 +804,16 @@ pub async fn migration_destructive_gate(
         )
     );
 
-    let input =
-        prompt_user_async("Are you sure you want to continue? [y/N]", Some("N"), None).await?;
+    let prompt_info = PendingPrompt {
+        kind: PromptKind::Destructive {
+            change_count: risk.destructive_changes.len(),
+            summary: summary.clone(),
+        },
+        valid_responses: vec!["y".into(), "n".into()],
+        default_response: Some("n".into()),
+    };
+
+    let input = get_response(is_interactive, bridge, prompt_info).await?;
     let accepted = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
     if accepted {

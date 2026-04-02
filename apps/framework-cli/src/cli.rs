@@ -80,6 +80,7 @@ use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
     ConfirmationPolicy, MigrationGateOutcome,
 };
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -855,8 +856,11 @@ pub async fn top_command_handler(
                 yes_destructive,
                 yes_rename,
                 no_auto_backfill_sql,
+                agent,
             }) => {
                 info!("Running generate migration command");
+
+                let agent = *agent || env_bool("MOOSE_AGENT");
 
                 let mut project = load_project(commands)?;
 
@@ -869,6 +873,37 @@ pub async fn top_command_handler(
                 );
 
                 check_project_name(&project.name())?;
+
+                // Start a lightweight MCP server for agent-driven prompts.
+                // The bridge is created first and shared: the server's handler
+                // clones the same Arc state, so prompt/respond stay in sync.
+                let (prompt_bridge, _mcp_server) = if agent {
+                    use crate::framework::core::prompt_bridge::PromptBridge;
+                    let host = &project.http_server_config.host;
+                    let port = project.http_server_config.port;
+                    let mcp_url = format!("http://{host}:{port}/mcp");
+                    let bridge = PromptBridge::new(mcp_url);
+                    match crate::mcp::standalone::start(host, port, bridge.clone()).await {
+                        Ok(server) => {
+                            display::show_message_wrapper(
+                                MessageType::Success,
+                                Message {
+                                    action: "MCP".to_string(),
+                                    details: format!("Prompt server available at {}", server.url()),
+                                },
+                            );
+                            (Some(bridge), Some(server))
+                        }
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "MCP".to_string(),
+                                details: format!("Failed to start prompt server: {e}"),
+                            }));
+                        }
+                    }
+                } else {
+                    (None, None)
+                };
 
                 // Determine which remote source to use and generate migration
                 let result = if let Some(ref moose_url) = url {
@@ -928,6 +963,8 @@ pub async fn top_command_handler(
                     *yes_rename,
                     *no_auto_backfill_sql,
                     *save,
+                    agent,
+                    prompt_bridge.as_ref(),
                 )
                 .await;
 
@@ -1722,6 +1759,7 @@ pub async fn top_command_handler(
 /// Extracted from the `generate migration` handler so that early-returns
 /// (rename cancellation, destructive rejection) do not bypass the caller's
 /// `wait_for_usage_capture` call.
+#[allow(clippy::too_many_arguments)]
 async fn confirm_and_save_migration(
     project: &Project,
     result: &mut MigrationPlanWithBeforeAfter,
@@ -1730,17 +1768,19 @@ async fn confirm_and_save_migration(
     yes_rename: bool,
     no_auto_backfill_sql: bool,
     save: bool,
+    agent: bool,
+    bridge: Option<&PromptBridge>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
-        agent: false,
+        agent,
     };
 
     let risk =
-        match confirm_renames_and_classify(&mut result.changes, &migration_policy, None).await? {
+        match confirm_renames_and_classify(&mut result.changes, &migration_policy, bridge).await? {
             Some(risk) => risk,
             None => {
                 return Ok(RoutineSuccess::success(Message::new(
@@ -1750,7 +1790,7 @@ async fn confirm_and_save_migration(
             }
         };
 
-    match migration_destructive_gate(&risk, &migration_policy).await? {
+    match migration_destructive_gate(&risk, &migration_policy, bridge).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
             return Ok(RoutineSuccess::success(Message::new(
