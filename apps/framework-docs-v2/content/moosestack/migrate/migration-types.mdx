@@ -263,6 +263,41 @@ class UserSchema(BaseModel):
 
 **Migration Result:** Alters `score` column type (data converted if compatible)
 
+## Database Macros and Clustered Deployments
+
+When defining physical infrastructure such as clustered deployments, you may need to leverage ClickHouse cluster macros. To support dynamic, macro-driven configurations in your models, Moose allows you to use `{macro}` syntax directly in your schema definition properties, such as a cluster name.
+
+Normally, Moose validates cluster identifiers strictly. However, if an identifier is wrapped in braces (e.g. `{cluster}`), Moose treats it as a ClickHouse macro. It bypasses local static validation and defers evaluation to the ClickHouse server at execution time. 
+
+<Callout type="info" title="Macro Syntax Verification">
+While validation is bypassed for the full macro name, Moose will still strictly verify that the braces are well-formed (no mismatched or unbalanced brackets like `}{`) to prevent malformed queries from reaching ClickHouse.
+</Callout>
+
+### Using Cluster Macros in Migrations
+
+Here is an example of what a cluster macro looks like in a generated `migrations/plan.yaml` file:
+
+```yaml
+operations:
+  - CreateTable:
+      table:
+        name: user_events
+        columns:
+          - name: id
+            data_type: String
+            required: true
+        engine: ReplicatedMergeTree
+        cluster_name: "{cluster}"
+```
+
+When this migration is applied, the CLI dynamically generates DDL using ClickHouse's single-quote interpolation for macros:
+
+```sql
+CREATE TABLE `user_events` ON CLUSTER '{cluster}' (id String) ENGINE = ReplicatedMergeTree;
+```
+
+ClickHouse reads the single-quoted string `'{cluster}'` during execution, detects the `{...}` syntax, and substitutes it with the `cluster` macro value defined in its local `macros.xml` configuration file.
+
 ## Removing Infrastructure
 
 <LanguageTabs>

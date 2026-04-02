@@ -41,6 +41,59 @@ pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
         && !name.starts_with('-')
 }
 
+/// Checks if a string is a valid ClickHouse cluster name.
+/// Allows `{` and `}` for macro patterns like `{cluster}`.
+pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    let mut in_brace = false;
+    let mut macro_len = 0;
+
+    for c in name.chars() {
+        if c == '{' {
+            if in_brace {
+                return false; // nested braces not allowed
+            }
+            in_brace = true;
+            macro_len = 0;
+        } else if c == '}' {
+            if !in_brace || macro_len == 0 {
+                return false; // unbalanced or empty braces not allowed
+            }
+            in_brace = false;
+        } else if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return false; // invalid character
+        } else if in_brace {
+            macro_len += 1;
+        }
+    }
+
+    if in_brace {
+        return false; // unclosed brace
+    }
+
+    let first_char = name.chars().next().unwrap();
+    if first_char.is_ascii_digit() || first_char == '-' {
+        return false;
+    }
+
+    true
+}
+
+/// Validates a cluster name, allowing ClickHouse macro patterns like `{cluster}`.
+pub fn validate_clickhouse_cluster_name(name: &str) -> Result<(), ClickhouseError> {
+    if is_valid_clickhouse_cluster_name(name) {
+        return Ok(());
+    }
+    Err(ClickhouseError::InvalidIdentifier {
+        identifier_type: "Cluster name".to_string(),
+        name: name.to_string(),
+        reason: "contains invalid characters (only alphanumeric, underscore, hyphen, and {} for macros allowed)".to_string(),
+    })
+}
+
 /// Validates that a string is a valid ClickHouse identifier, returning a typed error on failure.
 ///
 /// This delegates to `is_valid_clickhouse_identifier` for the boolean check and only
@@ -69,4 +122,101 @@ pub fn validate_clickhouse_identifier(
         name: name.to_string(),
         reason: reason.to_string(),
     })
+}
+
+/// Validates that a SQL expression does not contain characters that could enable SQL injection
+/// when the expression is interpolated directly into a query string.
+///
+/// Rejects semicolons (statement terminators) and comment markers (`--`, `/*`, `*/`) since
+/// these can be used to escape the intended expression context even when the expression is
+/// wrapped in parentheses by the caller.
+pub fn validate_clickhouse_expression(
+    expression: &str,
+    expression_type: &str,
+) -> Result<(), ClickhouseError> {
+    const FORBIDDEN: &[(&str, &str)] = &[
+        (";", "semicolons are not allowed in expressions"),
+        (
+            "--",
+            "SQL line comment markers (--) are not allowed in expressions",
+        ),
+        (
+            "/*",
+            "SQL block comment openers (/*) are not allowed in expressions",
+        ),
+        (
+            "*/",
+            "SQL block comment closers (*/) are not allowed in expressions",
+        ),
+    ];
+
+    for (pattern, reason) in FORBIDDEN {
+        if expression.contains(pattern) {
+            return Err(ClickhouseError::InvalidIdentifier {
+                identifier_type: expression_type.to_string(),
+                name: expression.to_string(),
+                reason: reason.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_expression_accepts_valid() {
+        assert!(validate_clickhouse_expression("len(col) <= 32", "test").is_ok());
+        assert!(validate_clickhouse_expression("col IN (1, 2, 3)", "test").is_ok());
+        assert!(validate_clickhouse_expression("isNotNull(col)", "test").is_ok());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_semicolon() {
+        assert!(validate_clickhouse_expression("col = 1; DROP TABLE foo", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_line_comment() {
+        assert!(validate_clickhouse_expression("col = 1 -- bypass", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_block_comment_open() {
+        assert!(validate_clickhouse_expression("col = 1 /* inject", "test").is_err());
+    }
+
+    #[test]
+    fn test_validate_expression_rejects_block_comment_close() {
+        assert!(validate_clickhouse_expression("*/ UNION SELECT 1", "test").is_err());
+    }
+
+    #[test]
+    fn test_is_valid_clickhouse_cluster_name() {
+        // Valid basic names
+        assert!(is_valid_clickhouse_cluster_name("my_cluster"));
+        assert!(is_valid_clickhouse_cluster_name("cluster-123"));
+        assert!(is_valid_clickhouse_cluster_name("c1"));
+
+        // Valid macro names
+        assert!(is_valid_clickhouse_cluster_name("{cluster}"));
+        assert!(is_valid_clickhouse_cluster_name("{my_cluster}"));
+        assert!(is_valid_clickhouse_cluster_name("prefix_{cluster}_suffix"));
+
+        // Invalid basic names
+        assert!(!is_valid_clickhouse_cluster_name("")); // empty
+        assert!(!is_valid_clickhouse_cluster_name("1cluster")); // starts with digit
+        assert!(!is_valid_clickhouse_cluster_name("-cluster")); // starts with hyphen
+        assert!(!is_valid_clickhouse_cluster_name("my cluster")); // contains space
+        assert!(!is_valid_clickhouse_cluster_name("my@cluster")); // invalid char
+
+        // Invalid macro names
+        assert!(!is_valid_clickhouse_cluster_name("{}")); // empty braces
+        assert!(!is_valid_clickhouse_cluster_name("{a{b}")); // nested braces
+        assert!(!is_valid_clickhouse_cluster_name("}{")); // unbalanced braces
+        assert!(!is_valid_clickhouse_cluster_name("{cluster")); // unclosed brace
+        assert!(!is_valid_clickhouse_cluster_name("cluster}")); // unopened brace
+    }
 }

@@ -795,10 +795,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
+        let constraints_changed = before.constraints != after.constraints;
         if !column_changes.is_empty()
             || before.indexes != after.indexes
             || before.projections != after.projections
             || sample_by_changed
+            || constraints_changed
         {
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
@@ -879,6 +881,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1874,6 +1877,7 @@ mod tests {
             table_settings: Some(table_settings),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

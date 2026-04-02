@@ -419,6 +419,92 @@ pipeline = IngestPipeline[CompositeShared]("composite_shared", IngestPipelineCon
   </LanguageTabContent>
 </LanguageTabs>
 
+### Adding Table Constraints
+
+You can configure constraints on MergeTree-family ClickHouse tables to enforce data integrity. 
+
+#### The `TableConstraint` Interface
+
+Constraints are defined using the `TableConstraint` interface:
+
+- `name` (string): The identifier for the constraint.
+- `expression` (string): The ClickHouse SQL expression to evaluate.
+- `type` (string): The type of constraint. Allowed values are `"CHECK"` or `"ASSUME"`.
+
+*Compatibility Note: Table constraints are fully supported in both standalone `OlapTable` definitions and when used inside `IngestPipeline` configurations.*
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/datamodels/user.ts"
+import { Key, OlapTable, TableConstraint } from "@514labs/moose-lib";
+
+export interface User {
+  id: Key<string>;
+  name: string;
+  age: number;
+  name_len: number;
+}
+
+// Defining constraints
+const ageConstraint: TableConstraint = {
+  name: "valid_age",
+  expression: "age >= 0",
+  type: "CHECK"
+};
+
+const nameLenConstraint: TableConstraint = {
+  name: "assume_name_len",
+  expression: "length(name) = name_len",
+  type: "ASSUME"
+};
+
+export const UserTable = new OlapTable<User>("User", {
+  constraints: [ageConstraint, nameLenConstraint]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig, Key, MergeTreeEngine, MooseModel
+
+class User(MooseModel):
+    id: Key[str]
+    name: str
+    age: int
+    name_len: int
+
+# Defining constraints via OlapConfig.TableConstraint
+age_constraint = OlapConfig.TableConstraint(
+    name="valid_age",
+    expression="age >= 0",
+    type="CHECK"
+)
+
+name_len_constraint = OlapConfig.TableConstraint(
+    name="assume_name_len",
+    expression="length(name) = name_len",
+    type="ASSUME"
+)
+
+UserTable = OlapTable(
+    User,
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        constraints=[age_constraint, name_len_constraint]
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.
+
+In the example above, `ASSUME CONSTRAINT` is used to assert that the `length(name)` function always equals the value of the `name_len` column. This means that whenever `length(name)` is called in a query, ClickHouse can replace it with `name_len`, which should be faster because it avoids calling the `length()` function.
+
+Then, when executing a query like `SELECT name FROM User WHERE length(name) < 5;`, ClickHouse can optimize it to `SELECT name FROM User WHERE name_len < 5;` because of the `ASSUME CONSTRAINT`. This can make the query run faster because it avoids calculating the length of name for each row.
+
+**Note**: `ASSUME CONSTRAINT` does not enforce the constraint, it merely informs the optimizer that the constraint holds true. If the constraint is not actually true, the results of the queries may be incorrect. Therefore, you should only use `ASSUME CONSTRAINT` if you are sure that the constraint is true.
+
 **Key Point**: Complex types including nested objects and arrays work consistently across all infrastructure.
 
 ### ClickHouse-Specific Types (Standalone vs IngestPipeline)

@@ -31,6 +31,35 @@ export interface TableProjection {
 }
 
 /**
+ * Defines a constraint on a ClickHouse table.
+ * Constraints can enforce data integrity rules or provide hints to the query optimizer.
+ *
+ * @example
+ * ```typescript
+ * constraints: [
+ *   {
+ *     name: "age_positive",
+ *     expression: "age > 0",
+ *     type: "CHECK"
+ *   },
+ *   {
+ *     name: "valid_status",
+ *     expression: "status IN ('active', 'inactive')",
+ *     type: "ASSUME"
+ *   }
+ * ]
+ * ```
+ */
+export interface TableConstraint {
+  /** The unique identifier or name of the constraint */
+  name: string;
+  /** The SQL or logical expression that defines the constraint condition */
+  expression: string;
+  /** The type of the constraint */
+  type: "CHECK" | "ASSUME";
+}
+
+/**
  * Represents a failed record during insertion with error details
  */
 export interface FailedRecord<T> {
@@ -277,6 +306,7 @@ export type BaseOlapConfig<T> = (
  */
 export type MergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.MergeTree;
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -287,6 +317,7 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.ReplacingMergeTree;
   ver?: keyof T & string; // Optional version column
   isDeleted?: keyof T & string; // Optional is_deleted column
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -295,6 +326,7 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  */
 export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.AggregatingMergeTree;
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -304,6 +336,7 @@ export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.SummingMergeTree;
   columns?: string[];
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -313,6 +346,7 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type CollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.CollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -323,6 +357,7 @@ export type VersionedCollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.VersionedCollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
   ver: keyof T & string; // Version column for ordering state changes
+  constraints?: TableConstraint[];
 };
 
 interface ReplicatedEngineProperties {
@@ -545,6 +580,9 @@ export type DistributedConfig<T> = Omit<
   shardingKey?: string;
   /** Optional: Policy name for data distribution */
   policyName?: string;
+  /** Optional table-level constraints (passed through for type compatibility, but
+   *  constraints are only meaningful on the underlying _local MergeTree tables) */
+  constraints?: TableConstraint[];
 };
 
 /** Kafka table settings. See: https://clickhouse.com/docs/engines/table-engines/integrations/kafka */
@@ -773,19 +811,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
-    // Validate cluster and explicit replication params are not both specified
-    const hasCluster = typeof (resolvedConfig as any).cluster === "string";
-    const hasKeeperPath =
-      typeof (resolvedConfig as any).keeperPath === "string";
-    const hasReplicaName =
-      typeof (resolvedConfig as any).replicaName === "string";
-
-    if (hasCluster && (hasKeeperPath || hasReplicaName)) {
-      throw new Error(
-        `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
-          `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
-      );
-    }
+    // When cluster is specified alongside keeperPath/replicaName, cluster is used
+    // only for ON CLUSTER DDL generation while keeperPath/replicaName remain explicit.
+    // This supports tables with existing ZooKeeper paths that need ON CLUSTER for ALTER.
 
     super(name, resolvedConfig, schema, columns, validators);
     this.insertValidators = insertValidators;

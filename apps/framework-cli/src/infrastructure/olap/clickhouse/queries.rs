@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
 ON CLUSTER `{{cluster_name}}`{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
-{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_constraints}}, {{#each constraints}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
@@ -3456,6 +3456,35 @@ pub fn create_table_query(
             (true, items)
         };
 
+    let (has_constraints, constraint_strings): (bool, Vec<String>) =
+        if table.constraints.is_empty() || !table.engine.is_merge_tree_family() {
+            (false, vec![])
+        } else {
+            let items: Vec<String> = table
+                .constraints
+                .iter()
+                .map(|c| {
+                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_identifier(
+                        &c.name,
+                        "Constraint name",
+                    )?;
+                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_identifier(
+                        &c.constraint_type.to_string(),
+                        "Constraint type",
+                    )?;
+                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_expression(
+                        &c.expression,
+                        "Constraint expression",
+                    )?;
+                    Ok(format!(
+                        "CONSTRAINT `{}` {} ({})",
+                        c.name, c.constraint_type, c.expression
+                    ))
+                })
+                .collect::<Result<Vec<String>, ClickhouseError>>()?;
+            (true, items)
+        };
+
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
     // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
@@ -3491,6 +3520,8 @@ pub fn create_table_query(
         "indexes": index_strings,
         "has_projections": has_projections,
         "projections": projection_strings,
+        "has_constraints": has_constraints,
+        "constraints": constraint_strings,
         "primary_key_string": if supports_primary_key {
             primary_key_str
         } else {
@@ -3624,6 +3655,16 @@ pub fn alter_table_reset_settings_query(
     Ok(reg.render_template(ALTER_TABLE_RESET_SETTINGS_TEMPLATE, &context)?)
 }
 
+fn is_effectively_nullable_type(t: &ClickHouseColumnType) -> bool {
+    match t {
+        ClickHouseColumnType::Nullable(_) => true,
+        ClickHouseColumnType::LowCardinality(inner) => {
+            matches!(inner.as_ref(), ClickHouseColumnType::Nullable(_))
+        }
+        _ => false,
+    }
+}
+
 pub fn basic_field_type_to_string(
     field_type: &ClickHouseColumnType,
 ) -> Result<String, ClickhouseError> {
@@ -3675,14 +3716,13 @@ pub fn basic_field_type_to_string(
                     let field_type_string = basic_field_type_to_string(&col.column_type)?;
                     match col.required {
                         false
-                            if !matches!(
-                                col.column_type,
-                                // if type is Nullable, `field_type_string` is already wrapped in Nullable
-                                ClickHouseColumnType::Nullable(_)
+                            if !is_effectively_nullable_type(&col.column_type)
+                                && !matches!(
+                                    col.column_type,
                                     // Nested and Array are not allowed to be nullable
-                                    | ClickHouseColumnType::Nested(_)
-                                    | ClickHouseColumnType::Array(_)
-                            ) =>
+                                    ClickHouseColumnType::Nested(_)
+                                        | ClickHouseColumnType::Array(_)
+                                ) =>
                         {
                             Ok(format!("{} Nullable({})", col.name, field_type_string))
                         }
@@ -3791,8 +3831,8 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
-                "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
-                    // if type is Nullable, do not add extra specifier
+                "field_nullable": if is_effectively_nullable_type(&column.column_type) {
+                    // if type is already nullable (e.g. Nullable or LowCardinality(Nullable)), do not add extra specifier
                     "".to_string()
                 } else if column.required || column.is_array() || column.is_nested() {
                     // Clickhouse doesn't allow array/nested fields to be nullable
@@ -4029,6 +4069,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4072,6 +4113,7 @@ PRIMARY KEY (`id`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4114,6 +4156,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4185,6 +4228,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4231,6 +4275,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4276,6 +4321,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4331,6 +4377,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4405,6 +4452,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4453,6 +4501,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -4625,6 +4674,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -4697,6 +4747,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
@@ -4742,6 +4793,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("product_id".to_string()),
@@ -4808,6 +4860,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_settings: Some(settings),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5286,6 +5339,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5874,8 +5928,9 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
-            cluster_name: Some("test_cluster".to_string()),
+            cluster_name: Some("{cluster}".to_string()),
             primary_key_expression: None,
         };
 
@@ -5883,7 +5938,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER `{cluster}`"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -5923,6 +5978,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -5939,12 +5995,12 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
     #[test]
     fn test_drop_table_with_cluster() {
-        let cluster_name = Some("test_cluster");
+        let cluster_name = Some("{cluster}");
         let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER `{cluster}`"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -6001,6 +6057,20 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
         assert!(query.contains("ALTER TABLE"));
         assert!(query.contains("MODIFY SETTING"));
+
+        // Also test with a macro cluster
+        let macro_query = alter_table_modify_settings_query(
+            "test_db",
+            "test_table",
+            &settings,
+            Some("{cluster}"),
+        )
+        .unwrap();
+
+        assert!(
+            macro_query.contains("ON CLUSTER `{cluster}`"),
+            "MODIFY SETTING query should contain ON CLUSTER clause with macro"
+        );
     }
 
     #[test]
@@ -6034,6 +6104,18 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
         assert!(query.contains("ALTER TABLE"));
         assert!(query.contains("ADD COLUMN"));
+
+        // Also test with a macro cluster for reset settings
+        let settings = vec!["index_granularity".to_string()];
+
+        let reset_query =
+            alter_table_reset_settings_query("test_db", "test_table", &settings, Some("{cluster}"))
+                .unwrap();
+
+        assert!(
+            reset_query.contains("ON CLUSTER `{cluster}`"),
+            "RESET SETTING query should contain ON CLUSTER clause with macro"
+        );
     }
 
     #[test]
@@ -6950,6 +7032,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             cluster_name: None,
             primary_key_expression: None,
         };
@@ -7014,6 +7097,7 @@ ORDER BY (`id`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7082,6 +7166,7 @@ ORDER BY (`event_time`)
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7501,6 +7586,7 @@ ORDER BY (`event_time`)
                 name: "proj_by_user".to_string(),
                 body: "SELECT * ORDER BY user_id".to_string(),
             }],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7549,6 +7635,7 @@ ORDER BY (`event_time`)
                 name: "should_be_ignored".to_string(),
                 body: "SELECT * ORDER BY data".to_string(),
             }],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -7558,6 +7645,228 @@ ORDER BY (`event_time`)
         assert!(
             !query.contains("PROJECTION"),
             "Non-MergeTree DDL should NOT contain projections. Got: {}",
+            query
+        );
+    }
+
+    #[test]
+    fn test_create_table_query_keeps_constraint_for_mergetree() {
+        use crate::framework::core::infrastructure::table::ConstraintType;
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_keeps_constraints".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![ClickHouseConstraint {
+                name: "should_be_kept".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: ConstraintType::Check,
+            }],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table.clone(), false).unwrap();
+        assert!(
+            table.engine.is_merge_tree_family(),
+            "Engine must be MergeTree for this test"
+        );
+        assert!(
+            query.contains("CONSTRAINT"),
+            "MergeTree DDL should contain constraints. Got: {}",
+            query
+        );
+        assert!(query.contains("`should_be_kept` CHECK (id > 0)"));
+    }
+
+    #[test]
+    fn test_create_table_query_drops_constraint_for_non_mergetree() {
+        use crate::framework::core::infrastructure::table::ConstraintType;
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_drops_constraints".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "localhost:9092".to_string(),
+                topic_list: "events".to_string(),
+                group_name: "grp".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![ClickHouseConstraint {
+                name: "should_be_ignored".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: ConstraintType::Check,
+            }],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table.clone(), false).unwrap();
+        assert!(
+            !table.engine.is_merge_tree_family(),
+            "Engine must be non-MergeTree for this test"
+        );
+        assert!(
+            !query.contains("CONSTRAINT"),
+            "Non-MergeTree DDL should NOT contain constraints. Got: {}",
+            query
+        );
+    }
+
+    #[test]
+    fn test_low_cardinality_nullable_no_extra_null_modifier() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_lc_nullable".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+                ClickHouseColumn {
+                    name: "browser".to_string(),
+                    column_type: ClickHouseColumnType::LowCardinality(Box::new(
+                        ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
+                    )),
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: Some("ZSTD(1)".to_string()),
+                    materialized: None,
+                    alias: None,
+                },
+                ClickHouseColumn {
+                    name: "nested_data".to_string(),
+                    column_type: ClickHouseColumnType::Nested(vec![ClickHouseColumn {
+                        name: "nested_browser".to_string(),
+                        column_type: ClickHouseColumnType::String,
+                        required: false,
+                        primary_key: false,
+                        unique: false,
+                        default: None,
+                        comment: None,
+                        ttl: None,
+                        codec: None,
+                        materialized: None,
+                        alias: None,
+                    }]),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let mut table2 = table.clone();
+        table2.columns[2].column_type = ClickHouseColumnType::Nested(vec![ClickHouseColumn {
+            name: "nested_browser".to_string(),
+            column_type: ClickHouseColumnType::LowCardinality(Box::new(
+                ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::String)),
+            )),
+            required: false,
+            primary_key: false,
+            unique: false,
+            default: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }]);
+
+        let query = create_table_query("test_db", table2, false).unwrap();
+
+        assert!(
+            query.contains("`browser` LowCardinality(Nullable(String))  CODEC(ZSTD(1))"),
+            "DDL should contain exact column definition for browser. Got: {}",
+            query
+        );
+        assert!(
+            !query.contains("`browser` LowCardinality(Nullable(String)) NULL"),
+            "DDL should NOT have extra NULL. Got: {}",
+            query
+        );
+        assert!(
+            query.contains(
+                "`nested_data` Nested(nested_browser LowCardinality(Nullable(String))) NOT NULL"
+            ),
+            "DDL should contain exact column definition for nested_data. Got: {}",
+            query
+        );
+        assert!(
+            !query.contains("Nullable(LowCardinality(Nullable(String)))"),
+            "DDL should NOT have double Nullable in Nested column. Got: {}",
             query
         );
     }

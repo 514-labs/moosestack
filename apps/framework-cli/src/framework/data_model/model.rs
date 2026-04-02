@@ -74,6 +74,7 @@ impl DataModel {
             table_settings_hash: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None, // Database defaults to global config
             table_ttl_setting: None,
             cluster_name: None,
