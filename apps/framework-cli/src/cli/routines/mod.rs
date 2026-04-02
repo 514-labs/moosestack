@@ -585,7 +585,9 @@ pub async fn start_development_mode(
             Ok(stored) => {
                 let remote_clickhouse_url = match stored {
                     Some(url) => Some(url),
-                    None if settings.dev.suppress_dev_setup_prompt => None,
+                    None if settings.dev.suppress_dev_setup_prompt || confirmation_policy.agent => {
+                        None
+                    }
                     None => {
                         display::show_message_wrapper(
                             MessageType::Info,
