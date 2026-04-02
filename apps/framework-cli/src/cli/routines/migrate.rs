@@ -90,19 +90,17 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
-/// Strips both metadata and ignored fields from tables
-fn strip_metadata_and_ignored_fields(
+/// Normalizes every table via `normalize_table_for_diff` so that comparisons
+/// only consider ClickHouse-DDL-relevant fields (the same fields the plan diff checks).
+fn strip_non_schema_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
 ) -> HashMap<String, Table> {
     tables
         .iter()
         .map(|(name, table)| {
-            let mut table = table.clone();
-            table.metadata = None;
-            // Also strip ignored fields
             let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                &table, ignore_ops,
+                table, ignore_ops,
             );
             (name.clone(), table)
         })
@@ -111,8 +109,8 @@ fn strip_metadata_and_ignored_fields(
 
 /// Detects drift by comparing three snapshots of table state.
 ///
-/// This function strips metadata (file paths) before comparison to avoid false positives
-/// when code is reorganized without schema changes.
+/// Uses `normalize_table_for_diff` — the same normalization the plan diff uses —
+/// so that "empty olap_changes" ↔ NoDrift / AlreadyAtTarget.
 ///
 /// # Arguments
 /// * `current_tables` - What's in the database right now (after reconciliation)
@@ -129,11 +127,9 @@ fn detect_drift(
     target_tables: &HashMap<String, Table>,
     ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
-    // Strip metadata and ignored fields to avoid false drift
-    let current_no_metadata = strip_metadata_and_ignored_fields(current_tables, ignore_operations);
-    let expected_no_metadata =
-        strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
-    let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
+    let current_no_metadata = strip_non_schema_fields(current_tables, ignore_operations);
+    let expected_no_metadata = strip_non_schema_fields(expected_tables, ignore_operations);
+    let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
 
     // Check 1: Did the DB change since the plan was generated?
     if current_no_metadata == expected_no_metadata {

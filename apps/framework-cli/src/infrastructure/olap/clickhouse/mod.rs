@@ -322,22 +322,32 @@ impl IgnorableOperation {
     }
 }
 
-/// Normalizes a table by stripping fields that should be ignored during comparison.
+/// Canonical normalization for table comparison.
 ///
-/// This prevents the diff strategy from detecting changes in ignored fields and
-/// generating unnecessary drop+create operations.
+/// Strips Moose-internal tracking fields (`metadata`, `seed_filter`,
+/// `source_primitive`, `version`, `life_cycle`) that are never part of
+/// ClickHouse DDL, plus any schema fields covered by `ignore_ops`.
 ///
-/// # Arguments
-/// * `table` - The table to normalize
-/// * `ignore_ops` - Slice of operations to ignore
-///
-/// # Returns
-/// A new table with ignored fields stripped/normalized to match the "before" state
+/// Used by **both** the plan diff (`diff_tables_with_strategy`) and
+/// drift detection (`detect_drift`) so that "empty olap_changes" implies
+/// NoDrift / AlreadyAtTarget.
 pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
     let mut normalized = table.clone();
 
-    // seed_filter is a dev-time seeding directive, never part of ClickHouse schema
+    // Strip Moose-internal tracking fields that are never part of ClickHouse DDL.
+    // Both the plan diff and drift detection must ignore these so that
+    // "empty olap_changes" ↔ "NoDrift / AlreadyAtTarget".
+    normalized.metadata = None;
     normalized.seed_filter = Default::default();
+    normalized.version = None;
+    normalized.life_cycle = LifeCycle::default();
+    normalized.source_primitive = PrimitiveSignature {
+        name: String::new(),
+        primitive_type: PrimitiveTypes::DataModel,
+    };
 
     if ignore_ops.is_empty() {
         return normalized;

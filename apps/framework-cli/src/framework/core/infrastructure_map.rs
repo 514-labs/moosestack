@@ -2058,7 +2058,7 @@ impl InfrastructureMap {
             if let Some(normalized_target) =
                 normalized_target.get(&normalized_table.id(default_database))
             {
-                if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
+                if normalized_table != normalized_target {
                     // Get original tables for use in changes using the HashMap key
                     // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
@@ -3717,26 +3717,6 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
     let mut b = b.clone();
     a.metadata = None;
     b.metadata = None;
-    a == b
-}
-
-/// Check if two tables are equal, ignoring metadata
-///
-/// Metadata changes (like source file location) should not trigger redeployments.
-///
-/// # Arguments
-/// * `a` - The first table to compare
-/// * `b` - The second table to compare
-///
-/// # Returns
-/// `true` if the tables are equal ignoring metadata, `false` otherwise
-fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.metadata = None;
-    b.metadata = None;
-    a.seed_filter = Default::default();
-    b.seed_filter = Default::default();
     a == b
 }
 
