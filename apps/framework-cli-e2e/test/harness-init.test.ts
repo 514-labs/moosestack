@@ -168,6 +168,40 @@ describe("harness init", () => {
     ).to.contain(".turbo");
   });
 
+  it("targets the nested Moose project when bootstrapping a typescript-agent repo from remote", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "agent-remote-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "agent-remote-e2e",
+        "typescript-agent",
+        "--location",
+        projectDir,
+        "--from-remote",
+        "http://user:pass@127.0.0.1:9/default",
+        "--agent",
+        "none",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.not.equal(0);
+    expect(result.stdout).to.not.contain("No project found");
+    expect(result.stderr).to.not.contain("No project found");
+    expect(
+      fs.existsSync(
+        path.join(projectDir, "packages/moosestack-service/moose.config.toml"),
+      ),
+    ).to.equal(true);
+  });
+
   it("rejects bare --from-remote in arg-driven mode", async function () {
     this.timeout(120_000);
 

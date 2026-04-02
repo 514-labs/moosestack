@@ -148,6 +148,45 @@ fn harness_init_typescript_agent_keeps_turbo_gitignore_entry() {
 
 #[test]
 #[serial_test::serial(harness_init)]
+fn harness_init_typescript_agent_from_remote_uses_nested_moose_project_dir() {
+    ensure_test_environment();
+
+    let home = tempfile::tempdir().expect("temp home");
+    setup_codex_home(home.path());
+    let project_dir = home.path().join("agent-remote-app");
+
+    cli()
+        .env("HOME", home.path())
+        .env("MOOSE_HARNESS_SKILLS_DIR", fixture_skills_dir())
+        .env("MOOSE_TELEMETRY__ENABLED", "false")
+        .current_dir(home.path())
+        .args([
+            "harness",
+            "init",
+            "agent-remote-app",
+            "typescript-agent",
+            "--location",
+            project_dir.to_str().expect("project dir"),
+            "--from-remote",
+            "http://user:pass@127.0.0.1:9/default",
+            "--agent",
+            "none",
+            "--no-lsp",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("No project found").not())
+        .stderr(predicate::str::contains("No project found").not());
+
+    assert!(project_dir
+        .join("packages")
+        .join("moosestack-service")
+        .join("moose.config.toml")
+        .exists());
+}
+
+#[test]
+#[serial_test::serial(harness_init)]
 fn harness_init_rejects_bare_from_remote_flag() {
     ensure_test_environment();
 

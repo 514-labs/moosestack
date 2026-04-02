@@ -16,7 +16,7 @@ use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::project_init::{
     initialize_project, ProjectInitOptions, RemoteBootstrapSource,
 };
-use crate::cli::routines::templates::{get_visible_template_infos, TemplateInfo};
+use crate::cli::routines::templates::prompt_for_template_name;
 use crate::cli::settings::Settings;
 use crate::cli::{check_project_name, prompt_user};
 use crate::utilities::capture::{capture_usage, wait_for_usage_capture, ActivityType};
@@ -385,7 +385,7 @@ async fn resolve_interactive_options(
         }
     };
 
-    let template = prompt_for_template().await?;
+    let template = prompt_for_template_name().await?;
     let default_location = if name == "." {
         ".".to_string()
     } else {
@@ -415,113 +415,6 @@ async fn resolve_interactive_options(
         install_lsp,
         agent_selection,
     })
-}
-
-async fn prompt_for_template() -> Result<String, RoutineFailure> {
-    let mut default_template = "typescript".to_string();
-
-    match get_visible_template_infos(CLI_VERSION).await {
-        Ok(templates) if !templates.is_empty() => {
-            if let Some(candidate) = choose_default_template(&templates) {
-                default_template = candidate.to_string();
-            }
-            return prompt_for_template_selection(&templates, &default_template);
-        }
-        Ok(_) => {}
-        Err(error) => {
-            show_message!(error.message_type, error.message);
-        }
-    }
-
-    Ok(prompt_user(
-        "Template name",
-        Some(&default_template),
-        Some("Run `moose template list` if you want the full catalog."),
-    )?
-    .to_lowercase())
-}
-
-fn choose_default_template(templates: &[TemplateInfo]) -> Option<&str> {
-    templates
-        .iter()
-        .find(|template| template.name == "typescript")
-        .or_else(|| templates.first())
-        .map(|template| template.name.as_str())
-}
-
-fn prompt_for_template_selection(
-    templates: &[TemplateInfo],
-    default_template: &str,
-) -> Result<String, RoutineFailure> {
-    let default_index = templates
-        .iter()
-        .position(|template| template.name == default_template)
-        .unwrap_or(0);
-    let default_selection = (default_index + 1).to_string();
-
-    loop {
-        let options = templates
-            .iter()
-            .enumerate()
-            .map(|(index, template)| {
-                let default_suffix = if index == default_index {
-                    " [default]"
-                } else {
-                    ""
-                };
-                format!(
-                    "  [{}] {} ({}) - {}{}",
-                    index + 1,
-                    template.name,
-                    template.language,
-                    template.description,
-                    default_suffix
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let selection = prompt_user(
-            &format!("Select template\n{options}"),
-            Some(&default_selection),
-            Some("Choose a number or press enter to accept the default."),
-        )?;
-
-        match resolve_template_selection(&selection, templates) {
-            Ok(template_name) => return Ok(template_name),
-            Err(details) => {
-                show_message!(
-                    MessageType::Warning,
-                    Message::new("Harness".to_string(), details)
-                );
-            }
-        }
-    }
-}
-
-fn resolve_template_selection(
-    selection: &str,
-    templates: &[TemplateInfo],
-) -> Result<String, String> {
-    let trimmed = selection.trim();
-
-    if let Ok(index) = trimmed.parse::<usize>() {
-        if (1..=templates.len()).contains(&index) {
-            return Ok(templates[index - 1].name.clone());
-        }
-    }
-
-    if let Some(template) = templates
-        .iter()
-        .find(|template| template.name.eq_ignore_ascii_case(trimmed))
-    {
-        return Ok(template.name.clone());
-    }
-
-    Err(format!(
-        "Unknown template selection '{trimmed}'. Choose a number between 1 and {}.",
-        templates.len()
-    ))
 }
 
 fn prompt_for_agents(home: &Path) -> Result<AgentSelection, RoutineFailure> {
@@ -1785,37 +1678,6 @@ mod tests {
         assert!(values.contains(&"auto"));
         assert!(values.contains(&"none"));
         assert!(values.contains(&"codex"));
-    }
-
-    #[test]
-    fn resolve_template_selection_accepts_index() {
-        let templates = vec![
-            TemplateInfo {
-                name: "python-empty".to_string(),
-                language: "python".to_string(),
-                description: "Python".to_string(),
-            },
-            TemplateInfo {
-                name: "typescript".to_string(),
-                language: "typescript".to_string(),
-                description: "TypeScript".to_string(),
-            },
-        ];
-
-        let selected = resolve_template_selection("2", &templates).unwrap();
-        assert_eq!(selected, "typescript");
-    }
-
-    #[test]
-    fn resolve_template_selection_rejects_unknown_value() {
-        let templates = vec![TemplateInfo {
-            name: "typescript".to_string(),
-            language: "typescript".to_string(),
-            description: "TypeScript".to_string(),
-        }];
-
-        let error = resolve_template_selection("typoscript", &templates).unwrap_err();
-        assert!(error.contains("Unknown template selection"));
     }
 
     #[test]
