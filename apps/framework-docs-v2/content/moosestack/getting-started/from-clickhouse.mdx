@@ -141,19 +141,19 @@ Use the ClickHouse Playground tab to try it out!
   <LanguageTabContent value="typescript">
 ```bash filename="Initialize new project" copy
 # Option 1: Provide connection string directly
-moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+moose init my-project typescript-empty --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING>
 
 # Option 2: Run without connection string for interactive setup
-moose init my-project --from-remote --language typescript
+moose init my-project typescript-empty --from-remote
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```bash filename="Initialize new project" copy
 # Option 1: Provide connection string directly
-moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+moose init my-project python-empty --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING>
 
 # Option 2: Run without connection string for interactive setup
-moose init my-project --from-remote --language python
+moose init my-project python-empty --from-remote
 ```
   </LanguageTabContent>
 </LanguageTabs>
@@ -197,13 +197,13 @@ See the section: <a href="#connect-to-your-remote-clickhouse" className="text-bl
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```bash filename="Try using the ClickHouse Playground!" copy
-moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language typescript
+moose init my-project typescript-empty --from-remote https://explorer:@play.clickhouse.com:443/?database=default
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```bash filename="Initialize new project" copy
 # Generate code models from your existing ClickHouse tables
-moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language python
+moose init my-project python-empty --from-remote https://explorer:@play.clickhouse.com:443/?database=default
 ```
   </LanguageTabContent>
 </LanguageTabs>
