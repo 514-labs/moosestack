@@ -742,7 +742,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     match arbitrary_precision {
                         Ok(number) => {
                             if let ColumnType::Int(int_t) = t {
-                                if !check_str_in_range(number.as_str(), int_t) {
+                                if !check_str_in_range(&number.to_string(), int_t) {
                                     return Err(A::Error::custom(format!(
                                         "Integer out of range for {:?} at {}: {}",
                                         int_t,
