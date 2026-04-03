@@ -17,6 +17,7 @@ use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
+use itertools::Itertools;
 use std::collections::HashMap;
 
 /// Migration files loaded from disk
@@ -217,16 +218,20 @@ fn log_table_diff(
         let lj = serde_json::to_string_pretty(l).unwrap_or_default();
         let rj = serde_json::to_string_pretty(r).unwrap_or_default();
         tracing::debug!(table = %name, "{label}:");
-        for (i, (a, b)) in lj.lines().zip(rj.lines()).enumerate() {
-            if a != b {
-                tracing::debug!("  line {i}: left:  {a}");
-                tracing::debug!("  line {i}: right: {b}");
+        for (i, pair) in lj.lines().zip_longest(rj.lines()).enumerate() {
+            match pair {
+                itertools::EitherOrBoth::Both(a, b) if a != b => {
+                    tracing::debug!("  line {i}: left:  {a}");
+                    tracing::debug!("  line {i}: right: {b}");
+                }
+                itertools::EitherOrBoth::Left(a) => {
+                    tracing::debug!("  line {i}: left:  {a}");
+                }
+                itertools::EitherOrBoth::Right(b) => {
+                    tracing::debug!("  line {i}: right: {b}");
+                }
+                _ => {}
             }
-        }
-        let lc = lj.lines().count();
-        let rc = rj.lines().count();
-        if lc != rc {
-            tracing::debug!("  (left has {lc} lines, right has {rc} lines)");
         }
     }
 }
@@ -771,6 +776,9 @@ pub async fn execute_migration_plan(
 
             // Check target matches code (normalize both sides so only
             // DDL-relevant fields are compared, consistent with detect_drift).
+            // We intentionally use the *current* project ignore_ops, not a
+            // saved-plan copy: if ignore_ops changed since plan generation the
+            // plan is stale and this check correctly triggers regeneration.
             let ignore_ops = &project.migration_config.ignore_operations;
             if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
                 != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
