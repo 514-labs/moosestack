@@ -325,8 +325,9 @@ impl IgnorableOperation {
 /// Canonical normalization for table comparison.
 ///
 /// Strips Moose-internal tracking fields (`metadata`, `seed_filter`,
-/// `source_primitive`, `version`, `life_cycle`) that are never part of
-/// ClickHouse DDL, plus any schema fields covered by `ignore_ops`.
+/// `source_primitive`, `life_cycle`) that are never part of ClickHouse
+/// DDL, plus any schema fields covered by `ignore_ops`.
+/// `version` is intentionally kept because `Table::id()` depends on it.
 ///
 /// Used by **both** the plan diff (`diff_tables_with_strategy`) and
 /// drift detection (`detect_drift`) so that "empty olap_changes" implies
@@ -340,9 +341,11 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     // Strip Moose-internal tracking fields that are never part of ClickHouse DDL.
     // Both the plan diff and drift detection must ignore these so that
     // "empty olap_changes" ↔ "NoDrift / AlreadyAtTarget".
+    //
+    // NOTE: `version` is intentionally kept — it feeds `Table::id()` which is
+    // used as a HashMap key in `diff_tables_with_strategy`.
     normalized.metadata = None;
     normalized.seed_filter = Default::default();
-    normalized.version = None;
     normalized.life_cycle = LifeCycle::default();
     normalized.source_primitive = PrimitiveSignature {
         name: String::new(),

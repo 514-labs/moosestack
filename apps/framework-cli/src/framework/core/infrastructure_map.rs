@@ -2012,38 +2012,38 @@ impl InfrastructureMap {
             target_tables.len()
         );
 
-        // Normalize tables for comparison if ignore_ops is provided
-        let (normalized_self, normalized_target) = if !ignore_ops.is_empty() {
+        // Always normalize: strips Moose-internal tracking fields (metadata,
+        // seed_filter, source_primitive, life_cycle) plus any schema fields
+        // covered by ignore_ops.  This keeps the comparison in sync with
+        // detect_drift (same normalize_table_for_diff call).
+        if !ignore_ops.is_empty() {
             tracing::info!(
                 "Normalizing tables before comparison. Ignore list: {:?}",
                 ignore_ops
             );
-            let normalized_self: HashMap<String, Table> = self_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            let normalized_target: HashMap<String, Table> = target_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            (normalized_self, normalized_target)
-        } else {
-            (self_tables.clone(), target_tables.clone())
-        };
+        }
+        let normalized_self: HashMap<String, Table> = self_tables
+            .iter()
+            .map(|(name, table)| {
+                (
+                    name.clone(),
+                    crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                        table, ignore_ops,
+                    ),
+                )
+            })
+            .collect();
+        let normalized_target: HashMap<String, Table> = target_tables
+            .iter()
+            .map(|(name, table)| {
+                (
+                    name.clone(),
+                    crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                        table, ignore_ops,
+                    ),
+                )
+            })
+            .collect();
 
         let mut table_updates = 0;
         let mut table_removals = 0;
