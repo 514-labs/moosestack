@@ -55,25 +55,15 @@ impl MooseMcpHandler {
 
 impl ServerHandler for MooseMcpHandler {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities {
-                tools: Some(Default::default()),
-                ..Default::default()
-            },
-            server_info: Implementation {
-                name: self.server_name.clone(),
-                version: self.server_version.clone(),
-                title: Some("Moose MCP Server".to_string()),
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
-                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, and sample streaming topics"
-                    .to_string(),
-            ),
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(ProtocolVersion::V_2024_11_05)
+            .with_server_info(
+                Implementation::new(self.server_name.clone(), self.server_version.clone())
+                    .with_title("Moose MCP Server"),
+            )
+            .with_instructions(
+                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, and sample streaming topics",
+            )
     }
 
     async fn list_tools(
@@ -81,11 +71,7 @@ impl ServerHandler for MooseMcpHandler {
         _pagination: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            meta: None,
-            tools: all_tool_definitions(),
-            next_cursor: None,
-        })
+        Ok(ListToolsResult::with_all_items(all_tool_definitions()))
     }
 
     async fn call_tool(
@@ -155,14 +141,12 @@ pub fn create_mcp_http_service(
     );
 
     let session_manager = Arc::new(LocalSessionManager::default());
-    let config = StreamableHttpServerConfig {
-        // keep alive low so that we can shut down the server when we're done
-        // and that it doesn't hang around forever
-        sse_keep_alive: Some(std::time::Duration::from_secs(1)),
-        // Stateless mode avoids sticky session behavior across local dev server restarts.
-        stateful_mode: false,
-        ..Default::default()
-    };
+    // keep alive low so that we can shut down the server when we're done
+    // and that it doesn't hang around forever.
+    // Stateless mode avoids sticky session behavior across local dev server restarts.
+    let config = StreamableHttpServerConfig::default()
+        .with_sse_keep_alive(Some(std::time::Duration::from_secs(1)))
+        .with_stateful_mode(false);
 
     StreamableHttpService::new(
         move || {

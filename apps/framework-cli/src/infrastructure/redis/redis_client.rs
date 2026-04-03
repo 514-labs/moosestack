@@ -849,7 +849,7 @@ impl RedisClient {
         self.connection_manager.state.load(Ordering::SeqCst)
     }
 
-    pub async fn set_with_service_prefix<V: redis::ToRedisArgs + Send + Sync>(
+    pub async fn set_with_service_prefix<V: redis::ToSingleRedisArg + Send + Sync>(
         &self,
         key: &str,
         value: V,

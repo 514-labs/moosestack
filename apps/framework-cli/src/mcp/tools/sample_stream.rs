@@ -109,19 +109,12 @@ pub fn tool_definition() -> Tool {
         "required": ["stream_name"]
     });
 
-    Tool {
-        name: "get_stream_sample".into(),
-        description: Some(
-            "Sample recent messages from streaming topics to verify data flow, debug transformations, or inspect payloads. Get last N messages from any topic. Use after get_infra_map to see available topics.".into()
-        ),
-        input_schema: Arc::new(schema.as_object().unwrap().clone()),
-        annotations: None,
-        execution: None,
-        icons: None,
-        meta: None,
-        output_schema: None,
-        title: Some("Sample Stream Messages".into()),
-    }
+    Tool::new(
+        "get_stream_sample",
+        "Sample recent messages from streaming topics to verify data flow, debug transformations, or inspect payloads. Get last N messages from any topic. Use after get_infra_map to see available topics.",
+        Arc::new(schema.as_object().unwrap().clone()),
+    )
+    .with_title("Sample Stream Messages")
 }
 
 /// Parse and validate parameters from MCP arguments

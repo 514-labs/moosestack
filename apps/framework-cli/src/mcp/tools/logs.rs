@@ -5,7 +5,7 @@
 
 use chrono::Local;
 use regex::Regex;
-use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
+use rmcp::model::{CallToolResult, Content, Tool};
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -169,19 +169,11 @@ pub fn tool_definition() -> Tool {
         }
     });
 
-    Tool {
-        name: "get_logs".into(),
-        description: Some(
-            "Debug issues by checking dev server logs. Filter by level (ERROR/WARN/INFO/DEBUG/TRACE) or search with regex. Use when troubleshooting errors, connection issues, or unexpected behavior.".into()
-        ),
-        input_schema: Arc::new(schema.as_object().unwrap().clone()),
-        annotations: None,
-        execution: None,
-        icons: None,
-        meta: None,
-        output_schema: None,
-        title: Some("Get Dev Server Logs".into()),
-    }
+    Tool::new(
+        "get_logs",
+        "Debug issues by checking dev server logs. Filter by level (ERROR/WARN/INFO/DEBUG/TRACE) or search with regex. Use when troubleshooting errors, connection issues, or unexpected behavior.",
+        Arc::new(schema.as_object().unwrap().clone()),
+    )
 }
 
 /// Parse and validate parameters from MCP arguments
@@ -239,46 +231,18 @@ pub fn handle_call(arguments: Option<&Map<String, Value>>) -> CallToolResult {
     let params = match parse_params(arguments) {
         Ok(p) => p,
         Err(e) => {
-            return CallToolResult {
-                content: vec![Annotated {
-                    raw: RawContent::Text(RawTextContent {
-                        text: format!("Parameter validation error: {}", e),
-                        meta: None,
-                    }),
-                    annotations: None,
-                }],
-                is_error: Some(true),
-                meta: None,
-                structured_content: None,
-            };
+            return CallToolResult::error(vec![Content::text(format!(
+                "Parameter validation error: {}",
+                e
+            ))]);
         }
     };
 
     match execute_get_logs(params) {
-        Ok(content) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: content,
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(false),
-            meta: None,
-            structured_content: None,
-        },
-        Err(e) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: format!("Error retrieving logs: {}", e),
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(true),
-            meta: None,
-            structured_content: None,
-        },
+        Ok(content) => CallToolResult::success(vec![Content::text(content)]),
+        Err(e) => {
+            CallToolResult::error(vec![Content::text(format!("Error retrieving logs: {}", e))])
+        }
     }
 }
 

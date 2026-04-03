@@ -105,27 +105,16 @@ impl ProxyMcpHandler {
 
 impl ServerHandler for ProxyMcpHandler {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities {
-                tools: Some(Default::default()),
-                ..Default::default()
-            },
-            server_info: Implementation {
-                name: "moose-mcp-proxy".to_string(),
-                version: CLI_VERSION.to_string(),
-                title: Some("Moose MCP Proxy".to_string()),
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(ProtocolVersion::V_2024_11_05)
+            .with_server_info(
+                Implementation::new("moose-mcp-proxy", CLI_VERSION).with_title("Moose MCP Proxy"),
+            )
+            .with_instructions(
                 "Moose MCP Proxy - Proxies tool calls to the Moose dev server. \
                  If the dev server is not running, tool calls will return an error \
-                 asking you to start `moose dev`."
-                    .to_string(),
-            ),
-        }
+                 asking you to start `moose dev`.",
+            )
     }
 
     async fn list_tools(
@@ -133,11 +122,7 @@ impl ServerHandler for ProxyMcpHandler {
         _pagination: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            meta: None,
-            tools: all_tool_definitions(),
-            next_cursor: None,
-        })
+        Ok(ListToolsResult::with_all_items(all_tool_definitions()))
     }
 
     async fn call_tool(

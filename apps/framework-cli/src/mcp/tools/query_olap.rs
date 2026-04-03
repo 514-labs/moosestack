@@ -3,7 +3,7 @@
 //! This module implements the MCP tool for executing read-only SQL queries
 //! against the ClickHouse OLAP database for data exploration and debugging.
 
-use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
+use rmcp::model::{CallToolResult, Content, Tool};
 use serde_json::{json, Map, Value};
 use sqlparser::ast::Statement;
 use sqlparser::dialect::ClickHouseDialect;
@@ -293,19 +293,11 @@ pub fn tool_definition() -> Tool {
         "required": ["query"]
     });
 
-    Tool {
-        name: "query_olap".into(),
-        description: Some(
-            "Query ClickHouse to explore data, verify ingestion, check schemas. Use SELECT to analyze stored data, SHOW/DESCRIBE for table info, system.tables/system.columns for metadata. Read-only, safe for production. Tables auto-scoped to project database.".into()
-        ),
-        input_schema: Arc::new(schema.as_object().unwrap().clone()),
-        annotations: None,
-        execution: None,
-        icons: None,
-        meta: None,
-        output_schema: None,
-        title: Some("Query OLAP Database".into()),
-    }
+    Tool::new(
+        "query_olap",
+        "Query ClickHouse to explore data, verify ingestion, check schemas. Use SELECT to analyze stored data, SHOW/DESCRIBE for table info, system.tables/system.columns for metadata. Read-only, safe for production. Tables auto-scoped to project database.",
+        Arc::new(schema.as_object().unwrap().clone()),
+    )
 }
 
 /// Parse and validate parameters from MCP arguments
@@ -457,46 +449,18 @@ pub async fn handle_call(
     let params = match parse_params(arguments) {
         Ok(p) => p,
         Err(e) => {
-            return CallToolResult {
-                content: vec![Annotated {
-                    raw: RawContent::Text(RawTextContent {
-                        text: format!("Parameter validation error: {}", e),
-                        meta: None,
-                    }),
-                    annotations: None,
-                }],
-                is_error: Some(true),
-                meta: None,
-                structured_content: None,
-            };
+            return CallToolResult::error(vec![Content::text(format!(
+                "Parameter validation error: {}",
+                e
+            ))]);
         }
     };
 
     match execute_query_olap(config, params).await {
-        Ok(content) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: content,
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(false),
-            meta: None,
-            structured_content: None,
-        },
-        Err(e) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: format!("Query execution error: {}", e),
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(true),
-            meta: None,
-            structured_content: None,
-        },
+        Ok(content) => CallToolResult::success(vec![Content::text(content)]),
+        Err(e) => {
+            CallToolResult::error(vec![Content::text(format!("Query execution error: {}", e))])
+        }
     }
 }
 

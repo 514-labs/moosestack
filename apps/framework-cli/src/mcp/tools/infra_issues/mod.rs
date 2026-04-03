@@ -136,19 +136,12 @@ pub fn tool_definition() -> Tool {
         "required": ["infrastructure_type"]
     });
 
-    Tool {
-        name: "get_issues".into(),
-        description: Some(
-            "Proactively scan for health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.".into()
-        ),
-        input_schema: Arc::new(schema.as_object().unwrap().clone()),
-        annotations: None,
-        execution: None,
-        icons: None,
-        meta: None,
-        output_schema: None,
-        title: Some("Get Project Issues".into()),
-    }
+    Tool::new(
+        "get_issues",
+        "Proactively scan for health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.",
+        Arc::new(schema.as_object().unwrap().clone()),
+    )
+    .with_title("Get Project Issues")
 }
 
 /// Parse and validate parameters from MCP arguments

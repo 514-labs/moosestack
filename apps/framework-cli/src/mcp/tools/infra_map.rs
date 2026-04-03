@@ -44,19 +44,12 @@ pub fn tool_definition() -> Tool {
         }
     });
 
-    Tool {
-        name: "get_infra_map".into(),
-        description: Some(
-            "🔍 START HERE: Get complete project topology showing all components (tables, topics, APIs, functions, workflows, web apps) with source file locations and data flow connections. Essential first step to understand project structure, locate files, and verify code changes are reflected. Use 'search' to focus on specific components (e.g., search='User' shows UserEvents topic, user tables, and all related connections).".into()
-        ),
-        input_schema: Arc::new(schema.as_object().unwrap().clone()),
-        annotations: None,
-        execution: None,
-        icons: None,
-        meta: None,
-        output_schema: None,
-        title: Some("Get Infrastructure Map".into()),
-    }
+    Tool::new(
+        "get_infra_map",
+        "🔍 START HERE: Get complete project topology showing all components (tables, topics, APIs, functions, workflows, web apps) with source file locations and data flow connections. Essential first step to understand project structure, locate files, and verify code changes are reflected. Use 'search' to focus on specific components (e.g., search='User' shows UserEvents topic, user tables, and all related connections).",
+        Arc::new(schema.as_object().unwrap().clone()),
+    )
+    .with_title("Get Infrastructure Map")
 }
 
 /// Handle the tool call with the given arguments
