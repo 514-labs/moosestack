@@ -8,10 +8,10 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
-use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
+use crate::infrastructure::olap::clickhouse::{normalize_table_for_diff, IgnorableOperation};
 use crate::project::Project;
 use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
@@ -99,9 +99,7 @@ fn strip_non_schema_fields(
     tables
         .iter()
         .map(|(name, table)| {
-            let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                table, ignore_ops,
-            );
+            let table = normalize_table_for_diff(table, ignore_ops);
             (name.clone(), table)
         })
         .collect()

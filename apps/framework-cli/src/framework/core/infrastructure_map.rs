@@ -57,11 +57,13 @@ use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::framework::versions::Version;
-use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+use crate::infrastructure::olap::clickhouse::{
+    codec_expressions_are_equivalent, normalize_table_for_diff,
+};
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
@@ -2024,25 +2026,11 @@ impl InfrastructureMap {
         }
         let normalized_self: HashMap<String, Table> = self_tables
             .iter()
-            .map(|(name, table)| {
-                (
-                    name.clone(),
-                    crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                        table, ignore_ops,
-                    ),
-                )
-            })
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
             .collect();
         let normalized_target: HashMap<String, Table> = target_tables
             .iter()
-            .map(|(name, table)| {
-                (
-                    name.clone(),
-                    crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                        table, ignore_ops,
-                    ),
-                )
-            })
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
             .collect();
 
         let mut table_updates = 0;
