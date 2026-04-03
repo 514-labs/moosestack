@@ -40,7 +40,7 @@ use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
-    classify_plan_risk, destructive_confirmation_gate, rename_confirmation_gate, ConfirmationPolicy,
+    confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
@@ -457,15 +457,11 @@ async fn watch(
                                                     .await?;
 
                                                     spinner_handle.pause();
-                                                    let approved_drops = match rename_confirmation_gate(&mut plan_result.changes, &confirmation_policy).await? {
-                                                        Some(drops) => drops,
+                                                    let risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
+                                                        Some(risk) => risk,
                                                         None => return Ok(false),
                                                     };
-
-                                                    let mut risk = classify_plan_risk(&plan_result.changes);
-                                                    risk.exclude_approved_drops(&approved_drops);
-                                                    let proceed = destructive_confirmation_gate(&risk, &confirmation_policy).await;
-                                                    if !proceed? {
+                                                    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
                                                         return Ok(false);
                                                     }
                                                     spinner_handle.resume();

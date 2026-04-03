@@ -66,6 +66,31 @@ Planned migrations are active whenever a `plan.yaml` file exists in the `migrati
 olap = true
 ```
 
+### Production Safety Gate
+
+By default, `moose prod` **refuses to start** if the computed infrastructure diff contains destructive operations (table drops, column drops, table recreates, view removals) and no `plan.yaml` is present. This prevents accidental data loss when deploying schema changes that haven't been reviewed.
+
+```toml filename="moose.config.toml"
+[migration_config]
+# Default: false — destructive changes blocked unless a plan.yaml is present
+prod_auto_allow_destructive = false
+```
+
+| Scenario | Behavior |
+| :--- | :--- |
+| No destructive changes | `moose prod` starts normally regardless of `plan.yaml`. |
+| Destructive changes + `plan.yaml` present | `moose prod` applies the reviewed plan and starts normally. |
+| Destructive changes + no `plan.yaml` | `moose prod` **refuses to start** with an error listing the destructive operations. |
+
+When startup is blocked, the error message lists every destructive operation and suggests two remediation paths:
+
+1. Run `moose generate migration --save` to create a reviewed `plan.yaml`.
+2. Set `prod_auto_allow_destructive = true` in `moose.config.toml` (or `MOOSE_MIGRATION_CONFIG__PROD_AUTO_ALLOW_DESTRUCTIVE=true` as an environment variable) to opt out of the safety gate.
+
+<Callout type="warning" title="Opting out">
+  Setting `prod_auto_allow_destructive = true` restores the pre-safety-gate behavior where `moose prod` applies destructive changes without a plan file. Only do this if you accept the risk of unreviewed destructive schema changes in production.
+</Callout>
+
 ## Command Options
 
 The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
@@ -96,6 +121,17 @@ moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 | :--- | :--- |
 | `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
 | `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
+
+### Confirmation flags
+
+These flags control the interactive confirmation prompts during plan generation:
+
+| Option | Environment Variable | Description |
+| :--- | :--- | :--- |
+| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames and destructive operations). |
+| `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE=1` | Skip the confirmation prompt for destructive operations. |
+| `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
+| `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
 
 ## Drift Detection
 

@@ -92,7 +92,7 @@ cdc_user_table = OlapTable[CdcUserData]("cdc_users", OlapConfig(
 If you don't yet have a Moose project, use init-from-remote to bootstrap models from your existing ClickHouse:
 
 ```bash filename="Terminal" copy
-moose init my-project --from-remote <YOUR_CLICKHOUSE_URL> --language <typescript|python>
+moose init my-project <template> --from-remote <YOUR_CLICKHOUSE_URL>
 ```
 
 What happens:

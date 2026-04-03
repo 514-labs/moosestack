@@ -1,90 +1,15 @@
 # TypeScript Agent Template
 
-This template gives you a production-shaped TypeScript starter for building organization-aware agents on MooseStack.
+This is a TypeScript starter template for building production-ready analytics agents: including the actual agents, plus the infrastructure and middleware needed to make them safe, reliable, and performant — often called the "agent harness".
 
-It combines:
-- a Moose service with JWT-backed RLS and MCP tools
-- a Next.js app with chat, mock email/password auth for local development, and dashboard views
-- a single-agent chat experience by default, plus optional reference multi-agent runtime code
-- AI Elements primitives for the generic chat shell
-- Moose-owned app APIs backed by query-layer models
-- a shared agent runtime package for provider/model/tool orchestration
-- a reusable Langfuse collector package for host-side observability sinks
-- a shared contracts package for frontend/service DTOs
-- Langfuse-compatible tracing from the web app
-- optional Bedrock provider and Guardrails wiring
+What is an analytics agent? An analytics agent inspects available data sources, queries and aggregates data, interprets results, and presents findings, or even takes action.
 
-## Why Moose + Next.js
+MooseStack provides the framework and runtime for the harness layer service in this template. It provides typed ingest models that become real ClickHouse tables, JWT-verified row-level security enforced at the data layer, semantic/query models so every surface shares consistent metric definitions, and an MCP server over that same surface. The template pairs MooseStack with a Next.js app for the chat UI and dashboard, and a shared agent runtime for provider/model/tool orchestration.
 
-This template is intentionally not "just Next.js with a few route handlers."
+For a full explanation of the analytics agent use case, the harness concept, and a step-by-step tutorial:
+https://docs.fiveonefour.com/guides/production-ready-analytics-agent/overview?lang=typescript
 
-- Next.js is the app host. It owns auth/session handling, the UI, server-rendered pages, and the chat route that talks to the shared agent runtime.
-- Moose is the data-service runtime. It owns the typed data model, tenant isolation, semantic/query models, app-facing service APIs, and MCP tools over the same data surface.
-
-That split matters once your app needs more than a thin UI over an existing API:
-
-- you want typed ingest models that become real tables and services instead of hand-written backend glue
-- you want row-level security and org scoping enforced close to the data
-- you want a semantic layer for metrics, filters, and read models instead of burying analytics logic inside route handlers
-- you want the same backend surface to power dashboards, chat tools, and external MCP clients
-- you want the data plane to stay usable even if the frontend changes
-
-If you only need a simple UI over an existing backend, plain Next.js is often enough. This template is for the case where the application also needs a real data service: modeled data, organization-aware reads, analytics-style queries, and tool-accessible APIs.
-
-## Overview
-
-```mermaid
-flowchart LR
-  subgraph Access["Authentication"]
-    TenantA["Org A"]
-    TenantB["Org B"]
-    Admin["Admin Debug<br/>local only"]
-    OIDC["External OIDC"]
-  end
-
-  subgraph Web["Next.js host app"]
-    Auth["Auth.js session"]
-    UI["Dashboard UI"]
-    Chat["Chat API route"]
-  end
-
-  subgraph Moose["MooseStack service"]
-    AppAPI["/app dashboard API"]
-    MCP["/tools MCP server"]
-    Query["Semantic/query layer"]
-    Data["tenant_knowledge<br/>ClickHouse + RLS"]
-  end
-
-  TenantA --> Auth
-  TenantB --> Auth
-  Admin --> Auth
-  OIDC --> Auth
-  Auth -->|org_id or access_role| UI
-  Auth -->|Bearer JWT| Chat
-  UI -->|Bearer JWT| AppAPI
-  Chat -->|Bearer JWT| MCP
-  AppAPI --> Query
-  MCP --> Query
-  Query --> Data
-```
-
-Authentication establishes identity. Authorization determines whether the request is organization-scoped (`org_id`) or uses the local-only `Admin Debug` bypass for troubleshooting.
-
-## Optional Multi-Agent Reference Flow
-
-The runtime package still includes a simple multi-agent reference flow:
-
-- `supervisor` classifies the latest user request and selects one specialist
-- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with the authenticated MCP tools
-- `narrator` rewrites the specialist's working notes into the final user-facing answer
-
-The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
-
-Start with these files if you want to customize the pattern:
-
-- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
-- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
-- `packages/agent-runtime/src/prompts/multi-agent.ts` - reference supervisor/specialist/narrator prompts
+![Template Architecture](Template-architecture.png)
 
 ## Prerequisites
 
@@ -95,14 +20,10 @@ Start with these files if you want to customize the pattern:
 - One local container runtime: Docker Desktop / Docker Engine, or Finch
 - Provider credentials if you want chat to be usable immediately: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or AWS Bedrock credentials. `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
 
-`pnpm dev:start` runs the workspace build first, then auto-detects Docker or Finch, prefers Docker when both are ready, and passes the selected container CLI to the spawned Moose process.
-
-If you run `pnpm dev:moose` or `moose dev` directly with Finch, set `MOOSE_DEV__CONTAINER_CLI_PATH=finch` or add `[dev] container_cli_path = "finch"` to `~/.moose/config.toml`.
-
 ## Quickstart
 
 ```bash
-moose init <project-name> typescript-agent
+moose harness init <project-name> typescript-agent
 cd <project-name>
 pnpm install
 pnpm env:prepare
@@ -113,9 +34,9 @@ pnpm dev:start
 
 `packages/web-app/.env.local` is intentionally not checked in. The generated app ships with safe defaults in `packages/web-app/.env.example`, and `pnpm env:prepare` writes the project-local secrets into `.env.local`.
 
-`pnpm dev:start` runs the workspace build, checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app.
+`pnpm dev:start` runs the workspace build, checks Docker or Finch, waits for the Moose service and MCP endpoint to come up, then starts the web app. `pnpm dev` runs the same build and starts both services without the readiness checks.
 
-In a third terminal, seed starter data:
+In another terminal, seed starter data:
 
 ```bash
 pnpm seed
@@ -134,96 +55,6 @@ pnpm test
 pnpm lint
 pnpm format
 ```
-
-## Compatible Versions
-
-This template pins its external package versions centrally in `pnpm-workspace.yaml`, and the workspace `package.json` files consume them via `catalog:` references.
-
-The AI SDK v6 stack in this template is currently pinned to these compatible versions:
-
-| Package | Pinned version | Notes |
-| --- | --- | --- |
-| `pnpm` | `10.33.0` | Template `packageManager` |
-| `ai` | `6.0.138` | Core AI SDK v6 line |
-| `@ai-sdk/react` | `3.0.140` | React bindings compatible with `ai@6` |
-| `@ai-sdk/amazon-bedrock` | `4.0.83` | Bedrock provider compatible with `ai@6` |
-| `@ai-sdk/anthropic` | `3.0.64` | Anthropic provider compatible with `ai@6` |
-| `@ai-sdk/openai` | `3.0.48` | OpenAI provider compatible with `ai@6` |
-| `@ai-sdk/mcp` | `1.0.30` | MCP client bridge used by the shared runtime |
-| `zod` | `4.3.6` | Web app and shared runtime validation |
-| `zod` via `catalog:zod3` | `3.25.76` | `packages/moosestack-service` stays on the v3 line required by its MCP stack |
-
-The workspace also overrides transitive `tar` to `7.5.7` so generated apps stay on a patched archive dependency across the full workspace.
-
-## Manual Template Testing
-
-Templates should be tested from a generated app, not in-place inside this repository.
-
-From the monorepo root:
-
-```bash
-cargo build --package moose-cli
-node scripts/package-templates.js
-```
-
-Then initialize the template in a temp directory:
-
-```bash
-MOOSE_CLI="${MOOSE_CLI:-$(pwd)/target/debug/moose-cli}"
-TMP_DIR="$(mktemp -d /tmp/typescript-agent-XXXXXX)"
-cd "$TMP_DIR"
-"$MOOSE_CLI" init my-agent typescript-agent
-cd my-agent
-pnpm install
-```
-
-If you prefer to use a CLI from your `PATH` instead of the just-built local binary, set `MOOSE_CLI=moose-cli` before running the snippet.
-
-Run the generated app checks:
-
-```bash
-pnpm test
-pnpm build
-pnpm build:service
-```
-
-For a full local smoke test:
-
-```bash
-pnpm env:prepare
-pnpm dev:start
-```
-
-In a third terminal:
-
-```bash
-pnpm seed
-```
-
-Then verify:
-
-- `http://localhost:3000` renders the landing page
-- local email/password sign-in works for the seeded mock users
-- org-scoped users only see their own records, while the local admin can inspect both organizations
-- streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
-- chat tool calls follow the same authenticated access scope as the dashboard
-- `http://localhost:4000/tools` requires a bearer JWT with `org_id`, or the local admin debug JWT with `access_role=admin_debug`
-
-## Local Development
-
-Local development uses the built-in local mock login flow:
-
-- `MOOSE_AUTH_MODE=local` enables the mock email/password sign-in page in the web app
-- org-scoped mock users sign in with short-lived JWTs carrying `org_id`
-- `admin@template.com` signs in with a short-lived JWT carrying `access_role=admin_debug`
-- Moose verifies that JWT using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`)
-- org-scoped users stay limited by the same row policy across dashboard APIs and MCP tools
-- the admin mock user bypasses organization scoping for local troubleshooting only
-
-Local mock accounts included by default:
-- `user1@orgA.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_A_USER`
-- `user2@orgB.com` with password stored in `LOCAL_MOCK_PASSWORD_ORG_B_USER`
-- `admin@template.com` with password stored in `LOCAL_MOCK_PASSWORD_ADMIN`
 
 ## Environment Variables
 
@@ -297,6 +128,144 @@ If `AI_PROVIDER=bedrock`:
 - set `BEDROCK_GUARDRAIL_ID` to enable real Guardrails checks
 - set `BEDROCK_GUARDRAIL_VERSION` if you do not want `DRAFT`
 - if no guardrail is configured, the template falls back to a development-only mock adapter under `packages/web-app/src/dev/`
+
+## Optional Multi-Agent Reference Flow
+
+The runtime package includes a simple multi-agent reference flow:
+
+- `supervisor` classifies the latest user request and selects one specialist
+- one specialist (`catalog-researcher`, `knowledge-analyst`, or `metrics-investigator`) investigates with the authenticated MCP tools
+- `narrator` rewrites the specialist's working notes into the final user-facing answer
+
+The generated app uses the single-agent runtime by default. The multi-agent flow remains in the workspace as reference code for teams that want to keep or extend it.
+
+Start with these files if you want to customize the pattern:
+
+- `packages/agent-runtime/src/index.ts` - shared runtime plus the reference supervisor -> specialist -> narrator orchestration
+- `packages/web-app/src/lib/chat-agent.ts` - Next-hosted adapter that injects auth, tracing, and guardrails into the runtime
+- `packages/agent-runtime/src/prompts/multi-agent.ts` - reference supervisor/specialist/narrator prompts
+
+## Auth Overview
+
+```mermaid
+flowchart LR
+  subgraph Access["Authentication"]
+    TenantA["Org A"]
+    TenantB["Org B"]
+    Admin["Admin Debug<br/>local only"]
+    OIDC["External OIDC"]
+  end
+
+  subgraph Web["Next.js host app"]
+    Auth["Auth.js session"]
+    UI["Dashboard UI"]
+    Chat["Chat API route"]
+  end
+
+  subgraph Moose["MooseStack service"]
+    AppAPI["/app dashboard API"]
+    MCP["/tools MCP server"]
+    Query["Semantic/query layer"]
+    Data["tenant_knowledge<br/>ClickHouse + RLS"]
+  end
+
+  TenantA --> Auth
+  TenantB --> Auth
+  Admin --> Auth
+  OIDC --> Auth
+  Auth -->|org_id or access_role| UI
+  Auth -->|Bearer JWT| Chat
+  UI -->|Bearer JWT| AppAPI
+  Chat -->|Bearer JWT| MCP
+  AppAPI --> Query
+  MCP --> Query
+  Query --> Data
+```
+
+Authentication establishes identity. Authorization determines whether the request is organization-scoped (`org_id`) or uses the local-only `Admin Debug` bypass for troubleshooting.
+
+In local development, `MOOSE_AUTH_MODE=local` enables the mock email/password sign-in page. Org-scoped users sign in with short-lived JWTs carrying `org_id`; the admin user signs in with a JWT carrying `access_role=admin_debug`, which bypasses org scoping for troubleshooting. Moose verifies both using the RSA public key in `packages/moosestack-service/.env.local` (`MOOSE_JWT__SECRET`). The same row policy applies across dashboard APIs and MCP tools.
+
+Local mock accounts (passwords stored in `packages/web-app/.env.local`):
+- `user1@orgA.com` — `LOCAL_MOCK_PASSWORD_ORG_A_USER`
+- `user2@orgB.com` — `LOCAL_MOCK_PASSWORD_ORG_B_USER`
+- `admin@template.com` — `LOCAL_MOCK_PASSWORD_ADMIN`
+
+## Compatible Versions
+
+This template pins its external package versions centrally in `pnpm-workspace.yaml`, and the workspace `package.json` files consume them via `catalog:` references.
+
+The AI SDK v6 stack in this template is currently pinned to these compatible versions:
+
+| Package | Pinned version | Notes |
+| --- | --- | --- |
+| `pnpm` | `10.33.0` | Template `packageManager` |
+| `ai` | `6.0.138` | Core AI SDK v6 line |
+| `@ai-sdk/react` | `3.0.140` | React bindings compatible with `ai@6` |
+| `@ai-sdk/amazon-bedrock` | `4.0.83` | Bedrock provider compatible with `ai@6` |
+| `@ai-sdk/anthropic` | `3.0.64` | Anthropic provider compatible with `ai@6` |
+| `@ai-sdk/openai` | `3.0.48` | OpenAI provider compatible with `ai@6` |
+| `@ai-sdk/mcp` | `1.0.30` | MCP client bridge used by the shared runtime |
+| `zod` | `4.3.6` | Web app and shared runtime validation |
+| `zod` via `catalog:zod3` | `3.25.76` | `packages/moosestack-service` stays on the v3 line required by its MCP stack |
+
+The workspace also overrides transitive `tar` to `7.5.7` so generated apps stay on a patched archive dependency across the full workspace.
+
+## Manual Template Testing (for template contributors)
+
+These instructions are for contributors working on the template source in the monorepo, not for apps initialized with `moose init`.
+
+Templates should be tested from a generated app, not in-place inside this repository.
+
+From the monorepo root:
+
+```bash
+cargo build --package moose-cli
+node scripts/package-templates.js
+```
+
+Then initialize the template in a temp directory:
+
+```bash
+MOOSE_CLI="${MOOSE_CLI:-$(pwd)/target/debug/moose-cli}"
+TMP_DIR="$(mktemp -d /tmp/typescript-agent-XXXXXX)"
+cd "$TMP_DIR"
+"$MOOSE_CLI" init my-agent typescript-agent
+cd my-agent
+pnpm install
+```
+
+If you prefer to use a CLI from your `PATH` instead of the just-built local binary, set `MOOSE_CLI=moose-cli` before running the snippet.
+
+Run the generated app checks:
+
+```bash
+pnpm test
+pnpm build
+pnpm build:service
+```
+
+For a full local smoke test:
+
+```bash
+pnpm env:prepare
+pnpm dev:start
+```
+
+In a third terminal:
+
+```bash
+pnpm seed
+```
+
+Then verify:
+
+- `http://localhost:3000` renders the landing page
+- local email/password sign-in works for the seeded mock users
+- org-scoped users only see their own records, while the local admin can inspect both organizations
+- streamed chat responses stay single-agent by default; `[AGENT:...]` handoff markers only appear if you switch back to the optional multi-agent flow
+- chat tool calls follow the same authenticated access scope as the dashboard
+- `http://localhost:4000/tools` requires a bearer JWT with `org_id`, or the local admin debug JWT with `access_role=admin_debug`
 
 ## What Gets Seeded
 
@@ -414,15 +383,15 @@ The default convention is:
 
 The workspace aliases point package imports like `agent-runtime`, `agent-contracts`, and `@/` to source files, so tests do not require a prior build step.
 
-## Notes
+## What's Included
 
-- `pnpm env:prepare` creates local env files from the checked-in examples.
-- `pnpm dev:start` runs the workspace build, validates Docker or Finch, waits for readiness, and starts both services.
-- `pnpm dev` runs the same workspace build, then starts both services without the extra readiness checks.
-- `pnpm build` uses Turbo to build the shared packages plus the Next app in dependency order.
-- `pnpm build:service` builds the Moose service docker image.
-- `pnpm test` uses Vitest at the workspace root and is safe to run before `pnpm dev`.
-- `pnpm seed` requires the Moose service to be running.
-- `pnpm lint` runs Biome across the template and ESLint in the Next app.
-- `pnpm format` runs Biome formatting across the template.
-- The chat and dashboard follow the same authenticated access scope; org-scoped mock users see one organization, while the admin mock user sees the seeded dataset across organizations.
+- a Moose service with JWT-backed RLS and MCP tools
+- a Next.js app with chat, mock email/password auth for local development, and dashboard views
+- a single-agent chat experience by default, plus optional reference multi-agent runtime code
+- AI Elements primitives for the generic chat shell
+- Moose-owned app APIs backed by query-layer models
+- a shared agent runtime package for provider/model/tool orchestration
+- a reusable Langfuse collector package for host-side observability sinks
+- a shared contracts package for frontend/service DTOs
+- Langfuse-compatible tracing from the web app
+- optional Bedrock provider and Guardrails wiring

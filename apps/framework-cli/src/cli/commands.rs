@@ -15,10 +15,6 @@ pub enum Commands {
         name: String,
 
         /// Template to use for the project
-        #[arg(
-            conflicts_with = "from_remote",
-            required_unless_present_any = ["from_remote", "language"]
-        )]
         template: Option<String>,
 
         /// Location of your app or service
@@ -32,15 +28,10 @@ pub enum Commands {
         /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
         #[arg(
             long,
-            required_unless_present_any = ["template", "language"],
             value_name = "CONNECTION_STRING",
             num_args = 0..=1
         )]
         from_remote: Option<Option<String>>,
-
-        /// Programming language to use for the project
-        #[arg(long, conflicts_with = "template")]
-        language: Option<String>,
 
         /// Generate a custom Dockerfile at project root for customization
         #[arg(long)]
@@ -391,6 +382,22 @@ pub enum GenerateCommand {
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,
+
+        /// Skip all confirmation prompts (renames and destructive operations)
+        #[arg(long)]
+        yes_all: bool,
+
+        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        #[arg(long)]
+        yes_destructive: bool,
+
+        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        #[arg(long)]
+        yes_rename: bool,
+
+        /// Disable automatic backfill SQL generation for versioned tables
+        #[arg(long)]
+        no_auto_backfill_sql: bool,
     },
 }
 
