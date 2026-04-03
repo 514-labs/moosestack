@@ -789,7 +789,7 @@ pub fn print_migration_rejected_guidance(
     println!("\nNext Steps");
     println!("  1. {version_hint}");
     println!("  2. Export the new table from root `{root_file}`");
-    println!("  3. Run `moose generate migration` again");
+    println!("  3. Run `moose dev` to apply the changes");
 }
 
 // ---------------------------------------------------------------------------
