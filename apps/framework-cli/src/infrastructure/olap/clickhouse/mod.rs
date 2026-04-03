@@ -333,9 +333,6 @@ impl IgnorableOperation {
 /// drift detection (`detect_drift`) so that "empty olap_changes" implies
 /// NoDrift / AlreadyAtTarget.
 pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
-    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
-    use crate::framework::core::partial_infrastructure_map::LifeCycle;
-
     let mut normalized = table.clone();
 
     // Strip Moose-internal tracking fields that are never part of ClickHouse DDL.
@@ -346,9 +343,9 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     // used as a HashMap key in `diff_tables_with_strategy`.
     normalized.metadata = None;
     normalized.seed_filter = Default::default();
-    normalized.life_cycle = LifeCycle::default();
+    normalized.life_cycle = Default::default();
     normalized.source_primitive = PrimitiveSignature {
-        name: String::new(),
+        name: normalized.name.clone(),
         primitive_type: PrimitiveTypes::DataModel,
     };
 
