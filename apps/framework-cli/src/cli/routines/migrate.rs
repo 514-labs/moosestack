@@ -162,6 +162,28 @@ fn detect_drift(
         .cloned()
         .collect();
 
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        for table_name in &changed_tables {
+            if let (Some(current), Some(expected)) = (
+                current_no_metadata.get(table_name),
+                expected_no_metadata.get(table_name),
+            ) {
+                let cur = serde_json::to_string_pretty(current).unwrap_or_default();
+                let exp = serde_json::to_string_pretty(expected).unwrap_or_default();
+                tracing::debug!(
+                    table = %table_name,
+                    "Drift detail — current (from DB) vs expected (from plan):"
+                );
+                for (i, (c, e)) in cur.lines().zip(exp.lines()).enumerate() {
+                    if c != e {
+                        tracing::debug!("  line {}: current: {}", i + 1, c);
+                        tracing::debug!("  line {}:expected: {}", i + 1, e);
+                    }
+                }
+            }
+        }
+    }
+
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
