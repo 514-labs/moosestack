@@ -707,8 +707,12 @@ pub async fn execute_migration_plan(
         DriftStatus::NoDrift => {
             println!("  ✓ Current = Expected (no drift detected)");
 
-            // Check target matches code
-            if files.state_after.tables != target_infra_map.tables {
+            // Check target matches code (normalize both sides so only
+            // DDL-relevant fields are compared, consistent with detect_drift).
+            let ignore_ops = &project.migration_config.ignore_operations;
+            if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
+                != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
+            {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
                      The migration was perhaps generated before additional code changes.\n\
