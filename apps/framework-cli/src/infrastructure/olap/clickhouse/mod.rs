@@ -322,10 +322,22 @@ impl IgnorableOperation {
     }
 }
 
+/// Readonly MergeTree settings that cannot be modified after table creation.
+/// Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
+///
+/// Each entry is `(setting_name, default_value)`.
+pub(crate) const READONLY_SETTING_DEFAULTS: &[(&str, &str)] = &[
+    ("index_granularity", "8192"),
+    ("index_granularity_bytes", "10485760"),
+    ("enable_mixed_granularity_parts", "1"),
+    ("add_minmax_index_for_numeric_columns", "0"),
+    ("add_minmax_index_for_string_columns", "0"),
+    ("table_disk", "0"),
+];
+
 /// Canonical normalization for table comparison.
 ///
-/// Strips Moose-internal tracking fields (`metadata`, `seed_filter`,
-/// `source_primitive`, `life_cycle`) that are never part of ClickHouse
+/// Strips Moose-internal tracking fields that are never part of ClickHouse
 /// DDL, plus any schema fields covered by `ignore_ops`.
 /// `version` is intentionally kept because `Table::id()` depends on it.
 ///
@@ -335,10 +347,6 @@ impl IgnorableOperation {
 pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
     let mut normalized = table.clone();
 
-    // Strip Moose-internal tracking fields that are never part of ClickHouse DDL.
-    // Both the plan diff and drift detection must ignore these so that
-    // "empty olap_changes" ↔ "NoDrift / AlreadyAtTarget".
-    //
     // NOTE: `version` is intentionally kept — it feeds `Table::id()` which is
     // used as a HashMap key in `diff_tables_with_strategy`.
     normalized.metadata = None;
@@ -348,6 +356,20 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
         name: normalized.name.clone(),
         primitive_type: PrimitiveTypes::DataModel,
     };
+    // ClickHouse readonly settings (index_granularity, etc.) appear in
+    // DB-introspected table_settings with their default values even when
+    // never explicitly set.  The diff strategy already ignores them, so
+    // strip them here too for raw `==` consistency.
+    if let Some(settings) = &mut normalized.table_settings {
+        for &(key, default) in READONLY_SETTING_DEFAULTS {
+            if settings.get(key).map(|v| v.as_str()) == Some(default) {
+                settings.remove(key);
+            }
+        }
+        if settings.is_empty() {
+            normalized.table_settings = None;
+        }
+    }
 
     if ignore_ops.is_empty() {
         return normalized;

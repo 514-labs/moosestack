@@ -90,8 +90,19 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
-/// Normalizes every table via `normalize_table_for_diff` so that comparisons
-/// only consider ClickHouse-DDL-relevant fields (the same fields the plan diff checks).
+/// Normalizes every table for drift detection.
+///
+/// Applies `normalize_table_for_diff` (same as the plan diff) plus additional
+/// stripping of fields that the diff strategy handles specially but the raw
+/// `==` comparison in `detect_drift` cannot:
+///
+/// - `engine_params_hash` / `table_settings_hash`: exist for secret-bearing
+///   settings (e.g. Kafka credentials). The diff strategy compares hashes when
+///   *both* sides have one and falls back to direct value comparison otherwise.
+///   DB-introspected tables never have hashes, so one side is always `None`.
+/// - `database`: `None` means "use default". DB-reconciled tables get
+///   `Some(actual_db)`, which is semantically equal when it IS the default.
+///   A real database change surfaces as a different `Table::id()` key.
 fn strip_non_schema_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
@@ -99,7 +110,10 @@ fn strip_non_schema_fields(
     tables
         .iter()
         .map(|(name, table)| {
-            let table = normalize_table_for_diff(table, ignore_ops);
+            let mut table = normalize_table_for_diff(table, ignore_ops);
+            table.engine_params_hash = None;
+            table.table_settings_hash = None;
+            table.database = None;
             (name.clone(), table)
         })
         .collect()
