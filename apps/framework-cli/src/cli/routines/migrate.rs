@@ -163,31 +163,57 @@ fn detect_drift(
         .collect();
 
     if tracing::enabled!(tracing::Level::DEBUG) {
-        for table_name in &changed_tables {
-            if let (Some(current), Some(expected)) = (
-                current_no_metadata.get(table_name),
-                expected_no_metadata.get(table_name),
-            ) {
-                let cur = serde_json::to_string_pretty(current).unwrap_or_default();
-                let exp = serde_json::to_string_pretty(expected).unwrap_or_default();
-                tracing::debug!(
-                    table = %table_name,
-                    "Drift detail — current (from DB) vs expected (from plan):"
-                );
-                for (i, (c, e)) in cur.lines().zip(exp.lines()).enumerate() {
-                    if c != e {
-                        tracing::debug!("  line {}: current: {}", i + 1, c);
-                        tracing::debug!("  line {}:expected: {}", i + 1, e);
-                    }
-                }
-            }
-        }
+        log_table_diff(
+            &changed_tables,
+            &current_no_metadata,
+            &expected_no_metadata,
+            "current (DB) vs expected (plan-before) — why not NoDrift",
+        );
+        log_table_diff(
+            &changed_tables,
+            &current_no_metadata,
+            &target_no_metadata,
+            "current (DB) vs target (code) — why not AlreadyAtTarget",
+        );
     }
 
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
         changed_tables,
+    }
+}
+
+/// Logs per-field diffs between two table snapshots for a set of table names.
+fn log_table_diff(
+    table_names: &[String],
+    left: &HashMap<String, Table>,
+    right: &HashMap<String, Table>,
+    label: &str,
+) {
+    for name in table_names {
+        let (Some(l), Some(r)) = (left.get(name), right.get(name)) else {
+            tracing::debug!(table = %name, "{label}: table missing from one side");
+            continue;
+        };
+        if l == r {
+            tracing::debug!(table = %name, "{label}: identical");
+            continue;
+        }
+        let lj = serde_json::to_string_pretty(l).unwrap_or_default();
+        let rj = serde_json::to_string_pretty(r).unwrap_or_default();
+        tracing::debug!(table = %name, "{label}:");
+        for (i, (a, b)) in lj.lines().zip(rj.lines()).enumerate() {
+            if a != b {
+                tracing::debug!("  line {i}: left:  {a}");
+                tracing::debug!("  line {i}: right: {b}");
+            }
+        }
+        let lc = lj.lines().count();
+        let rc = rj.lines().count();
+        if lc != rc {
+            tracing::debug!("  (left has {lc} lines, right has {rc} lines)");
+        }
     }
 }
 
