@@ -168,14 +168,9 @@ fn detect_drift(
         .cloned()
         .collect();
 
-    let changed_tables: Vec<String> = current_no_metadata
-        .keys()
-        .filter(|k| {
-            expected_no_metadata.contains_key(*k)
-                && current_no_metadata.get(*k) != expected_no_metadata.get(*k)
-        })
-        .cloned()
-        .collect();
+    let changed_tables = changed_tables_between(&current_no_metadata, &expected_no_metadata);
+    let changed_vs_target_tables =
+        changed_tables_between(&current_no_metadata, &target_no_metadata);
 
     if tracing::enabled!(tracing::Level::DEBUG) {
         log_table_diff(
@@ -185,7 +180,7 @@ fn detect_drift(
             "current (DB) vs expected (plan-before) — why not NoDrift",
         );
         log_table_diff(
-            &changed_tables,
+            &changed_vs_target_tables,
             &current_no_metadata,
             &target_no_metadata,
             "current (DB) vs target (code) — why not AlreadyAtTarget",
@@ -197,6 +192,16 @@ fn detect_drift(
         missing_tables,
         changed_tables,
     }
+}
+
+fn changed_tables_between(
+    left: &HashMap<String, Table>,
+    right: &HashMap<String, Table>,
+) -> Vec<String> {
+    left.keys()
+        .filter(|k| right.contains_key(*k) && left.get(*k) != right.get(*k))
+        .cloned()
+        .collect()
 }
 
 /// Logs per-field diffs between two table snapshots for a set of table names.
@@ -1011,6 +1016,27 @@ mod tests {
             }
             _ => panic!("Expected DriftDetected"),
         }
+    }
+
+    #[test]
+    fn test_changed_tables_between_uses_specified_pair() {
+        let mut current = HashMap::new();
+        current.insert("users".to_string(), create_modified_table("users"));
+        current.insert("posts".to_string(), create_test_table("posts"));
+
+        let mut expected = HashMap::new();
+        expected.insert("users".to_string(), create_test_table("users"));
+        expected.insert("posts".to_string(), create_test_table("posts"));
+
+        let mut target = HashMap::new();
+        target.insert("users".to_string(), create_modified_table("users"));
+        target.insert("posts".to_string(), create_modified_table("posts"));
+
+        let changed_vs_expected = changed_tables_between(&current, &expected);
+        let changed_vs_target = changed_tables_between(&current, &target);
+
+        assert_eq!(changed_vs_expected, vec!["users".to_string()]);
+        assert_eq!(changed_vs_target, vec!["posts".to_string()]);
     }
 
     #[test]
