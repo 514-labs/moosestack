@@ -1,7 +1,7 @@
-kafka-python-ng==2.2.2
-clickhouse-connect==0.11.0
-requests==2.32.4
-moose-cli==0.6.439
-moose-lib==0.6.439
-faker==40.8.0
-fastapi[standard]==0.135.1
+kafka-python-ng==2.2.3
+clickhouse-connect==0.15.1
+requests==2.33.1
+moose-cli==0.6.487
+moose-lib==0.6.487
+faker==40.12.0
+fastapi[standard]==0.135.3
