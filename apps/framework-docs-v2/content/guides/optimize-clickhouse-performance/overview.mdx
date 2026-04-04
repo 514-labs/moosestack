@@ -8,9 +8,9 @@ import { BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This guide is for developers with a MooseStack application deployed on [Fiveonefour hosting](/hosting) who want to find and fix a slow ClickHouse query. It does not teach ClickHouse from scratch. Instead, it walks you through an AI-assisted workflow: your agent profiles the slow query, proposes schema changes, and benchmarks each optimization candidate on its own isolated preview database. The output is a pull request with the winning change and the evidence behind it.
+This guide is for developers with a MooseStack application deployed on [Fiveonefour hosting](/hosting) who want to find and fix a slow ClickHouse query. It does not teach ClickHouse from scratch. Instead, it walks you through an AI-assisted workflow: your agent profiles the slow query, proposes different schema optimizations, and benchmarks each one on its own isolated preview database. The output is a pull request with the winning change and the evidence behind it.
 
-You should be comfortable reading a ClickHouse query and reviewing a pull request. The guide introduces `EXPLAIN` output and benchmark JSON as you encounter them, but it does not cover ClickHouse fundamentals.
+You should be comfortable reading a ClickHouse query and reviewing a pull request. You do not need deep ClickHouse performance expertise. The benchmarks collect query metrics, `EXPLAIN` profiling, and resource usage, and your agent interprets them for you.
 
 <BulletPointsCard
   title="This guide is a good fit when"
