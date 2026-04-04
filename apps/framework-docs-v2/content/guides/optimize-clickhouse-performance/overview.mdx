@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: When to use the ClickHouse optimization workflow and what to expect from the review artifacts
+description: How preview branches on Fiveonefour let you benchmark ClickHouse optimizations before they touch production
 languages: ["typescript"]
 ---
 
@@ -8,41 +8,50 @@ import { BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This guide is for a deployed MooseStack application with a production ClickHouse query pattern that can be faster. The goal is not to teach ClickHouse from scratch. The goal is to help you use an AI workflow that can profile the slow path, scaffold a benchmark package around the real query contract, propose candidate schema changes, validate them on preview, and hand you back a PR for the winning candidate with evidence you can verify.
+This guide is for developers with a MooseStack application deployed on [Fiveonefour hosting](/hosting) who want to find and fix a slow ClickHouse query. It does not teach ClickHouse from scratch. Instead, it walks you through an AI-assisted workflow: your agent profiles the slow query, proposes schema changes, and benchmarks each optimization candidate on its own isolated preview database. The output is a pull request with the winning change and the evidence behind it.
 
-That workflow ends at a benchmarked winner and a reviewable migration plan. It does **not** decide the safest production rollout shape for every change. If the winning candidate needs a phased release, delayed cleanup, or stricter recovery plan, rollout planning takes over after the optimization review.
-
-## Prerequisites
-
-The workflow relies on the `514` CLI, a linked local repository, and the agent harness from `514 agent init`. In the [tutorial](/guides/optimize-clickhouse-performance/tutorial), complete **Setup** (install, sign in, link), then **Optimization workflow** (`514 agent init`, copilot prompt, run the skill), then **PR review** (benchmark results, migration plan and code diff, optional reruns on preview vs `main`). Hosting reference: [Hosting](/hosting), [`514 project link`](/hosting/cli/projects/link), [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup), and [Setup failures](/hosting/troubleshooting/setup-failures) if something blocks you.
+You should be comfortable reading a ClickHouse query and reviewing a pull request. The guide introduces `EXPLAIN` output and benchmark JSON as you encounter them, but it does not cover ClickHouse fundamentals.
 
 <BulletPointsCard
   title="This guide is a good fit when"
   bulletStyle="check"
   bullets={[
     {
-      title: "You have production apps powered by ClickHouse that can be faster",
+      title: "You have a production app on Fiveonefour with a ClickHouse query that can be faster",
       description:
-        "The workflow profiles a real production query path and benchmarks changes against it, so it works best when there is already a live workload to improve.",
+        "The workflow profiles one of your production queries and benchmarks changes against it, so it works best when there is already a live workload to measure.",
     },
     {
       title: "You want your AI agent to help you get better at ClickHouse",
       description:
-        "ClickHouse data modeling is tricky. The workflow lets your agent bridge that gap by profiling the real query pattern, proposing changes, and turning them into artifacts you can inspect.",
+        "ClickHouse data modeling is tricky. This workflow lets your agent profile the query, propose schema changes, and hand you benchmarks and a migration plan to review.",
     },
     {
       title: "You want to review the agent's work before anything touches production",
       description:
-        "The output is a pull request with benchmark test results and a migration plan that you review and approve.",
+        "The output is a pull request with benchmark test results and a migration plan. Nothing ships until you merge.",
     },
   ]}
 />
 
+## How the experiment works
+
+The workflow uses **preview branches** on [Fiveonefour hosting](/hosting) to run a controlled experiment. Each preview branch deploys to its own isolated ClickHouse database, so the only variable between runs is the schema change being tested.
+
+1. **Freeze a baseline.** The agent pushes a baseline branch with your current schema, unchanged. Fiveonefour deploys it to a preview database that serves as the control.
+2. **Deploy candidates.** Each proposed schema change gets its own branch. Fiveonefour deploys it to a separate preview database with the new layout applied.
+3. **Benchmark all branches with the same test.** The agent generates a benchmark package that runs the same query against every preview database — baseline and candidates. The only difference is the underlying table layout.
+4. **Compare and pick a winner.** The agent compares latency, `EXPLAIN` output, rows read, and memory usage across all branches, then opens a PR for the candidate that performed best.
+
+Because every branch gets its own database on Fiveonefour, the comparison is clean. You are not benchmarking against shared infrastructure or a moving target. The baseline stays frozen, the candidates are isolated, and the benchmark query is the same everywhere.
+
+The experiment produces a benchmarked winner and a migration plan you can review. It does **not** decide how to roll the change out to production. If the winning candidate needs a phased release, delayed cleanup, or a recovery plan, that planning happens after you approve the optimization.
+
 ## What the workflow is actually optimizing
 
-ClickHouse performance usually comes down to whether your table ordering matches the filter and grouping pattern your application actually uses.
+ClickHouse performance usually comes down to one thing: whether the table's sorting key (its `ORDER BY` clause) matches the filter and grouping patterns your queries actually use.
 
-In the prototype case, the slow query path was not fixed by generic SQL cleanup. It got faster because the schema started matching the query shape, which changed the `EXPLAIN indexes = 1` output from a full scan:
+In the example used to build this guide, the slow query was not fixed by rewriting SQL. It got faster because the table's sorting key was changed to match the query's filter columns. That shifted the `EXPLAIN indexes = 1` output from a full scan:
 
 ```text
 Condition: true
@@ -57,27 +66,17 @@ Granules: 6/24
 Granule skip: 75%
 ```
 
-That is the main idea behind this guide. The workflow is trying to improve structural signals first, then confirm that latency follows.
+That is the core idea behind this guide: improve the table structure so ClickHouse can skip irrelevant data, then confirm that query latency drops.
 
-## What the workflow gives back
+## Prerequisites
 
-You are not expected to trust the agent on vibes. The workflow should give you:
+- A MooseStack app deployed on [Fiveonefour hosting](/hosting)
+- The [`514` CLI](/hosting/cli) installed and authenticated
+- Your local repository linked to the Fiveonefour project via [`514 project link`](/hosting/cli/projects/link)
+- Agent skills installed via `514 agent init` (covered in the [tutorial](/guides/optimize-clickhouse-performance/tutorial))
 
-- a scaffolded `query-benchmarks/` package created by `moose add benchmark`, instead of a one-off benchmark file
-- a `benchmark.config.ts` contract that keeps the same query target, scenarios, thresholds, and sampling across baseline and candidate branches
-- `EXPLAIN` output showing whether the query started using the primary key or another skipping mechanism
-- benchmark timing collected from server-side query data
-- `migrations/plan.yaml` so you can review the schema operations and decide whether the winner needs additional rollout shaping before production
+The setup takes a few minutes. The agent workflow runs for several minutes while preview branches deploy and benchmarks execute. Budget roughly 30 minutes end to end for a first run.
 
-## Where optimization ends and rollout planning begins
+If something blocks setup, see [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup) and [Setup failures](/hosting/troubleshooting/setup-failures).
 
-The optimization review has two gates:
-
-1. The benchmark evidence
-2. The migration plan
-
-The benchmark tells you whether the optimized query path is structurally better and measurably faster. The migration plan tells you whether the branch is changing the database in the way you intended.
-
-If both look good, you have a believable winner. That still does not mean every candidate should ship to production unchanged. When the migration plan needs phased rollout logic, delayed cleanup, manual verification gates, or a stricter recovery path, that is the handoff point to rollout planning.
-
-If you want the step-by-step path for running the workflow and reviewing those artifacts, continue to the tutorial.
+When you are ready for the step-by-step path, continue to the [tutorial](/guides/optimize-clickhouse-performance/tutorial).
