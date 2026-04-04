@@ -1796,9 +1796,9 @@ const guidesNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "guides/optimize-clickhouse-performance",
-    title: "Optimizing ClickHouse Performance with AI",
+    title: "Optimize a Slow ClickHouse Query with Your AI Agent",
     description:
-      "Profile a slow query, validate the optimization in preview, and review the benchmark evidence plus migration plan before merge.",
+      "Profile a slow query, benchmark candidate schema changes on preview, and review the winning PR before merge.",
     icon: IconBrain,
     languages: ["typescript"],
     children: [
