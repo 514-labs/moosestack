@@ -225,12 +225,11 @@ mod tests {
     use super::*;
 
     fn get_test_project_abs_dir_path() -> PathBuf {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let test_project_location = manifest_dir.join("tests/python/project");
+        let test_project_location = PathBuf::from("tests/python/project");
 
         println!("cwd: {}", std::env::current_dir().unwrap().display());
-        println!("CARGO_MANIFEST_DIR: {}", manifest_dir.display());
-        println!("target: {}", test_project_location.display());
+        println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
+        println!("target (relative): {}", test_project_location.display());
         println!("target exists: {}", test_project_location.exists());
 
         std::fs::canonicalize(test_project_location).unwrap()
