@@ -129,7 +129,7 @@ In this section the agent profiles the slow query, proposes optimizations, bench
 2. `PROFILE`: inspect the slow query and run diagnostics.
 3. `PROPOSE`: show candidate schema changes and the query pattern they are meant to improve.
 4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
-5. `EXPERIMENT`: deploy and seed each candidate branches, apply the schema optimizations, and run the same benchmark tests against each candidate.
+5. `EXPERIMENT`: deploy and seed each candidate branch, apply the schema optimizations, and run the same benchmark tests against each candidate.
 6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
 7. `SHIP`: open a PR with the comparison summary and benchmark evidence.
 </Callout>
@@ -199,12 +199,12 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
 >
 <GuideStepper.WhatYouNeed>
 - Patience for branch pushes and preview deployments
-- Willingness to approve raw `514 clickhouse query` when the skill prompts you
+- The agent will run read-only ClickHouse queries during profiling and benchmarking
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A frozen `perf/baseline` branch with the benchmark target wired up
+- A frozen `perf/baseline` branch (cut from your default branch, with the benchmark package added) serving as the control
 - One or more candidate branches with data model and benchmark target changes
-- Benchmark runs against baseline and candidate deployments, and a PR for the winner
+- Benchmark runs against baseline and candidate branches (no PR per candidate — only one PR for the winner)
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="SETUP: confirm the target deployment">
@@ -212,8 +212,8 @@ The agent should start by confirming the linked project, the deployment it will 
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="PROFILE: expect query inspection and gated diagnostics">
-This is where the agent inspects slow queries, runs `EXPLAIN`, and gathers storage diagnostics. Raw `514 clickhouse query` steps should prompt you here. Approve them only when the SQL matches the query path you expect the workflow to analyze.
+<GuideStepper.Checkpoint title="PROFILE: expect query inspection and diagnostics">
+This is where the agent inspects slow queries, runs `EXPLAIN`, and gathers storage diagnostics. The ClickHouse client is read-only, so these queries run safely without manual approval. Check that the SQL matches the query path you expect the workflow to analyze.
 
 </GuideStepper.Checkpoint>
 
@@ -274,16 +274,13 @@ export const benchmark = defineBenchmark({
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="EXPERIMENT: help preview benchmarking only if needed">
-The agent should try to wire the benchmark package to the right preview deployment by default. If it cannot finish that setup on its own, you may need to help by filling in `.env.preview` in the generated benchmark package.
+The agent should try to wire the benchmark package to the right preview deployment by default. If it cannot finish that setup on its own, you can pull the preview credentials with the CLI:
 
-What you may need to provide:
+```bash
+514 env list --platform --dotenv > .env.local
+```
 
-- the preview ClickHouse host
-- the preview ClickHouse user and password
-- the preview database name for the branch being benchmarked
-- the SSL setting required by 514 hosting
-
-Get those values from 514 hosting for the preview deployment the benchmark is targeting, then populate `.env.preview` in the generated benchmark package before the run continues.
+This writes the ClickHouse host, user, password, database name, and SSL setting for the current branch's preview deployment into `.env.local`. Run it from inside the generated benchmark package directory for the branch you want to test.
 
 </GuideStepper.Checkpoint>
 
