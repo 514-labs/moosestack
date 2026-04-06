@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 Use this guide when a production ClickHouse query in your MooseStack app is slower than it should be.
 
-You will set up your AI coding agent with the `514` harness to benchmark the slow query against one or more optimized candidates. By the end you will have a reviewable PR with the winning schema changes, benchmark evidence, and a migration plan.
+You will set up your AI coding agent with the `514` harness to benchmark the slow query against one or more optimized candidates. By the end you will have a reviewable PR with the winning schema changes and benchmark evidence.
 
 The experiment:
 1. Profiles the slow query and proposes optimization candidates
@@ -26,6 +26,17 @@ This guide assumes:
 - The agent can reuse an existing query path or define a query model when profiling finds a pattern without one
 
 ### Setup
+
+<Callout
+  type="info"
+  title="Don't have a MooseStack project yet?"
+  href="/moosestack/getting-started/from-clickhouse"
+  icon="Database"
+  ctaLabel="Start from ClickHouse"
+>
+Start by bootstrapping a MooseStack project from your existing ClickHouse database, then return here once you have a project the agent can run against.
+</Callout>
+
 
 Set up the `514` harness with your coding agent and link your local MooseStack project to its Fiveonefour counterpart.
 
@@ -120,7 +131,7 @@ In this section the agent profiles the slow query, proposes optimizations, bench
 4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
 5. `EXPERIMENT`: deploy and seed each candidate branches, apply the schema optimizations, and run the same benchmark tests against each candidate.
 6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
-7. `SHIP`: open a PR with the comparison summary, JSON evidence, and `migrations/plan.yaml`.
+7. `SHIP`: open a PR with the comparison summary and benchmark evidence.
 </Callout>
 
 <GuideStepper id="optimize-ch-workflow" persist>
@@ -287,7 +298,7 @@ The agent should compare each candidate back to the same baseline contract, note
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="SHIP: expect a PR, not an auto-merge">
-The workflow ends by opening a PR for the winning candidate. That PR should include a comparison summary, links to the benchmark JSON evidence, and `migrations/plan.yaml`. The experiment is complete at this point, but nothing should touch production until you review those artifacts.
+The workflow ends by opening a PR for the winning candidate. That PR should include a comparison summary and links to the benchmark results. The experiment is complete at this point, but nothing should touch production until you review those artifacts.
 
 </GuideStepper.Checkpoint>
 
@@ -299,12 +310,11 @@ Example: index use, fewer granules read (for example selective condition vs full
 
 ### PR review
 
-**The experiment is over. The PR is now the review surface.** The agent can open a PR, but you still decide what ships. Your two gates before merge are the benchmark evidence and the migration plan.
+**The experiment is over. The PR is now the review surface.** The agent can open a PR, but you still decide what ships.
 
-You should confirm three things here:
+You should confirm two things here:
 
 - the benchmarks and `EXPLAIN` support the performance claim
-- `migrations/plan.yaml` matches the code diff and the benchmark target
 - any rebuild, backfill, or destructive step is explicit and acceptable before production
 
 <GuideStepper id="optimize-ch-pr" persist>
@@ -618,132 +628,8 @@ If that SQL does not match the app code or benchmark target in the PR, stop and 
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="review-migration-plan-and-changes"
-  number={2}
-  title="Review the migration plan and rollout intent"
-  summary="Read migrations/plan.yaml as a sequence so you know what changes in ClickHouse, how data moves, and whether rollout planning should reshape the plan before production."
->
-<GuideStepper.WhatYouNeed>
-- The same PR
-- Comfort reading `migrations/plan.yaml` and TypeScript data model diffs
-</GuideStepper.WhatYouNeed>
-<GuideStepper.WhatYouGet>
-- A clear picture of schema operations, data movement, and rollout questions before anything hits production
-</GuideStepper.WhatYouGet>
-
-<GuideStepper.Checkpoint title="Match the schema diff, benchmark target, and plan">
-Start in the code diff. Find the schema change the PR says made the query faster, then make sure the benchmark and the migration plan both point at that same change.
-
-One common shape is a new `OlapTable` version:
-
-```diff
- export const UserEventsV1 = new OlapTable("UserEvents", {
-   version: "1.0",
-   orderByFields: ["timestamp", "current_database"],
- });
-
-+export const UserEventsV2 = new OlapTable("UserEvents", {
-+  version: "2.0",
-+  orderByFields: ["current_database", "timestamp"],
-+});
-```
-
-If the PR claims better skipping on `current_database`, the benchmark should target the new layout and `migrations/plan.yaml` should explain how the database gets there. If the diff, benchmark target, and plan all tell different stories, stop and ask why.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Read plan.yaml as a sequence, not just a list">
-Open `migrations/plan.yaml` and read it top to bottom. You are not only checking whether the right operations appear. You are checking whether the **sequence makes sense**.
-
-For each operation, ask:
-
-- what problem is this step solving
-- what data exists before this step
-- what data exists after this step
-- does the next step depend on this one having happened first
-
-Good review language sounds like: rename the old table to preserve the current rows, create the new layout, backfill into the new layout, then clean up the old copy when the move is complete.
-
-See [Planned Migrations](/moosestack/migrate/planned-migrations) for the plan format.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Treat rename-create-backfill-drop as a valid reviewed shape">
-Do not use "no drop ever" as the rule. A reviewed sequence can rename the old table, create a new one, backfill it, and then drop the renamed old table after the copy.
-
-One valid shape looks like this:
-
-```yaml
-operations:
-  - RawSql:
-      sql: |
-        RENAME TABLE UserEvents TO UserEvents_old
-  - CreateTable:
-      name: UserEvents
-      orderBy: [current_database, timestamp]
-  - RawSql:
-      sql: |
-        INSERT INTO UserEvents
-        SELECT *
-        FROM UserEvents_old
-  - RawSql:
-      sql: |
-        DROP TABLE IF EXISTS UserEvents_old
-```
-
-That can be correct when the rename preserves the original rows long enough for the backfill and the drop only happens after the move is done.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Check the backfill details, including casts">
-Rebuild-style optimizations need a data-preserving copy step, not just `CreateTable`. In `RawSql` backfills, check whether the selected columns line up with the new table definition.
-
-If the new layout changes data types, codecs, or `LowCardinality` usage, explicit casts in the backfill can be a good sign:
-
-```yaml
-operations:
-  - RawSql:
-      sql: |
-        INSERT INTO UserEvents
-        SELECT
-          timestamp,
-          CAST(user_id, 'LowCardinality(String)'),
-          current_database
-        FROM UserEvents_old
-```
-
-You are looking for a believable story: rows move from the preserved old shape into the new shape without silent type mismatch or missing columns. A new table with no backfill, or a backfill that ignores a type change the schema diff introduced, needs an explanation.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Treat destructive operations as review points, not auto-rejects">
-`DropTable`, `DropTableColumn`, and `ModifyTableColumn` are not automatically wrong. They are operations that need intent, timing, and consequences explained. The [going-to-production migration review](/guides/applications/going-to-production) is the stricter reference for shaping these operations before a production deploy.
-
-Good signs:
-
-- a `DropTable` only removes a renamed old table after a successful backfill
-- a risky column operation is clearly tied to an intentional schema change
-- the PR calls out any re-seed, backfill, or recovery implications
-
-Stop and request changes when:
-
-- a destructive step removes an active table or column with no preservation step
-- the plan shape does not match the code diff
-- preview behavior suggests the plan did something other than what the PR describes
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Hand off to rollout planning when the plan needs reshaping">
-This optimization review is about whether the winning candidate is believable and intentional. It is **not** the final word on the safest production rollout shape.
-
-If the plan needs phased rollout logic, manual verification gates, a delayed cleanup step, or a more cautious recovery path, stop here and hand it off to rollout planning before merge. The optimization workflow found a promising winner. Rollout planning decides whether that exact migration sequence is the one you should ship to production. Use the [going-to-production guide](/guides/applications/going-to-production) when you need the stricter production rollout checklist.
-
-</GuideStepper.Checkpoint>
-</GuideStepper.Step>
-
-<GuideStepper.Step
   id="reproduce-benchmarks-baseline-vs-winner-preview"
-  number={3}
+  number={2}
   title="Run the benchmark package yourself (optional)"
   summary="Run the generated benchmark package against the baseline and winning candidate preview databases to validate the result on your machine."
 >
@@ -843,13 +729,12 @@ Compare the saved reports from both runs. The benchmark package stays the same. 
 
 <GuideStepper.Step
   id="decide-whether-to-merge"
-  number={4}
+  number={3}
   title="Decide whether to merge"
   summary="Make the final shipping decision after review and optional reruns."
 >
 <GuideStepper.WhatYouNeed>
 - Benchmark review complete
-- Migration plan review complete
 - Optional reruns complete, if you chose to do them
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -857,7 +742,7 @@ Compare the saved reports from both runs. The benchmark package stays the same. 
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Merge when you are satisfied">
-Merge when benchmarks, `migrations/plan.yaml`, and optional reruns match what you want to ship. Otherwise request changes.
+Merge when benchmarks and optional reruns match what you want to ship. Otherwise request changes.
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
@@ -952,4 +837,3 @@ Use this when you need the current field map while reviewing the benchmark step 
 - [Setup failures](/hosting/troubleshooting/setup-failures)
 - [Query Layer](/moosestack/reference/query-layer)
 - [Semantic Layer](/moosestack/apis/semantic-layer)
-- [Planned Migrations](/moosestack/migrate/planned-migrations)

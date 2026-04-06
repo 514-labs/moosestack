@@ -4,48 +4,56 @@ description: How preview branches on Fiveonefour let you benchmark ClickHouse op
 languages: ["typescript"]
 ---
 
-import { BulletPointsCard } from "@/components/mdx";
+import { Callout } from "@/components/mdx";
 
 ## Overview
 
-This guide is for developers with a MooseStack application deployed on [Fiveonefour hosting](/hosting) who want to find and fix a slow ClickHouse query. It does not teach ClickHouse from scratch. Instead, it walks you through an AI-assisted workflow: your agent profiles the slow query, proposes different schema optimizations, and benchmarks each one on its own isolated preview database. The output is a pull request with the winning change and the evidence behind it.
+By the end of this guide you will have a pull request with a benchmarked ClickHouse schema change and a migration plan. Nothing touches production until you review and merge.
 
-You should be comfortable reading a ClickHouse query and reviewing a pull request. You do not need deep ClickHouse performance expertise. The benchmarks collect query metrics, `EXPLAIN` profiling, and resource usage, and your agent interprets them for you.
+**Why complete it.** You have a slow ClickHouse query in a MooseStack app on [Fiveonefour hosting](/hosting) and you want it faster. You do not need to be a ClickHouse expert. The agent shows its reasoning at each step, so you pick up optimization patterns by reviewing its work.
 
-<BulletPointsCard
-  title="This guide is a good fit when"
-  bulletStyle="check"
-  bullets={[
-    {
-      title: "You have a production app on Fiveonefour with a ClickHouse query that can be faster",
-      description:
-        "The workflow profiles one of your production queries and benchmarks changes against it, so it works best when there is already a live workload to measure.",
-    },
-    {
-      title: "You want your AI agent to help you get better at ClickHouse",
-      description:
-        "ClickHouse data modeling is tricky. This workflow lets your agent profile the query, propose schema changes, and hand you benchmarks and a migration plan to review.",
-    },
-    {
-      title: "You want to review the agent's work before anything touches production",
-      description:
-        "The output is a pull request with benchmark test results and a migration plan. Nothing ships until you merge.",
-    },
-  ]}
-/>
+**The approach.** Your AI coding agent profiles the slow query, proposes schema changes, and tests each one against a frozen copy of your current schema on its own isolated database. It picks the winner and opens a PR with the evidence. You review the results and decide whether to ship.
 
-## How the experiment works
+**What you need.** A MooseStack app deployed on Fiveonefour with a live workload to benchmark against. Your coding agent (Cursor, Claude Code, Copilot, or similar) open on the repo. Comfort reading a ClickHouse query and reviewing a pull request.
 
-The workflow uses **preview branches** on [Fiveonefour hosting](/hosting) to run a controlled experiment. Each preview branch deploys to its own isolated ClickHouse database, so the only variable between runs is the schema change being tested.
+**What you don't need.** Deep ClickHouse performance knowledge. The agent collects query metrics, `EXPLAIN` output, and resource numbers, and includes a report with the results and an interpretation in the PR.
 
-1. **Freeze a baseline.** The agent pushes a baseline branch with your current schema, unchanged. Fiveonefour deploys it to a preview database that serves as the control.
-2. **Deploy candidates.** Each proposed schema change gets its own branch. Fiveonefour deploys it to a separate preview database with the new layout applied.
-3. **Benchmark all branches with the same test.** The agent generates a benchmark package that runs the same query against every preview database — baseline and candidates. The only difference is the underlying table layout.
-4. **Compare and pick a winner.** The agent compares latency, `EXPLAIN` output, rows read, and memory usage across all branches, then opens a PR for the candidate that performed best.
+<Callout
+  type="info"
+  title="Don't have a MooseStack project yet?"
+  href="/moosestack/getting-started/from-clickhouse"
+  icon="Database"
+  ctaLabel="Start from ClickHouse"
+>
+Start by bootstrapping a MooseStack project from your existing ClickHouse database, then return here once you have a project the agent can run against.
+</Callout>
 
-Because every branch gets its own database on Fiveonefour, the comparison is clean. You are not benchmarking against shared infrastructure or a moving target. The baseline stays frozen, the candidates are isolated, and the benchmark query is the same everywhere.
+## How this guide works
 
-The experiment produces a benchmarked winner and a migration plan you can review. It does **not** decide how to roll the change out to production. If the winning candidate needs a phased release, delayed cleanup, or a recovery plan, that planning happens after you approve the optimization.
+This guide starts by installing a performance testing harness into your repo. Your agent uses the harness to run a controlled experiment that benchmarks different schema optimization strategies against the live query you want to optimize.
+
+The harness provides four things:
+
+**A performance optimization skill** that walks the agent through the full workflow: profiling the slow query, proposing schema changes, freezing a baseline, benchmarking candidates, and opening a PR for the winner. The skill defines what the agent does at each stage and what evidence it collects.
+
+**ClickHouse best practices rules** that ground the agent's schema proposals. When the agent sees a full table scan, these rules help it propose specific changes like reordering a sorting key to match your filter columns, rather than guessing.
+
+**A benchmark test package** that the skill scaffolds into your repo. The package captures the slow query the agent profiled, wraps it with filter scenarios, and sets performance thresholds. The agent runs this same package against every preview database so the only variable is the schema.
+
+**514 Platform tools** that enable your agent to provision, connect to, and tear down the isolated ClickHouse databases needed for each optimization candidate.
+
+### The experiment
+
+With the harness in place, the agent runs a controlled experiment using **preview branches** on [Fiveonefour hosting](/hosting). Each preview branch gets its own isolated ClickHouse database, so the only variable between runs is the schema change.
+
+1. **Freeze a baseline.** The agent pushes a branch with your current schema, unchanged. Fiveonefour deploys it to a preview database. This is the control.
+2. **Deploy candidates.** Each proposed schema change gets its own branch and its own preview database with the new layout applied.
+3. **Benchmark every branch.** The agent runs the scaffolded benchmark package against every preview database. Same query, same thresholds, different table layout.
+4. **Pick a winner.** The agent compares latency, `EXPLAIN` output, rows read, and memory usage across branches, then opens a PR for the best candidate.
+
+Because every branch gets its own database, the comparison is clean. The baseline stays frozen and the candidates are isolated.
+
+The experiment ends with a PR. It does not decide how to roll the change out to production. If the winner needs a phased release or a recovery plan, that planning happens after you approve the optimization.
 
 ## What the workflow is actually optimizing
 
@@ -58,7 +66,7 @@ Condition: true
 Granules: 5921/5921
 ```
 
-to a useful index condition with meaningful skipping:
+to an index condition that actually skips data:
 
 ```text
 Condition: category in ['A3']
@@ -66,17 +74,6 @@ Granules: 6/24
 Granule skip: 75%
 ```
 
-That is the core idea behind this guide: improve the table structure so ClickHouse can skip irrelevant data, then confirm that query latency drops.
+The idea: change the table structure so ClickHouse skips irrelevant data, then confirm latency drops.
 
-## Prerequisites
-
-- A MooseStack app deployed on [Fiveonefour hosting](/hosting)
-- The [`514` CLI](/hosting/cli) installed and authenticated
-- Your local repository linked to the Fiveonefour project via [`514 project link`](/hosting/cli/projects/link)
-- Agent skills installed via `514 agent init` (covered in the [tutorial](/guides/optimize-clickhouse-performance/tutorial))
-
-The setup takes a few minutes. The agent workflow runs for several minutes while preview branches deploy and benchmarks execute. Budget roughly 30 minutes end to end for a first run.
-
-If something blocks setup, see [Fiveonefour hosting to local setup](/hosting/workflow/fiveonefour-to-local-setup) and [Setup failures](/hosting/troubleshooting/setup-failures).
-
-When you are ready for the step-by-step path, continue to the [tutorial](/guides/optimize-clickhouse-performance/tutorial).
+Budget roughly 30 minutes end to end for a first run. Ready to start? Continue to the [tutorial](/guides/optimize-clickhouse-performance/tutorial).
