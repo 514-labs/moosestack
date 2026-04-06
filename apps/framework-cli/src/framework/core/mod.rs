@@ -27,6 +27,7 @@ pub mod infrastructure;
 pub mod infrastructure_map;
 pub mod lifecycle_filter;
 pub mod migration_plan;
+pub mod operation_class;
 pub mod partial_infrastructure_map;
 pub mod plan;
 pub mod plan_risk;
