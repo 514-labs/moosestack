@@ -975,9 +975,14 @@ pub async fn start_production_mode(
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
-    if !project.migration_config.prod_auto_allow_destructive {
+    if !execute_migration_yaml {
+        info!("Migration file not found.")
+    }
+
+    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+        info!("prod_auto_allow_destructive is false, analysing risk.");
         let risk = classify_plan_risk(&plan.changes);
-        if risk.is_destructive() && !execute_migration_yaml {
+        if risk.is_destructive() {
             let summary = risk
                 .destructive_changes
                 .iter()
@@ -989,12 +994,16 @@ pub async fn start_production_mode(
                  destructive operation(s) but no plan.yaml was found.\n\
                  {}\n\n\
                  To proceed, either:\n  \
-                 1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
+                 1. Create a new version of the table by setting the `version` field in your \
+                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
+                 heuristic uses these to migrate data automatically\n  \
                  2. Set `prod_auto_allow_destructive = true` under [migration_config] \
                  in moose.config.toml to allow unplanned destructive changes.",
                 risk.destructive_changes.len(),
                 summary,
             ));
+        } else {
+            info!("PlanRisk: {:?}, proceeding.", risk)
         }
     }
 

@@ -709,7 +709,8 @@ pub mod tests {
     #[test]
     fn test_new_python_project() {
         let project = Project::new(
-            Path::new("tests/python/project"),
+            // CI sets cwd to a temp dir, so relative paths don't resolve to the package root.
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/python/project"),
             "test_project".to_string(),
             SupportedLanguages::Python,
         );
