@@ -708,22 +708,9 @@ pub mod tests {
 
     #[test]
     fn test_new_python_project() {
-        let cwd = std::env::current_dir().unwrap();
-        println!("cwd: {}", cwd.display());
-        // println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
-        println!(
-            "cwd contents: {:?}",
-            std::fs::read_dir(&cwd)
-                .unwrap()
-                .map(|e| e.unwrap().file_name())
-                .collect::<Vec<_>>()
-        );
-        println!(
-            "tests/python/project exists (relative): {}",
-            Path::new("tests/python/project").exists()
-        );
         let project = Project::new(
-            Path::new("tests/python/project"),
+            // CI sets cwd to a temp dir, so relative paths don't resolve to the package root.
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/python/project"),
             "test_project".to_string(),
             SupportedLanguages::Python,
         );

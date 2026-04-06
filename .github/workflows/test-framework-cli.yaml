@@ -186,7 +186,7 @@ jobs:
         run: pnpm install --filter=@repo/scripts # for package-templates.js
 
       - name: Run CLI Tests
-        run: cargo test -- --nocapture
+        run: cargo test
 
       - name: Inspect Logs
         if: always()
