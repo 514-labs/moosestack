@@ -228,7 +228,7 @@ mod tests {
         let test_project_location = PathBuf::from("tests/python/project");
 
         println!("cwd: {}", std::env::current_dir().unwrap().display());
-        println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
+        // println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
         println!("target (relative): {}", test_project_location.display());
         println!("target exists: {}", test_project_location.exists());
 
