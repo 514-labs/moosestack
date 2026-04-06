@@ -25,7 +25,7 @@ This guide assumes:
 - Your coding agent is open on this repository
 - The agent can reuse an existing query path or define a query model when profiling finds a pattern without one
 
-### Setup
+## Setup
 
 <Callout
   type="info"
@@ -144,7 +144,7 @@ This pulls skills from the 514 registry and sets up the agent harness for your p
 </GuideStepper.Step>
 </GuideStepper>
 
-### Optimization workflow
+## Optimization workflow
 
 Point your coding agent at the slow query or endpoint and ask it to optimize. A straightforward ask like the one below should invoke the **performance optimization skill** from your harness:
 
@@ -330,7 +330,7 @@ Example: index use, fewer granules read (for example selective condition vs full
 </GuideStepper.Step>
 </GuideStepper>
 
-### PR review
+## PR review
 
 **The experiment is over. The PR is now the review surface.** The agent can open a PR, but you still decide what ships.
 
@@ -737,11 +737,9 @@ Use this file to understand why a run passed or failed.
 After the baseline run, change only the preview target and run the same package again. In most cases that means swapping only the database name in `.env.preview`:
 
 ```bash
-# baseline preview fork
-pnpm bench
+pnpm bench  # baseline preview fork
 
-# winning candidate preview fork
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<winning-candidate-preview-db-name> pnpm bench
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<winning-candidate-preview-db-name> pnpm bench  # winning candidate preview fork
 ```
 
 Compare the saved reports from both runs. The benchmark package stays the same. The database target changes.
