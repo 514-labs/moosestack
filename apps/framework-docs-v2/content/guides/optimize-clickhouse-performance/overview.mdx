@@ -55,25 +55,12 @@ Because every branch gets its own database, the comparison is clean. The baselin
 
 The experiment ends with a PR. It does not decide how to roll the change out to production. If the winner needs a phased release or a recovery plan, that planning happens after you approve the optimization.
 
-## What the workflow is actually optimizing
-
-ClickHouse performance usually comes down to one thing: whether the table's sorting key (its `ORDER BY` clause) matches the filter and grouping patterns your queries actually use.
-
-In the example used to build this guide, the slow query was not fixed by rewriting SQL. It got faster because the table's sorting key was changed to match the query's filter columns. That shifted the `EXPLAIN indexes = 1` output from a full scan:
-
-```text
-Condition: true
-Granules: 5921/5921
-```
-
-to an index condition that actually skips data:
-
-```text
-Condition: category in ['A3']
-Granules: 6/24
-Granule skip: 75%
-```
-
-The idea: change the table structure so ClickHouse skips irrelevant data, then confirm latency drops.
-
-Budget roughly 30 minutes end to end for a first run. Ready to start? Continue to the [tutorial](/guides/optimize-clickhouse-performance/tutorial).
+<Callout
+  type="info"
+  title="Ready to start?"
+  href="/guides/optimize-clickhouse-performance/tutorial"
+  icon="Rocket"
+  ctaLabel="Start the tutorial"
+>
+Budget roughly 30 minutes end to end for a first run. The tutorial walks you through setup, the optimization workflow, and PR review.
+</Callout>
