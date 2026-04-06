@@ -183,6 +183,7 @@ pub mod metrics_console;
 pub mod migrate;
 pub mod openapi;
 pub mod peek;
+pub mod plan_files;
 pub mod project_init;
 pub mod ps;
 pub mod query;
