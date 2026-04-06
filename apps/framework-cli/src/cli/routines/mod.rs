@@ -975,9 +975,14 @@ pub async fn start_production_mode(
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
-    if !project.migration_config.prod_auto_allow_destructive {
+    if !execute_migration_yaml {
+        info!("Migration file not found.")
+    }
+
+    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+        info!("prod_auto_allow_destructive is false, analysing risk.");
         let risk = classify_plan_risk(&plan.changes);
-        if risk.is_destructive() && !execute_migration_yaml {
+        if risk.is_destructive() {
             let summary = risk
                 .destructive_changes
                 .iter()
@@ -995,6 +1000,8 @@ pub async fn start_production_mode(
                 risk.destructive_changes.len(),
                 summary,
             ));
+        } else {
+            info!("PlanRisk: {:?}, proceeding.", risk)
         }
     }
 
