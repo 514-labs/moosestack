@@ -710,7 +710,7 @@ pub mod tests {
     fn test_new_python_project() {
         let cwd = std::env::current_dir().unwrap();
         println!("cwd: {}", cwd.display());
-        println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
+        // println!("CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
         println!(
             "cwd contents: {:?}",
             std::fs::read_dir(&cwd)
