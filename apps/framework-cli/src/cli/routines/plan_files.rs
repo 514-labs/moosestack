@@ -7,10 +7,13 @@
 // in by subsequent tasks (Tasks 4-7).  Allow dead code until then.
 #![allow(dead_code)]
 
+use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::{MigrationPlan, MIGRATION_SCHEMA};
+use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -154,15 +157,260 @@ fn strip_yaml_language_server_header(content: &str) -> String {
         .join("\n")
 }
 
+/// Result of comparing the current database state against a plan's expected
+/// state, scoped to only the objects referenced by the plan's operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopedDriftStatus {
+    /// The referenced objects match the expected state; the plan can be applied.
+    Applicable,
+    /// The referenced objects are already gone from current state (e.g. a
+    /// `DropTable` plan where the table no longer exists). Safe to skip.
+    AlreadyApplied,
+    /// Some referenced objects differ between current and expected state.
+    /// The plan should be blocked until the drift is resolved.
+    Drifted { changed_tables: Vec<String> },
+}
+
+/// Extracts the set of table/view names referenced by a slice of operations.
+///
+/// For most variants the name is in the `table` or `name` field. `RawSql` is
+/// skipped because we cannot reliably extract object names from arbitrary SQL.
+/// `CreateRowPolicy`/`DropRowPolicy` contribute every table in the policy's
+/// `tables` list.
+///
+/// Names are qualified as `database.name` when the operation specifies a
+/// database, otherwise `default_database.name`.
+pub fn referenced_tables(
+    ops: &[SerializableOlapOperation],
+    default_database: &str,
+) -> HashSet<String> {
+    let mut names = HashSet::new();
+
+    let qualify = |name: &str, db: &Option<String>| -> String {
+        let db = db.as_deref().unwrap_or(default_database);
+        format!("{}.{}", db, name)
+    };
+
+    for op in ops {
+        match op {
+            SerializableOlapOperation::CreateTable { table } => {
+                names.insert(qualify(&table.name, &table.database));
+            }
+            SerializableOlapOperation::DropTable {
+                table, database, ..
+            } => {
+                names.insert(qualify(table, database));
+            }
+            SerializableOlapOperation::AddTableColumn {
+                table, database, ..
+            }
+            | SerializableOlapOperation::DropTableColumn {
+                table, database, ..
+            }
+            | SerializableOlapOperation::ModifyTableColumn {
+                table, database, ..
+            }
+            | SerializableOlapOperation::RenameTableColumn {
+                table, database, ..
+            }
+            | SerializableOlapOperation::ModifyTableSettings {
+                table, database, ..
+            }
+            | SerializableOlapOperation::ModifyTableTtl {
+                table, database, ..
+            }
+            | SerializableOlapOperation::AddTableIndex {
+                table, database, ..
+            }
+            | SerializableOlapOperation::DropTableIndex {
+                table, database, ..
+            }
+            | SerializableOlapOperation::AddTableProjection {
+                table, database, ..
+            }
+            | SerializableOlapOperation::DropTableProjection {
+                table, database, ..
+            }
+            | SerializableOlapOperation::ModifySampleBy {
+                table, database, ..
+            }
+            | SerializableOlapOperation::RemoveSampleBy {
+                table, database, ..
+            } => {
+                names.insert(qualify(table, database));
+            }
+            SerializableOlapOperation::CreateMaterializedView { name, database, .. }
+            | SerializableOlapOperation::DropMaterializedView { name, database } => {
+                names.insert(qualify(name, database));
+            }
+            SerializableOlapOperation::CreateView { name, database, .. }
+            | SerializableOlapOperation::DropView { name, database } => {
+                names.insert(qualify(name, database));
+            }
+            SerializableOlapOperation::RawSql { .. } => {
+                // Cannot extract table names from arbitrary SQL — skip.
+            }
+            SerializableOlapOperation::CreateRowPolicy { policy }
+            | SerializableOlapOperation::DropRowPolicy { policy } => {
+                for table_ref in &policy.tables {
+                    names.insert(qualify(&table_ref.name, &table_ref.database));
+                }
+            }
+        }
+    }
+
+    names
+}
+
+/// Compares the current database state against the expected state from a
+/// plan's `_state.json`, scoped only to the objects referenced by the plan's
+/// operations.
+///
+/// # Arguments
+///
+/// * `current` — tables currently in the live database, keyed by
+///   `database.table_name`.
+/// * `expected` — tables captured in the plan's state snapshot, keyed the same
+///   way.
+/// * `ops` — the operations from the plan file.
+/// * `default_database` — the project's default ClickHouse database name.
+///
+/// # Returns
+///
+/// * [`ScopedDriftStatus::Applicable`] — all referenced objects match; safe to
+///   apply the plan.
+/// * [`ScopedDriftStatus::AlreadyApplied`] — all referenced objects that
+///   existed in the expected state are now absent from the current state,
+///   indicating the plan was already executed.
+/// * [`ScopedDriftStatus::Drifted`] — at least one referenced object differs
+///   between current and expected state.
+pub fn detect_scoped_drift(
+    current: &HashMap<String, Table>,
+    expected: &HashMap<String, Table>,
+    ops: &[SerializableOlapOperation],
+    default_database: &str,
+) -> ScopedDriftStatus {
+    let refs = referenced_tables(ops, default_database);
+
+    if refs.is_empty() {
+        return ScopedDriftStatus::Applicable;
+    }
+
+    let mut changed = Vec::new();
+    let mut all_gone = true; // track whether every expected-present ref is gone
+
+    for name in &refs {
+        let in_expected = expected.get(name);
+        let in_current = current.get(name);
+
+        match (in_expected, in_current) {
+            // Expected and current both have it — compare.
+            (Some(exp), Some(cur)) => {
+                all_gone = false;
+                if exp != cur {
+                    changed.push(name.clone());
+                }
+            }
+            // Expected had it, current does not — possibly already applied.
+            (Some(_), None) => {
+                // remains all_gone = true for this ref
+            }
+            // Expected didn't have it, current does — new object appeared,
+            // but since expected didn't track it, it's not drift for this plan.
+            (None, Some(_)) => {
+                all_gone = false;
+            }
+            // Neither has it — no drift for this ref.
+            (None, None) => {
+                // Not in expected, not in current — doesn't affect drift.
+            }
+        }
+    }
+
+    if !changed.is_empty() {
+        changed.sort();
+        return ScopedDriftStatus::Drifted {
+            changed_tables: changed,
+        };
+    }
+
+    // If every referenced object that was in expected is now gone from current,
+    // and there were no mismatches, it's already applied.
+    // Edge case: if no ref was in expected at all (e.g. all CreateTable ops for
+    // new tables that weren't in the snapshot), `all_gone` is still true but the
+    // plan hasn't been "applied" — it's applicable. We distinguish by checking
+    // whether any ref was actually present in expected.
+    let any_was_expected = refs.iter().any(|name| expected.contains_key(name));
+
+    if any_was_expected && all_gone {
+        ScopedDriftStatus::AlreadyApplied
+    } else {
+        ScopedDriftStatus::Applicable
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy};
+    use crate::framework::core::infrastructure_map::PrimitiveSignature;
+    use crate::framework::core::infrastructure_map::PrimitiveTypes;
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use chrono::TimeZone;
     use tempfile::TempDir;
 
     /// Helper: build a fixed timestamp for deterministic tests.
     fn test_timestamp() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 4, 6, 15, 30, 22).unwrap()
+    }
+
+    /// Helper: build a minimal Table for drift detection tests.
+    fn test_table(name: &str) -> Table {
+        Table {
+            name: name.to_string(),
+            engine: ClickhouseEngine::MergeTree,
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }
+    }
+
+    /// Helper: build a minimal Column for drift detection tests.
+    fn test_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        }
     }
 
     #[test]
@@ -249,5 +497,223 @@ mod tests {
             files[0].file_name().unwrap().to_str().unwrap(),
             plan_filename(&ts)
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // referenced_tables tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn referenced_tables_extracts_drop_table_name() {
+        let ops = vec![SerializableOlapOperation::DropTable {
+            table: "events".to_string(),
+            database: None,
+            cluster_name: None,
+        }];
+        let refs = referenced_tables(&ops, "mydb");
+        assert_eq!(refs, HashSet::from(["mydb.events".to_string()]));
+    }
+
+    #[test]
+    fn referenced_tables_uses_explicit_database() {
+        let ops = vec![SerializableOlapOperation::DropTable {
+            table: "events".to_string(),
+            database: Some("other_db".to_string()),
+            cluster_name: None,
+        }];
+        let refs = referenced_tables(&ops, "mydb");
+        assert_eq!(refs, HashSet::from(["other_db.events".to_string()]));
+    }
+
+    #[test]
+    fn referenced_tables_skips_raw_sql() {
+        let ops = vec![SerializableOlapOperation::RawSql {
+            sql: vec!["DROP TABLE foo".to_string()],
+            description: "manual".to_string(),
+        }];
+        let refs = referenced_tables(&ops, "mydb");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn referenced_tables_extracts_create_table_name() {
+        let mut table = test_table("users");
+        table.database = Some("custom".to_string());
+        let ops = vec![SerializableOlapOperation::CreateTable { table }];
+        let refs = referenced_tables(&ops, "mydb");
+        assert_eq!(refs, HashSet::from(["custom.users".to_string()]));
+    }
+
+    #[test]
+    fn referenced_tables_extracts_view_names() {
+        let ops = vec![
+            SerializableOlapOperation::CreateView {
+                name: "v1".to_string(),
+                database: None,
+                select_sql: "SELECT 1".to_string(),
+            },
+            SerializableOlapOperation::DropMaterializedView {
+                name: "mv1".to_string(),
+                database: Some("analytics".to_string()),
+            },
+        ];
+        let refs = referenced_tables(&ops, "mydb");
+        assert!(refs.contains("mydb.v1"));
+        assert!(refs.contains("analytics.mv1"));
+        assert_eq!(refs.len(), 2);
+    }
+
+    #[test]
+    fn referenced_tables_empty_ops() {
+        let refs = referenced_tables(&[], "mydb");
+        assert!(refs.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // detect_scoped_drift tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn no_drift_when_referenced_tables_match() {
+        let table_a = test_table("events");
+        let unrelated = test_table("users");
+
+        // expected and current both have "events" identically
+        let expected: HashMap<String, Table> = [
+            ("mydb.events".to_string(), table_a.clone()),
+            ("mydb.users".to_string(), unrelated.clone()),
+        ]
+        .into_iter()
+        .collect();
+
+        // current has "events" identical, "users" changed (extra column)
+        let mut changed_users = unrelated;
+        changed_users.columns.push(test_column("extra"));
+
+        let current: HashMap<String, Table> = [
+            ("mydb.events".to_string(), table_a),
+            ("mydb.users".to_string(), changed_users),
+        ]
+        .into_iter()
+        .collect();
+
+        // Plan only touches "events", so "users" drift should be ignored
+        let ops = vec![SerializableOlapOperation::AddTableColumn {
+            table: "events".to_string(),
+            column: test_column("new_col"),
+            after_column: None,
+            database: None,
+            cluster_name: None,
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "mydb");
+        assert_eq!(status, ScopedDriftStatus::Applicable);
+    }
+
+    #[test]
+    fn drift_when_referenced_table_changed() {
+        let table_a = test_table("events");
+
+        let expected: HashMap<String, Table> = [("mydb.events".to_string(), table_a.clone())]
+            .into_iter()
+            .collect();
+
+        // current has "events" with an extra column — drift!
+        let mut changed_events = table_a;
+        changed_events.columns.push(test_column("surprise_col"));
+
+        let current: HashMap<String, Table> = [("mydb.events".to_string(), changed_events)]
+            .into_iter()
+            .collect();
+
+        let ops = vec![SerializableOlapOperation::DropTableColumn {
+            table: "events".to_string(),
+            column_name: "old_col".to_string(),
+            database: None,
+            cluster_name: None,
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "mydb");
+        assert_eq!(
+            status,
+            ScopedDriftStatus::Drifted {
+                changed_tables: vec!["mydb.events".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn already_applied_when_referenced_table_gone() {
+        let table_a = test_table("events");
+
+        // expected has "events"
+        let expected: HashMap<String, Table> =
+            [("mydb.events".to_string(), table_a)].into_iter().collect();
+
+        // current does NOT have "events" — the drop already happened
+        let current: HashMap<String, Table> = HashMap::new();
+
+        let ops = vec![SerializableOlapOperation::DropTable {
+            table: "events".to_string(),
+            database: None,
+            cluster_name: None,
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "mydb");
+        assert_eq!(status, ScopedDriftStatus::AlreadyApplied);
+    }
+
+    #[test]
+    fn applicable_when_empty_ops() {
+        let current: HashMap<String, Table> = HashMap::new();
+        let expected: HashMap<String, Table> = HashMap::new();
+
+        let status = detect_scoped_drift(&current, &expected, &[], "mydb");
+        assert_eq!(status, ScopedDriftStatus::Applicable);
+    }
+
+    #[test]
+    fn applicable_when_create_table_not_in_expected() {
+        // A CreateTable op referencing a table that didn't exist in expected
+        // state (because it's being created). Current also doesn't have it.
+        let current: HashMap<String, Table> = HashMap::new();
+        let expected: HashMap<String, Table> = HashMap::new();
+
+        let ops = vec![SerializableOlapOperation::CreateTable {
+            table: test_table("new_table"),
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "mydb");
+        assert_eq!(status, ScopedDriftStatus::Applicable);
+    }
+
+    #[test]
+    fn already_applied_mixed_gone_and_absent() {
+        // Two ops: one for a table that was in expected and is now gone,
+        // another for a table that was never in expected (e.g. CreateTable).
+        let table_a = test_table("old_table");
+
+        let expected: HashMap<String, Table> = [("mydb.old_table".to_string(), table_a)]
+            .into_iter()
+            .collect();
+
+        let current: HashMap<String, Table> = HashMap::new();
+
+        let ops = vec![
+            SerializableOlapOperation::DropTable {
+                table: "old_table".to_string(),
+                database: None,
+                cluster_name: None,
+            },
+            SerializableOlapOperation::CreateTable {
+                table: test_table("new_table"),
+            },
+        ];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "mydb");
+        // old_table was expected and is gone → already applied signal
+        // new_table was not in expected and not in current → neutral
+        // Result: AlreadyApplied because the expected-present ref is gone
+        assert_eq!(status, ScopedDriftStatus::AlreadyApplied);
     }
 }
