@@ -708,8 +708,22 @@ pub mod tests {
 
     #[test]
     fn test_new_python_project() {
+        let cwd = std::env::current_dir().unwrap();
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target = manifest_dir.join("tests/python/project");
+        println!("cwd: {}", cwd.display());
+        println!("CARGO_MANIFEST_DIR: {}", manifest_dir.display());
+        println!("target: {}", target.display());
+        println!("target exists: {}", target.exists());
+        println!(
+            "cwd contents: {:?}",
+            std::fs::read_dir(&cwd)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect::<Vec<_>>()
+        );
         let project = Project::new(
-            Path::new("tests/python/project"),
+            &target,
             "test_project".to_string(),
             SupportedLanguages::Python,
         );
