@@ -65,6 +65,16 @@ const createPath = (apisDir: string, path: string) => {
   return `${apisDir}${path}.js`;
 };
 
+const send404 = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  startMs: number,
+) => {
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not Found" }));
+  httpLogger(req, res, startMs);
+};
+
 const httpLogger = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -287,6 +297,7 @@ const apiHandler = async (
         }
 
         if (!userFuncModule || matchedApiName === undefined) {
+          send404(req, res, start);
           return;
         }
 
@@ -513,12 +524,10 @@ const createMainRouter = async (
         },
       );
       await apiRequestHandler(modifiedReq as http.IncomingMessage, res);
-      if (res.headersSent) return;
+      return;
     }
 
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not Found" }));
-    httpLogger(req, res, start);
+    send404(req, res, start);
   };
 };
 
