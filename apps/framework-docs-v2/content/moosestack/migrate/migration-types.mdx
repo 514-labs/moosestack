@@ -270,7 +270,7 @@ When defining physical infrastructure such as clustered deployments, you may nee
 Normally, Moose validates cluster identifiers strictly. However, if an identifier is wrapped in braces (e.g. `{cluster}`), Moose treats it as a ClickHouse macro. It bypasses local static validation and defers evaluation to the ClickHouse server at execution time. 
 
 <Callout type="info" title="Macro Syntax Verification">
-While validation is bypassed for the full macro name, Moose will still strictly verify that the braces are well-formed (no mismatched or unbalanced brackets like `}{`) to prevent malformed queries from reaching ClickHouse.
+When a cluster name uses `{macro}` syntax (including embedded segments such as `prefix_{cluster}_suffix`), Moose skips matching it against clusters in `moose.config.toml`, but it still checks the whole string as a valid ClickHouse cluster name: balanced braces, non-empty macro segments, and only allowed characters—so patterns like `}{` or `{{a}}` are rejected before they reach ClickHouse.
 </Callout>
 
 ### Using Cluster Macros in Migrations

@@ -8,13 +8,15 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
+use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
 use crate::project::Project;
 use crate::utilities::constants::{
-    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    CLICKHOUSE_MACRO_CLUSTER_NAME_RULES, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE,
 };
 use anyhow::Result;
 use std::collections::HashMap;
@@ -206,6 +208,7 @@ fn validate_table_databases_and_clusters(
 ) -> Result<()> {
     let mut invalid_tables = Vec::new();
     let mut invalid_clusters = Vec::new();
+    let mut malformed_cluster_macros = Vec::new();
 
     // Get configured cluster names
     let cluster_names: Vec<String> = clusters
@@ -236,12 +239,22 @@ fn validate_table_databases_and_clusters(
                 cluster_names
             );
 
-            // Cluster macros like `{cluster}` bypass the cluster_names validation
-            // since they are evaluated dynamically by ClickHouse.
-            let is_macro = cluster.contains('{') && cluster.contains('}');
-            if !is_macro && (cluster_names.is_empty() || !cluster_names.contains(cluster)) {
-                tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
-                invalid_clusters.push((table_name.to_string(), cluster.clone()));
+            match macro_use_legal(cluster) {
+                Some(true) => {}
+                Some(false) => {
+                    tracing::info!(
+                        "Cluster '{}' uses malformed macro syntax for table '{}'",
+                        cluster,
+                        table_name
+                    );
+                    malformed_cluster_macros.push((table_name.to_string(), cluster.clone()));
+                }
+                None => {
+                    if cluster_names.is_empty() || !cluster_names.contains(cluster) {
+                        tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
+                        invalid_clusters.push((table_name.to_string(), cluster.clone()));
+                    }
+                }
             }
         }
     };
@@ -387,7 +400,9 @@ fn validate_table_databases_and_clusters(
     }
 
     // Build error message if we found any issues
-    let has_errors = !invalid_tables.is_empty() || !invalid_clusters.is_empty();
+    let has_errors = !invalid_tables.is_empty()
+        || !invalid_clusters.is_empty()
+        || !malformed_cluster_macros.is_empty();
     if has_errors {
         let mut error_message = String::new();
 
@@ -428,9 +443,27 @@ fn validate_table_databases_and_clusters(
             error_message.push_str("]\n");
         }
 
+        if !malformed_cluster_macros.is_empty() {
+            if !invalid_tables.is_empty() {
+                error_message.push('\n');
+            }
+            error_message.push_str(
+                "One or more tables specify a cluster name with invalid ClickHouse macro syntax:\n\n",
+            );
+            for (table_name, cluster) in &malformed_cluster_macros {
+                error_message.push_str(&format!(
+                    "  • Table '{}' specifies cluster '{}'\n",
+                    table_name, cluster
+                ));
+            }
+            error_message.push('\n');
+            error_message.push_str(CLICKHOUSE_MACRO_CLUSTER_NAME_RULES);
+            error_message.push('\n');
+        }
+
         // Report cluster errors
         if !invalid_clusters.is_empty() {
-            if !invalid_tables.is_empty() {
+            if !invalid_tables.is_empty() || !malformed_cluster_macros.is_empty() {
                 error_message.push('\n');
             }
 

@@ -43,6 +43,8 @@ pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
 
 /// Checks if a string is a valid ClickHouse cluster name.
 /// Allows `{` and `}` for macro patterns like `{cluster}`.
+///
+/// User-facing copy for invalid macro names: [`crate::utilities::constants::CLICKHOUSE_MACRO_CLUSTER_NAME_RULES`].
 pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
     if name.is_empty() {
         return false;
@@ -80,6 +82,20 @@ pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
     }
 
     true
+}
+
+/// Classifies ClickHouse `{macro}` usage in a cluster name for static validation.
+///
+/// - `None` — no `{` or `}`; treat as a literal cluster name (match against config).
+/// - `Some(true)` — macro syntax is present and the full string passes
+///   [`is_valid_clickhouse_cluster_name`]; skip config cluster matching.
+/// - `Some(false)` — `{` or `}` appears but the string is not a valid macro cluster name
+///   (unbalanced braces, empty `{}`, invalid characters, etc.).
+pub fn macro_use_legal(name: &str) -> Option<bool> {
+    if !name.contains('{') && !name.contains('}') {
+        return None;
+    }
+    Some(is_valid_clickhouse_cluster_name(name))
 }
 
 /// Validates a cluster name, allowing ClickHouse macro patterns like `{cluster}`.
@@ -218,5 +234,17 @@ mod tests {
         assert!(!is_valid_clickhouse_cluster_name("}{")); // unbalanced braces
         assert!(!is_valid_clickhouse_cluster_name("{cluster")); // unclosed brace
         assert!(!is_valid_clickhouse_cluster_name("cluster}")); // unopened brace
+    }
+
+    #[test]
+    fn test_macro_use_legal() {
+        assert_eq!(macro_use_legal("my_cluster"), None);
+        assert_eq!(macro_use_legal("{cluster}"), Some(true));
+        assert_eq!(macro_use_legal("prefix_{cluster}_suffix"), Some(true));
+        assert_eq!(macro_use_legal("}{"), Some(false));
+        assert_eq!(macro_use_legal("{{a}}"), Some(false));
+        assert_eq!(macro_use_legal("{cluster"), Some(false));
+        assert_eq!(macro_use_legal("cluster}"), Some(false));
+        assert_eq!(macro_use_legal("{}"), Some(false));
     }
 }

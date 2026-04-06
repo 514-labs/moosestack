@@ -41,6 +41,11 @@ pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
 pub const SAMPLE_STREAMING_FUNCTION_DEST: &str = "Bar";
 
+/// User-facing rules for macro-style ClickHouse cluster names (`{cluster}`, `prefix_{cluster}_suffix`, …).
+///
+/// Must stay aligned with [`crate::infrastructure::olap::clickhouse::errors::is_valid_clickhouse_cluster_name`].
+pub const CLICKHOUSE_MACRO_CLUSTER_NAME_RULES: &str = "Macro cluster names must use balanced, non-nested `{macro}` segments with a non-empty body; only ASCII letters, digits, underscores, and hyphens may appear inside the braces and in literal parts between segments. The full name must not start with a digit or hyphen. For example `{cluster}` or `prefix_{cluster}_suffix`.";
+
 pub const CLICKHOUSE_CONTAINER_NAME: &str = "clickhousedb";
 pub const REDPANDA_CONTAINER_NAME: &str = "redpanda";
 pub const TEMPORAL_CONTAINER_NAME: &str = "temporal";

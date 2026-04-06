@@ -1,4 +1,7 @@
-use crate::{infrastructure::stream, project::Project};
+use crate::{
+    infrastructure::olap::clickhouse::errors::macro_use_legal, infrastructure::stream,
+    project::Project, utilities::constants::CLICKHOUSE_MACRO_CLUSTER_NAME_RULES,
+};
 
 use super::infrastructure_map::{OlapChange, TableChange};
 use super::plan::InfraPlan;
@@ -30,12 +33,15 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     // Check all tables in the target infrastructure map
     for table in plan.target_infra_map.tables.values() {
         if let Some(cluster_name) = &table.cluster_name {
-            // ClickHouse macros like {cluster} are resolved at runtime
-            // from system.macros - validate the macro pattern and skip if valid
-            use crate::infrastructure::olap::clickhouse::errors::is_valid_clickhouse_cluster_name;
-            let is_macro = cluster_name.contains('{') && cluster_name.contains('}');
-            if is_macro && is_valid_clickhouse_cluster_name(cluster_name) {
-                continue;
+            match macro_use_legal(cluster_name) {
+                Some(true) => continue,
+                Some(false) => {
+                    return Err(ValidationError::ClusterValidation(format!(
+                        "Table '{}' specifies cluster '{}' with invalid ClickHouse macro syntax in the cluster name.\n\n{}\n",
+                        table.name, cluster_name, CLICKHOUSE_MACRO_CLUSTER_NAME_RULES
+                    )));
+                }
+                None => {} // i.e. no macro use
             }
 
             // If table has a cluster_name, verify it's defined in the config
@@ -382,6 +388,38 @@ mod tests {
         let result = validate(&project, &plan);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_cluster_macro_skips_config_even_when_no_clusters_defined() {
+        let project = create_test_project(None);
+        let table = create_test_table("test_table", Some("{cluster}".to_string()));
+        let plan = create_test_plan(vec![table]);
+
+        let result = validate(&project, &plan);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_malformed_cluster_macro_is_rejected() {
+        let project = create_test_project(Some(vec![ClusterConfig {
+            name: "real_cluster".to_string(),
+        }]));
+        let table = create_test_table("test_table", Some("}{".to_string()));
+        let plan = create_test_plan(vec![table]);
+
+        let result = validate(&project, &plan);
+
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::ClusterValidation(msg)) => {
+                assert!(msg.contains("test_table"));
+                assert!(msg.contains("}{"));
+                assert!(msg.contains("invalid ClickHouse macro syntax"));
+            }
+            _ => panic!("Expected ClusterValidation error"),
+        }
     }
 
     #[test]
