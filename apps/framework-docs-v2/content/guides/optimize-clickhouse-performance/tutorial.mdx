@@ -4,7 +4,7 @@ description: Profile a slow query, compare a frozen baseline against optimizatio
 languages: ["typescript"]
 ---
 
-import { Callout, GuideStepper } from "@/components/mdx";
+import { BulletPointsCard, Callout, GuideStepper } from "@/components/mdx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 # Optimize a Slow ClickHouse Query with Your AI Agent
@@ -154,15 +154,44 @@ This query is slow. Help me figure out how to make it faster.
 
 Your agent may pause to ask you to confirm that skill before the long run. After you accept it, the skill profiles the slow query, benchmarks each candidate against the baseline, and opens a PR for the winner.
 
-<Callout type="info" title="What to expect from the run">
-1. `SETUP`: confirm the linked repo, the deployment target, and the query path in scope.
-2. `PROFILE`: inspect the slow query and run diagnostics.
-3. `PROPOSE`: show candidate schema changes and the query pattern they are meant to improve.
-4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
-5. `EXPERIMENT`: deploy and seed each candidate branch, apply the schema optimizations, and run the same benchmark tests against each candidate.
-6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
-7. `SHIP`: open a PR with the comparison summary and benchmark evidence.
-</Callout>
+<BulletPointsCard
+  title="What to expect from the run"
+  bulletStyle="number"
+  uppercase={false}
+  compact
+  bullets={[
+    {
+      title: "SETUP",
+      description: "Lock the repo, deployment, and slow query path.",
+    },
+    {
+      title: "PROFILE",
+      description: "Inspect the query and collect diagnostics.",
+    },
+    {
+      title: "PROPOSE",
+      description: "Lay out candidate schema changes and what they target.",
+    },
+    {
+      title: "BASELINE",
+      description: "Scaffold benchmarks, freeze the control branch, run the baseline.",
+    },
+    {
+      title: "EXPERIMENT",
+      description: "Deploy candidates on previews and run the same benchmark package.",
+    },
+    {
+      title: "COMPARE",
+      description: "Pick the winner from the results.",
+    },
+    {
+      title: "SHIP",
+      description: "Open a PR with the summary and benchmark evidence.",
+    },
+  ]}
+/>
+
+The step-by-step section below goes through each stage in more detail: what you should see, what the agent might ask for, and what belongs in the repo when that stage is done.
 
 <GuideStepper id="optimize-ch-workflow" persist>
 <GuideStepper.Step
