@@ -38,7 +38,7 @@ Start by bootstrapping a MooseStack project from your existing ClickHouse databa
 </Callout>
 
 
-Set up the `514` harness with your coding agent and link your local MooseStack project to its Fiveonefour counterpart.
+Install the `514` CLI, link your local MooseStack project to its Fiveonefour counterpart, and run `514 agent init` so your coding agent has the harness and skills.
 
 <GuideStepper id="optimize-ch-setup" persist>
 <GuideStepper.Step
@@ -118,31 +118,15 @@ Related docs:
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
-</GuideStepper>
 
-### Optimization workflow
-
-In this section the agent profiles the slow query, proposes optimizations, benchmarks each one against the unmodified baseline, and picks the winner with evidence.
-
-<Callout type="info" title="What to expect from the run">
-1. `SETUP`: confirm the linked repo, the deployment target, and the query path in scope.
-2. `PROFILE`: inspect the slow query and run diagnostics.
-3. `PROPOSE`: show candidate schema changes and the query pattern they are meant to improve.
-4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
-5. `EXPERIMENT`: deploy and seed each candidate branch, apply the schema optimizations, and run the same benchmark tests against each candidate.
-6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
-7. `SHIP`: open a PR with the comparison summary and benchmark evidence.
-</Callout>
-
-<GuideStepper id="optimize-ch-workflow" persist>
 <GuideStepper.Step
   id="agent-init-harness"
-  number={1}
+  number={3}
   title="Run 514 agent init"
   summary="Pull in 514 skills and scaffold the agent harness for your repo."
 >
 <GuideStepper.WhatYouNeed>
-- Setup complete: CLI installed and repo linked to the right Fiveonefour project
+- Install and project link steps complete
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - Agent skill packs (including ClickHouse and performance-related workflows where applicable)
@@ -158,14 +142,37 @@ In this section the agent profiles the slow query, proposes optimizations, bench
 This pulls skills from the 514 registry and sets up the agent harness for your project.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
+</GuideStepper>
 
+### Optimization workflow
+
+Point your coding agent at the slow query or endpoint and ask it to optimize. A straightforward ask like the one below should invoke the **performance optimization skill** from your harness:
+
+```text
+This query is slow. Help me figure out how to make it faster.
+```
+
+Your agent may pause to ask you to confirm that skill before the long run. After you accept it, the skill profiles the slow query, benchmarks each candidate against the baseline, and opens a PR for the winner.
+
+<Callout type="info" title="What to expect from the run">
+1. `SETUP`: confirm the linked repo, the deployment target, and the query path in scope.
+2. `PROFILE`: inspect the slow query and run diagnostics.
+3. `PROPOSE`: show candidate schema changes and the query pattern they are meant to improve.
+4. `BASELINE`: scaffold a benchmark test package, freeze the baseline branch, and execute the control run.
+5. `EXPERIMENT`: deploy and seed each candidate branch, apply the schema optimizations, and run the same benchmark tests against each candidate.
+6. `COMPARE`: choose the winner by comparing the benchmark results across branches.
+7. `SHIP`: open a PR with the comparison summary and benchmark evidence.
+</Callout>
+
+<GuideStepper id="optimize-ch-workflow" persist>
 <GuideStepper.Step
   id="ask-copilot-optimize"
-  number={2}
-  title="Ask your copilot to optimize a query"
-  summary="Prompt your coding agent and confirm the performance optimization skill."
+  number={1}
+  title="Confirm the performance optimization skill"
+  summary="When your agent proposes the perf workflow, accept it so profiling and benchmarks can start."
 >
 <GuideStepper.WhatYouNeed>
+- Setup complete: CLI installed, project linked, and `514 agent init` run
 - A deployed MooseStack app on Fiveonefour (the slow query path in code)
 - Your coding agent (Cursor, Claude Code, Copilot in your editor, and so on) opened on this repo
 </GuideStepper.WhatYouNeed>
@@ -173,17 +180,6 @@ This pulls skills from the 514 registry and sets up the agent harness for your p
 - The agent selects the performance optimization skill (often named `514--perf-optimize` or `perf-optimize` depending on client)
 - Explicit confirmation before it runs a long optimization workflow
 </GuideStepper.WhatYouGet>
-
-<GuideStepper.Checkpoint title="Prompt the agent">
-Ask for a ClickHouse performance optimization on your deployed app, and point it at the slow query or endpoint. Example:
-
-```text
-Optimize ClickHouse performance for this MooseStack app on Fiveonefour.
-Profile the slow query path, propose candidate schema changes, create a frozen baseline branch,
-compare candidate branches against the same benchmark, and prepare a PR for the winner with benchmark evidence.
-```
-
-</GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Confirm the performance optimization skill">
 When the agent proposes the perf optimization skill, confirm. It should drive profiling, schema work, benchmarks, and the PR. If the bundle name differs, accept only if it is the same harness you got from `514 agent init`.
@@ -193,7 +189,7 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
 
 <GuideStepper.Step
   id="optimization-workflow-runs"
-  number={3}
+  number={2}
   title="Let the optimization workflow run"
   summary="Follow the seven stages so you know what the agent is doing, what it may ask you for, and what artifact each stage should produce."
 >
