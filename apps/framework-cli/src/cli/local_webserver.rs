@@ -3435,7 +3435,7 @@ async fn shutdown(
         }
 
         // Step 5: Kill native processes if --alpha mode was used.
-        // Embedded devredis is shut down via its handle; ClickHouse/Temporal
+        // Embedded devkafka/devredis are shut down via their handles; ClickHouse/Temporal
         // are killed via PID files (only present when NativeInfraProvider started them).
         crate::utilities::native_infra::shutdown_embedded_servers();
         let native_infra_dir = project.project_location.join(".moose/native_infra");
