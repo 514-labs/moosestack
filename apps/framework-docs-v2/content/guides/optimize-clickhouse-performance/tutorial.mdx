@@ -14,6 +14,7 @@ Use this guide when a production ClickHouse query in your MooseStack app is slow
 You will set up your AI coding agent with the `514` harness to benchmark the slow query against one or more optimized candidates. By the end you will have a reviewable PR with the winning schema changes and benchmark evidence.
 
 The experiment:
+
 1. Profiles the slow query and proposes optimization candidates
 2. Creates isolated preview databases on 514 hosting for the baseline and each candidate
 3. Benchmarks every preview with the same test to pick the best performer
@@ -34,9 +35,9 @@ This guide assumes:
   icon="Database"
   ctaLabel="Start from ClickHouse"
 >
-Start by bootstrapping a MooseStack project from your existing ClickHouse database, then return here once you have a project the agent can run against.
+  Start by bootstrapping a MooseStack project from your existing ClickHouse
+  database, then return here once you have a project the agent can run against.
 </Callout>
-
 
 Install the `514` CLI, link your local MooseStack project to its Fiveonefour counterpart, and run `514 agent init` so your coding agent has the harness and skills.
 
@@ -61,6 +62,7 @@ From [Hosting](/hosting), install the `514` CLI:
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
 ```
+
 </GuideStepper.Checkpoint>
 <GuideStepper.Checkpoint title="Verify installation">
 
@@ -140,17 +142,47 @@ Related docs:
 ```
 
 This pulls skills from the 514 registry and sets up the agent harness for your project.
+
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
 
 ## Optimization workflow
 
-Point your coding agent at the slow query or endpoint and ask it to optimize. A straightforward ask like the one below should invoke the **performance optimization skill** from your harness:
+Ask your coding agent to improve ClickHouse performance. Choose the prompt that matches your starting point:
+
+1. Use the first prompt if you want the agent to identify slow ClickHouse queries first.
+2. Use the second prompt if you already know the specific query, handler, or endpoint you want to optimize.
+
+<Tabs defaultValue="discover-query">
+  <TabsList>
+    <TabsTrigger value="discover-query">I need help finding it</TabsTrigger>
+    <TabsTrigger value="known-query">I know the slow query</TabsTrigger>
+  </TabsList>
+  <TabsContent value="discover-query">
+Use this when you want the agent to identify the slow queries before proposing improvements.
 
 ```text
-This query is slow. Help me figure out how to make it faster.
+Help me improve my ClickHouse performance.
+
+I do not know which queries are slow yet, so help me identify opportunities to optimize, then suggest and benchmark improvements.
 ```
+
+  </TabsContent>
+  <TabsContent value="known-query">
+Use this when you already have the SQL, handler path, or endpoint you want to optimize.
+
+```text
+I already know the slow query or endpoint.
+
+Here is the SQL, handler, or endpoint I want to optimize:
+@<filename>
+
+Help me figure out how to make it faster.
+```
+
+  </TabsContent>
+</Tabs>
 
 Your agent may pause to ask you to confirm that skill before the long run. After you accept it, the skill profiles the slow query, benchmarks each candidate against the baseline, and opens a PR for the winner.
 
@@ -174,11 +206,13 @@ Your agent may pause to ask you to confirm that skill before the long run. After
     },
     {
       title: "BASELINE",
-      description: "Scaffold benchmarks, freeze the control branch, run the baseline.",
+      description:
+        "Scaffold benchmarks, freeze the control branch, run the baseline.",
     },
     {
       title: "EXPERIMENT",
-      description: "Deploy candidates on previews and run the same benchmark package.",
+      description:
+        "Deploy candidates on previews and run the same benchmark package.",
     },
     {
       title: "COMPARE",
@@ -663,8 +697,36 @@ If that SQL does not match the app code or benchmark target in the PR, stop and 
 - Independent confirmation that the winning candidate preview beats, or at least matches, the baseline preview for the same benchmark package
 </GuideStepper.WhatYouGet>
 
+<GuideStepper.Checkpoint title="Populate .env.preview with target database credentials">
+Manual benchmark runs use `.env.preview` in the benchmark package. If the agent did not finish wiring it for you, switch into `query-benchmarks/` first, then write the preview credentials for the branch you want to test into that file:
+
+```bash
+cd query-benchmarks
+pnpm env:preview
+```
+
+This command uses your current local branch, so it writes the matching preview credentials into `.env.preview`.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Validate the preview target before you run">
+Review `.env.preview` before the first run and make sure it points at the preview branch you want to test. In particular, check that `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` matches that branch's preview database name.
+
+These are the fields to check in `.env.preview`:
+
+```bash
+MOOSE_CLICKHOUSE_CONFIG__HOST=...
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=...
+MOOSE_CLICKHOUSE_CONFIG__USER=...
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=...
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=...
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=...
+```
+
+In most cases, only `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` changes across branches.
+</GuideStepper.Checkpoint>
+
 <GuideStepper.Checkpoint title="Run the generated benchmark package">
-Run the benchmark from inside the generated package:
+Once `.env.preview` points at the baseline deployment, run the benchmark from inside the generated package:
 
 ```bash
 cd query-benchmarks
@@ -672,29 +734,6 @@ pnpm bench
 ```
 
 The package runs Vitest with the benchmark configuration and writes reports into `query-benchmarks/reports/`.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Populate .env.preview with preview credentials">
-Manual benchmark runs use `.env.preview` in the benchmark package. If the agent did not finish wiring it for you, populate that file with the preview ClickHouse credentials from 514 hosting for the branch you want to test.
-
-For baseline and winner preview deployments, the ClickHouse host, port, user, password, and SSL setting are usually shared. The value that typically changes per branch is the database name.
-
-Use `514 agent deployment list` to find the preview deployments, then pull the ClickHouse connection details for the matching branch from 514 hosting.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Start with the baseline deployment">
-Set `.env.preview` to the frozen baseline deployment first so your first run is the unchanged control:
-
-```bash
-MOOSE_CLICKHOUSE_CONFIG__HOST=<your-cluster>.clickhouse.boreal.cloud
-MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=8443
-MOOSE_CLICKHOUSE_CONFIG__USER=default
-MOOSE_CLICKHOUSE_CONFIG__PASSWORD=<your-password>
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<baseline-preview-db-name>
-MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
-```
 
 </GuideStepper.Checkpoint>
 
@@ -734,15 +773,16 @@ Use this file to understand why a run passed or failed.
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint title="Run the same package against the winner">
-After the baseline run, change only the preview target and run the same package again. In most cases that means swapping only the database name in `.env.preview`:
+After the baseline run, switch to the winning candidate branch, refresh `.env.preview`, and run the same package again:
 
 ```bash
-pnpm bench  # baseline preview fork
-
-MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<winning-candidate-preview-db-name> pnpm bench  # winning candidate preview fork
+git checkout <winning-candidate-branch>
+cd query-benchmarks
+pnpm env:preview
+pnpm bench
 ```
 
-Compare the saved reports from both runs. The benchmark package stays the same. The database target changes.
+Compare the saved reports from both runs. The benchmark package stays the same. The checked-out branch and refreshed preview credentials determine which preview database you test.
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
@@ -788,7 +828,9 @@ Use this when you need the current field map while reviewing the benchmark step 
         {
           "title": "EXPLAIN shows index usage in at least one scenario",
           "status": "failed",
-          "failureMessages": ["AssertionError: No scenario uses index pruning..."]
+          "failureMessages": [
+            "AssertionError: No scenario uses index pruning..."
+          ]
         }
       ]
     }
@@ -796,7 +838,7 @@ Use this when you need the current field map while reviewing the benchmark step 
 }
 ```
 
-### benchmark-*.json
+### benchmark-\*.json
 
 ```json
 {
@@ -837,16 +879,16 @@ Use this when you need the current field map while reviewing the benchmark step 
 
 `test-results.json` tells you whether the benchmark passed. `benchmark-*.json` tells you why.
 
-| What to compare               | Where in the report                             | What good looks like                                |
-| ----------------------------- | ----------------------------------------------- | --------------------------------------------------- |
-| Did the run pass?             | `test-results.json -> success`                  | `true`, or a failure you can explain                |
-| Which assertion failed?       | `test-results.json -> testResults[].assertionResults[]` | Clear pass/fail/skip for each test          |
-| Overall p95?                  | `benchmark-*.json -> tests.baseline.p95`        | Lower in winner than baseline                       |
-| Scenario regressions?         | `benchmark-*.json -> tests.scenarioRegression`  | Present only if scenario test ran; no ratio above threshold |
-| Selective scenario pruning?   | `benchmark-*.json -> tests.explain.<scenario>.explain.indexCondition` | At least one selective scenario is not `"true"`   |
-| Granules skipped?             | `benchmark-*.json -> tests.explain.<scenario>.explain.granuleSkipPct` | Higher in winner for the selective scenario       |
-| Rows read?                    | `benchmark-*.json -> tests.baseline.profiles[0].readRows` | Lower in winner when the contract is unchanged |
-| Memory usage?                 | `benchmark-*.json -> tests.baseline.profiles[0].memoryUsage` | Lower in winner when the contract is unchanged |
+| What to compare             | Where in the report                                                   | What good looks like                                        |
+| --------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Did the run pass?           | `test-results.json -> success`                                        | `true`, or a failure you can explain                        |
+| Which assertion failed?     | `test-results.json -> testResults[].assertionResults[]`               | Clear pass/fail/skip for each test                          |
+| Overall p95?                | `benchmark-*.json -> tests.baseline.p95`                              | Lower in winner than baseline                               |
+| Scenario regressions?       | `benchmark-*.json -> tests.scenarioRegression`                        | Present only if scenario test ran; no ratio above threshold |
+| Selective scenario pruning? | `benchmark-*.json -> tests.explain.<scenario>.explain.indexCondition` | At least one selective scenario is not `"true"`             |
+| Granules skipped?           | `benchmark-*.json -> tests.explain.<scenario>.explain.granuleSkipPct` | Higher in winner for the selective scenario                 |
+| Rows read?                  | `benchmark-*.json -> tests.baseline.profiles[0].readRows`             | Lower in winner when the contract is unchanged              |
+| Memory usage?               | `benchmark-*.json -> tests.baseline.profiles[0].memoryUsage`          | Lower in winner when the contract is unchanged              |
 
 ## Related docs
 
