@@ -211,11 +211,10 @@ fn validate_dictionary_config(plan: &InfraPlan) -> Result<(), ValidationError> {
                     && t.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
             });
             let is_dict_source = !shadowed_by_table
-                && plan
-                    .target_infra_map
-                    .olap_dictionaries
-                    .values()
-                    .any(|d| d.name == ts.table);
+                && plan.target_infra_map.olap_dictionaries.values().any(|d| {
+                    d.name == ts.table
+                        && d.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
+                });
             if is_dict_source {
                 return Err(ValidationError::DictionaryValidation(format!(
                     "Dictionary '{}' cannot use dictionary '{}' as a source table. \

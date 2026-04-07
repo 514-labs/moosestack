@@ -877,34 +877,41 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         // Fetch and compare dictionaries (presence/absence only)
         debug!("Fetching actual dictionary names from OLAP databases");
 
-        let mut actual_dictionary_names: HashSet<String> = HashSet::new();
+        let default_db = project.clickhouse_config.db_name.as_str();
+        // Track (database, name) pairs to avoid false positives when the same dictionary
+        // name exists in multiple databases.
+        let mut actual_dictionaries: HashSet<(String, String)> = HashSet::new();
         for database in &all_databases {
             debug!("Fetching dictionaries from database: {}", database);
             let db_names = self.olap_client.list_dictionaries(database).await?;
-            actual_dictionary_names.extend(db_names);
+            for name in db_names {
+                actual_dictionaries.insert((database.clone(), name));
+            }
         }
 
         debug!(
             "Found {} dictionaries across all databases",
-            actual_dictionary_names.len()
+            actual_dictionaries.len()
         );
 
-        let unmapped_dictionaries: Vec<String> = actual_dictionary_names
+        let unmapped_dictionaries: Vec<String> = actual_dictionaries
             .iter()
-            .filter(|name| {
-                !infra_map
-                    .olap_dictionaries
-                    .values()
-                    .any(|d| &d.name == *name)
+            .filter(|(db, name)| {
+                !infra_map.olap_dictionaries.values().any(|d| {
+                    &d.name == name && d.database.as_deref().unwrap_or(default_db) == db.as_str()
+                })
             })
-            .cloned()
+            .map(|(db, name)| format!("{}_{}", db, name))
             .collect();
 
         let missing_dictionaries: Vec<String> = infra_map
             .olap_dictionaries
             .values()
-            .filter(|d| !actual_dictionary_names.contains(&d.name))
-            .map(|d| d.name.clone())
+            .filter(|d| {
+                let db = d.database.as_deref().unwrap_or(default_db);
+                !actual_dictionaries.contains(&(db.to_string(), d.name.clone()))
+            })
+            .map(|d| d.id(default_db))
             .collect();
 
         // Structural comparison (mismatched) is deferred — list_dictionaries returns names only.
@@ -2166,7 +2173,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(discrepancies.unmapped_dictionaries.len(), 1);
-        assert_eq!(discrepancies.unmapped_dictionaries[0], "dict_products");
+        assert_eq!(discrepancies.unmapped_dictionaries[0], "test_dict_products");
         assert!(discrepancies.missing_dictionaries.is_empty());
     }
 
@@ -2188,7 +2195,7 @@ mod tests {
 
         assert!(discrepancies.unmapped_dictionaries.is_empty());
         assert_eq!(discrepancies.missing_dictionaries.len(), 1);
-        assert_eq!(discrepancies.missing_dictionaries[0], "dict_products");
+        assert_eq!(discrepancies.missing_dictionaries[0], "test_dict_products");
     }
 
     #[test]
