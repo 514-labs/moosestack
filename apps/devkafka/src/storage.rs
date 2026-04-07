@@ -52,7 +52,11 @@ impl PartitionState {
             raw_batch: patched,
         });
         self.next_offset += record_count as i64;
-        self.notify.notify_waiters();
+        // Use notify_one() instead of notify_waiters() so that a permit is
+        // stored when no Fetch handler is currently waiting.  This prevents a
+        // race where data arrives between do_fetch() returning empty and the
+        // long-poll registering its notification future.
+        self.notify.notify_one();
         Ok(base_offset)
     }
 

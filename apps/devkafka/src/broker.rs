@@ -120,6 +120,12 @@ impl Broker {
             RequestKind::InitProducerId(req) => Ok(ResponseKind::InitProducerId(
                 handlers::init_producer_id::handle(self, req, api_version),
             )),
+            RequestKind::SaslHandshake(req) => Ok(ResponseKind::SaslHandshake(
+                handlers::sasl_handshake::handle(self, req, api_version),
+            )),
+            RequestKind::SaslAuthenticate(req) => Ok(ResponseKind::SaslAuthenticate(
+                handlers::sasl_authenticate::handle(self, req, api_version),
+            )),
             _ => Err(BrokerError::UnsupportedApiKey {
                 api_key,
                 version: api_version,

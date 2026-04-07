@@ -12,4 +12,6 @@ pub mod metadata;
 pub mod offset_commit;
 pub mod offset_fetch;
 pub mod produce;
+pub mod sasl_authenticate;
+pub mod sasl_handshake;
 pub mod sync_group;

@@ -13,6 +13,9 @@ pub struct Connection {
     buffer: BytesMut,
     /// Reusable buffer for serializing outgoing frames.
     write_buf: Vec<u8>,
+    /// When set, `write_frame` pushes to this vec instead of writing to the
+    /// socket.  Used by EXEC to capture per-command responses.
+    captured: Option<Vec<Frame>>,
 }
 
 impl Connection {
@@ -22,7 +25,18 @@ impl Connection {
             stream: BufWriter::new(socket),
             buffer: BytesMut::with_capacity(4 * 1024),
             write_buf: Vec::with_capacity(1024),
+            captured: None,
         }
+    }
+
+    /// Start capturing frames written via `write_frame`.
+    pub fn start_capture(&mut self) {
+        self.captured = Some(Vec::new());
+    }
+
+    /// Stop capturing and return the collected frames.
+    pub fn stop_capture(&mut self) -> Vec<Frame> {
+        self.captured.take().unwrap_or_default()
     }
 
     /// Read a single `Frame` value from the underlying stream.
@@ -49,7 +63,14 @@ impl Connection {
     }
 
     /// Write a single `Frame` value to the underlying stream.
+    ///
+    /// If capture mode is active (via [`start_capture`]), the frame is stored
+    /// in memory instead of being written to the socket.
     pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
+        if let Some(ref mut captured) = self.captured {
+            captured.push(frame.clone());
+            return Ok(());
+        }
         self.write_buf.clear();
         frame.write_to(&mut self.write_buf);
         self.stream.write_all(&self.write_buf).await?;
