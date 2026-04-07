@@ -890,7 +890,6 @@ def test_serializer_syntax_error_in_user_file_fails_gracefully():
 def test_external_source_fields_are_camelcase(source, snake_key, camel_key):
     """Multi-word external source fields must serialize to camelCase so Rust can
     deserialize them (all Rust external source structs use rename_all = "camelCase")."""
-    table = OlapTable[Lookup](name="tbl_ext_cc")
     config = OlapDictionaryConfig(
         external_source=source,
         primary_key=["lookup_id"],
