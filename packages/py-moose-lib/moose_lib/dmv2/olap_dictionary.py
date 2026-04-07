@@ -32,7 +32,7 @@ Usage::
 """
 
 from typing import Any, Generic, Literal, Optional, Union
-from pydantic import AliasGenerator, BaseModel, ConfigDict, model_validator
+from pydantic import AliasGenerator, BaseModel, ConfigDict, SecretStr, model_validator
 from pydantic.alias_generators import to_camel
 
 from .types import BaseTypedResource, T
@@ -280,7 +280,7 @@ class ClickHouseRemoteSource(BaseModel):
     host: str
     port: int
     user: str
-    password: str
+    password: SecretStr
     db: str
     table: str
     query: Optional[str] = None
@@ -296,7 +296,7 @@ class MysqlSource(BaseModel):
     host: str
     port: int = 3306
     user: str
-    password: str
+    password: SecretStr
     db: str
     table: str
     query: Optional[str] = None
@@ -312,7 +312,7 @@ class PostgresqlSource(BaseModel):
     host: str
     port: int = 5432
     user: str
-    password: str
+    password: SecretStr
     db: str
     table: str
     query: Optional[str] = None
@@ -328,7 +328,7 @@ class RedisSource(BaseModel):
     host: str
     port: int = 6379
     storage_type: str
-    password: Optional[str] = None
+    password: Optional[SecretStr] = None
     db_index: Optional[int] = None
 
 
@@ -340,7 +340,7 @@ class MongoDbSource(BaseModel):
     host: str
     port: int = 27017
     user: str
-    password: str
+    password: SecretStr
     db: str
     collection: str
 
@@ -363,7 +363,7 @@ class S3Source(BaseModel):
     url: str
     format: str
     access_key_id: Optional[str] = None
-    secret_access_key: Optional[str] = None
+    secret_access_key: Optional[SecretStr] = None
 
 
 ExternalSource = Union[
@@ -496,22 +496,39 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             raise ValueError(f"OlapDictionary '{name}' is already registered")
         _olap_dictionaries[name] = self
 
+    @staticmethod
+    def _build_key_expr(*keys) -> str:
+        """Build the key expression for a dictGet/dictHas SQL fragment.
+
+        Args:
+            *keys: One or more SQL key expressions (column references or literals).
+
+        Returns:
+            A single SQL expression: the bare key for one column, or
+            ``tuple(k1, k2, ...)`` for composite keys.
+
+        Raises:
+            ValueError: If no keys are provided.
+        """
+        if not keys:
+            raise ValueError("At least one key argument is required")
+        if len(keys) > 1:
+            return f"tuple({', '.join(str(k) for k in keys)})"
+        return str(keys[0])
+
     def get(self, attr: str, *keys) -> str:
         """Generate a ``dictGet`` SQL fragment.
 
         Args:
             attr: Attribute column name to retrieve.
-            *keys: Key column expressions (SQL fragments or Python values).
+            *keys: Key column expressions (SQL fragments or column references).
 
         Returns:
             SQL fragment, e.g.
             ``dictGet('local.dict_products', 'product_name', product_id)``
         """
         db = self.config.database or "local"
-        if len(keys) > 1:
-            key_expr = f"tuple({', '.join(str(k) for k in keys)})"
-        else:
-            key_expr = str(keys[0]) if keys else ""
+        key_expr = self._build_key_expr(*keys)
         return f"dictGet('{db}.{self.name}', '{attr}', {key_expr})"
 
     def get_or_default(self, attr: str, default: Any, *keys) -> str:
@@ -519,7 +536,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
         Args:
             attr: Attribute column name to retrieve.
-            default: Default value when the key is not found.
+            default: Default value (SQL expression) when the key is not found.
             *keys: Key column expressions.
 
         Returns:
@@ -527,10 +544,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             ``dictGetOrDefault('local.dict_products', 'category', product_id, 'Unknown')``
         """
         db = self.config.database or "local"
-        if len(keys) > 1:
-            key_expr = f"tuple({', '.join(str(k) for k in keys)})"
-        else:
-            key_expr = str(keys[0]) if keys else ""
+        key_expr = self._build_key_expr(*keys)
         return f"dictGetOrDefault('{db}.{self.name}', '{attr}', {key_expr}, {default})"
 
     def has(self, *keys) -> str:
@@ -543,8 +557,5 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             SQL fragment, e.g. ``dictHas('local.dict_products', product_id)``
         """
         db = self.config.database or "local"
-        if len(keys) > 1:
-            key_expr = f"tuple({', '.join(str(k) for k in keys)})"
-        else:
-            key_expr = str(keys[0]) if keys else ""
+        key_expr = self._build_key_expr(*keys)
         return f"dictHas('{db}.{self.name}', {key_expr})"
