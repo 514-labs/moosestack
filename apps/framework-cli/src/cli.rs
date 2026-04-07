@@ -1174,6 +1174,8 @@ pub async fn top_command_handler(
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
 
+            crate::utilities::native_infra::shutdown_embedded_servers();
+
             wait_for_usage_capture(capture_handle).await;
 
             Ok(RoutineSuccess::success(Message::new(
