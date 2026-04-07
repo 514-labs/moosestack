@@ -117,6 +117,7 @@ use super::watcher::FileWatcher;
 use super::{display, prompt_user};
 use super::{Message, MessageType};
 
+use crate::framework::core::operation_class::has_plan_worthy_changes;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
@@ -717,6 +718,18 @@ pub async fn start_development_mode(
     };
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
         return Ok(());
+    }
+
+    if has_plan_worthy_changes(&plan.changes) {
+        show_message!(
+            MessageType::Highlight,
+            Message {
+                action: "Heads up".to_string(),
+                details: "This change includes operations that will require a migration plan \
+                          for production. Run `moose generate migration --save` before deploying."
+                    .to_string(),
+            }
+        );
     }
 
     let api_changes_channel = web_server
