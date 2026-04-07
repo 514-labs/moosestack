@@ -16,7 +16,9 @@ use tracing::{debug, info, warn};
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{InfraChanges, InfrastructureMap};
 use crate::framework::core::migration_plan::MigrationPlan;
-use crate::framework::core::operation_class::{classify_serializable_op, OperationClass};
+use crate::framework::core::operation_class::{
+    classify_serializable_op, has_plan_worthy_changes, OperationClass,
+};
 use crate::framework::core::plan::infra_changes_to_operations;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse::{
@@ -59,10 +61,12 @@ pub async fn execute_hybrid_migration(
         return Ok(());
     }
 
-    // 2. Classify each operation.
-    let has_plan_worthy = all_ops
-        .iter()
-        .any(|op| classify_serializable_op(op) == OperationClass::PlanWorthy);
+    // 2. Classify using OlapChange-level classification.
+    //    We must classify at the OlapChange level because the conversion to
+    //    SerializableOlapOperation loses semantic information — e.g.
+    //    PopulateMaterializedView becomes RawSql, which would be incorrectly
+    //    classified as plan-worthy.
+    let has_plan_worthy = has_plan_worthy_changes(changes);
 
     // 3. Resolve plan-worthy operations.
     let planned_ops: Vec<SerializableOlapOperation> = if has_plan_worthy {
