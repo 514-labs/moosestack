@@ -110,6 +110,7 @@ toon-format = "0.4.0"
 urlencoding = "2"
 open = "5"
 
+devredis = { path = "../devredis" }
 tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
