@@ -102,12 +102,13 @@ export * from "./models";
 
     testLogger.info("Starting moose dev with incremental compilation...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
         RUST_LOG: "info",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -146,12 +147,13 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
         RUST_LOG: "info",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -228,12 +230,13 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
         RUST_LOG: "info",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
