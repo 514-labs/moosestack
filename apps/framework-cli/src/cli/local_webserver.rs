@@ -3113,7 +3113,8 @@ async fn shutdown(
             }
         }
 
-        // Step 5: Kill native processes if --dockerless mode was used.
+        // Step 5: Shut down embedded servers and kill native processes.
+        crate::utilities::native_infra::shutdown_embedded_servers();
         if project.dev.dockerless {
             crate::utilities::native_infra::kill_native_processes(project);
         }
