@@ -20,7 +20,6 @@ import {
   stopDevProcess,
   waitForServerStart,
   killRemainingProcesses,
-  cleanupDocker,
   globalDockerCleanup,
   removeTestProject,
   createTempTestDirectory,
@@ -90,12 +89,14 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Start dev server
     testLogger.info("Starting dev server for .env configuration tests...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
     });
 
@@ -124,7 +125,6 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Cleanup
     await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "ts-dotenv-config");
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });
@@ -207,7 +207,7 @@ describe("python template tests - .env file configuration", function () {
     testLogger.info(
       "Starting dev server for Python .env configuration tests...",
     );
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
       env: {
@@ -215,6 +215,8 @@ describe("python template tests - .env file configuration", function () {
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
     });
 
@@ -243,7 +245,6 @@ describe("python template tests - .env file configuration", function () {
 
     // Cleanup
     await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "py-dotenv-config");
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });

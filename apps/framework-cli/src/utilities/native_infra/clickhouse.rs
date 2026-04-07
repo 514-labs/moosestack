@@ -202,6 +202,46 @@ pub fn ensure_database(project: &Project) -> Result<(), NativeInfraError> {
     }
 }
 
+/// Wait for the embedded Keeper to be operational.
+///
+/// The ClickHouse HTTP endpoint may become available before the embedded Keeper
+/// has finished bootstrapping its Raft state.  Creating ReplicatedMergeTree
+/// tables during this window puts them in readonly mode.  We probe
+/// `system.zookeeper` to confirm the Keeper connection is live.
+pub fn wait_for_keeper(project: &Project) -> Result<(), NativeInfraError> {
+    let ch = &project.clickhouse_config;
+    let url = format!("http://127.0.0.1:{}/", ch.host_port);
+    let query = "SELECT 1 FROM system.zookeeper WHERE path = '/' LIMIT 1";
+    let client = reqwest::blocking::Client::new();
+
+    for attempt in 1..=30 {
+        match client
+            .post(&url)
+            .query(&[("user", &ch.user), ("password", &ch.password)])
+            .body(query.to_string())
+            .send()
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!("Embedded Keeper ready (attempt {attempt})");
+                return Ok(());
+            }
+            Ok(resp) => {
+                let body = resp.text().unwrap_or_default();
+                tracing::debug!("Keeper not ready (attempt {attempt}): {body}");
+            }
+            Err(e) => {
+                tracing::debug!("Keeper check failed (attempt {attempt}): {e}");
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+
+    Err(NativeInfraError::HealthCheck {
+        service: "ClickHouse Keeper".to_string(),
+        reason: "embedded Keeper did not become ready within 30s".to_string(),
+    })
+}
+
 /// Returns the native data directory for ClickHouse within a project.
 pub fn native_data_dir(project: &Project) -> PathBuf {
     project.project_location.join(".moose").join(NATIVE_CH_DIR)

@@ -7,6 +7,7 @@ use tracing::{debug, error, info};
 use crate::cmd::Command;
 use crate::connection::Connection;
 use crate::db::Db;
+use crate::frame::Frame;
 use crate::shutdown::Shutdown;
 
 /// Maximum number of concurrent connections.
@@ -93,9 +94,24 @@ impl Listener {
     }
 }
 
+/// Extract the command name from a frame without consuming it.
+fn peek_command_name(frame: &Frame) -> Option<String> {
+    if let Frame::Array(parts) = frame {
+        if let Some(Frame::Bulk(name)) = parts.first() {
+            return String::from_utf8(name.to_vec())
+                .ok()
+                .map(|s| s.to_uppercase());
+        }
+    }
+    None
+}
+
 impl Handler {
     /// Process a single connection.
     async fn run(&mut self) -> crate::Result<()> {
+        // Buffered commands when inside a MULTI transaction.
+        let mut tx_queue: Option<Vec<Frame>> = None;
+
         while !self.shutdown.is_shutdown() {
             // Read a frame, or return None on clean shutdown / disconnect.
             let maybe_frame = tokio::select! {
@@ -112,10 +128,80 @@ impl Handler {
 
             debug!(?frame);
 
+            // Handle MULTI / EXEC / DISCARD before normal command dispatch.
+            match peek_command_name(&frame).as_deref() {
+                Some("MULTI") => {
+                    let resp = if tx_queue.is_some() {
+                        Frame::Error("ERR MULTI calls can not be nested".into())
+                    } else {
+                        tx_queue = Some(Vec::new());
+                        Frame::Simple("OK".into())
+                    };
+                    self.connection.write_frame(&resp).await?;
+                    continue;
+                }
+                Some("DISCARD") => {
+                    let resp = if tx_queue.is_none() {
+                        Frame::Error("ERR DISCARD without MULTI".into())
+                    } else {
+                        tx_queue = None;
+                        Frame::Simple("OK".into())
+                    };
+                    self.connection.write_frame(&resp).await?;
+                    continue;
+                }
+                Some("EXEC") => {
+                    match tx_queue.take() {
+                        Some(queue) => {
+                            let mut results = Vec::with_capacity(queue.len());
+                            for queued_frame in queue {
+                                match Command::from_frame(queued_frame) {
+                                    Ok(cmd) => {
+                                        self.connection.start_capture();
+                                        let _ = cmd
+                                            .apply(
+                                                &self.db,
+                                                &mut self.connection,
+                                                &mut self.shutdown,
+                                            )
+                                            .await?;
+                                        let captured = self.connection.stop_capture();
+                                        results.push(
+                                            captured.into_iter().next().unwrap_or(Frame::NullBulk),
+                                        );
+                                    }
+                                    Err(e) => {
+                                        results.push(Frame::Error(format!("ERR {}", e)));
+                                    }
+                                }
+                            }
+                            self.connection.write_frame(&Frame::Array(results)).await?;
+                        }
+                        None => {
+                            self.connection
+                                .write_frame(&Frame::Error("ERR EXEC without MULTI".into()))
+                                .await?;
+                        }
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Inside a transaction: queue the frame and reply +QUEUED.
+            if let Some(ref mut queue) = tx_queue {
+                queue.push(frame);
+                self.connection
+                    .write_frame(&Frame::Simple("QUEUED".into()))
+                    .await?;
+                continue;
+            }
+
+            // Normal command execution.
             let cmd = match Command::from_frame(frame) {
                 Ok(cmd) => cmd,
                 Err(err) => {
-                    let response = crate::frame::Frame::Error(format!("ERR {}", err));
+                    let response = Frame::Error(format!("ERR {}", err));
                     self.connection.write_frame(&response).await?;
                     continue;
                 }

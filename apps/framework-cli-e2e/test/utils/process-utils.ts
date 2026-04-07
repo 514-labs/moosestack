@@ -235,39 +235,42 @@ export const killRemainingProcesses = async (
       },
     );
     log.debug("Killed any remaining Python processes");
+
+    // Kill native infrastructure processes that may have been orphaned when
+    // moose-cli was killed with SIGKILL in dockerless mode.
+    await execAsync(
+      "pkill -9 -f 'clickhouse server' || true; pkill -9 -f 'temporal server' || true",
+      {
+        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+      },
+    );
+    log.debug("Killed any remaining native infrastructure processes");
   } catch (error) {
     log.warn("Error killing remaining processes", error);
   }
 };
 
 /**
- * Wait for streaming functions and ClickHouse sync to start by checking Redpanda consumer groups.
+ * Wait for streaming functions and ClickHouse sync to start.
  *
- * This approach directly verifies that consumers have:
- * 1. Connected to Kafka/Redpanda
- * 2. Joined their consumer groups
- * 3. Reached a "Stable" state (ready to process messages)
- *
- * We wait for two types of consumer groups:
- * - "flow-*" groups: Streaming function consumers (transform data between topics)
- * - "clickhouse_sync" group: Syncs data from Kafka topics to ClickHouse tables
- *
- * Both must be stable before data can flow end-to-end from ingestion to ClickHouse.
- * We poll `rpk group list` until all required groups are in Stable state.
+ * In Docker mode, checks Redpanda consumer groups via `rpk group list`.
+ * In dockerless mode (no Docker), falls back to the /ready endpoint which verifies
+ * all infrastructure services (Redis, Kafka, ClickHouse, Temporal) are healthy,
+ * then waits a stabilization period for consumer groups to settle.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
-  log.debug(
-    "Waiting for streaming functions to start (checking Redpanda consumer groups)",
-    {
-      timeoutMs,
-    },
-  );
+  const baseUrl = options.baseUrl ?? SERVER_CONFIG.url;
+  log.debug("Waiting for streaming functions to start", { timeoutMs });
 
   const startTime = Date.now();
+  let dockerAttempts = 0;
+  const MAX_DOCKER_DETECT_ATTEMPTS = 10;
 
   while (Date.now() - startTime < timeoutMs) {
     try {
@@ -277,31 +280,38 @@ export const waitForStreamingFunctions = async (
       );
 
       if (!containerName.trim()) {
+        dockerAttempts++;
+        if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
+          // No Docker container found — assume dockerless mode (devkafka embedded)
+          log.debug(
+            "No Redpanda container found after multiple attempts, using dockerless mode readiness check",
+          );
+          await waitForStreamingDockerlessMode(
+            timeoutMs - (Date.now() - startTime),
+            baseUrl,
+            log,
+          );
+          return;
+        }
         log.debug("Waiting for Redpanda container to start");
         await setTimeoutAsync(1000);
         continue;
       }
 
-      // Check consumer groups using rpk
+      // Docker mode: Check consumer groups using rpk
       const { stdout: groupList } = await execAsync(
         `docker exec ${containerName.trim()} rpk group list`,
       );
 
       log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
-      // Parse for Stable groups
-      // Expected format: "BROKER  GROUP  STATE"
-      // Example: "0  flow-Foo-  Stable"
       const lines = groupList.split("\n").slice(1); // Skip header
 
-      // Check flow-* groups (streaming functions)
       const flowGroups = lines.filter((line) => line.includes("flow-"));
       const stableFlowGroups = flowGroups.filter((line) =>
         line.includes("Stable"),
       );
 
-      // Check clickhouse_sync groups (Kafka to ClickHouse sync)
-      // These are critical for data to actually appear in ClickHouse tables
       const clickhouseSyncGroups = lines.filter((line) =>
         line.includes("clickhouse_sync"),
       );
@@ -333,7 +343,6 @@ export const waitForStreamingFunctions = async (
           },
         );
 
-        // Grace period for consumer groups to fully stabilize
         log.debug("Waiting for consumer groups to stabilize");
         await setTimeoutAsync(3000);
         log.debug("✓ Streaming functions and ClickHouse sync ready");
@@ -345,8 +354,18 @@ export const waitForStreamingFunctions = async (
       );
       await setTimeoutAsync(1000);
     } catch (error) {
-      // Container might not be ready yet, or rpk command failed
-      // Continue polling until timeout
+      dockerAttempts++;
+      if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
+        log.debug(
+          "Docker checks failing, using dockerless mode readiness check",
+        );
+        await waitForStreamingDockerlessMode(
+          timeoutMs - (Date.now() - startTime),
+          baseUrl,
+          log,
+        );
+        return;
+      }
       log.debug("Error checking consumer groups, retrying", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -356,6 +375,47 @@ export const waitForStreamingFunctions = async (
 
   throw new Error(
     `Streaming functions and ClickHouse sync did not reach Stable state within ${timeoutMs / 1000}s`,
+  );
+};
+
+/**
+ * Alpha mode readiness check: uses the /ready endpoint to verify all infrastructure
+ * services are healthy, then waits for consumer groups to stabilize.
+ */
+const waitForStreamingDockerlessMode = async (
+  remainingMs: number,
+  baseUrl: string,
+  log: ScopedLogger,
+): Promise<void> => {
+  const startTime = Date.now();
+  const STABILIZATION_DELAY_MS = 10_000;
+
+  // Poll /ready endpoint until all services report healthy
+  while (Date.now() - startTime < remainingMs - STABILIZATION_DELAY_MS) {
+    try {
+      const response = await fetch(`${baseUrl}/ready`);
+      if (response.status === 200) {
+        log.debug("✓ All infrastructure services healthy via /ready endpoint");
+        // Wait for consumer groups to join and stabilize after infra is ready
+        log.debug(
+          `Waiting ${STABILIZATION_DELAY_MS / 1000}s for streaming consumer groups to stabilize`,
+        );
+        await setTimeoutAsync(STABILIZATION_DELAY_MS);
+        log.debug("✓ Streaming functions ready (dockerless mode)");
+        return;
+      }
+      const body = await response.text();
+      log.debug(`Infrastructure not ready (${response.status}): ${body}`);
+    } catch (error) {
+      log.debug("Error checking /ready endpoint, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await setTimeoutAsync(1000);
+  }
+
+  throw new Error(
+    `Infrastructure did not become ready within the remaining timeout (dockerless mode)`,
   );
 };
 
