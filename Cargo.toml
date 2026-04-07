@@ -4,6 +4,7 @@ members = [
     "apps/framework-cli",
     "packages/posthog514client-rs",
     "apps/devredis",
+    "apps/devkafka",
 ]
 
 [profile.dev]
