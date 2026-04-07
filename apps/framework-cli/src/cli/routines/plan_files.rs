@@ -292,12 +292,30 @@ pub fn detect_scoped_drift(
         return ScopedDriftStatus::Applicable;
     }
 
+    // Build secondary lookups keyed by "database.table_name" to match the
+    // format produced by `referenced_tables`. The primary HashMap keys use
+    // `Table::id()` which has a different format (underscores, version suffix).
+    let current_by_ref: HashMap<String, &Table> = current
+        .values()
+        .map(|t| {
+            let db = t.database.as_deref().unwrap_or(default_database);
+            (format!("{}.{}", db, t.name), t)
+        })
+        .collect();
+    let expected_by_ref: HashMap<String, &Table> = expected
+        .values()
+        .map(|t| {
+            let db = t.database.as_deref().unwrap_or(default_database);
+            (format!("{}.{}", db, t.name), t)
+        })
+        .collect();
+
     let mut changed = Vec::new();
     let mut all_gone = true; // track whether every expected-present ref is gone
 
     for name in &refs {
-        let in_expected = expected.get(name);
-        let in_current = current.get(name);
+        let in_expected = expected_by_ref.get(name);
+        let in_current = current_by_ref.get(name);
 
         match (in_expected, in_current) {
             // Expected and current both have it — compare.
@@ -336,7 +354,7 @@ pub fn detect_scoped_drift(
     // new tables that weren't in the snapshot), `all_gone` is still true but the
     // plan hasn't been "applied" — it's applicable. We distinguish by checking
     // whether any ref was actually present in expected.
-    let any_was_expected = refs.iter().any(|name| expected.contains_key(name));
+    let any_was_expected = refs.iter().any(|name| expected_by_ref.contains_key(name));
 
     if any_was_expected && all_gone {
         ScopedDriftStatus::AlreadyApplied
@@ -711,5 +729,75 @@ mod tests {
         // new_table was not in expected and not in current → neutral
         // Result: AlreadyApplied because the expected-present ref is gone
         assert_eq!(status, ScopedDriftStatus::AlreadyApplied);
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: drift detection must work when HashMap keys use Table::id()
+    // format ("db_TableName_1_0") instead of the "db.TableName" format from
+    // referenced_tables. This was a real bug where lookups always returned
+    // None, making drift detection a no-op.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn drift_detected_with_table_id_format_keys() {
+        // Simulate the real-world scenario: InfrastructureMap.tables uses
+        // Table::id() which produces "db_name_version" keys.
+        let mut table_expected = test_table("AmazonReview");
+        table_expected.columns = vec![test_column("vine"), test_column("star_rating")];
+
+        let mut table_current = test_table("AmazonReview");
+        // vine was already dropped — current state differs from expected
+        table_current.columns = vec![test_column("star_rating")];
+
+        // Keys use Table::id() format (underscore-separated, version suffix)
+        let expected: HashMap<String, Table> = [(table_expected.id("prod_demo"), table_expected)]
+            .into_iter()
+            .collect();
+
+        let current: HashMap<String, Table> = [(table_current.id("prod_demo"), table_current)]
+            .into_iter()
+            .collect();
+
+        let ops = vec![SerializableOlapOperation::DropTableColumn {
+            table: "AmazonReview".to_string(),
+            column_name: "vine".to_string(),
+            database: None,
+            cluster_name: None,
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "prod_demo");
+        // Must detect drift — the table changed since the plan was generated.
+        // Before the fix, this returned Applicable because the key formats
+        // didn't match and lookups returned None.
+        assert_eq!(
+            status,
+            ScopedDriftStatus::Drifted {
+                changed_tables: vec!["prod_demo.AmazonReview".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn no_drift_with_table_id_format_keys_when_state_matches() {
+        let mut table = test_table("AmazonReview");
+        table.columns = vec![test_column("vine"), test_column("star_rating")];
+
+        // Both expected and current are identical, using Table::id() keys
+        let expected: HashMap<String, Table> = [(table.id("prod_demo"), table.clone())]
+            .into_iter()
+            .collect();
+
+        let current: HashMap<String, Table> =
+            [(table.id("prod_demo"), table)].into_iter().collect();
+
+        let ops = vec![SerializableOlapOperation::DropTableColumn {
+            table: "AmazonReview".to_string(),
+            column_name: "vine".to_string(),
+            database: None,
+            cluster_name: None,
+        }];
+
+        let status = detect_scoped_drift(&current, &expected, &ops, "prod_demo");
+        assert_eq!(status, ScopedDriftStatus::Applicable);
     }
 }

@@ -232,37 +232,87 @@ fn load_and_validate_plan_files(
     Ok(all_ops)
 }
 
-/// Checks whether two operations target the same object by comparing their
-/// enum discriminant and target name.
+/// Checks whether two operations represent the same logical change.
+///
+/// Compares the operation identity key, which includes all fields that
+/// distinguish one operation from another of the same kind (e.g. table name
+/// AND column name for column operations, not just table name).
 fn ops_match(a: &SerializableOlapOperation, b: &SerializableOlapOperation) -> bool {
-    std::mem::discriminant(a) == std::mem::discriminant(b) && op_target(a) == op_target(b)
+    op_identity(a) == op_identity(b)
 }
 
-/// Extracts the target table or view name from an operation, if available.
-fn op_target(op: &SerializableOlapOperation) -> Option<&str> {
+/// Returns a string that uniquely identifies this operation for matching
+/// purposes. Includes all fields that distinguish one operation from another
+/// of the same kind.
+fn op_identity(op: &SerializableOlapOperation) -> String {
     match op {
-        SerializableOlapOperation::CreateTable { table } => Some(&table.name),
-        SerializableOlapOperation::DropTable { table, .. } => Some(table),
-        SerializableOlapOperation::AddTableColumn { table, .. }
-        | SerializableOlapOperation::DropTableColumn { table, .. }
-        | SerializableOlapOperation::ModifyTableColumn { table, .. }
-        | SerializableOlapOperation::RenameTableColumn { table, .. }
-        | SerializableOlapOperation::ModifyTableSettings { table, .. }
-        | SerializableOlapOperation::ModifyTableTtl { table, .. }
-        | SerializableOlapOperation::AddTableIndex { table, .. }
-        | SerializableOlapOperation::DropTableIndex { table, .. }
-        | SerializableOlapOperation::AddTableProjection { table, .. }
-        | SerializableOlapOperation::DropTableProjection { table, .. }
-        | SerializableOlapOperation::ModifySampleBy { table, .. }
-        | SerializableOlapOperation::RemoveSampleBy { table, .. } => Some(table),
-        SerializableOlapOperation::CreateMaterializedView { name, .. }
-        | SerializableOlapOperation::DropMaterializedView { name, .. }
-        | SerializableOlapOperation::CreateView { name, .. }
-        | SerializableOlapOperation::DropView { name, .. } => Some(name),
-        SerializableOlapOperation::RawSql { .. } => None,
-        SerializableOlapOperation::CreateRowPolicy { policy }
-        | SerializableOlapOperation::DropRowPolicy { policy } => {
-            policy.tables.first().map(|t| t.name.as_str())
+        SerializableOlapOperation::CreateTable { table } => {
+            format!("CreateTable:{}", table.name)
+        }
+        SerializableOlapOperation::DropTable { table, .. } => {
+            format!("DropTable:{table}")
+        }
+        SerializableOlapOperation::AddTableColumn { table, column, .. } => {
+            format!("AddTableColumn:{}.{}", table, column.name)
+        }
+        SerializableOlapOperation::DropTableColumn {
+            table, column_name, ..
+        } => format!("DropTableColumn:{table}.{column_name}"),
+        SerializableOlapOperation::ModifyTableColumn {
+            table,
+            after_column,
+            ..
+        } => format!("ModifyTableColumn:{}.{}", table, after_column.name),
+        SerializableOlapOperation::RenameTableColumn {
+            table,
+            before_column_name,
+            after_column_name,
+            ..
+        } => format!("RenameTableColumn:{table}.{before_column_name}->{after_column_name}"),
+        SerializableOlapOperation::ModifyTableSettings { table, .. } => {
+            format!("ModifyTableSettings:{table}")
+        }
+        SerializableOlapOperation::ModifyTableTtl { table, .. } => {
+            format!("ModifyTableTtl:{table}")
+        }
+        SerializableOlapOperation::AddTableIndex { table, index, .. } => {
+            format!("AddTableIndex:{}.{}", table, index.name)
+        }
+        SerializableOlapOperation::DropTableIndex {
+            table, index_name, ..
+        } => format!("DropTableIndex:{table}.{index_name}"),
+        SerializableOlapOperation::AddTableProjection {
+            table, projection, ..
+        } => format!("AddTableProjection:{}.{}", table, projection.name),
+        SerializableOlapOperation::DropTableProjection {
+            table,
+            projection_name,
+            ..
+        } => format!("DropTableProjection:{table}.{projection_name}"),
+        SerializableOlapOperation::ModifySampleBy { table, .. } => {
+            format!("ModifySampleBy:{table}")
+        }
+        SerializableOlapOperation::RemoveSampleBy { table, .. } => {
+            format!("RemoveSampleBy:{table}")
+        }
+        SerializableOlapOperation::CreateMaterializedView { name, .. } => {
+            format!("CreateMV:{name}")
+        }
+        SerializableOlapOperation::DropMaterializedView { name, .. } => {
+            format!("DropMV:{name}")
+        }
+        SerializableOlapOperation::CreateView { name, .. } => {
+            format!("CreateView:{name}")
+        }
+        SerializableOlapOperation::DropView { name, .. } => format!("DropView:{name}"),
+        SerializableOlapOperation::RawSql { description, .. } => {
+            format!("RawSql:{description}")
+        }
+        SerializableOlapOperation::CreateRowPolicy { policy } => {
+            format!("CreateRowPolicy:{}", policy.name)
+        }
+        SerializableOlapOperation::DropRowPolicy { policy } => {
+            format!("DropRowPolicy:{}", policy.name)
         }
     }
 }
@@ -281,11 +331,101 @@ fn describe_op(op: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::RawSql { description, .. } => {
             format!("RawSql({description})")
         }
-        other => {
-            let target = op_target(other)
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| "?".to_string());
-            format!("{:?}({target})", std::mem::discriminant(other))
+        other => op_identity(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+    fn test_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
         }
+    }
+
+    // Regression: ops_match must distinguish operations on the same table
+    // but different columns. Before the fix, two DropTableColumn ops on
+    // "AmazonReview" for different columns were considered matching because
+    // op_target only returned the table name.
+    #[test]
+    fn ops_match_distinguishes_different_columns_on_same_table() {
+        let drop_vine = SerializableOlapOperation::DropTableColumn {
+            table: "AmazonReview".to_string(),
+            column_name: "vine".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+        let drop_total_votes = SerializableOlapOperation::DropTableColumn {
+            table: "AmazonReview".to_string(),
+            column_name: "total_votes".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+
+        // Same column → match
+        assert!(ops_match(&drop_vine, &drop_vine));
+        // Different columns on same table → must NOT match
+        assert!(!ops_match(&drop_vine, &drop_total_votes));
+    }
+
+    #[test]
+    fn ops_match_distinguishes_different_column_adds_on_same_table() {
+        let add_col_a = SerializableOlapOperation::AddTableColumn {
+            table: "Events".to_string(),
+            column: test_column("col_a"),
+            after_column: None,
+            database: None,
+            cluster_name: None,
+        };
+        let add_col_b = SerializableOlapOperation::AddTableColumn {
+            table: "Events".to_string(),
+            column: test_column("col_b"),
+            after_column: None,
+            database: None,
+            cluster_name: None,
+        };
+
+        assert!(ops_match(&add_col_a, &add_col_a));
+        assert!(!ops_match(&add_col_a, &add_col_b));
+    }
+
+    #[test]
+    fn ops_match_same_op_matches() {
+        let op = SerializableOlapOperation::DropTable {
+            table: "events".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+        assert!(ops_match(&op, &op));
+    }
+
+    #[test]
+    fn ops_match_different_op_types_dont_match() {
+        let drop = SerializableOlapOperation::DropTable {
+            table: "events".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+        let drop_col = SerializableOlapOperation::DropTableColumn {
+            table: "events".to_string(),
+            column_name: "col".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+        assert!(!ops_match(&drop, &drop_col));
     }
 }
