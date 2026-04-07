@@ -136,8 +136,15 @@ pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
 pub const DEFAULT_SEED_LIMIT: usize = 1000;
 
 pub const MIGRATIONS_DIR: &str = "migrations";
+
+// Legacy single-file migration constants — replaced by timestamped plan files
+// in `migrations/<timestamp>.yaml` + `<timestamp>_state.json`.
+// Kept temporarily for backwards compatibility during transition.
+#[allow(dead_code)]
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
+#[allow(dead_code)]
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
+#[allow(dead_code)]
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
 
 // Feedback
