@@ -16,12 +16,12 @@
 
 ## Unit tests to add
 
-Location: `packages/ts-moose-lib/src/` (colocated, mocha)
+Location: `packages/ts-moose-lib/tests/` (mocha)
 
 - Construction and field defaults
 - Validation: mutually exclusive sources, required fields
 - Registration into `getMooseInternal().olapDictionaries`
-- Serialization matches Rust's expected JSON shape (camelCase keys, SCREAMING_SNAKE_CASE enum values)
+- Serialization matches Rust's expected JSON shape (camelCase keys for top-level fields, snake_case for layout fields, SCREAMING_SNAKE_CASE enum values)
 - `get()`/`getOrDefault()`/`has()` SQL helper output
 - Composite primary keys
 - All 16 layout types serialize correctly
