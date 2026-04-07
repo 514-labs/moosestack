@@ -295,6 +295,48 @@ def test_has_composite_key():
     assert sql == "dictHas('local.dict_has_ck', tuple(id1, r1))"
 
 
+def test_get_no_keys_raises():
+    table = OlapTable[Lookup](name="tbl_get_nokeys")
+    d = OlapDictionary[Lookup](
+        name="dict_get_nokeys",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+        ),
+    )
+    with pytest.raises(ValueError, match="At least one key argument is required"):
+        d.get("value")
+
+
+def test_get_or_default_no_keys_raises():
+    table = OlapTable[Lookup](name="tbl_god_nokeys")
+    d = OlapDictionary[Lookup](
+        name="dict_god_nokeys",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+        ),
+    )
+    with pytest.raises(ValueError, match="At least one key argument is required"):
+        d.get_or_default("value", "'Unknown'")
+
+
+def test_has_no_keys_raises():
+    table = OlapTable[Lookup](name="tbl_has_nokeys")
+    d = OlapDictionary[Lookup](
+        name="dict_has_nokeys",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+        ),
+    )
+    with pytest.raises(ValueError, match="At least one key argument is required"):
+        d.has()
+
+
 def test_get_uses_explicit_database():
     table = OlapTable[Lookup](name="tbl_db")
     d = OlapDictionary[Lookup](
@@ -589,6 +631,8 @@ def _run_serializer(app_dir: str, moose_lib_root: str) -> dict:
         text=True,
         env=env,
         cwd=app_dir,
+        check=False,
+        timeout=60,
     )
     assert result.returncode == 0, (
         f"dmv2_serializer exited with code {result.returncode}.\n"
@@ -743,6 +787,8 @@ def test_serializer_syntax_error_in_user_file_fails_gracefully():
             text=True,
             env=env,
             cwd=tmp,
+            check=False,
+            timeout=30,
         )
 
     assert result.returncode != 0, (
