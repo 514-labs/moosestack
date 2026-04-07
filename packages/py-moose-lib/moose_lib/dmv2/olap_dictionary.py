@@ -32,7 +32,8 @@ Usage::
 """
 
 from typing import Any, Generic, Literal, Optional, Union
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import AliasGenerator, BaseModel, ConfigDict, model_validator
+from pydantic.alias_generators import to_camel
 
 from .types import BaseTypedResource, T
 from .life_cycle import LifeCycle
@@ -200,14 +201,6 @@ class ComplexKeyHashedArrayLayout(BaseModel):
     shards: Optional[int] = None
 
 
-class ComplexKeyRangeHashedLayout(BaseModel):
-    """Multi-column key range hashed layout."""
-
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["COMPLEX_KEY_RANGE_HASHED"] = "COMPLEX_KEY_RANGE_HASHED"
-    range_lookup_strategy: Optional[str] = None
-
-
 class ComplexKeyCacheLayout(BaseModel):
     """Multi-column key LRU cache."""
 
@@ -250,20 +243,28 @@ DictionaryLayout = Union[
     ComplexKeyHashedLayout,
     ComplexKeySparseHashedLayout,
     ComplexKeyHashedArrayLayout,
-    ComplexKeyRangeHashedLayout,
     ComplexKeyCacheLayout,
     ComplexKeySsdCacheLayout,
     ComplexKeyDirectLayout,
 ]
-"""Union of all 16 ClickHouse dictionary layout types."""
+"""Union of all 15 ClickHouse dictionary layout types."""
 
 # ─── External source types ────────────────────────────────────────────────────
+
+# Shared config for external source models: fields use snake_case for user
+# convenience but serialize to camelCase so Rust's #[serde(rename_all = "camelCase")]
+# can deserialize them correctly.
+_external_source_config = ConfigDict(
+    extra="forbid",
+    populate_by_name=True,
+    alias_generator=AliasGenerator(serialization_alias=to_camel),
+)
 
 
 class HttpSource(BaseModel):
     """HTTP/HTTPS endpoint as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["HTTP"] = "HTTP"
     url: str
     format: str
@@ -274,7 +275,7 @@ class HttpSource(BaseModel):
 class ClickHouseRemoteSource(BaseModel):
     """Remote ClickHouse server as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["CLICK_HOUSE"] = "CLICK_HOUSE"
     host: str
     port: int
@@ -290,7 +291,7 @@ class ClickHouseRemoteSource(BaseModel):
 class MysqlSource(BaseModel):
     """MySQL database as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["MYSQL"] = "MYSQL"
     host: str
     port: int = 3306
@@ -306,7 +307,7 @@ class MysqlSource(BaseModel):
 class PostgresqlSource(BaseModel):
     """PostgreSQL database as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["POSTGRESQL"] = "POSTGRESQL"
     host: str
     port: int = 5432
@@ -322,7 +323,7 @@ class PostgresqlSource(BaseModel):
 class RedisSource(BaseModel):
     """Redis as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["REDIS"] = "REDIS"
     host: str
     port: int = 6379
@@ -334,7 +335,7 @@ class RedisSource(BaseModel):
 class MongoDbSource(BaseModel):
     """MongoDB collection as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["MONGODB"] = "MONGODB"
     host: str
     port: int = 27017
@@ -347,7 +348,7 @@ class MongoDbSource(BaseModel):
 class ExecutableSource(BaseModel):
     """External executable process as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["EXECUTABLE"] = "EXECUTABLE"
     command: str
     format: str
@@ -357,7 +358,7 @@ class ExecutableSource(BaseModel):
 class S3Source(BaseModel):
     """S3 object storage as dictionary source."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _external_source_config
     type: Literal["S3"] = "S3"
     url: str
     format: str
@@ -411,10 +412,8 @@ class OlapDictionaryConfig(BaseModel):
     """Optional top-level invalidation query."""
     columns: Optional[dict[str, DictionaryColumn]] = None
     """Per-column attribute overrides (DEFAULT, EXPRESSION, INJECTIVE, etc.)."""
-    defaults: Optional[dict[str, Union[str, int, float]]] = None
-    """Column-level default values (shorthand when only ``DEFAULT`` is needed)."""
     settings: Optional[dict[str, Union[str, int]]] = None
-    """Extra ClickHouse dictionary settings."""
+    """Extra ClickHouse dictionary settings (values are coerced to strings)."""
     comment: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
@@ -432,6 +431,10 @@ class OlapDictionaryConfig(BaseModel):
             )
         if self.source_query is not None and not self.source_tables:
             raise ValueError("source_tables is required when using source_query")
+        if self.source_query is not None and not self.source_query.strip():
+            raise ValueError("source_query must not be blank")
+        if not self.primary_key:
+            raise ValueError("primary_key must contain at least one column name")
         return self
 
 
