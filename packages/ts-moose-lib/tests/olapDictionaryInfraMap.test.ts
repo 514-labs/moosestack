@@ -716,10 +716,17 @@ describe("OlapDictionary infra map round-trip", () => {
   // ── Subprocess tests ────────────────────────────────────────────────────────
 
   describe("subprocess: TABLE source — full CLI round-trip via moose-runner", () => {
-    let tmpDir: string;
+    let tmpDir: string | undefined;
+    let cachedResult: ReturnType<typeof runSerializer>;
+    let infraMap: Record<string, any>;
 
-    before(() => {
+    before(function (this: Mocha.Context) {
+      this.timeout(30_000);
       tmpDir = createTempProject(tableSourceFixture());
+      cachedResult = runSerializer(tmpDir);
+      if (cachedResult.exitCode === 0) {
+        infraMap = parseDelimitedOutput(cachedResult.stdout);
+      }
     });
 
     after(() => {
@@ -727,58 +734,46 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it("exits with code 0", () => {
-      const { exitCode, stderr } = runSerializer(tmpDir);
-      expect(exitCode, `stderr: ${stderr}`).to.equal(0);
+      expect(cachedResult.exitCode, `stderr: ${cachedResult.stderr}`).to.equal(
+        0,
+      );
     });
 
     it("output contains ___MOOSE_STUFF___ delimiters", () => {
-      const { stdout } = runSerializer(tmpDir);
-      expect(stdout).to.include("___MOOSE_STUFF___start");
-      expect(stdout).to.include("end___MOOSE_STUFF___");
+      expect(cachedResult.stdout).to.include("___MOOSE_STUFF___start");
+      expect(cachedResult.stdout).to.include("end___MOOSE_STUFF___");
     });
 
     it("olapDictionaries section contains dict_products", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const infraMap = parseDelimitedOutput(stdout);
       expect(infraMap).to.have.property("olapDictionaries");
       expect(infraMap.olapDictionaries).to.have.property("dict_products");
     });
 
     it("dict_products has correct name", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.name).to.equal("dict_products");
     });
 
     it("dict_products primaryKey is camelCase and correct", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict).to.have.property("primaryKey");
       expect(dict).to.not.have.property("primary_key");
       expect(dict.primaryKey).to.deep.equal(["ProductId"]);
     });
 
     it('dict_products source.type is "TABLE"', () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.source.type).to.equal("TABLE");
     });
 
     it("dict_products source.table is the Products table name", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       // Fixture uses a View-like object with name 'Products'
       expect(dict.source.table).to.equal("Products");
     });
 
     it("dict_products layout.type is HASHED with snake_case fields", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.layout.type).to.equal("HASHED");
       expect(dict.layout).to.have.property("initial_array_size", 1024);
       expect(dict.layout).to.have.property("max_load_factor", 0.9);
@@ -787,17 +782,13 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it('dict_products lifetime.type is "SINGLE" with seconds: 3600', () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.lifetime.type).to.equal("SINGLE");
       expect(dict.lifetime.seconds).to.equal(3600);
     });
 
     it("dict_products columns include typeString (camelCase)", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.columns).to.be.an("array").with.length.greaterThan(0);
       const col = dict.columns[0];
       expect(col).to.have.property("typeString");
@@ -805,19 +796,24 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it("dict_products settings and comment are present", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_products"];
+      const dict = infraMap.olapDictionaries["dict_products"];
       expect(dict.settings).to.deep.equal({ max_execution_time: "30" });
       expect(dict.comment).to.equal("Product lookup dictionary");
     });
   });
 
   describe("subprocess: QUERY source — full CLI round-trip via moose-runner", () => {
-    let tmpDir: string;
+    let tmpDir: string | undefined;
+    let cachedResult: ReturnType<typeof runSerializer>;
+    let infraMap: Record<string, any>;
 
-    before(() => {
+    before(function (this: Mocha.Context) {
+      this.timeout(30_000);
       tmpDir = createTempProject(querySourceFixture());
+      cachedResult = runSerializer(tmpDir);
+      if (cachedResult.exitCode === 0) {
+        infraMap = parseDelimitedOutput(cachedResult.stdout);
+      }
     });
 
     after(() => {
@@ -825,51 +821,45 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it("exits with code 0", () => {
-      const { exitCode, stderr } = runSerializer(tmpDir);
-      expect(exitCode, `stderr: ${stderr}`).to.equal(0);
+      expect(cachedResult.exitCode, `stderr: ${cachedResult.stderr}`).to.equal(
+        0,
+      );
     });
 
     it("olapDictionaries section contains dict_by_query", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const infraMap = parseDelimitedOutput(stdout);
       expect(infraMap.olapDictionaries).to.have.property("dict_by_query");
     });
 
     it('dict_by_query source.type is "QUERY"', () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_by_query"];
+      const dict = infraMap.olapDictionaries["dict_by_query"];
       expect(dict.source.type).to.equal("QUERY");
     });
 
     it("dict_by_query source.query is a non-empty SQL string", () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_by_query"];
+      const dict = infraMap.olapDictionaries["dict_by_query"];
       expect(dict.source).to.have.property("query");
       expect(dict.source.query).to.be.a("string").and.include("SELECT");
     });
 
     it('dict_by_query lifetime.type is "STATIC" (lifetime: 0)', () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_by_query"];
+      const dict = infraMap.olapDictionaries["dict_by_query"];
       expect(dict.lifetime.type).to.equal("STATIC");
     });
 
     it('dict_by_query layout.type is "FLAT"', () => {
-      const { stdout } = runSerializer(tmpDir);
-      const dict =
-        parseDelimitedOutput(stdout).olapDictionaries["dict_by_query"];
+      const dict = infraMap.olapDictionaries["dict_by_query"];
       expect(dict.layout.type).to.equal("FLAT");
     });
   });
 
   describe("subprocess: malformed fixture — invalid dictionary should cause non-zero exit", () => {
-    let tmpDir: string;
+    let tmpDir: string | undefined;
+    let cachedResult: ReturnType<typeof runSerializer>;
 
-    before(() => {
+    before(function (this: Mocha.Context) {
+      this.timeout(30_000);
       tmpDir = createTempProject(malformedFixture());
+      cachedResult = runSerializer(tmpDir);
     });
 
     after(() => {
@@ -877,13 +867,11 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it("exits with non-zero status when the user file throws", () => {
-      const { exitCode } = runSerializer(tmpDir);
-      expect(exitCode).to.not.equal(0);
+      expect(cachedResult.exitCode).to.not.equal(0);
     });
 
     it("stderr contains an error message", () => {
-      const { stderr } = runSerializer(tmpDir);
-      expect(stderr).to.be.a("string").and.to.not.be.empty;
+      expect(cachedResult.stderr).to.be.a("string").and.to.not.be.empty;
     });
   });
 });
