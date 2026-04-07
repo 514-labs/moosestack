@@ -474,10 +474,10 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
         self.config = config
         self._column_list = _to_columns(t)
         self.life_cycle = config.life_cycle
-        self.metadata = {
-            **(config.metadata or {}),
-            "source": get_source_file_from_stack(),
-        }
+        self.metadata = {**(config.metadata or {})}
+        source_file = get_source_file_from_stack()
+        if "source" not in self.metadata and source_file:
+            self.metadata["source"] = {"file": source_file}
 
         # Build source_tables list for dependency tracking
         if config.source_table is not None:
