@@ -885,7 +885,14 @@ def _serialize_dict_source(config) -> dict:
     if config.source_query is not None:
         return {"type": "QUERY", "query": config.source_query}
     if config.external_source is not None:
-        ext = config.external_source.model_dump(exclude_none=True, by_alias=True)
+        from pydantic import SecretStr
+
+        raw = config.external_source.model_dump(exclude_none=True, by_alias=True)
+        # Unwrap SecretStr fields so the actual credential values reach Rust.
+        ext = {
+            k: (v.get_secret_value() if isinstance(v, SecretStr) else v)
+            for k, v in raw.items()
+        }
         return {"type": "EXTERNAL", "source": ext}
     raise ValueError("OlapDictionaryConfig has no source set")
 
@@ -1312,15 +1319,11 @@ def to_infra_map() -> dict:
         # Build top-level invalidate_query from DictionaryInvalidation if set.
         # Rust expects a raw SQL string: SELECT fn(column) FROM source_table
         invalidate_query = None
-        if d.config.invalidate is not None:
+        if d.config.invalidate is not None and len(d.source_tables) == 1:
             inv = d.config.invalidate
-            if d.source_tables:
-                # Strip backtick quoting to get the plain table reference
-                source_ref = d.source_tables[0].replace("`", "")
-                invalidate_query = f"SELECT {inv.fn}({inv.column}) FROM {source_ref}"
-            else:
-                # External or query source — caller must use a custom form
-                invalidate_query = f"SELECT {inv.fn}({inv.column})"
+            # Strip backtick quoting to get the plain table reference
+            source_ref = d.source_tables[0].replace("`", "")
+            invalidate_query = f"SELECT {inv.fn}({inv.column}) FROM {source_ref}"
 
         olap_dictionaries[name] = OlapDictionaryJson(
             name=d.name,
