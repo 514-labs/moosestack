@@ -451,7 +451,7 @@ fn validate_table_databases_and_clusters(
 }
 
 /// Execute migration operations with detailed error handling
-async fn execute_operations(
+pub(crate) async fn execute_operations(
     project: &Project,
     migration_plan: &MigrationPlan,
     client: &ConfiguredDBClient,

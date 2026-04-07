@@ -176,6 +176,7 @@ pub(crate) mod docs;
 pub mod feedback;
 pub mod format_query;
 pub mod harness;
+pub mod hybrid_migrate;
 pub mod kafka_pull;
 pub mod logs;
 pub mod ls;
