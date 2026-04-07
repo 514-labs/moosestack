@@ -63,6 +63,38 @@ impl ReconciliationFilter {
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
         }
     }
+
+    /// Merge all IDs from `other` into `self` (set union).
+    pub fn merge(&mut self, other: &ReconciliationFilter) {
+        self.table_ids.extend(other.table_ids.iter().cloned());
+        self.sql_resource_ids
+            .extend(other.sql_resource_ids.iter().cloned());
+        self.materialized_view_ids
+            .extend(other.materialized_view_ids.iter().cloned());
+        self.view_ids.extend(other.view_ids.iter().cloned());
+        self.select_row_policy_ids
+            .extend(other.select_row_policy_ids.iter().cloned());
+    }
+
+    /// Re-prefix table IDs from `source_db` to `target_db`.
+    ///
+    /// Table IDs are formatted as `{database}_{name}_{version}`. When the caller (e.g. a
+    /// local CLI) has a different `default_database` than the server, the table IDs it
+    /// produces carry the wrong prefix. This method strips `source_db` and prepends
+    /// `target_db` so the IDs match what the server's reconciliation expects.
+    pub fn reprefix_table_ids(&mut self, source_db: &str, target_db: &str) {
+        if source_db == target_db {
+            return;
+        }
+        self.table_ids = self
+            .table_ids
+            .iter()
+            .map(|id| match id.strip_prefix(source_db) {
+                Some(suffix) => format!("{target_db}{suffix}"),
+                None => id.clone(),
+            })
+            .collect();
+    }
 }
 
 /// Errors that can occur during the planning process.
