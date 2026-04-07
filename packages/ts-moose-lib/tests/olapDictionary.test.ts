@@ -9,6 +9,7 @@ import {
   OlapDictionaryConfig,
   COMPLEX_KEY_LAYOUTS,
 } from "../src/dmv2/sdk/olapDictionary";
+import { getOlapDictionaries, getOlapDictionary } from "../src/dmv2/registry";
 import { LifeCycle } from "../src/dmv2/sdk/lifeCycle";
 import { sql } from "../src/sqlHelpers";
 import { ClickHouseInt } from "../src/dataModels/types";
@@ -116,6 +117,121 @@ describe("OlapDictionary", () => {
 
       expect(dict.name).to.equal("dict_http");
       expect(getMooseInternal().olapDictionaries.has("dict_http")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (clickhouse)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_ch", {
+        externalSource: {
+          type: "clickhouse",
+          host: "remote.example.com",
+          port: 9000,
+          user: "default",
+          password: "secret",
+          db: "mydb",
+          table: "products",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_ch")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (mysql)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_mysql", {
+        externalSource: {
+          type: "mysql",
+          host: "mysql.example.com",
+          port: 3306,
+          user: "root",
+          password: "pass",
+          db: "shop",
+          table: "products",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_mysql")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (postgresql)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_pg", {
+        externalSource: {
+          type: "postgresql",
+          host: "pg.example.com",
+          port: 5432,
+          user: "postgres",
+          password: "pass",
+          db: "shop",
+          table: "products",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_pg")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (redis)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_redis", {
+        externalSource: {
+          type: "redis",
+          host: "redis.example.com",
+          port: 6379,
+          storageType: "simple",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_redis")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (mongodb)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_mongo", {
+        externalSource: {
+          type: "mongodb",
+          host: "mongo.example.com",
+          port: 27017,
+          user: "admin",
+          password: "pass",
+          db: "shop",
+          collection: "products",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_mongo")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (executable)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_exec", {
+        externalSource: {
+          type: "executable",
+          command: "/usr/local/bin/dict-loader",
+          format: "TabSeparated",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_exec")).to.be.true;
+    });
+
+    it("should create a dictionary with externalSource (s3)", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_s3", {
+        externalSource: {
+          type: "s3",
+          url: "s3://my-bucket/products.csv",
+          format: "CSV",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+      expect(getMooseInternal().olapDictionaries.has("dict_s3")).to.be.true;
     });
 
     it("should set columns from compiler-injected schema", () => {
@@ -598,6 +714,62 @@ describe("OlapDictionary", () => {
       expect(() => dict.has()).to.throw("key argument is required");
     });
 
+    it("get() should throw when too few keys passed (1 passed, 2 required)", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_arity_few", {
+        sourceTable: source,
+        primaryKey: ["ProductId", "Category"],
+        layout: { type: "COMPLEX_KEY_HASHED" },
+        lifetime: 3600,
+      });
+
+      expect(() => dict.get("ProductName", "only_one_key")).to.throw(
+        "expected 2 key argument(s) but got 1",
+      );
+    });
+
+    it("get() should throw when too many keys passed (2 passed, 1 required)", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_arity_many", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      expect(() => dict.get("ProductName", "key_one", "extra_key")).to.throw(
+        "expected 1 key argument(s) but got 2",
+      );
+    });
+
+    it("has() should throw when too few keys passed (1 passed, 2 required)", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_has_arity_few", {
+        sourceTable: source,
+        primaryKey: ["ProductId", "Category"],
+        layout: { type: "COMPLEX_KEY_HASHED" },
+        lifetime: 3600,
+      });
+
+      expect(() => dict.has("only_one_key")).to.throw(
+        "expected 2 key argument(s) but got 1",
+      );
+    });
+
+    it("has() should throw when too many keys passed (2 passed, 1 required)", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_has_arity_many", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      expect(() => dict.has("key_one", "extra_key")).to.throw(
+        "expected 1 key argument(s) but got 2",
+      );
+    });
+
     it("dictionary should be interpolatable in sql template tag", () => {
       const source = makeSourceTable();
       const dict = new OlapDictionary<ProductLookup>("dict_interp", {
@@ -645,7 +817,6 @@ describe("OlapDictionary", () => {
         lifetime: 0,
       });
 
-      const { getOlapDictionaries } = require("../src/dmv2/registry");
       const dicts = getOlapDictionaries();
       expect(dicts.size).to.equal(2);
       expect(dicts.has("dict_a")).to.be.true;
@@ -661,7 +832,6 @@ describe("OlapDictionary", () => {
         lifetime: 3600,
       });
 
-      const { getOlapDictionary } = require("../src/dmv2/registry");
       expect(getOlapDictionary("dict_get_by_name")).to.equal(dict);
       expect(getOlapDictionary("nonexistent")).to.be.undefined;
     });
