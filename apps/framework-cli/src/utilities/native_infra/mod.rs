@@ -1,5 +1,6 @@
 pub mod binary_manager;
 pub mod clickhouse;
+pub mod devredis;
 pub mod errors;
 pub mod temporal;
 
@@ -13,23 +14,56 @@ use binary_manager::BinaryManager;
 use errors::NativeInfraError;
 use std::path::Path;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::runtime::Handle;
 use tracing::info;
 
-/// Fully native infrastructure provider: ClickHouse + Temporal as local processes.
+/// Holds handles to embedded servers so they can be shut down from anywhere.
+struct EmbeddedHandles {
+    devredis: Option<devredis::DevRedisHandle>,
+}
+
+/// Global storage for embedded server handles.
+static EMBEDDED_HANDLES: OnceLock<Arc<Mutex<Option<EmbeddedHandles>>>> = OnceLock::new();
+
+fn handles_lock() -> &'static Arc<Mutex<Option<EmbeddedHandles>>> {
+    EMBEDDED_HANDLES.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+/// Shut down any running embedded servers.
 ///
-/// No Docker dependency. ClickHouse and Temporal run as native child processes.
-/// Embedded devkafka and devredis support is added by subsequent PRs.
+/// This is safe to call from both sync and async contexts — it signals shutdown
+/// without awaiting. The embedded tasks will stop on their own.
+pub fn shutdown_embedded_servers() {
+    let lock = handles_lock();
+    let guard = lock.lock().unwrap();
+
+    if let Some(handles) = guard.as_ref() {
+        if let Some(dr) = &handles.devredis {
+            info!("Signaling embedded devredis to shut down");
+            dr.signal_shutdown();
+        }
+    }
+}
+
+/// Fully native infrastructure provider: devredis + ClickHouse + Temporal as local processes.
+///
+/// No Docker dependency. devredis runs as an embedded tokio task.
+/// ClickHouse and Temporal run as native child processes.
 pub struct NativeInfraProvider {
     /// Binary manager for downloading/caching native binaries.
     binary_manager: BinaryManager,
+    /// Handle to the tokio runtime for spawning embedded servers.
+    rt_handle: Handle,
 }
 
 impl NativeInfraProvider {
     pub fn new(_settings: &Settings) -> Result<Self, NativeInfraError> {
         Ok(Self {
             binary_manager: BinaryManager::new()?,
+            rt_handle: Handle::current(),
         })
     }
 
@@ -64,6 +98,37 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn start(&self, project: &Project) -> Result<(), RoutineFailure> {
+        // Start embedded devredis (Redis needed early for leadership/presence)
+        let devredis_handle = with_timing("Start devredis", || {
+            with_spinner_completion(
+                "Starting native Redis (devredis)",
+                "Native Redis (devredis) started",
+                || {
+                    let port = project.redis_config.port;
+                    let handle = self
+                        .rt_handle
+                        .block_on(devredis::start_embedded(port))
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    Ok::<_, anyhow::Error>(handle)
+                },
+                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            )
+        })
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Failed".to_string(), "to start devredis".to_string()),
+                e,
+            )
+        })?;
+
+        // Store embedded handles for later shutdown
+        {
+            let mut guard = handles_lock().lock().unwrap();
+            *guard = Some(EmbeddedHandles {
+                devredis: Some(devredis_handle),
+            });
+        }
+
         // Start native ClickHouse
         let ch_binary =
             clickhouse::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
@@ -123,6 +188,9 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn stop(&self, project: &Project, _settings: &Settings) -> Result<(), RoutineFailure> {
+        // Shut down embedded devredis
+        shutdown_embedded_servers();
+
         // Kill native child processes via their PID files
         kill_pid_file(&clickhouse::pid_file_path(project));
         kill_pid_file(&temporal::pid_file_path(project));
