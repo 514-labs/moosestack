@@ -5,6 +5,17 @@ import { getSourceFileFromStack } from "../utils/stackTrace";
 import { formatTableReference } from "./tableReferenceUtils";
 
 /**
+ * Returns the registry key for a view, using `database::name` when a database is set.
+ * Centralizes the key format so all callers stay in sync.
+ */
+export function viewRegistryKey(
+  database: string | undefined,
+  name: string,
+): string {
+  return database ? `${database}::${name}` : name;
+}
+
+/**
  * Configuration options for creating a View.
  */
 export interface ViewConfig {
@@ -66,7 +77,8 @@ export class View {
       (
         typeof configOrSelectStatement === "object" &&
         configOrSelectStatement !== null &&
-        "selectStatement" in configOrSelectStatement
+        "selectStatement" in configOrSelectStatement &&
+        "baseTables" in configOrSelectStatement
       ) ?
         configOrSelectStatement
       : {
@@ -101,8 +113,7 @@ export class View {
     // to allow same view name in different databases.
     // Using '::' as separator to avoid ambiguity with view names containing dots.
     const views = getMooseInternal().views;
-    const registryKey =
-      this.database ? `${this.database}::${this.name}` : this.name;
+    const registryKey = viewRegistryKey(this.database, this.name);
     if (!isClientOnlyMode() && views.has(registryKey)) {
       const qualifiedName =
         this.database ? `${this.database}.${this.name}` : this.name;

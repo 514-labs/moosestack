@@ -40,7 +40,7 @@ import {
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
-import { View } from "./sdk/view";
+import { View, viewRegistryKey } from "./sdk/view";
 import { SelectRowPolicy } from "./sdk/selectRowPolicy";
 import {
   getSourceDir,
@@ -1315,7 +1315,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
         } else if (r.kind === "View") {
           const view = r as View;
           return {
-            id: view.database ? `${view.database}::${view.name}` : view.name,
+            id: viewRegistryKey(view.database, view.name),
             kind: "View",
           };
         } else if (r.kind === "MaterializedView") {
@@ -1348,7 +1348,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
         } else if (r.kind === "View") {
           const view = r as View;
           return {
-            id: view.database ? `${view.database}::${view.name}` : view.name,
+            id: viewRegistryKey(view.database, view.name),
             kind: "View",
           };
         } else if (r.kind === "MaterializedView") {
@@ -1402,8 +1402,7 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
 
   // Serialize views with structured data
   registry.views.forEach((view) => {
-    const viewKey =
-      view.database ? `${view.database}::${view.name}` : view.name;
+    const viewKey = viewRegistryKey(view.database, view.name);
     views[viewKey] = {
       name: view.name,
       ...(view.database !== undefined && { database: view.database }),
