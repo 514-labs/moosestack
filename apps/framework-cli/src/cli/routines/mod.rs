@@ -122,8 +122,7 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
-    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
-    ConfirmationPolicy,
+    confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
@@ -135,7 +134,7 @@ use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
-use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
+use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, STORE_CRED_PROMPT};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
@@ -975,48 +974,16 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
-
-    if !execute_migration_yaml {
-        info!("Migration file not found.")
-    }
-
-    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
-        info!("prod_auto_allow_destructive is false, analysing risk.");
-        let risk = classify_plan_risk(&plan.changes);
-        if risk.is_destructive() {
-            let summary = risk
-                .destructive_changes
-                .iter()
-                .map(|c| format!("  - {c}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            return Err(anyhow::anyhow!(
-                "Production startup blocked: the computed infrastructure diff contains {} \
-                 destructive operation(s) but no plan.yaml was found.\n\
-                 {}\n\n\
-                 To proceed, either:\n  \
-                 1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
-                 2. Set `prod_auto_allow_destructive = true` under [migration_config] \
-                 in moose.config.toml to allow unplanned destructive changes.",
-                risk.destructive_changes.len(),
-                summary,
-            ));
-        } else {
-            info!("PlanRisk: {:?}, proceeding.", risk)
-        }
-    }
-
-    if execute_migration_yaml {
-        migrate::execute_migration_plan(
-            &project,
-            &project.clickhouse_config,
-            &current_state.tables,
-            &plan.target_infra_map,
-            &*state_storage,
-        )
-        .await?;
-    };
+    // Hybrid migration: auto-apply safe ops dynamically, use plan files for destructive/backfill
+    hybrid_migrate::execute_hybrid_migration(
+        &project,
+        &current_state.tables,
+        &plan.target_infra_map,
+        &plan.changes,
+        &*state_storage,
+        project.migration_config.prod_auto_allow_destructive,
+    )
+    .await?;
 
     plan_validator::validate(&project, &plan)?;
 
@@ -1026,20 +993,17 @@ pub async fn start_production_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
+    // skip_olap is now always true — OLAP handled by hybrid executor above
     let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
-        skip_olap: execute_migration_yaml,
+        skip_olap: true,
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
     })
     .await?;
-
-    state_storage
-        .store_infrastructure_map(&plan.target_infra_map)
-        .await?;
 
     let infra_map: &'static InfrastructureMap = Box::leak(Box::new(plan.target_infra_map));
 

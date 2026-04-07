@@ -2,31 +2,26 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
-use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
-use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
-use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
-use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::infrastructure::olap::clickhouse::config::ClusterConfig;
 use crate::infrastructure::olap::clickhouse::{
-    check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
+    create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
 use crate::project::Project;
-use crate::utilities::constants::{
-    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
-};
 use anyhow::Result;
+
+#[cfg(test)]
+use crate::framework::core::infrastructure::table::Table;
+#[cfg(test)]
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+#[cfg(test)]
 use std::collections::HashMap;
 
-/// Migration files loaded from disk
-struct MigrationFiles {
-    plan: MigrationPlan,
-    state_before: InfrastructureMap,
-    state_after: InfrastructureMap,
-}
-
 /// Result of drift detection
+#[cfg(test)]
 enum DriftStatus {
     NoDrift,
     AlreadyAtTarget,
@@ -37,60 +32,8 @@ enum DriftStatus {
     },
 }
 
-/// Load and parse migration files from disk
-fn load_migration_files() -> Result<MigrationFiles> {
-    // Check if all required migration files exist
-    let missing_files: Vec<&str> = [
-        MIGRATION_FILE,
-        MIGRATION_BEFORE_STATE_FILE,
-        MIGRATION_AFTER_STATE_FILE,
-    ]
-    .iter()
-    .filter(|path| !std::path::Path::new(path).exists())
-    .copied()
-    .collect();
-
-    if !missing_files.is_empty() {
-        anyhow::bail!(
-            "Missing migration file(s): {}\n\
-             \n\
-             You need to generate a migration plan first:\n\
-             \n\
-             moose generate migration --clickhouse-url <url> --save\n\
-             \n\
-             This will create:\n\
-             - {} (the migration plan to execute)\n\
-             - {} (snapshot of remote state)\n\
-             - {} (snapshot of local code)\n\
-             \n\
-             After reviewing the plan, run:\n\
-             moose migrate --clickhouse-url <url>\n",
-            missing_files.join(", "),
-            MIGRATION_FILE,
-            MIGRATION_BEFORE_STATE_FILE,
-            MIGRATION_AFTER_STATE_FILE
-        );
-    }
-
-    // Load and parse files
-    let plan_content = std::fs::read_to_string(MIGRATION_FILE)?;
-    let plan: MigrationPlan =
-        serde_json::from_value(serde_yaml::from_str::<serde_json::Value>(&plan_content)?)?;
-
-    let before_content = std::fs::read_to_string(MIGRATION_BEFORE_STATE_FILE)?;
-    let state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
-
-    let after_content = std::fs::read_to_string(MIGRATION_AFTER_STATE_FILE)?;
-    let state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
-
-    Ok(MigrationFiles {
-        plan,
-        state_before,
-        state_after,
-    })
-}
-
 /// Strips both metadata and ignored fields from tables
+#[cfg(test)]
 fn strip_metadata_and_ignored_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
@@ -123,6 +66,7 @@ fn strip_metadata_and_ignored_fields(
 /// * `DriftStatus::NoDrift` - Database matches expected state, safe to proceed
 /// * `DriftStatus::AlreadyAtTarget` - Database already matches target, migration already applied
 /// * `DriftStatus::DriftDetected` - Database has diverged, migration plan is stale
+#[cfg(test)]
 fn detect_drift(
     current_tables: &HashMap<String, Table>,
     expected_tables: &HashMap<String, Table>,
@@ -172,28 +116,6 @@ fn detect_drift(
         extra_tables,
         missing_tables,
         changed_tables,
-    }
-}
-
-/// Report drift details to the user
-fn report_drift(drift: &DriftStatus) {
-    if let DriftStatus::DriftDetected {
-        extra_tables,
-        missing_tables,
-        changed_tables,
-    } = drift
-    {
-        println!("\n❌ Migration validation failed - database state has changed since plan was generated\n");
-
-        if !extra_tables.is_empty() {
-            println!("  Tables added to database: {:?}", extra_tables);
-        }
-        if !missing_tables.is_empty() {
-            println!("  Tables removed from database: {:?}", missing_tables);
-        }
-        if !changed_tables.is_empty() {
-            println!("  Tables with schema changes: {:?}", changed_tables);
-        }
     }
 }
 
@@ -684,90 +606,6 @@ pub async fn execute_migration(
     }
 
     result
-}
-
-/// Execute pre-planned migration
-///
-/// It validates the plan and executes it if valid. After successful execution,
-/// it saves the new infrastructure state.
-pub async fn execute_migration_plan(
-    project: &Project,
-    clickhouse_config: &ClickHouseConfig,
-    current_tables: &HashMap<String, Table>,
-    target_infra_map: &InfrastructureMap,
-    state_storage: &dyn StateStorage,
-) -> Result<()> {
-    println!("Executing migration plan...");
-
-    // Load migration files
-    let files = load_migration_files()?;
-
-    // Display plan info
-    println!("✓ Loaded approved migration plan from {:?}", MIGRATION_FILE);
-    println!("  Plan created: {}", files.plan.created_at);
-    println!("  Total operations: {}", files.plan.total_operations());
-    println!();
-    println!("Safety checks:");
-    println!("  • Expected = Database state when plan was generated");
-    println!("  • Current  = Database state right now");
-    println!("  • Target   = What your local code defines");
-    println!();
-
-    // Validate migration plan
-    println!("Validating migration plan...");
-    let drift = detect_drift(
-        current_tables,
-        &files.state_before.tables,
-        &target_infra_map.tables,
-        &project.migration_config.ignore_operations,
-    );
-
-    match drift {
-        DriftStatus::NoDrift => {
-            println!("  ✓ Current = Expected (no drift detected)");
-
-            // Check target matches code
-            if files.state_after.tables != target_infra_map.tables {
-                anyhow::bail!(
-                    "The desired state of the plan is different from the current code.\n\
-                     The migration was perhaps generated before additional code changes.\n\
-                     Please regenerate the migration plan:\n\
-                     \n\
-                     moose generate migration --clickhouse-url <url> --save\n"
-                );
-            }
-            println!("  ✓ Target = Code (plan is still valid)");
-
-            // Execute operations
-            let client = create_client(clickhouse_config.clone());
-            check_ready(&client).await?;
-            execute_operations(project, &files.plan, &client).await?;
-        }
-        DriftStatus::AlreadyAtTarget => {
-            println!("  ✓ Database already matches target state - skipping migration");
-        }
-        DriftStatus::DriftDetected { .. } => {
-            report_drift(&drift);
-            anyhow::bail!(
-                "\nThe database state has changed since the migration plan was generated.\n\
-                 This could happen if:\n\
-                 - Another developer applied changes\n\
-                 - Manual database modifications were made\n\
-                 - The plan is stale\n\
-                 \n\
-                 Please regenerate the migration plan:\n\
-                 \n\
-                 moose generate migration --clickhouse-url <url> --save\n"
-            );
-        }
-    }
-
-    // Save the complete infrastructure state
-    state_storage
-        .store_infrastructure_map(target_infra_map)
-        .await?;
-
-    Ok(())
 }
 
 #[cfg(test)]
