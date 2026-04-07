@@ -1157,7 +1157,7 @@ pub async fn top_command_handler(
             let _ = clean_project(&project_arc, &provider)?;
 
             // Also kill any native infrastructure processes started by --alpha mode.
-            // Embedded devredis is shut down via its handle;
+            // Embedded devkafka/devredis are shut down via their handles;
             // ClickHouse/Temporal are killed via PID files.
             crate::utilities::native_infra::shutdown_embedded_servers();
             let ch_pid = project_arc
