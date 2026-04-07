@@ -1,5 +1,12 @@
 """Tests for OlapDictionary in moose_lib.dmv2.olap_dictionary."""
 
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
+
 import pytest
 from pydantic import BaseModel, ValidationError
 
@@ -559,3 +566,181 @@ def test_all_external_source_types_have_type_field():
         assert hasattr(src, "type"), f"{src.__class__.__name__} missing 'type'"
         d = src.model_dump(exclude_none=True)
         assert "type" in d
+
+
+# ─── Integration: dmv2_serializer subprocess round-trip ──────────────────────
+#
+# These tests verify that moose_lib.dmv2_serializer (the same entry point the
+# Rust CLI calls) can import a real user Python file, build the infra map, and
+# produce JSON that correctly represents an OlapDictionary.  The subprocess
+# approach mirrors exactly what `moose build` does in production.
+
+
+def _run_serializer(app_dir: str, moose_lib_root: str) -> dict:
+    """Run `python -m moose_lib.dmv2_serializer` and return the parsed infra map."""
+    env = {
+        **os.environ,
+        "PYTHONPATH": f"{moose_lib_root}{os.pathsep}{app_dir}",
+        "MOOSE_SOURCE_DIR": "app",
+        "IS_LOADING_INFRA_MAP": "true",
+    }
+    result = subprocess.run(
+        [sys.executable, "-u", "-m", "moose_lib.dmv2_serializer"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=app_dir,
+    )
+    assert result.returncode == 0, (
+        f"dmv2_serializer exited with code {result.returncode}.\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    marker = "___MOOSE_STUFF___start"
+    end_marker = "end___MOOSE_STUFF___"
+    assert (
+        marker in result.stdout
+    ), f"Output marker not found in stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    json_str = result.stdout.split(marker, 1)[1].split(end_marker, 1)[0].strip()
+    return json.loads(json_str)
+
+
+def _moose_lib_root() -> str:
+    """Return the directory that contains the moose_lib package."""
+    import moose_lib
+
+    return str(os.path.dirname(os.path.dirname(moose_lib.__file__)))
+
+
+def test_serializer_parses_olap_dictionary_with_source_table():
+    """A Python file that defines an OlapDictionary backed by an OlapTable
+    must round-trip through dmv2_serializer with all key fields intact."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import HashedLayout, DictionaryLifetime
+
+        class Product(BaseModel):
+            product_id: str
+            product_name: str
+            price_level: int
+
+        products_table = OlapTable[Product](name="products")
+
+        dict_products = OlapDictionary[Product](
+            name="dict_products",
+            config=OlapDictionaryConfig(
+                source_table=products_table,
+                primary_key=["product_id"],
+                layout=HashedLayout(),
+                lifetime=DictionaryLifetime(min=60, max=300),
+            ),
+        )
+    """
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    dicts = infra_map.get("olapDictionaries", {})
+    assert "dict_products" in dicts, f"Expected dict_products in {list(dicts.keys())}"
+
+    d = dicts["dict_products"]
+    assert d["name"] == "dict_products"
+    assert d["primaryKey"] == ["product_id"]
+    assert d["source"]["type"] == "TABLE"
+    assert d["source"]["table"] == "products"
+    assert d["layout"]["type"] in ("HASHED", "Hashed", "hashed")
+    assert d["lifetime"]["type"] == "RANGE"
+    assert d["lifetime"]["min"] == 60
+    assert d["lifetime"]["max"] == 300
+
+
+def test_serializer_parses_olap_dictionary_with_source_query():
+    """An OlapDictionary that uses source_query instead of source_table
+    must be recognised and serialised correctly."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import HashedLayout
+
+        class Region(BaseModel):
+            region_id: str
+            region_name: str
+
+        regions_table = OlapTable[Region](name="regions")
+
+        dict_regions = OlapDictionary[Region](
+            name="dict_regions",
+            config=OlapDictionaryConfig(
+                source_query="SELECT region_id, region_name FROM regions",
+                source_tables=[regions_table],
+                primary_key=["region_id"],
+                layout=HashedLayout(),
+            ),
+        )
+    """
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    dicts = infra_map.get("olapDictionaries", {})
+    assert "dict_regions" in dicts, f"Expected dict_regions in {list(dicts.keys())}"
+
+    d = dicts["dict_regions"]
+    assert d["source"]["type"] == "QUERY"
+    assert "SELECT" in d["source"]["query"]
+
+
+def test_serializer_syntax_error_in_user_file_fails_gracefully():
+    """A user file with a syntax error must cause dmv2_serializer to exit
+    non-zero; the error should appear in stderr and not produce a truncated
+    infra map that silently omits resources."""
+    bad_main_py = textwrap.dedent(
+        """\
+        from moose_lib import OlapTable
+        this is not valid python !!!
+    """
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(bad_main_py)
+
+        env = {
+            **os.environ,
+            "PYTHONPATH": f"{_moose_lib_root()}{os.pathsep}{tmp}",
+            "MOOSE_SOURCE_DIR": "app",
+            "IS_LOADING_INFRA_MAP": "true",
+        }
+        result = subprocess.run(
+            [sys.executable, "-u", "-m", "moose_lib.dmv2_serializer"],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=tmp,
+        )
+
+    assert result.returncode != 0, (
+        "Expected non-zero exit for a file with a syntax error, "
+        f"but got returncode={result.returncode}"
+    )
+    assert "SyntaxError" in result.stderr or "SyntaxError" in result.stdout
