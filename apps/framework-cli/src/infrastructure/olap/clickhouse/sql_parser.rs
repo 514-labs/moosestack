@@ -812,11 +812,13 @@ fn is_safe_bare_identifier(value: &str) -> bool {
 
 /// Unquotes an identifier in place, but only when it is safe to do so.
 /// Preserves backtick quoting for identifiers that contain special characters.
+///
+/// Note: sqlparser already strips surrounding backticks when parsing, so
+/// `ident.value` for `` `table-one` `` is `"table-one"`, not `` "`table-one`" ``.
+/// We only need to clear `quote_style` — no value mutation required.
 fn unquote_if_safe(ident: &mut Ident) {
-    let clean = ident.value.replace('`', "");
-    if is_safe_bare_identifier(&clean) {
+    if is_safe_bare_identifier(&ident.value) {
         ident.quote_style = None;
-        ident.value = clean;
     }
 }
 
@@ -2966,14 +2968,27 @@ ORDER BY id"#;
     #[test]
     fn test_normalize_sql_mv_inner_join_special_char_table_names() {
         // Full user-reported case: Python MV with INNER JOIN and hyphenated table/column names.
-        // The SELECT is used verbatim in CREATE MATERIALIZED VIEW AS {select_sql}.
-        let select_sql = "SELECT a.`event-type`, b.`session-id` \
-                          FROM `raw-events` a \
-                          INNER JOIN `session-data` b ON a.`session-id` = b.`session-id`";
+        // Uses a complete CREATE MATERIALIZED VIEW statement to exercise pre_visit_statement()
+        // and the TO-clause normalization path, which a bare SELECT would not reach.
+        let sql = "CREATE MATERIALIZED VIEW `mv-name` \
+                   TO `target-table` AS \
+                   SELECT a.`event-type`, b.`session-id` \
+                   FROM `raw-events` a \
+                   INNER JOIN `session-data` b ON a.`session-id` = b.`session-id`";
 
-        let normalized = normalize_sql_for_comparison(select_sql, "");
+        let normalized = normalize_sql_for_comparison(sql, "");
 
-        // All hyphenated identifiers must keep their backticks.
+        // MV name and TO target with hyphens must keep backticks (pre_visit_statement path).
+        assert!(
+            normalized.contains("`mv-name`"),
+            "Backtick on MV name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`target-table`"),
+            "Backtick on TO table name must be preserved; got: {normalized}"
+        );
+
+        // FROM/JOIN table names and column refs must also keep backticks.
         assert!(
             normalized.contains("`raw-events`"),
             "Backtick on `raw-events` must be preserved; got: {normalized}"
