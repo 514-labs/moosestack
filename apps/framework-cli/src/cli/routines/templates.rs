@@ -2,6 +2,7 @@ use flate2::read::GzDecoder;
 use futures::StreamExt;
 use home::home_dir;
 use regex::Regex;
+use serde::Serialize;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -14,6 +15,7 @@ use tracing::warn;
 use super::RoutineFailure;
 use super::RoutineSuccess;
 use crate::cli::display::{Message, MessageType};
+use crate::cli::prompt_user;
 use crate::cli::settings::user_directory;
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
@@ -23,6 +25,7 @@ use crate::utilities::git::is_git_repo;
 const TEMPLATE_REGISTRY_URL: &str = "https://templates.514.dev";
 const DOWNLOAD_DIR: &str = "templates";
 const LOCAL_TEMPLATE_DIR: &str = "template-packages";
+const TEMPLATE_LIST_SCHEMA_VERSION: u32 = 1;
 
 // Add a new struct to represent template config
 #[derive(Debug)]
@@ -45,6 +48,24 @@ impl TemplateConfig {
                 .unwrap_or(true),
         })
     }
+}
+
+/// Metadata for a visible project template returned by `moose template list`.
+#[derive(Debug, Serialize, PartialEq, Eq, Clone)]
+pub struct TemplateInfo {
+    /// Template identifier used with `moose init`.
+    pub name: String,
+    /// Programming language used by the template, such as `typescript` or `python`.
+    pub language: String,
+    /// Human-readable description shown in listings and editor pickers.
+    pub description: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct TemplateListJson {
+    schema_version: u32,
+    template_version: String,
+    templates: Vec<TemplateInfo>,
 }
 
 // TODO - no need to download every time, once cached once, use the cached version
@@ -263,7 +284,7 @@ pub async fn get_template_config(
         return Err(RoutineFailure::error(Message {
             action: "Template".to_string(),
             details: format!(
-                "Template '{}' not found. Available templates:\n{}",
+                "Template '{}' not found. Available templates:\n{}\n\nLooking for a full example app? Check https://github.com/514-labs/moosestack/tree/main/examples",
                 template_name,
                 available_templates.join("\n")
             ),
@@ -281,16 +302,27 @@ pub async fn get_template_config(
     Ok(template_config)
 }
 
-pub async fn list_available_templates(
-    template_version: &str,
-) -> Result<RoutineSuccess, RoutineFailure> {
-    let manifest = get_template_manifest(template_version).await.map_err(|e| {
-        RoutineFailure::error(Message {
-            action: "Templates".to_string(),
-            details: format!("Failed to load template manifest: {e:?}"),
+fn collect_template_infos(templates: &toml::value::Table) -> Vec<TemplateInfo> {
+    let mut template_infos: Vec<TemplateInfo> = templates
+        .iter()
+        .filter_map(|(name, config)| {
+            TemplateConfig::from_toml(config).and_then(|config| {
+                config.visible.then_some(TemplateInfo {
+                    name: name.clone(),
+                    language: config.language,
+                    description: config.description,
+                })
+            })
         })
-    })?;
+        .collect();
 
+    template_infos.sort_by(|left, right| left.name.cmp(&right.name));
+    template_infos
+}
+
+fn visible_template_infos_from_manifest(
+    manifest: &Value,
+) -> Result<Vec<TemplateInfo>, RoutineFailure> {
     let templates = manifest.get("templates").ok_or_else(|| {
         RoutineFailure::error(Message {
             action: "Templates".to_string(),
@@ -298,42 +330,189 @@ pub async fn list_available_templates(
         })
     })?;
 
-    let available_templates: Vec<String> = templates
-        .as_table()
-        .map(|table| {
-            table
-                .iter()
-                .filter_map(|(name, config)| {
-                    TemplateConfig::from_toml(config).and_then(|config| {
-                        // Filter out templates with visible=false
-                        if config.visible {
-                            Some(format!(
-                                "  - {} ({}) - {}",
-                                name, config.language, config.description
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect()
+    let templates_table = templates.as_table().ok_or_else(|| {
+        RoutineFailure::error(Message {
+            action: "Templates".to_string(),
+            details: "Invalid manifest: templates section must be a table".to_string(),
         })
-        .unwrap_or_default();
+    })?;
+
+    Ok(collect_template_infos(templates_table))
+}
+
+/// Returns visible template metadata for the requested template manifest version.
+///
+/// This loads the manifest for `template_version`, filters out hidden templates,
+/// and returns the remaining entries sorted by name. It returns
+/// `RoutineFailure` when the manifest cannot be loaded or is missing the
+/// expected `templates` section.
+pub async fn get_visible_template_infos(
+    template_version: &str,
+) -> Result<Vec<TemplateInfo>, RoutineFailure> {
+    let manifest = get_template_manifest(template_version).await.map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Templates".to_string(),
+            details: format!("Failed to load template manifest: {e:?}"),
+        })
+    })?;
+
+    visible_template_infos_from_manifest(&manifest)
+}
+
+pub async fn list_available_templates(
+    template_version: &str,
+    json: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let template_infos = get_visible_template_infos(template_version).await?;
+
+    if json {
+        let payload = TemplateListJson {
+            schema_version: TEMPLATE_LIST_SCHEMA_VERSION,
+            template_version: template_version.to_string(),
+            templates: template_infos,
+        };
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload).map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "Templates".to_string(),
+                    details: format!("Failed to serialize templates: {e}"),
+                })
+            })?
+        );
+
+        return Ok(RoutineSuccess::success(Message::new(
+            String::new(),
+            String::new(),
+        )));
+    }
 
     let output = format!(
         "Available templates for version {}:
 {}",
         template_version,
-        available_templates.join(
-            "
-"
-        )
+        template_infos
+            .iter()
+            .map(|template| format!(
+                "  - {} ({}) - {}",
+                template.name, template.language, template.description
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 
     Ok(RoutineSuccess::success(Message::new(
         "Templates".to_string(),
         output,
     )))
+}
+
+pub async fn prompt_for_template_name() -> Result<String, RoutineFailure> {
+    let mut default_template = "typescript".to_string();
+
+    match get_visible_template_infos(CLI_VERSION).await {
+        Ok(templates) if !templates.is_empty() => {
+            if let Some(candidate) = choose_default_template(&templates) {
+                default_template = candidate.to_string();
+            }
+            return prompt_for_template_selection(&templates, &default_template);
+        }
+        Ok(_) => {}
+        Err(error) => {
+            show_message!(error.message_type, error.message);
+        }
+    }
+
+    Ok(prompt_user(
+        "Template name",
+        Some(&default_template),
+        Some("Run `moose template list` if you want the full catalog."),
+    )?
+    .to_lowercase())
+}
+
+fn choose_default_template(templates: &[TemplateInfo]) -> Option<&str> {
+    templates
+        .iter()
+        .find(|template| template.name == "typescript")
+        .or_else(|| templates.first())
+        .map(|template| template.name.as_str())
+}
+
+fn prompt_for_template_selection(
+    templates: &[TemplateInfo],
+    default_template: &str,
+) -> Result<String, RoutineFailure> {
+    let default_index = templates
+        .iter()
+        .position(|template| template.name == default_template)
+        .unwrap_or(0);
+    let default_selection = (default_index + 1).to_string();
+
+    loop {
+        let options = templates
+            .iter()
+            .enumerate()
+            .map(|(index, template)| {
+                let default_suffix = if index == default_index {
+                    " [default]"
+                } else {
+                    ""
+                };
+                format!(
+                    "  [{}] {} ({}) - {}{}",
+                    index + 1,
+                    template.name,
+                    template.language,
+                    template.description,
+                    default_suffix
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let selection = prompt_user(
+            &format!("Select template\n{options}"),
+            Some(&default_selection),
+            Some("Choose a number or press enter to accept the default."),
+        )?;
+
+        match resolve_template_selection(&selection, templates) {
+            Ok(template_name) => return Ok(template_name),
+            Err(details) => {
+                show_message!(
+                    MessageType::Warning,
+                    Message::new("Template".to_string(), details)
+                );
+            }
+        }
+    }
+}
+
+fn resolve_template_selection(
+    selection: &str,
+    templates: &[TemplateInfo],
+) -> Result<String, String> {
+    let trimmed = selection.trim();
+
+    if let Ok(index) = trimmed.parse::<usize>() {
+        if (1..=templates.len()).contains(&index) {
+            return Ok(templates[index - 1].name.clone());
+        }
+    }
+
+    if let Some(template) = templates
+        .iter()
+        .find(|template| template.name.eq_ignore_ascii_case(trimmed))
+    {
+        return Ok(template.name.clone());
+    }
+
+    Err(format!(
+        "Unknown template selection '{trimmed}'. Choose a number between 1 and {}.",
+        templates.len()
+    ))
 }
 
 pub async fn create_project_from_template(
@@ -422,16 +601,16 @@ pub async fn create_project_from_template(
                         "name".to_string(),
                         serde_json::Value::String(project_name.clone()),
                     );
-                    std::fs::write(
-                        &package_json_path,
+                    let package_json_content = format!(
+                        "{}\n",
                         serde_json::to_string_pretty(&package_json).map_err(|e| {
                             RoutineFailure::error(Message {
                                 action: "Init".to_string(),
                                 details: format!("Failed to serialize package.json: {e}"),
                             })
-                        })?,
-                    )
-                    .map_err(|e| {
+                        })?
+                    );
+                    std::fs::write(&package_json_path, package_json_content).map_err(|e| {
                         RoutineFailure::error(Message {
                             action: "Init".to_string(),
                             details: format!("Failed to write package.json: {e}"),
@@ -621,12 +800,34 @@ dockerfile_path = "./Dockerfile"
 mod tests {
     use super::*;
     use crate::test_utils::ensure_test_environment;
+    use serde_json::Value as JsonValue;
+    use std::fs;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+    }
+
+    fn read_toml_file(relative_path: &str) -> Value {
+        let file_path = repo_root().join(relative_path);
+        let content =
+            fs::read_to_string(&file_path).expect("template config fixture should be readable");
+        toml::from_str(&content).expect("template config fixture should parse")
+    }
+
+    fn read_json_file(relative_path: &str) -> JsonValue {
+        let file_path = repo_root().join(relative_path);
+        let content =
+            fs::read_to_string(&file_path).expect("template package fixture should be readable");
+        serde_json::from_str(&content).expect("template package fixture should parse")
+    }
 
     #[tokio::test]
     async fn test_list_available_templates_local() {
         ensure_test_environment();
         // Use version "0.0.1" to test against the local manifest
-        let result = list_available_templates("0.0.1").await;
+        let result = list_available_templates("0.0.1", false).await;
 
         assert!(
             result.is_ok(),
@@ -640,6 +841,125 @@ mod tests {
         // Check for specific templates expected in the local manifest
         assert!(success_message.contains("- typescript (typescript)"));
         assert!(success_message.contains("- python (python)"));
+    }
+
+    #[test]
+    fn test_collect_template_infos_filters_hidden_templates() {
+        let templates = toml::toml! {
+            [visible_template]
+            language = "typescript"
+            description = "Visible template"
+            post_install_print = ""
+            visible = true
+
+            [hidden_template]
+            language = "python"
+            description = "Hidden template"
+            post_install_print = ""
+            visible = false
+        };
+
+        let infos = collect_template_infos(templates.as_table().unwrap());
+
+        assert_eq!(
+            infos,
+            vec![TemplateInfo {
+                name: "visible_template".to_string(),
+                language: "typescript".to_string(),
+                description: "Visible template".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn resolve_template_selection_accepts_index() {
+        let templates = vec![
+            TemplateInfo {
+                name: "python-empty".to_string(),
+                language: "python".to_string(),
+                description: "Python".to_string(),
+            },
+            TemplateInfo {
+                name: "typescript".to_string(),
+                language: "typescript".to_string(),
+                description: "TypeScript".to_string(),
+            },
+        ];
+
+        let selected = resolve_template_selection("2", &templates).unwrap();
+        assert_eq!(selected, "typescript");
+    }
+
+    #[test]
+    fn resolve_template_selection_rejects_unknown_value() {
+        let templates = vec![TemplateInfo {
+            name: "typescript".to_string(),
+            language: "typescript".to_string(),
+            description: "TypeScript".to_string(),
+        }];
+
+        let error = resolve_template_selection("typoscript", &templates).unwrap_err();
+        assert!(error.contains("Unknown template selection"));
+    }
+
+    #[test]
+    fn test_visible_template_infos_from_manifest_rejects_non_table_templates() {
+        let manifest = toml::toml! {
+            templates = []
+        };
+
+        let error = visible_template_infos_from_manifest(&manifest).unwrap_err();
+        assert_eq!(
+            error.message.details,
+            "Invalid manifest: templates section must be a table"
+        );
+    }
+
+    #[test]
+    fn test_visible_template_infos_from_manifest_rejects_missing_templates() {
+        let manifest = toml::Value::Table(toml::map::Map::new());
+
+        let error = visible_template_infos_from_manifest(&manifest).unwrap_err();
+        assert_eq!(
+            error.message.details,
+            "Invalid manifest: missing templates section"
+        );
+    }
+
+    #[test]
+    fn test_template_list_json_is_versioned() {
+        let payload = TemplateListJson {
+            schema_version: TEMPLATE_LIST_SCHEMA_VERSION,
+            template_version: "0.0.1".to_string(),
+            templates: vec![TemplateInfo {
+                name: "typescript".to_string(),
+                language: "typescript".to_string(),
+                description: "TypeScript project".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_value(payload).expect("template list payload should serialize");
+        let schema_version = json
+            .get("schema_version")
+            .and_then(|value| value.as_u64())
+            .expect("schema_version should be present");
+        let template_version = json
+            .get("template_version")
+            .and_then(|value| value.as_str())
+            .expect("template_version should be present");
+        let templates = json
+            .get("templates")
+            .and_then(|value| value.as_array())
+            .expect("templates should be present");
+        let first_template = templates
+            .first()
+            .and_then(|value| value.as_object())
+            .expect("template entry should be an object");
+
+        assert_eq!(schema_version, u64::from(TEMPLATE_LIST_SCHEMA_VERSION));
+        assert_eq!(template_version, "0.0.1");
+        assert_eq!(templates.len(), 1);
+        assert!(!first_template.contains_key("visible"));
     }
 
     #[tokio::test]
@@ -688,5 +1008,43 @@ mod tests {
         let templates_table = manifest["templates"].as_table().unwrap();
         assert!(templates_table.contains_key("typescript"));
         assert!(templates_table.contains_key("python"));
+    }
+
+    #[test]
+    fn test_typescript_agent_post_install_print_starts_before_seed() {
+        let manifest = read_toml_file("templates/typescript-agent/template.config.toml");
+        let config = TemplateConfig::from_toml(&manifest)
+            .expect("typescript-agent template config should be valid");
+        let start_index = config
+            .post_install_print
+            .find("pnpm dev:start")
+            .expect("post-install print should mention pnpm dev:start");
+        let seed_index = config
+            .post_install_print
+            .find("pnpm seed")
+            .expect("post-install print should mention pnpm seed");
+
+        assert!(
+            start_index < seed_index,
+            "pnpm dev:start should be printed before pnpm seed",
+        );
+    }
+
+    #[test]
+    fn test_typescript_agent_dev_entrypoints_prebuild_workspace() {
+        let package_json = read_json_file("templates/typescript-agent/package.json");
+        let scripts = package_json
+            .get("scripts")
+            .and_then(JsonValue::as_object)
+            .expect("typescript-agent package.json should define scripts");
+
+        assert_eq!(
+            scripts.get("predev").and_then(JsonValue::as_str),
+            Some("pnpm build"),
+        );
+        assert_eq!(
+            scripts.get("predev:start").and_then(JsonValue::as_str),
+            Some("pnpm build"),
+        );
     }
 }

@@ -225,8 +225,9 @@ mod tests {
     use super::*;
 
     fn get_test_project_abs_dir_path() -> PathBuf {
-        let test_project_location = PathBuf::from("tests/python/project");
-
+        // CI sets cwd to a temp dir, so relative paths don't resolve to the package root.
+        let test_project_location =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/python/project");
         std::fs::canonicalize(test_project_location).unwrap()
     }
 

@@ -10,6 +10,7 @@ export type BulletPointLinkVariant = "default" | "emphasized";
 export interface BasicBulletPoint {
   title: string;
   description?: string;
+  examples?: string[];
   link?: {
     text: string;
     href: string;
@@ -26,6 +27,7 @@ interface BulletPointCardProps {
   bulletStyle?: BulletStyle;
   uppercase?: boolean;
   compact?: boolean;
+  examplesLabel?: string;
 }
 
 // ------------------- Shared components -------------------
@@ -91,9 +93,11 @@ export function BulletIcon({
 export function BulletPointContent({
   point,
   compact,
+  examplesLabel = "Examples:",
 }: {
   point: BasicBulletPoint | string;
   compact?: boolean;
+  examplesLabel?: string;
 }) {
   return (
     <div className="flex-1 space-y-1">
@@ -108,6 +112,21 @@ export function BulletPointContent({
           )}
         >
           <p className="mb-1">{point.description}</p>
+          {point.examples && point.examples.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <span className="text-xs text-muted-foreground/70 font-mono">
+                {examplesLabel}
+              </span>
+              {point.examples.map((ex, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-xs font-mono text-muted-foreground border border-border"
+                >
+                  {ex}
+                </span>
+              ))}
+            </div>
+          )}
           {point.link &&
             (point.link.external ?
               <Link
@@ -215,16 +234,22 @@ function BulletPoint({
   index,
   bulletStyle,
   compact,
+  examplesLabel,
 }: {
   bullet: BasicBulletPoint | string | undefined;
   index: number;
   bulletStyle?: BulletStyle;
   compact?: boolean;
+  examplesLabel?: string;
 }) {
   return (
     <div className="flex items-start flex-1">
       <BulletIcon index={index} bulletStyle={bulletStyle} compact={compact} />
-      <BulletPointContent point={bullet!} compact={compact} />
+      <BulletPointContent
+        point={bullet!}
+        compact={compact}
+        examplesLabel={examplesLabel}
+      />
     </div>
   );
 }
@@ -240,6 +265,7 @@ export function BulletPointsCard({
   bulletStyle,
   uppercase = true,
   compact = false,
+  examplesLabel,
 }: BulletPointCardProps) {
   return (
     <BulletPointCard className={className} compact={compact}>
@@ -260,6 +286,7 @@ export function BulletPointsCard({
                 index={index}
                 bulletStyle={bulletStyle}
                 compact={compact}
+                examplesLabel={examplesLabel}
               />
             </Row>
           </React.Fragment>

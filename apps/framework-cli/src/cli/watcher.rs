@@ -39,6 +39,9 @@ use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
+use crate::framework::core::plan_risk::{
+    confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -213,6 +216,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
+    confirmation_policy: ConfirmationPolicy,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -260,21 +264,37 @@ async fn watch(
                     receiver_ack.send_replace(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
                     rx.mark_unchanged();
 
-                    let result: anyhow::Result<()> = with_spinner_completion_async(
+                    let activate_spinner = {
+                        use crate::utilities::constants::SHOW_TIMING;
+                        use std::sync::atomic::Ordering;
+                        !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+                    };
+
+                    let result: anyhow::Result<bool> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
-                        async {
+                        async |spinner_handle| {
                             let plan_result = with_timing_async("Planning", async {
                                 framework::core::plan::plan_changes(&**state_storage, &project).await
                             })
                             .await;
 
                             match plan_result {
-                                Ok((_, plan_result)) => {
+                                Ok((_, mut plan_result)) => {
                                     with_timing_async("Validation", async {
                                         framework::core::plan_validator::validate(&project, &plan_result)
                                     })
                                     .await?;
+
+                                    spinner_handle.pause();
+                                    let risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
+                                        Some(risk) => risk,
+                                        None => return Ok(false),
+                                    };
+                                    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
+                                        return Ok(false);
+                                    }
+                                    spinner_handle.resume();
 
                                     display::show_changes(&plan_result);
                                     // Hold the mutation guard only for execution/persist steps.
@@ -337,21 +357,25 @@ async fn watch(
                                     });
                                 }
                             }
-                            Ok(())
+                            Ok(true)
                         },
-                        {
-                            use crate::utilities::constants::SHOW_TIMING;
-                            use std::sync::atomic::Ordering;
-                            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
-                        },
+                        activate_spinner,
                     )
                     .await;
                     match result {
-                        Ok(()) => {
+                        Ok(true) => {
                             project
                                 .http_server_config
                                 .run_after_dev_server_reload_script()
                                 .await;
+                        }
+                        Ok(false) => {
+                            show_message!(MessageType::Info, {
+                                Message {
+                                    action: "Skipped".to_string(),
+                                    details: "Destructive changes declined by user".to_string(),
+                                }
+                            });
                         }
                         Err(e) => {
                             show_message!(MessageType::Error, {
@@ -410,6 +434,7 @@ impl FileWatcher {
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
+        confirmation_policy: ConfirmationPolicy,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
@@ -442,6 +467,7 @@ impl FileWatcher {
                 shutdown_rx,
                 ignore_matcher,
                 app_dir,
+                confirmation_policy,
             )
             .await
         };

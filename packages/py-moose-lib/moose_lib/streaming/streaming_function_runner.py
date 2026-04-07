@@ -29,7 +29,7 @@ import time
 from typing import Optional, Callable, Tuple, Any
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
-from moose_lib import cli_log, CliLogData, DeadLetterQueue
+from moose_lib import cli_log, CliLogData
 from moose_lib.commons import (
     EnhancedJSONEncoder,
     moose_management_port,
@@ -105,7 +105,7 @@ class KafkaTopicConfig:
 
 def load_streaming_function(
     function_file_dir: str, function_file_name: str
-) -> tuple[type, list[tuple[Callable, Optional[DeadLetterQueue]]]]:
+) -> tuple[type, list[Callable]]:
     """
     Load a streaming function by finding the stream transformation that matches
     the source and target topics.
@@ -117,7 +117,7 @@ def load_streaming_function(
     Returns:
         Tuple of (input_type, transformation_functions) where:
             - input_type is the Pydantic model type of the source stream
-            - transformation_functions is a list of functions that transform source to target data and their dead letter queues
+            - transformation_functions is a list of callable streaming functions
 
     Raises:
         SystemExit: If module import fails or if no matching transformation is found
@@ -137,10 +137,7 @@ def load_streaming_function(
             continue
 
         if stream.has_consumers() and target_topic is None:
-            consumers = [
-                (entry.consumer, entry.config.dead_letter_queue)
-                for entry in stream.consumers
-            ]
+            consumers = [entry.consumer for entry in stream.consumers]
             if not consumers:
                 continue
             return stream.model_type, consumers
@@ -154,10 +151,7 @@ def load_streaming_function(
                 and dest_stream_py_name == target_topic.topic_name_to_stream_name()
             ):
                 # Found the matching transformation
-                transformations = [
-                    (entry.transformation, entry.config.dead_letter_queue)
-                    for entry in transform_entries
-                ]
+                transformations = [entry.transformation for entry in transform_entries]
                 if not transformations:
                     continue
                 return stream.model_type, transformations
@@ -193,6 +187,11 @@ parser.add_argument(
 )
 parser.add_argument(
     "--target_topic_json", type=str, help="The target topic for the streaming function"
+)
+parser.add_argument(
+    "--dlq_topic_json",
+    type=str,
+    help="The dead letter queue topic for the streaming function",
 )
 parser.add_argument(
     "--sasl_username",
@@ -233,6 +232,9 @@ target_topic = (
     KafkaTopicConfig(**json.loads(args.target_topic_json))
     if args.target_topic_json
     else None
+)
+dlq_topic: Optional[KafkaTopicConfig] = (
+    KafkaTopicConfig(**json.loads(args.dlq_topic_json)) if args.dlq_topic_json else None
 )
 function_file_dir = args.function_file_dir
 function_file_name = args.function_file_name
@@ -422,9 +424,7 @@ def main():
                 load_streaming_function(function_file_dir, function_file_name)
             )
 
-            needs_producer = target_topic is not None or any(
-                pair[1] is not None for pair in streaming_function_callables
-            )
+            needs_producer = target_topic is not None or dlq_topic is not None
 
             # Initialize Kafka connections in the processing thread
             consumer = create_consumer()
@@ -539,8 +539,7 @@ def main():
                             # Run the flow
                             message_outputs = []
                             for (
-                                streaming_function_callable,
-                                dlq,
+                                streaming_function_callable
                             ) in streaming_function_callables:
                                 try:
                                     # Wrap user function execution with structured logging context
@@ -550,7 +549,7 @@ def main():
                                     )
                                 except Exception as e:
                                     traceback.print_exc()
-                                    if dlq is not None:
+                                    if dlq_topic is not None:
                                         dead_letter = DeadLetterModel(
                                             original_record=message.value,
                                             error_message=str(e),
@@ -558,14 +557,14 @@ def main():
                                             failed_at=datetime.now(timezone.utc),
                                             source="transform",
                                         )
-                                        record = dead_letter.model_dump_json().encode(
-                                            "utf-8"
-                                        )
-                                        producer.send(dlq.name, record).get()
+                                        record = dead_letter.model_dump_json(
+                                            by_alias=True
+                                        ).encode("utf-8")
+                                        producer.send(dlq_topic.name, record).get()
                                         cli_log(
                                             CliLogData(
                                                 action="DeadLetter",
-                                                message=f"Sent message to DLQ {dlq.name}: {str(e)}",
+                                                message=f"Sent message to DLQ {dlq_topic.name}: {str(e)}",
                                                 message_type=CliLogData.ERROR,
                                             )
                                         )

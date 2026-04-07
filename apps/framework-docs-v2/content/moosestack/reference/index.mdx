@@ -177,9 +177,6 @@ interface BaseOlapConfig<T> {
   // Optional lifecycle mode (defaults to MOOSE_MANAGED)
   lifeCycle?: LifeCycle;
 
-  // Per-table filter applied during `moose seed clickhouse`
-  seedFilter?: { limit?: number; where?: string };
-
   // Additional engine-specific fields (ver, isDeleted, keeperPath, etc.)
   // depend on the engine type
 }
@@ -196,11 +193,6 @@ class OlapConfig(BaseModel):
     database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
     order_by_fields: list[str] = []  # Fields to order by
     engine: Optional[EngineConfig] = None  # Table engine configuration
-    class SeedFilter(BaseModel):
-        limit: Optional[int] = None
-        where: Optional[str] = None
-
-    seed_filter: Optional[SeedFilter] = None  # Per-table filter for `moose seed clickhouse`
     indexes: list[OlapConfig.TableIndex] = []  # Secondary indexes
     projections: list[OlapConfig.TableProjection] = []  # Projections for alternative ordering
 ```
@@ -531,7 +523,25 @@ active_user_events = View(
     """,
     [events, users]
 )
+
+# With a specific database (multi-database support)
+analytics_view = View(
+    "analytics_events",
+    "SELECT * FROM {events}",
+    [events],
+    database="analytics",
+)
 ```
+
+**Constructor:** `View(name, select_statement, base_tables, database=None, metadata=None)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Name of the view |
+| `select_statement` | `str` | SELECT SQL defining the view |
+| `base_tables` | `list[OlapTable \| View]` | Source tables/views for dependency tracking |
+| `database` | `str` (optional) | ClickHouse database to create the view in. When set, the view is created as `` `database`.`view_name` `` |
+| `metadata` | `dict` (optional) | Optional metadata |
 
 **Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
   </LanguageTabContent>

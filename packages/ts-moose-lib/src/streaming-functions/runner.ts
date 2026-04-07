@@ -31,7 +31,7 @@ import {
 } from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
-import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
+import type { ConsumerConfig, TransformConfig } from "../dmv2";
 import {
   buildFieldMutationsFromColumns,
   mutateParsedJson,
@@ -88,7 +88,8 @@ type KafkaMessageWithLineage = {
   value: string;
   originalValue: object;
   originalMessage: KafkaMessage;
-  dlq?: DeadLetterQueue<any>;
+  /** Namespace-prefixed DLQ topic name provided by the CLI. */
+  dlqTopicName?: string;
 };
 
 /**
@@ -109,6 +110,8 @@ export interface TopicConfig {
 export interface StreamingFunctionArgs {
   sourceTopic: TopicConfig;
   targetTopic?: TopicConfig;
+  /** DLQ topic config with namespace-prefixed name, provided by the CLI. */
+  dlqTopic?: TopicConfig;
   functionFilePath: string;
   broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
@@ -264,6 +267,7 @@ const handleMessage = async (
   producer: Producer,
   fieldMutations?: FieldMutations,
   logPayloads?: boolean,
+  dlqTopicName?: string,
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -295,15 +299,10 @@ const handleMessage = async (
         try {
           return await fn(parsedData);
         } catch (e) {
-          // Check if there's a deadLetterQueue configured
-          const deadLetterQueue = config.deadLetterQueue;
-
-          if (deadLetterQueue) {
-            // Create a dead letter record
+          if (dlqTopicName) {
             const deadLetterRecord = {
               originalRecord: {
                 ...parsedData,
-                // Include original Kafka message metadata
                 __sourcePartition: message.partition,
                 __sourceOffset: message.offset,
                 __sourceTimestamp: message.timestamp,
@@ -316,20 +315,18 @@ const handleMessage = async (
 
             cliLog({
               action: "DeadLetter",
-              message: `Sending message to DLQ ${deadLetterQueue.name}: ${e instanceof Error ? e.message : String(e)}`,
+              message: `Sending message to DLQ ${dlqTopicName}: ${e instanceof Error ? e.message : String(e)}`,
               message_type: "Error",
             });
-            // Send to the DLQ
             try {
               await producer.send({
-                topic: deadLetterQueue.name,
+                topic: dlqTopicName,
                 messages: [{ value: JSON.stringify(deadLetterRecord) }],
               });
             } catch (dlqError) {
               logger.error(`Failed to send to dead letter queue: ${dlqError}`);
             }
           } else {
-            // No DLQ configured, just log the error
             cliLog({
               action: "Function",
               message: `Error processing message (no DLQ configured): ${e instanceof Error ? e.message : String(e)}`,
@@ -344,8 +341,7 @@ const handleMessage = async (
     );
 
     const processedMessages = transformedData
-      .map((userFunctionOutput, i) => {
-        const [_, config] = streamingFunctionWithConfigList[i];
+      .map((userFunctionOutput) => {
         if (userFunctionOutput) {
           if (Array.isArray(userFunctionOutput)) {
             // We Promise.all streamingFunctionWithConfigList above.
@@ -360,7 +356,7 @@ const handleMessage = async (
                 value: JSON.stringify(item),
                 originalValue: parsedData,
                 originalMessage: message,
-                dlq: config.deadLetterQueue ?? undefined,
+                dlqTopicName,
               }));
           } else {
             return [
@@ -368,7 +364,7 @@ const handleMessage = async (
                 value: JSON.stringify(userFunctionOutput),
                 originalValue: parsedData,
                 originalMessage: message,
-                dlq: config.deadLetterQueue ?? undefined,
+                dlqTopicName,
               },
             ];
           }
@@ -420,11 +416,10 @@ const handleDLQForFailedMessages = async (
   let dlqErrors = 0;
 
   for (const msg of messages) {
-    if (msg.dlq && msg.originalValue) {
+    if (msg.dlqTopicName && msg.originalValue) {
       const deadLetterRecord = {
         originalRecord: {
           ...msg.originalValue,
-          // Include original Kafka message metadata
           __sourcePartition: msg.originalMessage.partition,
           __sourceOffset: msg.originalMessage.offset,
           __sourceTimestamp: msg.originalMessage.timestamp,
@@ -437,22 +432,22 @@ const handleDLQForFailedMessages = async (
 
       cliLog({
         action: "DeadLetter",
-        message: `Sending failed message to DLQ ${msg.dlq.name}: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Sending failed message to DLQ ${msg.dlqTopicName}: ${error instanceof Error ? error.message : String(error)}`,
         message_type: "Error",
       });
 
       try {
         await producer.send({
-          topic: msg.dlq.name,
+          topic: msg.dlqTopicName,
           messages: [{ value: JSON.stringify(deadLetterRecord) }],
         });
-        logger.log(`Sent failed message to DLQ ${msg.dlq.name}`);
+        logger.log(`Sent failed message to DLQ ${msg.dlqTopicName}`);
         messagesHandledByDLQ++;
       } catch (dlqError) {
         logger.error(`Failed to send to DLQ: ${dlqError}`);
         dlqErrors++;
       }
-    } else if (!msg.dlq) {
+    } else if (!msg.dlqTopicName) {
       messagesWithoutDLQ++;
       logger.warn(`Cannot send to DLQ: no DLQ configured for message`);
     } else {
@@ -728,6 +723,7 @@ const startConsumer = async (
                   producer,
                   fieldMutations,
                   args.logPayloads,
+                  args.dlqTopic?.name,
                 );
               },
               {
@@ -747,7 +743,6 @@ const startConsumer = async (
         await heartbeat();
 
         if (filteredMessages.length > 0) {
-          // Messages now carry their own DLQ configuration in the lineage
           await sendMessages(
             logger,
             metrics,

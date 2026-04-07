@@ -38,6 +38,8 @@ import {
   IconBrain,
   IconTrendingUp,
   IconSearch,
+  IconFlask,
+  IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -675,6 +677,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/reference/testing-utilities",
+    title: "Testing Utilities",
+    icon: IconFlask,
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
     slug: "moosestack/data-types",
     title: "Data Types",
     icon: IconAtom,
@@ -924,6 +933,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "moosestack/configuration/jwt",
         title: "JWT",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/row-level-security",
+        title: "Row-Level Security",
         languages: ["typescript", "python"],
       },
       {
@@ -1245,9 +1260,69 @@ const hostingNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "hosting/cli/env",
+    title: "env",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/env/list",
+        title: "list",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/get",
+        title: "get",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/set",
+        title: "set",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/env/delete",
+        title: "delete",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
     slug: "hosting/cli/agent",
     title: "agent",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/agent/init",
+        title: "init",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "hosting/cli/agent/remove",
+        title: "remove",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
+    slug: "hosting/cli/clickhouse",
+    title: "clickhouse",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "hosting/cli/clickhouse/seed",
+        title: "seed",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   { type: "separator" },
   { type: "label", title: "Resource Commands" },
@@ -1411,6 +1486,26 @@ const hostingNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "hosting/workflow/fiveonefour-to-local-setup",
     title: "Fiveonefour to Local Setup",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/workflow/environment-variables",
+    title: "Manage Environment Variables",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "hosting/workflow/branch-data-seeding",
+    title: "Branch Data Seeding",
+    languages: ["typescript", "python"],
+  },
+  { type: "separator" },
+  { type: "label", title: "Integrations" },
+  {
+    type: "page",
+    slug: "hosting/integrations/vercel",
+    title: "Vercel",
     languages: ["typescript", "python"],
   },
   { type: "separator" },
@@ -1642,6 +1737,35 @@ const guidesNavigationConfig: NavigationConfig = [
         slug: "guides/chat-in-your-app/tutorial",
         title: "Tutorial",
         languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
+    slug: "guides/production-ready-analytics-agent",
+    title: "Custom analytics agents",
+    description:
+      "Get a multi-tenant, observable, analytics agent running from a production-shaped template.",
+    icon: IconRobot,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/overview",
+        title: "Overview",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/dev-approach",
+        title: "Dev Approach",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/production-ready-analytics-agent/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
       },
     ],
   },
@@ -2130,6 +2254,7 @@ export interface SerializableGuideSection {
  */
 const iconToNameMap = new Map<TablerIcon, string>([
   [IconChartLine, "IconChartLine"],
+  [IconRobot, "IconRobot"],
   [IconMessageChatbot, "IconMessageChatbot"],
   [IconFileReport, "IconFileReport"],
   [IconCloudUpload, "IconCloudUpload"],

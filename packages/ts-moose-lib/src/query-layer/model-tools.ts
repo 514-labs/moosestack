@@ -11,7 +11,15 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toQuery, type Sql } from "../sqlHelpers";
 import { QueryClient } from "../consumption-apis/helpers";
-import type { FilterInputTypeHint, SortDir } from "./types";
+import type {
+  DimensionDef,
+  FilterInputTypeHint,
+  MetricDef,
+  SortDir,
+} from "./types";
+
+export const DEFAULT_LIMIT = 1000;
+
 // =============================================================================
 // QueryModelBase — Minimal structural interface for MCP utilities
 // =============================================================================
@@ -45,8 +53,8 @@ export interface QueryModelBase {
   };
   readonly filters: Record<string, QueryModelFilter>;
   readonly sortable: readonly string[];
-  readonly dimensions?: Record<string, { description?: string }>;
-  readonly metrics?: Record<string, { description?: string }>;
+  readonly dimensions?: Record<string, DimensionDef>;
+  readonly metrics?: Record<string, MetricDef>;
   readonly columnNames: readonly string[];
   toSql(request: Record<string, unknown>): Sql;
 }
@@ -106,7 +114,7 @@ export interface ModelToolOptions {
   requiredFilters?: string[];
   /** Maximum limit for the tool. Falls back to model.defaults.maxLimit, then 1000. */
   maxLimit?: number;
-  /** Default limit for the tool. Falls back to model.defaults.limit, then 100. */
+  /** Default limit for the tool. Falls back to model.defaults.limit, then 1000. */
   defaultLimit?: number;
   /** Default values applied when params are absent. Merged with model.defaults. */
   defaults?: {
@@ -163,8 +171,11 @@ export function createModelTool(
   const requiredFilters = [
     ...new Set([...modelRequiredFilters, ...(options.requiredFilters ?? [])]),
   ];
-  const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? 1000;
-  const defaultLimit = options.defaultLimit ?? mergedDefaults.limit ?? 100;
+  const maxLimit = options.maxLimit ?? modelDefaults.maxLimit ?? DEFAULT_LIMIT;
+  const defaultLimit = Math.min(
+    options.defaultLimit ?? mergedDefaults.limit ?? DEFAULT_LIMIT,
+    maxLimit,
+  );
 
   const requiredSet = new Set(requiredFilters);
   const schema: Record<string, z.ZodType> = {};
@@ -339,7 +350,11 @@ export function registerModelTools(
     const toolName = model.name;
     const toolDescription = model.description ?? toolName;
     const tool = createModelTool(model);
-    const defaultLimit = model.defaults?.limit ?? 100;
+    const maxLimit = model.defaults?.maxLimit ?? DEFAULT_LIMIT;
+    const defaultLimit = Math.min(
+      model.defaults?.limit ?? DEFAULT_LIMIT,
+      maxLimit,
+    );
 
     server.tool(
       toolName,

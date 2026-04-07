@@ -23,7 +23,7 @@
 use std::fmt;
 
 use super::config::ClickHouseConfig;
-use super::{create_client, ConfiguredDBClient};
+use super::{create_readonly_client, ConfiguredDBClient};
 use urlencoding::encode;
 
 /// Escapes a string for use in a SQL string literal.
@@ -176,9 +176,11 @@ impl ClickHouseRemote {
             host_data_path: None,
             additional_databases: vec![],
             clusters: None,
+            rls_user: None,
+            rls_password: None,
         };
 
-        let client = create_client(config);
+        let client = create_readonly_client(config);
         (client, self.database.clone())
     }
 
@@ -336,9 +338,7 @@ mod tests {
             password: "secret123".to_string(),
             use_ssl: true,
             host_port: 8443,
-            host_data_path: None,
-            additional_databases: vec![],
-            clusters: None,
+            ..Default::default()
         }
     }
 

@@ -40,6 +40,11 @@ pub struct FunctionProcess {
     pub source_primitive: PrimitiveSignature,
 
     pub metadata: Option<Metadata>,
+
+    /// Topic ID for the dead letter queue, resolved from the infra map.
+    /// Used to construct the namespace-prefixed topic name for DLQ sends.
+    #[serde(default)]
+    pub dead_letter_queue_topic_id: Option<String>,
 }
 
 impl FunctionProcess {
@@ -76,6 +81,7 @@ impl FunctionProcess {
                     file: function.executable.to_string_lossy().to_string(),
                 }),
             }),
+            dead_letter_queue_topic_id: None,
         }
     }
 
@@ -149,6 +155,7 @@ impl FunctionProcess {
                     special_fields: Default::default(),
                 }
             })),
+            dead_letter_queue_topic_id: self.dead_letter_queue_topic_id.clone(),
             special_fields: Default::default(),
         }
     }
@@ -175,6 +182,7 @@ impl FunctionProcess {
                     .into_option()
                     .map(|s| super::table::SourceLocation { file: s.file }),
             }),
+            dead_letter_queue_topic_id: proto.dead_letter_queue_topic_id,
         }
     }
 }

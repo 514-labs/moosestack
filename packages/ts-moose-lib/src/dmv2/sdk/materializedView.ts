@@ -2,12 +2,12 @@ import { ClickHouseEngines } from "../../dataModels/types";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
 import { View } from "./view";
+import { formatTableReference } from "./tableReferenceUtils";
 import { LifeCycle } from "./lifeCycle";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
-import { formatTableReference } from "./tableReferenceUtils";
 
 /**
  * Configuration options for creating a Materialized View.

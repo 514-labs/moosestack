@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "esModuleInterop": true,
+    "plugins": [
+      {
+        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js"
+      },
+      {
+        "transform": "typia/lib/transform"
+      }
+    ],
+    "strictNullChecks": true
+  },
+  "exclude": ["dist", "test"]
+}

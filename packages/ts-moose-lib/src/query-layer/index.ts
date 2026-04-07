@@ -69,6 +69,18 @@ export {
   type ModelToolResult,
 } from "./model-tools";
 
+// --- Schema Utilities ---
+
+export {
+  getModelSchema,
+  type QueryModelSchema,
+  type SchemaMetric,
+  type SchemaDimension,
+  type SchemaFilter,
+  type SchemaFilterValue,
+  type GetModelSchemaOptions,
+} from "./model-schema";
+
 // --- SQL Utilities ---
 
 export {

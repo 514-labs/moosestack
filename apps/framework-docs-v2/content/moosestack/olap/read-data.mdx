@@ -567,6 +567,14 @@ def build_conditional_query(client: MooseClient, params: FilterParams):
 
 To build REST APIs that expose your data, see the [Bring Your Own API Framework documentation](/moosestack/app-api-frameworks) for comprehensive examples and patterns using Express, Koa, Fastify, or FastAPI.
 
+## Computed Columns in Query Results
+
+By default, ClickHouse excludes [ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns from `SELECT *` results. When you query through `MooseClient.query.execute`, Moose sets `asterisk_include_alias_columns` and `asterisk_include_materialized_columns` per-query so that `SELECT *` returns all columns including computed ones.
+
+<Callout type="warning" title="Complex queries with SELECT *">
+Because these settings apply per-query on `execute`, any `SELECT *` within your query will include computed columns. If you have complex SQL where the extra columns could affect column ordering or subquery results, name your columns explicitly in the `SELECT` clause instead of relying on `*`.
+</Callout>
+
 ## Common Pitfalls
 
 <LanguageTabs>

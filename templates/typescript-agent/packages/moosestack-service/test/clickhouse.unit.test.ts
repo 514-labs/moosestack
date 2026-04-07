@@ -1,0 +1,154 @@
+import { sql } from "@514labs/moose-lib";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  executeReadonlySql,
+  executeReadonlyStatement,
+  executeScopedSql,
+} from "../data/clickhouse/readonly-query";
+
+describe("executeReadonlyStatement", () => {
+  it("uses max_result_rows instead of the legacy limit setting", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [{ org_id: "org_a" }],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+    };
+    const rowPolicyOptions = {
+      role: "tenant_reader",
+      clickhouse_settings: {
+        readonly: "0",
+        max_result_rows: "9999",
+        result_overflow_mode: "throw",
+        output_format_json_quote_64bit_integers: "0",
+      },
+    };
+
+    const rows = await executeReadonlyStatement<{ org_id: string }>(
+      queryClient as never,
+      "SELECT org_id FROM tenant_knowledge LIMIT 1",
+      {
+        limit: 100,
+        rowPolicyOptions,
+      },
+    );
+
+    expect(rows).toEqual([{ org_id: "org_a" }]);
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "SELECT org_id FROM tenant_knowledge LIMIT 1",
+        role: "tenant_reader",
+        clickhouse_settings: expect.objectContaining({
+          readonly: "2",
+          max_result_rows: "100",
+          result_overflow_mode: "break",
+          output_format_json_quote_64bit_integers: "0",
+        }),
+      }),
+    );
+    expect(querySpy.mock.calls[0]?.[0]?.clickhouse_settings).not.toHaveProperty(
+      "limit",
+    );
+  });
+
+  it("formats Date query parameters as ClickHouse-compatible UTC timestamps", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+    };
+    const timestamp = new Date("2026-03-27T12:34:56.789-04:00");
+
+    await executeReadonlySql(
+      queryClient as never,
+      sql`SELECT ${timestamp} AS observed_at`,
+      25,
+    );
+
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query_params: {
+          p0: "2026-03-27 16:34:56",
+        },
+        clickhouse_settings: expect.objectContaining({
+          readonly: "2",
+          max_result_rows: "25",
+        }),
+      }),
+    );
+  });
+
+  it("still supports the numeric limit shorthand", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+    };
+
+    await executeReadonlyStatement(
+      queryClient as never,
+      "SELECT org_id FROM tenant_knowledge",
+      10,
+    );
+
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clickhouse_settings: expect.objectContaining({
+          max_result_rows: "10",
+          readonly: "2",
+        }),
+      }),
+    );
+  });
+
+  it("keeps scoped queries readonly by wrapping the scoped QueryClient", async () => {
+    const querySpy = vi.fn(async () => {
+      return {
+        json: async () => [{ org_id: "org_a" }],
+      };
+    });
+    const queryClient = {
+      client: {
+        query: querySpy,
+      },
+      query_id_prefix: "scoped-prefix",
+      rowPolicyOptions: {
+        role: "tenant_reader",
+        clickhouse_settings: {
+          SQL_moose_rls_org_id: "org_a",
+        },
+      },
+    };
+
+    const rows = await executeScopedSql<{ org_id: string }>(
+      queryClient as never,
+      sql`SELECT org_id FROM tenant_knowledge LIMIT 1`,
+    );
+
+    expect(rows).toEqual([{ org_id: "org_a" }]);
+    expect(querySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "tenant_reader",
+        clickhouse_settings: expect.objectContaining({
+          SQL_moose_rls_org_id: "org_a",
+          readonly: "2",
+        }),
+      }),
+    );
+  });
+});

@@ -1,0 +1,63 @@
+---
+title: Branch Data Seeding
+description: Automatically seed preview environment databases with data from the parent branch so you can test with realistic data immediately.
+order: 3
+---
+
+import { Callout } from "@/components/mdx";
+
+# Branch Data Seeding
+
+When you push a feature branch, 514 Hosting creates an isolated ClickHouse database for that branch's preview environment. Branch data seeding automatically populates this database with a sample of data from the parent branch, so you can validate queries, views, and APIs against realistic data without waiting for ingestion.
+
+## Zero Configuration Required
+
+Branch seeding runs automatically — no setup needed. Every table discovered in the parent branch's infrastructure map is seeded into the new branch's database with a default limit of **10,000 rows per table**.
+
+## How It Works
+
+1. **Merge base detection** — when a branch deploys for the first time, the platform identifies the merge base (common ancestor commit) between your branch and the deployed parent.
+2. **Infrastructure map lookup** — the platform reads the infrastructure map from the merge base deploy to discover which tables exist.
+3. **Table creation and data copy** — for each table in the infrastructure map, the platform creates the table in the new branch's database and copies rows from the parent database using `INSERT INTO ... SELECT * FROM`.
+
+Seeding runs automatically during the `INITIALIZE_BRANCH_SCHEMA` phase of the first deployment. Subsequent pushes to the same branch do not re-seed.
+
+## Deployment Status
+
+During seeding, your deployment progresses through these statuses:
+
+| Status | Meaning |
+|--------|---------|
+| **Seeding** | Data copy is in progress. |
+| **Seeded** | All tables seeded successfully. |
+| **Seeding Failed** | One or more tables failed to seed. The deployment continues — seeding failures are non-blocking. |
+
+You can monitor deployment status in the 514 Hosting project UI or via the CLI:
+
+```bash filename="Terminal" copy
+514 deployment list --project <org>/<project>
+```
+
+## Failure Handling
+
+Branch seeding is designed to be non-blocking:
+
+- If an individual table fails to seed (e.g., schema mismatch), the remaining tables still seed and the deployment proceeds.
+- If the merge base cannot be determined (e.g., no common ancestor with a deployed branch), seeding is skipped entirely and the branch starts with an empty database.
+- If the infrastructure map is missing from the merge base deploy, seeding is skipped.
+
+Failed tables are logged with the table name and error message for debugging.
+
+## When Seeding Does Not Run
+
+Seeding is skipped in the following cases:
+
+- **Default branch** — the main/production branch does not seed from itself.
+- **No deployed merge base** — if no ancestor commit of your branch has been deployed, there is no source database to seed from.
+- **Subsequent deploys** — only the first deployment for a branch triggers seeding. Later pushes to the same branch update the schema without re-seeding.
+
+## Related
+
+- [`514 clickhouse seed`](/hosting/cli/clickhouse/seed) — manually seed a table between branches on 514 Hosting.
+- [`moose seed clickhouse`](/moosestack/moose-cli#seed-clickhouse) — CLI command for seeding local development databases from a remote source.
+- [Fiveonefour to local setup](/hosting/workflow/fiveonefour-to-local-setup) — end-to-end local development workflow.

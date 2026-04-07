@@ -1,0 +1,11 @@
+.moose
+node_modules
+dist
+coverage
+.ts-node
+
+.turbo
+
+# env files
+.env*
+!.env.example

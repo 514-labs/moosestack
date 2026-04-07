@@ -95,7 +95,7 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
     compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
 };
-use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
+use crate::framework::core::migration_plan::MigrationPlanWithBeforeAfter;
 use crate::framework::core::plan_validator;
 use crate::framework::typescript::parser::get_compiled_index_path;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -121,6 +121,10 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
+    ConfirmationPolicy,
+};
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -171,6 +175,7 @@ pub mod docker_packager;
 pub(crate) mod docs;
 pub mod feedback;
 pub mod format_query;
+pub mod harness;
 pub mod kafka_pull;
 pub mod logs;
 pub mod ls;
@@ -178,6 +183,7 @@ pub mod metrics_console;
 pub mod migrate;
 pub mod openapi;
 pub mod peek;
+pub mod project_init;
 pub mod ps;
 pub mod query;
 pub mod scripts;
@@ -468,6 +474,7 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    confirmation_policy: ConfirmationPolicy,
 ) -> anyhow::Result<()> {
     // Set global flag so ensure_typescript_compiled knows to skip
     // (tspc --watch handles compilation in dev mode)
@@ -542,7 +549,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, plan) = plan_changes(&*state_storage, &project).await?;
+    let (_, mut plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -703,6 +710,14 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
+    let risk = match confirm_renames_and_classify(&mut plan.changes, &confirmation_policy).await? {
+        Some(risk) => risk,
+        None => return Ok(()),
+    };
+    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
+        return Ok(());
+    }
+
     let api_changes_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
@@ -767,6 +782,7 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 ts_compile_handle,
+                confirmation_policy,
             )?;
         }
         SupportedLanguages::Python => {
@@ -782,6 +798,7 @@ pub async fn start_development_mode(
                 settings.clone(),
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
+                confirmation_policy,
             )?;
         }
     }
@@ -956,7 +973,39 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
+    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
+
+    if !execute_migration_yaml {
+        info!("Migration file not found.")
+    }
+
+    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+        info!("prod_auto_allow_destructive is false, analysing risk.");
+        let risk = classify_plan_risk(&plan.changes);
+        if risk.is_destructive() {
+            let summary = risk
+                .destructive_changes
+                .iter()
+                .map(|c| format!("  - {c}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(anyhow::anyhow!(
+                "Production startup blocked: the computed infrastructure diff contains {} \
+                 destructive operation(s) but no plan.yaml was found.\n\
+                 {}\n\n\
+                 To proceed, either:\n  \
+                 1. Create a new version of the table by setting the `version` field in your \
+                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
+                 heuristic uses these to migrate data automatically\n  \
+                 2. Set `prod_auto_allow_destructive = true` under [migration_config] \
+                 in moose.config.toml to allow unplanned destructive changes.",
+                risk.destructive_changes.len(),
+                summary,
+            ));
+        } else {
+            info!("PlanRisk: {:?}, proceeding.", risk)
+        }
+    }
 
     if execute_migration_yaml {
         migrate::execute_migration_plan(
@@ -1513,13 +1562,11 @@ pub async fn remote_gen_migration(
 
     plan_validator::validate(project, &plan)?;
 
-    let db_migration =
-        MigrationPlan::from_infra_plan(&plan.changes, &project.clickhouse_config.db_name)?;
-
     Ok(MigrationPlanWithBeforeAfter {
         remote_state: remote_infra_map,
         local_infra_map,
-        db_migration,
+        changes: plan.changes,
+        default_database: project.clickhouse_config.db_name.clone(),
     })
 }
 

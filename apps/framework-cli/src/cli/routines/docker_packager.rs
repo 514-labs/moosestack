@@ -3,8 +3,8 @@ use crate::cli::display::with_spinner_completion;
 use crate::cli::routines::util::ensure_docker_running;
 use crate::framework::languages::SupportedLanguages;
 use crate::utilities::constants::{
-    OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT, SETUP_PY,
-    TSCONFIG_JSON,
+    MIGRATIONS_DIR, OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT,
+    SETUP_PY, TSCONFIG_JSON,
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
@@ -264,6 +264,7 @@ COPY_PACKAGE_FILE
 COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
+COPY --chown=moose:moose ./migration[s] ./migrations
 
 
 # Placeholder for the language specific install command
@@ -556,6 +557,7 @@ USER root:root
 WORKDIR /temp-monorepo
 COPY --from=monorepo-base /monorepo/pnpm-workspace.yaml ./
 {}
+COPY --from=monorepo-base /monorepo/.npmr[c] ./
 COPY --from=monorepo-base /monorepo/{} ./{}
 # Copy all workspace directories that exist
 {}
@@ -727,6 +729,7 @@ pub fn build_dockerfile(
         TSCONFIG_JSON,
         PROJECT_CONFIG_FILE,
         OLD_PROJECT_CONFIG_FILE,
+        MIGRATIONS_DIR,
     ];
 
     // Handle lock file copying for TypeScript projects only (may be from parent directories for monorepos)
@@ -876,6 +879,12 @@ pub fn build_dockerfile(
                             "COPY --chown=moose:moose ./versions",
                             &format!(
                                 "COPY --chown=moose:moose {relative_project_path}/.moose/packager/versions"
+                            ),
+                        )
+                        .replace(
+                            "COPY --chown=moose:moose ./migration[s]",
+                            &format!(
+                                "COPY --chown=moose:moose {relative_project_path}/migration[s]"
                             ),
                         );
 

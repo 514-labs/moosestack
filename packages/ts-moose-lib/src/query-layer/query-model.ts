@@ -391,9 +391,9 @@ export function defineQueryModel<
     defaults = {},
   } = config;
   const table = resolveTable(tableOrMv);
-  const { maxLimit = 1000 } = defaults;
+  const { maxLimit } = defaults;
 
-  const primaryTableName = table.name;
+  const primaryTableName = table.generateTableName();
   const hasJoins = joinDefs != null && Object.keys(joinDefs).length > 0;
 
   // --- Normalize dimensions ---
@@ -438,7 +438,7 @@ export function defineQueryModel<
             `Column '${name}' references unknown join '${def.join}'`,
           );
         }
-        const joinTableName = resolveTable(joinDef.table).name;
+        const joinTableName = resolveTable(joinDef.table).generateTableName();
         normalizedColumns[name] = {
           expression: raw(
             `${quoteIdentifier(joinTableName)}.${quoteIdentifier(String(def.column))}`,
@@ -692,7 +692,7 @@ export function defineQueryModel<
 
       let onClause: Sql;
       if (joinDef.leftKey && joinDef.rightKey) {
-        const joinTableName = joinTable.name;
+        const joinTableName = joinTable.generateTableName();
         onClause = raw(
           `${quoteIdentifier(primaryTableName)}.${quoteIdentifier(joinDef.leftKey)} = ${quoteIdentifier(joinTableName)}.${quoteIdentifier(joinDef.rightKey)}`,
         );
@@ -786,11 +786,21 @@ export function defineQueryModel<
       );
     }
 
-    const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
-    const offsetVal = spec.offset ?? (spec.page ?? 0) * limitVal;
+    const rawLimit = spec.limit ?? defaults.limit;
+    const limitVal =
+      rawLimit != null && maxLimit != null ?
+        Math.min(rawLimit, maxLimit)
+      : (rawLimit ?? maxLimit);
+
+    if (limitVal == null && (spec.page != null || spec.offset != null)) {
+      throw new Error(
+        "Cannot use 'page' or 'offset' without a 'limit' — set a limit on the request or in model defaults",
+      );
+    }
+
     const pagination =
-      spec.offset != null ?
-        sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
+      limitVal == null ? empty
+      : spec.offset != null ? sql`LIMIT ${limitVal} OFFSET ${spec.offset}`
       : paginate(limitVal, spec.page ?? 0);
 
     const selectedFields =

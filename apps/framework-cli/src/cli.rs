@@ -18,30 +18,34 @@ use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
-    Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs,
-    KafkaCommands, TemplateSubCommands, WorkflowCommands,
+    Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, HarnessSubCommands,
+    KafkaArgs, KafkaCommands, TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
 use regex::Regex;
+use rmcp::ServiceExt;
 use routines::auth::{display_hash_token_result, generate_hash_token};
 use routines::build::build_package;
 use routines::clean::clean_project;
 use routines::docker_packager::{build_dockerfile, create_dockerfile};
+use routines::harness::run_harness_init;
 use routines::kafka_pull::write_external_topics;
 use routines::metrics_console::run_console;
 use routines::peek::peek;
+use routines::project_init::{initialize_project, ProjectInitOptions, RemoteBootstrapSource};
 use routines::ps::show_processes;
 use routines::query::query;
 use routines::scripts::{
     cancel_workflow, get_workflow_status, list_workflows_history, pause_workflow, run_workflow,
     terminate_workflow, unpause_workflow,
 };
-use routines::templates::list_available_templates;
+use routines::templates::{list_available_templates, prompt_for_template_name};
 use tracing::{debug, info, warn};
 
 use settings::Settings;
 use std::collections::HashMap;
+use std::io::stdout;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -56,27 +60,26 @@ use crate::cli::{
 };
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::infrastructure::olap::clickhouse::config::{
-    parse_clickhouse_connection_string, parse_clickhouse_connection_string_with_metadata,
-};
-use crate::infrastructure::olap::clickhouse::config_resolver::store_remote_clickhouse_credentials;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::metrics::TelemetryMetadata;
-use crate::project::{ClickHouseProtocol, Project, RemoteClickHouseConfig};
+use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
-use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
-    MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE,
+    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::{AddComponent, DbArgs};
-use crate::cli::routines::code_generation::{
-    db_pull, db_pull_from_remote, db_to_dmv2, prompt_user_for_remote_ch_http,
-};
+use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
-use crate::cli::routines::templates::create_project_from_template;
-use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::framework::core::migration_plan::{
+    BackfillCheckResult, MigrationPlanWithBeforeAfter, MIGRATION_SCHEMA,
+};
+use crate::framework::core::plan_risk::{
+    confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
+    ConfirmationPolicy, MigrationGateOutcome,
+};
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -84,6 +87,13 @@ use anyhow::Result;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::timeout;
+
+/// Reads a boolean from an environment variable (`"1"` or `"true"`, case-insensitive).
+fn env_bool(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
 
 /// Generic prompt function with hints, default values, and better formatting
 pub fn prompt_user(
@@ -93,27 +103,8 @@ pub fn prompt_user(
 ) -> Result<String, RoutineFailure> {
     use std::io::{self, Write};
 
-    // Build the prompt with proper formatting
-    let mut full_prompt = String::new();
-
-    // Add the main prompt text
-    full_prompt.push_str(prompt_text);
-
-    // Add default value if provided
-    if let Some(default_value) = default {
-        full_prompt.push_str(&format!(" (default: {})", default_value));
-    }
-
-    // Add hint if provided
-    if let Some(hint_text) = hint {
-        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
-    }
-
-    // Add the prompt indicator
-    full_prompt.push_str("\n> ");
-
-    print!("{}", full_prompt);
-    let _ = io::stdout().flush();
+    print!("{}", format_prompt(prompt_text, default, hint));
+    let _ = stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
         RoutineFailure::new(
@@ -124,16 +115,55 @@ pub fn prompt_user(
             e,
         )
     })?;
-    let trimmed = input.trim();
+    Ok(apply_default(input.trim(), default))
+}
 
-    // Return default if input is empty, otherwise return the trimmed input
-    let result = if trimmed.is_empty() {
+/// Async version of [`prompt_user`] that doesn't block the tokio runtime.
+pub async fn prompt_user_async(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    use std::io::Write;
+    use tokio::io::AsyncBufReadExt;
+
+    print!("{}", format_prompt(prompt_text, default, hint));
+    let _ = stdout().flush();
+
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = stdin.lines();
+    let line = lines.next_line().await.map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Prompt".to_string(),
+                details: "Failed to read user input".to_string(),
+            },
+            e,
+        )
+    })?;
+    let trimmed = line.as_deref().unwrap_or("").trim();
+    Ok(apply_default(trimmed, default))
+}
+
+fn format_prompt(prompt_text: &str, default: Option<&str>, hint: Option<&str>) -> String {
+    let mut full_prompt = String::new();
+    full_prompt.push_str(prompt_text);
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+    full_prompt.push_str("\n> ");
+    full_prompt
+}
+
+fn apply_default(trimmed: &str, default: Option<&str>) -> String {
+    if trimmed.is_empty() {
         default.unwrap_or("").to_string()
     } else {
         trimmed.to_string()
-    };
-
-    Ok(result)
+    }
 }
 
 /// Prompts user for password input with masked characters (shows * instead of typed chars)
@@ -144,11 +174,11 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
         event::{read, Event, KeyCode, KeyModifiers},
         terminal::{disable_raw_mode, enable_raw_mode},
     };
-    use std::io::{self, Write};
+    use std::io::Write;
 
     // Print the prompt
     print!("{}\n> ", prompt_text);
-    let _ = io::stdout().flush();
+    let _ = stdout().flush();
 
     // Enable raw mode to capture individual key presses
     enable_raw_mode().map_err(|e| {
@@ -199,13 +229,13 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                             password.pop();
                             // Erase the last asterisk: move back, print space, move back again
                             print!("\x08 \x08");
-                            let _ = io::stdout().flush();
+                            let _ = stdout().flush();
                         }
                     }
                     KeyCode::Char(c) => {
                         password.push(c);
                         print!("*"); // Show asterisk instead of actual character
-                        let _ = io::stdout().flush();
+                        let _ = stdout().flush();
                     }
                     _ => {} // Ignore other keys
                 }
@@ -307,7 +337,7 @@ pub fn load_project_dev() -> Result<Project, RoutineFailure> {
     })
 }
 
-fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
+pub(crate) fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
     // Special case: Allow "." as a valid project name to indicate current directory
     if name == "." {
         return Ok(());
@@ -448,47 +478,26 @@ pub async fn top_command_handler(
             template,
             no_fail_already_exists,
             from_remote,
-            language,
             custom_dockerfile,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}, custom_dockerfile: {}",
-                name, location, template, language, custom_dockerfile
+                "Running init command with name: {}, location: {:?}, template: {:?}, custom_dockerfile: {}",
+                name, location, template, custom_dockerfile
             );
 
-            // Determine template, prompting for language if needed (especially for --from-remote)
+            // Determine template, prompting when needed.
             let template = match template {
                 Some(t) => t.to_lowercase(),
-                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
-                    Some("typescript") => "typescript-empty".to_string(),
-                    Some("python") => "python-empty".to_string(),
-                    Some(lang) => {
-                        return Err(RoutineFailure::error(Message::new(
-                            "Unknown".to_string(),
-                            format!("language {lang}"),
-                        )));
-                    }
-                    None => {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message::new(
-                                "Init".to_string(),
-                                "Setting up your new Moose project".to_string(),
-                            ),
-                        );
-                        let input = prompt_user(
-                            "Select language [1] TypeScript [2] Python",
-                            Some("1"),
-                            None,
-                        )?
-                        .to_lowercase();
-
-                        match input.as_str() {
-                            "2" | "Python" | "py" => "python-empty".to_string(),
-                            _ => "typescript-empty".to_string(),
-                        }
-                    }
-                },
+                None => {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message::new(
+                            "Init".to_string(),
+                            "Setting up your new Moose project".to_string(),
+                        ),
+                    );
+                    prompt_for_template_name().await?
+                }
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -503,111 +512,23 @@ pub async fn top_command_handler(
 
             check_project_name(name)?;
 
-            let post_install_message = create_project_from_template(
-                &template,
-                name,
+            let project_outcome = initialize_project(&ProjectInitOptions {
+                template: &template,
+                project_name: name,
                 dir_path,
-                *no_fail_already_exists,
-                *custom_dockerfile,
-            )
+                no_fail_already_exists: *no_fail_already_exists,
+                custom_dockerfile: *custom_dockerfile,
+                remote_bootstrap: match from_remote {
+                    None => RemoteBootstrapSource::None,
+                    Some(None) => RemoteBootstrapSource::Prompt,
+                    Some(Some(url)) => RemoteBootstrapSource::ConnectionString(url.to_string()),
+                },
+            })
             .await?;
-
-            let normalized_url = match from_remote {
-                None => {
-                    // No --from-remote flag provided
-                    None
-                }
-                Some(None) => {
-                    // --from-remote flag provided, but no URL given - use interactive prompts
-                    let url = prompt_user_for_remote_ch_http()?;
-                    db_to_dmv2(&url, dir_path).await?;
-                    Some(url)
-                }
-                Some(Some(url_str)) => {
-                    db_to_dmv2(url_str, dir_path).await?;
-                    Some(url_str.to_string())
-                }
-            };
-
-            // Write [dev.remote_clickhouse] config and store credentials
-            if let Some(ref connection_string) = normalized_url {
-                // Parse the connection string to extract components
-                let parsed = parse_clickhouse_connection_string_with_metadata(connection_string)
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "Parse Error".to_string(),
-                                "Failed to parse ClickHouse URL".to_string(),
-                            ),
-                            e,
-                        )
-                    })?;
-
-                // db_to_dmv2 already changed into dir_path, so just load the project
-                let mut project = crate::cli::load_project_dev()?;
-
-                // Set up [dev.remote_clickhouse] config
-                project.dev.remote_clickhouse = Some(RemoteClickHouseConfig {
-                    protocol: ClickHouseProtocol::Http,
-                    host: Some(parsed.config.host.clone()),
-                    port: Some(parsed.config.host_port as u16),
-                    database: Some(parsed.config.db_name.clone()),
-                    use_ssl: parsed.config.use_ssl,
-                });
-
-                // Write updated config to disk
-                project.write_to_disk().map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new(
-                            "Failure".to_string(),
-                            "writing remote_clickhouse config".to_string(),
-                        ),
-                        e,
-                    )
-                })?;
-
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message::new(
-                        "Config".to_string(),
-                        format!(
-                            "Wrote [dev.remote_clickhouse] to moose.config.toml (host: {}, database: {})",
-                            parsed.config.host, parsed.config.db_name
-                        ),
-                    ),
-                );
-
-                // Store credentials in keychain
-                if let Err(e) = store_remote_clickhouse_credentials(
-                    name,
-                    &parsed.config.user,
-                    &parsed.config.password,
-                ) {
-                    display::show_message_wrapper(
-                        MessageType::Warning,
-                        Message::new(
-                            "Keychain".to_string(),
-                            format!("Failed to store credentials: {e:?}. You'll be prompted again next time."),
-                        ),
-                    );
-                }
-
-                // Also store the full URL for backwards compatibility
-                let repo = KeyringSecretRepository;
-                if let Err(e) = repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
-                    display::show_message_wrapper(
-                        MessageType::Warning,
-                        Message::new(
-                            "Keychain".to_string(),
-                            format!("Failed to store connection URL: {e:?}. You'll be prompted again next time."),
-                        ),
-                    );
-                }
-            }
 
             wait_for_usage_capture(capture_handle).await;
 
-            let success_message = format!("\n\n{post_install_message}");
+            let success_message = format!("\n\n{}", project_outcome.post_install_message);
 
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
@@ -746,6 +667,9 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
+            yes_all,
+            yes_destructive,
+            yes_rename,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -761,6 +685,16 @@ pub async fn top_command_handler(
             if *log_payloads {
                 info!("Payload logging enabled");
             }
+
+            let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
+            let confirmation_policy = ConfirmationPolicy {
+                accept_destructive: accept_all
+                    || *yes_destructive
+                    || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+                accept_rename: accept_all || *yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
+                is_dev: true,
+            };
+
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -820,6 +754,7 @@ pub async fn top_command_handler(
                 redis_client,
                 &settings,
                 *mcp,
+                confirmation_policy,
             )
             .await
             .map_err(|e| {
@@ -914,6 +849,10 @@ pub async fn top_command_handler(
                 clickhouse_url,
                 redis_url,
                 save,
+                yes_all,
+                yes_destructive,
+                yes_rename,
+                no_auto_backfill_sql,
             }) => {
                 info!("Running generate migration command");
 
@@ -969,7 +908,7 @@ pub async fn top_command_handler(
                     }));
                 };
 
-                let result = result.map_err(|e| {
+                let mut result = result.map_err(|e| {
                     RoutineFailure::new(
                         Message {
                             action: "Plan".to_string(),
@@ -979,103 +918,20 @@ pub async fn top_command_handler(
                     )
                 })?;
 
-                let plan_yaml = result.db_migration.to_yaml().map_err(|e| {
-                    RoutineFailure::new(
-                        Message {
-                            action: "Plan".to_string(),
-                            details: "Failed to serialize".to_string(),
-                        },
-                        e,
-                    )
-                })?;
+                let outcome = confirm_and_save_migration(
+                    &project,
+                    &mut result,
+                    *yes_all,
+                    *yes_destructive,
+                    *yes_rename,
+                    *no_auto_backfill_sql,
+                    *save,
+                )
+                .await;
 
                 wait_for_usage_capture(capture_handle).await;
 
-                if *save {
-                    std::fs::create_dir_all("./migrations").map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "Migration".to_string(),
-                                "plan writing failed.".to_string(),
-                            ),
-                            e,
-                        )
-                    })?;
-
-                    if let Err(e) = std::fs::write(
-                        project
-                            .internal_dir_with_routine_failure_err()?
-                            .join("migration_schema.json"),
-                        MIGRATION_SCHEMA,
-                    ) {
-                        warn!("Error writing migration schema file: {e:?}");
-                    };
-                    // Prepend YAML language server schema directive for better editor support
-                    let plan_yaml_with_header = format!(
-                        "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
-                        plan_yaml
-                    );
-                    std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(
-                        |e| {
-                            RoutineFailure::new(
-                                Message::new(
-                                    "Migration".to_string(),
-                                    "plan writing failed.".to_string(),
-                                ),
-                                e,
-                            )
-                        },
-                    )?;
-                    std::fs::write(
-                        MIGRATION_BEFORE_STATE_FILE,
-                        serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
-                            RoutineFailure::new(
-                                Message::new(
-                                    "Error".to_string(),
-                                    "serializing remote state.".to_string(),
-                                ),
-                                e,
-                            )
-                        })?,
-                    )
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "Migration".to_string(),
-                                "plan writing failed.".to_string(),
-                            ),
-                            e,
-                        )
-                    })?;
-                    std::fs::write(
-                        MIGRATION_AFTER_STATE_FILE,
-                        serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
-                            RoutineFailure::new(
-                                Message::new(
-                                    "Error".to_string(),
-                                    "serializing local state.".to_string(),
-                                ),
-                                e,
-                            )
-                        })?,
-                    )
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "Migration".to_string(),
-                                "plan writing failed.".to_string(),
-                            ),
-                            e,
-                        )
-                    })?;
-                } else {
-                    println!("Changes: \n\n{}", plan_yaml);
-                }
-
-                Ok(RoutineSuccess::success(Message::new(
-                    "Migration".to_string(),
-                    "generated".to_string(),
-                )))
+                outcome
             }
             None => Err(RoutineFailure::error(Message {
                 action: "Generate".to_string(),
@@ -1481,7 +1337,11 @@ pub async fn top_command_handler(
 
             let template_cmd = template_args.command.as_ref().unwrap();
             match template_cmd {
-                TemplateSubCommands::List {} => {
+                TemplateSubCommands::List { json } => {
+                    if *json {
+                        QUIET_STDOUT.store(true, Ordering::Relaxed);
+                    }
+
                     let capture_handle = crate::utilities::capture::capture_usage(
                         ActivityType::TemplateListCommand,
                         None,
@@ -1490,11 +1350,20 @@ pub async fn top_command_handler(
                         HashMap::new(),
                     );
 
-                    let result = list_available_templates(CLI_VERSION).await;
+                    let result = list_available_templates(CLI_VERSION, *json).await;
 
                     wait_for_usage_capture(capture_handle).await;
 
                     result
+                }
+            }
+        }
+        Commands::Harness(harness_args) => {
+            info!("Running harness command");
+
+            match &harness_args.command {
+                HarnessSubCommands::Init(flags) => {
+                    run_harness_init(flags, &settings, &machine_id).await
                 }
             }
         }
@@ -1638,6 +1507,61 @@ pub async fn top_command_handler(
             let project = load_project(commands)?;
             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
+        Commands::Mcp { host, port } => {
+            // Resolve host/port: CLI args > project config > defaults
+            let (resolved_host, resolved_port) = {
+                let default_host = "localhost".to_string();
+                let default_port: u16 = 4000;
+
+                match (host.clone(), *port) {
+                    (Some(h), Some(p)) => (h, p),
+                    (h, p) => {
+                        // Try loading project config for unset values
+                        let (proj_host, proj_port) = load_project(commands)
+                            .map(|proj| {
+                                (
+                                    proj.http_server_config.host.clone(),
+                                    proj.http_server_config.port,
+                                )
+                            })
+                            .unwrap_or((default_host.clone(), default_port));
+                        (h.unwrap_or(proj_host), p.unwrap_or(proj_port))
+                    }
+                }
+            };
+
+            let dev_server_url = format!("http://{}:{}/mcp", resolved_host, resolved_port);
+            eprintln!(
+                "Moose MCP proxy connecting to dev server at {}",
+                dev_server_url
+            );
+
+            let handler = crate::mcp::ProxyMcpHandler::new(dev_server_url);
+
+            let service = handler
+                .serve(rmcp::transport::io::stdio())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::error(Message::new(
+                        "MCP".to_string(),
+                        format!("Failed to start MCP proxy: {e}"),
+                    ))
+                })?;
+
+            service.waiting().await.map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "MCP".to_string(),
+                    format!("MCP proxy error: {e}"),
+                ))
+            })?;
+
+            // Return an empty message so nothing is written to stdout,
+            // which is reserved for MCP protocol frames.
+            Ok(RoutineSuccess::success(Message::new(
+                String::new(),
+                String::new(),
+            )))
+        }
         Commands::Kafka(KafkaArgs { command }) => match command {
             KafkaCommands::Pull {
                 bootstrap,
@@ -1717,6 +1641,7 @@ pub async fn top_command_handler(
             let component_name = match &component {
                 AddComponent::McpServer(_) => "mcp-server",
                 AddComponent::Chat(_) => "chat",
+                AddComponent::Benchmark(_) => "benchmark",
             };
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1787,6 +1712,243 @@ pub async fn top_command_handler(
             result
         }
     }
+}
+
+/// Runs confirmation gates (rename + destructive), builds the final migration
+/// plan with optional backfill SQL, and saves or prints the result.
+///
+/// Extracted from the `generate migration` handler so that early-returns
+/// (rename cancellation, destructive rejection) do not bypass the caller's
+/// `wait_for_usage_capture` call.
+async fn confirm_and_save_migration(
+    project: &Project,
+    result: &mut MigrationPlanWithBeforeAfter,
+    yes_all: bool,
+    yes_destructive: bool,
+    yes_rename: bool,
+    no_auto_backfill_sql: bool,
+    save: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
+    let migration_policy = ConfirmationPolicy {
+        accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+        accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
+        is_dev: false,
+    };
+
+    let risk = match confirm_renames_and_classify(&mut result.changes, &migration_policy).await? {
+        Some(risk) => risk,
+        None => {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation cancelled during rename confirmation".to_string(),
+            )));
+        }
+    };
+
+    match migration_destructive_gate(&risk, &migration_policy).await? {
+        MigrationGateOutcome::Rejected { tables } => {
+            print_migration_rejected_guidance(&tables, &project.language);
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation aborted".to_string(),
+            )));
+        }
+        MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
+    }
+
+    let mut db_migration = result.to_migration_plan().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Plan".to_string(),
+                details: "Failed to order migration operations".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    if no_auto_backfill_sql {
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "Auto-backfill".to_string(),
+                details: "disabled by --no-auto-backfill-sql".to_string(),
+            },
+        );
+    } else {
+        let candidates = db_migration.detect_backfill_candidates(
+            &result.remote_state.tables,
+            &project.clickhouse_config.db_name,
+        );
+
+        if !candidates.is_empty() {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Backfill".to_string(),
+                    details: "Checking versioned table backfill opportunities...".to_string(),
+                },
+            );
+        }
+
+        for check in &candidates {
+            match check {
+                BackfillCheckResult::Candidate(c) => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Equivalent".to_string(),
+                            details: format!(
+                                "`{}` <- `{}`",
+                                c.target_table_name, c.source_table_name
+                            ),
+                        },
+                    );
+
+                    let should_append = {
+                        use std::io::IsTerminal;
+                        if std::io::stdin().is_terminal() && stdout().is_terminal() {
+                            let answer = prompt_user(
+                                "Append RawSql backfill operation to plan.yaml? [Y/n]",
+                                Some("Y"),
+                                None,
+                            )?;
+                            !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                        } else {
+                            info!("Non-interactive mode: auto-appending backfill SQL");
+                            true
+                        }
+                    };
+
+                    if should_append {
+                        db_migration.append_backfill(c);
+                        display::show_message_wrapper(
+                            MessageType::Success,
+                            Message {
+                                action: "Appended".to_string(),
+                                details: format!(
+                                    "RawSql backfill: `{}` <- `{}`",
+                                    c.target_table_name, c.source_table_name
+                                ),
+                            },
+                        );
+                    } else {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message {
+                                action: "Skipped".to_string(),
+                                details: "auto-backfill by user choice".to_string(),
+                            },
+                        );
+                    }
+                }
+                BackfillCheckResult::NonEquivalent {
+                    target,
+                    source,
+                    reason,
+                } => {
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Skipped".to_string(),
+                            details: format!(
+                                "auto-backfill for `{target}`: schema is not \
+                                 equivalent to `{source}`\n  - Mismatch: {reason}"
+                            ),
+                        },
+                    );
+                }
+                BackfillCheckResult::Duplicate { target, source } => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Exists".to_string(),
+                            details: format!(
+                                "Backfill SQL already exists for `{target}` <- \
+                                 `{source}`; no duplicate appended"
+                            ),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let plan_yaml = db_migration.to_yaml().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Plan".to_string(),
+                details: "Failed to serialize".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    if save {
+        std::fs::create_dir_all("./migrations").map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+
+        if let Err(e) = std::fs::write(
+            project
+                .internal_dir_with_routine_failure_err()?
+                .join("migration_schema.json"),
+            MIGRATION_SCHEMA,
+        ) {
+            warn!("Error writing migration schema file: {e:?}");
+        };
+
+        let plan_yaml_with_header = format!(
+            "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
+            plan_yaml
+        );
+        std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+        std::fs::write(
+            MIGRATION_BEFORE_STATE_FILE,
+            serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Error".to_string(), "serializing remote state.".to_string()),
+                    e,
+                )
+            })?,
+        )
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+        std::fs::write(
+            MIGRATION_AFTER_STATE_FILE,
+            serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Error".to_string(), "serializing local state.".to_string()),
+                    e,
+                )
+            })?,
+        )
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+    } else {
+        println!("Changes: \n\n{}", plan_yaml);
+    }
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Migration".to_string(),
+        "generated".to_string(),
+    )))
 }
 
 #[cfg(test)]

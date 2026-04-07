@@ -1,0 +1,260 @@
+/// <reference types="node" />
+/// <reference types="mocha" />
+/// <reference types="chai" />
+
+import { expect } from "chai";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { randomUUID } from "crypto";
+import { spawn } from "child_process";
+import { parse as parseToml } from "@iarna/toml";
+
+const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
+const SKILLS_FIXTURE_PATH = path.resolve(
+  __dirname,
+  "../../../apps/framework-cli/tests/fixtures/agent-skills",
+);
+
+const runHarnessInit = (
+  args: string[],
+  options: {
+    homeDir: string;
+    cwd?: string;
+    stdin?: string;
+  },
+): Promise<{ code: number | null; stdout: string; stderr: string }> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(CLI_PATH, args, {
+      cwd: options.cwd ?? options.homeDir,
+      env: {
+        ...process.env,
+        HOME: options.homeDir,
+        MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_HARNESS_SKILLS_DIR: SKILLS_FIXTURE_PATH,
+      },
+      stdio: "pipe",
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+
+    if (options.stdin) {
+      child.stdin.write(options.stdin);
+    }
+    child.stdin.end();
+  });
+
+const createTempDir = (prefix: string) =>
+  fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-${randomUUID()}-`));
+
+describe("harness init", () => {
+  it("runs the zero-arg interactive wizard", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "wizard-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(["harness", "init"], {
+      homeDir,
+      stdin: "wizard-e2e\nnot-a-template\n\n\n\n\nn\n",
+    });
+
+    expect(result.code).to.equal(0, result.stderr);
+    expect(result.stdout).to.contain("Starting interactive harness setup");
+    expect(result.stdout).to.contain("Select template");
+    expect(result.stdout).to.contain("Unknown template selection");
+    expect(fs.existsSync(path.join(projectDir, "package.json"))).to.equal(true);
+    expect(
+      fs.existsSync(
+        path.join(homeDir, ".codex/skills/clickhouse--best-practices"),
+      ),
+    ).to.equal(true);
+  });
+
+  it("stays non-interactive in arg-driven mode", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "arg-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "arg-e2e",
+        "typescript",
+        "--location",
+        projectDir,
+        "--agent",
+        "codex",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.equal(0, result.stderr);
+    expect(result.stdout).to.not.contain("Project name");
+    expect(result.stdout).to.not.contain("Coding agents");
+    expect(fs.existsSync(path.join(projectDir, "package.json"))).to.equal(true);
+    const codexConfigPath = path.join(homeDir, ".codex/config.toml");
+    expect(fs.existsSync(codexConfigPath)).to.equal(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          homeDir,
+          ".agents/skills/clickhouse/best-practices/references/rule-1.md",
+        ),
+      ),
+    ).to.equal(true);
+
+    const codexConfig = fs.readFileSync(codexConfigPath, "utf8");
+    const parsed = parseToml(codexConfig) as {
+      mcp_servers?: {
+        "moose-dev"?: {
+          command?: string;
+          args?: string[];
+        };
+        context7?: {
+          url?: string;
+        };
+      };
+    };
+    expect(parsed.mcp_servers?.["moose-dev"]?.command).to.equal("moose");
+    expect(parsed.mcp_servers?.["moose-dev"]?.args?.[0]).to.equal("mcp");
+    expect(parsed.mcp_servers?.context7?.url).to.equal(
+      "https://mcp.context7.com/mcp",
+    );
+    expect(codexConfig).to.not.contain("http://localhost:4000/mcp");
+  });
+
+  it("preserves the typescript-agent turbo cache ignore entry", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "agent-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "agent-e2e",
+        "typescript-agent",
+        "--location",
+        projectDir,
+        "--agent",
+        "none",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.equal(0, result.stderr);
+    expect(fs.existsSync(path.join(projectDir, "package.json"))).to.equal(true);
+    expect(
+      fs.readFileSync(path.join(projectDir, ".gitignore"), "utf8"),
+    ).to.contain(".turbo");
+  });
+
+  it("targets the nested Moose project when bootstrapping a typescript-agent repo from remote", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "agent-remote-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "agent-remote-e2e",
+        "typescript-agent",
+        "--location",
+        projectDir,
+        "--from-remote",
+        "http://user:pass@127.0.0.1:9/default",
+        "--agent",
+        "none",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.not.equal(0);
+    expect(result.stdout).to.not.contain("No project found");
+    expect(result.stderr).to.not.contain("No project found");
+    expect(
+      fs.existsSync(
+        path.join(projectDir, "packages/moosestack-service/moose.config.toml"),
+      ),
+    ).to.equal(true);
+  });
+
+  it("rejects bare --from-remote in arg-driven mode", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "remote-e2e");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "remote-e2e",
+        "typescript",
+        "--location",
+        projectDir,
+        "--from-remote",
+        "--agent",
+        "none",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.not.equal(0);
+    expect(result.stderr).to.contain(
+      "a value is required for '--from-remote <CONNECTION_STRING>'",
+    );
+  });
+
+  it("supports project names that would otherwise match the schema subcommand", async function () {
+    this.timeout(120_000);
+
+    const homeDir = createTempDir("moose-harness-home");
+    const projectDir = path.join(homeDir, "schema");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+
+    const result = await runHarnessInit(
+      [
+        "harness",
+        "init",
+        "--name",
+        "schema",
+        "--template",
+        "typescript",
+        "--location",
+        projectDir,
+        "--agent",
+        "none",
+        "--no-lsp",
+      ],
+      { homeDir },
+    );
+
+    expect(result.code).to.equal(0, result.stderr);
+    expect(fs.existsSync(path.join(projectDir, "package.json"))).to.equal(true);
+  });
+});

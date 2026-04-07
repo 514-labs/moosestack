@@ -1,0 +1,727 @@
+---
+title: Tutorial
+description: Get a production-shaped analytics agent running and customized for your domain
+languages: ["typescript"]
+---
+
+import { Callout, BulletPointsCard, CommunityCallout } from "@/components/mdx";
+
+# Tutorial: Production-Ready Analytics Agent
+
+This tutorial walks you through building a production-ready analytics agent from the [`typescript-agent` template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent) — a complete reference implementation with the Analytics Agent Harness already wired: JWT auth, multi-tenant row-level security, multi-agent orchestration, observability hooks, a semantic layer, and guardrails. You customize it for your domain, not build from scratch.
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       Typescript-agent Template --> Your Analytics Agent App                      │
+│                                                                                                   │
+│  ┌─────────────┐   ┌─────────────────────────────────────────────┐   ┌─────────────┐   ┌───────┐  │
+│  │ Source Data │──►│  Agent-ready Analytical Infra & Middleware  │──►│  Analytics  │──►│  GUI  │  │
+│  └─────────────┘   │                                             │   │    Agent    │   └───────┘  │
+│                    │   Analytical DB · Streaming · APIs / MCPs   │   └─────────────┘              │
+│                    │  Security · Observability · Semantic Layer  │                                │
+│                    │                                             │                                │
+│                    │         aka "Analytics Agent Harness"       │                                │
+│                    └─────────────────────────────────────────────┘                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │          Coding Agent Harness  (514 / MooseStack)          │
+                     └────────────────────────────────────────────────────────────┘
+                                                  ▲
+                     ┌────────────────────────────────────────────────────────────┐
+                     │     Coding Agent (Claude Code · Cursor · Kiro · Codex)     │
+                     └────────────────────────────────────────────────────────────┘
+```
+
+For context on what the Analytics Agent Harness is and when this approach is worth it, read the [Overview](/guides/production-ready-analytics-agent/overview). For how to set up your coding agent for this work, read [Dev Approach](/guides/production-ready-analytics-agent/dev-approach).
+
+**Reference implementation:** The [ADS-B Flight Anomaly Agent](https://github.com/514-labs/agent-adsb) is a fully built analytics agent on this same template — real-time military aircraft tracking, anomaly detection, and a chat interface backed by live ADS-B data. Every step in this tutorial is implemented end-to-end in that repo. We'll reference it throughout.
+
+<BulletPointsCard
+  title="By the end of this tutorial you'll have"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "A running analytics agent backed by ClickHouse",
+      description:
+        "A single-agent or multi-agent pipeline that runs targeted ClickHouse queries and returns accurate, well-explained answers.",
+    },
+    {
+      title: "Your domain data in ClickHouse and queryable by the agent",
+      description:
+        "A typed data model, a chosen ingest strategy, and verified chat responses against your real data.",
+    },
+    {
+      title: "A semantic layer so every surface shares the same metric definitions",
+      description:
+        "Chat, APIs, dashboards, and MCP tools all share one definition. Metrics don't drift.",
+    },
+    {
+      title: "Full observability: every tool call, model decision, cost, and latency",
+      description:
+        "Langfuse traces wired in from the first real query. Tuning prompts and identifying slow queries from real trace data.",
+    },
+    {
+      title: "Secure, multi-tenant access — JWT-authenticated, tenant-isolated at the database layer",
+      description:
+        "Row-level security enforced in ClickHouse. Cross-tenant queries are rejected at the data layer, not the application layer.",
+    },
+    {
+      title: "A frontend chat UI wired to the agent",
+      description:
+        "Either the template's Next.js UI customized for your domain, or your own frontend connected to the agent.",
+    },
+    {
+      title: "Guardrails configured and verified for your provider",
+      description:
+        "Content policy enforcement wired in before you ship, not bolted on after an incident.",
+    },
+  ]}
+/>
+
+### How to use this tutorial
+
+You can work through this tutorial manually, use your coding agent to execute each section, or a mix of both. 
+
+To go agent-first from the start, try a prompt like this with your coding agent:
+
+```text
+I want to build a production-ready analytics agent. Read the tutorial at
+https://docs.fiveonefour.com/guides/production-ready-analytics-agent/tutorial
+for context, then help me execute each section. Start by installing MooseStack 
+and getting the template running locally. Then customize by asking me about my
+use case, my data source, and what I want my analytics agent to be able to do. 
+```
+
+---
+
+### Steps
+
+1. [Get Running Locally](#1-get-running-locally)
+2. [Wire Up Observability](#2-wire-up-observability)
+3. [Get Your Data In](#3-get-your-data-in)
+4. [Surface Your Data — Semantic Layer, APIs & MCP Tools](#4-surface-your-data--semantic-layer-apis--mcp-tools)
+5. [Customize Your Agent](#5-customize-your-agent)
+6. [Build Your Frontend](#6-build-your-frontend)
+7. [Configure Multitenancy & Row-Level Security](#7-configure-multitenancy--row-level-security)
+8. [Configure Guardrails](#8-configure-guardrails)
+9. [Deploy](#9-deploy)
+
+<CommunityCallout title="Need live support?">
+Join the MooseStack Slack — the team behind the Coding Agent Harness and this template is there.
+[Join the community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+</CommunityCallout>
+
+---
+
+## 1. Get Running Locally
+
+### Install the harness CLIs
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514,moose
+```
+
+For prerequisites, platform-specific instructions, and troubleshooting, see the [MooseStack Quickstart](https://www.fiveonefour.com/moosestack/getting-started/quickstart).
+
+### Create your project
+
+```bash
+moose harness init \
+  --name my-analytics-agent-app \
+  --agent claude-code \
+  --agent cursor \
+  --agent kiro \
+  --lsp \
+  --template typescript-agent
+```
+
+This scaffolds the project, installs 514 agent skills, configures MCP for your coding agent(s), and enables the LSP for SQL validation and schema introspection. The `--agent` flags shown are the recommended defaults — add or remove based on what you use. Supported values: `claude-code`, `cursor`, `vscode`, `copilot-cli`, `kiro`, `windsurf`, `opencode`, `continue`, `cline`, `codex`, `amp`, `aider`, `roo-code`, `zed`, `augment-code`, `trae`, `kilo-code`, `void`, `pearai`, `melty`, `supermaven`. Omit `--agent` entirely to auto-detect.
+
+### Get up and running
+
+Follow the **Quickstart** section in the [template README](https://github.com/514-labs/moosestack/tree/main/templates/typescript-agent#quickstart) to install dependencies, prepare environment files (`pnpm env:prepare` creates `.env.local` files, generates `AUTH_SECRET`, and creates a local RSA keypair for the JWT flow), configure your AI provider, and start the dev environment.
+
+<Callout type="info" title="AI provider vs. coding agent">
+The AI provider you configure here is for the **analytics agents running inside the application** — they respond to user queries in the chat UI. This is separate from the coding agent (Claude Code, Cursor, etc.) you're using to build the app.
+</Callout>
+
+<Callout type="info" title="Bedrock tool schema note">
+When writing custom MCP tools backed by Bedrock, prefer `z.string()` with explicit allowed-value descriptions over `z.enum()`. Bedrock's tool-schema validation is stricter than Anthropic/OpenAI, and `z.enum()` types can cause silent failures. The template's built-in tools are already on this pattern.
+</Callout>
+
+`pnpm dev:start` requires Docker Desktop or Docker Engine running. It's a long-running process — keep it in its own terminal.
+
+![Docker containers after pnpm dev:start](/guides/production-ready-analytics-agent/docker-containers.png)
+
+Once the dev server is running and you've seeded the demo data, **restart your coding agent** so it picks up the MooseDev MCP server. Your coding agent now has live ClickHouse introspection for the rest of the tutorial.
+
+Open `http://localhost:3000` and sign in as one of the demo tenants. The dashboard shows tenant-scoped demo metrics.
+
+![Dashboard after sign-in with seeded data](/guides/production-ready-analytics-agent/agent-3.png)
+
+Try the chat - click the chat icon in the bottom right, and ask something of the analytics agent (Eg. "Tell me about high priority events"). Then sign out and sign in as the other tenant — you should see different data. This confirms tenant-scoped row-level security is working before you invest time customizing.
+
+![Chat panel showing tool calls with seeded data](/guides/production-ready-analytics-agent/agent-4.png)
+
+![Other tenant showing different data](/guides/production-ready-analytics-agent/agent-5.png)
+
+**You're ready to continue when** you get a streamed chat response and can see different data per tenant.
+
+<Callout type="info">
+If you see "Port 4000 already in use" after restarting, a stale `moose-cli` process is holding the port. `kill` won't work — use `kill -9 $(lsof -ti:4000)` to clear it.
+</Callout>
+
+---
+
+## 2. Wire Up Observability
+
+Wire up Langfuse before you start customizing — you want traces from your first real query, not after you've already shipped.
+
+### Create a Langfuse project
+
+1. Sign up at [cloud.langfuse.com](https://cloud.langfuse.com) — free Hobby tier available
+2. Create a project (e.g. "my-analytics-agent")
+3. Go to **Project Settings → API Keys** and generate credentials: a public key (`pk-lf-...`) and a secret key (`sk-lf-...`)
+
+### Configure and restart
+
+Add to `packages/web-app/.env.local`:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+# LANGFUSE_BASE_URL defaults to https://cloud.langfuse.com (EU)
+# Set https://us.cloud.langfuse.com if your project is in the US region
+```
+
+Restart the web app after editing `.env.local` — env vars are read at startup.
+
+### Verify traces
+
+Send a chat message. In Langfuse, open **Tracing** — you should see a trace named `agent:<tenant>` for each request, showing the full tool call chain, token counts, latency, and tenant ID.
+
+![Langfuse trace showing agent tool calls and metadata](/guides/production-ready-analytics-agent/agent-8.png)
+
+<Callout type="info">
+Trace inputs show `[redacted prompt; N chars]` by design — the template sanitizes prompts before sending to Langfuse as a privacy measure. Customize this in `packages/agent-runtime/src/streams/trace-session.ts` if you want full content visibility during development.
+</Callout>
+
+---
+
+## 3. Get Your Data In
+
+The template ships with a `TenantKnowledge` demo model — a placeholder to confirm your setup is working. This section replaces it with your domain data.
+
+**The order matters: sample first, then model, then load.** Your coding agent needs to see real field names, types, and values before it can define an accurate ClickHouse schema. Don't model from docs alone if you can get a sample.
+
+### Collect a data sample
+
+Before writing any TypeScript, get a sample your coding agent can inspect. How depends on your source:
+
+- **API:** Fetch a sample response — e.g. `curl -s https://api.example.com/data | jq '.[0]'`
+- **Remote file (S3, Parquet, CSV):** Query it directly: `moose query "SELECT * FROM url('https://...') LIMIT 100"`
+- **Existing database:** Ask your coding agent to connect and pull schema + sample rows
+- **File you already have:** Drop it in the project and point your coding agent at it
+
+The goal is ground-truth column names, types, and representative values before you write a single interface.
+
+> **ADS-B example:** `curl -s https://api.adsb.lol/v2/mil | jq '.ac[0]'` — returns one military aircraft object with all available fields, including `hex`, `flight`, `alt_baro`, `gs`, `emergency`, and `lat`/`lon`.
+
+### Define your data model
+
+Key file: `packages/moosestack-service/app/ingest/models.ts`
+
+Give your coding agent the sample and any additional context — schema docs, a data dictionary, API response examples. Your model might be a full `IngestPipeline` with streaming ingest, or just an `OlapTable` for direct ClickHouse load.
+
+The `clickhouse--best-practices` skill (installed with the harness) covers schema design, type selection, and `orderByFields` strategy — invoke it via your coding agent. Key rules that apply to data modeling:
+
+- Order `orderByFields` from low to high cardinality — common filter columns first, high-cardinality timestamps last
+- Use `LowCardinality` for string fields with fewer than ~10K unique values (status codes, categories, identifiers)
+- Use `ClickHouseDefault` instead of `?` (Nullable) wherever a sensible default exists — only use Nullable where NULL is semantically meaningful
+- Include your most-filtered columns in `orderByFields`
+
+```typescript
+// Example model shape
+import { OlapTable, Stream, IngestApi, ClickHouseEngines } from "@514labs/moose-lib";
+
+export const MyTable = new OlapTable<MyData>("my_table", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["low_cardinality_field", "timestamp"],
+});
+
+export const MyStream = new Stream<MyData>("my_data", {
+  destination: MyTable,
+});
+
+export const MyIngestApi = new IngestApi<MyData>("my_data", {
+  destination: MyStream,
+});
+```
+
+> **ADS-B example:** [`models.ts` in agent-adsb](https://github.com/514-labs/agent-adsb/blob/main/packages/moosestack-service/app/ingest/models.ts) — `AircraftTracking` with `hex` + `polled_at` as `orderByFields`, `LowCardinality` on `emergency`/`category`/`squawk`, and Nullable only on `lat`/`lon` where a NULL position fix is meaningful.
+
+```text
+Agent prompt — define the data model:
+
+I'm sharing [your sample file / API response]. Replace the TenantKnowledge
+interface and IngestPipeline in packages/moosestack-service/app/ingest/models.ts
+with a model for [your domain]. Use the sample to inform column types and
+cardinalities. Keep the tenant_id field and SelectRowPolicy for multi-tenant
+isolation. Invoke the /clickhouse--best-practices skill for typing and orderBy
+guidance. Export the new table from app/index.ts.
+```
+
+### Clean up template references
+
+Replacing the data model breaks several files that depend on `TenantKnowledge`. Work through these in order:
+
+| File | What to do |
+|---|---|
+| `app/index.ts` | Remove the `knowledge` re-export; add your model |
+| `app/mcp/tool-access/exposed-surface.ts` | Update to reference your new table |
+| `app/semantic/knowledge.ts` | Stub or remove — you'll rebuild this in Section 4 |
+| `app/semantic/dashboard-snapshot.ts` | Stub with matching function signature — rebuild in Section 4 |
+| `app/mcp/server.ts` | Comment out `registerSemanticModelTools` imports and calls — re-enable in Section 4 |
+| `packages/agent-contracts/src/index.ts` | Replace `DashboardSnapshot`, `KnowledgeMetrics` types with your own |
+| `packages/web-app/src/app/page.tsx` | Update or stub the dashboard UI — rebuild in Section 6 |
+| `seed/tenant_knowledge.sql` + `scripts/seed.mjs` | Remove or replace with your own seed data |
+| `test/*.unit.test.ts` | Update references to your models |
+
+<Callout type="warning">
+The Moose dev file watcher shows an error count when TypeScript compilation fails, but not the actual error messages. If you see errors after swapping the model, run `pnpm build:service` from the project root to get full diagnostics.
+</Callout>
+
+### Load your data
+
+**Static archive — one-shot load**
+
+For historical datasets or files in S3, Parquet, or CSV:
+
+```bash
+moose query "INSERT INTO your_table SELECT field_a, field_b FROM s3('https://your-bucket/file.parquet', Parquet)"
+```
+
+`moose query -f` reports "0 rows" for INSERT statements — this is expected. Verify with a follow-up SELECT:
+
+```bash
+moose query "SELECT COUNT(*) FROM your_table"
+```
+
+In production, use `514 query` to run the same SQL against your hosted ClickHouse.
+
+**Scheduled / batch refresh**
+
+For data that updates periodically, create a MooseStack Workflow that polls your source on a schedule:
+
+```typescript
+// app/workflows/my-workflow.ts
+import { Task, Workflow } from "@514labs/moose-lib";
+
+const fetchTask = new Task<void, void>("fetch-task", {
+  run: async () => {
+    const response = await fetch("https://api.example.com/data");
+    const records = await response.json();
+    await fetch("http://localhost:4000/ingest/my_data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(records),
+    });
+  },
+  retries: 1,
+  timeout: "30s",
+});
+
+export const myWorkflow = new Workflow("my-workflow", {
+  startingTask: fetchTask,
+  schedule: "@every 30s",  // cron syntax also supported: "0 */5 * * *"
+  retries: 1,
+  timeout: "1m",
+});
+```
+
+Export the workflow from `app/index.ts` so Moose registers it. See [MooseStack Workflows](https://docs.fiveonefour.com/moosestack/workflows?lang=typescript) for the full API.
+
+When mapping API responses to your model: trim string fields (many APIs return values with trailing spaces), handle fields that carry mixed types (`alt_baro` in ADS-B can be `"ground"` instead of a number), pass `null` for fields declared as Nullable that are missing from the response, and add an ingestion timestamp so you know when each snapshot was captured.
+
+> **ADS-B example:** [`workflows/` in agent-adsb](https://github.com/514-labs/agent-adsb/tree/main/packages/moosestack-service/app/workflows) — polls `adsb.lol/v2/mil` every 30 seconds, maps the API response to `AircraftTracking`, posts to the ingest API.
+
+**Real-time / CDC**
+
+- **ClickHouse Cloud:** Use [ClickPipes](https://clickhouse.com/docs/integrations/clickpipes) for CDC directly from your source database — no additional infrastructure
+- **Self-hosted / MooseStack:** Use `IngestPipeline` with `stream: true` to wire up a Redpanda topic, then connect Debezium. See the [Performant Dashboards guide](https://docs.fiveonefour.com/guides/performant-dashboards) for step-by-step instructions
+
+**Existing ClickHouse instance**
+
+If your data already lives in a remote ClickHouse cluster:
+
+```bash
+# Generate MooseStack data models from existing schema
+moose db pull --clickhouse-url clickhouse://user:pass@host:port/database
+
+# Copy rows into local ClickHouse for development
+moose seed clickhouse --clickhouse-url clickhouse://user:pass@host:port/database --limit 100000
+```
+
+Use `--table <name>` to seed a specific table, `--order-by 'timestamp DESC'` for the most recent rows, and `--all` to copy without a row limit.
+
+### Verify
+
+```bash
+moose ls                                          # list all tables, streams, APIs, workflows
+moose query "SELECT COUNT(*) FROM your_table"     # confirm data loaded
+moose peek your_table                             # view sample rows
+```
+
+For a deeper check, use the MooseDev MCP tools in your coding agent:
+- `get_infra_map` — confirms your new table, topic, and ingest API appear in the registered component list
+- `query_olap` with `DESCRIBE TABLE your_table` — verifies column types, defaults, and nullability match your model intent
+
+Then ask the chat a question about your data. Check the tool call results in the chat UI — each one shows the SQL that was executed. Confirm the query targets your table, not the demo `tenant_knowledge` table.
+
+---
+
+## 4. Surface Your Data — Semantic Layer, APIs & MCP Tools
+
+This section is about making your data accessible: defining what questions can be asked, how the analytics agent calls your data, and what APIs and tools you expose. Everything you define here is shared across the agent, APIs, and dashboards — define a metric once, it's available everywhere and never drifts.
+
+The semantic layer defines *what questions can be asked* about your data. Query models declare dimensions, metrics, and filters once — then the same model can be projected into multiple interfaces:
+
+- **MCP tool** for agents — via `registerModelTools(server, [model], queryClient)`
+- **Dashboard API** — via `model.toSql()` in your Express handlers (see `app/semantic/dashboard-snapshot.ts`)
+- **REST API** — via `buildQuery(model)` for external consumers
+
+This means the chat agent and the dashboard use the same metric definitions — define a metric once, it's available everywhere.
+
+See the [ClickHouse metrics layer blog post](https://clickhouse.com/blog/metrics-layer-with-fiveonefour) for background on this pattern, and the [agent-adsb repo](https://github.com/514-labs/agent-adsb) for a complete implementation.
+
+### What to build
+
+Create a query model in `app/semantic/` using `defineQueryModel`. Think about:
+
+- **Dimensions**: what should users/agents be able to group by? (e.g. status, category, time buckets)
+- **Metrics**: what aggregations matter? (e.g. total count, average value, error count, min/max for threshold detection)
+- **Filters**: what should be filterable? (e.g. ID, time range, status, type)
+- **Description**: this is what the LLM reads to decide when to call the tool — make it specific about what data is available and what the filters mean
+
+The template's `app/semantic/knowledge.ts` has a working example of `defineQueryModel` with dimensions, metrics, filters, and column-level query models. The [agent-adsb query models](https://github.com/514-labs/agent-adsb/tree/main/packages/moosestack-service/app/query-models) show a more complete domain-specific version.
+
+> **Note**: Use `sql.fragment` (not bare `sql`) for expressions inside query models — e.g. `agg: sql.fragment\`avg(gs)\``. The LSP will show "Invalid SQL" errors if you use bare `sql`.
+
+```text
+Agent prompt — build the semantic layer:
+
+Create a query model in packages/moosestack-service/app/semantic/ for the data
+in packages/moosestack-service/app/ingest/models.ts.
+Docs: https://docs.fiveonefour.com/moosestack/apis/semantic-layer
+Use column references from the OlapTable object (e.g. YourTable.columns.field).
+Add descriptions to metrics, dimensions, and filters — they propagate to MCP tool
+definitions and help the LLM decide when and how to use each tool.
+Export from app/index.ts.
+```
+
+### Wire into MCP
+
+Register your query models as MCP tools in `app/mcp/server.ts` using `registerSemanticModelTools`. This gives agents typed tools with your dimensions, metrics, and filters as parameters — they don't need to write raw SQL.
+
+The template's `server.ts` has the pattern: import your models, pass them to `registerModelTools` inside `createMcpServer`.
+
+<Callout type="warning">
+`registerModelTools` has a known type incompatibility: the return type of `defineQueryModel()` doesn't satisfy the `QueryModelBase` constraint. The workaround is `registerModelTools(server, [model] as any, queryClient)`. The runtime behavior is correct — this is a type-level issue only.
+</Callout>
+
+### Clean up
+
+- Remove or replace `app/semantic/knowledge.ts` (the stubbed `TenantKnowledge` query models)
+- Export your new semantic model from `app/index.ts`
+
+### Verify
+
+- Moose should hot-reload the changes — check `get_infra_map` to confirm
+- Sign in and ask the chat about your data — you should see your semantic query tools appear as tool calls, not raw SQL
+- Check Langfuse traces to confirm tool calls flow through the semantic layer
+
+**Good**: Agent calls `query_your_metrics` with `{ metrics: ["totalCount", "avgValue"], filters: { createdAt: { gte: "..." } } }` — typed, constrained, auditable.
+
+**Bad**: Agent writes raw `SELECT count(*) FROM your_table WHERE ...` — bypasses the semantic layer, no shared definitions, harder to audit.
+
+### Add custom MCP tools *(optional)*
+
+For queries that don't fit the semantic layer pattern — lookups, entity detail, multi-step logic — add a tool file in `packages/moosestack-service/app/mcp/tools/` and call it from `app/mcp/server.ts`:
+
+```typescript
+// app/mcp/tools/my-tool.ts
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod/v3";
+import { executeReadonlyStatement } from "../../data/clickhouse/readonly-query";
+import type { TenantMooseContext } from "../../http/context/tenant-context";
+
+export function registerMyTool(
+  server: McpServer,
+  context: Pick<TenantMooseContext, "moose" | "rowPolicyOptions">,
+): void {
+  server.registerTool(
+    "my_tool",
+    {
+      title: "Human-readable title",
+      description: "Be specific — the agent reads this to decide when to use the tool.",
+      inputSchema: {
+        param: z.string().describe("What this parameter is for"),
+      },
+    },
+    async ({ param }) => {
+      const { client } = context.moose;
+      const rows = await executeReadonlyStatement(
+        client.query,
+        `SELECT ... WHERE param = {param:String}`,
+        { limit: 100, rowPolicyOptions: context.rowPolicyOptions },
+      );
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }],
+      };
+    },
+  );
+}
+```
+
+Two rules for every custom tool:
+- Use `executeReadonlyStatement()` for all DB access — this preserves readonly mode and row-policy enforcement
+- Return errors via `{ content: [...], isError: true }`, not by throwing
+
+### Add custom HTTP API endpoints *(optional)*
+
+Add endpoints in `packages/moosestack-service/app/http/` using Express and `getMooseUtils()`. Use your query model's `toSql()` to keep API responses consistent with what the agent returns:
+
+```typescript
+import express from "express";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { myQueryModel } from "../semantic/my-model";
+
+const app = express();
+app.use(express.json());
+
+app.get("/my-endpoint", async (req, res) => {
+  const { client } = await getMooseUtils();
+  const result = await client.query.execute(myQueryModel.toSql({ /* filters */ }));
+  res.json(await result.json());
+});
+
+export const myApi = new WebApp("myApi", app, { mountPath: "/my-api" });
+```
+
+Export the `WebApp` from `app/index.ts` so MooseStack discovers it.
+
+![Agent using semantic query tools](/guides/production-ready-analytics-agent/agent-6.png)
+
+---
+
+## 5. Customize Your Agent
+
+### Single agent vs multi-agent
+
+The template ships with a single agent approach, and a multi-agent flow (supervisor → specialist → narrator). The template defaults to single agent (`createAgentStream`). To use the full multi-agent flow, switch to `createMultiAgentStream` in `packages/web-app/src/lib/chat-agent.ts`. The reference multi-agent implementation lives in `packages/agent-runtime/src/streams/create-multi-agent-stream.ts`.
+
+**Single agent** — one LLM call per message with all tools available. Lower latency, easier to debug. Good for most domain-specific analytics use cases where routing adds no value.
+
+**Multi-agent** — supervisor classifies, specialist investigates, narrator polishes. Worth the complexity when you have:
+- Different trust boundaries per role (read-only query agent vs write-capable alert agent)
+- Distinct tool sets per role
+- Different guardrail policies per agent
+- Complex workflows where decomposition genuinely improves response quality
+
+For guidance on the tradeoffs, see Anthropic's [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) — particularly the sections on routing workflows vs autonomous agents.
+
+### Edit the system prompt
+
+File: `packages/agent-runtime/src/prompts/default-system.ts` (exports `DEFAULT_AGENT_SYSTEM_PROMPT`)
+
+The default prompt is intentionally minimal. Update it to describe your domain: what the data represents, key business terms, metric naming conventions, and any answer-format preferences. The more domain context, the more accurate the output.
+
+> **ADS-B example:** The system prompt describes squawk codes (7500 = hijacking, 7600 = radio loss, 7700 = general emergency), altitude thresholds for anomaly detection, rules for citing aircraft by hex code, and how to explain baro vs geometric altitude to a non-pilot.
+
+### Add a domain specialist *(optional)*
+
+1. Define its system prompt in `packages/agent-runtime/src/prompts/multi-agent.ts`
+2. Register it in the supervisor's selection logic in the same file
+3. The narrator handles its output — no changes to the MCP server or web app required
+
+### What hot-reloads and what doesn't
+
+The Moose service hot-reloads changes to `packages/moosestack-service/app/` — data models, workflows, MCP tools, and semantic layer files reload automatically. The web app and agent-runtime are separate packages and do not hot-reload.
+
+After any change to `packages/agent-runtime/` (prompts, orchestration) or `packages/agent-contracts/`:
+
+```bash
+pnpm --filter agent-runtime build
+# then restart pnpm dev:web
+```
+
+### Verify
+
+Test the agent with a set of representative questions that cover your domain. For each response, check:
+
+- Does the agent use the right tool for the question? (Check inline tool call results in the chat UI)
+- Are the answers accurate against what's in ClickHouse? Cross-check with `moose query` for any result that seems off
+- Does the language and framing match your domain? If not, tighten the system prompt
+
+```bash
+# Cross-check a specific answer from the chat
+moose query "SELECT <metric> FROM your_table WHERE <filter> ORDER BY <field> LIMIT 10"
+```
+
+If the agent is routing poorly between specialists (multi-agent), or calling the wrong tool, the system prompt or tool descriptions are the first place to tune — not the agent architecture.
+
+---
+
+## 6. Build Your Frontend
+
+The web app in `packages/web-app/` is a standard Next.js app — customize it however you like. Your interface could be a chat panel, a dashboard, a data explorer, or all three.
+
+<Callout type="info">
+As you build out your frontend, you may find you need new or modified APIs and MCP tools to support what you want to show. Go back to Section 4 to add query models, custom MCP tools, or HTTP endpoints — then come back here. The data layer and the frontend evolve together.
+</Callout>
+
+### Customize the template UI
+
+Things you'll likely want to change:
+
+- **Dashboard page** (`src/app/page.tsx`) — the template shows "Knowledge Records" and "High Priority" cards. Replace with dashboard cards relevant to your domain. Use your query model's `toSql()` via the dashboard API so the dashboard and chat use the same metric definitions
+- **Chat example prompts** — update the suggested prompts in the chat panel to match your data
+- **Landing page copy** — the template describes itself as a "tenant-scoped agent dashboard". Change this to describe your app
+
+The template ships with a two-tenant login (ACME Fleet / Globex Mobility) to demonstrate row-level security. For your app you might:
+- Keep multi-tenant auth if your data is tenant-scoped
+- Simplify to a single login if your data is public (like ADS-B)
+- Remove the local mock OIDC entirely and wire up your own auth
+
+The auth plumbing is fairly deep in the template — if you don't need multi-tenancy, the easiest path is to keep one tenant and ignore the other rather than ripping auth out.
+
+> **ADS-B example:** [`web-app/` in agent-adsb](https://github.com/514-labs/agent-adsb/tree/main/packages/web-app) — dashboard cards show live aircraft count, active emergency count, and recent anomaly list. Simplified to a single tenant ("NORAD Watch") since ADS-B data is public.
+
+### Build from scratch
+
+If you want a different framework or a fully custom UI, your frontend needs three things:
+
+1. **Authentication** — call the local mock OIDC (dev) or your production OIDC provider to get a JWT. The template's auth flow is in `packages/web-app/src/dev/local-auth.ts`
+2. **Chat endpoint** — stream requests to `/api/chat` on the Moose service (`MOOSE_SERVICE_URL`) with a valid JWT. The response is a server-sent event stream with `[AGENT:supervisor]`, `[AGENT:<specialist>]`, `[AGENT:narrator]` handoff markers and inline tool call results
+3. **Tool call display** — parse and surface the inline tool call results in the stream. This is what gives users confidence that answers are grounded in real data, not hallucinated
+
+The `vercel.json` at the repo root documents all env vars the web app requires.
+
+### Verify
+
+Open `http://localhost:3000`, sign in, and run through your main use cases. For each:
+
+- Does the answer match what `moose query` returns for the same question?
+- Are tool calls visible and do they show the right data?
+- Does the UI surface the right information without requiring the user to interpret raw query results?
+
+```bash
+# Spot-check any answer that seems off
+moose query "SELECT <what the agent just told you> FROM your_table LIMIT 20"
+```
+
+This is also the right moment to refine your chat example prompts — watch what questions users actually ask and update the suggestions to match.
+
+![Completed analytics agent frontend with chat and dashboard](/guides/production-ready-analytics-agent/agent-7.png)
+
+---
+
+## 7. Configure Multitenancy & Row-Level Security
+
+The template's auth infrastructure (JWT-backed OIDC) is always in place. If your data is public or single-tenant, you can simplify — the easiest path is to keep one tenant and ignore the other rather than ripping auth out.
+
+If your app needs tenant isolation, the template has a working reference implementation:
+
+- **Row policy definition**: `SelectRowPolicy` in the template's `app/ingest/models.ts` — ties a table column to a JWT claim. Tables in the policy are automatically scoped in MCP tool queries and dashboard APIs
+- **Tenant context middleware**: `app/http/context/tenant-context.ts` extracts the tenant ID from the JWT and passes `rowPolicyOptions` to ClickHouse queries
+- **JWT configuration**: see the [JWT Authentication docs](https://docs.fiveonefour.com/moosestack/apis/auth) for setting up `moose.config.toml` with your identity provider's public key, issuer, and audience
+- **Local dev flow**: `packages/web-app/src/dev/local-auth.ts` mints short-lived JWTs for the local tenant picker
+
+> **ADS-B example:** ADS-B data is public — the agent-adsb app simplified to a single tenant ("NORAD Watch") and removed `SelectRowPolicy`. The JWT auth infrastructure remains in place.
+
+For production OIDC, set `MOOSE_AUTH_MODE=oidc`, update the `[jwt]` issuer/audience in `packages/moosestack-service/moose.config.toml`, and set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_TENANT_CLAIM`.
+
+### Verify
+
+1. Sign in as one tenant and ask a question. Open the Langfuse trace and confirm the SQL includes `WHERE tenant_id = '...'`
+2. Sign in as a different tenant and ask the same question. Confirm the answers differ
+
+---
+
+## 8. Configure Guardrails
+
+The template has built-in Bedrock Guardrails support. When `AI_PROVIDER=bedrock` and `BEDROCK_GUARDRAIL_ID` is set, every user prompt is checked via `ApplyGuardrailCommand` before the agent runs.
+
+### Set up Bedrock Guardrails
+
+1. In AWS Console, navigate to **Amazon Bedrock → Guardrails** and create a guardrail
+2. Configure content filters (toxicity, violence, etc.), topic policies, and PII detection
+3. Set environment variables in `packages/web-app/.env.local`:
+
+```bash
+AI_PROVIDER=bedrock
+BEDROCK_GUARDRAIL_ID=your-guardrail-id
+BEDROCK_GUARDRAIL_VERSION=DRAFT
+```
+
+### How it works
+
+The guardrail adapter in `packages/web-app/src/lib/guardrails.ts` selects the right implementation at startup:
+
+- **Bedrock + guardrail ID set**: `BedrockGuardrailAdapter` — checks every prompt via `ApplyGuardrailCommand` before the agent runs
+- **Bedrock without guardrail ID**: falls back to a development mock adapter
+- **Non-Bedrock provider** (`anthropic`, `openai`): `NoopGuardrailAdapter` — silent pass-through
+
+Custom guardrail logic for any provider can be added by implementing the `GuardrailAdapter` interface (one method: `assessPrompt(prompt: string): Promise<GuardrailResult>`).
+
+### Verify
+
+Restart the web app and check the chat status response for `guardrailsConfigured: true`. Test with a prompt designed to trigger your content policy — confirm the blocked response comes from the guardrail before model execution, and that the assessment is recorded in the Langfuse trace.
+
+![Guardrails configured and blocking a harmful prompt](/guides/production-ready-analytics-agent/agent-9.png)
+
+---
+
+## 9. Deploy
+
+The template is pre-configured for deployment to 514 hosting (MooseStack service) and Vercel (Next.js web app). Preview environments are provisioned automatically per PR — each branch gets an isolated ClickHouse database so schema changes can be validated before merging.
+
+### Deploy the MooseStack service
+
+Go to [https://fiveonefour.boreal.cloud/sign-up](https://fiveonefour.boreal.cloud/sign-up), create a project, connect your GitHub repo, and set the project root to `packages/moosestack-service` or wherever your MooseStack service lives.
+
+Set environment variables in the 514 hosting project settings:
+
+| Variable | Notes |
+|---|---|
+| `AI_PROVIDER` + provider credentials | Same as your local setup |
+| `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | From your Langfuse project |
+| `BEDROCK_GUARDRAIL_ID` + `BEDROCK_GUARDRAIL_VERSION` | If using Bedrock Guardrails |
+| `MOOSE_JWT__SECRET` | Your production OIDC provider's PEM public key |
+| `MOOSE_AUTH_MODE=oidc` | Switches from local mock to real OIDC |
+| `OIDC_ISSUER` | Your OIDC provider's issuer URL |
+| `OIDC_CLIENT_ID` | Client ID |
+| `OIDC_CLIENT_SECRET` | Client secret |
+| `OIDC_TENANT_CLAIM` | JWT claim containing the tenant identifier |
+
+Push to main to deploy. Open a feature branch and create a PR to get a preview environment with an isolated ClickHouse database per branch.
+
+### Deploy the web app
+
+The template includes a `vercel.json` at the repo root pre-configured with the build command, output directory, and all env var definitions. Connect your repo to Vercel — no manual build settings needed.
+
+Required env vars in Vercel project settings:
+
+| Variable | Notes |
+|---|---|
+| `AUTH_SECRET` | Random secret for NextAuth session signing — generate a new one for production |
+| `MOOSE_SERVICE_URL` | Your 514-hosted Moose service base URL |
+| `AI_PROVIDER` + provider credentials | Same as local |
+| `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | If using Langfuse |
+| `BEDROCK_GUARDRAIL_ID` + `BEDROCK_GUARDRAIL_VERSION` | If using Bedrock Guardrails |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | If using production OIDC |
+
+All env vars are documented in `vercel.json` — check it for the full list.
+
+**Validated:** Chat UI is live at your Vercel URL. Sign in, run a query, and confirm the trace lands in Langfuse with the correct tenant scope. You're done.

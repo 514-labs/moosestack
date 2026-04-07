@@ -29,6 +29,8 @@ import {
   BreakingChanges,
   TemplatesGridServer,
   CommandSnippet,
+  FeatureCard,
+  FeatureGrid,
   // Interactive components for dynamic guides
   SelectField,
   CheckboxGroup,
@@ -61,7 +63,13 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from "@/components/ui/accordion";
-import { IconTerminal, IconFileCode } from "@tabler/icons-react";
+import {
+  IconTerminal,
+  IconFileCode,
+  IconRobot,
+  IconAdjustments,
+  IconBook,
+} from "@tabler/icons-react";
 import {
   ServerCodeBlock,
   ServerInlineCode,
@@ -186,6 +194,11 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     AccordionContent,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
+    IconRobot,
+    IconAdjustments,
+    IconBook,
+    FeatureCard,
+    FeatureGrid,
     SourceCodeLink,
     Link,
 

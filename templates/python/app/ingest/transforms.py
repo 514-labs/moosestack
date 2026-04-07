@@ -1,5 +1,5 @@
 from app.ingest.models import fooModel, barModel, Foo, Bar
-from moose_lib import DeadLetterQueue, DeadLetterModel, TransformConfig, MooseCache
+from moose_lib import DeadLetterModel, TransformConfig, MooseCache
 from datetime import datetime
 
 

@@ -2,7 +2,9 @@ import { describe, it } from "mocha";
 import { expect } from "chai";
 import { createModelTool } from "../src/query-layer/model-tools";
 import type { QueryModelBase } from "../src/query-layer/model-tools";
-import { sql } from "../src/sqlHelpers";
+import { sql, type Sql } from "../src/sqlHelpers";
+
+const dummyAgg: Sql = sql`count(*)`;
 
 function mockModel(overrides: Partial<QueryModelBase> = {}): QueryModelBase {
   return {
@@ -37,8 +39,11 @@ describe("description propagation into MCP tool schemas", () => {
   it("should propagate metric descriptions into the metrics schema", () => {
     const model = mockModel({
       metrics: {
-        revenue: { description: "Total revenue from completed events" },
-        totalEvents: { description: "Count of all events" },
+        revenue: {
+          agg: dummyAgg,
+          description: "Total revenue from completed events",
+        },
+        totalEvents: { agg: dummyAgg, description: "Count of all events" },
       },
     });
 

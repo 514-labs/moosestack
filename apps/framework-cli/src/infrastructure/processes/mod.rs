@@ -49,6 +49,12 @@ pub async fn execute_changes(
     changes: &[ProcessChange],
     metrics: Arc<Metrics>,
 ) -> Result<(), SyncProcessChangesError> {
+    // Refresh row policies so the next consumption process start() picks up
+    // any added/removed SelectRowPolicy definitions
+    process_registry
+        .consumption
+        .update_row_policies(infra_map.select_row_policies.values().cloned().collect());
+
     for change in changes.iter() {
         match change {
             ProcessChange::TopicToTableSyncProcess(Change::Added(sync)) => {
