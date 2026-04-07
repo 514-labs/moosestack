@@ -19,6 +19,7 @@ docs = """
 npm_deps = [
   "@514labs/moose-lib@latest",
   "@types/node@^20.19.33",
+  "dotenv@latest",
   "typescript@^5.7.0",
   "vitest@^3.2.4",
 ]
