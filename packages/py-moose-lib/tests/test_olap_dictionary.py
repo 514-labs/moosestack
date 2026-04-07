@@ -661,6 +661,13 @@ def test_serializer_parses_olap_dictionary_with_source_table():
     assert d["lifetime"]["type"] == "RANGE"
     assert d["lifetime"]["min"] == 60
     assert d["lifetime"]["max"] == 300
+    # metadata.source must be {"file": "..."}, not a bare string —
+    # Rust's SourceLocation struct requires this shape.
+    meta_source = d.get("metadata", {}).get("source")
+    assert isinstance(
+        meta_source, dict
+    ), f'metadata.source must be a dict ({{"file": "..."}}), got: {meta_source!r}'
+    assert "file" in meta_source, f"metadata.source missing 'file' key: {meta_source}"
 
 
 def test_serializer_parses_olap_dictionary_with_source_query():
