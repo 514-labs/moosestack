@@ -885,7 +885,7 @@ def _serialize_dict_source(config) -> dict:
     if config.source_query is not None:
         return {"type": "QUERY", "query": config.source_query}
     if config.external_source is not None:
-        ext = config.external_source.model_dump(exclude_none=True)
+        ext = config.external_source.model_dump(exclude_none=True, by_alias=True)
         return {"type": "EXTERNAL", "source": ext}
     raise ValueError("OlapDictionaryConfig has no source set")
 
@@ -1332,7 +1332,7 @@ def to_infra_map() -> dict:
             layout=d.config.layout.model_dump(exclude_none=True),
             lifetime=_serialize_dict_lifetime(d.config.lifetime),
             invalidate_query=invalidate_query,
-            settings=d.config.settings or {},
+            settings={k: str(v) for k, v in (d.config.settings or {}).items()},
             comment=d.config.comment,
             metadata=getattr(d, "metadata", None),
             life_cycle=(d.life_cycle.value if d.life_cycle else "FULLY_MANAGED"),
