@@ -16,6 +16,9 @@ pub struct Shared {
     background_task: Notify,
     /// Pub/sub channels.
     pub(crate) pub_sub: Mutex<PubSub>,
+    /// Cached Lua scripts (SHA1 hex → script source).
+    /// Used by SCRIPT LOAD / EVALSHA.
+    scripts: Mutex<HashMap<String, String>>,
 }
 
 pub struct State {
@@ -63,6 +66,7 @@ impl Db {
             pub_sub: Mutex::new(PubSub {
                 channels: HashMap::new(),
             }),
+            scripts: Mutex::new(HashMap::new()),
         });
 
         // Spawn background task to purge expired keys.
@@ -277,6 +281,33 @@ impl Db {
             .entry(channel)
             .or_insert_with(|| broadcast::channel(1024).0);
         sender.subscribe()
+    }
+
+    /// SCRIPT LOAD: Store a script and return its SHA1 hex digest.
+    pub fn script_load(&self, code: &str) -> String {
+        let hash = sha1_smol::Sha1::from(code).digest().to_string();
+        self.shared
+            .scripts
+            .lock()
+            .unwrap()
+            .insert(hash.clone(), code.to_string());
+        hash
+    }
+
+    /// SCRIPT EXISTS: Check which SHA1 hashes are cached. Returns a Vec of bools.
+    pub fn script_exists(&self, hashes: &[String]) -> Vec<bool> {
+        let scripts = self.shared.scripts.lock().unwrap();
+        hashes.iter().map(|h| scripts.contains_key(h)).collect()
+    }
+
+    /// SCRIPT FLUSH: Remove all cached scripts.
+    pub fn script_flush(&self) {
+        self.shared.scripts.lock().unwrap().clear();
+    }
+
+    /// Look up a cached script by SHA1. Returns the source code if found.
+    pub fn script_get(&self, sha1: &str) -> Option<String> {
+        self.shared.scripts.lock().unwrap().get(sha1).cloned()
     }
 
     /// Signal shutdown.
