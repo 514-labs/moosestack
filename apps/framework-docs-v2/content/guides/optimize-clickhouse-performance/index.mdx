@@ -1,0 +1,40 @@
+---
+title: Optimizing ClickHouse Performance with AI
+description: Profile a slow query, validate the optimization in preview, and review the benchmark evidence plus migration plan before merge.
+languages: ["typescript"]
+---
+
+import { CTACards, CTACard, Callout } from "@/components/mdx";
+
+# Optimizing ClickHouse Performance with AI
+
+<Callout type="info" title="TL;DR">
+  - This guide is for MooseStack apps that already have a production ClickHouse
+  query path that can be faster.
+  - The optimization workflow profiles that query, proposes candidate schema
+  changes, benchmarks them, and opens a PR for the winning candidate.
+  - Your job is to review the benchmark evidence and migration plan, then decide
+  whether the winner is ready as-is or needs a safer rollout plan before
+  production.
+</Callout>
+
+You need the `514` CLI installed, signed in, and your repo linked to your Fiveonefour project (see the **Setup** section in the [tutorial](/guides/optimize-clickhouse-performance/tutorial) and [Hosting](/hosting)). The tutorial then covers **Optimization workflow** and **PR review** in separate sections.
+
+## Where to go
+
+<CTACards columns={2}>
+  <CTACard
+    title="Overview"
+    description="Understand what the optimization workflow does, what evidence it produces, and where rollout planning takes over."
+    ctaLink="/guides/optimize-clickhouse-performance/overview"
+    ctaLabel="Read first"
+    Icon="Eye"
+  />
+  <CTACard
+    title="Tutorial"
+    description="Run the optimization workflow, review the PR artifacts, and hand off production-shaping questions when needed."
+    ctaLink="/guides/optimize-clickhouse-performance/tutorial"
+    ctaLabel="Run it"
+    Icon="Rocket"
+  />
+</CTACards>
