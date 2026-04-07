@@ -3387,7 +3387,7 @@ impl InfrastructureMap {
     /// Masks sensitive credentials before exporting to JSON migration files.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
         use crate::infrastructure::olap::clickhouse::dictionary::{
-            DictionarySource, ExternalDictionarySource,
+            DictionarySource, ExternalDictionarySource, ExternalDictionarySourceWrapper,
         };
 
         for table in self.tables.values_mut() {
@@ -3429,8 +3429,8 @@ impl InfrastructureMap {
 
         // Mask credentials in dictionary external sources
         for dict in self.olap_dictionaries.values_mut() {
-            if let DictionarySource::External(ref mut ext) = dict.source {
-                match ext {
+            if let DictionarySource::External(ExternalDictionarySourceWrapper { ref mut external_source }) = dict.source {
+                match external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
