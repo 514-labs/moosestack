@@ -2912,4 +2912,104 @@ ORDER BY id"#;
             "Raw body should be trimmed but internal whitespace preserved"
         );
     }
+
+    // Regression tests for backtick handling in INNER JOIN SQL with special-character
+    // identifiers. User-reported bug: backticks in INNER JOIN clauses were being stripped,
+    // producing invalid SQL like `FROM table-one` (parsed as `table` MINUS `one`).
+    //
+    // Root cause: the Normalizer visits TableFactor::Table nodes and sets quote_style=None,
+    // so table names lose their backticks. Compound column references (table.column) are NOT
+    // visited by pre_visit_expr so their quote_style is preserved and backticks survive.
+    //
+    // This asymmetry means:
+    //   - `table-one` in FROM/JOIN → stripped → invalid ClickHouse SQL (BUG)
+    //   - t1.`user-id` as column ref → preserved → valid ClickHouse SQL
+    #[test]
+    fn test_normalize_sql_inner_join_strips_backticks_from_table_names() {
+        // Reproduces user-reported case: INNER JOIN with hyphenated table names.
+        // Table names in FROM/JOIN have their backticks stripped by the Normalizer,
+        // which is invalid when the table name contains hyphens.
+        let sql = "SELECT t1.`user-id`, t2.`order-total` \
+                   FROM `table-one` t1 \
+                   INNER JOIN `table-two` t2 ON t1.`user-id` = t2.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // BUG: table names lose backticks after normalization.
+        // `table-one` without backticks is invalid ClickHouse SQL.
+        assert!(
+            !normalized.contains("`table-one`"),
+            "Backticks on hyphenated table names are stripped (bug); got: {normalized}"
+        );
+        assert!(
+            !normalized.contains("`table-two`"),
+            "Backticks on hyphenated table names are stripped (bug); got: {normalized}"
+        );
+
+        // Column references in compound identifiers (t1.`col`) do retain backticks
+        // because the Normalizer does not visit CompoundIdentifier nodes.
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs in compound identifiers survive; got: {normalized}"
+        );
+    }
+
+    #[test]
+    fn test_normalize_sql_mv_inner_join_special_char_table_names() {
+        // Full user-reported case: Python MV with INNER JOIN and hyphenated table/column names.
+        // After normalization, hyphenated table names lose backticks → invalid SQL for MV creation.
+        let select_sql = "SELECT a.`event-type`, b.`session-id` \
+                          FROM `raw-events` a \
+                          INNER JOIN `session-data` b ON a.`session-id` = b.`session-id`";
+
+        let normalized = normalize_sql_for_comparison(select_sql, "");
+
+        // BUG: table names stripped → the CREATE MATERIALIZED VIEW AS {select_sql} would be invalid
+        assert!(
+            !normalized.contains("`raw-events`"),
+            "Backticks on `raw-events` table name are stripped (bug); got: {normalized}"
+        );
+        assert!(
+            !normalized.contains("`session-data`"),
+            "Backticks on `session-data` table name are stripped (bug); got: {normalized}"
+        );
+
+        // Column refs in compound identifiers keep their backticks
+        assert!(
+            normalized.contains("`session-id`"),
+            "Backticks on hyphenated column refs in compound identifiers survive; got: {normalized}"
+        );
+    }
+
+    // Regular views go through the same normalize_sql path and are equally affected.
+    // The Normalizer visits TableFactor::Table nodes in the view's SELECT body,
+    // stripping backticks from hyphenated table names there too.
+    #[test]
+    fn test_normalize_sql_view_inner_join_strips_backticks_from_table_names() {
+        // A CREATE VIEW (not materialized) with an INNER JOIN and hyphenated table names.
+        // This uses normalize_sql_for_comparison, which is also applied to regular views
+        // in normalize_infra_map_for_comparison.
+        let sql = "CREATE VIEW `my-view` AS \
+                   SELECT a.`user-id`, b.`order-count` \
+                   FROM `user-table` a \
+                   INNER JOIN `order-table` b ON a.`user-id` = b.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // BUG: same as materialized views — hyphenated table names lose backticks.
+        assert!(
+            !normalized.contains("`user-table`"),
+            "Backticks on `user-table` are stripped (bug affects views too); got: {normalized}"
+        );
+        assert!(
+            !normalized.contains("`order-table`"),
+            "Backticks on `order-table` are stripped (bug affects views too); got: {normalized}"
+        );
+
+        // Column refs in compound identifiers keep backticks
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs in compound identifiers survive; got: {normalized}"
+        );
+    }
 }
