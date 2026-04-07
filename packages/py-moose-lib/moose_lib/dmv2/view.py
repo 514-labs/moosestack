@@ -26,6 +26,21 @@ def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
     return f"`{table.name}`"
 
 
+def view_registry_key(database: Optional[str], name: str) -> str:
+    """Returns the registry key for a view, using `database::name` when a database is set.
+
+    Centralizes the key format so all callers stay in sync.
+
+    Args:
+        database: Optional database name
+        name: View name
+
+    Returns:
+        Registry key in format `database::name` or just `name`
+    """
+    return f"{database}::{name}" if database else name
+
+
 class ViewConfig(BaseModel):
     """Configuration options for creating a View.
 
@@ -121,7 +136,7 @@ class View:
 
         # Database-aware registry key to allow same view name in different databases.
         # Using '::' as separator to avoid ambiguity with view names containing dots.
-        registry_key = f"{self.database}::{self.name}" if self.database else self.name
+        registry_key = view_registry_key(self.database, self.name)
         if registry_key in _views:
             qualified = f"{self.database}.{self.name}" if self.database else self.name
             raise ValueError(f"View with name {qualified} already exists")

@@ -30,6 +30,7 @@ from moose_lib.dmv2 import (
     OlapConfig,
     SqlResource,
 )
+from moose_lib.dmv2.view import view_registry_key
 from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
@@ -617,7 +618,8 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
             resource = r  # type: SqlResource
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
         elif r.kind == "View":
-            return InfrastructureSignatureJson(id=r.name, kind="View")
+            view_id = view_registry_key(getattr(r, "database", None), r.name)
+            return InfrastructureSignatureJson(id=view_id, kind="View")
         elif r.kind == "MaterializedView":
             return InfrastructureSignatureJson(id=r.name, kind="MaterializedView")
         else:
