@@ -1,5 +1,6 @@
 pub mod binary_manager;
 pub mod clickhouse;
+pub mod devkafka;
 pub mod devredis;
 pub mod errors;
 pub mod temporal;
@@ -20,8 +21,9 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tracing::info;
 
-/// Holds handles to embedded servers so they can be shut down from anywhere.
+/// Holds handles to embedded devkafka and devredis servers.
 struct EmbeddedHandles {
+    devkafka: Option<devkafka::DevKafkaHandle>,
     devredis: Option<devredis::DevRedisHandle>,
 }
 
@@ -32,7 +34,7 @@ fn handles_lock() -> &'static Arc<Mutex<Option<EmbeddedHandles>>> {
     EMBEDDED_HANDLES.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
-/// Shut down any running embedded servers.
+/// Shut down any running embedded devkafka/devredis servers.
 ///
 /// This is safe to call from both sync and async contexts — it signals shutdown
 /// without awaiting. The embedded tasks will stop on their own.
@@ -41,6 +43,10 @@ pub fn shutdown_embedded_servers() {
     let guard = lock.lock().unwrap();
 
     if let Some(handles) = guard.as_ref() {
+        if let Some(dk) = &handles.devkafka {
+            info!("Signaling embedded devkafka to shut down");
+            dk.signal_shutdown();
+        }
         if let Some(dr) = &handles.devredis {
             info!("Signaling embedded devredis to shut down");
             dr.signal_shutdown();
@@ -121,10 +127,32 @@ impl InfraProvider for NativeInfraProvider {
             )
         })?;
 
+        // Start embedded devkafka
+        let devkafka_handle = with_timing("Start devkafka", || {
+            with_spinner_completion(
+                "Starting native Kafka (devkafka)",
+                "Native Kafka (devkafka) started",
+                || {
+                    let port = devkafka::broker_port(&project.redpanda_config);
+                    let handle = devkafka::start_embedded("0.0.0.0", port)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    Ok::<_, anyhow::Error>(handle)
+                },
+                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            )
+        })
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Failed".to_string(), "to start devkafka".to_string()),
+                e,
+            )
+        })?;
+
         // Store embedded handles for later shutdown
         {
             let mut guard = handles_lock().lock().unwrap();
             *guard = Some(EmbeddedHandles {
+                devkafka: Some(devkafka_handle),
                 devredis: Some(devredis_handle),
             });
         }
@@ -229,11 +257,22 @@ impl InfraProvider for NativeInfraProvider {
         )))
     }
 
-    fn validate_redpanda(&self, _project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
-        info!("Skipping Kafka validation in alpha mode (not yet available)");
-        Ok(RoutineSuccess::success(Message::new(
-            "Skipped".to_string(),
-            "Kafka validation (alpha mode)".to_string(),
+    fn validate_redpanda(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        let port = devkafka::broker_port(&project.redpanda_config);
+
+        for _ in 0..30 {
+            if devkafka::health_check(port).is_ok() {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Validated".to_string(),
+                    "native Kafka broker (devkafka)".to_string(),
+                )));
+            }
+            sleep(Duration::from_secs(1));
+        }
+
+        Err(RoutineFailure::error(Message::new(
+            "Failed".to_string(),
+            format!("devkafka health check timed out on port {port} after 30s"),
         )))
     }
 
@@ -241,10 +280,10 @@ impl InfraProvider for NativeInfraProvider {
         &self,
         _project_name: &str,
     ) -> Result<RoutineSuccess, RoutineFailure> {
-        // Single-node native Kafka doesn't have a cluster concept
+        // Single-node devkafka doesn't have a cluster concept
         Ok(RoutineSuccess::success(Message::new(
             "Validated".to_string(),
-            "native Kafka (single-node, no cluster needed)".to_string(),
+            "devkafka (single-node, no cluster needed)".to_string(),
         )))
     }
 
