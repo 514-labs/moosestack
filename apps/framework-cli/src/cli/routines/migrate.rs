@@ -641,22 +641,35 @@ pub async fn execute_migration(
             current_infra_map
         };
 
-        let current_tables = &current_infra_map.tables;
+        // Compute the full diff using plan_changes
+        let (_current_state, plan) =
+            crate::framework::core::plan::plan_changes(state_storage.as_ref(), project)
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Plan".to_string(),
+                            "Failed to compute infrastructure changes".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
 
-        // Execute migration
-        execute_migration_plan(
+        // Execute hybrid migration (auto-apply + plan files)
+        super::hybrid_migrate::execute_hybrid_migration(
             project,
-            clickhouse_config,
-            current_tables,
-            &target_infra_map,
+            &current_infra_map.tables,
+            &plan.target_infra_map,
+            &plan.changes,
             state_storage.as_ref(),
+            false, // moose migrate never auto-allows destructive
         )
         .await
         .map_err(|e| {
             RoutineFailure::new(
                 Message::new(
                     "\nMigration".to_string(),
-                    "Failed to execute migration plan".to_string(),
+                    "Failed to execute hybrid migration".to_string(),
                 ),
                 e,
             )

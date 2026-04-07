@@ -5,9 +5,7 @@
 //!
 //! This module is called by both `moose migrate` and `moose prod`.
 
-// The public entry point `execute_hybrid_migration` is not yet wired into the
-// CLI commands — Tasks 6-7 will call it from `moose migrate` and `moose prod`.
-#![allow(dead_code)]
+// Called by `moose migrate` (Task 6) and will be called by `moose prod` (Task 7).
 
 use std::collections::HashMap;
 use std::path::Path;
