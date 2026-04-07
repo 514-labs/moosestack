@@ -8,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::broker::Broker;
-use crate::error::ConnectionError;
+use crate::error::{BrokerError, ConnectionError};
 
 /// Maximum frame size (8 MiB). Frames larger than this are rejected to prevent
 /// unbounded memory growth from a misbehaving client.
@@ -98,29 +98,18 @@ pub async fn handle_connection(
             }
         }
 
-        match response {
-            Ok(response_body) => {
-                let response_header_version = ApiKey::try_from(api_key_raw)
-                    .map(|k| k.response_header_version(api_version))
-                    .unwrap_or(0);
-
-                let mut resp_header = ResponseHeader::default();
-                resp_header.correlation_id = correlation_id;
-
-                let mut resp_buf = BytesMut::new();
-                resp_header
-                    .encode(&mut resp_buf, response_header_version)
-                    .map_err(|e| ConnectionError::Decode(e.into()))?;
-                response_body
-                    .encode(&mut resp_buf, api_version)
-                    .map_err(|e| ConnectionError::Decode(e.into()))?;
-
-                let mut out = BytesMut::with_capacity(4 + resp_buf.len());
-                out.put_u32(resp_buf.len() as u32);
-                out.extend_from_slice(&resp_buf);
-
-                stream.write_all(&out).await?;
-                stream.flush().await?;
+        let response_body = match response {
+            Ok(body) => body,
+            Err(BrokerError::UnsupportedApiKey { api_key, version }) => {
+                // Non-fatal: log and skip (don't close the connection).
+                // Real Kafka brokers silently ignore unknown API keys.
+                tracing::debug!(
+                    peer = %addr,
+                    api_key,
+                    version,
+                    "Ignoring unsupported API key, keeping connection open"
+                );
+                continue;
             }
             Err(e) => {
                 tracing::warn!(
@@ -132,6 +121,30 @@ pub async fn handle_connection(
                 );
                 return Err(ConnectionError::Handler(e));
             }
+        };
+
+        {
+            let response_header_version = ApiKey::try_from(api_key_raw)
+                .map(|k| k.response_header_version(api_version))
+                .unwrap_or(0);
+
+            let mut resp_header = ResponseHeader::default();
+            resp_header.correlation_id = correlation_id;
+
+            let mut resp_buf = BytesMut::new();
+            resp_header
+                .encode(&mut resp_buf, response_header_version)
+                .map_err(|e| ConnectionError::Decode(e.into()))?;
+            response_body
+                .encode(&mut resp_buf, api_version)
+                .map_err(|e| ConnectionError::Decode(e.into()))?;
+
+            let mut out = BytesMut::with_capacity(4 + resp_buf.len());
+            out.put_u32(resp_buf.len() as u32);
+            out.extend_from_slice(&resp_buf);
+
+            stream.write_all(&out).await?;
+            stream.flush().await?;
         }
     }
 }

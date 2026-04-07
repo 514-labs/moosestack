@@ -17,12 +17,14 @@ pub fn handle(
         (2, 0, 7),  // ListOffsets
         (3, 1, 12), // Metadata
         (8, 2, 8),  // OffsetCommit
-        (9, 1, 8),  // OffsetFetch
+        (9, 1, 7),  // OffsetFetch (capped at v7; v8 uses groups-based format)
         (10, 0, 3), // FindCoordinator
         (11, 0, 9), // JoinGroup
         (12, 0, 4), // Heartbeat
         (13, 0, 5), // LeaveGroup
         (14, 0, 5), // SyncGroup
+        (16, 0, 1), // SaslHandshake
+        (17, 0, 2), // SaslAuthenticate
         (18, 0, 3), // ApiVersions
         (19, 0, 7), // CreateTopics
         (20, 0, 6), // DeleteTopics
