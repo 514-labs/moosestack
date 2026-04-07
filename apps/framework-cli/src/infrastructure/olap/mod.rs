@@ -214,6 +214,15 @@ pub async fn execute_changes_via_deltas(
         }
     }
 
+    // Append to dev migration log (best-effort — don't fail execution on log errors)
+    if let Ok(internal_dir) = project.internal_dir() {
+        let mut log =
+            crate::framework::core::dev_migration_log::DevMigrationLog::load(&internal_dir);
+        if let Err(e) = log.append_and_save(&deltas, &internal_dir) {
+            tracing::warn!("Failed to write dev migration log: {}", e);
+        }
+    }
+
     Ok(())
 }
 

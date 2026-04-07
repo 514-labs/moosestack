@@ -74,8 +74,8 @@ use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
 use crate::framework::core::migration_plan::{BackfillCheckResult, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
-    confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
-    ConfirmationPolicy, MigrationGateOutcome,
+    migration_destructive_gate, print_migration_rejected_guidance, ConfirmationPolicy,
+    MigrationGateOutcome,
 };
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
@@ -1886,16 +1886,93 @@ async fn confirm_and_save_migration(
         is_dev: false,
     };
 
-    let risk = match confirm_renames_and_classify(&mut result.changes, &migration_policy).await? {
-        Some(risk) => risk,
-        None => {
-            return Ok(RoutineSuccess::success(Message::new(
-                "Migration".to_string(),
-                "generation cancelled during rename confirmation".to_string(),
-            )));
+    // Step 1: Rename gate on raw InfraChanges (mutates changes in place).
+    // This must happen before compaction since renames affect the structural diff.
+    use crate::framework::core::plan_risk::rename_confirmation_gate;
+    let _approved_drops =
+        match rename_confirmation_gate(&mut result.changes, &migration_policy).await? {
+            Some(drops) => drops,
+            None => {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Migration".to_string(),
+                    "generation cancelled during rename confirmation".to_string(),
+                )));
+            }
+        };
+
+    // Step 2: Generate deltas — compaction from dev log, or snapshot diff fallback.
+    let (mut infra_deltas, used_dev_log) = if let Ok(internal_dir) = project.internal_dir() {
+        let dev_log =
+            crate::framework::core::dev_migration_log::DevMigrationLog::load(&internal_dir);
+        if !dev_log.is_empty() {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Compaction".to_string(),
+                    details: format!(
+                        "Using dev migration log ({} entries) for compacted migration",
+                        dev_log.entries.len()
+                    ),
+                },
+            );
+            let deltas = crate::framework::core::dev_migration_log::compact_dev_log(
+                &dev_log,
+                &result.remote_state,
+                &result.default_database,
+            );
+            (deltas, true)
+        } else {
+            (
+                crate::framework::core::infra_delta::olap_changes_to_deltas(
+                    &result.changes.olap_changes,
+                    &result.default_database,
+                ),
+                false,
+            )
         }
+    } else {
+        (
+            crate::framework::core::infra_delta::olap_changes_to_deltas(
+                &result.changes.olap_changes,
+                &result.default_database,
+            ),
+            false,
+        )
     };
 
+    // Step 3: Classify risk from the actual deltas (not the raw snapshot diff).
+    use crate::framework::core::plan_risk::classify_risk_from_deltas;
+    let risk = classify_risk_from_deltas(&infra_deltas);
+
+    // Step 4: Show dev context if available before prompting.
+    if risk.is_destructive() {
+        if let Ok(internal_dir) = project.internal_dir() {
+            let dev_log =
+                crate::framework::core::dev_migration_log::DevMigrationLog::load(&internal_dir);
+            if !dev_log.is_empty() {
+                let dev_context =
+                    crate::framework::core::dev_migration_log::extract_dev_policy_context(&dev_log);
+                if !dev_context.is_empty() {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Dev History".to_string(),
+                            details: format!(
+                                "These destructive operations were previously confirmed in dev:\n{}",
+                                dev_context
+                                    .values()
+                                    .map(|v| format!("  - {}", v))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    // Step 5: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
@@ -1907,6 +1984,10 @@ async fn confirm_and_save_migration(
         MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
     }
 
+    // Step 6: Fill policies from the risk classification.
+    crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
+
+    // Legacy MigrationPlan for backfill detection only.
     let db_migration = result.to_migration_plan().map_err(|e| {
         RoutineFailure::new(
             Message {
@@ -1916,15 +1997,6 @@ async fn confirm_and_save_migration(
             e,
         )
     })?;
-
-    // Convert OLAP changes to InfraDeltas
-    let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
-        &result.changes.olap_changes,
-        &result.default_database,
-    );
-
-    // Fill in real policy descriptions from the user's confirmation
-    crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
 
     // Check for backfill opportunities (uses legacy MigrationPlan for detection only)
     if !no_auto_backfill_sql {
@@ -2080,6 +2152,25 @@ async fn confirm_and_save_migration(
                 ),
             },
         );
+
+        // Clear dev log after successful migration generation
+        if used_dev_log {
+            if let Ok(internal_dir) = project.internal_dir() {
+                if let Err(e) =
+                    crate::framework::core::dev_migration_log::DevMigrationLog::clear(&internal_dir)
+                {
+                    tracing::warn!("Failed to clear dev migration log: {}", e);
+                } else {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Compaction".to_string(),
+                            details: "Dev migration log cleared".to_string(),
+                        },
+                    );
+                }
+            }
+        }
     } else {
         if infra_deltas.is_empty() {
             println!("No changes detected.");

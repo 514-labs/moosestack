@@ -21,6 +21,7 @@
 /// └──────────────┘                     └──────────────┘
 ///
 pub mod check;
+pub mod dev_migration_log;
 pub mod execute;
 pub mod infra_delta;
 pub mod infra_reality_checker;
