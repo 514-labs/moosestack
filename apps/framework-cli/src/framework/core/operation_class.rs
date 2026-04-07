@@ -75,10 +75,8 @@ pub fn classify_serializable_op(op: &SerializableOlapOperation) -> OperationClas
     }
 }
 
-/// Partition OLAP changes into (plan_worthy, auto_apply) vectors of references.
-pub fn partition_olap_changes(
-    infra_changes: &InfraChanges,
-) -> (Vec<&OlapChange>, Vec<&OlapChange>) {
+#[cfg(test)]
+fn partition_olap_changes(infra_changes: &InfraChanges) -> (Vec<&OlapChange>, Vec<&OlapChange>) {
     let mut plan_worthy = Vec::new();
     let mut auto_apply = Vec::new();
 

@@ -119,20 +119,29 @@ pub async fn execute_hybrid_migration(
     let merged_ops: Vec<SerializableOlapOperation> = if planned_ops.is_empty() {
         all_ops
     } else {
-        all_ops
-            .into_iter()
-            .map(|op| {
-                if classify_serializable_op(&op) == OperationClass::PlanWorthy {
-                    planned_ops
-                        .iter()
-                        .find(|p| ops_match(&op, p))
-                        .cloned()
-                        .unwrap_or(op)
-                } else {
-                    op
+        let mut merged = Vec::with_capacity(all_ops.len());
+        for op in all_ops {
+            if classify_serializable_op(&op) == OperationClass::PlanWorthy {
+                match planned_ops.iter().find(|p| ops_match(&op, p)).cloned() {
+                    Some(reviewed_op) => merged.push(reviewed_op),
+                    None => {
+                        if prod_auto_allow_destructive {
+                            merged.push(op);
+                        } else {
+                            anyhow::bail!(
+                                "Hybrid migration blocked: destructive operation {} is not \
+                                 covered by any plan file. Re-run `moose generate migration` \
+                                 to create an updated plan.",
+                                describe_op(&op),
+                            );
+                        }
+                    }
                 }
-            })
-            .collect()
+            } else {
+                merged.push(op);
+            }
+        }
+        merged
     };
 
     // 5. Execute via the existing migration executor.

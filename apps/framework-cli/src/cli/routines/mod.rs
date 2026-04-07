@@ -998,6 +998,18 @@ pub async fn start_production_mode(
     )
     .await?;
 
+    if project.features.olap {
+        let desired_policies: Vec<_> = plan
+            .target_infra_map
+            .select_row_policies
+            .values()
+            .cloned()
+            .collect();
+        if !desired_policies.is_empty() {
+            crate::infrastructure::olap::bootstrap_rls(&project, &desired_policies).await?;
+        }
+    }
+
     plan_validator::validate(&project, &plan)?;
 
     let api_changes_channel = web_server
