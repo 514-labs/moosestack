@@ -41,7 +41,7 @@ use routines::scripts::{
     terminate_workflow, unpause_workflow,
 };
 use routines::templates::{list_available_templates, prompt_for_template_name};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use settings::Settings;
 use std::collections::HashMap;
@@ -50,6 +50,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::cli::routines::logs::{follow_logs, show_logs};
+use crate::cli::routines::plan_files;
 use crate::cli::routines::remote_refresh;
 use crate::cli::routines::setup_redis_client;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
@@ -61,12 +62,13 @@ use crate::cli::{
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE,
-    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATIONS_DIR,
+    PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -74,8 +76,9 @@ use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
 use crate::framework::core::migration_plan::{
-    BackfillCheckResult, MigrationPlanWithBeforeAfter, MIGRATION_SCHEMA,
+    BackfillCheckResult, MigrationPlan, MigrationPlanWithBeforeAfter,
 };
+use crate::framework::core::operation_class::{classify_serializable_op, OperationClass};
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
     ConfirmationPolicy, MigrationGateOutcome,
@@ -1874,75 +1877,95 @@ async fn confirm_and_save_migration(
         }
     }
 
-    let plan_yaml = db_migration.to_yaml().map_err(|e| {
-        RoutineFailure::new(
+    // Partition operations into plan-worthy and auto-apply
+    let plan_worthy_ops: Vec<SerializableOlapOperation> = db_migration
+        .operations
+        .iter()
+        .filter(|op| classify_serializable_op(op) == OperationClass::PlanWorthy)
+        .cloned()
+        .collect();
+
+    let auto_apply_count = db_migration.operations.len() - plan_worthy_ops.len();
+
+    if auto_apply_count > 0 {
+        display::show_message_wrapper(
+            MessageType::Info,
             Message {
-                action: "Plan".to_string(),
-                details: "Failed to serialize".to_string(),
+                action: "Auto-apply".to_string(),
+                details: format!(
+                    "{} operation(s) will be applied automatically at deploy time (no plan needed)",
+                    auto_apply_count
+                ),
             },
-            e,
-        )
-    })?;
+        );
+    }
 
-    if save {
-        std::fs::create_dir_all("./migrations").map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
-            )
-        })?;
-
-        if let Err(e) = std::fs::write(
-            project
-                .internal_dir_with_routine_failure_err()?
-                .join("migration_schema.json"),
-            MIGRATION_SCHEMA,
-        ) {
-            warn!("Error writing migration schema file: {e:?}");
+    if plan_worthy_ops.is_empty() {
+        if save {
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Migration".to_string(),
+                    details: "No changes require a migration plan. All changes will be applied automatically at deploy time.".to_string(),
+                },
+            );
+        } else {
+            let plan_yaml = db_migration.to_yaml().map_err(|e| {
+                RoutineFailure::new(
+                    Message {
+                        action: "Plan".to_string(),
+                        details: "Failed to serialize".to_string(),
+                    },
+                    e,
+                )
+            })?;
+            println!("Changes (all auto-apply): \n\n{}", plan_yaml);
+        }
+    } else {
+        let plan_only = MigrationPlan {
+            created_at: db_migration.created_at,
+            operations: plan_worthy_ops,
         };
 
-        let plan_yaml_with_header = format!(
-            "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
-            plan_yaml
-        );
-        std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
+        if save {
+            let migrations_dir = std::path::Path::new(MIGRATIONS_DIR);
+            let internal_dir = project.internal_dir_with_routine_failure_err()?;
+            let (plan_path, state_path) = plan_files::write_plan_files(
+                migrations_dir,
+                &plan_only,
+                &result.remote_state,
+                &internal_dir,
             )
-        })?;
-        std::fs::write(
-            MIGRATION_BEFORE_STATE_FILE,
-            serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
+            .map_err(|e| {
                 RoutineFailure::new(
-                    Message::new("Error".to_string(), "serializing remote state.".to_string()),
+                    Message::new("Migration".to_string(), "plan writing failed.".to_string()),
                     e,
                 )
-            })?,
-        )
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
-            )
-        })?;
-        std::fs::write(
-            MIGRATION_AFTER_STATE_FILE,
-            serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
+            })?;
+
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Saved".to_string(),
+                    details: format!(
+                        "Plan: {}\n  State: {}",
+                        plan_path.display(),
+                        state_path.display()
+                    ),
+                },
+            );
+        } else {
+            let plan_yaml = plan_only.to_yaml().map_err(|e| {
                 RoutineFailure::new(
-                    Message::new("Error".to_string(), "serializing local state.".to_string()),
+                    Message {
+                        action: "Plan".to_string(),
+                        details: "Failed to serialize".to_string(),
+                    },
                     e,
                 )
-            })?,
-        )
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
-            )
-        })?;
-    } else {
-        println!("Changes: \n\n{}", plan_yaml);
+            })?;
+            println!("Plan-worthy changes: \n\n{}", plan_yaml);
+        }
     }
 
     Ok(RoutineSuccess::success(Message::new(

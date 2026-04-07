@@ -3,8 +3,8 @@
 //! Provides functions to format, parse, discover, read, and write timestamped
 //! migration plan files in the `migrations/` directory.
 
-// These functions are not yet called from the main binary — they will be wired
-// in by subsequent tasks (Tasks 4-7).  Allow dead code until then.
+// Some functions (discover, load, drift detection) are not yet called from the
+// main binary — they will be wired in by subsequent tasks (Tasks 5-7).
 #![allow(dead_code)]
 
 use crate::framework::core::infrastructure::table::Table;
