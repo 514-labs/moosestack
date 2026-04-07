@@ -41,7 +41,7 @@ use routines::scripts::{
     terminate_workflow, unpause_workflow,
 };
 use routines::templates::{list_available_templates, prompt_for_template_name};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use settings::Settings;
 use std::collections::HashMap;
@@ -65,17 +65,14 @@ use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE,
-    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
-use crate::framework::core::migration_plan::{
-    BackfillCheckResult, MigrationPlanWithBeforeAfter, MIGRATION_SCHEMA,
-};
+use crate::framework::core::migration_plan::{BackfillCheckResult, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
     ConfirmationPolicy, MigrationGateOutcome,
@@ -1068,8 +1065,16 @@ pub async fn top_command_handler(
         Commands::Migrate {
             clickhouse_url,
             redis_url,
+            validate,
         } => {
             info!("Running migrate command");
+
+            if *validate {
+                // Validate-only mode: no ClickHouse or Redis needed
+                let project = load_project(commands)?;
+                return validate_migrations(&project);
+            }
+
             let mut project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1714,6 +1719,151 @@ pub async fn top_command_handler(
     }
 }
 
+/// Validate migration files without executing them.
+///
+/// Loads all migration files from ./migrations/, verifies the delta sequence
+/// is consistent (fold succeeds from empty map), and reports any issues.
+fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+    use crate::framework::core::migration_file::MigrationHistory;
+    use std::path::Path;
+
+    let migrations_dir = Path::new("./migrations");
+    if !migrations_dir.exists() {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Validate".to_string(),
+            "No migrations directory found".to_string(),
+        )));
+    }
+
+    let history = MigrationHistory::load_from_dir(migrations_dir).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Validate".to_string(),
+            format!("Failed to load migration files: {}", e),
+        ))
+    })?;
+
+    if history.is_empty() {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Validate".to_string(),
+            "No migration files found in ./migrations/".to_string(),
+        )));
+    }
+
+    println!("Validating {} migration file(s)...\n", history.files.len());
+
+    // Display each migration
+    for file in &history.files {
+        println!("  {} ({} delta(s))", file.id, file.deltas.len());
+        for delta in &file.deltas {
+            println!("    - {}", delta.summary());
+        }
+    }
+    println!();
+
+    // Test fold: reconstruct map from empty
+    let default_database = &project.clickhouse_config.db_name;
+    let mut fold_ok = true;
+    match history.reconstruct_olap_map(default_database) {
+        Ok(map) => {
+            println!(
+                "✓ Fold succeeded: {} table(s), {} view(s), {} MV(s)",
+                map.tables.len(),
+                map.views.len(),
+                map.materialized_views.len()
+            );
+        }
+        Err(e) => {
+            println!("✗ Fold failed: {}", e);
+            fold_ok = false;
+        }
+    }
+
+    // Check for conflicts between migrations that share a parent hash
+    // Group migrations by parent_state_hash
+    let mut by_parent: std::collections::HashMap<
+        &str,
+        Vec<&crate::framework::core::migration_file::MigrationFile>,
+    > = std::collections::HashMap::new();
+    for file in &history.files {
+        by_parent
+            .entry(&file.parent_state_hash)
+            .or_default()
+            .push(file);
+    }
+
+    let mut conflict_count = 0;
+    for (hash, files) in &by_parent {
+        if files.len() > 1 {
+            // Multiple migrations from the same parent — check for conflicts
+            // Compare each pair
+            for i in 0..files.len() {
+                for j in (i + 1)..files.len() {
+                    let conflicts = MigrationHistory::detect_conflicts(
+                        &[files[i].clone()],
+                        &[files[j].clone()],
+                    );
+                    for conflict in &conflicts {
+                        conflict_count += 1;
+                        match conflict {
+                            crate::framework::core::migration_file::MigrationConflict::SameTableModified {
+                                table_id,
+                                branch_a_migration,
+                                branch_b_migration,
+                            } => {
+                                println!(
+                                    "⚠ Conflict: table '{}' modified by both '{}' and '{}' (parent: {}..)",
+                                    table_id,
+                                    branch_a_migration,
+                                    branch_b_migration,
+                                    &hash[..12.min(hash.len())]
+                                );
+                            }
+                            crate::framework::core::migration_file::MigrationConflict::TableDroppedAndModified {
+                                table_id,
+                                dropper,
+                                modifier,
+                            } => {
+                                println!(
+                                    "⚠ Conflict: table '{}' dropped by '{}' but modified by '{}' (parent: {}..)",
+                                    table_id,
+                                    dropper,
+                                    modifier,
+                                    &hash[..12.min(hash.len())]
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if conflict_count > 0 || !fold_ok {
+        let mut issues = Vec::new();
+        if !fold_ok {
+            issues.push("fold failed".to_string());
+        }
+        if conflict_count > 0 {
+            issues.push(format!("{} conflict(s)", conflict_count));
+        }
+        println!("\n✗ Validation failed: {}", issues.join(", "));
+        return Err(RoutineFailure::error(Message::new(
+            "Validate".to_string(),
+            issues.join(", "),
+        )));
+    }
+
+    println!("\n✓ All migrations valid, no conflicts detected");
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Validate".to_string(),
+        format!(
+            "{} migration file(s) validated successfully",
+            history.files.len()
+        ),
+    )))
+}
+
 /// Runs confirmation gates (rename + destructive), builds the final migration
 /// plan with optional backfill SQL, and saves or prints the result.
 ///
@@ -1757,7 +1907,7 @@ async fn confirm_and_save_migration(
         MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
     }
 
-    let mut db_migration = result.to_migration_plan().map_err(|e| {
+    let db_migration = result.to_migration_plan().map_err(|e| {
         RoutineFailure::new(
             Message {
                 action: "Plan".to_string(),
@@ -1767,15 +1917,17 @@ async fn confirm_and_save_migration(
         )
     })?;
 
-    if no_auto_backfill_sql {
-        display::show_message_wrapper(
-            MessageType::Success,
-            Message {
-                action: "Auto-backfill".to_string(),
-                details: "disabled by --no-auto-backfill-sql".to_string(),
-            },
-        );
-    } else {
+    // Convert OLAP changes to InfraDeltas
+    let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
+        &result.changes.olap_changes,
+        &result.default_database,
+    );
+
+    // Fill in real policy descriptions from the user's confirmation
+    crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
+
+    // Check for backfill opportunities (uses legacy MigrationPlan for detection only)
+    if !no_auto_backfill_sql {
         let candidates = db_migration.detect_backfill_candidates(
             &result.remote_state.tables,
             &project.clickhouse_config.db_name,
@@ -1809,7 +1961,7 @@ async fn confirm_and_save_migration(
                         use std::io::IsTerminal;
                         if std::io::stdin().is_terminal() && stdout().is_terminal() {
                             let answer = prompt_user(
-                                "Append RawSql backfill operation to plan.yaml? [Y/n]",
+                                "Append backfill operation to migration? [Y/n]",
                                 Some("Y"),
                                 None,
                             )?;
@@ -1821,13 +1973,21 @@ async fn confirm_and_save_migration(
                     };
 
                     if should_append {
-                        db_migration.append_backfill(c);
+                        // Extract column names from the SQL for the BackfillTable delta
+                        infra_deltas.push(
+                            crate::framework::core::infra_delta::InfraDelta::BackfillTable {
+                                source_table: c.source_table_name.clone(),
+                                target_table: c.target_table_name.clone(),
+                                columns: vec![],
+                                sql: c.sql.clone(),
+                            },
+                        );
                         display::show_message_wrapper(
                             MessageType::Success,
                             Message {
                                 action: "Appended".to_string(),
                                 details: format!(
-                                    "RawSql backfill: `{}` <- `{}`",
+                                    "Backfill: `{}` <- `{}`",
                                     c.target_table_name, c.source_table_name
                                 ),
                             },
@@ -1874,17 +2034,14 @@ async fn confirm_and_save_migration(
         }
     }
 
-    let plan_yaml = db_migration.to_yaml().map_err(|e| {
-        RoutineFailure::new(
-            Message {
-                action: "Plan".to_string(),
-                details: "Failed to serialize".to_string(),
-            },
-            e,
-        )
-    })?;
-
     if save {
+        if infra_deltas.is_empty() {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "no changes to write".to_string(),
+            )));
+        }
+
         std::fs::create_dir_all("./migrations").map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
@@ -1892,57 +2049,46 @@ async fn confirm_and_save_migration(
             )
         })?;
 
-        if let Err(e) = std::fs::write(
-            project
-                .internal_dir_with_routine_failure_err()?
-                .join("migration_schema.json"),
-            MIGRATION_SCHEMA,
-        ) {
-            warn!("Error writing migration schema file: {e:?}");
-        };
-
-        let plan_yaml_with_header = format!(
-            "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
-            plan_yaml
+        let parent_hash = result.remote_state.olap_hash();
+        let migration_file = crate::framework::core::migration_file::MigrationFile::new(
+            "migration".to_string(),
+            parent_hash,
+            infra_deltas,
         );
-        std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(|e| {
+        let migration_yaml = migration_file.to_yaml().map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "Failed to serialize".to_string()),
+                e,
+            )
+        })?;
+        let migration_path = format!("./migrations/{}.yaml", migration_file.id);
+        std::fs::write(&migration_path, &migration_yaml).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
                 e,
             )
         })?;
-        std::fs::write(
-            MIGRATION_BEFORE_STATE_FILE,
-            serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
-                RoutineFailure::new(
-                    Message::new("Error".to_string(), "serializing remote state.".to_string()),
-                    e,
-                )
-            })?,
-        )
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
-            )
-        })?;
-        std::fs::write(
-            MIGRATION_AFTER_STATE_FILE,
-            serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
-                RoutineFailure::new(
-                    Message::new("Error".to_string(), "serializing local state.".to_string()),
-                    e,
-                )
-            })?,
-        )
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
-                e,
-            )
-        })?;
+
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "Migration".to_string(),
+                details: format!(
+                    "Written to {} ({} delta(s))",
+                    migration_path,
+                    migration_file.deltas.len()
+                ),
+            },
+        );
     } else {
-        println!("Changes: \n\n{}", plan_yaml);
+        if infra_deltas.is_empty() {
+            println!("No changes detected.");
+        } else {
+            println!("Changes ({} delta(s)):\n", infra_deltas.len());
+            for (i, delta) in infra_deltas.iter().enumerate() {
+                println!("  {}. {}", i + 1, delta.summary());
+            }
+        }
     }
 
     Ok(RoutineSuccess::success(Message::new(

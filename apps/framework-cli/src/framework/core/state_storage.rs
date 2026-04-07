@@ -41,6 +41,12 @@ pub trait StateStorage: Send + Sync {
 
     /// Release migration lock
     async fn release_migration_lock(&self) -> Result<()>;
+
+    /// Record a migration file ID as applied
+    async fn store_applied_migration(&self, migration_id: &str) -> Result<()>;
+
+    /// Load the list of applied migration file IDs
+    async fn load_applied_migrations(&self) -> Result<Vec<String>>;
 }
 
 /// Redis-based state storage
@@ -51,6 +57,7 @@ pub struct RedisStateStorage {
 impl RedisStateStorage {
     const LOCK_KEY: &'static str = "migration_lock";
     const LOCK_TIMEOUT_SECS: i64 = 300; // 5 minutes
+    const APPLIED_MIGRATIONS_KEY: &'static str = "applied_migrations";
 
     pub fn new(client: Arc<RedisClient>) -> Self {
         Self { client }
@@ -125,6 +132,29 @@ impl StateStorage for RedisStateStorage {
 
         info!("Released migration lock {}", lock_key);
         Ok(())
+    }
+
+    async fn store_applied_migration(&self, migration_id: &str) -> Result<()> {
+        let mut applied = self.load_applied_migrations().await?;
+        if !applied.contains(&migration_id.to_string()) {
+            applied.push(migration_id.to_string());
+        }
+        let json = serde_json::to_string(&applied)?;
+        self.client
+            .set_with_service_prefix(Self::APPLIED_MIGRATIONS_KEY, &json)
+            .await?;
+        Ok(())
+    }
+
+    async fn load_applied_migrations(&self) -> Result<Vec<String>> {
+        let value: Option<String> = self
+            .client
+            .get_with_service_prefix(Self::APPLIED_MIGRATIONS_KEY)
+            .await?;
+        match value {
+            Some(json) => Ok(serde_json::from_str(&json)?),
+            None => Ok(vec![]),
+        }
     }
 }
 
@@ -411,6 +441,59 @@ impl StateStorage for ClickHouseStateStorage {
 
         info!("Released migration lock");
         Ok(())
+    }
+
+    async fn store_applied_migration(&self, migration_id: &str) -> Result<()> {
+        self.ensure_state_table().await?;
+
+        let mut applied = self.load_applied_migrations().await?;
+        if !applied.contains(&migration_id.to_string()) {
+            applied.push(migration_id.to_string());
+        }
+        let json = serde_json::to_string(&applied)?;
+
+        // Upsert: delete then insert (KeeperMap doesn't support UPDATE)
+        let delete_sql = format!(
+            "DELETE FROM `{}`.`{}` WHERE key = 'applied_migrations'",
+            self.db_name,
+            Self::STATE_TABLE
+        );
+        let _ = self.client.client.query(&delete_sql).execute().await;
+
+        let insert_sql = format!(
+            "INSERT INTO `{}`.`{}` (key, value) VALUES ('applied_migrations', '{}')",
+            self.db_name,
+            Self::STATE_TABLE,
+            json.replace('\'', "''")
+        );
+        self.client
+            .client
+            .query(&insert_sql)
+            .execute()
+            .await
+            .context("Failed to store applied migration")?;
+
+        Ok(())
+    }
+
+    async fn load_applied_migrations(&self) -> Result<Vec<String>> {
+        self.ensure_state_table().await?;
+
+        let query = format!(
+            "SELECT value FROM `{}`.`{}` WHERE key = 'applied_migrations'",
+            self.db_name,
+            Self::STATE_TABLE
+        );
+
+        let mut cursor = match self.client.client.query(&query).fetch::<String>() {
+            Ok(cursor) => cursor,
+            Err(_) => return Ok(vec![]),
+        };
+
+        match cursor.next().await {
+            Ok(Some(json)) => Ok(serde_json::from_str(&json)?),
+            _ => Ok(vec![]),
+        }
     }
 }
 

@@ -22,10 +22,12 @@
 ///
 pub mod check;
 pub mod execute;
+pub mod infra_delta;
 pub mod infra_reality_checker;
 pub mod infrastructure;
 pub mod infrastructure_map;
 pub mod lifecycle_filter;
+pub mod migration_file;
 pub mod migration_plan;
 pub mod partial_infrastructure_map;
 pub mod plan;

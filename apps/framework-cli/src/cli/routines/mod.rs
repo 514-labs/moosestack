@@ -549,7 +549,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, mut plan) = plan_changes(&*state_storage, &project).await?;
+    let (reconciled_map, mut plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -724,7 +724,7 @@ pub async fn start_development_mode(
 
     let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let process_registry = execute_initial_infra_change(ExecutionContext {
+    let (process_registry, folded_olap_map) = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
@@ -732,27 +732,27 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
+        current_olap_map: Some(reconciled_map),
     })
     .await?;
 
     let process_registry = Arc::new(RwLock::new(process_registry));
 
+    // Build the stored map: start from target (has non-OLAP fields), merge folded OLAP state
+    let mut stored_map = plan.target_infra_map;
+    if let Some(folded) = folded_olap_map {
+        stored_map.merge_olap_from(&folded);
+    }
+
     // Create mirrors after infra is set up (databases exist)
-    create_external_mirrors(
-        &project,
-        &plan.target_infra_map,
-        remote_for_mirrors.as_ref(),
-    )
-    .await;
+    create_external_mirrors(&project, &stored_map, remote_for_mirrors.as_ref()).await;
 
-    let openapi_file = openapi(&project, &plan.target_infra_map).await?;
+    let openapi_file = openapi(&project, &stored_map).await?;
 
-    state_storage
-        .store_infrastructure_map(&plan.target_infra_map)
-        .await?;
+    state_storage.store_infrastructure_map(&stored_map).await?;
 
     let infra_map: &'static RwLock<InfrastructureMap> =
-        Box::leak(Box::new(RwLock::new(plan.target_infra_map)));
+        Box::leak(Box::new(RwLock::new(stored_map)));
 
     // Create processing coordinator to synchronize file watcher with MCP tools
     use crate::cli::processing_coordinator::ProcessingCoordinator;
@@ -1024,7 +1024,7 @@ pub async fn start_production_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let process_registry = execute_initial_infra_change(ExecutionContext {
+    let (process_registry, _) = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
@@ -1032,6 +1032,7 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
+        current_olap_map: None,
     })
     .await?;
 

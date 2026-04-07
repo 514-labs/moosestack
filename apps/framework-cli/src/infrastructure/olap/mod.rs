@@ -171,6 +171,52 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Execute OLAP changes via the InfraDelta path.
+///
+/// This is the unified execution model for both dev mode and production:
+/// 1. Converts `OlapChange`s to `InfraDelta`s
+/// 2. Executes the DDL via the existing `order_olap_changes → clickhouse::execute_changes`
+///    pipeline (preserves database creation, cluster validation, dependency ordering)
+/// 3. Applies all deltas to the infrastructure map (fold step)
+///
+/// The map is mutated in place to reflect the post-execution state.
+pub async fn execute_changes_via_deltas(
+    project: &Project,
+    changes: &[OlapChange],
+    current_map: &mut crate::framework::core::infrastructure_map::InfrastructureMap,
+) -> Result<(), OlapChangesError> {
+    use crate::framework::core::infra_delta::olap_changes_to_deltas;
+
+    // LIFECYCLE GUARD
+    let violations = lifecycle_filter::validate_lifecycle_compliance(
+        changes,
+        &project.clickhouse_config.db_name,
+    );
+    if !violations.is_empty() {
+        return Err(OlapChangesError::LifecycleViolation(violations));
+    };
+
+    let default_database = &project.clickhouse_config.db_name;
+
+    // Convert to deltas for the fold
+    let deltas = olap_changes_to_deltas(changes, default_database);
+
+    // Execute DDL via the existing pipeline (handles database creation,
+    // cluster validation, dependency ordering, teardown-before-setup)
+    let (teardown_plan, setup_plan) = ddl_ordering::order_olap_changes(changes, default_database)?;
+    clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
+
+    // Apply deltas to the map (fold step) — the map now reflects
+    // the post-execution state
+    for delta in &deltas {
+        if let Err(e) = delta.apply(current_map, default_database) {
+            tracing::warn!("Failed to apply delta to map during execution: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Separated from `execute_changes` because RLS bootstrap
 /// must run on every startup regardless of whether OLAP schema changed.

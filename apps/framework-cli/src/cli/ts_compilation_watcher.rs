@@ -447,7 +447,7 @@ async fn watch(
                                             .await;
 
                                             match plan_result {
-                                                Ok((_, mut plan_result)) => {
+                                                Ok((reconciled_map, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
                                                             &project,
@@ -472,6 +472,7 @@ async fn watch(
                                                         processing_coordinator.begin_processing().await;
                                                     let mut project_registries =
                                                         project_registries.write().await;
+                                                    let mut current_olap_map = reconciled_map;
 
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
@@ -483,6 +484,7 @@ async fn watch(
                                                                 &mut project_registries,
                                                                 metrics.clone(),
                                                                 &settings,
+                                                                Some(&mut current_olap_map),
                                                             )
                                                             .await
                                                         })
@@ -490,10 +492,14 @@ async fn watch(
 
                                                     match execution_result {
                                                         Ok(_) => {
+                                                            // Build stored map: target (non-OLAP) + folded OLAP state
+                                                            let mut stored_map = plan_result.target_infra_map;
+                                                            stored_map.merge_olap_from(&current_olap_map);
+
                                                             with_timing_async("Persist State", async {
                                                                 state_storage
                                                                     .store_infrastructure_map(
-                                                                        &plan_result.target_infra_map,
+                                                                        &stored_map,
                                                                     )
                                                                     .await
                                                             })
@@ -502,7 +508,7 @@ async fn watch(
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
                                                                     &project,
-                                                                    &plan_result.target_infra_map,
+                                                                    &stored_map,
                                                                 )
                                                                 .await
                                                             })
@@ -510,7 +516,7 @@ async fn watch(
 
                                                             let mut infra_ptr =
                                                                 infrastructure_map.write().await;
-                                                            *infra_ptr = plan_result.target_infra_map;
+                                                            *infra_ptr = stored_map;
                                                             Ok(true)
                                                         }
                                                         Err(e) => {
