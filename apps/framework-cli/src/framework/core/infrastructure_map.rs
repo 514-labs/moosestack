@@ -64,7 +64,7 @@ use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     codec_expressions_are_equivalent, normalize_table_for_diff,
 };
-use crate::infrastructure::redis::redis_client::RedisClient;
+use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
 use crate::utilities::constants::{PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
@@ -2710,6 +2710,18 @@ impl InfrastructureMap {
     /// Loads an infrastructure map using the last deployment's Redis key prefix.
     pub async fn load_from_last_redis_prefix(redis_client: &RedisClient) -> Result<Option<Self>> {
         let last_prefix = &redis_client.config.last_key_prefix;
+        let current_prefix = &redis_client.config.key_prefix;
+        let default_prefix = RedisConfig::default_key_prefix();
+
+        if *last_prefix == default_prefix && *current_prefix != default_prefix {
+            tracing::warn!(
+                "LAST_KEY_PREFIX is the default '{}' but KEY_PREFIX is '{}' — \
+                 this likely means MOOSE_REDIS_CONFIG__LAST_KEY_PREFIX was not set \
+                 (first deployment or missing configuration)",
+                default_prefix,
+                current_prefix,
+            );
+        }
 
         tracing::info!(
             "Loading InfrastructureMap from last Redis prefix: {}",
