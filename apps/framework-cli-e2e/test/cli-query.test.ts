@@ -62,12 +62,13 @@ describe("moose query command", () => {
 
     // Start moose dev
     testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
       stdio: "pipe",
       cwd: testProjectDir,
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
       },
     });
 
@@ -87,6 +88,7 @@ describe("moose query command", () => {
 
     await cleanupTestSuite(devProcess, testProjectDir, "query-cmd-test", {
       logPrefix: "Query Command Test",
+      includeDocker: false,
     });
   });
 
