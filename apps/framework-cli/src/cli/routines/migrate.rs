@@ -116,7 +116,7 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
 /// username change produces visible drift.
 fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
     use crate::infrastructure::olap::clickhouse::dictionary::{
-        DictionarySource, ExternalDictionarySource,
+        DictionarySource, ExternalDictionarySource, ExternalDictionarySourceWrapper,
     };
     use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
 
@@ -130,8 +130,11 @@ fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<Strin
             // (password = real value). Usernames are stored in plain-text in the JSON
             // by mask_credentials_for_json_export, so they must not be normalized here —
             // a username change must surface as drift.
-            if let DictionarySource::External(ref mut ext) = dict.source {
-                match ext {
+            if let DictionarySource::External(ExternalDictionarySourceWrapper {
+                ref mut external_source,
+            }) = dict.source
+            {
+                match external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
