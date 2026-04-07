@@ -328,7 +328,7 @@ function dataTypeToString(dataType: Column["data_type"]): string {
           : `'${v.name}' = ${v.value.Int ?? 0}`,
         )
         .join(", ");
-      return `Enum8(${entries})`;
+      return `${d.name}(${entries})`;
     }
   }
   return JSON.stringify(dataType);
@@ -371,10 +371,25 @@ function serializeLifetime(
   lifetime: DictionaryLifetime,
 ): Record<string, unknown> {
   if (typeof lifetime === "number") {
+    if (!Number.isFinite(lifetime) || lifetime < 0) {
+      throw new Error(
+        `OlapDictionary: lifetime must be a finite non-negative number (got ${lifetime}).`,
+      );
+    }
     if (lifetime === 0) {
       return { type: "STATIC" };
     }
     return { type: "SINGLE", seconds: lifetime };
+  }
+  if (
+    !Number.isFinite(lifetime.min) ||
+    !Number.isFinite(lifetime.max) ||
+    lifetime.min < 0 ||
+    lifetime.max < lifetime.min
+  ) {
+    throw new Error(
+      `OlapDictionary: lifetime range must use finite non-negative numbers with min <= max (got min=${lifetime.min}, max=${lifetime.max}).`,
+    );
   }
   return { type: "RANGE", min: lifetime.min, max: lifetime.max };
 }
@@ -659,8 +674,8 @@ export class OlapDictionary<T> {
         return toStaticQuery(k as Sql);
       }
       if (typeof k === "string") {
-        // Treat as a SQL identifier (column name)
-        return `\`${k}\``;
+        // Treat as a SQL identifier (column name); escape embedded backticks
+        return `\`${k.replace(/`/g, "``")}\``;
       }
       return String(k);
     });
@@ -685,9 +700,10 @@ export class OlapDictionary<T> {
         `OlapDictionary.get('${attr}'): at least one key argument is required.`,
       );
     }
-    const qualifiedName = this.getQualifiedName();
+    const qualifiedName = this.getQualifiedName().replace(/'/g, "''");
+    const escapedAttr = (attr as string).replace(/'/g, "''");
     const keyExpr = this.formatKeyArgs(keys);
-    return sql.raw(`dictGet('${qualifiedName}', '${attr}', ${keyExpr})`);
+    return sql.raw(`dictGet('${qualifiedName}', '${escapedAttr}', ${keyExpr})`);
   }
 
   /**
@@ -707,7 +723,8 @@ export class OlapDictionary<T> {
         `OlapDictionary.getOrDefault('${attr}'): at least one key argument is required.`,
       );
     }
-    const qualifiedName = this.getQualifiedName();
+    const qualifiedName = this.getQualifiedName().replace(/'/g, "''");
+    const escapedAttr = (attr as string).replace(/'/g, "''");
     const keyExpr = this.formatKeyArgs(keys);
     let defaultExpr: string;
     if (typeof defaultVal === "object" && "strings" in defaultVal) {
@@ -721,7 +738,7 @@ export class OlapDictionary<T> {
       defaultExpr = String(defaultVal);
     }
     return sql.raw(
-      `dictGetOrDefault('${qualifiedName}', '${attr}', ${keyExpr}, ${defaultExpr})`,
+      `dictGetOrDefault('${qualifiedName}', '${escapedAttr}', ${keyExpr}, ${defaultExpr})`,
     );
   }
 
@@ -742,7 +759,7 @@ export class OlapDictionary<T> {
         `OlapDictionary.has(): at least one key argument is required.`,
       );
     }
-    const qualifiedName = this.getQualifiedName();
+    const qualifiedName = this.getQualifiedName().replace(/'/g, "''");
     const keyExpr = this.formatKeyArgs(keys);
     return sql.raw(`dictHas('${qualifiedName}', ${keyExpr})`);
   }
