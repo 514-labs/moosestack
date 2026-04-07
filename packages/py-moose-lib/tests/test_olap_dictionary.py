@@ -17,7 +17,6 @@ from moose_lib.dmv2.olap_dictionary import (
     ComplexKeyDirectLayout,
     ComplexKeyHashedArrayLayout,
     ComplexKeyHashedLayout,
-    ComplexKeyRangeHashedLayout,
     ComplexKeySsdCacheLayout,
     ComplexKeySparseHashedLayout,
     DictionaryColumn,
@@ -42,6 +41,7 @@ from moose_lib.dmv2.olap_dictionary import (
     SsdCacheLayout,
 )
 from moose_lib.dmv2.olap_table import OlapTable, OlapConfig
+from moose_lib.dmv2.life_cycle import LifeCycle
 from moose_lib.dmv2.registry import get_olap_dictionaries, get_olap_dictionary
 from moose_lib.internal import (
     _serialize_dict_columns,
@@ -434,13 +434,12 @@ def test_source_mongodb_serialization():
         (ComplexKeyHashedLayout(), "COMPLEX_KEY_HASHED"),
         (ComplexKeySparseHashedLayout(), "COMPLEX_KEY_SPARSE_HASHED"),
         (ComplexKeyHashedArrayLayout(), "COMPLEX_KEY_HASHED_ARRAY"),
-        (ComplexKeyRangeHashedLayout(), "COMPLEX_KEY_RANGE_HASHED"),
         (ComplexKeyCacheLayout(size_in_cells=500), "COMPLEX_KEY_CACHE"),
         (ComplexKeySsdCacheLayout(path="/tmp/ck_ssd"), "COMPLEX_KEY_SSD_CACHE"),
         (ComplexKeyDirectLayout(), "COMPLEX_KEY_DIRECT"),
     ],
 )
-def test_all_16_layout_types_serialize(layout, expected_type):
+def test_all_15_layout_types_serialize(layout, expected_type):
     dumped = layout.model_dump(exclude_none=True)
     assert dumped["type"] == expected_type
 
@@ -751,3 +750,713 @@ def test_serializer_syntax_error_in_user_file_fails_gracefully():
         f"but got returncode={result.returncode}"
     )
     assert "SyntaxError" in result.stderr or "SyntaxError" in result.stdout
+
+
+# ─── A. Bug regression: external source camelCase ────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("source", "snake_key", "camel_key"),
+    [
+        (
+            HttpSource(url="http://x.com", format="CSV", where_clause="id > 0"),
+            "where_clause",
+            "whereClause",
+        ),
+        (
+            ClickHouseRemoteSource(
+                host="h",
+                port=9000,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                where_clause="x > 1",
+                invalidate_query="SELECT max(ts) FROM t",
+            ),
+            "where_clause",
+            "whereClause",
+        ),
+        (
+            ClickHouseRemoteSource(
+                host="h",
+                port=9000,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                invalidate_query="SELECT max(ts) FROM t",
+            ),
+            "invalidate_query",
+            "invalidateQuery",
+        ),
+        (
+            MysqlSource(
+                host="h",
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                where_clause="a=1",
+            ),
+            "where_clause",
+            "whereClause",
+        ),
+        (
+            PostgresqlSource(
+                host="h",
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                invalidate_query="SELECT 1",
+            ),
+            "invalidate_query",
+            "invalidateQuery",
+        ),
+        (
+            RedisSource(host="h", storage_type="hash_map"),
+            "storage_type",
+            "storageType",
+        ),
+        (
+            RedisSource(host="h", storage_type="simple", db_index=2),
+            "db_index",
+            "dbIndex",
+        ),
+        (
+            ExecutableSource(command="/bin/cat", format="CSV", implicit_key=True),
+            "implicit_key",
+            "implicitKey",
+        ),
+        (
+            S3Source(url="s3://b/f", format="CSV", access_key_id="AK"),
+            "access_key_id",
+            "accessKeyId",
+        ),
+        (
+            S3Source(url="s3://b/f", format="CSV", secret_access_key="SK"),
+            "secret_access_key",
+            "secretAccessKey",
+        ),
+    ],
+)
+def test_external_source_fields_are_camelcase(source, snake_key, camel_key):
+    """Multi-word external source fields must serialize to camelCase so Rust can
+    deserialize them (all Rust external source structs use rename_all = "camelCase")."""
+    table = OlapTable[Lookup](name="tbl_ext_cc")
+    config = OlapDictionaryConfig(
+        external_source=source,
+        primary_key=["lookup_id"],
+        layout=HashedLayout(),
+    )
+    src = _serialize_dict_source(config)
+    inner = src["source"]
+    assert camel_key in inner, (
+        f"Expected camelCase key '{camel_key}' in serialized source, "
+        f"got keys: {list(inner.keys())}"
+    )
+    assert (
+        snake_key not in inner
+    ), f"snake_case key '{snake_key}' must not appear in serialized source"
+
+
+# ─── A. Bug regression: ComplexKeyRangeHashedLayout removed ──────────────────
+
+
+def test_complex_key_range_hashed_layout_not_exported():
+    """ComplexKeyRangeHashedLayout has no Rust counterpart and must be removed."""
+    import moose_lib.dmv2.olap_dictionary as mod
+
+    assert not hasattr(
+        mod, "ComplexKeyRangeHashedLayout"
+    ), "ComplexKeyRangeHashedLayout still exists but Rust has no matching variant"
+
+
+# ─── A. Bug regression: settings int values → strings ────────────────────────
+
+
+def test_settings_integer_values_serialized_as_strings():
+    """Rust's HashMap<String, String> cannot hold int values; they must be
+    coerced to strings during serialization."""
+    table = OlapTable[Lookup](name="tbl_settings_int")
+    OlapDictionary[Lookup](
+        name="dict_settings_int",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            settings={"max_threads": 4, "timeout": 30, "label": "ok"},
+        ),
+    )
+    result = to_infra_map()
+    d = result["olapDictionaries"]["dict_settings_int"]
+    settings = d["settings"]
+    assert settings["max_threads"] == "4", "int value must be coerced to string"
+    assert settings["timeout"] == "30"
+    assert settings["label"] == "ok"
+    for v in settings.values():
+        assert isinstance(v, str), f"All settings values must be str, got {type(v)}"
+
+
+# ─── B. External source serialization — all 8 sources ────────────────────────
+
+
+def test_serialize_clickhouse_remote_source():
+    src = ClickHouseRemoteSource(
+        host="ch.host",
+        port=9000,
+        user="user",
+        password="pass",
+        db="mydb",
+        table="mytable",
+        query="SELECT 1",
+        where_clause="id > 0",
+        invalidate_query="SELECT max(ts) FROM mytable",
+    )
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert result["type"] == "EXTERNAL"
+    assert inner["type"] == "CLICK_HOUSE"
+    assert inner["host"] == "ch.host"
+    assert inner["whereClause"] == "id > 0"
+    assert inner["invalidateQuery"] == "SELECT max(ts) FROM mytable"
+    assert "where_clause" not in inner
+    assert "invalidate_query" not in inner
+
+
+def test_serialize_mysql_source():
+    src = MysqlSource(
+        host="mysql.host",
+        user="u",
+        password="p",
+        db="d",
+        table="t",
+        where_clause="active=1",
+        invalidate_query="SELECT max(updated_at) FROM t",
+    )
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert inner["type"] == "MYSQL"
+    assert inner["whereClause"] == "active=1"
+    assert inner["invalidateQuery"] == "SELECT max(updated_at) FROM t"
+
+
+def test_serialize_postgresql_source():
+    src = PostgresqlSource(
+        host="pg.host",
+        user="u",
+        password="p",
+        db="d",
+        table="t",
+        where_clause="status='active'",
+        invalidate_query="SELECT max(rev) FROM t",
+    )
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert inner["type"] == "POSTGRESQL"
+    assert inner["whereClause"] == "status='active'"
+    assert inner["invalidateQuery"] == "SELECT max(rev) FROM t"
+
+
+def test_serialize_redis_source():
+    src = RedisSource(host="redis.host", storage_type="hash_map", db_index=3)
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert inner["type"] == "REDIS"
+    assert inner["storageType"] == "hash_map"
+    assert inner["dbIndex"] == 3
+    assert "storage_type" not in inner
+    assert "db_index" not in inner
+
+
+def test_serialize_executable_source():
+    src = ExecutableSource(
+        command="/usr/bin/cat data.csv", format="CSV", implicit_key=True
+    )
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert inner["type"] == "EXECUTABLE"
+    assert inner["implicitKey"] is True
+    assert "implicit_key" not in inner
+
+
+def test_serialize_s3_source():
+    src = S3Source(
+        url="s3://bucket/data.csv",
+        format="CSV",
+        access_key_id="AKIAIOSFODNN7",
+        secret_access_key="wJalrXUtnFEMI",
+    )
+    config = OlapDictionaryConfig(
+        external_source=src, primary_key=["id"], layout=HashedLayout()
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert inner["type"] == "S3"
+    assert inner["accessKeyId"] == "AKIAIOSFODNN7"
+    assert inner["secretAccessKey"] == "wJalrXUtnFEMI"
+    assert "access_key_id" not in inner
+    assert "secret_access_key" not in inner
+
+
+# ─── C. Layout params through to_infra_map ───────────────────────────────────
+
+
+def test_infra_map_cache_layout_params():
+    table = OlapTable[Lookup](name="tbl_cache_params")
+    OlapDictionary[Lookup](
+        name="dict_cache_params",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=CacheLayout(size_in_cells=50000, max_threads_for_updates=2),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_cache_params"]
+    assert d["layout"]["size_in_cells"] == 50000
+    assert d["layout"]["max_threads_for_updates"] == 2
+
+
+def test_infra_map_ssd_cache_layout_params():
+    table = OlapTable[Lookup](name="tbl_ssd_params")
+    OlapDictionary[Lookup](
+        name="dict_ssd_params",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=SsdCacheLayout(
+                path="/mnt/ssd/dict", block_size=4096, file_size=1048576
+            ),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_ssd_params"]
+    assert d["layout"]["path"] == "/mnt/ssd/dict"
+    assert d["layout"]["block_size"] == 4096
+    assert d["layout"]["file_size"] == 1048576
+
+
+def test_infra_map_range_hashed_layout_params():
+    table = OlapTable[Lookup](name="tbl_range_params")
+    OlapDictionary[Lookup](
+        name="dict_range_params",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=RangeHashedLayout(range_lookup_strategy="min"),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_range_params"]
+    assert d["layout"]["range_lookup_strategy"] == "min"
+
+
+def test_infra_map_hashed_array_layout_params():
+    table = OlapTable[Lookup](name="tbl_harray_params")
+    OlapDictionary[Lookup](
+        name="dict_harray_params",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedArrayLayout(shards=8),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_harray_params"]
+    assert d["layout"]["shards"] == 8
+
+
+def test_infra_map_ip_trie_layout_params():
+    table = OlapTable[Lookup](name="tbl_ip_params")
+    OlapDictionary[Lookup](
+        name="dict_ip_params",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=IpTrieLayout(access_to_key_from_attributes=True),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_ip_params"]
+    assert d["layout"]["access_to_key_from_attributes"] is True
+
+
+@pytest.mark.parametrize(
+    ("layout", "param_key", "param_val"),
+    [
+        (
+            ComplexKeyHashedLayout(initial_array_size=1024, max_load_factor=0.8),
+            "initial_array_size",
+            1024,
+        ),
+        (
+            ComplexKeySparseHashedLayout(initial_array_size=256),
+            "initial_array_size",
+            256,
+        ),
+        (ComplexKeyHashedArrayLayout(shards=4), "shards", 4),
+        (
+            ComplexKeyCacheLayout(size_in_cells=2000, max_threads_for_updates=1),
+            "size_in_cells",
+            2000,
+        ),
+        (ComplexKeySsdCacheLayout(path="/tmp/ck", block_size=8192), "block_size", 8192),
+    ],
+)
+def test_infra_map_complex_key_layout_params(layout, param_key, param_val):
+    table = OlapTable[Lookup](name=f"tbl_ck_{layout.type.lower()}")
+    OlapDictionary[Lookup](
+        name=f"dict_ck_{layout.type.lower()}",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id", "value"],
+            layout=layout,
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"][f"dict_ck_{layout.type.lower()}"]
+    assert d["layout"][param_key] == param_val
+
+
+# ─── D. Remaining untested fields through to_infra_map ───────────────────────
+
+
+def test_infra_map_invalidate_query():
+    table = OlapTable[Lookup](name="tbl_inv")
+    OlapDictionary[Lookup](
+        name="dict_inv",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            invalidate=DictionaryInvalidation(column="updated_at", fn="max"),
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_inv"]
+    iq = d.get("invalidateQuery")
+    assert iq is not None, "invalidateQuery must be set when invalidate is configured"
+    assert "max" in iq
+    assert "updated_at" in iq
+    assert "tbl_inv" in iq
+
+
+def test_infra_map_comment():
+    table = OlapTable[Lookup](name="tbl_comment")
+    OlapDictionary[Lookup](
+        name="dict_comment",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            comment="Product lookup dict",
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_comment"]
+    assert d["comment"] == "Product lookup dict"
+
+
+def test_infra_map_settings():
+    table = OlapTable[Lookup](name="tbl_cfg_settings")
+    OlapDictionary[Lookup](
+        name="dict_cfg_settings",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            settings={"max_threads": "2", "query_wait_timeout_milliseconds": "500"},
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_cfg_settings"]
+    assert d["settings"]["max_threads"] == "2"
+    assert d["settings"]["query_wait_timeout_milliseconds"] == "500"
+
+
+def test_infra_map_database_field():
+    table = OlapTable[Lookup](name="tbl_dbfield")
+    OlapDictionary[Lookup](
+        name="dict_dbfield",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            database="analytics",
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_dbfield"]
+    assert d["database"] == "analytics"
+
+
+def test_infra_map_life_cycle_deletion_protected():
+    table = OlapTable[Lookup](name="tbl_dp")
+    OlapDictionary[Lookup](
+        name="dict_dp",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            life_cycle=LifeCycle.DELETION_PROTECTED,
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_dp"]
+    assert d["lifeCycle"] == "DELETION_PROTECTED"
+
+
+def test_column_expression_override():
+    table = OlapTable[Lookup](name="tbl_expr")
+    OlapDictionary[Lookup](
+        name="dict_expr",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            columns={"value": DictionaryColumn(expression="upper(value)")},
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_expr"]
+    value_col = next(c for c in d["columns"] if c["name"] == "value")
+    assert value_col.get("expression") == "upper(value)"
+
+
+def test_column_hierarchical_override():
+    table = OlapTable[Lookup](name="tbl_hier")
+    OlapDictionary[Lookup](
+        name="dict_hier",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            columns={"value": DictionaryColumn(hierarchical=True)},
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_hier"]
+    value_col = next(c for c in d["columns"] if c["name"] == "value")
+    assert value_col.get("isHierarchical") is True
+
+
+def test_column_is_object_id_override():
+    table = OlapTable[Lookup](name="tbl_objid")
+    OlapDictionary[Lookup](
+        name="dict_objid",
+        config=OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            columns={"value": DictionaryColumn(is_object_id=True)},
+        ),
+    )
+    d = to_infra_map()["olapDictionaries"]["dict_objid"]
+    value_col = next(c for c in d["columns"] if c["name"] == "value")
+    assert value_col.get("isObjectId") is True
+
+
+# ─── E. Integration (subprocess) — remaining gaps ────────────────────────────
+
+
+def test_serializer_external_source_end_to_end():
+    """A Python file using an external HttpSource must produce EXTERNAL/HTTP
+    in the subprocess-serialized infra map."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import HashedLayout, HttpSource
+
+        class Item(BaseModel):
+            item_id: str
+            label: str
+
+        dict_items = OlapDictionary[Item](
+            name="dict_items_ext",
+            config=OlapDictionaryConfig(
+                external_source=HttpSource(
+                    url="http://api.example.com/items",
+                    format="JSONEachRow",
+                    where_clause="active=1",
+                ),
+                primary_key=["item_id"],
+                layout=HashedLayout(),
+            ),
+        )
+    """
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    dicts = infra_map.get("olapDictionaries", {})
+    assert "dict_items_ext" in dicts
+    src = dicts["dict_items_ext"]["source"]
+    assert src["type"] == "EXTERNAL"
+    assert src["source"]["type"] == "HTTP"
+    assert src["source"]["url"] == "http://api.example.com/items"
+    # camelCase must be used, not snake_case
+    assert "whereClause" in src["source"]
+    assert "where_clause" not in src["source"]
+
+
+def test_serializer_layout_with_params():
+    """CacheLayout params must survive the full subprocess round-trip."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import CacheLayout
+
+        class Item(BaseModel):
+            item_id: str
+            label: str
+
+        t = OlapTable[Item](name="items_cache")
+        d = OlapDictionary[Item](
+            name="dict_items_cache",
+            config=OlapDictionaryConfig(
+                source_table=t,
+                primary_key=["item_id"],
+                layout=CacheLayout(size_in_cells=10000, max_threads_for_updates=4),
+            ),
+        )
+    """
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    d = infra_map["olapDictionaries"]["dict_items_cache"]
+    assert d["layout"]["type"] == "CACHE"
+    assert d["layout"]["size_in_cells"] == 10000
+    assert d["layout"]["max_threads_for_updates"] == 4
+
+
+def test_serializer_all_optional_fields():
+    """invalidate, comment, settings, database, cluster all round-trip correctly."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import HashedLayout, DictionaryInvalidation
+
+        class Item(BaseModel):
+            item_id: str
+            label: str
+
+        t = OlapTable[Item](name="items_optional")
+        d = OlapDictionary[Item](
+            name="dict_items_optional",
+            config=OlapDictionaryConfig(
+                source_table=t,
+                primary_key=["item_id"],
+                layout=HashedLayout(),
+                comment="Test dictionary",
+                database="mydb",
+                cluster="my_cluster",
+                settings={"max_threads": 2},
+                invalidate=DictionaryInvalidation(column="updated_at", fn="max"),
+            ),
+        )
+    """
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    d = infra_map["olapDictionaries"]["dict_items_optional"]
+    assert d["comment"] == "Test dictionary"
+    assert d["database"] == "mydb"
+    assert d["clusterName"] == "my_cluster"
+    assert d["settings"]["max_threads"] == "2"
+    iq = d.get("invalidateQuery")
+    assert iq is not None and "max" in iq and "updated_at" in iq
+
+
+def test_serializer_top_level_keys_are_camelcase():
+    """Top-level dictionary JSON keys must use camelCase (no snake_case keys)
+    so Rust's #[serde(rename_all = \"camelCase\")] on OlapDictionary can parse them."""
+    main_py = textwrap.dedent(
+        """\
+        from pydantic import BaseModel
+        from moose_lib import OlapTable, OlapDictionary, OlapDictionaryConfig
+        from moose_lib.dmv2.olap_dictionary import HashedLayout
+        from moose_lib.dmv2.life_cycle import LifeCycle
+
+        class Item(BaseModel):
+            item_id: str
+            label: str
+
+        t = OlapTable[Item](name="items_cc")
+        d = OlapDictionary[Item](
+            name="dict_items_cc",
+            config=OlapDictionaryConfig(
+                source_table=t,
+                primary_key=["item_id"],
+                layout=HashedLayout(),
+                cluster="cl",
+                life_cycle=LifeCycle.DELETION_PROTECTED,
+            ),
+        )
+    """
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        app_pkg = os.path.join(tmp, "app")
+        os.makedirs(app_pkg)
+        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "main.py"), "w") as f:
+            f.write(main_py)
+        infra_map = _run_serializer(tmp, _moose_lib_root())
+
+    d = infra_map["olapDictionaries"]["dict_items_cc"]
+    # These snake_case keys must NOT appear at top level
+    for bad_key in ("primary_key", "cluster_name", "life_cycle", "invalidate_query"):
+        assert bad_key not in d, f"snake_case key '{bad_key}' must not appear in output"
+    # These camelCase keys must be present
+    assert "primaryKey" in d
+    assert "clusterName" in d
+    assert "lifeCycle" in d
+
+
+# ─── F. Validation edge cases ────────────────────────────────────────────────
+
+
+def test_blank_source_query_rejected():
+    """An empty/whitespace-only source_query must be rejected at config instantiation."""
+    table = OlapTable[Lookup](name="tbl_blank_query")
+    with pytest.raises(ValidationError, match="blank"):
+        OlapDictionaryConfig(
+            source_query="   ",
+            source_tables=[table],
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+        )
+
+
+def test_empty_primary_key_rejected():
+    """An empty primary_key list must be rejected at config instantiation."""
+    table = OlapTable[Lookup](name="tbl_empty_pk")
+    with pytest.raises(ValidationError, match="primary_key"):
+        OlapDictionaryConfig(
+            source_table=table,
+            primary_key=[],
+            layout=HashedLayout(),
+        )
