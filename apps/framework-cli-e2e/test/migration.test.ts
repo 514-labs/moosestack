@@ -112,12 +112,14 @@ describe("typescript template tests - migration", () => {
 
     // Start outer moose dev (just for infrastructure - ClickHouse + Keeper)
     testLogger.info("\nStarting outer moose dev for infrastructure...");
-    outerMooseProcess = spawn(CLI_PATH, ["dev"], {
+    outerMooseProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       stdio: "pipe",
       cwd: outerMooseDir,
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
     });
 
@@ -141,6 +143,7 @@ describe("typescript template tests - migration", () => {
     testLogger.info("\n=== Cleaning up Migration Tests ===");
     await cleanupTestSuite(outerMooseProcess, outerMooseDir, "ts-migrate", {
       logPrefix: "Migration Tests",
+      includeDocker: false,
     });
   });
 

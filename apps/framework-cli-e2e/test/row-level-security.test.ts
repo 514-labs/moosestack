@@ -135,6 +135,7 @@ describe("Row-Level Security E2E Tests", function () {
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

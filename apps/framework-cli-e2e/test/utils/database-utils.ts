@@ -11,6 +11,53 @@ export interface DatabaseOptions {
 }
 
 /**
+ * Waits until all ClickHouse ReplicatedMergeTree replicas are writable.
+ *
+ * After ClickHouse starts with embedded Keeper, newly-created replicated tables
+ * can be in readonly mode while the replica finishes initializing.  This check
+ * polls `system.replicas` until `is_readonly = 0` for every replica.
+ */
+export const waitForClickhouseReplicasReady = async (
+  timeoutMs: number = 30_000,
+  options: DatabaseOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? dbLogger;
+  const attempts = Math.ceil(timeoutMs / 1000);
+
+  await withRetries(
+    async () => {
+      const client = createClient(CLICKHOUSE_CONFIG);
+      try {
+        const result = await client.query({
+          query:
+            "SELECT database, table, is_readonly FROM system.replicas WHERE is_readonly = 1",
+          format: "JSONEachRow",
+        });
+        const readonlyReplicas: any[] = await result.json();
+        if (readonlyReplicas.length > 0) {
+          const names = readonlyReplicas
+            .map((r) => `${r.database}.${r.table}`)
+            .join(", ");
+          throw new Error(
+            `${readonlyReplicas.length} replica(s) still readonly: ${names}`,
+          );
+        }
+        log.debug("All ClickHouse replicas are writable");
+      } finally {
+        await client.close();
+      }
+    },
+    {
+      attempts,
+      delayMs: 1000,
+      backoffFactor: 1,
+      logger: log,
+      operationName: "ClickHouse replicas readiness",
+    },
+  );
+};
+
+/**
  * Cleans up ClickHouse data by truncating test tables
  */
 export const cleanupClickhouseData = async (

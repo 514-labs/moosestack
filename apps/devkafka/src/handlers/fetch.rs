@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{BufMut, BytesMut};
@@ -6,7 +5,7 @@ use kafka_protocol::messages::fetch_response::{
     FetchResponse, FetchableTopicResponse, PartitionData,
 };
 use kafka_protocol::messages::FetchRequest;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 
 use crate::broker::Broker;
 use crate::error;
@@ -19,51 +18,58 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
     let max_wait_ms = request.max_wait_ms.max(0) as u64;
     let min_bytes = request.min_bytes.max(0);
 
+    // Subscribe to data-arrival notifications BEFORE the first fetch so we
+    // can't miss a produce that happens between fetch and wait.
+    let mut receivers = collect_receivers(broker, &request).await;
+
     // First attempt to fetch
     let (response, total_bytes) = do_fetch(broker, &request).await;
 
     // Long polling: if we got less than min_bytes and max_wait_ms > 0, wait for data
-    if total_bytes < min_bytes as i64 && max_wait_ms > 0 {
-        let notifies = collect_notifies(broker, &request).await;
+    if total_bytes < min_bytes as i64 && max_wait_ms > 0 && !receivers.is_empty() {
+        let timeout = Duration::from_millis(max_wait_ms);
+        let _ = tokio::time::timeout(timeout, wait_any_changed(&mut receivers)).await;
 
-        if !notifies.is_empty() {
-            let timeout = Duration::from_millis(max_wait_ms);
-            let _ = tokio::time::timeout(timeout, wait_any_notify(&notifies)).await;
-
-            // Re-fetch after wait
-            let (response, _) = do_fetch(broker, &request).await;
-            return response;
-        }
+        // Re-fetch after wait
+        let (response, _) = do_fetch(broker, &request).await;
+        return response;
     }
 
     response
 }
 
-async fn wait_any_notify(notifies: &[Arc<Notify>]) {
-    // Use tokio::select! to wait on up to a few notifies.
-    // For simplicity in dev usage, wait on all of them via a spawned approach.
-    if notifies.is_empty() {
+/// Wait until any of the watch receivers reports a change.
+async fn wait_any_changed(receivers: &mut [watch::Receiver<u64>]) {
+    if receivers.is_empty() {
         return;
     }
 
-    // Create a shared notify that fires when any partition gets data
-    let combined = Arc::new(Notify::new());
-    let mut handles = Vec::new();
-
-    for notify in notifies {
-        let n = notify.clone();
-        let c = combined.clone();
-        handles.push(tokio::spawn(async move {
-            n.notified().await;
-            c.notify_one();
-        }));
-    }
-
-    combined.notified().await;
-
-    // Abort remaining tasks
-    for h in handles {
-        h.abort();
+    // Build a future for each receiver and race them.
+    // `changed()` returns immediately if the value was modified since the
+    // receiver was created (or since the last `changed()` call).
+    tokio::select! {
+        biased;
+        _ = async {
+            // For an arbitrary number of receivers we poll them all via
+            // spawned tasks and a shared oneshot signal.
+            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+            let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+            let mut handles = Vec::with_capacity(receivers.len());
+            for recv in receivers.iter().cloned() {
+                let tx = tx.clone();
+                handles.push(tokio::spawn(async move {
+                    let mut recv = recv;
+                    let _ = recv.changed().await;
+                    if let Some(tx) = tx.lock().await.take() {
+                        let _ = tx.send(());
+                    }
+                }));
+            }
+            let _ = rx.await;
+            for h in handles {
+                h.abort();
+            }
+        } => {}
     }
 }
 
@@ -117,19 +123,19 @@ async fn do_fetch(broker: &Broker, request: &FetchRequest) -> (FetchResponse, i6
     (response, total_bytes)
 }
 
-async fn collect_notifies(broker: &Broker, request: &FetchRequest) -> Vec<Arc<Notify>> {
+async fn collect_receivers(broker: &Broker, request: &FetchRequest) -> Vec<watch::Receiver<u64>> {
     let topics = broker.topics.read().await;
-    let mut notifies = Vec::new();
+    let mut receivers = Vec::new();
 
     for topic_req in &request.topics {
         if let Some(topic) = topics.get(&topic_req.topic) {
             for partition_req in &topic_req.partitions {
                 if let Some(partition) = topic.partitions.get(partition_req.partition as usize) {
-                    notifies.push(partition.notify.clone());
+                    receivers.push(partition.data_version());
                 }
             }
         }
     }
 
-    notifies
+    receivers
 }

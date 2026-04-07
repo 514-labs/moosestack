@@ -177,6 +177,7 @@ const buildDevEnv = (
     TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
     MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
     MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+    MOOSE_ACCEPT_DESTRUCTIVE: "1",
   };
   if (language === "python") {
     env.VIRTUAL_ENV = path.join(projectDir, ".venv");
@@ -233,7 +234,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Starting dev server...");
       const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: devEnv,
@@ -264,6 +265,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
+        includeDocker: false,
       });
     });
 

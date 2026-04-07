@@ -1,5 +1,6 @@
 mod del;
 mod eval;
+mod evalsha;
 mod expire;
 mod get;
 mod keys;
@@ -10,6 +11,7 @@ mod publish;
 mod quit;
 mod rpoplpush;
 mod rpush;
+mod script;
 mod set;
 mod subscribe;
 
@@ -36,6 +38,8 @@ pub enum Command {
     Publish(publish::Publish),
     Subscribe(subscribe::Subscribe),
     Eval(eval::Eval),
+    Evalsha(evalsha::Evalsha),
+    Script(script::Script),
 }
 
 impl Command {
@@ -64,6 +68,8 @@ impl Command {
             "PUBLISH" => Command::Publish(publish::Publish::parse(&mut parse)?),
             "SUBSCRIBE" => Command::Subscribe(subscribe::Subscribe::parse(&mut parse)?),
             "EVAL" => Command::Eval(eval::Eval::parse(&mut parse)?),
+            "EVALSHA" => Command::Evalsha(evalsha::Evalsha::parse(&mut parse)?),
+            "SCRIPT" => Command::Script(script::Script::parse(&mut parse)?),
             _ => {
                 return Err(format!("unknown command '{}'", command_name).into());
             }
@@ -136,6 +142,14 @@ impl Command {
                 Ok(false)
             }
             Command::Eval(cmd) => {
+                cmd.apply(db, dst).await?;
+                Ok(false)
+            }
+            Command::Evalsha(cmd) => {
+                cmd.apply(db, dst).await?;
+                Ok(false)
+            }
+            Command::Script(cmd) => {
                 cmd.apply(db, dst).await?;
                 Ok(false)
             }
