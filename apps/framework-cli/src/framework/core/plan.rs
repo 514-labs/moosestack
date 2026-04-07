@@ -605,21 +605,14 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     // Handle Dictionary reconciliation (presence/absence only)
     debug!("Reconciling Dictionaries");
 
-    // Remove missing dictionaries (in map but don't exist in reality)
-    for missing_dict_name in discrepancies.missing_dictionaries {
+    // Remove missing dictionaries (in map but don't exist in reality).
+    // missing_dictionaries contains dictionary IDs ({db}_{name}), which are the map keys.
+    for missing_dict_id in discrepancies.missing_dictionaries {
         debug!(
             "Removing missing dictionary from infrastructure map: {}",
-            missing_dict_name
+            missing_dict_id
         );
-        // Dictionaries are keyed by id (database_name), find by name
-        if let Some(id) = reconciled_map
-            .olap_dictionaries
-            .iter()
-            .find(|(_, d)| d.name == missing_dict_name)
-            .map(|(id, _)| id.clone())
-        {
-            reconciled_map.olap_dictionaries.remove(&id);
-        }
+        reconciled_map.olap_dictionaries.remove(&missing_dict_id);
     }
 
     // Unmapped dictionaries (exist in database but not in the current infrastructure map) are
