@@ -3120,7 +3120,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
- "tokio-util",
  "toml",
  "toml_edit 0.22.27",
  "tonic 0.12.3",
@@ -6260,7 +6259,6 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "futures-util",
  "pin-project-lite",
  "tokio",
 ]
