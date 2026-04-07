@@ -1,0 +1,15 @@
+[package]
+name = "devredis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+bytes = "1"
+mlua = { version = "0.11", features = ["lua51", "vendored"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+redis = { version = "0.29", features = ["tokio-comp"] }
