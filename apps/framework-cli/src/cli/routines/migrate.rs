@@ -758,7 +758,7 @@ pub async fn execute_migration_plan(
     println!("Executing migration plan...");
 
     // Load migration files, re-keying tables to the current project's db_name
-    let files = load_migration_files(&project.clickhouse_config.db_name)?;
+    let files = load_migration_files(&clickhouse_config.db_name)?;
 
     // Display plan info
     println!("✓ Loaded approved migration plan from {:?}", MIGRATION_FILE);
