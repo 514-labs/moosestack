@@ -233,7 +233,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Starting dev server...");
       const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--alpha"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: devEnv,
@@ -264,6 +264,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
+        includeDocker: false,
       });
     });
 
