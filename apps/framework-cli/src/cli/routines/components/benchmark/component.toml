@@ -10,8 +10,9 @@ docs = """
      Import your compiled query model from your Moose project, define your base query
      and scenarios, and adjust thresholds.
   2. Run moose build in your Moose project so compiled models are available.
-  3. Run the benchmark package scripts:
-       npm test
+  3. From the benchmark package directory, run `npm run env:preview` to write the
+     preview deployment's MOOSE_CLICKHOUSE_CONFIG__* values to .env.preview.
+  4. Run the benchmark:
        npm run bench
 """
 

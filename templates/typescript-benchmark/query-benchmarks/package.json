@@ -7,7 +7,7 @@
     "node": ">=20 <25"
   },
   "scripts": {
-    "test": "vitest run --config vitest.config.ts",
+    "env:preview": "514 env list --platform --dotenv > .env.preview",
     "bench": "node --env-file=.env.preview ./node_modules/vitest/vitest.mjs run --config vitest.config.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   }
