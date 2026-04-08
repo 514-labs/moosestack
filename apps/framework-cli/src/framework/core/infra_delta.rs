@@ -650,6 +650,11 @@ impl InfraDelta {
     /// `RecreateTable` splits into `DropTable` + `CreateTable`.
     /// `BackfillTable` becomes `RawSql`.
     /// Execution-only variants produce their DDL equivalents.
+    ///
+    /// Note: `default_database` is currently unused because table lookups use
+    /// the pre-computed `table_id` key. Once deltas are made database-agnostic
+    /// (514-1096), this parameter will be used to resolve table references at
+    /// lowering time.
     pub fn to_atomic_operations(
         &self,
         map: &InfrastructureMap,

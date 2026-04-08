@@ -33,6 +33,15 @@ pub enum OlapChangesError {
     /// should have been blocked earlier.
     #[error("Lifecycle policy violations detected: {}", format_violations(.0))]
     LifecycleViolation(Vec<LifecycleViolation>),
+
+    /// Delta fold failed after DDL execution succeeded.
+    /// The database has been modified but the in-memory map is inconsistent.
+    /// This indicates a bug in the delta's `apply()` logic.
+    #[error("Delta fold failed after DDL execution: {delta_summary} — {error}")]
+    DeltaFoldFailed {
+        delta_summary: String,
+        error: String,
+    },
 }
 
 fn format_violations(violations: &[LifecycleViolation]) -> String {
@@ -207,10 +216,15 @@ pub async fn execute_changes_via_deltas(
     clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
 
     // Apply deltas to the map (fold step) — the map now reflects
-    // the post-execution state
+    // the post-execution state. This MUST succeed — if the fold disagrees
+    // with the DDL that just executed, the stored map will be inconsistent
+    // with the database, causing wrong diffs on next startup.
     for delta in &deltas {
         if let Err(e) = delta.apply(current_map, default_database) {
-            tracing::warn!("Failed to apply delta to map during execution: {}", e);
+            return Err(OlapChangesError::DeltaFoldFailed {
+                delta_summary: delta.summary(),
+                error: e.to_string(),
+            });
         }
     }
 

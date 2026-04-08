@@ -1,7 +1,9 @@
-//! Dev migration log — records structural deltas during dev mode.
+//! Dev migration log — records deltas during dev mode.
 //!
 //! During `moose dev`, every OLAP change is recorded as a sequence of
-//! `InfraDelta` entries (without policies) in `.moose/dev_migrations/`.
+//! `InfraDelta` entries in `.moose/dev_migrations/`. Destructive deltas
+//! preserve their `DestructivePolicy` from the dev session, which is
+//! shown as context when generating production migrations.
 //! This log is used by `moose generate migration` to compact the dev
 //! history into a minimal production migration.
 
@@ -15,7 +17,7 @@ use std::path::{Path, PathBuf};
 pub struct DevLogEntry {
     /// When this change was applied
     pub timestamp: DateTime<Utc>,
-    /// The structural deltas (no policies — those are added at generate time)
+    /// The deltas applied in this change, including any `DestructivePolicy` decisions
     pub deltas: Vec<InfraDelta>,
 }
 

@@ -2204,6 +2204,7 @@ async fn confirm_and_save_migration(
 
 /// Legacy migration generation path (plan.yaml + state snapshots).
 /// Used when `features.migrate_with_deltas` is false.
+/// This is an exact copy of the original `confirm_and_save_migration` from main.
 async fn confirm_and_save_migration_legacy(
     project: &Project,
     result: &mut MigrationPlanWithBeforeAfter,
@@ -2213,10 +2214,12 @@ async fn confirm_and_save_migration_legacy(
     no_auto_backfill_sql: bool,
     save: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
+    use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
     use crate::framework::core::plan_risk::confirm_renames_and_classify;
     use crate::utilities::constants::{
         MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
     };
+    use tracing::warn;
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
@@ -2256,29 +2259,108 @@ async fn confirm_and_save_migration_legacy(
         )
     })?;
 
-    if !no_auto_backfill_sql {
+    if no_auto_backfill_sql {
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "Auto-backfill".to_string(),
+                details: "disabled by --no-auto-backfill-sql".to_string(),
+            },
+        );
+    } else {
         let candidates = db_migration.detect_backfill_candidates(
             &result.remote_state.tables,
             &project.clickhouse_config.db_name,
         );
 
+        if !candidates.is_empty() {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Backfill".to_string(),
+                    details: "Checking versioned table backfill opportunities...".to_string(),
+                },
+            );
+        }
+
         for check in &candidates {
-            if let BackfillCheckResult::Candidate(c) = check {
-                let should_append = {
-                    use std::io::IsTerminal;
-                    if std::io::stdin().is_terminal() && stdout().is_terminal() {
-                        let answer = prompt_user(
-                            "Append RawSql backfill operation to plan.yaml? [Y/n]",
-                            Some("Y"),
-                            None,
-                        )?;
-                        !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+            match check {
+                BackfillCheckResult::Candidate(c) => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Equivalent".to_string(),
+                            details: format!(
+                                "`{}` <- `{}`",
+                                c.target_table_name, c.source_table_name
+                            ),
+                        },
+                    );
+
+                    let should_append = {
+                        use std::io::IsTerminal;
+                        if std::io::stdin().is_terminal() && stdout().is_terminal() {
+                            let answer = prompt_user(
+                                "Append RawSql backfill operation to plan.yaml? [Y/n]",
+                                Some("Y"),
+                                None,
+                            )?;
+                            !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                        } else {
+                            info!("Non-interactive mode: auto-appending backfill SQL");
+                            true
+                        }
+                    };
+
+                    if should_append {
+                        db_migration.append_backfill(c);
+                        display::show_message_wrapper(
+                            MessageType::Success,
+                            Message {
+                                action: "Appended".to_string(),
+                                details: format!(
+                                    "RawSql backfill: `{}` <- `{}`",
+                                    c.target_table_name, c.source_table_name
+                                ),
+                            },
+                        );
                     } else {
-                        true
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message {
+                                action: "Skipped".to_string(),
+                                details: "auto-backfill by user choice".to_string(),
+                            },
+                        );
                     }
-                };
-                if should_append {
-                    db_migration.append_backfill(c);
+                }
+                BackfillCheckResult::NonEquivalent {
+                    target,
+                    source,
+                    reason,
+                } => {
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Skipped".to_string(),
+                            details: format!(
+                                "auto-backfill for `{target}`: schema is not \
+                                 equivalent to `{source}`\n  - Mismatch: {reason}"
+                            ),
+                        },
+                    );
+                }
+                BackfillCheckResult::Duplicate { target, source } => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Exists".to_string(),
+                            details: format!(
+                                "Backfill SQL already exists for `{target}` <- \
+                                 `{source}`; no duplicate appended"
+                            ),
+                        },
+                    );
                 }
             }
         }
@@ -2301,6 +2383,15 @@ async fn confirm_and_save_migration_legacy(
                 e,
             )
         })?;
+
+        if let Err(e) = std::fs::write(
+            project
+                .internal_dir_with_routine_failure_err()?
+                .join("migration_schema.json"),
+            MIGRATION_SCHEMA,
+        ) {
+            warn!("Error writing migration schema file: {e:?}");
+        };
 
         let plan_yaml_with_header = format!(
             "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
