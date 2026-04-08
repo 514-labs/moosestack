@@ -221,7 +221,7 @@ The agent should start by confirming the linked project, the deployment it will 
 <GuideStepper.Step
   id="profile-and-review-proposals"
   number={2}
-  title="Profile the query and review proposed optimizations"
+  title="Review query analysis and proposed optimizations"
   summary="The agent inspects the slow query, collects diagnostics, and proposes candidate schema changes for you to review before benchmarking begins."
 >
 <GuideStepper.WhatYouNeed>
@@ -249,7 +249,7 @@ Even if a candidate involves a destructive change like dropping and recreating a
 <GuideStepper.Step
   id="freeze-baseline"
   number={3}
-  title="Freeze the baseline and scaffold the benchmark"
+  title="Validate the baseline"
   summary="The agent creates the control branch, scaffolds the benchmark package, and wires it to your Moose-defined query."
 >
 <GuideStepper.WhatYouNeed>
@@ -348,7 +348,7 @@ export const benchmark = defineBenchmark({
 <GuideStepper.Step
   id="run-candidate-experiments"
   number={4}
-  title="Run candidate experiments in parallel sub-agents"
+  title="Observe subagents run candidate experiments in parallel"
   summary="The agent deploys each candidate schema change to its own preview branch and benchmarks them all against the frozen baseline."
 >
 <GuideStepper.WhatYouNeed>
