@@ -21,9 +21,12 @@ pub fn ensure_binary(manager: &BinaryManager) -> Result<PathBuf, NativeInfraErro
 pub fn start_command(
     binary: &Path,
     project: &Project,
-) -> Result<tokio::process::Child, std::io::Error> {
+) -> Result<tokio::process::Child, NativeInfraError> {
     let data_dir = native_data_dir(project);
-    std::fs::create_dir_all(&data_dir)?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| NativeInfraError::CreateDir {
+        path: data_dir.clone(),
+        source: e,
+    })?;
 
     let db_path = data_dir.join("temporal.db");
     let tc = &project.temporal_config;
@@ -45,6 +48,10 @@ pub fn start_command(
         .stderr(Stdio::null())
         .kill_on_drop(false)
         .spawn()
+        .map_err(|e| NativeInfraError::ProcessStart {
+            name: "temporal".to_string(),
+            source: e,
+        })
 }
 
 /// Health check: try connecting to the gRPC port.

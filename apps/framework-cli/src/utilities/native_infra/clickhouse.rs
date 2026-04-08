@@ -235,10 +235,12 @@ fn clickhouse_download_url() -> (String, Option<String>) {
             format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-common-static-{ver_short}-arm64.tgz"),
             Some(format!("clickhouse-common-static-{ver_short}/usr/bin/clickhouse")),
         )
-    } else {
+    } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
         (
             format!("https://github.com/ClickHouse/ClickHouse/releases/download/v{ver}/clickhouse-common-static-{ver_short}-amd64.tgz"),
             Some(format!("clickhouse-common-static-{ver_short}/usr/bin/clickhouse")),
         )
+    } else {
+        unreachable!("unsupported platform should be caught by detect_platform()")
     }
 }

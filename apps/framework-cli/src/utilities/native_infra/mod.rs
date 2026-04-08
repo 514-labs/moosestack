@@ -76,7 +76,7 @@ impl InfraProvider for NativeInfraProvider {
                 || {
                     let child = clickhouse::start_command(&ch_binary, &ch_config)?;
                     if let Some(pid) = child.id() {
-                        write_pid_file(&clickhouse::pid_file_path(project), pid)
+                        write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
                             .map_err(|e| anyhow::anyhow!("{}", e))?;
                     }
                     Ok::<(), anyhow::Error>(())
@@ -95,29 +95,34 @@ impl InfraProvider for NativeInfraProvider {
         })?;
 
         // Start native Temporal
-        with_timing("Start Temporal", || {
+        let temporal_result = with_timing("Start Temporal", || {
             with_spinner_completion(
                 "Starting native Temporal dev server",
                 "Native Temporal started",
                 || {
                     let temporal_binary = temporal::ensure_binary(&self.binary_manager)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let child = temporal::start_command(&temporal_binary, project)?;
+                    let child = temporal::start_command(&temporal_binary, project)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
                     if let Some(pid) = child.id() {
-                        write_pid_file(&temporal::pid_file_path(project), pid)
+                        write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
                             .map_err(|e| anyhow::anyhow!("{}", e))?;
                     }
                     Ok::<(), anyhow::Error>(())
                 },
                 !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
             )
-        })
-        .map_err(|e| {
-            RoutineFailure::new(
+        });
+
+        if let Err(e) = temporal_result {
+            // Roll back: kill ClickHouse since we failed to start Temporal
+            info!("Temporal startup failed, rolling back ClickHouse");
+            kill_pid_file(&clickhouse::pid_file_path(project));
+            return Err(RoutineFailure::new(
                 Message::new("Failed".to_string(), "to start native Temporal".to_string()),
                 e,
-            )
-        })?;
+            ));
+        }
 
         Ok(())
     }
@@ -200,48 +205,100 @@ impl InfraProvider for NativeInfraProvider {
     }
 }
 
-/// Write a process ID to a PID file, creating parent directories as needed.
-pub(crate) fn write_pid_file(pid_path: &Path, pid: u32) -> Result<(), NativeInfraError> {
+/// Write a process ID and expected process name to a PID file.
+///
+/// Format: `{pid}:{process_name}` — the process name is used to verify
+/// identity before sending SIGTERM (guards against PID reuse).
+pub(crate) fn write_pid_file(
+    pid_path: &Path,
+    pid: u32,
+    process_name: &str,
+) -> Result<(), NativeInfraError> {
     if let Some(parent) = pid_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| NativeInfraError::WritePidFile {
             path: pid_path.to_path_buf(),
             source: e,
         })?;
     }
-    std::fs::write(pid_path, pid.to_string()).map_err(|e| NativeInfraError::WritePidFile {
-        path: pid_path.to_path_buf(),
-        source: e,
+    std::fs::write(pid_path, format!("{pid}:{process_name}")).map_err(|e| {
+        NativeInfraError::WritePidFile {
+            path: pid_path.to_path_buf(),
+            source: e,
+        }
     })?;
-    info!("Wrote PID {pid} to {}", pid_path.display());
+    info!("Wrote PID {pid} ({process_name}) to {}", pid_path.display());
     Ok(())
 }
 
-/// Read a PID from a file, send SIGTERM to the process, and remove the file.
+/// Check whether the process with the given PID matches the expected name.
 ///
-/// This is a best-effort operation: if the file doesn't exist, the PID is invalid,
-/// or the process is already gone, we log and move on.
+/// Uses `ps -p {pid} -o comm=` which works on both macOS and Linux.
+fn process_matches(pid: u32, expected_name: &str) -> bool {
+    match std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let actual = String::from_utf8_lossy(&output.stdout);
+            let actual = actual.trim();
+            // The command name may be a full path or just the binary name
+            actual.contains(expected_name)
+        }
+        _ => false, // Process doesn't exist or ps failed
+    }
+}
+
+/// Read a PID from a file, verify the process identity, send SIGTERM, and remove the file.
+///
+/// PID files use the format `{pid}:{process_name}`. The process name is checked
+/// against the running process to guard against PID reuse. If the process doesn't
+/// match (or is already gone), the stale PID file is removed without sending a signal.
 pub fn kill_pid_file(pid_path: &Path) {
-    let pid_str = match std::fs::read_to_string(pid_path) {
+    let contents = match std::fs::read_to_string(pid_path) {
         Ok(s) => s,
         Err(_) => return, // No PID file — nothing to kill
     };
 
-    let pid: u32 = match pid_str.trim().parse() {
-        Ok(p) => p,
-        Err(e) => {
-            info!(
-                "Invalid PID in {}: {e}. Removing stale file.",
-                pid_path.display()
-            );
-            let _ = std::fs::remove_file(pid_path);
-            return;
+    let contents = contents.trim();
+
+    // Parse "pid:name" or legacy "pid" format
+    let (pid, expected_name) = if let Some((pid_str, name)) = contents.split_once(':') {
+        match pid_str.parse::<u32>() {
+            Ok(p) => (p, Some(name)),
+            Err(e) => {
+                info!(
+                    "Invalid PID in {}: {e}. Removing stale file.",
+                    pid_path.display()
+                );
+                let _ = std::fs::remove_file(pid_path);
+                return;
+            }
+        }
+    } else {
+        match contents.parse::<u32>() {
+            Ok(p) => (p, None),
+            Err(e) => {
+                info!(
+                    "Invalid PID in {}: {e}. Removing stale file.",
+                    pid_path.display()
+                );
+                let _ = std::fs::remove_file(pid_path);
+                return;
+            }
         }
     };
 
+    // Verify process identity before killing (guards against PID reuse)
+    if let Some(name) = expected_name {
+        if !process_matches(pid, name) {
+            info!("PID {pid} no longer belongs to {name} (stale or reused). Removing PID file.",);
+            let _ = std::fs::remove_file(pid_path);
+            return;
+        }
+    }
+
     info!("Sending SIGTERM to PID {pid} (from {})", pid_path.display());
 
-    // Send SIGTERM via the `kill` command (available on all Unix systems).
-    // Exit code 0 = signal sent, non-zero = process already gone or permission error.
     match std::process::Command::new("kill")
         .args(["-TERM", &pid.to_string()])
         .output()
@@ -270,10 +327,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let pid_path = tmp.path().join("test.pid");
 
-        write_pid_file(&pid_path, 12345).unwrap();
+        write_pid_file(&pid_path, 12345, "test").unwrap();
 
         assert!(pid_path.exists());
-        assert_eq!(std::fs::read_to_string(&pid_path).unwrap(), "12345");
+        assert_eq!(std::fs::read_to_string(&pid_path).unwrap(), "12345:test");
     }
 
     #[test]
@@ -281,10 +338,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let pid_path = tmp.path().join("a").join("b").join("c").join("test.pid");
 
-        write_pid_file(&pid_path, 42).unwrap();
+        write_pid_file(&pid_path, 42, "test").unwrap();
 
         assert!(pid_path.exists());
-        assert_eq!(std::fs::read_to_string(&pid_path).unwrap(), "42");
+        assert_eq!(std::fs::read_to_string(&pid_path).unwrap(), "42:test");
     }
 
     #[test]
@@ -293,7 +350,7 @@ mod tests {
         let pid_path = tmp.path().join("test.pid");
 
         // Use a PID that almost certainly doesn't exist
-        std::fs::write(&pid_path, "999999999").unwrap();
+        std::fs::write(&pid_path, "999999999:nonexistent").unwrap();
 
         kill_pid_file(&pid_path);
 
