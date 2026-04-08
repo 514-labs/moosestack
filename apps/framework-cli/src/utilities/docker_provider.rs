@@ -150,7 +150,7 @@ impl InfraProvider for DockerInfraProvider {
                 RoutineFailure::new(
                     Message::new(
                         "Failed".to_string(),
-                        format!("to validate red panda cluster, {err}"),
+                        "to validate Redpanda cluster".to_string(),
                     ),
                     err,
                 )
@@ -216,7 +216,10 @@ fn validate_container_run(
         for _ in 0..30 {
             if let Some(effective_health) = container.health {
                 if effective_health == expected {
-                    break;
+                    return Ok(RoutineSuccess::success(Message::new(
+                        "Validated".to_string(),
+                        format!("{container_name} docker container"),
+                    )));
                 }
             } else {
                 debug!("No health info for container {}", container_name);
@@ -226,6 +229,11 @@ fn validate_container_run(
             container = find_container(project, container_name, docker_client)?;
             sleep(Duration::from_secs(1));
         }
+
+        return Err(RoutineFailure::error(Message::new(
+            "Timeout".to_string(),
+            format!("{container_name} did not become {expected} within 30 seconds"),
+        )));
     }
 
     Ok(RoutineSuccess::success(Message::new(
