@@ -1,4 +1,3 @@
-use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
@@ -8,6 +7,7 @@ use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
 #[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -246,23 +246,23 @@ pub enum AtomicOlapOperation {
     /// Create a new ClickHouse dictionary (CREATE DICTIONARY IF NOT EXISTS)
     CreateDictionary {
         /// The dictionary to create
-        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
     /// Replace an existing dictionary (CREATE OR REPLACE DICTIONARY — zero-downtime update)
     ReplaceDictionary {
         /// Dictionary state before the update
-        before: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        before: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
         /// Dictionary state after the update
-        after: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        after: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
     /// Drop an existing dictionary (DROP DICTIONARY IF EXISTS)
     DropDictionary {
         /// The dictionary to drop
-        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
