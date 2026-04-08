@@ -61,7 +61,7 @@ use crate::framework::core::infrastructure::select_row_policy::{
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
-    OrderBy, Table, TableIndex, TableProjection, METADATA_PREFIX,
+    OrderBy, Table, TableConstraint, TableIndex, TableProjection, METADATA_PREFIX,
 };
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
@@ -239,7 +239,7 @@ pub enum SerializableOlapOperation {
     },
     AddTableConstraint {
         table: String,
-        constraint: crate::framework::core::infrastructure::table::TableConstraint,
+        constraint: TableConstraint,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
         /// Optional cluster name for ON CLUSTER support
@@ -1204,7 +1204,7 @@ async fn execute_drop_table_projection(
 async fn execute_add_table_constraint(
     db_name: &str,
     table_name: &str,
-    constraint: &crate::framework::core::infrastructure::table::TableConstraint,
+    constraint: &TableConstraint,
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
@@ -3047,21 +3047,10 @@ impl OlapOperations for ConfiguredDBClient {
                     .collect(),
                 constraints: extract_constraints_from_create_table(&create_query)
                     .into_iter()
-                    .map(|c| {
-                        let parsed_type = c.constraint_type.parse().unwrap_or_else(|_| {
-                            tracing::warn!(
-                                "Unrecognized constraint type '{}' for constraint '{}' on table '{}', defaulting to Unparsed",
-                                c.constraint_type,
-                                c.name,
-                                table_name
-                            );
-                            crate::framework::core::infrastructure::table::ConstraintType::Unparsed(c.constraint_type.clone())
-                        });
-                        crate::framework::core::infrastructure::table::TableConstraint {
-                            name: c.name,
-                            expression: c.expression,
-                            constraint_type: parsed_type,
-                        }
+                    .map(|c| TableConstraint {
+                        name: c.name,
+                        expression: c.expression,
+                        constraint_type: c.constraint_type.as_str().into(),
                     })
                     .collect(),
                 database: Some(database),

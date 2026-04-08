@@ -295,7 +295,7 @@ impl<'de> Deserialize<'de> for ConstraintType {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(s.parse().unwrap())
+        Ok(Self::from(s.as_str()))
     }
 }
 
@@ -309,17 +309,12 @@ impl std::fmt::Display for ConstraintType {
     }
 }
 
-impl std::str::FromStr for ConstraintType {
-    type Err = std::convert::Infallible;
-
-    /// Parses a string into a ConstraintType.
-    /// Expects either "CHECK" or "ASSUME" (case-insensitive).
-    /// If unknown, preserves it as Unparsed.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
-            "CHECK" => Ok(ConstraintType::Check),
-            "ASSUME" => Ok(ConstraintType::Assume),
-            _ => Ok(ConstraintType::Unparsed(s.to_string())),
+impl From<&str> for ConstraintType {
+    fn from(value: &str) -> Self {
+        match value.to_uppercase().as_str() {
+            "CHECK" => ConstraintType::Check,
+            "ASSUME" => ConstraintType::Assume,
+            _ => ConstraintType::Unparsed(value.to_string()),
         }
     }
 }
@@ -357,7 +352,7 @@ impl TableConstraint {
         TableConstraint {
             name: proto.name,
             expression: proto.expression,
-            constraint_type: proto.constraint_type.parse().unwrap(),
+            constraint_type: proto.constraint_type.as_str().into(),
         }
     }
 }

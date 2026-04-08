@@ -4529,7 +4529,7 @@ impl serde::Serialize for InfrastructureMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::framework::core::infrastructure::table::IntType;
+    use crate::framework::core::infrastructure::table::{ConstraintType, IntType};
     use crate::framework::core::infrastructure_map::DefaultTableDiffStrategy;
     use crate::framework::core::infrastructure_map::{
         Change, InfrastructureMap, OlapChange, OrderBy, StreamingChange, TableChange,
@@ -4708,8 +4708,7 @@ mod tests {
             crate::framework::core::infrastructure::table::TableConstraint {
                 name: "test_constraint".to_string(),
                 expression: "id > 0".to_string(),
-                constraint_type:
-                    crate::framework::core::infrastructure::table::ConstraintType::Check,
+                constraint_type: ConstraintType::Check,
             },
         ];
 

@@ -1,4 +1,6 @@
-use crate::framework::core::infrastructure::table::{DataEnum, JsonOptions, OrderBy};
+use crate::framework::core::infrastructure::table::{
+    ConstraintType, DataEnum, JsonOptions, OrderBy,
+};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use chrono::{DateTime, FixedOffset};
@@ -726,7 +728,7 @@ pub struct ClickHouseProjection {
 pub struct ClickHouseConstraint {
     pub name: String,
     pub expression: String,
-    pub constraint_type: crate::framework::core::infrastructure::table::ConstraintType,
+    pub constraint_type: ConstraintType,
 }
 
 #[derive(Debug, Clone)]
