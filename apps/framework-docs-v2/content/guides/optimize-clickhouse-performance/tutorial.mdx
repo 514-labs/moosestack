@@ -149,10 +149,29 @@ This pulls skills from the 514 registry and sets up the agent harness for your p
 
 ## Optimization workflow
 
-Ask your coding agent to improve ClickHouse performance. Choose the prompt that matches your starting point:
+This section helps you understand what the agent is doing at each stage of the optimization workflow, what it may ask you to confirm, and how to spot issues early enough to unblock the run.
 
-1. Use the first prompt if you want the agent to identify slow ClickHouse queries first.
-2. Use the second prompt if you already know the specific query, handler, or endpoint you want to optimize.
+You can use this workflow whether you already know which query needs work or need the agent to help identify a good optimization target first. It verifies the setup, runs the optimization workflow in preview branch databases, and leaves production untouched. The end result is a PR with the evidence you need to decide whether the change is ready to move forward.
+
+<GuideStepper id="optimize-ch-workflow" persist>
+<GuideStepper.Step
+  id="kick-off-optimization-run"
+  number={1}
+  title="Kick off the optimization run"
+  summary="Choose the prompt that matches whether you need help finding the slow query or already know the target path."
+>
+<GuideStepper.WhatYouNeed>
+- Setup complete: CLI installed, project linked, and `514 agent init` run
+- Your coding agent open on this repo
+- Either a slow query to point at or a repo where the agent can help find one
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A clear prompt to start the workflow from the right entry point
+- The context your agent needs before it proposes the performance optimization skill
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Ask your agent to improve ClickHouse performance">
+Choose the prompt that matches your starting point:
 
 <Tabs defaultValue="discover-query">
   <TabsList>
@@ -184,53 +203,14 @@ Help me figure out how to make it faster.
   </TabsContent>
 </Tabs>
 
-Your agent may pause to ask you to confirm that skill before the long run. After you accept it, the skill profiles the slow query, benchmarks each candidate against the baseline, and opens a PR for the winner.
+Your agent may pause to ask you to confirm the performance optimization skill before the long run starts.
 
-<BulletPointsCard
-  title="What to expect from the run"
-  bulletStyle="number"
-  uppercase={false}
-  compact
-  bullets={[
-    {
-      title: "SETUP",
-      description: "Lock the repo, deployment, and slow query path.",
-    },
-    {
-      title: "PROFILE",
-      description: "Inspect the query and collect diagnostics.",
-    },
-    {
-      title: "PROPOSE",
-      description: "Lay out candidate schema changes and what they target.",
-    },
-    {
-      title: "BASELINE",
-      description:
-        "Scaffold benchmarks, freeze the control branch, run the baseline.",
-    },
-    {
-      title: "EXPERIMENT",
-      description:
-        "Deploy candidates on previews and run the same benchmark package.",
-    },
-    {
-      title: "COMPARE",
-      description: "Pick the winner from the results.",
-    },
-    {
-      title: "SHIP",
-      description: "Open a PR with the summary and benchmark evidence.",
-    },
-  ]}
-/>
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
 
-The step-by-step section below goes through each stage in more detail: what you should see, what the agent might ask for, and what belongs in the repo when that stage is done.
-
-<GuideStepper id="optimize-ch-workflow" persist>
 <GuideStepper.Step
   id="ask-copilot-optimize"
-  number={1}
+  number={2}
   title="Confirm the performance optimization skill"
   summary="When your agent proposes the perf workflow, accept it so profiling and benchmarks can start."
 >
@@ -251,19 +231,18 @@ When the agent proposes the perf optimization skill, confirm. It should drive pr
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="optimization-workflow-runs"
-  number={2}
-  title="Let the optimization workflow run"
-  summary="Follow the seven stages so you know what the agent is doing, what it may ask you for, and what artifact each stage should produce."
+  id="confirm-scope-and-profile"
+  number={3}
+  title="Confirm scope and profile the target"
+  summary="Make sure the agent is looking at the right deployment and query path before it starts proposing changes."
 >
 <GuideStepper.WhatYouNeed>
 - Patience for branch pushes and preview deployments
 - The agent will run read-only ClickHouse queries during profiling and benchmarking
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A frozen `perf/baseline` branch (cut from your default branch, with the benchmark package added) serving as the control
-- One or more candidate branches with data model and benchmark target changes
-- Benchmark runs against baseline and candidate branches (no PR per candidate — only one PR for the winner)
+- Confirmation of the linked project, deployment, and query or endpoint in scope
+- Query diagnostics, including `EXPLAIN`, for the slow path the workflow will optimize
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="SETUP: confirm the target deployment">
@@ -275,11 +254,44 @@ The agent should start by confirming the linked project, the deployment it will 
 This is where the agent inspects slow queries, runs `EXPLAIN`, and gathers storage diagnostics. The ClickHouse client is read-only, so these queries run safely without manual approval. Check that the SQL matches the query path you expect the workflow to analyze.
 
 </GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="review-proposed-optimizations"
+  number={4}
+  title="Review the proposed optimizations"
+  summary="Check that the agent is solving the right problem before it starts creating baseline and candidate branches."
+>
+<GuideStepper.WhatYouNeed>
+- The scope and profiling step complete
+- Enough context to tell whether the candidate plan matches the slow query you care about
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A candidate plan that ties each schema change to a query pattern
+- Early visibility into rebuild or re-seed risk before benchmarks begin
+</GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="PROPOSE: review the candidate plan">
 The agent should show candidate schema changes, the query pattern they are meant to improve, and any known rebuild or re-seed risk. This is the moment to check that it is solving the right problem before benchmark branches are created.
 
 </GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="run-baseline-and-preview-experiments"
+  number={5}
+  title="Run the baseline and preview experiments"
+  summary="Let the agent freeze the control, scaffold the benchmark package, and run candidate comparisons on preview branches."
+>
+<GuideStepper.WhatYouNeed>
+- The candidate plan approved
+- Patience for branch pushes, preview deployments, and possible re-seeds
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A frozen `perf/baseline` branch serving as the control
+- One or more candidate branches with data model and benchmark target changes
+- Benchmark runs against baseline and candidate branches using the same benchmark contract
+</GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="BASELINE: freeze the control and scaffold the benchmark">
 The workflow should run `moose add benchmark` and reuse the generated package instead of hand-writing benchmark infrastructure. In the prototype, that scaffold looks like this:
@@ -347,6 +359,22 @@ This writes the ClickHouse host, user, password, database name, and SSL setting 
 If `ORDER BY` or similar forces a rebuild, each candidate branch may need a re-seed before benchmarks are trustworthy. The PR should say which candidate needed it and how the data was copied forward.
 
 </GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="review-the-winning-candidate"
+  number={6}
+  title="Review the winning candidate before the PR"
+  summary="Make sure the comparison is credible and understand what evidence should appear in the PR."
+>
+<GuideStepper.WhatYouNeed>
+- Completed baseline and candidate benchmark runs
+- The same benchmark contract used across those runs
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A winning candidate with caveats called out
+- A PR that summarizes the comparison and links to the benchmark evidence
+</GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="COMPARE: expect a winner and caveats">
 The agent should compare each candidate back to the same baseline contract, note any skipped or flat scenarios, and make it clear why the winner was chosen. You should know what improved, what stayed the same, and what caveats still matter before the PR is opened.

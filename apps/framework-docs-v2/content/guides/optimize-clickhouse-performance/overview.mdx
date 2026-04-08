@@ -6,39 +6,15 @@ languages: ["typescript"]
 
 import { BulletPointsCard, Callout } from "@/components/mdx";
 
-## Overview
+# Overview
 
-By the end of this guide you will have a pull request with a benchmarked ClickHouse schema change and a migration plan. Nothing touches production until you review and merge.
+Most slow ClickHouse queries are a schema problem, not a query problem. Reordering the `ORDER BY` to match your filter patterns, switching the table engine, or adding a materialized view can make a bigger difference than rewriting SQL.
 
-<BulletPointsCard
-  title="At a glance"
-  bulletStyle="bullet"
-  uppercase={false}
-  bullets={[
-    {
-      title: "Why complete it",
-      description:
-        "You have a slow ClickHouse query in a MooseStack app and you want it faster. You do not need to be a ClickHouse expert. The agent shows its reasoning at each step, so you pick up optimization patterns by reviewing its work.",
-      link: { text: "Fiveonefour hosting", href: "/hosting" },
-    },
-    {
-      title: "The approach",
-      description:
-        "Your AI coding agent profiles the slow query, proposes schema changes, and tests each one against a frozen copy of your current schema on its own isolated database. It picks the winner and opens a PR with the evidence. You review the results and decide whether to ship.",
-    },
-    {
-      title: "What you need",
-      description:
-        "A MooseStack app deployed on Fiveonefour with a live workload to benchmark against. Your coding agent (Cursor, Claude Code, Copilot, or similar) open on the repo. Comfort reading a ClickHouse query and reviewing a pull request.",
-    },
-    {
-      title: "What you don't need",
-      description:
-        "Deep ClickHouse performance knowledge. The agent collects query metrics, `EXPLAIN` output, and resource numbers, and includes a report with the results and an interpretation in the PR.",
-    },
-  ]}
-/>
+This workflow gives your coding agent a performance testing harness to try those changes against the query you want to speed up. All benchmarking runs on databases isolated from production, and you review the results before anything ships.
 
+## What does the performance testing harness do?
+
+The harness runs a controlled experiment on your behalf. It applies each candidate schema change on its own git branch, then uses Fiveonefour preview branches to deploy and benchmark that change against an isolated ClickHouse database. Every candidate is compared back to a frozen baseline using the same test. The agent picks the best performer and opens a pull request with the evidence.
 <Callout
   type="info"
   title="Don't have a MooseStack project yet?"
@@ -49,9 +25,56 @@ By the end of this guide you will have a pull request with a benchmarked ClickHo
 Start by bootstrapping a MooseStack project from your existing ClickHouse database, then return here once you have a project the agent can run against.
 </Callout>
 
-## How this guide works
+```mermaid
+flowchart LR
+  main["main branch"]
 
-This guide starts by installing a performance testing harness into your repo. Your agent uses the harness to run a controlled experiment that benchmarks different schema optimization strategies against the live query you want to optimize.
+  main --> baseline["baseline branch<br/>(current schema, frozen)"]
+  main --> c1["candidate 1 branch<br/>(schema change A)"]
+  main --> c2["candidate 2 branch<br/>(schema change B)"]
+
+  baseline --> db0[("baseline DB")]
+  c1 --> db1[("candidate 1 DB")]
+  c2 --> db2[("candidate 2 DB")]
+
+  db0 --> bench["same benchmark<br/>contract"]
+  db1 --> bench
+  db2 --> bench
+
+  bench --> winner["PR: winning candidate"]
+```
+
+<BulletPointsCard
+  title="Why the workflow is structured this way"
+  bulletStyle="bullet"
+  uppercase={false}
+  bullets={[
+    {
+      title: "Why is the baseline frozen?",
+      description:
+        "If the baseline branch picks up new commits while candidates are running, the comparison is no longer apples to apples. Freezing the baseline means every candidate is measured against the exact same schema and data state.",
+    },
+    {
+      title: "Why does each candidate get its own database?",
+      description:
+        "ClickHouse schema changes like reordering an ORDER BY can trigger background data rewrites. If two candidates shared a database, one rewrite could interfere with the other's benchmark results. Isolation removes that variable.",
+    },
+    {
+      title: "Why use the same benchmark contract everywhere?",
+      description:
+        "If the query, scenarios, or thresholds change between runs, you cannot tell whether a latency improvement came from the schema change or from a looser test. Running the same package against every database keeps the comparison honest.",
+    },
+    {
+      title: "Why does the workflow stop at a PR?",
+      description:
+        "The experiment proves which schema change is faster in preview. It does not answer whether the migration is safe for production, whether a backfill is needed, or whether a phased rollout makes more sense. Those decisions are yours to make during PR review.",
+    },
+  ]}
+/>
+
+## What is in the performance testing harness?
+
+The harness is made up of four pieces that `514 agent init` installs into your repo.
 
 <BulletPointsCard
   title="What the harness provides"
@@ -61,7 +84,7 @@ This guide starts by installing a performance testing harness into your repo. Yo
     {
       title: "A performance optimization skill",
       description:
-        "Walks the agent through the full workflow: profiling the slow query, proposing schema changes, freezing a baseline, benchmarking candidates, and opening a PR for the winner. Defines what the agent does at each stage and what evidence it collects.",
+        "Tells the agent what to do at each stage of the optimization workflow and what evidence to collect. The tutorial covers each stage in detail.",
     },
     {
       title: "ClickHouse best practices rules",
@@ -71,7 +94,7 @@ This guide starts by installing a performance testing harness into your repo. Yo
     {
       title: "A benchmark test package",
       description:
-        "The skill scaffolds it into your repo. The package captures the slow query the agent profiled, wraps it with filter scenarios, and sets performance thresholds. The agent runs this same package against every preview database so the only variable is the schema.",
+        "Scaffolded into your repo during setup. The package captures the slow query, wraps it with filter scenarios, and sets performance thresholds. The agent runs this package against every preview database so the only variable is the schema.",
     },
     {
       title: "514 Platform tools",
@@ -80,42 +103,6 @@ This guide starts by installing a performance testing harness into your repo. Yo
     },
   ]}
 />
-
-### The experiment
-
-With the harness in place, the agent runs a controlled experiment using **preview branches** on [Fiveonefour hosting](/hosting). Each preview branch gets its own isolated ClickHouse database, so the only variable between runs is the schema change.
-
-<BulletPointsCard
-  title="What the agent does"
-  bulletStyle="number"
-  uppercase={false}
-  bullets={[
-    {
-      title: "Freeze a baseline",
-      description:
-        "The agent pushes a branch with your current schema, unchanged. Fiveonefour deploys it to a preview database. This is the control.",
-    },
-    {
-      title: "Deploy candidates",
-      description:
-        "Each proposed schema change gets its own branch and its own preview database with the new layout applied.",
-    },
-    {
-      title: "Benchmark every branch",
-      description:
-        "The agent runs the scaffolded benchmark package against every preview database. Same query, same thresholds, different table layout.",
-    },
-    {
-      title: "Pick a winner",
-      description:
-        "The agent compares latency, `EXPLAIN` output, rows read, and memory usage across branches, then opens a PR for the best candidate.",
-    },
-  ]}
-/>
-
-Because every branch gets its own database, the comparison is clean. The baseline stays frozen and the candidates are isolated.
-
-The experiment ends with a PR. It does not decide how to roll the change out to production. If the winner needs a phased release or a recovery plan, that planning happens after you approve the optimization.
 
 <Callout
   type="info"
