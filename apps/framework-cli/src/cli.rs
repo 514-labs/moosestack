@@ -15,7 +15,10 @@ pub mod settings;
 pub mod ts_compilation_watcher;
 pub mod watcher;
 use super::metrics::Metrics;
-use crate::utilities::{constants, docker::DockerClient};
+use crate::utilities::constants;
+use crate::utilities::docker::DockerClient;
+use crate::utilities::docker_provider::DockerInfraProvider;
+use crate::utilities::infra_provider::InfraProvider;
 use clap::Parser;
 use commands::{
     Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, HarnessSubCommands,
@@ -431,6 +434,7 @@ fn override_project_config_from_url(
 async fn run_local_infrastructure_with_timeout(
     project: &Arc<Project>,
     settings: &Settings,
+    provider: Box<dyn InfraProvider + Send>,
 ) -> anyhow::Result<()> {
     let timeout_duration = Duration::from_secs(settings.dev.infrastructure_timeout_seconds);
 
@@ -439,17 +443,23 @@ async fn run_local_infrastructure_with_timeout(
         let project = project.clone();
         let settings = settings.clone();
         move || {
-            let docker_client = DockerClient::new(&settings);
-            run_local_infrastructure(&project, &settings, &docker_client)
+            run_local_infrastructure(&project, &settings, provider.as_ref()).map_err(|e| {
+                anyhow::anyhow!(
+                    "{}: {}",
+                    e.message.action,
+                    e.error
+                        .map(|err| format!("{err:#}"))
+                        .unwrap_or_else(|| e.message.details)
+                )
+            })
         }
     });
 
     match timeout(timeout_duration, run_future).await {
-        Ok(Ok(result)) => result,
+        Ok(Ok(result)) => result.map_err(|e| anyhow::anyhow!("{}", e)),
         Ok(Err(e)) => Err(e.into()),
         Err(_) => Err(anyhow::anyhow!(
-            "Docker container startup and validation timed out after {} seconds.\n\n\
-                This usually happens when Docker is in an unresponsive state.\n\n\
+            "Infrastructure startup and validation timed out after {} seconds.\n\n\
                 Troubleshooting steps:\n\
                 • Check if Docker is running: `docker info`\n\
                 • Stop existing containers: `docker stop $(docker ps -aq)`\n\
@@ -709,7 +719,9 @@ pub async fn top_command_handler(
 
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
-                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                let provider: Box<dyn InfraProvider + Send> =
+                    Box::new(DockerInfraProvider::new(&settings));
+                run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
                         RoutineFailure::error(Message {
@@ -954,7 +966,9 @@ pub async fn top_command_handler(
 
             // If start_include_dependencies is true, manage Docker containers like dev mode
             if *start_include_dependencies {
-                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                let provider: Box<dyn InfraProvider + Send> =
+                    Box::new(DockerInfraProvider::new(&settings));
+                run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
                         RoutineFailure::error(Message {
@@ -1121,8 +1135,8 @@ pub async fn top_command_handler(
 
             check_project_name(&project_arc.name())?;
 
-            let docker_client = DockerClient::new(&settings);
-            let _ = clean_project(&project_arc, &docker_client)?;
+            let provider = DockerInfraProvider::new(&settings);
+            let _ = clean_project(&project_arc, &provider)?;
 
             wait_for_usage_capture(capture_handle).await;
 
