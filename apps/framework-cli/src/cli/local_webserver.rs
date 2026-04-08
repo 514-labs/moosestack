@@ -2532,6 +2532,7 @@ impl Webserver {
                                                 ),
                                             }
                                         });
+                                        // Do not insert the route when schema resolution fails
                                     }
                                 }
                             }
@@ -2600,6 +2601,7 @@ impl Webserver {
                                                 ),
                                             }
                                         });
+                                        // Do not insert the route when schema resolution fails
                                     }
                                 }
                             }
