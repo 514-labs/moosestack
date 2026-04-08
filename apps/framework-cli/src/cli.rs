@@ -461,11 +461,10 @@ async fn run_local_infrastructure_with_timeout(
         Err(_) => Err(anyhow::anyhow!(
             "Infrastructure startup and validation timed out after {} seconds.\n\n\
                 Troubleshooting steps:\n\
-                • Check if Docker is running: `docker info`\n\
-                • Stop existing containers: `docker stop $(docker ps -aq)`\n\
-                • Restart Docker Desktop (if using Desktop)\n\
-                • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
                 • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • Alpha mode: check logs in .moose/native_infra/\n\
+                • Docker mode: check if Docker is running with `docker info`\n\
+                • Docker mode: stop existing containers with `docker stop $(docker ps -aq)`\n\
                 • If the issue persists, you can increase the timeout in your Moose configuration:\n\
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\

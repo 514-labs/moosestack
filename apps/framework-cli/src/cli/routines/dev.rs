@@ -48,12 +48,14 @@ pub fn run_local_infrastructure(
         }
     }
 
-    // Inform user if override file is present
-    let override_file = project
-        .project_location
-        .join("docker-compose.dev.override.yaml");
-    if override_file.exists() {
-        println!("[moose] Using docker-compose.dev.override.yaml for custom infrastructure");
+    // Inform user if override file is present (Docker mode only)
+    if !project.use_native_infra {
+        let override_file = project
+            .project_location
+            .join("docker-compose.dev.override.yaml");
+        if override_file.exists() {
+            println!("[moose] Using docker-compose.dev.override.yaml for custom infrastructure");
+        }
     }
 
     // Check the load_infra flag before starting containers

@@ -11,7 +11,6 @@ use crate::utilities::constants::SHOW_TIMING;
 use crate::utilities::infra_provider::InfraProvider;
 use binary_manager::BinaryManager;
 use errors::NativeInfraError;
-use std::net::TcpStream;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread::sleep;
@@ -162,22 +161,11 @@ impl InfraProvider for NativeInfraProvider {
         )))
     }
 
-    fn validate_redpanda(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
-        let port = broker_port_from_config(&project.redpanda_config);
-
-        for _ in 0..30 {
-            if tcp_health_check(port).is_ok() {
-                return Ok(RoutineSuccess::success(Message::new(
-                    "Validated".to_string(),
-                    "native Kafka broker".to_string(),
-                )));
-            }
-            sleep(Duration::from_secs(1));
-        }
-
-        Err(RoutineFailure::error(Message::new(
-            "Failed".to_string(),
-            format!("Kafka broker health check timed out on port {port} after 30s"),
+    fn validate_redpanda(&self, _project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        info!("Skipping Kafka validation in alpha mode (not yet available)");
+        Ok(RoutineSuccess::success(Message::new(
+            "Skipped".to_string(),
+            "Kafka validation (alpha mode)".to_string(),
         )))
     }
 
@@ -210,30 +198,6 @@ impl InfraProvider for NativeInfraProvider {
             format!("Temporal health check timed out on port {port} after 30s"),
         )))
     }
-}
-
-/// Extract the broker port from the KafkaConfig broker string (e.g. "localhost:19092" -> 19092).
-pub(crate) fn broker_port_from_config(
-    config: &crate::infrastructure::stream::kafka::models::KafkaConfig,
-) -> u16 {
-    config
-        .broker
-        .rsplit(':')
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(19092)
-}
-
-/// Simple TCP health check on a port.
-pub(crate) fn tcp_health_check(port: u16) -> Result<(), NativeInfraError> {
-    let addr = format!("127.0.0.1:{port}");
-    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).map_err(|_| {
-        NativeInfraError::HealthCheck {
-            service: "tcp".to_string(),
-            reason: format!("connection refused on port {port}"),
-        }
-    })?;
-    Ok(())
 }
 
 /// Write a process ID to a PID file, creating parent directories as needed.
