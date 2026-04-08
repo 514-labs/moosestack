@@ -222,8 +222,7 @@ fn validate_container_run(
                     )));
                 }
             } else {
-                debug!("No health info for container {}", container_name);
-                break;
+                debug!("No health info for container {} yet", container_name);
             }
 
             container = find_container(project, container_name, docker_client)?;
