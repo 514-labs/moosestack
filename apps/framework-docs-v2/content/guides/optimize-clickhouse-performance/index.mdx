@@ -4,35 +4,71 @@ description: Profile a slow query, validate the optimization in preview, and rev
 languages: ["typescript"]
 ---
 
-import { CTACards, CTACard, Callout } from "@/components/mdx";
+import { BulletPointsCard, CTACards, CTACard } from "@/components/mdx";
 
 # Optimizing ClickHouse Performance with AI
 
-<Callout type="info" title="TL;DR">
-  - This guide is for MooseStack apps that already have a production ClickHouse
-  query path that can be faster.
-  - The optimization workflow profiles that query, proposes candidate schema
-  changes, benchmarks them, and opens a PR for the winning candidate.
-  - Your job is to review the benchmark evidence and migration plan, then decide
-  whether the winner is ready as-is or needs a safer rollout plan before
-  production.
-</Callout>
+Use this guide when you have a slow ClickHouse query in a deployed MooseStack app on Fiveonefour and want your coding agent to help fix it. You can point it at a query you already know is slow, or let it find one worth optimizing. It benchmarks schema changes on isolated preview databases, then opens a pull request with the evidence for you to review. Nothing touches production until you review and approve the pull request.
 
-You need the `514` CLI installed, signed in, and your repo linked to your Fiveonefour project (see the **Setup** section in the [tutorial](/guides/optimize-clickhouse-performance/tutorial) and [Hosting](/hosting)). The tutorial then covers **Optimization workflow** and **PR review** in separate sections.
+<BulletPointsCard
+  title="What you need"
+  bulletStyle="check"
+  uppercase={false}
+  compact
+  bullets={[
+    {
+      title: "A deployed MooseStack app on Fiveonefour",
+      description:
+        "The workflow needs access to your hosting project to create preview branch databases.",
+      link: { text: "Don't have a hosting project?", href: "/hosting" },
+    },
+    {
+      title: "Your coding agent",
+      description: "Cursor, Claude Code, Codex, Copilot, or similar",
+    },
+    {
+      title: "Query and PR review skills",
+      description:
+        "You should be comfortable reading a ClickHouse query and reviewing a pull request.",
+    },
+  ]}
+/>
+
+
+<BulletPointsCard
+  title="What you don't need"
+  bulletStyle="x"
+  uppercase={false}
+  compact
+  bullets={[
+    {
+      title: "Deep ClickHouse optimization expertise",
+      description:
+        "The agent proposes schema changes and walks through the tradeoffs. You review what it found in the pull request.",
+    },
+    {
+      title: "Manual performance investigation workflows",
+      description:
+        "The workflow handles diagnostics and benchmarking and puts the results in the pull request.",
+    },
+  ]}
+/>
+
+
 
 ## Where to go
 
 <CTACards columns={2}>
   <CTACard
     title="Overview"
-    description="Understand what the optimization workflow does, what evidence it produces, and where rollout planning takes over."
+    description="How the preview-branch experiment works and what evidence it produces."
     ctaLink="/guides/optimize-clickhouse-performance/overview"
     ctaLabel="Read first"
     Icon="Eye"
   />
   <CTACard
     title="Tutorial"
-    description="Run the optimization workflow, review the PR artifacts, and hand off production-shaping questions when needed."
+    description="Step-by-step walkthrough of the optimization workflow and PR review."
     ctaLink="/guides/optimize-clickhouse-performance/tutorial"
     ctaLabel="Run it"
     Icon="Rocket"
