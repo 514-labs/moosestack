@@ -603,7 +603,7 @@ pub struct PartialInfrastructureMap {
         HashMap<String, crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
     #[serde(default)]
     olap_dictionaries:
-        HashMap<String, crate::framework::core::infrastructure::dictionary::OlapDictionary>,
+        HashMap<String, crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -1814,11 +1814,11 @@ mod tests {
     /// on olap_dictionaries. Previously only tables/topics/views/etc. were covered.
     #[test]
     fn test_normalize_all_metadata_paths_normalizes_dictionary_source_file() {
-        use crate::framework::core::infrastructure::dictionary::{
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+        use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
             DictionaryTableSource, OlapDictionary,
         };
-        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
         use std::collections::HashMap;
         use std::path::Path;
 

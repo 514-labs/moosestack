@@ -49,7 +49,6 @@ use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
-use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::core::lifecycle_filter;
@@ -60,6 +59,7 @@ use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
 use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
@@ -3352,6 +3352,10 @@ impl InfrastructureMap {
 
     /// Masks sensitive credentials before exporting to JSON migration files.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionarySource, ExternalDictionarySource,
+        };
+
         for table in self.tables.values_mut() {
             match &mut table.engine {
                 ClickhouseEngine::S3Queue {
@@ -3384,6 +3388,41 @@ impl InfrastructureMap {
                 for key in table.engine.sensitive_settings() {
                     if let Some(value) = settings.get_mut(*key) {
                         *value = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                }
+            }
+        }
+
+        // Mask credentials in dictionary external sources
+        for dict in self.olap_dictionaries.values_mut() {
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        if s.password.is_some() {
+                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        if s.access_key_id.is_some() {
+                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                        if s.secret_access_key.is_some() {
+                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
                     }
                 }
             }
@@ -9815,7 +9854,7 @@ mod diff_select_row_policy_tests {
     /// for dictionary-only projects.
     #[test]
     fn test_uses_olap_true_when_only_dictionaries_present() {
-        use crate::framework::core::infrastructure::dictionary::{
+        use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
             DictionaryTableSource, OlapDictionary,
         };
@@ -9866,7 +9905,7 @@ mod diff_select_row_policy_tests {
     /// previously missing this field, causing silent data loss on every persist.
     #[test]
     fn test_json_round_trip_preserves_olap_dictionaries() {
-        use crate::framework::core::infrastructure::dictionary::{
+        use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
             DictionaryTableSource, OlapDictionary,
         };

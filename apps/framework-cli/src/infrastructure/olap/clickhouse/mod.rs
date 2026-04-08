@@ -75,6 +75,7 @@ pub mod client;
 pub mod config;
 pub mod config_resolver;
 pub mod diagnostics;
+pub mod dictionary;
 pub mod diff_strategy;
 pub mod errors;
 pub mod inserter;
@@ -302,17 +303,17 @@ pub enum SerializableOlapOperation {
     /// Create a dictionary (CREATE DICTIONARY IF NOT EXISTS)
     CreateDictionary {
         /// The dictionary to create
-        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     },
     /// Replace a dictionary (CREATE OR REPLACE DICTIONARY)
     ReplaceDictionary {
         /// The dictionary state after update
-        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     },
     /// Drop a dictionary (DROP DICTIONARY IF EXISTS)
     DropDictionary {
         /// The dictionary to drop
-        dict: crate::framework::core::infrastructure::dictionary::OlapDictionary,
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     },
 }
 
@@ -1850,7 +1851,7 @@ async fn execute_drop_row_policy(
 /// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
 async fn execute_create_dictionary(
     _db_name: &str,
-    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_create_if_not_exists_sql();
@@ -1868,7 +1869,7 @@ async fn execute_create_dictionary(
 /// Execute a CREATE OR REPLACE DICTIONARY operation.
 async fn execute_replace_dictionary(
     _db_name: &str,
-    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_replace_sql();
@@ -1886,7 +1887,7 @@ async fn execute_replace_dictionary(
 /// Execute a DROP DICTIONARY IF EXISTS operation.
 async fn execute_drop_dictionary(
     _db_name: &str,
-    dict: &crate::framework::core::infrastructure::dictionary::OlapDictionary,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_drop_sql();
