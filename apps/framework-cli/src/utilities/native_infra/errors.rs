@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum NativeInfraError {
     #[error(
-        "unsupported platform: {os}/{arch} — native binaries are only available for macOS arm64"
+        "unsupported platform: {os}/{arch} — native binaries are available for macOS and Linux (arm64, x86_64)"
     )]
     UnsupportedPlatform {
         os: &'static str,
