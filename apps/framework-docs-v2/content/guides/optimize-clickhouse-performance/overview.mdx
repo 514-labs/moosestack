@@ -8,13 +8,14 @@ import { BulletPointsCard, Callout } from "@/components/mdx";
 
 # Overview
 
-Most slow ClickHouse queries are a schema problem, not a query problem. Reordering the `ORDER BY` to match your filter patterns, switching the table engine, or adding a materialized view can make a bigger difference than rewriting SQL.
+The most effective way to speed up a slow ClickHouse query is usually not to change the query itself, but to optimize the underlying data model it reads from. There are several strategies within the data modeling layer: reordering the `ORDER BY` to match your filter patterns, switching the table engine, or adding a materialized view. Often there is more than one approach worth trying, and you want to test each one to see which actually performs best.
 
-This workflow gives your coding agent a performance testing harness to try those changes against the query you want to speed up. All benchmarking runs on databases isolated from production, and you review the results before anything ships.
+This workflow gives your coding agent a performance testing harness to try different data model optimizations against the query you want to speed up. All benchmarking runs on databases isolated from production, and you review the results before anything ships.
 
 ## What does the performance testing harness do?
 
-The harness runs a controlled experiment on your behalf. It applies each candidate schema change on its own git branch, then uses Fiveonefour preview branches to deploy and benchmark that change against an isolated ClickHouse database. Every candidate is compared back to a frozen baseline using the same test. The agent picks the best performer and opens a pull request with the evidence.
+The harness runs a controlled experiment on your behalf. The agent first profiles the slow query to understand where the bottleneck is, then proposes candidate data model changes based on what it finds and the ClickHouse best practices rules included in the harness. It applies each candidate on its own git branch, then uses Fiveonefour preview branches to deploy and benchmark that change against an isolated ClickHouse database. Every candidate is compared back to a frozen baseline using the same test. The agent picks the best performer and opens a pull request with the evidence.
+
 <Callout
   type="info"
   title="Don't have a MooseStack project yet?"
@@ -46,7 +47,7 @@ flowchart LR
 
 <BulletPointsCard
   title="Why the workflow is structured this way"
-  bulletStyle="bullet"
+  bulletStyle="default"
   uppercase={false}
   bullets={[
     {
