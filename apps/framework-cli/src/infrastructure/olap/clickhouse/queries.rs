@@ -123,7 +123,7 @@ pub fn create_alias_for_table(
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
-ON CLUSTER `{{cluster_name}}`{{/if}}
+ON CLUSTER '{{cluster_name}}'{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{{field_properties}}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}, {{#each projections}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_constraints}}, {{#each constraints}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
@@ -6090,7 +6090,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         };
 
         let cluster_clause = Some("test_cluster")
-            .map(|c| format!(" ON CLUSTER `{}`", c))
+            .map(|c| format!(" ON CLUSTER '{}'", c))
             .unwrap_or_default();
 
         let query = format!(

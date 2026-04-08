@@ -542,7 +542,7 @@ pub async fn execute_changes(
             // Database has tables with clusters - create on each cluster
             for cluster in clusters {
                 let create_db_query = format!(
-                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER `{}`",
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER '{}'",
                     database, cluster
                 );
                 info!("Creating database {} on cluster {}", database, cluster);
@@ -882,7 +882,7 @@ pub async fn execute_atomic_operation(
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let cluster_clause = cluster_name
                 .as_ref()
-                .map(|c| format!(" ON CLUSTER `{}`", c))
+                .map(|c| format!(" ON CLUSTER '{}'", c))
                 .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
