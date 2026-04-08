@@ -5934,7 +5934,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `{cluster}`"),
+            query.contains("ON CLUSTER '{cluster}'"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -5996,7 +5996,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER `{cluster}`"),
+            query.contains("ON CLUSTER '{cluster}'"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -6064,7 +6064,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         .unwrap();
 
         assert!(
-            macro_query.contains("ON CLUSTER `{cluster}`"),
+            macro_query.contains("ON CLUSTER '{cluster}'"),
             "MODIFY SETTING query should contain ON CLUSTER clause with macro"
         );
     }
@@ -6109,7 +6109,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 .unwrap();
 
         assert!(
-            reset_query.contains("ON CLUSTER `{cluster}`"),
+            reset_query.contains("ON CLUSTER '{cluster}'"),
             "RESET SETTING query should contain ON CLUSTER clause with macro"
         );
     }
