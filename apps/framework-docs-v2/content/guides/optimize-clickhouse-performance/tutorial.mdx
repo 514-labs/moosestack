@@ -206,110 +206,107 @@ Help me figure out how to make it faster.
 Your agent may pause to ask you to confirm the performance optimization skill before the long run starts.
 
 </GuideStepper.Checkpoint>
-</GuideStepper.Step>
-
-<GuideStepper.Step
-  id="ask-copilot-optimize"
-  number={2}
-  title="Confirm the performance optimization skill"
-  summary="When your agent proposes the perf workflow, accept it so profiling and benchmarks can start."
->
-<GuideStepper.WhatYouNeed>
-- Setup complete: CLI installed, project linked, and `514 agent init` run
-- A deployed MooseStack app on Fiveonefour (the slow query path in code)
-- Your coding agent (Cursor, Claude Code, Copilot in your editor, and so on) opened on this repo
-</GuideStepper.WhatYouNeed>
-<GuideStepper.WhatYouGet>
-- The agent selects the performance optimization skill (often named `514--perf-optimize` or `perf-optimize` depending on client)
-- Explicit confirmation before it runs a long optimization workflow
-</GuideStepper.WhatYouGet>
 
 <GuideStepper.Checkpoint title="Confirm the performance optimization skill">
 When the agent proposes the perf optimization skill, confirm. It should drive profiling, schema work, benchmarks, and the PR. If the bundle name differs, accept only if it is the same harness you got from `514 agent init`.
 
 </GuideStepper.Checkpoint>
-</GuideStepper.Step>
 
-<GuideStepper.Step
-  id="confirm-scope-and-profile"
-  number={3}
-  title="Confirm scope and profile the target"
-  summary="Make sure the agent is looking at the right deployment and query path before it starts proposing changes."
->
-<GuideStepper.WhatYouNeed>
-- Patience for branch pushes and preview deployments
-- The agent will run read-only ClickHouse queries during profiling and benchmarking
-</GuideStepper.WhatYouNeed>
-<GuideStepper.WhatYouGet>
-- Confirmation of the linked project, deployment, and query or endpoint in scope
-- Query diagnostics, including `EXPLAIN`, for the slow path the workflow will optimize
-</GuideStepper.WhatYouGet>
-
-<GuideStepper.Checkpoint title="SETUP: confirm the target deployment">
+<GuideStepper.Checkpoint title="Confirm the target deployment">
 The agent should start by confirming the linked project, the deployment it will inspect, and the query or endpoint in scope. Before it moves on, you should know exactly which slow path is being optimized and which deployment the diagnostics are reading from.
 
 </GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="PROFILE: expect query inspection and diagnostics">
-This is where the agent inspects slow queries, runs `EXPLAIN`, and gathers storage diagnostics. The ClickHouse client is read-only, so these queries run safely without manual approval. Check that the SQL matches the query path you expect the workflow to analyze.
-
-</GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="review-proposed-optimizations"
-  number={4}
-  title="Review the proposed optimizations"
-  summary="Check that the agent is solving the right problem before it starts creating baseline and candidate branches."
+  id="profile-and-review-proposals"
+  number={2}
+  title="Profile the query and review proposed optimizations"
+  summary="The agent inspects the slow query, collects diagnostics, and proposes candidate schema changes for you to review before benchmarking begins."
 >
 <GuideStepper.WhatYouNeed>
-- The scope and profiling step complete
-- Enough context to tell whether the candidate plan matches the slow query you care about
+- Step 1 complete: the agent has confirmed the target deployment and query path
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A candidate plan that ties each schema change to a query pattern
+- Query diagnostics including `EXPLAIN` for the slow path
+- A candidate plan that ties each schema change to the query pattern it targets
 - Early visibility into rebuild or re-seed risk before benchmarks begin
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="PROPOSE: review the candidate plan">
+<GuideStepper.Checkpoint title="Let the agent profile the slow query">
+The agent does the work here: it inspects slow queries, runs `EXPLAIN`, and gathers storage diagnostics. Your job is to review and approve any exploratory queries if the agent asks, and confirm it is looking at the right query path.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Review the propopsed optimization plan">
 The agent should show candidate schema changes, the query pattern they are meant to improve, and any known rebuild or re-seed risk. This is the moment to check that it is solving the right problem before benchmark branches are created.
+
+Even if a candidate involves a destructive change like dropping and recreating a table, or a rebuild triggered by reordering the `ORDER BY`, all of that happens on an isolated preview database. Your production database is not touched at any point during this workflow. The only path to production is the pull request you review at the end.
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="run-baseline-and-preview-experiments"
-  number={5}
-  title="Run the baseline and preview experiments"
-  summary="Let the agent freeze the control, scaffold the benchmark package, and run candidate comparisons on preview branches."
+  id="freeze-baseline"
+  number={3}
+  title="Freeze the baseline and scaffold the benchmark"
+  summary="The agent creates the control branch, scaffolds the benchmark package, and wires it to your Moose-defined query."
 >
 <GuideStepper.WhatYouNeed>
 - The candidate plan approved
-- Patience for branch pushes, preview deployments, and possible re-seeds
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
-- A frozen `perf/baseline` branch serving as the control
-- One or more candidate branches with data model and benchmark target changes
-- Benchmark runs against baseline and candidate branches using the same benchmark contract
+- A frozen `perf/baseline` branch deployed to its own preview database
+- A benchmark package scaffolded as a sibling to your MooseStack project
+- Your Moose-defined query imported into the benchmark config
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="BASELINE: freeze the control and scaffold the benchmark">
-The workflow should run `moose add benchmark` and reuse the generated package instead of hand-writing benchmark infrastructure. In the prototype, that scaffold looks like this:
-
-```text
-query-benchmarks/
-  benchmark.config.ts
-  benchmark/core.ts
-  tests/query-benchmarks.test.ts
-  package.json
-```
-
-At this stage, the agent should also freeze `perf/baseline` and prove a control run with this same package. Treat the scaffold as part of the review surface: `benchmark.config.ts` defines the contract, and `tests/query-benchmarks.test.ts` runs it and writes the reports.
+<GuideStepper.Checkpoint title="Confirm the agent created the baseline branch">
+The agent should create and push a `perf/baseline` branch with your current schema unchanged. Once pushed, go to your Fiveonefour hosting deployments page and check that a new build appears in the deployments list for the `perf/baseline` branch. That deployment is the frozen control every candidate will be compared against.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="BASELINE: confirm the benchmark contract">
-The benchmark target interface is the code-level representation of the production query pattern the agent discovered. It can be an existing `defineQueryModel`, an existing query builder, or a new query model the agent creates if profiling finds a real query pattern without a codified entrypoint.
+<GuideStepper.Checkpoint title="Confirm the benchmark package was scaffolded">
+The agent should run `moose add benchmark --dir ../query-benchmarks` to scaffold the benchmark package as a sibling to your MooseStack project. Confirm the structure matches:
+
+```text
+parent-directory/
+├── your-moosestack-project/
+│   └── ...
+└── query-benchmarks/
+    ├── benchmark.config.ts
+    ├── benchmark/
+    │   └── core.ts
+    ├── tests/
+    │   └── query-benchmarks.test.ts
+    └── package.json
+```
+
+`benchmark.config.ts` defines the benchmark contract. `tests/query-benchmarks.test.ts` runs it and writes reports. Both are part of the review surface later.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Confirm your MooseStack project is a dependency of the benchmark package">
+The agent should add your MooseStack project as a package dependency in the benchmark package's `package.json`. This is what lets the benchmark config import your Moose-defined queries directly.
+
+Check that your MooseStack project appears in `dependencies`. You should see something like this in the benchmark package's `package.json`:
+
+```json filename="query-benchmarks/package.json"
+{
+  "dependencies": {
+    "your-moosestack-project": "workspace:*"
+  }
+}
+```
+
+If the import fails to resolve after this is in place, run `pnpm install` from the benchmark package directory.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Confirm the correct query was imported into the benchmark config">
+The agent should import the slow query the workflow profiled earlier into `benchmark.config.ts`. This is the query every preview database will be benchmarked against. It can be an existing `defineQueryModel`, a query builder, or a new query model the agent creates if profiling found a pattern without a codified entrypoint.
+
+Check that the query in `benchmark.config.ts` matches the slow path from the profiling step.
 
 What should stay the same across baseline and candidate branches:
 
@@ -324,7 +321,10 @@ What is allowed to change per candidate branch:
 
 Example:
 
-```ts
+```ts filename="query-benchmarks/benchmark.config.ts"
+import { benchmarkModel } from "your-moosestack-project";
+import { buildQuery, defineBenchmark } from "@514labs/moose-lib";
+
 const baseQuery = () => buildQuery(benchmarkModel);
 
 export const benchmark = defineBenchmark({
@@ -343,8 +343,29 @@ export const benchmark = defineBenchmark({
 ```
 
 </GuideStepper.Checkpoint>
+</GuideStepper.Step>
 
-<GuideStepper.Checkpoint title="EXPERIMENT: help preview benchmarking only if needed">
+<GuideStepper.Step
+  id="run-candidate-experiments"
+  number={4}
+  title="Run candidate experiments in parallel sub-agents"
+  summary="The agent deploys each candidate schema change to its own preview branch and benchmarks them all against the frozen baseline."
+>
+<GuideStepper.WhatYouNeed>
+- Baseline branch deployed and benchmark package scaffolded
+- Patience for branch pushes, preview deployments, and possible re-seeds
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- One preview branch and database per candidate schema change
+- Benchmark results for every candidate run against the same baseline
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="The agent deploys and benchmarks each candidate branch">
+The agent should push one branch per candidate, each with its own preview database. It runs the same benchmark package against every database so the schema change is the only variable. The agent may use parallel sub-agents to run multiple candidates at the same time.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Help with preview credentials only if needed">
 The agent should try to wire the benchmark package to the right preview deployment by default. If it cannot finish that setup on its own, you can pull the preview credentials with the CLI:
 
 ```bash
@@ -355,7 +376,7 @@ This writes the ClickHouse host, user, password, database name, and SSL setting 
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="EXPERIMENT: watch for candidate re-seeds">
+<GuideStepper.Checkpoint title="Watch for candidate re-seeds">
 If `ORDER BY` or similar forces a rebuild, each candidate branch may need a re-seed before benchmarks are trustworthy. The PR should say which candidate needed it and how the data was copied forward.
 
 </GuideStepper.Checkpoint>
@@ -363,9 +384,9 @@ If `ORDER BY` or similar forces a rebuild, each candidate branch may need a re-s
 
 <GuideStepper.Step
   id="review-the-winning-candidate"
-  number={6}
-  title="Review the winning candidate before the PR"
-  summary="Make sure the comparison is credible and understand what evidence should appear in the PR."
+  number={5}
+  title="Review the winning candidate"
+  summary="Make sure the comparison is credible and understand what evidence the agent used to pick the winner."
 >
 <GuideStepper.WhatYouNeed>
 - Completed baseline and candidate benchmark runs
@@ -373,22 +394,29 @@ If `ORDER BY` or similar forces a rebuild, each candidate branch may need a re-s
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A winning candidate with caveats called out
-- A PR that summarizes the comparison and links to the benchmark evidence
+- A summary table comparing benchmark results across branches
+- A pull request link to open and review
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="COMPARE: expect a winner and caveats">
-The agent should compare each candidate back to the same baseline contract, note any skipped or flat scenarios, and make it clear why the winner was chosen. You should know what improved, what stayed the same, and what caveats still matter before the PR is opened.
+<GuideStepper.Checkpoint title="Watch the agent present its findings">
+Once all candidate benchmarks are done, the agent compares latency, `EXPLAIN` output, rows read, and memory usage across every candidate and the frozen baseline. It picks the best performer and presents its reasoning.
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="SHIP: expect a PR, not an auto-merge">
-The workflow ends by opening a PR for the winning candidate. That PR should include a comparison summary and links to the benchmark results. The experiment is complete at this point, but nothing should touch production until you review those artifacts.
+<GuideStepper.Checkpoint title="Review the summary table">
+The agent should show a summary table comparing benchmark numbers for each candidate versus the baseline. Check that there is a clear winner, and note any scenarios that were skipped, flat, or regressed.
 
 </GuideStepper.Checkpoint>
 
-<Callout type="info" title="What good evidence looks like">
-Example: index use, fewer granules read (for example selective condition vs full scan, high `granuleSkipPct`), lower server-side latency. Your PR should show that kind of structural move in `EXPLAIN`, not only a headline number.
-</Callout>
+<GuideStepper.Checkpoint title="Weigh in on tradeoffs if needed">
+If two candidates are close, the agent may ask which tradeoff you prefer (for example, one is faster on filtered queries but slower on full scans). If all candidates are flat or worse than the baseline, you may want to propose a different optimization direction or stop here. If a candidate regressed on some scenarios but improved on others, decide whether the improvement is worth the tradeoff.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Let the agent open the PR">
+The agent may ask whether you want it to open a pull request for the winning candidate. Confirm that you do. Once the PR is created, click the link the agent gives you. The optimization workflow is done at this point. Nothing touches production until you review the PR artifacts in the next section.
+
+</GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
 
