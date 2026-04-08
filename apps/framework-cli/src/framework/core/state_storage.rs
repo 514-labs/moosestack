@@ -66,8 +66,12 @@ impl StateStorage for RedisStateStorage {
     }
 
     async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
-        // Note: load_from_last_redis_prefix internally canonicalizes tables
-        // for backward compatibility with data saved by older CLI versions
+        // Try current prefix first (handles restarts of the same deployment),
+        // then fall back to last prefix (handles new deployments loading previous state).
+        // Both methods internally canonicalize tables for backward compatibility.
+        if let Some(map) = InfrastructureMap::load_from_redis(&self.client).await? {
+            return Ok(Some(map));
+        }
         InfrastructureMap::load_from_last_redis_prefix(&self.client).await
     }
 

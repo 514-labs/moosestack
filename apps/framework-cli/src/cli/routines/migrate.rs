@@ -39,7 +39,7 @@ enum DriftStatus {
 }
 
 /// Load and parse migration files from disk
-fn load_migration_files() -> Result<MigrationFiles> {
+fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     // Check if all required migration files exist
     let missing_files: Vec<&str> = [
         MIGRATION_FILE,
@@ -79,10 +79,15 @@ fn load_migration_files() -> Result<MigrationFiles> {
         serde_json::from_value(serde_yaml::from_str::<serde_json::Value>(&plan_content)?)?;
 
     let before_content = std::fs::read_to_string(MIGRATION_BEFORE_STATE_FILE)?;
-    let state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
+    let mut state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
 
     let after_content = std::fs::read_to_string(MIGRATION_AFTER_STATE_FILE)?;
-    let state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
+    let mut state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
+
+    // Re-key tables so the HashMap keys match the current project's db_name.
+    // The saved files may have been generated against a different database name.
+    state_before.fixup_default_db(db_name);
+    state_after.fixup_default_db(db_name);
 
     Ok(MigrationFiles {
         plan,
@@ -752,8 +757,8 @@ pub async fn execute_migration_plan(
 ) -> Result<()> {
     println!("Executing migration plan...");
 
-    // Load migration files
-    let files = load_migration_files()?;
+    // Load migration files, re-keying tables to the current project's db_name
+    let files = load_migration_files(&clickhouse_config.db_name)?;
 
     // Display plan info
     println!("✓ Loaded approved migration plan from {:?}", MIGRATION_FILE);

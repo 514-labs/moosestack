@@ -63,6 +63,42 @@ impl ReconciliationFilter {
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
         }
     }
+
+    /// Merge all IDs from `other` into `self` (set union).
+    pub fn merge(&mut self, other: &ReconciliationFilter) {
+        self.table_ids.extend(other.table_ids.iter().cloned());
+        self.sql_resource_ids
+            .extend(other.sql_resource_ids.iter().cloned());
+        self.materialized_view_ids
+            .extend(other.materialized_view_ids.iter().cloned());
+        self.view_ids.extend(other.view_ids.iter().cloned());
+        self.select_row_policy_ids
+            .extend(other.select_row_policy_ids.iter().cloned());
+    }
+
+    /// Re-prefix table IDs from `source_db` to `target_db`.
+    ///
+    /// Table IDs are formatted as `{database}_{name}_{version}` (see [`Table::id`]).
+    /// When the caller (e.g. a local CLI) has a different `default_database` than the
+    /// server, the table IDs it produces carry the wrong prefix. This method strips
+    /// `{source_db}_` and prepends `{target_db}_` so the IDs match what the server's
+    /// reconciliation expects. IDs that don't start with the exact `{source_db}_`
+    /// segment are left unchanged.
+    pub fn reprefix_table_ids(&mut self, source_db: &str, target_db: &str) {
+        if source_db == target_db || source_db.is_empty() {
+            return;
+        }
+        let prefix = format!("{source_db}_");
+
+        self.table_ids = self
+            .table_ids
+            .iter()
+            .map(|id| match id.strip_prefix(&prefix) {
+                Some(rest) => format!("{target_db}_{rest}"),
+                None => id.clone(),
+            })
+            .collect();
+    }
 }
 
 /// Errors that can occur during the planning process.
@@ -1787,5 +1823,102 @@ mod tests {
 
         // They should be identical - this is the critical guarantee
         assert_eq!(direct_ops, migration_plan.operations);
+    }
+
+    #[test]
+    fn reprefix_table_ids_swaps_database_prefix() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "local_users_0_0".to_string(),
+                "local_orders_1_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("local", "myapp_prod");
+        assert_eq!(
+            filter.table_ids,
+            HashSet::from([
+                "myapp_prod_users_0_0".to_string(),
+                "myapp_prod_orders_1_0".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn reprefix_table_ids_noop_when_source_equals_target() {
+        let original = HashSet::from(["db_users_0_0".to_string()]);
+        let mut filter = ReconciliationFilter {
+            table_ids: original.clone(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("db", "db");
+        assert_eq!(filter.table_ids, original);
+    }
+
+    #[test]
+    fn reprefix_table_ids_noop_when_source_is_empty() {
+        let original = HashSet::from(["local_users_0_0".to_string()]);
+        let mut filter = ReconciliationFilter {
+            table_ids: original.clone(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("", "prod");
+        assert_eq!(filter.table_ids, original);
+    }
+
+    #[test]
+    fn reprefix_table_ids_requires_underscore_separator() {
+        // "prod" without the trailing underscore must not match "production_users_0_0".
+        // Note: "prod_eu_users_0_0" IS matched because `{source_db}_` = "prod_" is a
+        // valid prefix of that string — this is an inherent limitation of the
+        // `{db}_{name}_{version}` ID format (the same limitation exists in
+        // reconcile_with_reality). In practice, filter IDs and source_db come from the
+        // same inframap, so cross-database collisions do not arise.
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "prod_users_0_0".to_string(),
+                "production_users_0_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("prod", "staging");
+        assert!(
+            filter.table_ids.contains("staging_users_0_0"),
+            "prod_users_0_0 should be reprefixed"
+        );
+        assert!(
+            filter.table_ids.contains("production_users_0_0"),
+            "production_users_0_0 must NOT be reprefixed (different db name, not just prefix)"
+        );
+        assert_eq!(filter.table_ids.len(), 2);
+    }
+
+    #[test]
+    fn reprefix_table_ids_leaves_unmatched_ids_unchanged() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "local_users_0_0".to_string(),
+                "other_db_orders_0_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("local", "prod");
+        assert!(filter.table_ids.contains("prod_users_0_0"));
+        assert!(filter.table_ids.contains("other_db_orders_0_0"));
     }
 }
