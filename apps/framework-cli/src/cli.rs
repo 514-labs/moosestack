@@ -1879,6 +1879,20 @@ async fn confirm_and_save_migration(
     no_auto_backfill_sql: bool,
     save: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
+    // If delta migrations are not enabled, use the legacy path
+    if !project.features.migrate_with_deltas {
+        return confirm_and_save_migration_legacy(
+            project,
+            result,
+            yes_all,
+            yes_destructive,
+            yes_rename,
+            no_auto_backfill_sql,
+            save,
+        )
+        .await;
+    }
+
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
@@ -2180,6 +2194,156 @@ async fn confirm_and_save_migration(
                 println!("  {}. {}", i + 1, delta.summary());
             }
         }
+    }
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Migration".to_string(),
+        "generated".to_string(),
+    )))
+}
+
+/// Legacy migration generation path (plan.yaml + state snapshots).
+/// Used when `features.migrate_with_deltas` is false.
+async fn confirm_and_save_migration_legacy(
+    project: &Project,
+    result: &mut MigrationPlanWithBeforeAfter,
+    yes_all: bool,
+    yes_destructive: bool,
+    yes_rename: bool,
+    no_auto_backfill_sql: bool,
+    save: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    use crate::framework::core::plan_risk::confirm_renames_and_classify;
+    use crate::utilities::constants::{
+        MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    };
+
+    let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
+    let migration_policy = ConfirmationPolicy {
+        accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+        accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
+        is_dev: false,
+    };
+
+    let risk = match confirm_renames_and_classify(&mut result.changes, &migration_policy).await? {
+        Some(risk) => risk,
+        None => {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation cancelled during rename confirmation".to_string(),
+            )));
+        }
+    };
+
+    match migration_destructive_gate(&risk, &migration_policy).await? {
+        MigrationGateOutcome::Rejected { tables } => {
+            print_migration_rejected_guidance(&tables, &project.language);
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation aborted".to_string(),
+            )));
+        }
+        MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
+    }
+
+    let mut db_migration = result.to_migration_plan().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Plan".to_string(),
+                details: "Failed to order migration operations".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    if !no_auto_backfill_sql {
+        let candidates = db_migration.detect_backfill_candidates(
+            &result.remote_state.tables,
+            &project.clickhouse_config.db_name,
+        );
+
+        for check in &candidates {
+            if let BackfillCheckResult::Candidate(c) = check {
+                let should_append = {
+                    use std::io::IsTerminal;
+                    if std::io::stdin().is_terminal() && stdout().is_terminal() {
+                        let answer = prompt_user(
+                            "Append RawSql backfill operation to plan.yaml? [Y/n]",
+                            Some("Y"),
+                            None,
+                        )?;
+                        !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                    } else {
+                        true
+                    }
+                };
+                if should_append {
+                    db_migration.append_backfill(c);
+                }
+            }
+        }
+    }
+
+    let plan_yaml = db_migration.to_yaml().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Plan".to_string(),
+                details: "Failed to serialize".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    if save {
+        std::fs::create_dir_all("./migrations").map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+
+        let plan_yaml_with_header = format!(
+            "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
+            plan_yaml
+        );
+        std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+        std::fs::write(
+            MIGRATION_BEFORE_STATE_FILE,
+            serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Error".to_string(), "serializing remote state.".to_string()),
+                    e,
+                )
+            })?,
+        )
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+        std::fs::write(
+            MIGRATION_AFTER_STATE_FILE,
+            serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Error".to_string(), "serializing local state.".to_string()),
+                    e,
+                )
+            })?,
+        )
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+    } else {
+        println!("Changes: \n\n{}", plan_yaml);
     }
 
     Ok(RoutineSuccess::success(Message::new(

@@ -110,13 +110,17 @@ pub async fn execute_initial_infra_change(
                 olap::bootstrap_rls(ctx.project, &desired_policies).await?;
             }
 
-            if let Some(ref mut current_map) = ctx.current_olap_map {
-                olap::execute_changes_via_deltas(
-                    ctx.project,
-                    &ctx.plan.changes.olap_changes,
-                    current_map,
-                )
-                .await?;
+            if ctx.project.features.migrate_with_deltas {
+                if let Some(ref mut current_map) = ctx.current_olap_map {
+                    olap::execute_changes_via_deltas(
+                        ctx.project,
+                        &ctx.plan.changes.olap_changes,
+                        current_map,
+                    )
+                    .await?;
+                } else {
+                    olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
+                }
             } else {
                 olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
             }
@@ -216,9 +220,17 @@ pub async fn execute_online_change(
                 olap::bootstrap_rls(project, &desired_policies).await?;
             }
 
-            if let Some(current_map) = current_olap_map {
-                olap::execute_changes_via_deltas(project, &plan.changes.olap_changes, current_map)
+            if project.features.migrate_with_deltas {
+                if let Some(current_map) = current_olap_map {
+                    olap::execute_changes_via_deltas(
+                        project,
+                        &plan.changes.olap_changes,
+                        current_map,
+                    )
                     .await?;
+                } else {
+                    olap::execute_changes(project, &plan.changes.olap_changes).await?;
+                }
             } else {
                 olap::execute_changes(project, &plan.changes.olap_changes).await?;
             }

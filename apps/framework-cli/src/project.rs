@@ -226,6 +226,17 @@ pub struct ProjectFeatures {
     /// Whether Analytics APIs server is enabled
     #[serde(default = "_true")]
     pub apis: bool,
+
+    /// Whether to use the delta-based migration system.
+    ///
+    /// When enabled:
+    /// - Dev mode records OLAP deltas to a dev log and folds them into the stored map
+    /// - `moose generate migration` produces delta YAML files (with compaction from dev log)
+    /// - `moose migrate` applies delta files instead of legacy plan.yaml
+    ///
+    /// When disabled (default): the legacy snapshot-diff migration system is used.
+    #[serde(default)]
+    pub migrate_with_deltas: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -235,6 +246,7 @@ impl Default for ProjectFeatures {
             workflows: false,
             olap: true,
             apis: true,
+            migrate_with_deltas: false,
         }
     }
 }

@@ -758,23 +758,45 @@ pub async fn execute_migration(
             current_infra_map
         };
 
-        // Execute migration from delta files
-        execute_migration_deltas(
-            project,
-            clickhouse_config,
-            &current_infra_map,
-            state_storage.as_ref(),
-        )
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "\nMigration".to_string(),
-                    "Failed to execute migration deltas".to_string(),
-                ),
-                e,
+        if project.features.migrate_with_deltas {
+            // Delta-based migration path
+            execute_migration_deltas(
+                project,
+                clickhouse_config,
+                &current_infra_map,
+                state_storage.as_ref(),
             )
-        })?;
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "\nMigration".to_string(),
+                        "Failed to execute migration deltas".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+        } else {
+            // Legacy plan.yaml migration path
+            let current_tables = &current_infra_map.tables;
+            execute_migration_plan(
+                project,
+                clickhouse_config,
+                current_tables,
+                &target_infra_map,
+                state_storage.as_ref(),
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "\nMigration".to_string(),
+                        "Failed to execute migration plan".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+        }
 
         Ok(())
     }
