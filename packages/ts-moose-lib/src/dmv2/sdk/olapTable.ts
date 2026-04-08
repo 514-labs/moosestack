@@ -298,6 +298,13 @@ export type BaseOlapConfig<T> = (
     /** ClickHouse SQL WHERE expression to filter seeded rows. */
     where?: string;
   };
+  /**
+   * Optional table-level ClickHouse constraints.
+   *
+   * - **CHECK** — validated on INSERT.
+   * - **ASSUME** — optimizer hint only (no enforcement).
+   */
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -306,7 +313,6 @@ export type BaseOlapConfig<T> = (
  */
 export type MergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.MergeTree;
-  constraints?: TableConstraint[];
 };
 
 /**
@@ -317,7 +323,6 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.ReplacingMergeTree;
   ver?: keyof T & string; // Optional version column
   isDeleted?: keyof T & string; // Optional is_deleted column
-  constraints?: TableConstraint[];
 };
 
 /**
@@ -326,7 +331,6 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  */
 export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.AggregatingMergeTree;
-  constraints?: TableConstraint[];
 };
 
 /**
@@ -336,7 +340,6 @@ export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.SummingMergeTree;
   columns?: string[];
-  constraints?: TableConstraint[];
 };
 
 /**
@@ -346,7 +349,6 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 export type CollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.CollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
-  constraints?: TableConstraint[];
 };
 
 /**
@@ -357,7 +359,6 @@ export type VersionedCollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.VersionedCollapsingMergeTree;
   sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
   ver: keyof T & string; // Version column for ordering state changes
-  constraints?: TableConstraint[];
 };
 
 interface ReplicatedEngineProperties {
@@ -580,9 +581,6 @@ export type DistributedConfig<T> = Omit<
   shardingKey?: string;
   /** Optional: Policy name for data distribution */
   policyName?: string;
-  /** Optional table-level constraints (passed through for type compatibility, but
-   *  constraints are only meaningful on the underlying _local MergeTree tables) */
-  constraints?: TableConstraint[];
 };
 
 /** Kafka table settings. See: https://clickhouse.com/docs/engines/table-engines/integrations/kafka */
