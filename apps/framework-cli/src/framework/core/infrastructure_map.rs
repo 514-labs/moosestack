@@ -39,7 +39,9 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::select_row_policy::SelectRowPolicy;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table, TableReference};
+use super::infrastructure::table::{
+    table_constraints_equal_ignore_order, Column, OrderBy, Table, TableReference,
+};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -2151,8 +2153,11 @@ impl InfrastructureMap {
                         // Detect projection changes
                         let projections_changed = table.projections != target_table.projections;
 
-                        // Detect constraint changes
-                        let constraints_changed = table.constraints != target_table.constraints;
+                        // Detect constraint changes (order-insensitive; names are unique per table)
+                        let constraints_changed = !table_constraints_equal_ignore_order(
+                            &table.constraints,
+                            &target_table.constraints,
+                        );
 
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
@@ -2393,7 +2398,8 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
-        let constraints_changed = table.constraints != target_table.constraints;
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&table.constraints, &target_table.constraints);
         let projections_changed = table.projections != target_table.projections;
         let engine_changed = table.engine != target_table.engine;
         let table_settings_changed = table.table_settings != target_table.table_settings;
@@ -2497,7 +2503,8 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
-        let constraints_changed = table.constraints != target_table.constraints;
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&table.constraints, &target_table.constraints);
         let projections_changed = table.projections != target_table.projections;
         let engine_changed = table.engine != target_table.engine;
         let table_settings_changed = table.table_settings != target_table.table_settings;

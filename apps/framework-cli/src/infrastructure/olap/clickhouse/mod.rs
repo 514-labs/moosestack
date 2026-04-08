@@ -1214,8 +1214,6 @@ async fn execute_add_table_constraint(
         .map_err(ClickhouseChangesError::Clickhouse)?;
     validate_clickhouse_identifier(&constraint.name, "Constraint name")
         .map_err(ClickhouseChangesError::Clickhouse)?;
-    errors::validate_clickhouse_expression(&constraint.expression, "Constraint expression")
-        .map_err(ClickhouseChangesError::Clickhouse)?;
 
     let cluster_clause = cluster_name
         .map(|c| format!(" ON CLUSTER '{}'", c))

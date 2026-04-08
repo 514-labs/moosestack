@@ -335,6 +335,25 @@ pub struct TableConstraint {
     pub constraint_type: ConstraintType,
 }
 
+/// Compares two constraint lists for equality, ignoring slice order.
+///
+/// Constraint names are unique per table in ClickHouse, so each constraint is identified by
+/// `name`; we sort by name and compare element-wise with [`PartialEq`]. Used for drift
+/// detection so reordering constraints in JSON does not count as a change.
+pub(crate) fn table_constraints_equal_ignore_order(
+    a: &[TableConstraint],
+    b: &[TableConstraint],
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut sorted_a: Vec<&TableConstraint> = a.iter().collect();
+    let mut sorted_b: Vec<&TableConstraint> = b.iter().collect();
+    sorted_a.sort_by_key(|c| c.name.as_str());
+    sorted_b.sort_by_key(|c| c.name.as_str());
+    sorted_a == sorted_b
+}
+
 impl TableConstraint {
     /// Serializes the `TableConstraint` into its Protobuf message representation.
     /// The `constraint_type` is converted to its string representation (e.g., `"CHECK"`).
@@ -2562,6 +2581,29 @@ mod tests {
             "Serialized JSON should use uppercase CHECK: {}",
             json
         );
+    }
+
+    #[test]
+    fn table_constraints_equal_ignore_order() {
+        let c1 = TableConstraint {
+            name: "a".to_string(),
+            expression: "x".to_string(),
+            constraint_type: ConstraintType::Check,
+        };
+        let c2 = TableConstraint {
+            name: "b".to_string(),
+            expression: "y".to_string(),
+            constraint_type: ConstraintType::Assume,
+        };
+        let forward = vec![c1.clone(), c2.clone()];
+        let reverse = vec![c2, c1];
+        assert!(super::table_constraints_equal_ignore_order(
+            &forward, &reverse
+        ));
+        assert!(!super::table_constraints_equal_ignore_order(
+            &forward,
+            &[forward[0].clone()]
+        ));
     }
 
     #[test]

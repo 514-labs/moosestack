@@ -3472,10 +3472,6 @@ pub fn create_table_query(
                         &c.constraint_type.to_string(),
                         "Constraint type",
                     )?;
-                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_expression(
-                        &c.expression,
-                        "Constraint expression",
-                    )?;
                     Ok(format!(
                         "CONSTRAINT `{}` {} ({})",
                         c.name, c.constraint_type, c.expression
