@@ -3555,7 +3555,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}` SYNC{{/if}};
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}' SYNC{{/if}};
 "#;
 
 pub fn drop_table_query(
@@ -3576,12 +3576,12 @@ pub fn drop_table_query(
 }
 
 pub static ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
 MODIFY SETTING {{settings}};
 "#;
 
 pub static ALTER_TABLE_RESET_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER '{{cluster_name}}'{{/if}}
 RESET SETTING {{settings}};
 "#;
 
@@ -6048,7 +6048,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         .unwrap();
 
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "MODIFY SETTING query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
@@ -6065,7 +6065,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         assert!(
             macro_query.contains("ON CLUSTER '{cluster}'"),
-            "MODIFY SETTING query should contain ON CLUSTER clause with macro"
+            "MODIFY SETTING query should contain ON CLUSTER clause with macro\n {macro_query}"
         );
     }
 
@@ -6095,7 +6095,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
 
         assert!(
-            query.contains("ON CLUSTER `test_cluster`"),
+            query.contains("ON CLUSTER 'test_cluster'"),
             "ADD COLUMN query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
