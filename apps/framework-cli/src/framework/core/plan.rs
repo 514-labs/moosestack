@@ -964,6 +964,7 @@ mod tests {
             docker_config: crate::project::DockerConfig::default(),
             watcher_config: crate::cli::watcher::WatcherConfig::default(),
             dev: crate::project::DevConfig::default(),
+            use_native_infra: false,
         }
     }
 
