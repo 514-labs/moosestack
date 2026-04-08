@@ -456,7 +456,7 @@ async fn run_local_infrastructure_with_timeout(
     });
 
     match timeout(timeout_duration, run_future).await {
-        Ok(Ok(result)) => result.map_err(|e| anyhow::anyhow!("{}", e)),
+        Ok(Ok(result)) => result,
         Ok(Err(e)) => Err(e.into()),
         Err(_) => Err(anyhow::anyhow!(
             "Infrastructure startup and validation timed out after {} seconds.\n\n\
