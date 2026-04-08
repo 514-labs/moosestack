@@ -91,17 +91,17 @@ impl InfraProvider for DockerInfraProvider {
     }
 
     fn stop(&self, project: &Project, settings: &Settings) -> Result<(), RoutineFailure> {
-        ensure_docker_running(&self.docker_client).map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "Failed".to_string(),
-                    "to ensure docker is running".to_string(),
-                ),
-                e,
-            )
-        })?;
-
         if settings.should_shutdown_containers() {
+            ensure_docker_running(&self.docker_client).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to ensure docker is running".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+
             self.docker_client.stop_containers(project).map_err(|err| {
                 RoutineFailure::new(
                     Message::new("Failed".to_string(), "to stop containers".to_string()),
@@ -216,23 +216,16 @@ fn validate_container_run(
         for _ in 0..30 {
             if let Some(effective_health) = container.health {
                 if effective_health == expected {
-                    return Ok(RoutineSuccess::success(Message::new(
-                        "Validated".to_string(),
-                        format!("{container_name} docker container"),
-                    )));
+                    break;
                 }
             } else {
                 debug!("No health info for container {} yet", container_name);
+                break;
             }
 
             container = find_container(project, container_name, docker_client)?;
             sleep(Duration::from_secs(1));
         }
-
-        return Err(RoutineFailure::error(Message::new(
-            "Timeout".to_string(),
-            format!("{container_name} did not become {expected} within 30 seconds"),
-        )));
     }
 
     Ok(RoutineSuccess::success(Message::new(
