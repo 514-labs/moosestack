@@ -2,14 +2,18 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
-use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
+<<<<<<< HEAD
 use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
+=======
+use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+>>>>>>> 936c1901f (Move OlapDictionary to clickhouse infra folder and fix drift detection)
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
@@ -40,6 +44,7 @@ enum DriftStatus {
         changed_tables: Vec<String>,
         extra_dicts: Vec<String>,
         missing_dicts: Vec<String>,
+        changed_dicts: Vec<String>,
     },
 }
 
@@ -161,14 +166,9 @@ fn detect_drift(
     let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
 
     // Check 1: Did the DB change since the plan was generated?
-    // Compare both tables and dictionary key sets (names)
+    // Compare both tables and dictionaries with full content equality
     let tables_match = current_no_metadata == expected_no_metadata;
-    let dicts_match = current_dicts
-        .keys()
-        .collect::<std::collections::HashSet<_>>()
-        == expected_dicts
-            .keys()
-            .collect::<std::collections::HashSet<_>>();
+    let dicts_match = current_dicts == expected_dicts;
 
     if tables_match && dicts_match {
         return DriftStatus::NoDrift;
@@ -177,12 +177,7 @@ fn detect_drift(
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
     let tables_at_target = current_no_metadata == target_no_metadata;
-    let dicts_at_target = current_dicts
-        .keys()
-        .collect::<std::collections::HashSet<_>>()
-        == target_dicts
-            .keys()
-            .collect::<std::collections::HashSet<_>>();
+    let dicts_at_target = current_dicts == target_dicts;
 
     if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
@@ -232,12 +227,21 @@ fn detect_drift(
         .cloned()
         .collect();
 
+    let changed_dicts: Vec<String> = current_dicts
+        .keys()
+        .filter(|k| {
+            expected_dicts.contains_key(*k) && current_dicts.get(*k) != expected_dicts.get(*k)
+        })
+        .cloned()
+        .collect();
+
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
         changed_tables,
         extra_dicts,
         missing_dicts,
+        changed_dicts,
     }
 }
 
@@ -296,6 +300,7 @@ fn report_drift(drift: &DriftStatus) {
         changed_tables,
         extra_dicts,
         missing_dicts,
+        changed_dicts,
     } = drift
     {
         println!("\n❌ Migration validation failed - database state has changed since plan was generated\n");
@@ -314,6 +319,9 @@ fn report_drift(drift: &DriftStatus) {
         }
         if !missing_dicts.is_empty() {
             println!("  Dictionaries removed from database: {:?}", missing_dicts);
+        }
+        if !changed_dicts.is_empty() {
+            println!("  Dictionaries with content changes: {:?}", changed_dicts);
         }
     }
 }
@@ -1831,7 +1839,7 @@ mod tests {
     // ─── T1a: dictionary drift detection ──────────────────────────────────────
 
     fn create_test_dict(name: &str) -> OlapDictionary {
-        use crate::framework::core::infrastructure::dictionary::{
+        use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
             DictionaryTableSource,
         };

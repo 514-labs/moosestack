@@ -39,8 +39,8 @@ use crate::proto::infrastructure_map::{
     DictionaryTableSource as ProtoDictionaryTableSource, OlapDictionary as ProtoOlapDictionary,
 };
 
-use super::table::{deserialize_nullable_as_default, Metadata};
-use super::{DataLineage, InfrastructureSignature};
+use crate::framework::core::infrastructure::table::{deserialize_nullable_as_default, Metadata};
+use crate::framework::core::infrastructure::{DataLineage, InfrastructureSignature};
 
 // ─── Column attributes ────────────────────────────────────────────────────────
 
@@ -288,7 +288,7 @@ pub struct DictionaryHttpSource {
 
 /// External dictionary source — discriminated union of supported source types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(tag = "source_type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ExternalDictionarySource {
     Http(DictionaryHttpSource),
     ClickHouse(DictionaryClickHouseSource),
@@ -994,7 +994,16 @@ impl OlapDictionary {
     /// Builds the PRIMARY KEY clause
     fn primary_key_clause(&self) -> String {
         if self.primary_key.is_empty() {
-            "PRIMARY KEY id".to_string()
+            if self.columns.is_empty() {
+                // columns_ddl() synthesizes an `id UInt64` column in this case
+                "PRIMARY KEY id".to_string()
+            } else {
+                panic!(
+                    "OlapDictionary '{}' has columns defined but no primary_key set; \
+                     primary_key must not be empty when columns are provided",
+                    self.name
+                );
+            }
         } else {
             let keys = self
                 .primary_key
@@ -1050,40 +1059,43 @@ impl OlapDictionary {
                 }
                 ExternalDictionarySource::ClickHouse(c) => {
                     let mut params = vec![
-                        format!("HOST '{}'", c.host),
+                        format!("HOST '{}'", escape_clickhouse_string(&c.host)),
                         format!("PORT {}", c.port),
-                        format!("USER '{}'", c.user),
-                        format!("PASSWORD '{}'", c.password),
-                        format!("DB '{}'", c.db),
+                        format!("USER '{}'", escape_clickhouse_string(&c.user)),
+                        format!("PASSWORD '{}'", escape_clickhouse_string(&c.password)),
+                        format!("DB '{}'", escape_clickhouse_string(&c.db)),
                     ];
                     if let Some(ref q) = c.query {
                         params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
-                        params.push(format!("TABLE '{}'", c.table));
+                        params.push(format!("TABLE '{}'", escape_clickhouse_string(&c.table)));
                     }
                     if let Some(ref w) = c.where_clause {
-                        params.push(format!("WHERE '{}'", w));
+                        params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
                     }
                     if let Some(ref iq) = c.invalidate_query {
-                        params.push(format!("INVALIDATE_QUERY '{}'", iq));
+                        params.push(format!(
+                            "INVALIDATE_QUERY '{}'",
+                            escape_clickhouse_string(iq)
+                        ));
                     }
                     format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
                 }
                 ExternalDictionarySource::Mysql(m) => {
                     let mut params = vec![
-                        format!("HOST '{}'", m.host),
+                        format!("HOST '{}'", escape_clickhouse_string(&m.host)),
                         format!("PORT {}", m.port),
-                        format!("USER '{}'", m.user),
-                        format!("PASSWORD '{}'", m.password),
-                        format!("DB '{}'", m.db),
+                        format!("USER '{}'", escape_clickhouse_string(&m.user)),
+                        format!("PASSWORD '{}'", escape_clickhouse_string(&m.password)),
+                        format!("DB '{}'", escape_clickhouse_string(&m.db)),
                     ];
                     if let Some(ref q) = m.query {
                         params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
-                        params.push(format!("TABLE '{}'", m.table));
+                        params.push(format!("TABLE '{}'", escape_clickhouse_string(&m.table)));
                     }
                     if let Some(ref w) = m.where_clause {
-                        params.push(format!("WHERE '{}'", w));
+                        params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
                     }
                     if let Some(ref iq) = m.invalidate_query {
                         params.push(format!(
@@ -1095,19 +1107,19 @@ impl OlapDictionary {
                 }
                 ExternalDictionarySource::Postgresql(p) => {
                     let mut params = vec![
-                        format!("HOST '{}'", p.host),
+                        format!("HOST '{}'", escape_clickhouse_string(&p.host)),
                         format!("PORT {}", p.port),
-                        format!("USER '{}'", p.user),
-                        format!("PASSWORD '{}'", p.password),
-                        format!("DB '{}'", p.db),
+                        format!("USER '{}'", escape_clickhouse_string(&p.user)),
+                        format!("PASSWORD '{}'", escape_clickhouse_string(&p.password)),
+                        format!("DB '{}'", escape_clickhouse_string(&p.db)),
                     ];
                     if let Some(ref q) = p.query {
                         params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
-                        params.push(format!("TABLE '{}'", p.table));
+                        params.push(format!("TABLE '{}'", escape_clickhouse_string(&p.table)));
                     }
                     if let Some(ref w) = p.where_clause {
-                        params.push(format!("WHERE '{}'", w));
+                        params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
                     }
                     if let Some(ref iq) = p.invalidate_query {
                         params.push(format!(
@@ -1119,12 +1131,15 @@ impl OlapDictionary {
                 }
                 ExternalDictionarySource::Redis(r) => {
                     let mut params = vec![
-                        format!("HOST '{}'", r.host),
+                        format!("HOST '{}'", escape_clickhouse_string(&r.host)),
                         format!("PORT {}", r.port),
-                        format!("STORAGE_TYPE '{}'", r.storage_type),
+                        format!(
+                            "STORAGE_TYPE '{}'",
+                            escape_clickhouse_string(&r.storage_type)
+                        ),
                     ];
                     if let Some(ref pw) = r.password {
-                        params.push(format!("PASSWORD '{}'", pw));
+                        params.push(format!("PASSWORD '{}'", escape_clickhouse_string(pw)));
                     }
                     if let Some(db) = r.db_index {
                         params.push(format!("DB_INDEX {}", db));
@@ -1133,19 +1148,19 @@ impl OlapDictionary {
                 }
                 ExternalDictionarySource::Mongodb(m) => {
                     let params = [
-                        format!("HOST '{}'", m.host),
+                        format!("HOST '{}'", escape_clickhouse_string(&m.host)),
                         format!("PORT {}", m.port),
-                        format!("USER '{}'", m.user),
-                        format!("PASSWORD '{}'", m.password),
-                        format!("DB '{}'", m.db),
-                        format!("COLLECTION '{}'", m.collection),
+                        format!("USER '{}'", escape_clickhouse_string(&m.user)),
+                        format!("PASSWORD '{}'", escape_clickhouse_string(&m.password)),
+                        format!("DB '{}'", escape_clickhouse_string(&m.db)),
+                        format!("COLLECTION '{}'", escape_clickhouse_string(&m.collection)),
                     ];
                     format!("SOURCE(MONGODB({}))", params.join(" "))
                 }
                 ExternalDictionarySource::Executable(e) => {
                     let mut params = vec![
-                        format!("COMMAND '{}'", e.command),
-                        format!("FORMAT '{}'", e.format),
+                        format!("COMMAND '{}'", escape_clickhouse_string(&e.command)),
+                        format!("FORMAT '{}'", escape_clickhouse_string(&e.format)),
                     ];
                     if let Some(ik) = e.implicit_key {
                         params.push(format!("IMPLICIT_KEY {}", if ik { 1 } else { 0 }));
@@ -1153,13 +1168,18 @@ impl OlapDictionary {
                     format!("SOURCE(EXECUTABLE({}))", params.join(" "))
                 }
                 ExternalDictionarySource::S3(s) => {
-                    let mut params =
-                        vec![format!("URL '{}'", s.url), format!("FORMAT '{}'", s.format)];
+                    let mut params = vec![
+                        format!("URL '{}'", escape_clickhouse_string(&s.url)),
+                        format!("FORMAT '{}'", escape_clickhouse_string(&s.format)),
+                    ];
                     if let Some(ref k) = s.access_key_id {
-                        params.push(format!("ACCESS_KEY_ID '{}'", k));
+                        params.push(format!("ACCESS_KEY_ID '{}'", escape_clickhouse_string(k)));
                     }
                     if let Some(ref sk) = s.secret_access_key {
-                        params.push(format!("SECRET_ACCESS_KEY '{}'", sk));
+                        params.push(format!(
+                            "SECRET_ACCESS_KEY '{}'",
+                            escape_clickhouse_string(sk)
+                        ));
                     }
                     format!("SOURCE(S3({}))", params.join(" "))
                 }
@@ -1555,10 +1575,9 @@ impl OlapDictionary {
             } else {
                 Some(m.description)
             },
-            source: m
-                .source
-                .into_option()
-                .map(|s| super::table::SourceLocation { file: s.file }),
+            source: m.source.into_option().map(|s| {
+                crate::framework::core::infrastructure::table::SourceLocation { file: s.file }
+            }),
         });
 
         let life_cycle = match proto.life_cycle.enum_value_or_default() {
@@ -2336,6 +2355,21 @@ mod tests {
     #[test]
     fn test_serde_round_trip() {
         let dict = simple_dict("my_dict");
+        let json = serde_json::to_string(&dict).unwrap();
+        let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
+        assert_eq!(dict, restored);
+    }
+
+    #[test]
+    fn test_serde_external_source_round_trip() {
+        let mut dict = simple_dict("my_dict");
+        dict.source =
+            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+                url: "http://example.com/data.json".to_string(),
+                format: "JSONEachRow".to_string(),
+                method: None,
+                where_clause: None,
+            }));
         let json = serde_json::to_string(&dict).unwrap();
         let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
         assert_eq!(dict, restored);
