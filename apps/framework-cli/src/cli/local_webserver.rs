@@ -3118,7 +3118,7 @@ async fn shutdown(
         let native_infra_dir = project.project_location.join(".moose/native_infra");
         let ch_pid_path = native_infra_dir.join("clickhouse.pid");
         let temporal_pid_path = native_infra_dir.join("temporal.pid");
-        if native_infra_dir.exists() {
+        if project.use_native_infra && native_infra_dir.exists() {
             info!("Killing native infrastructure processes via PID files");
             crate::utilities::native_infra::kill_pid_file(&ch_pid_path);
             crate::utilities::native_infra::kill_pid_file(&temporal_pid_path);
