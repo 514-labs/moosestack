@@ -9,16 +9,17 @@ use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter}
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
 use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
-use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
+use crate::infrastructure::olap::clickhouse::{normalize_table_for_diff, IgnorableOperation};
 use crate::project::Project;
 use crate::utilities::constants::{
     CLICKHOUSE_MACRO_CLUSTER_NAME_RULES, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
     MIGRATION_FILE,
 };
 use anyhow::Result;
+use itertools::Itertools;
 use std::collections::HashMap;
 
 /// Migration files loaded from disk
@@ -40,7 +41,7 @@ enum DriftStatus {
 }
 
 /// Load and parse migration files from disk
-fn load_migration_files() -> Result<MigrationFiles> {
+fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     // Check if all required migration files exist
     let missing_files: Vec<&str> = [
         MIGRATION_FILE,
@@ -80,10 +81,15 @@ fn load_migration_files() -> Result<MigrationFiles> {
         serde_json::from_value(serde_yaml::from_str::<serde_json::Value>(&plan_content)?)?;
 
     let before_content = std::fs::read_to_string(MIGRATION_BEFORE_STATE_FILE)?;
-    let state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
+    let mut state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
 
     let after_content = std::fs::read_to_string(MIGRATION_AFTER_STATE_FILE)?;
-    let state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
+    let mut state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
+
+    // Re-key tables so the HashMap keys match the current project's db_name.
+    // The saved files may have been generated against a different database name.
+    state_before.fixup_default_db(db_name);
+    state_after.fixup_default_db(db_name);
 
     Ok(MigrationFiles {
         plan,
@@ -92,20 +98,30 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
-/// Strips both metadata and ignored fields from tables
-fn strip_metadata_and_ignored_fields(
+/// Normalizes every table for drift detection.
+///
+/// Applies `normalize_table_for_diff` (same as the plan diff) plus additional
+/// stripping of fields that the diff strategy handles specially but the raw
+/// `==` comparison in `detect_drift` cannot:
+///
+/// - `engine_params_hash` / `table_settings_hash`: exist for secret-bearing
+///   settings (e.g. Kafka credentials). The diff strategy compares hashes when
+///   *both* sides have one and falls back to direct value comparison otherwise.
+///   DB-introspected tables never have hashes, so one side is always `None`.
+/// - `database`: `None` means "use default". DB-reconciled tables get
+///   `Some(actual_db)`, which is semantically equal when it IS the default.
+///   A real database change surfaces as a different `Table::id()` key.
+fn strip_non_schema_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
 ) -> HashMap<String, Table> {
     tables
         .iter()
         .map(|(name, table)| {
-            let mut table = table.clone();
-            table.metadata = None;
-            // Also strip ignored fields
-            let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                &table, ignore_ops,
-            );
+            let mut table = normalize_table_for_diff(table, ignore_ops);
+            table.engine_params_hash = None;
+            table.table_settings_hash = None;
+            table.database = None;
             (name.clone(), table)
         })
         .collect()
@@ -113,8 +129,8 @@ fn strip_metadata_and_ignored_fields(
 
 /// Detects drift by comparing three snapshots of table state.
 ///
-/// This function strips metadata (file paths) before comparison to avoid false positives
-/// when code is reorganized without schema changes.
+/// Uses `normalize_table_for_diff` — the same normalization the plan diff uses —
+/// so that "empty olap_changes" ↔ NoDrift / AlreadyAtTarget.
 ///
 /// # Arguments
 /// * `current_tables` - What's in the database right now (after reconciliation)
@@ -131,11 +147,9 @@ fn detect_drift(
     target_tables: &HashMap<String, Table>,
     ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
-    // Strip metadata and ignored fields to avoid false drift
-    let current_no_metadata = strip_metadata_and_ignored_fields(current_tables, ignore_operations);
-    let expected_no_metadata =
-        strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
-    let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
+    let current_no_metadata = strip_non_schema_fields(current_tables, ignore_operations);
+    let expected_no_metadata = strip_non_schema_fields(expected_tables, ignore_operations);
+    let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
 
     // Check 1: Did the DB change since the plan was generated?
     if current_no_metadata == expected_no_metadata {
@@ -161,19 +175,76 @@ fn detect_drift(
         .cloned()
         .collect();
 
-    let changed_tables: Vec<String> = current_no_metadata
-        .keys()
-        .filter(|k| {
-            expected_no_metadata.contains_key(*k)
-                && current_no_metadata.get(*k) != expected_no_metadata.get(*k)
-        })
-        .cloned()
-        .collect();
+    let changed_tables = changed_tables_between(&current_no_metadata, &expected_no_metadata);
+    let changed_vs_target_tables =
+        changed_tables_between(&current_no_metadata, &target_no_metadata);
+
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        log_table_diff(
+            &changed_tables,
+            &current_no_metadata,
+            &expected_no_metadata,
+            "current (DB) vs expected (plan-before) — why not NoDrift",
+        );
+        log_table_diff(
+            &changed_vs_target_tables,
+            &current_no_metadata,
+            &target_no_metadata,
+            "current (DB) vs target (code) — why not AlreadyAtTarget",
+        );
+    }
 
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
         changed_tables,
+    }
+}
+
+fn changed_tables_between(
+    left: &HashMap<String, Table>,
+    right: &HashMap<String, Table>,
+) -> Vec<String> {
+    left.keys()
+        .filter(|k| right.contains_key(*k) && left.get(*k) != right.get(*k))
+        .cloned()
+        .collect()
+}
+
+/// Logs per-field diffs between two table snapshots for a set of table names.
+fn log_table_diff(
+    table_names: &[String],
+    left: &HashMap<String, Table>,
+    right: &HashMap<String, Table>,
+    label: &str,
+) {
+    for name in table_names {
+        let (Some(l), Some(r)) = (left.get(name), right.get(name)) else {
+            tracing::debug!(table = %name, "{label}: table missing from one side");
+            continue;
+        };
+        if l == r {
+            tracing::debug!(table = %name, "{label}: identical");
+            continue;
+        }
+        let lj = serde_json::to_string_pretty(l).unwrap_or_default();
+        let rj = serde_json::to_string_pretty(r).unwrap_or_default();
+        tracing::debug!(table = %name, "{label}:");
+        for (i, pair) in lj.lines().zip_longest(rj.lines()).enumerate() {
+            match pair {
+                itertools::EitherOrBoth::Both(a, b) if a != b => {
+                    tracing::debug!("  line {i}: left:  {a}");
+                    tracing::debug!("  line {i}: right: {b}");
+                }
+                itertools::EitherOrBoth::Left(a) => {
+                    tracing::debug!("  line {i}: left:  {a}");
+                }
+                itertools::EitherOrBoth::Right(b) => {
+                    tracing::debug!("  line {i}: right: {b}");
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -738,8 +809,8 @@ pub async fn execute_migration_plan(
 ) -> Result<()> {
     println!("Executing migration plan...");
 
-    // Load migration files
-    let files = load_migration_files()?;
+    // Load migration files, re-keying tables to the current project's db_name
+    let files = load_migration_files(&clickhouse_config.db_name)?;
 
     // Display plan info
     println!("✓ Loaded approved migration plan from {:?}", MIGRATION_FILE);
@@ -765,8 +836,15 @@ pub async fn execute_migration_plan(
         DriftStatus::NoDrift => {
             println!("  ✓ Current = Expected (no drift detected)");
 
-            // Check target matches code
-            if files.state_after.tables != target_infra_map.tables {
+            // Check target matches code (normalize both sides so only
+            // DDL-relevant fields are compared, consistent with detect_drift).
+            // We intentionally use the *current* project ignore_ops, not a
+            // saved-plan copy: if ignore_ops changed since plan generation the
+            // plan is stale and this check correctly triggers regeneration.
+            let ignore_ops = &project.migration_config.ignore_operations;
+            if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
+                != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
+            {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
                      The migration was perhaps generated before additional code changes.\n\
@@ -996,6 +1074,27 @@ mod tests {
             }
             _ => panic!("Expected DriftDetected"),
         }
+    }
+
+    #[test]
+    fn test_changed_tables_between_uses_specified_pair() {
+        let mut current = HashMap::new();
+        current.insert("users".to_string(), create_modified_table("users"));
+        current.insert("posts".to_string(), create_test_table("posts"));
+
+        let mut expected = HashMap::new();
+        expected.insert("users".to_string(), create_test_table("users"));
+        expected.insert("posts".to_string(), create_test_table("posts"));
+
+        let mut target = HashMap::new();
+        target.insert("users".to_string(), create_modified_table("users"));
+        target.insert("posts".to_string(), create_modified_table("posts"));
+
+        let changed_vs_expected = changed_tables_between(&current, &expected);
+        let changed_vs_target = changed_tables_between(&current, &target);
+
+        assert_eq!(changed_vs_expected, vec!["users".to_string()]);
+        assert_eq!(changed_vs_target, vec!["posts".to_string()]);
     }
 
     #[test]

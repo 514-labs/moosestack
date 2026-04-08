@@ -57,12 +57,14 @@ use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::framework::versions::Version;
-use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
-use crate::infrastructure::redis::redis_client::RedisClient;
+use crate::infrastructure::olap::clickhouse::{
+    codec_expressions_are_equivalent, normalize_table_for_diff,
+};
+use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
 use crate::utilities::constants::{PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
@@ -2012,38 +2014,24 @@ impl InfrastructureMap {
             target_tables.len()
         );
 
-        // Normalize tables for comparison if ignore_ops is provided
-        let (normalized_self, normalized_target) = if !ignore_ops.is_empty() {
+        // Always normalize: strips Moose-internal tracking fields (metadata,
+        // seed_filter, source_primitive, life_cycle) plus any schema fields
+        // covered by ignore_ops.  This keeps the comparison in sync with
+        // detect_drift (same normalize_table_for_diff call).
+        if !ignore_ops.is_empty() {
             tracing::info!(
                 "Normalizing tables before comparison. Ignore list: {:?}",
                 ignore_ops
             );
-            let normalized_self: HashMap<String, Table> = self_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            let normalized_target: HashMap<String, Table> = target_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            (normalized_self, normalized_target)
-        } else {
-            (self_tables.clone(), target_tables.clone())
-        };
+        }
+        let normalized_self: HashMap<String, Table> = self_tables
+            .iter()
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
+            .collect();
+        let normalized_target: HashMap<String, Table> = target_tables
+            .iter()
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
+            .collect();
 
         let mut table_updates = 0;
         let mut table_removals = 0;
@@ -2058,7 +2046,7 @@ impl InfrastructureMap {
             if let Some(normalized_target) =
                 normalized_target.get(&normalized_table.id(default_database))
             {
-                if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
+                if normalized_table != normalized_target {
                     // Get original tables for use in changes using the HashMap key
                     // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
@@ -2744,6 +2732,18 @@ impl InfrastructureMap {
     /// Loads an infrastructure map using the last deployment's Redis key prefix.
     pub async fn load_from_last_redis_prefix(redis_client: &RedisClient) -> Result<Option<Self>> {
         let last_prefix = &redis_client.config.last_key_prefix;
+        let current_prefix = &redis_client.config.key_prefix;
+        let default_prefix = RedisConfig::default_key_prefix();
+
+        if *last_prefix == default_prefix && *current_prefix != default_prefix {
+            tracing::warn!(
+                "LAST_KEY_PREFIX is the default '{}' but KEY_PREFIX is '{}' — \
+                 this likely means MOOSE_REDIS_CONFIG__LAST_KEY_PREFIX was not set \
+                 (first deployment or missing configuration)",
+                default_prefix,
+                current_prefix,
+            );
+        }
 
         tracing::info!(
             "Loading InfrastructureMap from last Redis prefix: {}",
@@ -3739,26 +3739,6 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
     let mut b = b.clone();
     a.metadata = None;
     b.metadata = None;
-    a == b
-}
-
-/// Check if two tables are equal, ignoring metadata
-///
-/// Metadata changes (like source file location) should not trigger redeployments.
-///
-/// # Arguments
-/// * `a` - The first table to compare
-/// * `b` - The second table to compare
-///
-/// # Returns
-/// `true` if the tables are equal ignoring metadata, `false` otherwise
-fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.metadata = None;
-    b.metadata = None;
-    a.seed_filter = Default::default();
-    b.seed_filter = Default::default();
     a == b
 }
 

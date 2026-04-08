@@ -5,8 +5,8 @@
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
-    CreateTableOptions, Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr,
-    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
+    CreateTableOptions, Expr, Ident, ObjectName, ObjectNamePart, Query, Select, SelectItem,
+    SetExpr, SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::keywords::Keyword;
@@ -1051,6 +1051,33 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
     result
 }
 
+/// Returns true if `value` is a safe bare identifier in ClickHouse (only ASCII
+/// letters, digits, and underscores, not starting with a digit). Identifiers that
+/// fail this check must remain backtick-quoted; stripping their quote style produces
+/// invalid SQL (e.g. `table-one` becomes `table` MINUS `one`).
+fn is_safe_bare_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        None => false,
+        Some(first) => {
+            (first.is_ascii_alphabetic() || first == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+    }
+}
+
+/// Unquotes an identifier in place, but only when it is safe to do so.
+/// Preserves backtick quoting for identifiers that contain special characters.
+///
+/// Note: sqlparser already strips surrounding backticks when parsing, so
+/// `ident.value` for `` `table-one` `` is `"table-one"`, not `` "`table-one`" ``.
+/// We only need to clear `quote_style` — no value mutation required.
+fn unquote_if_safe(ident: &mut Ident) {
+    if is_safe_bare_identifier(&ident.value) {
+        ident.quote_style = None;
+    }
+}
+
 /// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
 /// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
 /// but the SQL parser doesn't support this syntax, so we remove it
@@ -1058,7 +1085,7 @@ pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint>
 /// Handles nested parentheses (e.g., DateTime('UTC')) by counting paren depth
 /// Normalizes a SQL statement for comparison
 /// - Strips database prefixes that match the default database
-/// - Removes unnecessary backticks
+/// - Removes unnecessary backticks (when safe -- identifiers needing quotes are preserved)
 /// - Normalizes whitespace
 /// - Uppercases SQL keywords
 struct Normalizer<'a> {
@@ -1081,11 +1108,10 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     }
                 }
             }
-            // Unquote table names
+            // Unquote table names only when safe (preserves backticks for hyphenated names etc.)
             for part in &mut name.0 {
                 if let ObjectNamePart::Identifier(ident) = part {
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
         }
@@ -1095,8 +1121,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
     fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
         match expr {
             Expr::Identifier(ident) => {
-                ident.quote_style = None;
-                ident.value = ident.value.replace('`', "");
+                unquote_if_safe(ident);
             }
             Expr::Function(func) => {
                 // Uppercase function names (e.g. count -> COUNT)
@@ -1116,8 +1141,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     ) {
                         ident.value = upper;
                     }
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
             _ => {}
@@ -1138,8 +1162,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
 
             for part in &mut create_view.name.0 {
                 if let ObjectNamePart::Identifier(ident) = part {
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
             if let Some(to_name) = &mut create_view.to {
@@ -1154,8 +1177,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
 
                 for part in &mut to_name.0 {
                     if let ObjectNamePart::Identifier(ident) = part {
-                        ident.quote_style = None;
-                        ident.value = ident.value.replace('`', "");
+                        unquote_if_safe(ident);
                     }
                 }
             }
@@ -1168,8 +1190,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
         if let SetExpr::Select(select) = &mut *query.body {
             for item in &mut select.projection {
                 if let SelectItem::ExprWithAlias { alias, .. } = item {
-                    alias.quote_style = None;
-                    alias.value = alias.value.replace('`', "");
+                    unquote_if_safe(alias);
                 }
             }
         }
@@ -3368,5 +3389,98 @@ ENGINE = MergeTree"#;
         assert_eq!(strip_outer_parens("()"), "");
         // Whitespace
         assert_eq!(strip_outer_parens("  ( id > 0 )  "), "id > 0");
+    }
+
+    // Regression tests for backtick handling in INNER JOIN SQL with special-character
+    // identifiers. Previously, the Normalizer set quote_style=None unconditionally on all
+    // table names in FROM/JOIN clauses, stripping backticks even from identifiers like
+    // `table-one` that REQUIRE quoting (unquoted, ClickHouse parses it as `table` MINUS `one`).
+    //
+    // Fix: unquote_if_safe() only strips quote_style when the identifier is a valid bare
+    // identifier (alphanumeric + underscores only). Hyphenated names retain their backticks.
+    #[test]
+    fn test_normalize_sql_inner_join_preserves_backticks_on_hyphenated_table_names() {
+        // Reproduces user-reported case: INNER JOIN with hyphenated table/column names.
+        let sql = "SELECT t1.`user-id`, t2.`order-total` \
+                   FROM `table-one` t1 \
+                   INNER JOIN `table-two` t2 ON t1.`user-id` = t2.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // Table names with hyphens must keep backticks — they are required for valid SQL.
+        assert!(
+            normalized.contains("`table-one`"),
+            "Backticks on hyphenated table name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`table-two`"),
+            "Backticks on hyphenated table name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs must be preserved; got: {normalized}"
+        );
+    }
+
+    #[test]
+    fn test_normalize_sql_mv_inner_join_special_char_table_names() {
+        // Full user-reported case: Python MV with INNER JOIN and hyphenated table/column names.
+        // Uses a complete CREATE MATERIALIZED VIEW statement to exercise pre_visit_statement()
+        // and the TO-clause normalization path, which a bare SELECT would not reach.
+        let sql = "CREATE MATERIALIZED VIEW `mv-name` \
+                   TO `target-table` AS \
+                   SELECT a.`event-type`, b.`session-id` \
+                   FROM `raw-events` a \
+                   INNER JOIN `session-data` b ON a.`session-id` = b.`session-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // MV name and TO target with hyphens must keep backticks (pre_visit_statement path).
+        assert!(
+            normalized.contains("`mv-name`"),
+            "Backtick on MV name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`target-table`"),
+            "Backtick on TO table name must be preserved; got: {normalized}"
+        );
+
+        // FROM/JOIN table names and column refs must also keep backticks.
+        assert!(
+            normalized.contains("`raw-events`"),
+            "Backtick on `raw-events` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`session-data`"),
+            "Backtick on `session-data` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`session-id`"),
+            "Backtick on `session-id` must be preserved; got: {normalized}"
+        );
+    }
+
+    // Regular views go through the same normalize_sql path and were equally affected.
+    #[test]
+    fn test_normalize_sql_view_inner_join_preserves_backticks_on_hyphenated_table_names() {
+        let sql = "CREATE VIEW `my-view` AS \
+                   SELECT a.`user-id`, b.`order-count` \
+                   FROM `user-table` a \
+                   INNER JOIN `order-table` b ON a.`user-id` = b.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        assert!(
+            normalized.contains("`user-table`"),
+            "Backticks on `user-table` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`order-table`"),
+            "Backticks on `order-table` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs must be preserved; got: {normalized}"
+        );
     }
 }

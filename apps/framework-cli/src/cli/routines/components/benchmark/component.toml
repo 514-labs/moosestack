@@ -6,18 +6,20 @@ template = "typescript-benchmark"
 base_path = "query-benchmarks"
 
 docs = """
-  1. Edit benchmark.config.ts
-     Import your compiled query model from your Moose project, define your base query
-     and scenarios, and adjust thresholds.
-  2. Run moose build in your Moose project so compiled models are available.
-  3. Run the benchmark package scripts:
-       npm test
-       npm run bench
+  1. Add your Moose project to query-benchmarks/package.json as a `pnpm` workspace dependency with `workspace:*`.
+  2. Start `moose dev` in your Moose project so its compiled entry stays up to date.
+  3. Edit benchmark.config.ts to import your query model from that workspace package,
+     then define your base query, scenarios, and thresholds.
+  4. From the benchmark package directory, run `pnpm env:preview` to write the
+     preview deployment's MOOSE_CLICKHOUSE_CONFIG__* values to .env.preview.
+  5. Run the benchmark:
+       pnpm bench
 """
 
 npm_deps = [
   "@514labs/moose-lib@latest",
   "@types/node@^20.19.33",
+  "dotenv@latest",
   "typescript@^5.7.0",
   "vitest@^3.2.4",
 ]
