@@ -147,9 +147,9 @@ class OlapConfig(BaseModel):
                  Use this to enable replicated tables across ClickHouse clusters.
                  The cluster must be defined in moose.config.toml (dev environment only).
                  Example: cluster="prod_cluster"
-        constraints: Table-level CONSTRAINT definitions (CHECK / ASSUME) for any engine;
-                 same semantics as TypeScript ``BaseOlapConfig.constraints`` (CHECK on INSERT
-                 where applicable; ASSUME is optimizer-only; integration engines still accept DDL).
+        constraints: Optional table-level ClickHouse constraints.
+                     - **CHECK** — validated on INSERT.
+                     - **ASSUME** — optimizer hint only (no enforcement).
     """
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None
