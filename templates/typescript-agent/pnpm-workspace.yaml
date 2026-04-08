@@ -61,7 +61,7 @@ catalog:
   date-fns: "4.1.0"
   embla-carousel-react: "8.6.0"
   eslint: "9.39.4"
-  eslint-config-next: "16.1.6"
+  eslint-config-next: "16.1.7"
   express: "5.2.1"
   input-otp: "1.4.2"
   jose: "5.9.2"
@@ -70,7 +70,7 @@ catalog:
   media-chrome: "4.18.3"
   motion: "12.38.0"
   nanoid: "5.1.7"
-  next: "16.1.6"
+  next: "16.1.7"
   # Auth.js v5 beta is required for the template's App Router integration.
   next-auth: "5.0.0-beta.30"
   next-themes: "0.2.1"
