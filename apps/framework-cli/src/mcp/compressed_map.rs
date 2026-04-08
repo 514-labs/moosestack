@@ -789,11 +789,11 @@ mod tests {
 
     #[test]
     fn test_dictionary_component_and_pulls_from_edge() {
-        use crate::framework::core::infrastructure::dictionary::{
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
             DictionaryTableSource, OlapDictionary,
         };
-        use crate::framework::core::partial_infrastructure_map::LifeCycle;
 
         let mut infra_map = InfrastructureMap {
             default_database: "local".to_string(),

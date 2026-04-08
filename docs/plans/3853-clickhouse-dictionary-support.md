@@ -954,11 +954,11 @@ Feature is split into 5 stacked PRs, each reviewable independently but gated on 
 
 | PR | Branch | Content | Key Reviewer | ~Size |
 |---|---|---|---|---|
-| 1 | `dict/rust-core` | dictionary.rs, infra_map, proto, DDL ordering, lifecycle | Nico (Rust) | ~800 lines |
-| 2 | `dict/rust-integration` | plan_risk, plan_validator, ls, reality checker, credential resolution | Nico (Rust) | ~400 lines |
-| 3 | `dict/typescript-sdk` | olapDictionary.ts, internal.ts, sqlHelpers, exports, unit tests | SDK reviewer | ~600 lines |
-| 4 | `dict/python-sdk` | olap_dictionary.py, internal.py, registry, exports, unit tests | SDK reviewer | ~500 lines |
-| 5 | `dict/e2e-docs` | E2E tests, documentation, template updates | Anyone | ~400 lines |
+| 1 | `514Ben/3853-clickhouse-dictionary-rust-core` | dictionary.rs, infra_map, proto, DDL ordering, lifecycle | Nico (Rust) | ~800 lines |
+| 2 | `514Ben/3853-clickhouse-dictionary-rust-integration` | plan_risk, plan_validator, ls, reality checker, credential resolution | Nico (Rust) | ~400 lines |
+| 3 | `514Ben/3853-clickhouse-dictionary-typescript-sdk` | olapDictionary.ts, internal.ts, sqlHelpers, exports, unit tests | SDK reviewer | ~600 lines |
+| 4 | `514Ben/3853-clickhouse-dictionary-python-sdk` | olap_dictionary.py, internal.py, registry, exports, unit tests | SDK reviewer | ~500 lines |
+| 5 | `514Ben/3853-clickhouse-dictionary-e2e-docs` | E2E tests, documentation, template updates | Anyone | ~400 lines |
 
 All PRs can be open for review simultaneously. When PR 1 merges, Graphite auto-rebases PR 2–5 onto main.
 
