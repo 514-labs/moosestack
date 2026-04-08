@@ -238,7 +238,7 @@ The agent does the work here: it inspects slow queries, runs `EXPLAIN`, and gath
 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Review the propopsed optimization plan">
+<GuideStepper.Checkpoint title="Review the proposed optimization plan">
 The agent should show candidate schema changes, the query pattern they are meant to improve, and any known rebuild or re-seed risk. This is the moment to check that it is solving the right problem before benchmark branches are created.
 
 Even if a candidate involves a destructive change like dropping and recreating a table, or a rebuild triggered by reordering the `ORDER BY`, all of that happens on an isolated preview database. Your production database is not touched at any point during this workflow. The only path to production is the pull request you review at the end.
