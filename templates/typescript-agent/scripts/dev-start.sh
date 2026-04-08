@@ -503,8 +503,8 @@ log "Starting web app"
 WEB_PID="$!"
 
 # Next.js may start on a different port if 3000 is in use. Detect the actual
-# URL it prints ("- Local: http://localhost:<port>") before polling the app.
-detect_web_app_url() {
+# port it prints ("- Local: http://localhost:<port>") and update WEB_APP_URL.
+detect_web_app_port() {
   local timeout_seconds="$1"
   local start_time
   start_time="$(date +%s)"
@@ -514,15 +514,14 @@ detect_web_app_url() {
       fail "Web app exited before it became ready. Check the logs above."
     fi
 
-    local detected_url=""
-    detected_url="$(awk '/Local:/ { for(i=1;i<=NF;i++) if ($i ~ /^https?:\/\//) { print $i; exit } }' "${WEB_LOG_FILE}" 2>/dev/null || true)"
-    if [[ -n "${detected_url}" ]]; then
-      printf '%s\n' "${detected_url}"
+    local detected_port=""
+    detected_port="$(awk '/Local:/ { for(i=1;i<=NF;i++) if (match($i, /:[0-9]+\/?$/, a)) { gsub(/[^0-9]/, "", a[0]); print a[0]; exit } }' "${WEB_LOG_FILE}" 2>/dev/null || true)"
+    if [[ -n "${detected_port}" ]]; then
+      printf '%s\n' "${detected_port}"
       return
     fi
 
     if (( "$(date +%s)" - start_time >= timeout_seconds )); then
-      printf '%s\n' "${WEB_APP_URL}"
       return
     fi
 
@@ -530,10 +529,10 @@ detect_web_app_url() {
   done
 }
 
-DETECTED_WEB_URL="$(detect_web_app_url "${WEB_TIMEOUT_SECONDS}")"
-if [[ "${DETECTED_WEB_URL}" != "${WEB_APP_URL}" ]]; then
-  log "Web app started on ${DETECTED_WEB_URL} (port 3000 was in use)"
-  WEB_APP_URL="${DETECTED_WEB_URL}"
+DETECTED_PORT="$(detect_web_app_port "${WEB_TIMEOUT_SECONDS}")"
+if [[ -n "${DETECTED_PORT}" && "${WEB_APP_URL}" != *":${DETECTED_PORT}"* ]]; then
+  log "Web app started on port ${DETECTED_PORT} (configured port was in use)"
+  WEB_APP_URL="${WEB_APP_URL%:[0-9]*}:${DETECTED_PORT}"
 fi
 
 wait_for_http "Web app" "${WEB_APP_URL}/api/chat/status" "200" "${WEB_TIMEOUT_SECONDS}" "${WEB_PID}"
