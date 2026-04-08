@@ -394,14 +394,20 @@ impl DockerClient {
         let mut has_macros = false;
 
         for cluster in clusters {
-            // Resolve ClickHouse macro patterns like {cluster} to the inner name
-            // for the XML config - XML tags can't contain braces
-            let (resolved_name, is_macro) =
-                if cluster.name.starts_with('{') && cluster.name.ends_with('}') {
-                    (&cluster.name[1..cluster.name.len() - 1], true)
-                } else {
-                    (&cluster.name as &str, false)
-                };
+
+            // Extract all {macro} segments and replace them in the resolved name
+            let mut resolved_name = cluster.name.clone();
+            let mut macro_names = Vec::new();
+            let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
+            for cap in re.captures_iter(&cluster.name) {
+                if let Some(macro_name) = cap.get(1) {
+                    macro_names.push(macro_name.as_str().to_string());
+                }
+            }
+            // Replace {macro} with macro for XML tag
+            resolved_name = re.replace_all(&resolved_name, "$1").to_string();
+            let is_macro = !macro_names.is_empty();
+
 
             if !is_valid_clickhouse_identifier(resolved_name) {
                 warn!(
