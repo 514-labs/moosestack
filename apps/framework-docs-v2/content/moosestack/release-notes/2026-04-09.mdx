@@ -1,0 +1,82 @@
+---
+title: April 9, 2026
+description: Release notes for April 9, 2026
+commits:
+  moosestack: c9b96cad2d350099654adbe637ab79dcc4e93a3a
+  commercial: 7a2eb65c7ca3bbdb054c8e3cab6473199a2bbf40
+  registry: b617893ae7b34b0b6d88ebeb4dc1a78813037213
+---
+
+import { Callout } from "@/components/mdx";
+
+# April 9, 2026
+
+`moose generate migration` now interactively confirms renames, destructive changes, and backfill SQL before saving. The 514 CLI adds `--from-table` cross-version seeding, auto-detects project and branch for `deployment redeploy` and `logs query`, and cleans up error messages across the board.
+
+<Callout type="info" title="Highlights">
+* **New:** Interactive migration prompts for rename, destructive, and backfill confirmation
+* **New:** `514 clickhouse seed --from-table` for cross-version table seeding
+* **New:** Environment variable change notifications on branch pages
+* **Improved:** `514 deployment redeploy` and `514 logs query` auto-detect project and branch
+* **Improved:** Cleaner CLI error messages — no more raw gRPC status dumps
+</Callout>
+
+## Moose
+
+### New Features
+
+**Interactive migration prompts for `moose generate migration`** ([@phiSgr](https://github.com/phiSgr))
+  `moose generate migration` now walks you through each migration step interactively. The CLI detects potential renames (vs. drop-and-create), asks for confirmation on destructive operations, and lets you review auto-generated backfill SQL before saving. New flags `--yes-destructive`, `--yes-rename`, and `--no-auto-backfill-sql` give full control in CI/CD pipelines.
+
+  ```bash
+  # Interactive (default) — prompts for each decision
+  moose generate migration
+
+  # Non-interactive — accept destructive changes and renames automatically
+  moose generate migration --yes-destructive --yes-rename
+
+  # Skip auto-generated backfill SQL
+  moose generate migration --no-auto-backfill-sql
+  ```
+
+  Docs: [Planned Migrations](/moosestack/migrate/planned-migrations)
+
+### Improvements
+
+- `moose init` no longer requires a `--language` flag — the language is inferred from the template. Template is now a positional argument alongside the project name. ([@callicles](https://github.com/callicles))
+
+### Bug Fixes
+
+- Fix `moose harness init --from-remote` failing when used with templates in nested moose project directories. ([@callicles](https://github.com/callicles))
+- Return 404 instead of 500 for unknown consumption API routes, with a helpful message listing available APIs. ([@03cranec](https://github.com/03cranec))
+- Fix backtick stripping in materialized view and regular view SQL normalization — identifiers containing special characters (e.g. hyphens) now preserve their backtick quoting, preventing invalid SQL during migration comparison. ([@514Ben](https://github.com/514Ben))
+
+## Fiveonefour Hosting
+
+### New Features
+
+**`514 clickhouse seed --from-table` for cross-version seeding** ([@LucioFranco](https://github.com/LucioFranco))
+  A new `--from-table` flag on `514 clickhouse seed` lets you seed a target table from a differently-named source table. This is useful when table names change between schema versions and you need to migrate data from an older table into the new one.
+
+  ```bash
+  # Seed "events_v2" from the old "events" table in production
+  514 clickhouse seed events_v2 --from-table events --limit 10000
+  ```
+
+  Docs: [Branch Data Seeding](/hosting/workflow/branch-data-seeding)
+
+**Environment variable change notifications** ([@groy-514](https://github.com/groy-514))
+  Branch pages now display a notification banner when environment variables have been modified since the last deployment, with a call-to-action to redeploy. This helps catch missed redeployments after config changes.
+
+### Improvements
+
+- `514 deployment redeploy` now auto-detects project and branch from the linked repo and current git branch when no deploy ID is provided. ([@LucioFranco](https://github.com/LucioFranco))
+- `514 logs query` auto-detects project and branch from linked repo context, removing the need to pass explicit flags for common workflows. ([@LucioFranco](https://github.com/LucioFranco))
+- `514 clickhouse query` now enforces read-only mode, preventing accidental writes through the CLI query interface. ([@onelesd](https://github.com/onelesd))
+- CLI error messages no longer expose raw gRPC status details — errors now show clean, user-friendly messages. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+
+### Bug Fixes
+
+- Fix `514 env list` not showing platform environment variables when using the latest deployment. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Fix CLI URLs pointing to incorrect domains and web app route paths in `514 link` and authentication commands. ([@LucioFranco](https://github.com/LucioFranco))
+- Fix creating a branch manually not redirecting to the new branch page. ([@groy-514](https://github.com/groy-514))
