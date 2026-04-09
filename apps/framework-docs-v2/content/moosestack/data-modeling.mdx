@@ -421,17 +421,27 @@ pipeline = IngestPipeline[CompositeShared]("composite_shared", IngestPipelineCon
 
 ### Adding Table Constraints
 
-You can configure constraints on MergeTree-family ClickHouse tables to enforce data integrity.
+You can attach **ClickHouse table-level constraints** to an `OlapTable`
+or to the **`table`** portion of an `IngestPipeline` config (when `table` is an object).
 
-#### The `TableConstraint` Interface
+#### The `TableConstraint` type
 
-Constraints are defined using the `TableConstraint` interface:
+Constraints are defined using the `TableConstraint` type:
 
-- `name` (string): The identifier for the constraint.
-- `expression` (string): The ClickHouse SQL expression to evaluate.
-- `type` (string): The type of constraint. Allowed values are `"CHECK"` or `"ASSUME"`.
+| Field | Type | Purpose |
+| ----- | ---- | ------- |
+| `name` | `string` | Unique constraint name in ClickHouse. |
+| `expression` | `string` | SQL predicate (what appears inside the constraint body in DDL). |
+| `type` | `"CHECK"` \| `"ASSUME"` | Constraint kind (see below). |
 
-*Compatibility Note: Table constraints are fully supported in both standalone `OlapTable` definitions and when used inside `IngestPipeline` configurations.*
+In TypeScript this is the `TableConstraint` interface from `@514labs/moose-lib`. In Python it is `OlapConfig.TableConstraint` (nested class on `OlapConfig`).
+
+##### `type`: `CHECK` vs `ASSUME`
+
+- **`CHECK`** — ClickHouse **validates** this predicate on **INSERT** (and similar write paths) **when the engine applies constraint checking** for that table. If validation does not apply (for example, read-only or external engines where you never insert into that table), the constraint may still appear in DDL but has nothing to enforce at insert time.
+- **`ASSUME`** — **Optimizer-only**: ClickHouse **does not** enforce this on insert. It tells the planner that the predicate always holds so it may rewrite queries (e.g. replace expressions with materialized columns). If the data violates the assumption, **query results can be wrong**; use only when you are sure the property holds.
+
+#### `OlapTable` example
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -445,21 +455,20 @@ export interface User {
   name_len: number;
 }
 
-// Defining constraints
 const ageConstraint: TableConstraint = {
   name: "valid_age",
   expression: "age >= 0",
-  type: "CHECK"
+  type: "CHECK",
 };
 
 const nameLenConstraint: TableConstraint = {
   name: "assume_name_len",
   expression: "length(name) = name_len",
-  type: "ASSUME"
+  type: "ASSUME",
 };
 
 export const UserTable = new OlapTable<User>("User", {
-  constraints: [ageConstraint, nameLenConstraint]
+  constraints: [ageConstraint, nameLenConstraint],
 });
 ```
   </LanguageTabContent>
@@ -473,39 +482,105 @@ class User(MooseModel):
     age: int
     name_len: int
 
-# Defining constraints via OlapConfig.TableConstraint
 age_constraint = OlapConfig.TableConstraint(
     name="valid_age",
     expression="age >= 0",
-    type="CHECK"
+    type="CHECK",
 )
 
 name_len_constraint = OlapConfig.TableConstraint(
     name="assume_name_len",
     expression="length(name) = name_len",
-    type="ASSUME"
+    type="ASSUME",
 )
 
 UserTable = OlapTable(
     User,
     OlapConfig(
         engine=MergeTreeEngine(),
-        constraints=[age_constraint, name_len_constraint]
-    )
+        constraints=[age_constraint, name_len_constraint],
+    ),
 )
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.
+#### `IngestPipeline` example
 
-In the example above, `ASSUME CONSTRAINT` is used to assert that the `length(name)` function always equals the value of the `name_len` column. This means that whenever `length(name)` is called in a query, ClickHouse can replace it with `name_len`, which should be faster because it avoids calling the `length()` function.
+Pass constraints on the **`table`** key alongside engine and `orderByFields` / `orderByExpression` as usual:
 
-Then, when executing a query like `SELECT name FROM User WHERE length(name) < 5;`, ClickHouse can optimize it to `SELECT name FROM User WHERE name_len < 5;` because of the `ASSUME CONSTRAINT`. This can make the query run faster because it avoids calculating the length of name for each row.
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/datamodels/events_pipeline.ts"
+import {
+  Key,
+  IngestPipeline,
+  ClickHouseEngines,
+  TableConstraint,
+} from "@514labs/moose-lib";
 
-**Note**: `ASSUME CONSTRAINT` does not enforce the constraint, it merely informs the optimizer that the constraint holds true. If the constraint is not actually true, the results of the queries may be incorrect. Therefore, you should only use `ASSUME CONSTRAINT` if you are sure that the constraint is true.
+export interface Event {
+  id: Key<string>;
+  value: number;
+}
 
-**Key Point**: Complex types including nested objects and arrays work consistently across all infrastructure.
+const nonNegative: TableConstraint = {
+  name: "value_non_negative",
+  expression: "value >= 0",
+  type: "CHECK",
+};
+
+export const eventsPipeline = new IngestPipeline<Event>("events", {
+  ingestApi: true,
+  stream: true,
+  table: {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
+    constraints: [nonNegative],
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/datamodels/events_pipeline.py"
+from moose_lib import (
+    IngestPipeline,
+    IngestPipelineConfig,
+    OlapConfig,
+    Key,
+    MergeTreeEngine,
+    MooseModel,
+)
+
+class Event(MooseModel):
+    id: Key[str]
+    value: float
+
+value_non_negative = OlapConfig.TableConstraint(
+    name="value_non_negative",
+    expression="value >= 0",
+    type="CHECK",
+)
+
+events_pipeline = IngestPipeline[Event](
+    "events",
+    IngestPipelineConfig(
+        ingest_api=True,
+        stream=True,
+        table=OlapConfig(
+            engine=MergeTreeEngine(),
+            order_by_fields=["id"],
+            constraints=[value_non_negative],
+        ),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### ASSUME and the query optimizer
+
+For `ASSUME`, ClickHouse may rewrite queries using the declared predicate—for example, if `ASSUME` ties a function to a stored column, filters using the function might be turned into filters on that column. **`ASSUME` does not validate rows on insert**; only **`CHECK`** does, on engines/paths where insert-time checking applies.
 
 ### ClickHouse-Specific Types (Standalone vs IngestPipeline)
 
