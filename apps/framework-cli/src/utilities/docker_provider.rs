@@ -30,12 +30,6 @@ impl DockerInfraProvider {
             docker_client: DockerClient::new(settings),
         }
     }
-
-    /// Access the underlying `DockerClient` for operations not covered by
-    /// the trait (e.g. `buildx`, `tail_container_logs`, compose file creation).
-    pub fn docker_client(&self) -> &DockerClient {
-        &self.docker_client
-    }
 }
 
 impl InfraProvider for DockerInfraProvider {
