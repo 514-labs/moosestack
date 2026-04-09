@@ -22,6 +22,10 @@ Branch seeding runs automatically — no setup needed. Every table discovered in
 
 Seeding runs automatically during the `INITIALIZE_BRANCH_SCHEMA` phase of the first deployment. Subsequent pushes to the same branch do not re-seed.
 
+## Externally Managed Tables
+
+Seeding copies tables from the parent branch's infrastructure map, including [externally managed](/moosestack/olap/external-tables) tables. This ensures managed resources that depend on those tables work immediately. After seeding, MooseStack applies its own schema changes but leaves externally managed tables as-is.
+
 ## Deployment Status
 
 During seeding, your deployment progresses through these statuses:
