@@ -915,11 +915,32 @@ pub fn build_dockerfile(
             }
         }
     } else if project.docker_config.custom_dockerfile {
-        // Custom Dockerfile build - use project root as build context
-        info!(
-            "Using custom Dockerfile at {:?} with project root as build context",
-            file_path
-        );
+        // Custom Dockerfile build
+        // Resolve build context: use context_path if set, otherwise project root
+        let build_context = if let Some(ref ctx_path) = project.docker_config.context_path {
+            let resolved = project.project_location.join(ctx_path);
+            let canonical = resolved.canonicalize().map_err(|err| {
+                error!("Failed to resolve context_path '{}': {}", ctx_path, err);
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        format!("to resolve docker_config.context_path '{ctx_path}'"),
+                    ),
+                    err,
+                )
+            })?;
+            info!(
+                "Using custom Dockerfile at {:?} with context_path resolved to {:?}",
+                file_path, canonical
+            );
+            canonical
+        } else {
+            info!(
+                "Using custom Dockerfile at {:?} with project root as build context",
+                file_path
+            );
+            project.project_location.clone()
+        };
 
         // For custom Dockerfile builds, copy versions directory to project root
         // so the Dockerfile can find it at ./versions
@@ -952,10 +973,19 @@ pub fn build_dockerfile(
             false
         };
 
-        (project.project_location.clone(), file_path, copied_versions)
+        (build_context, file_path, copied_versions)
     } else {
         // Standard build
         (internal_dir.join("packager"), file_path, false)
+    };
+
+    // When using context_path, Docker needs -f to find the Dockerfile
+    let dockerfile_for_buildx = if project.docker_config.custom_dockerfile
+        && project.docker_config.context_path.is_some()
+    {
+        Some(dockerfile_path.clone())
+    } else {
+        None
     };
 
     let build_all = is_amd64 == is_arm64;
@@ -983,7 +1013,7 @@ pub fn build_dockerfile(
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
                     release_channel,
-                    None,
+                    dockerfile_for_buildx.as_deref(),
                 )
             },
             !project.is_production,
@@ -1025,7 +1055,7 @@ pub fn build_dockerfile(
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
                     release_channel,
-                    None,
+                    dockerfile_for_buildx.as_deref(),
                 )
             },
             !project.is_production,
