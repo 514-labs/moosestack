@@ -1801,6 +1801,7 @@ fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailu
                     let conflicts = MigrationHistory::detect_conflicts(
                         &[files[i].clone()],
                         &[files[j].clone()],
+                        default_database,
                     );
                     for conflict in &conflicts {
                         conflict_count += 1;
