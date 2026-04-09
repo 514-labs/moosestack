@@ -17,6 +17,9 @@ use std::thread::sleep;
 use std::time::Duration;
 use tracing::info;
 
+/// Relative path from project root to the native infrastructure directory.
+pub const NATIVE_INFRA_DIR: &str = ".moose/native_infra";
+
 /// Fully native infrastructure provider: ClickHouse + Temporal as local processes.
 ///
 /// No Docker dependency. ClickHouse and Temporal run as native child processes.
@@ -326,6 +329,20 @@ pub fn kill_pid_file(pid_path: &Path) {
     }
 
     let _ = std::fs::remove_file(pid_path);
+}
+
+/// Kill all native infrastructure processes for a project via their PID files.
+///
+/// Safe to call even when no native processes were started — missing PID files
+/// are silently ignored.
+pub fn kill_native_processes(project: &Project) {
+    let native_dir = project.project_location.join(NATIVE_INFRA_DIR);
+    if !native_dir.exists() {
+        return;
+    }
+    info!("Killing native infrastructure processes via PID files");
+    kill_pid_file(&clickhouse::pid_file_path(project));
+    kill_pid_file(&temporal::pid_file_path(project));
 }
 
 #[cfg(test)]

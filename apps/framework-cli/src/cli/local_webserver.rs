@@ -3114,14 +3114,8 @@ async fn shutdown(
         }
 
         // Step 5: Kill native processes if --dockerless mode was used.
-        // ClickHouse/Temporal are killed via PID files (only present when NativeInfraProvider started them).
-        let native_infra_dir = project.project_location.join(".moose/native_infra");
-        let ch_pid_path = native_infra_dir.join("clickhouse.pid");
-        let temporal_pid_path = native_infra_dir.join("temporal.pid");
-        if project.dev.dockerless && native_infra_dir.exists() {
-            info!("Killing native infrastructure processes via PID files");
-            crate::utilities::native_infra::kill_pid_file(&ch_pid_path);
-            crate::utilities::native_infra::kill_pid_file(&temporal_pid_path);
+        if project.dev.dockerless {
+            crate::utilities::native_infra::kill_native_processes(project);
         }
     }
 
