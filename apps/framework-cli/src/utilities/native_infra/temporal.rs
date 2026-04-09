@@ -87,7 +87,8 @@ pub fn native_data_dir(project: &Project) -> PathBuf {
 pub fn pid_file_path(project: &Project) -> PathBuf {
     project
         .project_location
-        .join(".moose/native_infra/temporal.pid")
+        .join(super::NATIVE_INFRA_DIR)
+        .join("temporal.pid")
 }
 
 /// Construct the platform-specific download URL for Temporal CLI.

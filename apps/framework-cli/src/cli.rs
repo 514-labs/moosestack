@@ -466,6 +466,9 @@ async fn run_local_infrastructure_with_timeout(
                 • Restart Docker Desktop (if using Desktop)\n\
                 • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
                 • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • Dockerless mode: check logs in .moose/native_infra/\n\
+                • Docker mode: check if Docker is running with `docker info`\n\
+                • Docker mode: stop existing containers with `docker stop $(docker ps -aq)`\n\
                 • If the issue persists, you can increase the timeout in your Moose configuration:\n\
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\
@@ -1153,21 +1156,12 @@ pub async fn top_command_handler(
 
             check_project_name(&project_arc.name())?;
 
+            // Kill native infrastructure processes first (before Docker cleanup which
+            // may fail if Docker is unavailable, e.g. when using --dockerless mode).
+            crate::utilities::native_infra::kill_native_processes(&project_arc);
+
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
-
-            // Also kill any native infrastructure processes started by --dockerless mode.
-            // ClickHouse/Temporal are killed via PID files.
-            let ch_pid = project_arc
-                .project_location
-                .join(".moose/native_infra/clickhouse.pid");
-            let temporal_pid = project_arc
-                .project_location
-                .join(".moose/native_infra/temporal.pid");
-            if ch_pid.exists() || temporal_pid.exists() {
-                crate::utilities::native_infra::kill_pid_file(&ch_pid);
-                crate::utilities::native_infra::kill_pid_file(&temporal_pid);
-            }
 
             wait_for_usage_capture(capture_handle).await;
 
