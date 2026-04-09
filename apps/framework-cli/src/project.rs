@@ -179,6 +179,12 @@ pub struct DockerConfig {
     /// Path to custom Dockerfile (relative to project root)
     #[serde(default = "default_dockerfile_path")]
     pub dockerfile_path: String,
+
+    /// Docker build context path, relative to project root.
+    /// Only used when custom_dockerfile is true.
+    /// Example: "../../.." to use monorepo root as context.
+    #[serde(default)]
+    pub context_path: Option<String>,
 }
 
 impl Default for DockerConfig {
@@ -186,6 +192,7 @@ impl Default for DockerConfig {
         Self {
             custom_dockerfile: false,
             dockerfile_path: default_dockerfile_path(),
+            context_path: None,
         }
     }
 }
