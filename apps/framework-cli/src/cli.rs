@@ -680,6 +680,7 @@ pub async fn top_command_handler(
             yes_all,
             yes_destructive,
             yes_rename,
+            dockerless,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -691,6 +692,9 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
             project.log_payloads = *log_payloads;
+            if *dockerless {
+                project.dev.dockerless = true;
+            }
 
             if *log_payloads {
                 info!("Payload logging enabled");
@@ -719,8 +723,22 @@ pub async fn top_command_handler(
 
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
-                let provider: Box<dyn InfraProvider + Send> =
-                    Box::new(DockerInfraProvider::new(&settings));
+                let provider: Box<dyn InfraProvider + Send> = if *dockerless {
+                    info!("Using native binaries for ClickHouse and Temporal (--dockerless mode)");
+                    Box::new(
+                        crate::utilities::native_infra::NativeInfraProvider::new(&settings)
+                            .map_err(|e| {
+                                RoutineFailure::error(Message {
+                                    action: "Dev".to_string(),
+                                    details: format!(
+                                        "Failed to initialize native infrastructure: {e}"
+                                    ),
+                                })
+                            })?,
+                    )
+                } else {
+                    Box::new(DockerInfraProvider::new(&settings))
+                };
                 run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
@@ -1137,6 +1155,19 @@ pub async fn top_command_handler(
 
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
+
+            // Also kill any native infrastructure processes started by --dockerless mode.
+            // ClickHouse/Temporal are killed via PID files.
+            let ch_pid = project_arc
+                .project_location
+                .join(".moose/native_infra/clickhouse.pid");
+            let temporal_pid = project_arc
+                .project_location
+                .join(".moose/native_infra/temporal.pid");
+            if ch_pid.exists() || temporal_pid.exists() {
+                crate::utilities::native_infra::kill_pid_file(&ch_pid);
+                crate::utilities::native_infra::kill_pid_file(&temporal_pid);
+            }
 
             wait_for_usage_capture(capture_handle).await;
 
