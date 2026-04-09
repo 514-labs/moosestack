@@ -1021,9 +1021,9 @@ impl OlapDictionary {
             DictionarySource::Table(t) => {
                 let mut params = vec![];
                 if let Some(ref db) = t.database {
-                    params.push(format!("DB '{}'", db));
+                    params.push(format!("DB '{}'", escape_clickhouse_string(db)));
                 }
-                params.push(format!("TABLE '{}'", t.table));
+                params.push(format!("TABLE '{}'", escape_clickhouse_string(&t.table)));
                 if let Some(ref w) = t.where_clause {
                     params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
                 }
@@ -1047,10 +1047,12 @@ impl OlapDictionary {
             }
             DictionarySource::External(ext) => match ext {
                 ExternalDictionarySource::Http(h) => {
-                    let mut params =
-                        vec![format!("URL '{}'", h.url), format!("FORMAT '{}'", h.format)];
+                    let mut params = vec![
+                        format!("URL '{}'", escape_clickhouse_string(&h.url)),
+                        format!("FORMAT '{}'", escape_clickhouse_string(&h.format)),
+                    ];
                     if let Some(ref m) = h.method {
-                        params.push(format!("METHOD '{}'", m));
+                        params.push(format!("METHOD '{}'", escape_clickhouse_string(m)));
                     }
                     if let Some(ref w) = h.where_clause {
                         params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
