@@ -983,6 +983,7 @@ pub fn build_dockerfile(
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
                     release_channel,
+                    None,
                 )
             },
             !project.is_production,
@@ -1024,6 +1025,7 @@ pub fn build_dockerfile(
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
                     release_channel,
+                    None,
                 )
             },
             !project.is_production,

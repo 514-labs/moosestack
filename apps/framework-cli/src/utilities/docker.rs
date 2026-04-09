@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{error, info, warn};
@@ -690,6 +690,7 @@ system.forceSearchAttributesCacheRefreshOnRead:
     /// * `architecture` - The Docker platform architecture (e.g., "linux/amd64")
     /// * `binarylabel` - The target triple (e.g., "x86_64-unknown-linux-gnu")
     /// * `channel` - The release channel ("stable" or "dev")
+    /// * `dockerfile_path` - Optional path to a Dockerfile (passed as `-f <path>`); if `None`, Docker uses the default `Dockerfile` in the build context
     pub fn buildx(
         &self,
         directory: &PathBuf,
@@ -697,10 +698,10 @@ system.forceSearchAttributesCacheRefreshOnRead:
         architecture: &str,
         binarylabel: &str,
         channel: &str,
+        dockerfile_path: Option<&Path>,
     ) -> std::io::Result<()> {
-        let mut child = self
-            .create_command()
-            .current_dir(directory)
+        let mut cmd = self.create_command();
+        cmd.current_dir(directory)
             .arg("buildx")
             .arg("build")
             .arg("--build-arg")
@@ -712,10 +713,16 @@ system.forceSearchAttributesCacheRefreshOnRead:
             .arg("--load")
             .arg("--no-cache")
             .arg("-t")
-            .arg(format!("moose-df-deployment-{binarylabel}:latest"))
+            .arg(format!("moose-df-deployment-{binarylabel}:latest"));
+
+        if let Some(path) = dockerfile_path {
+            cmd.arg("-f").arg(path);
+        }
+
+        let mut child = cmd
             .arg(".")
-            .stdout(Stdio::inherit())  // ✅ Stream stdout directly to console
-            .stderr(Stdio::inherit())  // ✅ Stream stderr directly to console
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()?;
 
         let status = child.wait()?;
