@@ -171,6 +171,7 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Execute OLAP changes via the InfraDelta path.
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Separated from `execute_changes` because RLS bootstrap
 /// must run on every startup regardless of whether OLAP schema changed.

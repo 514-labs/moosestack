@@ -226,6 +226,17 @@ pub struct ProjectFeatures {
     /// Whether Analytics APIs server is enabled
     #[serde(default = "_true")]
     pub apis: bool,
+
+    /// Whether to use the delta-based migration system.
+    ///
+    /// When enabled:
+    /// - Dev mode auto-generates `./migrations/pending.yaml` on every change
+    /// - `moose generate migration` produces delta YAML files
+    /// - `moose migrate` applies delta files
+    ///
+    /// When disabled (default): the legacy plan.yaml migration system is used.
+    #[serde(default)]
+    pub migrate_with_deltas: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -235,6 +246,7 @@ impl Default for ProjectFeatures {
             workflows: false,
             olap: true,
             apis: true,
+            migrate_with_deltas: false,
         }
     }
 }

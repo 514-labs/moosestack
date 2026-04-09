@@ -254,6 +254,69 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
     }
 }
 
+/// Classify risk from a list of `InfraDelta`s.
+///
+/// This is the delta-native equivalent of [`classify_plan_risk`]. It scans
+/// deltas for destructive operations (table drops, recreates, column drops,
+/// view/MV drops) and returns the same `PlanRisk` structure.
+///
+/// Used when the migration is generated from compacted dev log deltas
+/// rather than from raw `InfraChanges`.
+pub fn classify_risk_from_deltas(
+    deltas: &[crate::framework::core::infra_delta::InfraDelta],
+) -> PlanRisk {
+    use crate::framework::core::infra_delta::InfraDelta;
+
+    let mut destructive_changes = Vec::new();
+
+    for delta in deltas {
+        match delta {
+            InfraDelta::DropTable { table, .. } => {
+                destructive_changes.push(DestructiveChange::TableDrop {
+                    database: table.database.clone(),
+                    table_name_with_suffix: table.name.clone(),
+                    version: table.version.clone(),
+                });
+            }
+            InfraDelta::RecreateTable { before, .. } => {
+                destructive_changes.push(DestructiveChange::TableRecreate {
+                    database: before.database.clone(),
+                    table_name_with_suffix: before.name.clone(),
+                    reason: "schema change requires drop + recreate".to_string(),
+                    version: before.version.clone(),
+                });
+            }
+            InfraDelta::DropTableColumn {
+                table_id,
+                column_name,
+            } => {
+                destructive_changes.push(DestructiveChange::ColumnDrop {
+                    database: None,
+                    table_name_with_suffix: table_id.clone(),
+                    column_name: column_name.clone(),
+                });
+            }
+            InfraDelta::DropMaterializedView { mv } => {
+                destructive_changes.push(DestructiveChange::MaterializedViewDrop {
+                    database: mv.database.clone(),
+                    view_name: mv.name.clone(),
+                });
+            }
+            InfraDelta::DropView { view } => {
+                destructive_changes.push(DestructiveChange::ViewDrop {
+                    database: view.database.clone(),
+                    view_name: view.name.clone(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    PlanRisk {
+        destructive_changes,
+    }
+}
+
 /// Controls whether the confirmation gates auto-approve.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfirmationPolicy {

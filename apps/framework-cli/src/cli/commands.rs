@@ -90,6 +90,13 @@ pub enum Commands {
         /// Required when state_config.storage = "redis"
         #[arg(long)]
         redis_url: Option<String>,
+
+        /// Validate migration files without executing them.
+        /// Checks that the delta sequence is consistent (fold succeeds)
+        /// and detects semantic conflicts between migration files.
+        /// Does not require ClickHouse or Redis.
+        #[arg(long)]
+        validate: bool,
     },
 
     /// View some data from a table or stream

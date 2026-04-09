@@ -625,6 +625,135 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
     println!("  4. Run migrate again");
 }
 
+/// Execute migration from delta files (MigrationHistory).
+///
+/// Loads MigrationHistory from the migrations directory, filters to unapplied
+/// migrations, applies each delta by lowering to AtomicOlapOperations and
+/// executing against ClickHouse, then updates the infrastructure map via fold.
+pub async fn execute_migration_deltas(
+    project: &Project,
+    clickhouse_config: &ClickHouseConfig,
+    current_map: &InfrastructureMap,
+    state_storage: &dyn StateStorage,
+) -> Result<()> {
+    use crate::framework::core::migration_file::MigrationHistory;
+    use std::path::Path;
+
+    let migrations_dir = Path::new("./migrations");
+    if !migrations_dir.exists() {
+        println!("No migrations directory found — nothing to apply");
+        return Ok(());
+    }
+
+    let history = MigrationHistory::load_from_dir(migrations_dir)
+        .map_err(|e| anyhow::anyhow!("Failed to load migration files: {}", e))?;
+
+    if history.is_empty() {
+        println!("No migration files found in ./migrations/");
+        return Ok(());
+    }
+
+    // Filter to unapplied migrations only
+    let applied = state_storage.load_applied_migrations().await?;
+    let unapplied: Vec<_> = history
+        .files
+        .iter()
+        .filter(|f| !applied.contains(&f.id))
+        .collect();
+
+    if unapplied.is_empty() {
+        println!(
+            "All {} migration delta file(s) already applied",
+            history.files.len()
+        );
+        return Ok(());
+    }
+
+    println!(
+        "Found {} migration delta file(s) ({} unapplied)",
+        history.files.len(),
+        unapplied.len()
+    );
+
+    if !project.features.olap {
+        anyhow::bail!(
+            "OLAP must be enabled to apply migrations\n\
+             \n\
+             Add to moose.config.toml:\n\
+             [features]\n\
+             olap = true"
+        );
+    }
+
+    let client = create_client(clickhouse_config.clone());
+    check_ready(&client).await?;
+
+    let mut map = current_map.clone();
+    let default_database = &clickhouse_config.db_name;
+    let is_dev = !project.is_production;
+
+    for file in &unapplied {
+        // Validate parent state hash before applying
+        let current_hash = map.olap_hash();
+        if file.parent_state_hash != current_hash {
+            tracing::warn!(
+                "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'. \
+                 This migration may have been generated against a different base state.",
+                file.id,
+                &file.parent_state_hash[..12.min(file.parent_state_hash.len())],
+                &current_hash[..12.min(current_hash.len())],
+            );
+        }
+
+        println!(
+            "\n▶ Applying migration '{}' ({} delta(s))...",
+            file.id,
+            file.deltas.len()
+        );
+
+        for (idx, delta) in file.deltas.iter().enumerate() {
+            println!("  [{}/{}] {}", idx + 1, file.deltas.len(), delta.summary());
+
+            // Lower delta to atomic operations using current map state
+            let ops = delta.to_atomic_operations(&map, default_database);
+            for op in &ops {
+                let serializable = op.to_minimal();
+                if let Err(e) = crate::infrastructure::olap::clickhouse::execute_atomic_operation(
+                    default_database,
+                    &serializable,
+                    &client,
+                    is_dev,
+                )
+                .await
+                {
+                    println!(
+                        "\n❌ Failed at delta {}/{} in migration '{}'",
+                        idx + 1,
+                        file.deltas.len(),
+                        file.id
+                    );
+                    return Err(e.into());
+                }
+            }
+
+            // Apply delta to map (fold step)
+            delta
+                .apply(&mut map, default_database)
+                .map_err(|e| anyhow::anyhow!("Failed to apply delta to map: {}", e))?;
+        }
+
+        // Record this migration as applied
+        state_storage.store_applied_migration(&file.id).await?;
+        println!("  ✓ Migration '{}' applied successfully", file.id);
+    }
+
+    // Store the final map state
+    state_storage.store_infrastructure_map(&map).await?;
+
+    println!("\n✓ All migration deltas applied successfully");
+    Ok(())
+}
+
 /// Execute migration plan from CLI (moose migrate command)
 pub async fn execute_migration(
     project: &Project,
@@ -712,26 +841,47 @@ pub async fn execute_migration(
             current_infra_map
         };
 
-        let current_tables = &current_infra_map.tables;
-
-        // Execute migration
-        execute_migration_plan(
-            project,
-            clickhouse_config,
-            current_tables,
-            &target_infra_map,
-            state_storage.as_ref(),
-        )
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "\nMigration".to_string(),
-                    "Failed to execute migration plan".to_string(),
-                ),
-                e,
+        if project.features.migrate_with_deltas {
+            // Delta-based migration path
+            execute_migration_deltas(
+                project,
+                clickhouse_config,
+                &current_infra_map,
+                state_storage.as_ref(),
             )
-        })
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "\nMigration".to_string(),
+                        "Failed to execute migration deltas".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+        } else {
+            // Legacy plan.yaml migration path
+            let current_tables = &current_infra_map.tables;
+            execute_migration_plan(
+                project,
+                clickhouse_config,
+                current_tables,
+                &target_infra_map,
+                state_storage.as_ref(),
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "\nMigration".to_string(),
+                        "Failed to execute migration plan".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+        }
+
+        Ok(())
     }
     .await;
 
