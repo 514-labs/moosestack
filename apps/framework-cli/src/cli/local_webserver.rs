@@ -3525,8 +3525,10 @@ pub struct InfraMapResponse {
 /// persisted map's filter during reconciliation.
 ///
 /// Supported params (all comma-separated):
-///   `source_db`         – the caller's default database, used to re-prefix table IDs
-///   `extra_table_ids`   – table IDs to add to the filter
+///   `source_db`                – caller's default database
+///   `extra_table_ids`          – table IDs to add to the filter
+///   `extra_default_table_ids`  – subset of `extra_table_ids` that came from
+///                                tables using the caller's default database
 ///   `extra_sql_ids`     – SQL resource IDs
 ///   `extra_mv_ids`      – materialized view IDs
 ///   `extra_view_ids`    – view IDs
@@ -3556,6 +3558,7 @@ fn parse_extra_reconciliation_filter(
     }
 
     let table_ids = csv_set(&params, "extra_table_ids");
+    let default_table_ids = csv_set(&params, "extra_default_table_ids");
     let sql_resource_ids = csv_set(&params, "extra_sql_ids");
     let materialized_view_ids = csv_set(&params, "extra_mv_ids");
     let view_ids = csv_set(&params, "extra_view_ids");
@@ -3579,7 +3582,7 @@ fn parse_extra_reconciliation_filter(
     };
 
     if let Some(source_db) = params.get("source_db") {
-        filter.reprefix_table_ids(source_db, server_default_db);
+        filter.reprefix_table_ids_with_allowlist(source_db, server_default_db, &default_table_ids);
     }
 
     Some(filter)
@@ -4151,5 +4154,16 @@ mod tests {
 
         // Leading slash edge case
         assert_eq!(find_api_name("/api/1", &apis), "/api/1");
+    }
+
+    #[test]
+    fn test_parse_extra_reconciliation_filter_only_reprefixes_default_db_ids() {
+        let query = "source_db=prod&extra_table_ids=prod_users_1_0,prod_eu_orders_1_0&extra_default_table_ids=prod_users_1_0";
+        let filter = parse_extra_reconciliation_filter(Some(query), "staging")
+            .expect("filter should be parsed");
+
+        assert!(filter.table_ids.contains("staging_users_1_0"));
+        assert!(filter.table_ids.contains("prod_eu_orders_1_0"));
+        assert_eq!(filter.table_ids.len(), 2);
     }
 }

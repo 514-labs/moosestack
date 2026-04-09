@@ -99,6 +99,37 @@ impl ReconciliationFilter {
             })
             .collect();
     }
+
+    /// Re-prefix only table IDs listed in `source_default_table_ids`.
+    ///
+    /// This is used when the caller and server have different `default_database` values.
+    /// The allowlist must contain IDs that originated from tables with `database = None`
+    /// on the caller side. Explicit cross-database tables are intentionally excluded.
+    pub fn reprefix_table_ids_with_allowlist(
+        &mut self,
+        source_db: &str,
+        target_db: &str,
+        source_default_table_ids: &HashSet<String>,
+    ) {
+        if source_db == target_db || source_db.is_empty() || source_default_table_ids.is_empty() {
+            return;
+        }
+        let prefix = format!("{source_db}_");
+
+        self.table_ids = self
+            .table_ids
+            .iter()
+            .map(|id| {
+                if !source_default_table_ids.contains(id) {
+                    return id.clone();
+                }
+                match id.strip_prefix(&prefix) {
+                    Some(rest) => format!("{target_db}_{rest}"),
+                    None => id.clone(),
+                }
+            })
+            .collect();
+    }
 }
 
 /// Errors that can occur during the planning process.
@@ -1920,5 +1951,25 @@ mod tests {
         filter.reprefix_table_ids("local", "prod");
         assert!(filter.table_ids.contains("prod_users_0_0"));
         assert!(filter.table_ids.contains("other_db_orders_0_0"));
+    }
+
+    #[test]
+    fn reprefix_table_ids_with_allowlist_only_reprefixes_default_db_tables() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "prod_users_1_0".to_string(),
+                "prod_eu_orders_1_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        let allowlist = HashSet::from(["prod_users_1_0".to_string()]);
+
+        filter.reprefix_table_ids_with_allowlist("prod", "staging", &allowlist);
+
+        assert!(filter.table_ids.contains("staging_users_1_0"));
+        assert!(filter.table_ids.contains("prod_eu_orders_1_0"));
     }
 }
