@@ -774,4 +774,47 @@ pub mod tests {
             "Deserializing an empty [migration_config] must not auto-allow destructive changes"
         );
     }
+
+    #[test]
+    fn docker_config_default_has_no_context_path() {
+        let config = DockerConfig::default();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_without_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_with_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            context_path = "../../.."
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert_eq!(config.context_path.as_deref(), Some("../../.."));
+    }
+
+    #[test]
+    fn docker_config_deserializes_empty() {
+        let config: DockerConfig = toml::from_str("").unwrap();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
+    }
 }

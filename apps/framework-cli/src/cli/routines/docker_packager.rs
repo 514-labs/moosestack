@@ -62,6 +62,39 @@ fn resolve_dockerfile_path(project: &Project, internal_dir: &Path) -> PathBuf {
     }
 }
 
+/// Resolves the Docker build context directory for a custom Dockerfile build.
+///
+/// When `context_path` is set, resolves it relative to `project_location` and
+/// canonicalizes the result. Returns `project_location` when `context_path` is None.
+fn resolve_custom_build_context(
+    project_location: &Path,
+    context_path: Option<&str>,
+) -> Result<PathBuf, std::io::Error> {
+    match context_path {
+        Some(ctx_path) => {
+            let resolved = project_location.join(ctx_path);
+            resolved.canonicalize()
+        }
+        None => Ok(project_location.to_path_buf()),
+    }
+}
+
+/// Determines whether to pass a `-f` flag to `docker buildx` for the Dockerfile location.
+///
+/// Returns `Some(dockerfile_path)` when using a custom Dockerfile with `context_path`,
+/// since the Dockerfile is no longer at the build context root.
+fn resolve_dockerfile_for_buildx(
+    custom_dockerfile: bool,
+    context_path: &Option<String>,
+    dockerfile_path: &Path,
+) -> Option<PathBuf> {
+    if custom_dockerfile && context_path.is_some() {
+        Some(dockerfile_path.to_path_buf())
+    } else {
+        None
+    }
+}
+
 /// Checks if we should skip Dockerfile generation to preserve user customizations
 fn should_skip_dockerfile_generation(project: &Project, target_path: &Path) -> bool {
     // If custom_dockerfile is enabled and the target file already exists,
@@ -917,30 +950,29 @@ pub fn build_dockerfile(
     } else if project.docker_config.custom_dockerfile {
         // Custom Dockerfile build
         // Resolve build context: use context_path if set, otherwise project root
-        let build_context = if let Some(ref ctx_path) = project.docker_config.context_path {
-            let resolved = project.project_location.join(ctx_path);
-            let canonical = resolved.canonicalize().map_err(|err| {
-                error!("Failed to resolve context_path '{}': {}", ctx_path, err);
-                RoutineFailure::new(
-                    Message::new(
-                        "Failed".to_string(),
-                        format!("to resolve docker_config.context_path '{ctx_path}'"),
-                    ),
-                    err,
-                )
-            })?;
-            info!(
-                "Using custom Dockerfile at {:?} with context_path resolved to {:?}",
-                file_path, canonical
-            );
-            canonical
-        } else {
-            info!(
-                "Using custom Dockerfile at {:?} with project root as build context",
-                file_path
-            );
-            project.project_location.clone()
-        };
+        let build_context = resolve_custom_build_context(
+            &project.project_location,
+            project.docker_config.context_path.as_deref(),
+        )
+        .map_err(|err| {
+            let ctx_path = project
+                .docker_config
+                .context_path
+                .as_deref()
+                .unwrap_or(".");
+            error!("Failed to resolve context_path '{}': {}", ctx_path, err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    format!("to resolve docker_config.context_path '{ctx_path}'"),
+                ),
+                err,
+            )
+        })?;
+        info!(
+            "Using custom Dockerfile at {:?} with build context {:?}",
+            file_path, build_context
+        );
 
         // For custom Dockerfile builds, copy versions directory to project root
         // so the Dockerfile can find it at ./versions
@@ -980,13 +1012,11 @@ pub fn build_dockerfile(
     };
 
     // When using context_path, Docker needs -f to find the Dockerfile
-    let dockerfile_for_buildx = if project.docker_config.custom_dockerfile
-        && project.docker_config.context_path.is_some()
-    {
-        Some(dockerfile_path.clone())
-    } else {
-        None
-    };
+    let dockerfile_for_buildx = resolve_dockerfile_for_buildx(
+        project.docker_config.custom_dockerfile,
+        &project.docker_config.context_path,
+        &dockerfile_path,
+    );
 
     let build_all = is_amd64 == is_arm64;
 
@@ -1501,4 +1531,64 @@ fn create_standard_typescript_dockerfile(
         "Successfully".to_string(),
         "created dockerfile".to_string(),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn resolve_custom_build_context_without_context_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_location = temp_dir.path();
+
+        let result = resolve_custom_build_context(project_location, None).unwrap();
+        assert_eq!(result, project_location);
+    }
+
+    #[test]
+    fn resolve_custom_build_context_with_relative_path() {
+        let temp_dir = TempDir::new().unwrap();
+        // Create nested structure: temp/services/analytics/
+        let analytics_dir = temp_dir.path().join("services").join("analytics");
+        fs::create_dir_all(&analytics_dir).unwrap();
+
+        // context_path = "../.." should resolve to temp_dir root
+        let result = resolve_custom_build_context(&analytics_dir, Some("../..")).unwrap();
+        assert_eq!(result, temp_dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_custom_build_context_with_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let result = resolve_custom_build_context(temp_dir.path(), Some("nonexistent/dir"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_dockerfile_for_buildx_with_context_path() {
+        let dockerfile = PathBuf::from("/project/Dockerfile");
+        let context_path = Some("../../..".to_string());
+
+        let result = resolve_dockerfile_for_buildx(true, &context_path, &dockerfile);
+        assert_eq!(result, Some(PathBuf::from("/project/Dockerfile")));
+    }
+
+    #[test]
+    fn resolve_dockerfile_for_buildx_without_context_path() {
+        let dockerfile = PathBuf::from("/project/Dockerfile");
+
+        let result = resolve_dockerfile_for_buildx(true, &None, &dockerfile);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn resolve_dockerfile_for_buildx_not_custom() {
+        let dockerfile = PathBuf::from("/project/Dockerfile");
+        let context_path = Some("../../..".to_string());
+
+        let result = resolve_dockerfile_for_buildx(false, &context_path, &dockerfile);
+        assert!(result.is_none());
+    }
 }
