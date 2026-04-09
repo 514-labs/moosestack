@@ -33,15 +33,6 @@ pub enum OlapChangesError {
     /// should have been blocked earlier.
     #[error("Lifecycle policy violations detected: {}", format_violations(.0))]
     LifecycleViolation(Vec<LifecycleViolation>),
-
-    /// Delta fold failed after DDL execution succeeded.
-    /// The database has been modified but the in-memory map is inconsistent.
-    /// This indicates a bug in the delta's `apply()` logic.
-    #[error("Delta fold failed after DDL execution: {delta_summary} — {error}")]
-    DeltaFoldFailed {
-        delta_summary: String,
-        error: String,
-    },
 }
 
 fn format_violations(violations: &[LifecycleViolation]) -> String {
@@ -181,65 +172,6 @@ pub async fn execute_changes(
 }
 
 /// Execute OLAP changes via the InfraDelta path.
-///
-/// This is the unified execution model for both dev mode and production:
-/// 1. Converts `OlapChange`s to `InfraDelta`s
-/// 2. Executes the DDL via the existing `order_olap_changes → clickhouse::execute_changes`
-///    pipeline (preserves database creation, cluster validation, dependency ordering)
-/// 3. Applies all deltas to the infrastructure map (fold step)
-///
-/// The map is mutated in place to reflect the post-execution state.
-pub async fn execute_changes_via_deltas(
-    project: &Project,
-    changes: &[OlapChange],
-    current_map: &mut crate::framework::core::infrastructure_map::InfrastructureMap,
-) -> Result<(), OlapChangesError> {
-    use crate::framework::core::infra_delta::olap_changes_to_deltas;
-
-    // LIFECYCLE GUARD
-    let violations = lifecycle_filter::validate_lifecycle_compliance(
-        changes,
-        &project.clickhouse_config.db_name,
-    );
-    if !violations.is_empty() {
-        return Err(OlapChangesError::LifecycleViolation(violations));
-    };
-
-    let default_database = &project.clickhouse_config.db_name;
-
-    // Convert to deltas for the fold
-    let deltas = olap_changes_to_deltas(changes, default_database);
-
-    // Execute DDL via the existing pipeline (handles database creation,
-    // cluster validation, dependency ordering, teardown-before-setup)
-    let (teardown_plan, setup_plan) = ddl_ordering::order_olap_changes(changes, default_database)?;
-    clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
-
-    // Apply deltas to the map (fold step) — the map now reflects
-    // the post-execution state. This MUST succeed — if the fold disagrees
-    // with the DDL that just executed, the stored map will be inconsistent
-    // with the database, causing wrong diffs on next startup.
-    for delta in &deltas {
-        if let Err(e) = delta.apply(current_map, default_database) {
-            return Err(OlapChangesError::DeltaFoldFailed {
-                delta_summary: delta.summary(),
-                error: e.to_string(),
-            });
-        }
-    }
-
-    // Append to dev migration log (best-effort — don't fail execution on log errors)
-    if let Ok(internal_dir) = project.internal_dir() {
-        let mut log =
-            crate::framework::core::dev_migration_log::DevMigrationLog::load(&internal_dir);
-        if let Err(e) = log.append_and_save(&deltas, &internal_dir) {
-            tracing::warn!("Failed to write dev migration log: {}", e);
-        }
-    }
-
-    Ok(())
-}
-
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Separated from `execute_changes` because RLS bootstrap
 /// must run on every startup regardless of whether OLAP schema changed.

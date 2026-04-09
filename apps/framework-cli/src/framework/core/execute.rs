@@ -66,10 +66,6 @@ pub struct ExecutionContext<'a> {
     pub api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     pub webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     pub metrics: Arc<Metrics>,
-    /// The current OLAP infrastructure map state (pre-changes).
-    /// Used by the delta execution path to fold deltas against.
-    /// If None, the legacy execution path is used instead.
-    pub current_olap_map: Option<InfrastructureMap>,
 }
 
 /// Executes the initial infrastructure changes when the system starts up.
@@ -87,11 +83,10 @@ pub struct ExecutionContext<'a> {
 /// * `ctx` - Execution context containing project, settings, plan, and channels
 ///
 /// # Returns
-/// * `Result<(ProcessRegistries, Option<InfrastructureMap>), ExecutionError>` - The initialized
-///   process registries and optionally the folded OLAP map (if delta execution was used)
+/// * `Result<ProcessRegistries, ExecutionError>` - The initialized process registries or an error
 pub async fn execute_initial_infra_change(
-    mut ctx: ExecutionContext<'_>,
-) -> Result<(ProcessRegistries, Option<InfrastructureMap>), ExecutionError> {
+    ctx: ExecutionContext<'_>,
+) -> Result<ProcessRegistries, ExecutionError> {
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
     if ctx.settings.should_bypass_infrastructure_execution() {
@@ -110,20 +105,7 @@ pub async fn execute_initial_infra_change(
                 olap::bootstrap_rls(ctx.project, &desired_policies).await?;
             }
 
-            if ctx.project.features.migrate_with_deltas {
-                if let Some(ref mut current_map) = ctx.current_olap_map {
-                    olap::execute_changes_via_deltas(
-                        ctx.project,
-                        &ctx.plan.changes.olap_changes,
-                        current_map,
-                    )
-                    .await?;
-                } else {
-                    olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
-                }
-            } else {
-                olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
-            }
+            olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if ctx.project.features.streaming_engine {
@@ -169,7 +151,7 @@ pub async fn execute_initial_infra_change(
 
     workflows::execute_changes(ctx.project, &ctx.plan.changes.workflow_changes).await;
 
-    Ok((process_registries, ctx.current_olap_map))
+    Ok(process_registries)
 }
 
 /// Executes infrastructure changes during runtime (after initial setup).
@@ -201,7 +183,6 @@ pub async fn execute_online_change(
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
     settings: &Settings,
-    current_olap_map: Option<&mut InfrastructureMap>,
 ) -> Result<(), ExecutionError> {
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
@@ -220,20 +201,7 @@ pub async fn execute_online_change(
                 olap::bootstrap_rls(project, &desired_policies).await?;
             }
 
-            if project.features.migrate_with_deltas {
-                if let Some(current_map) = current_olap_map {
-                    olap::execute_changes_via_deltas(
-                        project,
-                        &plan.changes.olap_changes,
-                        current_map,
-                    )
-                    .await?;
-                } else {
-                    olap::execute_changes(project, &plan.changes.olap_changes).await?;
-                }
-            } else {
-                olap::execute_changes(project, &plan.changes.olap_changes).await?;
-            }
+            olap::execute_changes(project, &plan.changes.olap_changes).await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if project.features.streaming_engine {

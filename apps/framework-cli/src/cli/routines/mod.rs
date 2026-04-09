@@ -724,7 +724,10 @@ pub async fn start_development_mode(
 
     let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (process_registry, folded_olap_map) = execute_initial_infra_change(ExecutionContext {
+    // Capture the reconciled map as the dev session baseline for pending migration generation.
+    let dev_baseline = Arc::new(reconciled_map);
+
+    let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
@@ -732,17 +735,12 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
-        current_olap_map: Some(reconciled_map),
     })
     .await?;
 
     let process_registry = Arc::new(RwLock::new(process_registry));
 
-    // Build the stored map: start from target (has non-OLAP fields), merge folded OLAP state
-    let mut stored_map = plan.target_infra_map;
-    if let Some(folded) = folded_olap_map {
-        stored_map.merge_olap_from(&folded);
-    }
+    let stored_map = plan.target_infra_map;
 
     // Create mirrors after infra is set up (databases exist)
     create_external_mirrors(&project, &stored_map, remote_for_mirrors.as_ref()).await;
@@ -750,6 +748,17 @@ pub async fn start_development_mode(
     let openapi_file = openapi(&project, &stored_map).await?;
 
     state_storage.store_infrastructure_map(&stored_map).await?;
+
+    // Generate initial pending migration (best-effort, delta mode only)
+    if project.features.migrate_with_deltas {
+        if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+            &dev_baseline,
+            &stored_map,
+            &project,
+        ) {
+            tracing::warn!("Failed to write pending migration: {}", e);
+        }
+    }
 
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(stored_map)));
@@ -783,6 +792,7 @@ pub async fn start_development_mode(
                 watcher_shutdown_rx,
                 ts_compile_handle,
                 confirmation_policy,
+                dev_baseline.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -799,6 +809,7 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 confirmation_policy,
+                dev_baseline.clone(),
             )?;
         }
     }
@@ -1024,7 +1035,7 @@ pub async fn start_production_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (process_registry, _) = execute_initial_infra_change(ExecutionContext {
+    let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
@@ -1032,7 +1043,6 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
-        current_olap_map: None,
     })
     .await?;
 

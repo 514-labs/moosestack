@@ -230,11 +230,11 @@ pub struct ProjectFeatures {
     /// Whether to use the delta-based migration system.
     ///
     /// When enabled:
-    /// - Dev mode records OLAP deltas to a dev log and folds them into the stored map
-    /// - `moose generate migration` produces delta YAML files (with compaction from dev log)
-    /// - `moose migrate` applies delta files instead of legacy plan.yaml
+    /// - Dev mode auto-generates `./migrations/pending.yaml` on every change
+    /// - `moose generate migration` produces delta YAML files
+    /// - `moose migrate` applies delta files
     ///
-    /// When disabled (default): the legacy snapshot-diff migration system is used.
+    /// When disabled (default): the legacy plan.yaml migration system is used.
     #[serde(default)]
     pub migrate_with_deltas: bool,
 }

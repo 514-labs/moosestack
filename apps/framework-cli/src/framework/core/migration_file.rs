@@ -170,6 +170,9 @@ impl MigrationHistory {
             if path.file_name().and_then(|n| n.to_str()) == Some("plan.yaml") {
                 continue;
             }
+            if path.file_name().and_then(|n| n.to_str()) == Some("pending.yaml") {
+                continue;
+            }
 
             let content = std::fs::read_to_string(&path).map_err(|e| MigrationLoadError {
                 path: path.display().to_string(),

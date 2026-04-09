@@ -293,6 +293,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
     confirmation_policy: ConfirmationPolicy,
+    dev_baseline: Arc<InfrastructureMap>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -447,7 +448,7 @@ async fn watch(
                                             .await;
 
                                             match plan_result {
-                                                Ok((reconciled_map, mut plan_result)) => {
+                                                Ok((_, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
                                                             &project,
@@ -472,7 +473,6 @@ async fn watch(
                                                         processing_coordinator.begin_processing().await;
                                                     let mut project_registries =
                                                         project_registries.write().await;
-                                                    let mut current_olap_map = reconciled_map;
 
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
@@ -484,7 +484,6 @@ async fn watch(
                                                                 &mut project_registries,
                                                                 metrics.clone(),
                                                                 &settings,
-                                                                Some(&mut current_olap_map),
                                                             )
                                                             .await
                                                         })
@@ -492,9 +491,7 @@ async fn watch(
 
                                                     match execution_result {
                                                         Ok(_) => {
-                                                            // Build stored map: target (non-OLAP) + folded OLAP state
-                                                            let mut stored_map = plan_result.target_infra_map;
-                                                            stored_map.merge_olap_from(&current_olap_map);
+                                                            let stored_map = plan_result.target_infra_map;
 
                                                             with_timing_async("Persist State", async {
                                                                 state_storage
@@ -504,6 +501,17 @@ async fn watch(
                                                                     .await
                                                             })
                                                             .await?;
+
+                                                            // Generate pending migration (best-effort, delta mode only)
+                                                            if project.features.migrate_with_deltas {
+                                                                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+                                                                    &dev_baseline,
+                                                                    &stored_map,
+                                                                    &project,
+                                                                ) {
+                                                                    tracing::warn!("Failed to write pending migration: {}", e);
+                                                                }
+                                                            }
 
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
@@ -645,6 +653,7 @@ impl TsCompilationWatcher {
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
         confirmation_policy: ConfirmationPolicy,
+        dev_baseline: Arc<InfrastructureMap>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -661,6 +670,7 @@ impl TsCompilationWatcher {
                 shutdown_rx,
                 initial_handle,
                 confirmation_policy,
+                dev_baseline,
             )
             .await
         };

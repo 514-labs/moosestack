@@ -3610,22 +3610,6 @@ impl InfrastructureMap {
         }
     }
 
-    /// Merge OLAP fields from another map into this one.
-    ///
-    /// Overwrites tables, views, materialized_views, dmv1_views,
-    /// select_row_policies, and sql_resources with the values from `olap_source`.
-    /// Non-OLAP fields (topics, APIs, processes, etc.) are left unchanged.
-    ///
-    /// Used to combine the delta-folded OLAP state with the target map's non-OLAP fields.
-    pub fn merge_olap_from(&mut self, olap_source: &InfrastructureMap) {
-        self.tables = olap_source.tables.clone();
-        self.views = olap_source.views.clone();
-        self.materialized_views = olap_source.materialized_views.clone();
-        self.dmv1_views = olap_source.dmv1_views.clone();
-        self.select_row_policies = olap_source.select_row_policies.clone();
-        self.sql_resources = olap_source.sql_resources.clone();
-    }
-
     /// Compute a deterministic SHA-256 hash of the OLAP portion of this infrastructure map.
     ///
     /// The hash covers: tables, views, materialized_views, dmv1_views,
