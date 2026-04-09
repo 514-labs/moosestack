@@ -75,13 +75,15 @@ impl InfraProvider for NativeInfraProvider {
                 "Native ClickHouse started",
                 || {
                     let mut child = clickhouse::start_command(&ch_binary, &ch_config)?;
-                    if let Some(pid) = child.id() {
-                        if let Err(e) =
-                            write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
-                        {
-                            let _ = child.start_kill();
-                            return Err(anyhow::anyhow!("{}", e));
-                        }
+                    let pid = child.id().ok_or_else(|| {
+                        let _ = child.start_kill();
+                        anyhow::anyhow!("ClickHouse process exited immediately after spawn")
+                    })?;
+                    if let Err(e) =
+                        write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
+                    {
+                        let _ = child.start_kill();
+                        return Err(anyhow::anyhow!("{}", e));
                     }
                     Ok::<(), anyhow::Error>(())
                 },
@@ -108,13 +110,15 @@ impl InfraProvider for NativeInfraProvider {
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
                     let mut child = temporal::start_command(&temporal_binary, project)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    if let Some(pid) = child.id() {
-                        if let Err(e) =
-                            write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
-                        {
-                            let _ = child.start_kill();
-                            return Err(anyhow::anyhow!("{}", e));
-                        }
+                    let pid = child.id().ok_or_else(|| {
+                        let _ = child.start_kill();
+                        anyhow::anyhow!("Temporal process exited immediately after spawn")
+                    })?;
+                    if let Err(e) =
+                        write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
+                    {
+                        let _ = child.start_kill();
+                        return Err(anyhow::anyhow!("{}", e));
                     }
                     Ok::<(), anyhow::Error>(())
                 },
