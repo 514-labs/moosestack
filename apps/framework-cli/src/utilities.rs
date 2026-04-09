@@ -14,6 +14,7 @@ pub mod infra_provider;
 pub mod json;
 pub mod keyring;
 pub mod machine_id;
+pub mod native_infra;
 pub mod nodejs_version;
 pub mod package_managers;
 pub mod process_output;
