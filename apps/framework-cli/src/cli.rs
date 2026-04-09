@@ -1908,9 +1908,9 @@ async fn confirm_and_save_migration(
     };
 
     // Step 1: Rename gate on raw InfraChanges (mutates changes in place).
-    // This must happen before compaction since renames affect the structural diff.
+    // This must happen before delta generation since renames affect the structural diff.
     use crate::framework::core::plan_risk::rename_confirmation_gate;
-    let _approved_drops =
+    let approved_drops =
         match rename_confirmation_gate(&mut result.changes, &migration_policy).await? {
             Some(drops) => drops,
             None => {
@@ -1927,9 +1927,10 @@ async fn confirm_and_save_migration(
         &result.default_database,
     );
 
-    // Step 3: Classify risk from the actual deltas (not the raw snapshot diff).
+    // Step 3: Classify risk from deltas, excluding drops already approved during rename.
     use crate::framework::core::plan_risk::classify_risk_from_deltas;
-    let risk = classify_risk_from_deltas(&infra_deltas);
+    let mut risk = classify_risk_from_deltas(&infra_deltas);
+    risk.exclude_approved_drops(&approved_drops);
 
     // Step 4: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy).await? {

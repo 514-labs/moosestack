@@ -329,7 +329,10 @@ fn collect_table_ops(
     for file in files {
         for delta in &file.deltas {
             if let Some(table_id) = delta_table_id(delta, default_database) {
-                let is_drop = matches!(delta, InfraDelta::DropTable { .. });
+                let is_drop = matches!(
+                    delta,
+                    InfraDelta::DropTable { .. } | InfraDelta::RecreateTable { .. }
+                );
                 result
                     .entry(table_id)
                     .or_default()

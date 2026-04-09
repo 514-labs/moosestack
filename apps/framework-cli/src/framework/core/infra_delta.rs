@@ -302,12 +302,18 @@ impl InfraDelta {
                     }
                 })?;
                 let pos = match after_column {
-                    Some(after_name) => table
-                        .columns
-                        .iter()
-                        .position(|c| c.name == *after_name)
-                        .map(|i| i + 1)
-                        .unwrap_or(table.columns.len()),
+                    Some(after_name) => {
+                        match table.columns.iter().position(|c| c.name == *after_name) {
+                            Some(i) => i + 1,
+                            None => {
+                                tracing::warn!(
+                                    "Anchor column '{}' not found in table '{}', appending column '{}' at end",
+                                    after_name, table_id, column.name
+                                );
+                                table.columns.len()
+                            }
+                        }
+                    }
                     None => 0,
                 };
                 table.columns.insert(pos, column.clone());
@@ -483,6 +489,9 @@ impl InfraDelta {
             // ── Views ───────────────────────────────────────────
             InfraDelta::CreateView { view } => {
                 let id = view.id(default_database);
+                if map.views.contains_key(&id) {
+                    tracing::warn!("View '{}' already exists in map, overwriting", id);
+                }
                 map.views.insert(id, view.clone());
             }
 
@@ -495,6 +504,12 @@ impl InfraDelta {
 
             InfraDelta::CreateMaterializedView { mv } => {
                 let id = mv.id(default_database);
+                if map.materialized_views.contains_key(&id) {
+                    tracing::warn!(
+                        "Materialized view '{}' already exists in map, overwriting",
+                        id
+                    );
+                }
                 map.materialized_views.insert(id, mv.clone());
             }
 
@@ -507,6 +522,9 @@ impl InfraDelta {
 
             InfraDelta::CreateDmv1View { view } => {
                 let id = view.id();
+                if map.dmv1_views.contains_key(&id) {
+                    tracing::warn!("DMv1 view '{}' already exists in map, overwriting", id);
+                }
                 map.dmv1_views.insert(id, view.clone());
             }
 
