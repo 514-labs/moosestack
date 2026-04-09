@@ -392,13 +392,12 @@ impl DockerClient {
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
         let mut macros_xml = String::from("  <macros>\n");
         let mut has_macros = false;
+        let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
 
         for cluster in clusters {
-
             // Extract all {macro} segments and replace them in the resolved name
             let mut resolved_name = cluster.name.clone();
             let mut macro_names = Vec::new();
-            let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
             for cap in re.captures_iter(&cluster.name) {
                 if let Some(macro_name) = cap.get(1) {
                     macro_names.push(macro_name.as_str().to_string());
@@ -408,8 +407,7 @@ impl DockerClient {
             resolved_name = re.replace_all(&resolved_name, "$1").to_string();
             let is_macro = !macro_names.is_empty();
 
-
-            if !is_valid_clickhouse_identifier(resolved_name) {
+            if !is_valid_clickhouse_identifier(&resolved_name) {
                 warn!(
                     "Skipping cluster '{}': resolved name '{}' must be alphanumeric with underscores/hyphens only and cannot start with a digit or a hyphen",
                     cluster.name, resolved_name
