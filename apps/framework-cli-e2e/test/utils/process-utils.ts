@@ -364,7 +364,7 @@ export const waitForStreamingFunctions = async (
  * Uses the /ready endpoint which checks Redis, Redpanda, ClickHouse, and Temporal
  */
 export const waitForInfrastructureReady = async (
-  timeoutMs: number = 60_000,
+  timeoutMs: number = 120_000,
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
