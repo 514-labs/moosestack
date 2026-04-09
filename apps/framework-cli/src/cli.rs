@@ -679,7 +679,7 @@ pub async fn top_command_handler(
             yes_all,
             yes_destructive,
             yes_rename,
-            alpha,
+            dockerless,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -691,8 +691,8 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
             project.log_payloads = *log_payloads;
-            if *alpha {
-                project.use_native_infra = true;
+            if *dockerless {
+                project.dev.dockerless = true;
             }
 
             if *log_payloads {
@@ -722,8 +722,8 @@ pub async fn top_command_handler(
 
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
-                let provider: Box<dyn InfraProvider + Send> = if *alpha {
-                    info!("Using native binaries for ClickHouse and Temporal (--alpha mode)");
+                let provider: Box<dyn InfraProvider + Send> = if *dockerless {
+                    info!("Using native binaries for ClickHouse and Temporal (--dockerless mode)");
                     Box::new(
                         crate::utilities::native_infra::NativeInfraProvider::new(&settings)
                             .map_err(|e| {
@@ -1155,7 +1155,7 @@ pub async fn top_command_handler(
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
 
-            // Also kill any native infrastructure processes started by --alpha mode.
+            // Also kill any native infrastructure processes started by --dockerless mode.
             // ClickHouse/Temporal are killed via PID files.
             let ch_pid = project_arc
                 .project_location

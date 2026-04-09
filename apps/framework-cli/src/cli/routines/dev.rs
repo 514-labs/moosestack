@@ -53,10 +53,8 @@ pub fn run_local_infrastructure(
         .project_location
         .join("docker-compose.dev.override.yaml");
     if override_file.exists() {
-        if project.use_native_infra {
-            println!(
-                "[moose] Ignoring docker-compose.dev.override.yaml in --alpha mode (native infra)"
-            );
+        if project.dev.dockerless {
+            println!("[moose] Ignoring docker-compose.dev.override.yaml in --dockerless mode");
         } else {
             println!("[moose] Using docker-compose.dev.override.yaml for custom infrastructure");
         }

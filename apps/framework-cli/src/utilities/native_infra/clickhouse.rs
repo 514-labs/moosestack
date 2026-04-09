@@ -104,10 +104,16 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
         </node>
     </zookeeper>
 
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+
     <!-- Macros for replicated engine table paths -->
     <macros>
         <shard>01</shard>
         <replica>replica01</replica>
+        <database>{db_name}</database>
     </macros>
 </clickhouse>
 "#,
@@ -115,6 +121,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
         native_port = ch.native_port,
         user = ch.user,
         password = ch.password,
+        db_name = ch.db_name,
         data_path = data_dir.join("data").display(),
         log_dir = data_dir.join("logs").display(),
     );
@@ -169,19 +176,19 @@ pub fn health_check(port: i32) -> Result<(), NativeInfraError> {
 /// the `CREATE DATABASE IF NOT EXISTS` query after the server is healthy.
 pub fn ensure_database(project: &Project) -> Result<(), NativeInfraError> {
     let ch = &project.clickhouse_config;
-    let url = format!(
-        "http://127.0.0.1:{}/?user={}&password={}",
-        ch.host_port, ch.user, ch.password
-    );
+    let url = format!("http://127.0.0.1:{}/", ch.host_port);
     let query = format!("CREATE DATABASE IF NOT EXISTS `{}`", ch.db_name);
 
     let client = reqwest::blocking::Client::new();
-    let resp = client.post(&url).body(query.clone()).send().map_err(|_| {
-        NativeInfraError::HealthCheck {
+    let resp = client
+        .post(&url)
+        .query(&[("user", &ch.user), ("password", &ch.password)])
+        .body(query.clone())
+        .send()
+        .map_err(|_| NativeInfraError::HealthCheck {
             service: "ClickHouse".to_string(),
             reason: "failed to send CREATE DATABASE query".to_string(),
-        }
-    })?;
+        })?;
 
     if resp.status().is_success() {
         info!("Created database `{}`", ch.db_name);

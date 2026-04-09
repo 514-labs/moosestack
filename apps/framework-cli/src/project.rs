@@ -339,6 +339,11 @@ pub struct DevConfig {
     /// No credentials stored - they go in OS keychain or env vars
     #[serde(default)]
     pub remote_clickhouse: Option<RemoteClickHouseConfig>,
+
+    /// Whether to use native binaries for ClickHouse and Temporal instead of Docker.
+    /// Runtime-only flag set by `--dockerless`, not persisted to config.
+    #[serde(skip)]
+    pub dockerless: bool,
 }
 
 /// Represents a user's Moose project
@@ -411,11 +416,6 @@ pub struct Project {
     /// Development mode configuration
     #[serde(default)]
     pub dev: DevConfig,
-
-    /// Whether native infrastructure (--alpha mode) is being used instead of Docker.
-    /// Runtime-only flag, not persisted to config.
-    #[serde(skip)]
-    pub use_native_infra: bool,
 }
 
 pub fn default_source_dir() -> String {
@@ -491,7 +491,6 @@ impl Project {
             docker_config: DockerConfig::default(),
             watcher_config: WatcherConfig::default(),
             dev: DevConfig::default(),
-            use_native_infra: false,
         }
     }
 

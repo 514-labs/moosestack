@@ -147,9 +147,9 @@ pub enum Commands {
         #[arg(long)]
         yes_rename: bool,
 
-        /// Use native binaries for ClickHouse and Temporal instead of Docker (macOS arm64)
+        /// Use native binaries for ClickHouse and Temporal instead of Docker
         #[arg(long)]
-        alpha: bool,
+        dockerless: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]
