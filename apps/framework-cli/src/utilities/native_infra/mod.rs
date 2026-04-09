@@ -179,10 +179,10 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn validate_redpanda(&self, _project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
-        info!("Skipping Kafka validation in alpha mode (not yet available)");
+        info!("Skipping Kafka validation in --dockerless mode (not yet available)");
         Ok(RoutineSuccess::success(Message::new(
             "Skipped".to_string(),
-            "Kafka validation (alpha mode)".to_string(),
+            "Kafka validation (--dockerless mode)".to_string(),
         )))
     }
 
@@ -192,7 +192,7 @@ impl InfraProvider for NativeInfraProvider {
     ) -> Result<RoutineSuccess, RoutineFailure> {
         Ok(RoutineSuccess::success(Message::new(
             "Skipped".to_string(),
-            "Kafka cluster validation (alpha mode)".to_string(),
+            "Kafka cluster validation (--dockerless mode)".to_string(),
         )))
     }
 

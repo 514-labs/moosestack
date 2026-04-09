@@ -339,6 +339,11 @@ pub struct DevConfig {
     /// No credentials stored - they go in OS keychain or env vars
     #[serde(default)]
     pub remote_clickhouse: Option<RemoteClickHouseConfig>,
+
+    /// Whether to use native binaries for ClickHouse and Temporal instead of Docker.
+    /// Runtime-only flag set by `--dockerless`, not persisted to config.
+    #[serde(skip)]
+    pub dockerless: bool,
 }
 
 /// Represents a user's Moose project
