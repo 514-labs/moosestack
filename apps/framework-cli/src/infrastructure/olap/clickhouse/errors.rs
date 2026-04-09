@@ -51,7 +51,8 @@ pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
     }
 
     let mut in_brace = false;
-    let mut macro_len = 0;
+    let mut macro_body = String::new();
+    let mut macro_bodies = Vec::new();
 
     for c in name.chars() {
         if c == '{' {
@@ -59,16 +60,17 @@ pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
                 return false; // nested braces not allowed
             }
             in_brace = true;
-            macro_len = 0;
+            macro_body.clear();
         } else if c == '}' {
-            if !in_brace || macro_len == 0 {
+            if !in_brace || macro_body.is_empty() {
                 return false; // unbalanced or empty braces not allowed
             }
+            macro_bodies.push(std::mem::take(&mut macro_body));
             in_brace = false;
         } else if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
             return false; // invalid character
         } else if in_brace {
-            macro_len += 1;
+            macro_body.push(c);
         }
     }
 
@@ -81,7 +83,10 @@ pub fn is_valid_clickhouse_cluster_name(name: &str) -> bool {
         return false;
     }
 
-    true
+    // Each macro body must itself be a valid identifier (no leading digit/hyphen, etc.)
+    macro_bodies
+        .iter()
+        .all(|body| is_valid_clickhouse_identifier(body))
 }
 
 /// Classifies ClickHouse `{macro}` usage in a cluster name for static validation.
@@ -169,6 +174,8 @@ mod tests {
         assert!(!is_valid_clickhouse_cluster_name("}{")); // unbalanced braces
         assert!(!is_valid_clickhouse_cluster_name("{cluster")); // unclosed brace
         assert!(!is_valid_clickhouse_cluster_name("cluster}")); // unopened brace
+        assert!(!is_valid_clickhouse_cluster_name("{1cluster}")); // macro body starts with digit
+        assert!(!is_valid_clickhouse_cluster_name("{-cluster}")); // macro body starts with hyphen
     }
 
     #[test]

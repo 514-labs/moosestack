@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -390,22 +391,16 @@ impl DockerClient {
         }
 
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
-        let mut macros_xml = String::from("  <macros>\n");
-        let mut has_macros = false;
+        let mut all_macros: HashSet<String> = HashSet::new();
         let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
 
         for cluster in clusters {
-            // Extract all {macro} segments and replace them in the resolved name
-            let mut resolved_name = cluster.name.clone();
-            let mut macro_names = Vec::new();
-            for cap in re.captures_iter(&cluster.name) {
-                if let Some(macro_name) = cap.get(1) {
-                    macro_names.push(macro_name.as_str().to_string());
-                }
-            }
-            // Replace {macro} with macro for XML tag
-            resolved_name = re.replace_all(&resolved_name, "$1").to_string();
-            let is_macro = !macro_names.is_empty();
+            let macro_names: Vec<String> = re
+                .captures_iter(&cluster.name)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+
+            let resolved_name = re.replace_all(&cluster.name, "$1").to_string();
 
             if !is_valid_clickhouse_identifier(&resolved_name) {
                 warn!(
@@ -415,13 +410,7 @@ impl DockerClient {
                 continue;
             }
 
-            if is_macro {
-                macros_xml.push_str(&format!(
-                    "    <{name}>{name}</{name}>\n",
-                    name = resolved_name
-                ));
-                has_macros = true;
-            }
+            all_macros.extend(macro_names);
 
             xml.push_str(&format!(
                 "    <{name}>\n\
@@ -447,9 +436,12 @@ impl DockerClient {
         }
 
         xml.push_str("  </remote_servers>\n");
-        if has_macros {
-            macros_xml.push_str("  </macros>\n");
-            xml.push_str(&macros_xml);
+        if !all_macros.is_empty() {
+            xml.push_str("  <macros>\n");
+            for m in &all_macros {
+                xml.push_str(&format!("    <{m}>{m}</{m}>\n"));
+            }
+            xml.push_str("  </macros>\n");
         }
         xml.push_str("</clickhouse>\n");
         Some(xml)
