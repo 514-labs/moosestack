@@ -211,7 +211,8 @@ pub fn native_data_dir(project: &Project) -> PathBuf {
 pub fn pid_file_path(project: &Project) -> PathBuf {
     project
         .project_location
-        .join(".moose/native_infra/clickhouse.pid")
+        .join(super::NATIVE_INFRA_DIR)
+        .join("clickhouse.pid")
 }
 
 /// Construct the platform-specific download URL for ClickHouse.
