@@ -622,6 +622,18 @@ pub async fn execute_migration_deltas(
     let is_dev = !project.is_production;
 
     for file in &unapplied {
+        // Validate parent state hash before applying
+        let current_hash = map.olap_hash();
+        if file.parent_state_hash != current_hash {
+            tracing::warn!(
+                "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'. \
+                 This migration may have been generated against a different base state.",
+                file.id,
+                &file.parent_state_hash[..12.min(file.parent_state_hash.len())],
+                &current_hash[..12.min(current_hash.len())],
+            );
+        }
+
         println!(
             "\n▶ Applying migration '{}' ({} delta(s))...",
             file.id,

@@ -100,7 +100,7 @@ impl MigrationFile {
     /// Create a new migration file with a timestamp-based ID.
     pub fn new(description: String, parent_state_hash: String, deltas: Vec<InfraDelta>) -> Self {
         let now = Utc::now();
-        let timestamp = now.format("%Y%m%d_%H%M%S");
+        let timestamp = now.format("%Y%m%d_%H%M%S_%3f");
         let slug = description
             .to_lowercase()
             .split_whitespace()
@@ -128,10 +128,10 @@ impl MigrationFile {
     }
 
     /// Returns a list of all table IDs touched by deltas in this file.
-    pub fn touched_table_ids(&self) -> Vec<String> {
+    pub fn touched_table_ids(&self, default_database: &str) -> Vec<String> {
         let mut ids = Vec::new();
         for delta in &self.deltas {
-            if let Some(id) = delta_table_id(delta) {
+            if let Some(id) = delta_table_id(delta, default_database) {
                 if !ids.contains(&id) {
                     ids.push(id);
                 }
@@ -244,12 +244,13 @@ impl MigrationHistory {
     pub fn detect_conflicts(
         branch_a: &[MigrationFile],
         branch_b: &[MigrationFile],
+        default_database: &str,
     ) -> Vec<MigrationConflict> {
         let mut conflicts = Vec::new();
 
         // Build table_id → migration_id maps for each branch
-        let a_tables = collect_table_ops(branch_a);
-        let b_tables = collect_table_ops(branch_b);
+        let a_tables = collect_table_ops(branch_a, default_database);
+        let b_tables = collect_table_ops(branch_b, default_database);
 
         for (table_id, a_ops) in &a_tables {
             if let Some(b_ops) = b_tables.get(table_id) {
@@ -292,11 +293,14 @@ impl MigrationHistory {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /// Extract the table ID affected by a delta, if any.
-fn delta_table_id(delta: &InfraDelta) -> Option<String> {
+///
+/// Uses `Table::id(default_database)` for lifecycle variants (Create/Drop/Recreate)
+/// to produce the same qualified format as the `table_id` field in column mutations.
+fn delta_table_id(delta: &InfraDelta, default_database: &str) -> Option<String> {
     match delta {
-        InfraDelta::CreateTable { table } => Some(table.name.clone()),
-        InfraDelta::DropTable { table, .. } => Some(table.name.clone()),
-        InfraDelta::RecreateTable { before, .. } => Some(before.name.clone()),
+        InfraDelta::CreateTable { table } => Some(table.id(default_database)),
+        InfraDelta::DropTable { table, .. } => Some(table.id(default_database)),
+        InfraDelta::RecreateTable { before, .. } => Some(before.id(default_database)),
         InfraDelta::AddTableColumn { table_id, .. }
         | InfraDelta::DropTableColumn { table_id, .. }
         | InfraDelta::ModifyTableColumn { table_id, .. }
@@ -317,13 +321,14 @@ fn delta_table_id(delta: &InfraDelta) -> Option<String> {
 /// Collect table operations from migration files: table_id → [(migration_id, is_drop)]
 fn collect_table_ops(
     files: &[MigrationFile],
+    default_database: &str,
 ) -> std::collections::HashMap<String, Vec<(String, bool)>> {
     let mut result: std::collections::HashMap<String, Vec<(String, bool)>> =
         std::collections::HashMap::new();
 
     for file in files {
         for delta in &file.deltas {
-            if let Some(table_id) = delta_table_id(delta) {
+            if let Some(table_id) = delta_table_id(delta, default_database) {
                 let is_drop = matches!(delta, InfraDelta::DropTable { .. });
                 result
                     .entry(table_id)
@@ -565,7 +570,7 @@ mod tests {
             created_at: Utc::now(),
         }];
 
-        let conflicts = MigrationHistory::detect_conflicts(&a, &b);
+        let conflicts = MigrationHistory::detect_conflicts(&a, &b, TEST_DB);
         assert_eq!(conflicts.len(), 1);
         assert!(matches!(
             &conflicts[0],
@@ -594,7 +599,7 @@ mod tests {
             description: "Branch B modifies".to_string(),
             parent_state_hash: "0".repeat(64),
             deltas: vec![InfraDelta::AddTableColumn {
-                table_id: "events".to_string(),
+                table_id: "test_db_events".to_string(),
                 column: Column {
                     name: "email".to_string(),
                     data_type: ColumnType::String,
@@ -614,7 +619,7 @@ mod tests {
             created_at: Utc::now(),
         }];
 
-        let conflicts = MigrationHistory::detect_conflicts(&a, &b);
+        let conflicts = MigrationHistory::detect_conflicts(&a, &b, TEST_DB);
         assert_eq!(conflicts.len(), 1);
         assert!(matches!(
             &conflicts[0],
@@ -644,7 +649,7 @@ mod tests {
             created_at: Utc::now(),
         }];
 
-        let conflicts = MigrationHistory::detect_conflicts(&a, &b);
+        let conflicts = MigrationHistory::detect_conflicts(&a, &b, TEST_DB);
         assert!(conflicts.is_empty());
     }
 
@@ -701,7 +706,10 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        let ids = migration.touched_table_ids();
-        assert_eq!(ids.len(), 3); // "events", "test_db_events", "users"
+        let ids = migration.touched_table_ids(TEST_DB);
+        // CreateTable("events") → "test_db_events", AddTableColumn("test_db_events"), CreateTable("users") → "test_db_users"
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"test_db_events".to_string()));
+        assert!(ids.contains(&"test_db_users".to_string()));
     }
 }

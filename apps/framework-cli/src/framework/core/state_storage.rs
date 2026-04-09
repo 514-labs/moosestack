@@ -485,14 +485,17 @@ impl StateStorage for ClickHouseStateStorage {
             Self::STATE_TABLE
         );
 
-        let mut cursor = match self.client.client.query(&query).fetch::<String>() {
-            Ok(cursor) => cursor,
-            Err(_) => return Ok(vec![]),
-        };
+        let mut cursor = self
+            .client
+            .client
+            .query(&query)
+            .fetch::<String>()
+            .context("Failed to query applied migrations")?;
 
         match cursor.next().await {
             Ok(Some(json)) => Ok(serde_json::from_str(&json)?),
-            _ => Ok(vec![]),
+            Ok(None) => Ok(vec![]),
+            Err(e) => Err(anyhow::anyhow!("Failed to fetch applied migrations: {}", e)),
         }
     }
 }

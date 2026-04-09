@@ -1072,6 +1072,12 @@ pub async fn top_command_handler(
             if *validate {
                 // Validate-only mode: no ClickHouse or Redis needed
                 let project = load_project(commands)?;
+                if !project.features.migrate_with_deltas {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Validate".to_string(),
+                        "Migration validation requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
+                    )));
+                }
                 return validate_migrations(&project);
             }
 
@@ -1801,6 +1807,7 @@ fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailu
                     let conflicts = MigrationHistory::detect_conflicts(
                         &[files[i].clone()],
                         &[files[j].clone()],
+                        default_database,
                     );
                     for conflict in &conflicts {
                         conflict_count += 1;

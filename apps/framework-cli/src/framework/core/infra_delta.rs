@@ -696,7 +696,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::AddTableColumn {
                     table,
@@ -711,7 +717,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::DropTableColumn {
                     table,
@@ -726,7 +738,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::ModifyTableColumn {
                     table,
@@ -742,7 +760,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::RenameTableColumn {
                     table,
@@ -760,7 +784,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::ModifyTableSettings {
                     table,
@@ -776,7 +806,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::ModifyTableTtl {
                     table,
@@ -788,7 +824,13 @@ impl InfraDelta {
             InfraDelta::AddTableIndex { table_id, index } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::AddTableIndex {
                     table,
@@ -802,7 +844,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::DropTableIndex {
                     table,
@@ -816,7 +864,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::AddTableProjection {
                     table,
@@ -830,7 +884,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::DropTableProjection {
                     table,
@@ -844,7 +904,13 @@ impl InfraDelta {
             } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::ModifySampleBy {
                     table,
@@ -855,7 +921,13 @@ impl InfraDelta {
             InfraDelta::RemoveSampleBy { table_id } => {
                 let table = match map.tables.get(table_id) {
                     Some(t) => t.clone(),
-                    None => return vec![],
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
                 };
                 vec![AtomicOlapOperation::RemoveSampleBy {
                     table,
@@ -1241,7 +1313,19 @@ fn decompose_table_update(
         }
     }
     for (name, index) in &after_indexes {
-        if !before_indexes.contains_key(name) {
+        if let Some(before_index) = before_indexes.get(name) {
+            // Same name exists — check if content changed
+            if *before_index != *index {
+                deltas.push(InfraDelta::DropTableIndex {
+                    table_id: table_id.to_string(),
+                    index_name: name.to_string(),
+                });
+                deltas.push(InfraDelta::AddTableIndex {
+                    table_id: table_id.to_string(),
+                    index: (*index).clone(),
+                });
+            }
+        } else {
             deltas.push(InfraDelta::AddTableIndex {
                 table_id: table_id.to_string(),
                 index: (*index).clone(),
@@ -1270,7 +1354,19 @@ fn decompose_table_update(
         }
     }
     for (name, proj) in &after_projections {
-        if !before_projections.contains_key(name) {
+        if let Some(before_proj) = before_projections.get(name) {
+            // Same name exists — check if content changed
+            if *before_proj != *proj {
+                deltas.push(InfraDelta::DropTableProjection {
+                    table_id: table_id.to_string(),
+                    projection_name: name.to_string(),
+                });
+                deltas.push(InfraDelta::AddTableProjection {
+                    table_id: table_id.to_string(),
+                    projection: (*proj).clone(),
+                });
+            }
+        } else {
             deltas.push(InfraDelta::AddTableProjection {
                 table_id: table_id.to_string(),
                 projection: (*proj).clone(),

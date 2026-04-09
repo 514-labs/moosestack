@@ -3642,9 +3642,11 @@ impl InfrastructureMap {
         };
 
         // Serialize to JSON, sort keys for determinism, then hash
-        let json_value = serde_json::to_value(&snapshot).unwrap_or_default();
+        let json_value =
+            serde_json::to_value(&snapshot).expect("OLAP snapshot serialization should never fail");
         let sorted_value = crate::utilities::json::sort_json_keys(json_value);
-        let json_bytes = serde_json::to_vec(&sorted_value).unwrap_or_default();
+        let json_bytes =
+            serde_json::to_vec(&sorted_value).expect("sorted JSON serialization should never fail");
 
         let mut hasher = Sha256::new();
         hasher.update(&json_bytes);
