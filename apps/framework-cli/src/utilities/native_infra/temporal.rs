@@ -63,11 +63,13 @@ pub fn health_check(port: u16) -> Result<(), NativeInfraError> {
     use std::time::Duration;
 
     let addr = format!("127.0.0.1:{port}");
-    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).map_err(|_| {
-        NativeInfraError::HealthCheck {
-            service: "Temporal".to_string(),
-            reason: format!("connection refused on port {port}"),
-        }
+    TcpStream::connect_timeout(
+        &addr.parse().expect("valid socket addr"),
+        Duration::from_secs(2),
+    )
+    .map_err(|_| NativeInfraError::HealthCheck {
+        service: "Temporal".to_string(),
+        reason: format!("connection refused on port {port}"),
     })?;
 
     Ok(())

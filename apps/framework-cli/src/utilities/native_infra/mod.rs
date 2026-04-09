@@ -74,10 +74,14 @@ impl InfraProvider for NativeInfraProvider {
                 "Starting native ClickHouse server",
                 "Native ClickHouse started",
                 || {
-                    let child = clickhouse::start_command(&ch_binary, &ch_config)?;
+                    let mut child = clickhouse::start_command(&ch_binary, &ch_config)?;
                     if let Some(pid) = child.id() {
-                        write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
-                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        if let Err(e) =
+                            write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
+                        {
+                            let _ = child.start_kill();
+                            return Err(anyhow::anyhow!("{}", e));
+                        }
                     }
                     Ok::<(), anyhow::Error>(())
                 },
