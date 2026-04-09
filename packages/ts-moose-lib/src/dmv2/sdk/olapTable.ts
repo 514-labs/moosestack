@@ -290,7 +290,11 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 };
 
 /**
- * Configuration for AggregatingMergeTree engine
+ * Configuration for AggregatingMergeTree engine.
+ *
+ * See {@link ClickHouseEngines.AggregatingMergeTree} for guidance on annotating
+ * aggregate columns in `T` with `Aggregated` / `SimpleAggregated`.
+ *
  * @template T The data type of the records stored in the table.
  */
 export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
