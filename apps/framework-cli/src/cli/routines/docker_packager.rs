@@ -955,11 +955,7 @@ pub fn build_dockerfile(
             project.docker_config.context_path.as_deref(),
         )
         .map_err(|err| {
-            let ctx_path = project
-                .docker_config
-                .context_path
-                .as_deref()
-                .unwrap_or(".");
+            let ctx_path = project.docker_config.context_path.as_deref().unwrap_or(".");
             error!("Failed to resolve context_path '{}': {}", ctx_path, err);
             RoutineFailure::new(
                 Message::new(
