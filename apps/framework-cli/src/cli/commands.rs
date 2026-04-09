@@ -153,6 +153,10 @@ pub enum Commands {
         /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
         #[arg(long)]
         yes_rename: bool,
+
+        /// Use native binaries for ClickHouse and Temporal instead of Docker
+        #[arg(long)]
+        dockerless: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

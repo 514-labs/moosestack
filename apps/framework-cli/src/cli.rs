@@ -463,6 +463,9 @@ async fn run_local_infrastructure_with_timeout(
                 • Restart Docker Desktop (if using Desktop)\n\
                 • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
                 • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • Dockerless mode: check logs in .moose/native_infra/\n\
+                • Docker mode: check if Docker is running with `docker info`\n\
+                • Docker mode: stop existing containers with `docker stop $(docker ps -aq)`\n\
                 • If the issue persists, you can increase the timeout in your Moose configuration:\n\
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\
@@ -677,6 +680,7 @@ pub async fn top_command_handler(
             yes_all,
             yes_destructive,
             yes_rename,
+            dockerless,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -688,6 +692,9 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
             project.log_payloads = *log_payloads;
+            if *dockerless {
+                project.dev.dockerless = true;
+            }
 
             if *log_payloads {
                 info!("Payload logging enabled");
@@ -716,8 +723,22 @@ pub async fn top_command_handler(
 
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
-                let provider: Box<dyn InfraProvider + Send> =
-                    Box::new(DockerInfraProvider::new(&settings));
+                let provider: Box<dyn InfraProvider + Send> = if *dockerless {
+                    info!("Using native binaries for ClickHouse and Temporal (--dockerless mode)");
+                    Box::new(
+                        crate::utilities::native_infra::NativeInfraProvider::new(&settings)
+                            .map_err(|e| {
+                                RoutineFailure::error(Message {
+                                    action: "Dev".to_string(),
+                                    details: format!(
+                                        "Failed to initialize native infrastructure: {e}"
+                                    ),
+                                })
+                            })?,
+                    )
+                } else {
+                    Box::new(DockerInfraProvider::new(&settings))
+                };
                 run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
@@ -1145,6 +1166,10 @@ pub async fn top_command_handler(
             );
 
             check_project_name(&project_arc.name())?;
+
+            // Kill native infrastructure processes first (before Docker cleanup which
+            // may fail if Docker is unavailable, e.g. when using --dockerless mode).
+            crate::utilities::native_infra::kill_native_processes(&project_arc);
 
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
