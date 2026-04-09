@@ -106,11 +106,15 @@ impl InfraProvider for NativeInfraProvider {
                 || {
                     let temporal_binary = temporal::ensure_binary(&self.binary_manager)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let child = temporal::start_command(&temporal_binary, project)
+                    let mut child = temporal::start_command(&temporal_binary, project)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
                     if let Some(pid) = child.id() {
-                        write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
-                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        if let Err(e) =
+                            write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
+                        {
+                            let _ = child.start_kill();
+                            return Err(anyhow::anyhow!("{}", e));
+                        }
                     }
                     Ok::<(), anyhow::Error>(())
                 },
@@ -182,10 +186,9 @@ impl InfraProvider for NativeInfraProvider {
         &self,
         _project_name: &str,
     ) -> Result<RoutineSuccess, RoutineFailure> {
-        // Single-node native Kafka doesn't have a cluster concept
         Ok(RoutineSuccess::success(Message::new(
-            "Validated".to_string(),
-            "native Kafka (single-node, no cluster needed)".to_string(),
+            "Skipped".to_string(),
+            "Kafka cluster validation (alpha mode)".to_string(),
         )))
     }
 

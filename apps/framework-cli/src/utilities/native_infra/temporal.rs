@@ -39,7 +39,7 @@ pub fn start_command(
         .arg("--ui-port")
         .arg(tc.ui_port.to_string())
         .arg("--db-filename")
-        .arg(db_path.to_string_lossy().as_ref())
+        .arg(&db_path)
         .arg("--namespace")
         .arg(&tc.namespace)
         .arg("--log-level")
