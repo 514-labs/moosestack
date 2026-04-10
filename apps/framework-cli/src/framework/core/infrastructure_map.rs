@@ -2695,8 +2695,11 @@ impl InfrastructureMap {
     /// Must be called at runtime (dev/prod mode) rather than build time to avoid
     /// baking credentials into Docker images.
     pub fn resolve_runtime_credentials_from_env(&mut self) -> Result<(), String> {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionarySource, ExternalDictionarySource,
+        };
         use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-        use crate::utilities::secrets::resolve_optional_runtime_env;
+        use crate::utilities::secrets::{resolve_optional_runtime_env, resolve_runtime_env};
 
         for table in self.tables.values_mut() {
             let mut should_recalc_hash = false;
@@ -2809,6 +2812,123 @@ impl InfrastructureMap {
                     "Recalculated table_settings_hash for table '{}' after credential resolution",
                     table.name
                 );
+            }
+        }
+
+        // Resolve runtime environment variables in dictionary external source credentials.
+        // Named collections don't work on ClickHouse Cloud, so user/password must be specified
+        // inline. mooseRuntimeEnv.get() lets users avoid hardcoding credentials.
+        for dict in self.olap_dictionaries.values_mut() {
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved ClickHouse credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved MySQL credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved PostgreSQL credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        s.password = resolve_optional_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved Redis credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved MongoDB credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        s.access_key_id =
+                            resolve_optional_runtime_env(&s.access_key_id).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for dictionary '{}' field 'accessKeyId': {}",
+                                    dict.name, e
+                                )
+                            })?;
+                        s.secret_access_key =
+                            resolve_optional_runtime_env(&s.secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for dictionary '{}' field 'secretAccessKey': {}",
+                                    dict.name, e
+                                )
+                            })?;
+                        tracing::debug!(
+                            "Resolved S3 credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                        // No credentials to resolve
+                    }
+                }
             }
         }
 
@@ -10314,5 +10434,283 @@ mod diff_dictionaries_version_tests {
             .any(|c| matches!(c, OlapChange::OlapDictionary(Change::Added { .. })));
         assert!(has_removed, "missing Remove change for v1");
         assert!(has_added, "missing Add change for v2");
+    }
+}
+
+#[cfg(test)]
+mod dictionary_runtime_env_tests {
+    use super::*;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
+        DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
+        DictionaryRedisSource, DictionaryS3Source, DictionarySource, ExternalDictionarySource,
+    };
+    use std::collections::HashMap;
+
+    fn base_dict(source: ExternalDictionarySource) -> OlapDictionary {
+        OlapDictionary {
+            name: "test_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::External(source),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        }
+    }
+
+    fn make_infra_map(dict: OlapDictionary) -> InfrastructureMap {
+        let dict_id = dict.id("local");
+        let mut map = InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+        map.olap_dictionaries.insert(dict_id, dict);
+        map
+    }
+
+    #[test]
+    fn test_resolve_dictionary_clickhouse_credentials() {
+        std::env::set_var("DICT_CH_USER", "resolved_user");
+        std::env::set_var("DICT_CH_PASS", "resolved_pass");
+
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_CH_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_CH_PASS".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+            assert_eq!(s.user, "resolved_user");
+            assert_eq!(s.password, "resolved_pass");
+        } else {
+            panic!("Expected ClickHouse source");
+        }
+
+        std::env::remove_var("DICT_CH_USER");
+        std::env::remove_var("DICT_CH_PASS");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_mysql_credentials() {
+        std::env::set_var("DICT_MYSQL_USER", "mysql_user");
+        std::env::set_var("DICT_MYSQL_PASS", "mysql_pass");
+
+        let source = ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+            host: "localhost".to_string(),
+            port: 3306,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MYSQL_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_MYSQL_PASS".to_string(),
+            db: "mydb".to_string(),
+            table: "mytable".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Mysql(s)) = &dict.source {
+            assert_eq!(s.user, "mysql_user");
+            assert_eq!(s.password, "mysql_pass");
+        } else {
+            panic!("Expected MySQL source");
+        }
+
+        std::env::remove_var("DICT_MYSQL_USER");
+        std::env::remove_var("DICT_MYSQL_PASS");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_postgresql_credentials() {
+        std::env::set_var("DICT_PG_USER", "pg_user");
+        std::env::set_var("DICT_PG_PASS", "pg_pass");
+
+        let source = ExternalDictionarySource::Postgresql(DictionaryPostgresqlSource {
+            host: "localhost".to_string(),
+            port: 5432,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_PG_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_PG_PASS".to_string(),
+            db: "mydb".to_string(),
+            table: "mytable".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Postgresql(s)) = &dict.source {
+            assert_eq!(s.user, "pg_user");
+            assert_eq!(s.password, "pg_pass");
+        } else {
+            panic!("Expected PostgreSQL source");
+        }
+
+        std::env::remove_var("DICT_PG_USER");
+        std::env::remove_var("DICT_PG_PASS");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_redis_credentials() {
+        std::env::set_var("DICT_REDIS_PASS", "redis_pass");
+
+        let source = ExternalDictionarySource::Redis(DictionaryRedisSource {
+            host: "localhost".to_string(),
+            port: 6379,
+            password: Some("__MOOSE_RUNTIME_ENV__:DICT_REDIS_PASS".to_string()),
+            db_index: None,
+            storage_type: "simple".to_string(),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Redis(s)) = &dict.source {
+            assert_eq!(s.password, Some("redis_pass".to_string()));
+        } else {
+            panic!("Expected Redis source");
+        }
+
+        std::env::remove_var("DICT_REDIS_PASS");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_mongodb_credentials() {
+        std::env::set_var("DICT_MONGO_USER", "mongo_user");
+        std::env::set_var("DICT_MONGO_PASS", "mongo_pass");
+
+        let source = ExternalDictionarySource::Mongodb(DictionaryMongoDbSource {
+            host: "localhost".to_string(),
+            port: 27017,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MONGO_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_MONGO_PASS".to_string(),
+            db: "mydb".to_string(),
+            collection: "mycol".to_string(),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Mongodb(s)) = &dict.source {
+            assert_eq!(s.user, "mongo_user");
+            assert_eq!(s.password, "mongo_pass");
+        } else {
+            panic!("Expected MongoDB source");
+        }
+
+        std::env::remove_var("DICT_MONGO_USER");
+        std::env::remove_var("DICT_MONGO_PASS");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_s3_credentials() {
+        std::env::set_var("DICT_S3_KEY_ID", "s3_key_id");
+        std::env::set_var("DICT_S3_SECRET", "s3_secret");
+
+        let source = ExternalDictionarySource::S3(DictionaryS3Source {
+            url: "s3://bucket/data.csv".to_string(),
+            format: "CSV".to_string(),
+            access_key_id: Some("__MOOSE_RUNTIME_ENV__:DICT_S3_KEY_ID".to_string()),
+            secret_access_key: Some("__MOOSE_RUNTIME_ENV__:DICT_S3_SECRET".to_string()),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::S3(s)) = &dict.source {
+            assert_eq!(s.access_key_id, Some("s3_key_id".to_string()));
+            assert_eq!(s.secret_access_key, Some("s3_secret".to_string()));
+        } else {
+            panic!("Expected S3 source");
+        }
+
+        std::env::remove_var("DICT_S3_KEY_ID");
+        std::env::remove_var("DICT_S3_SECRET");
+    }
+
+    #[test]
+    fn test_resolve_dictionary_missing_env_var_returns_error() {
+        std::env::remove_var("DICT_MISSING_VAR");
+
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MISSING_VAR".to_string(),
+            password: "static_pass".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        let result = map.resolve_runtime_credentials_from_env();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("DICT_MISSING_VAR"),
+            "Error message should mention the missing variable, got: {err}"
+        );
+        assert!(
+            err.contains("test_dict"),
+            "Error message should mention the dictionary name, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_dictionary_static_credentials_passthrough() {
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "static_user".to_string(),
+            password: "static_pass".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+            assert_eq!(s.user, "static_user");
+            assert_eq!(s.password, "static_pass");
+        } else {
+            panic!("Expected ClickHouse source");
+        }
     }
 }
