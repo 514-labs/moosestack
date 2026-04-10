@@ -469,6 +469,9 @@ mod tests {
     #[test]
     fn test_process_name_matches_rejects_substring() {
         assert!(!process_name_matches("temporal-helper", "temporal"));
-        assert!(!process_name_matches("/opt/bin/clickhouse-backup", "clickhouse"));
+        assert!(!process_name_matches(
+            "/opt/bin/clickhouse-backup",
+            "clickhouse"
+        ));
     }
 }
