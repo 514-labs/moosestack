@@ -255,11 +255,26 @@ fn process_matches(pid: u32, expected_name: &str) -> bool {
         Ok(output) if output.status.success() => {
             let actual = String::from_utf8_lossy(&output.stdout);
             let actual = actual.trim();
-            // The command name may be a full path or just the binary name
-            actual.contains(expected_name)
+            process_name_matches(actual, expected_name)
         }
         _ => false, // Process doesn't exist or ps failed
     }
+}
+
+/// Compare process names safely to avoid substring false positives.
+///
+/// `ps -o comm=` may return either a bare command name or a full path. We normalize
+/// to the final path component and require an exact match.
+fn process_name_matches(actual_comm: &str, expected_name: &str) -> bool {
+    let actual = actual_comm.trim();
+    if actual.is_empty() || expected_name.is_empty() {
+        return false;
+    }
+    let normalized = std::path::Path::new(actual)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(actual);
+    normalized == expected_name
 }
 
 /// Read a PID from a file, verify the process identity, send SIGTERM, and remove the file.
@@ -443,5 +458,17 @@ mod tests {
             "Expected path to end with .moose/native_infra/temporal.pid, got: {}",
             path.display()
         );
+    }
+
+    #[test]
+    fn test_process_name_matches_exact_name() {
+        assert!(process_name_matches("clickhouse", "clickhouse"));
+        assert!(process_name_matches("/usr/local/bin/temporal", "temporal"));
+    }
+
+    #[test]
+    fn test_process_name_matches_rejects_substring() {
+        assert!(!process_name_matches("temporal-helper", "temporal"));
+        assert!(!process_name_matches("/opt/bin/clickhouse-backup", "clickhouse"));
     }
 }
