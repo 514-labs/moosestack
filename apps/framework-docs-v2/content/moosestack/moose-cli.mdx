@@ -436,7 +436,7 @@ All connection flags accept environment-variable fallbacks: `MOOSE_CLICKHOUSE_CO
 
 **Output options:**
 - `--save`: Write migration artifacts to the migrations directory. In legacy mode: `plan.yaml`, `remote_state.json`, `local_infra_map.json`. In delta mode (`migrate_with_deltas = true`): a timestamped `<id>.yaml` delta file. Omit to print a dry-run summary to stdout.
-- `--output-dir <DIR>`: Write migration artifacts to a custom directory instead of the default. Overrides `migration_config.dir`. Requires `--save`.
+- `--output-dir <DIR>`: Write migration artifacts to a custom directory. Takes highest precedence over `MOOSE_MIGRATION_CONFIG__DIR` and `migration_config.dir`. Requires `--save`.
 
 **Confirmation flags:**
 - `--yes-all`: Skip all confirmation prompts (renames and destructive operations). Can also be set via `MOOSE_ACCEPT_ALL=1`.

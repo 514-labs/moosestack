@@ -19,6 +19,18 @@ use crate::{
     project::Project,
 };
 
+/// Wraps the last character of a string in brackets for Docker's optional-COPY
+/// glob trick. E.g. `"migrations"` -> `"migration[s]"`.
+///
+/// Uses `char_indices` to locate the last character boundary safely so
+/// multi-byte UTF-8 endings do not panic.
+fn bracket_last_char(s: &str) -> String {
+    match s.char_indices().next_back() {
+        Some((idx, ch)) => format!("{}[{}]", &s[..idx], ch),
+        None => s.to_string(),
+    }
+}
+
 /// Generates a Docker COPY line for the migrations directory using the bracket
 /// glob trick so the COPY is a no-op when the directory doesn't exist.
 ///
@@ -28,13 +40,11 @@ use crate::{
 /// For `"local-migrations"` this produces:
 ///   `COPY --chown=moose:moose ./local-migration[s] ./local-migrations`
 fn docker_migrations_copy_line(dir: &str) -> String {
-    let bracketed = if dir.len() > 1 {
-        let (prefix, last) = dir.split_at(dir.len() - 1);
-        format!("{}[{}]", prefix, last)
-    } else {
-        format!("[{}]", dir)
-    };
-    format!("COPY --chown=moose:moose ./{} ./{}", bracketed, dir)
+    format!(
+        "COPY --chown=moose:moose ./{} ./{}",
+        bracket_last_char(dir),
+        dir
+    )
 }
 
 use serde_json::Value as JsonValue;
@@ -947,12 +957,7 @@ pub fn build_dockerfile(
                             ),
                             &{
                                 let dir = project.migration_config.resolved_dir();
-                                let bracketed = if dir.len() > 1 {
-                                    let (prefix, last) = dir.split_at(dir.len() - 1);
-                                    format!("{}[{}]", prefix, last)
-                                } else {
-                                    format!("[{}]", dir)
-                                };
+                                let bracketed = bracket_last_char(dir);
                                 format!(
                                     "COPY --chown=moose:moose {relative_project_path}/{bracketed} ./{dir}"
                                 )

@@ -2407,11 +2407,18 @@ async fn confirm_and_save_migration_legacy(
         };
 
         let plan_file = migrations_path.join("plan.yaml");
+        let abs_migrations = if migrations_path.is_absolute() {
+            migrations_path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(migrations_path)
+        };
         let schema_rel_path = pathdiff::diff_paths(
             project
                 .internal_dir_with_routine_failure_err()?
                 .join("migration_schema.json"),
-            migrations_path,
+            &abs_migrations,
         )
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "../.moose/migration_schema.json".to_string());

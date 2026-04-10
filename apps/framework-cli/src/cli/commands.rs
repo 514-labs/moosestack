@@ -98,7 +98,7 @@ pub enum Commands {
         #[arg(long)]
         validate: bool,
 
-        /// Directory containing migration files (default: migrations/)
+        /// Directory containing migration files. Overrides MOOSE_MIGRATION_CONFIG__DIR and migration_config.dir
         #[arg(long)]
         migrations_dir: Option<String>,
     },
@@ -414,7 +414,7 @@ pub enum GenerateCommand {
         #[arg(long)]
         no_auto_backfill_sql: bool,
 
-        /// Output directory for migration files (default: migrations/)
+        /// Output directory for migration files. Overrides MOOSE_MIGRATION_CONFIG__DIR and migration_config.dir
         #[arg(long, requires = "save")]
         output_dir: Option<String>,
     },

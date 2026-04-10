@@ -38,7 +38,9 @@ moose migrate --clickhouse-url <CONNECTION_STRING>
 
 ## Execution Lifecycle
 
-When `moose migrate` is executed:
+### Normal execution
+
+When `moose migrate --clickhouse-url <URL>` is executed:
 
 1.  **Resolve Directory:** Determines the migrations directory from `--migrations-dir` (if provided), then `migration_config.dir` (if set in config or `MOOSE_MIGRATION_CONFIG__DIR`), then the default `migrations/`.
 2.  **Load Plan:** Reads `plan.yaml` from the resolved migrations directory.
@@ -46,6 +48,16 @@ When `moose migrate` is executed:
 4.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
 5.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
 6.  **Report Success:** Exits with code 0 if all operations succeed.
+
+### Validate-only mode (delta migrations)
+
+When `moose migrate --validate` is executed (requires `features.migrate_with_deltas = true`):
+
+1.  **Resolve Directory:** Same resolution as above.
+2.  **Load Delta Files:** Reads all `.yaml` delta migration files from the resolved directory.
+3.  **Validate Deltas:** Checks that the delta sequence is consistent (fold succeeds from empty) and detects semantic conflicts between migration files.
+
+This mode does **not** connect to ClickHouse, does not check drift, and does not execute any operations.
 
 ## Failure Modes
 
