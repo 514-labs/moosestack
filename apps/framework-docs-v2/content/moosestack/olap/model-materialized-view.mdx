@@ -613,14 +613,6 @@ mv2 = MaterializedView[DailyCounts](MaterializedViewOptions(
   </LanguageTabContent>
 </LanguageTabs>
 
-### Blue/green schema migrations
-
-Create a new table for a breaking schema change and use an MV to copy data from the old table; when complete, switch reads to the new table and drop just the MV and old table.
-
-<Callout type="info" title="Blue/green table migrations" href="/moosestack/olap/schema-versioning" ctaLabel="Learn more">
-For more information on how to use materialized views to perform blue/green schema migrations, see the [Schema Versioning](/moosestack/olap/schema-versioning) guide.
-</Callout>
-
 ## Defining the transformation
 
 The `selectStatement` (TypeScript) or `select_statement` (Python) is a static SQL query that Moose runs to transform data from your source table(s) into rows for the destination table.
