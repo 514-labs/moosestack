@@ -223,7 +223,9 @@ export const killRemainingProcesses = async (
   const log = options.logger ?? processLogger;
 
   try {
-    await execAsync("pkill -9 -f moose-cli || true", {
+    // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
+    // process (sh -c "pkill -9 -f ...") from matching its own command line.
+    await execAsync("pkill -9 -f '[m]oose-cli' || true", {
       timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
       killSignal: "SIGKILL",
       windowsHide: true,
@@ -235,7 +237,7 @@ export const killRemainingProcesses = async (
 
   try {
     await execAsync(
-      "pkill -9 -f 'moose-runner|streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
+      "pkill -9 -f '[m]oose-runner|[s]treaming_function_runner|[p]ython_worker_wrapper|[c]onsumption.*localhost' || true",
       {
         timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
         killSignal: "SIGKILL",
@@ -254,8 +256,8 @@ export const killRemainingProcesses = async (
     //        19092 (devkafka), 7233 (Temporal)
     await execAsync(
       [
-        "pkill -9 -f 'clickhouse server' || true",
-        "pkill -9 -f 'temporal server' || true",
+        "pkill -9 -f '[c]lickhouse server' || true",
+        "pkill -9 -f '[t]emporal server' || true",
         "fuser -k 18123/tcp 2>/dev/null || true",
         "fuser -k 19000/tcp 2>/dev/null || true",
         "fuser -k 9181/tcp 2>/dev/null || true",

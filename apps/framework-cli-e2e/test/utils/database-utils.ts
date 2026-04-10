@@ -23,9 +23,12 @@ export const waitForClickhouseReplicasReady = async (
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
   const attempts = Math.ceil(timeoutMs / 1000);
+  let restartAttempted = false;
+  let pollCount = 0;
 
   await withRetries(
     async () => {
+      pollCount++;
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
         const result = await client.query({
@@ -35,6 +38,25 @@ export const waitForClickhouseReplicasReady = async (
         });
         const readonlyReplicas: any[] = await result.json();
         if (readonlyReplicas.length > 0) {
+          // After 10 failed polls, try SYSTEM RESTART REPLICA to nudge
+          // replicas out of readonly mode (common ClickHouse workaround).
+          if (pollCount >= 10 && !restartAttempted) {
+            restartAttempted = true;
+            for (const r of readonlyReplicas) {
+              try {
+                log.debug(
+                  `Issuing SYSTEM RESTART REPLICA for ${r.database}.${r.table}`,
+                );
+                await client.command({
+                  query: `SYSTEM RESTART REPLICA \`${r.database}\`.\`${r.table}\``,
+                });
+              } catch (restartErr) {
+                log.debug(
+                  `SYSTEM RESTART REPLICA failed for ${r.database}.${r.table}: ${restartErr}`,
+                );
+              }
+            }
+          }
           const names = readonlyReplicas
             .map((r) => `${r.database}.${r.table}`)
             .join(", ");

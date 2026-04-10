@@ -21,6 +21,25 @@ pub async fn handle(
 
     let group = coordinator.get_or_create_group(request.group_id.clone());
 
+    // Eagerly reap expired members before processing the join. Without this,
+    // a dead leader lingers for up to session_timeout + reaper_interval. The
+    // joining member wouldn't be elected leader and would receive an empty
+    // partition assignment from SyncGroup, stalling consumption.
+    let now = std::time::Instant::now();
+    let expired: Vec<StrBytes> = group
+        .members
+        .iter()
+        .filter(|(_, m)| {
+            let timeout_ms = m.session_timeout_ms.max(0) as u128;
+            now.duration_since(m.last_heartbeat).as_millis() > timeout_ms
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in expired {
+        tracing::info!(group = %request.group_id.0, member = %id, "Reaping expired member during JoinGroup");
+        group.remove_member(&id);
+    }
+
     // Generate or reuse member_id
     let member_id = if request.member_id.is_empty() {
         StrBytes::from_string(format!("member-{}", uuid::Uuid::new_v4()))
@@ -68,8 +87,13 @@ pub async fn handle(
         return response;
     }
 
-    // Elect leader if needed
-    if group.leader_id.is_none() {
+    // Elect leader if needed, or re-elect if the current leader is no longer a member
+    // (e.g. it was reaped above but the leader_id wasn't cleared).
+    if group.leader_id.is_none()
+        || !group
+            .members
+            .contains_key(group.leader_id.as_ref().unwrap())
+    {
         group.leader_id = Some(member_id.clone());
     }
 
