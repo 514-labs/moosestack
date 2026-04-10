@@ -41,11 +41,9 @@ import { Callout } from "@/components/mdx";
 
   Docs: [Planned Migrations](/moosestack/migrate/planned-migrations)
 
-### Improvements
-
+### Bug Fixes
 - `moose init` no longer requires a `--language` flag — the language is inferred from the template. Template is now a positional argument alongside the project name. ([@callicles](https://github.com/callicles))
 
-### Bug Fixes
 
 - Fix `moose harness init --from-remote` failing when used with templates in nested moose project directories. ([@callicles](https://github.com/callicles))
 - Return 404 instead of 500 for unknown consumption API routes, with a helpful message listing available APIs. ([@03cranec](https://github.com/03cranec))
