@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use super::errors::ClickhouseError;
+use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::ClickHouseColumn;
 use crate::framework::core::infrastructure::table::{EnumValue, OrderBy};
 use crate::infrastructure::olap::clickhouse::build_column_property_clauses;
@@ -3456,30 +3456,24 @@ pub fn create_table_query(
             (true, items)
         };
 
-    let (has_constraints, constraint_strings): (bool, Vec<String>) =
-        if table.constraints.is_empty() || !table.engine.is_merge_tree_family() {
-            (false, vec![])
-        } else {
-            let items: Vec<String> = table
-                .constraints
-                .iter()
-                .map(|c| {
-                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_identifier(
-                        &c.name,
-                        "Constraint name",
-                    )?;
-                    crate::infrastructure::olap::clickhouse::errors::validate_clickhouse_identifier(
-                        &c.constraint_type.to_string(),
-                        "Constraint type",
-                    )?;
-                    Ok(format!(
-                        "CONSTRAINT `{}` {} ({})",
-                        c.name, c.constraint_type, c.expression
-                    ))
-                })
-                .collect::<Result<Vec<String>, ClickhouseError>>()?;
-            (true, items)
-        };
+    let (has_constraints, constraint_strings): (bool, Vec<String>) = if table.constraints.is_empty()
+    {
+        (false, vec![])
+    } else {
+        let items: Vec<String> = table
+            .constraints
+            .iter()
+            .map(|c| {
+                validate_clickhouse_identifier(&c.name, "Constraint name")?;
+                validate_clickhouse_identifier(&c.constraint_type.to_string(), "Constraint type")?;
+                Ok(format!(
+                    "CONSTRAINT `{}` {} ({})",
+                    c.name, c.constraint_type, c.expression
+                ))
+            })
+            .collect::<Result<Vec<String>, ClickhouseError>>()?;
+        (true, items)
+    };
 
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
