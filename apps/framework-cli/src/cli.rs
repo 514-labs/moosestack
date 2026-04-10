@@ -68,8 +68,7 @@ use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATIONS_DIR,
-    PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -950,7 +949,9 @@ pub async fn top_command_handler(
                     )
                 })?;
 
-                let migrations_dir = output_dir.as_deref().unwrap_or(MIGRATIONS_DIR);
+                let migrations_dir = output_dir
+                    .as_deref()
+                    .unwrap_or_else(|| project.migration_config.resolved_dir());
 
                 let outcome = confirm_and_save_migration(
                     &project,
@@ -1110,8 +1111,6 @@ pub async fn top_command_handler(
         } => {
             info!("Running migrate command");
 
-            let resolved_migrations_dir = migrations_dir.as_deref().unwrap_or(MIGRATIONS_DIR);
-
             if *validate {
                 // Validate-only mode: no ClickHouse or Redis needed
                 let project = load_project(commands)?;
@@ -1121,6 +1120,9 @@ pub async fn top_command_handler(
                         "Migration validation requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
                     )));
                 }
+                let resolved_migrations_dir = migrations_dir
+                    .as_deref()
+                    .unwrap_or_else(|| project.migration_config.resolved_dir());
                 return validate_migrations(&project, resolved_migrations_dir);
             }
 
@@ -1151,6 +1153,10 @@ pub async fn top_command_handler(
             })?;
 
             override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
+
+            let resolved_migrations_dir = migrations_dir
+                .as_deref()
+                .unwrap_or_else(|| project.migration_config.resolved_dir());
 
             routines::migrate::execute_migration(
                 &project,

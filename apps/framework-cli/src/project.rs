@@ -71,7 +71,7 @@ use crate::utilities::constants::CLI_INTERNAL_VERSIONS_DIR;
 use crate::utilities::constants::ENVIRONMENT_VARIABLE_PREFIX;
 use crate::utilities::constants::OLD_PROJECT_CONFIG_FILE;
 use crate::utilities::constants::PROJECT_CONFIG_FILE;
-use crate::utilities::constants::{APP_DIR, CLI_PROJECT_INTERNAL_DIR, SCHEMAS_DIR};
+use crate::utilities::constants::{APP_DIR, CLI_PROJECT_INTERNAL_DIR, MIGRATIONS_DIR, SCHEMAS_DIR};
 use crate::utilities::git::GitConfig;
 use config::{Config, ConfigError, Environment, File};
 use python_project::PythonProject;
@@ -270,6 +270,17 @@ pub struct MigrationConfig {
     /// destructive operations are detected and no `plan.yaml` is present.
     #[serde(default)]
     pub prod_auto_allow_destructive: bool,
+    /// Directory for migration artifacts (default: "migrations").
+    /// Overridable via `MOOSE_MIGRATION_CONFIG__DIR` environment variable.
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
+impl MigrationConfig {
+    /// Returns the configured migration directory, falling back to the default.
+    pub fn resolved_dir(&self) -> &str {
+        self.dir.as_deref().unwrap_or(MIGRATIONS_DIR)
+    }
 }
 
 /// Configuration for development mode behavior with externally managed tables
