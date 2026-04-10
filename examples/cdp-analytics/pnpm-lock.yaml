@@ -18,7 +18,7 @@ importers:
         version: 1.0.4(express@5.2.1)
       '@514labs/moose-lib':
         specifier: latest
-        version: 0.6.483(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.28)(typescript@5.9.3))
+        version: 0.6.505(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.28)(typescript@5.9.3))
       '@cfworker/json-schema':
         specifier: 4.1.1
         version: 4.1.1
@@ -43,7 +43,7 @@ importers:
     devDependencies:
       '@514labs/moose-cli':
         specifier: latest
-        version: 0.6.483
+        version: 0.6.505
       '@types/express':
         specifier: ^5.0.3
         version: 5.0.6
@@ -52,7 +52,7 @@ importers:
         version: 20.19.28
       ts-node:
         specifier: ^10.9.2
-        version: 10.9.2(@swc/core@1.15.21)(@types/node@20.19.28)(typescript@5.9.3)
+        version: 10.9.2(@swc/core@1.15.24)(@types/node@20.19.28)(typescript@5.9.3)
 
   packages/web-app:
     dependencies:
@@ -259,27 +259,27 @@ packages:
     resolution: {integrity: sha512-wE9zNdx39tcXOlMN4RGQEkuwGPUIJ+4xVQ4WRMFOjVN9Ixndat89jTUIBQSlCOc4B3RrRcn4VTz13pJo9tESMg==}
     engines: {node: '>=18.0.0'}
 
-  '@514labs/moose-cli-darwin-arm64@0.6.483':
-    resolution: {integrity: sha512-fST6ol+5ZO0IEcD5FQ6cx+mKkQHwvHnCJXbeBp6R4ASf6gI6+ukAy8tqmG0qLDcF9xOUhp1VSoGLnsga1A/36g==}
+  '@514labs/moose-cli-darwin-arm64@0.6.505':
+    resolution: {integrity: sha512-CiHB2YwNFJhiR95A4E5REZETFGobtV4Fycxc3GJ1dwml8OUD0wVlIGlw1TG6rF3HGfoJRUBC7wkylfsW4g/4OQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@514labs/moose-cli-linux-arm64@0.6.483':
-    resolution: {integrity: sha512-rW3zMFpM95J3JnI/oia7PmRuYlFG7XajOddzGB6yAsDoehEEL1SaDt5bwPEthroXKTgvzJTQKuXJVnhofncYpQ==}
+  '@514labs/moose-cli-linux-arm64@0.6.505':
+    resolution: {integrity: sha512-BTpJGSlHl8uTz+pTDDMyXcxsLhDXqA7oEOOZXfKSOTG3LbxOzQQREKRSmfqpKNBbxhjsW73oiN7owKSf/SZzeg==}
     cpu: [arm64]
     os: [linux]
 
-  '@514labs/moose-cli-linux-x64@0.6.483':
-    resolution: {integrity: sha512-lVpSIZZ8LUuHykiIQc5n1ezTfSf1Xo5ZCeHoBe7rUk2IciFH/Y14OnDYoOrbWPXIGeFycmY6rlYq/XkGHn6GCg==}
+  '@514labs/moose-cli-linux-x64@0.6.505':
+    resolution: {integrity: sha512-Np0KokvmSHkbGJ7CWfVvBfSKIsxCPO2e1oV+9vrYHqmj1pVO+25zO01eeP4a3BZfP/1JRn+7scuOC0pZVYEnrQ==}
     cpu: [x64]
     os: [linux]
 
-  '@514labs/moose-cli@0.6.483':
-    resolution: {integrity: sha512-Gtt28Bt2eozVFAE3RJ4Xif6KANjHCt87rOFe8pRECAkR3FitnyXh8mUSL7EhYWLGoUNOLrShuH7gZ/tJGsdWLw==}
+  '@514labs/moose-cli@0.6.505':
+    resolution: {integrity: sha512-18g/7+g/fV7GQNiQ00mGxy+/++xsBMpD68cd4bU5IWoo+VxFF3u6AKwnNNWti3KTXDESKQDceMiBevagU1dLOg==}
     hasBin: true
 
-  '@514labs/moose-lib@0.6.483':
-    resolution: {integrity: sha512-Qx5v/hVc2U0y1emk5cSfOQi6Z2s0hyWhBG3kkQmQP7hKUZ70zbDvv9eV2Fr2tas9pciDfcbsiQl6vpE961Ba3A==}
+  '@514labs/moose-lib@0.6.505':
+    resolution: {integrity: sha512-dCO8daqsECgSxIG1GVHCISlvP41nbYvNKQ0fusZX0FzJppl6wNEe/ih7sKq3MpF7UvWuuRn71BmzS01MzDiJiA==}
     engines: {node: '>=20 <25'}
     hasBin: true
     peerDependencies:
@@ -1634,80 +1634,80 @@ packages:
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
 
-  '@swc/core-darwin-arm64@1.15.21':
-    resolution: {integrity: sha512-SA8SFg9dp0qKRH8goWsax6bptFE2EdmPf2YRAQW9WoHGf3XKM1bX0nd5UdwxmC5hXsBUZAYf7xSciCler6/oyA==}
+  '@swc/core-darwin-arm64@1.15.24':
+    resolution: {integrity: sha512-uM5ZGfFXjtvtJ+fe448PVBEbn/CSxS3UAyLj3O9xOqKIWy3S6hPTXSPbszxkSsGDYKi+YFhzAsR4r/eXLxEQ0g==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [darwin]
 
-  '@swc/core-darwin-x64@1.15.21':
-    resolution: {integrity: sha512-//fOVntgowz9+V90lVsNCtyyrtbHp3jWH6Rch7MXHXbcvbLmbCTmssl5DeedUWLLGiAAW1wksBdqdGYOTjaNLw==}
+  '@swc/core-darwin-x64@1.15.24':
+    resolution: {integrity: sha512-fMIb/Zfn929pw25VMBhV7Ji2Dl+lCWtUPNdYJQYOke+00E5fcQ9ynxtP8+qhUo/HZc+mYQb1gJxwHM9vty+lXg==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [darwin]
 
-  '@swc/core-linux-arm-gnueabihf@1.15.21':
-    resolution: {integrity: sha512-meNI4Sh6h9h8DvIfEc0l5URabYMSuNvyisLmG6vnoYAS43s8ON3NJR8sDHvdP7NJTrLe0q/x2XCn6yL/BeHcZg==}
+  '@swc/core-linux-arm-gnueabihf@1.15.24':
+    resolution: {integrity: sha512-vOkjsyjjxnoYx3hMEWcGxQrMgnNrRm6WAegBXrN8foHtDAR+zpdhpGF5a4lj1bNPgXAvmysjui8cM1ov/Clkaw==}
     engines: {node: '>=10'}
     cpu: [arm]
     os: [linux]
 
-  '@swc/core-linux-arm64-gnu@1.15.21':
-    resolution: {integrity: sha512-QrXlNQnHeXqU2EzLlnsPoWEh8/GtNJLvfMiPsDhk+ht6Xv8+vhvZ5YZ/BokNWSIZiWPKLAqR0M7T92YF5tmD3g==}
+  '@swc/core-linux-arm64-gnu@1.15.24':
+    resolution: {integrity: sha512-h/oNu+upkXJ6Cicnq7YGVj9PkdfarLCdQa8l/FlHYvfv8CEiMaeeTnpLU7gSBH/rGxosM6Qkfa/J9mThGF9CLA==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
 
-  '@swc/core-linux-arm64-musl@1.15.21':
-    resolution: {integrity: sha512-8/yGCMO333ultDaMQivE5CjO6oXDPeeg1IV4sphojPkb0Pv0i6zvcRIkgp60xDB+UxLr6VgHgt+BBgqS959E9g==}
+  '@swc/core-linux-arm64-musl@1.15.24':
+    resolution: {integrity: sha512-ZpF/pRe1guk6sKzQI9D1jAORtjTdNlyeXn9GDz8ophof/w2WhojRblvSDJaGe7rJjcPN8AaOkhwdRUh7q8oYIg==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
 
-  '@swc/core-linux-ppc64-gnu@1.15.21':
-    resolution: {integrity: sha512-ucW0HzPx0s1dgRvcvuLSPSA/2Kk/VYTv9st8qe1Kc22Gu0Q0rH9+6TcBTmMuNIp0Xs4BPr1uBttmbO1wEGI49Q==}
+  '@swc/core-linux-ppc64-gnu@1.15.24':
+    resolution: {integrity: sha512-QZEsZfisHTSJlmyChgDFNmKPb3W6Lhbfo/O76HhIngfEdnQNmukS38/VSe1feho+xkV5A5hETyCbx3sALBZKAQ==}
     engines: {node: '>=10'}
     cpu: [ppc64]
     os: [linux]
 
-  '@swc/core-linux-s390x-gnu@1.15.21':
-    resolution: {integrity: sha512-ulTnOGc5I7YRObE/9NreAhQg94QkiR5qNhhcUZ1iFAYjzg/JGAi1ch+s/Ixe61pMIr8bfVrF0NOaB0f8wjaAfA==}
+  '@swc/core-linux-s390x-gnu@1.15.24':
+    resolution: {integrity: sha512-DLdJKVsJgglqQrJBuoUYNmzm3leI7kUZhLbZGHv42onfKsGf6JDS3+bzCUQfte/XOqDjh/tmmn1DR/CF/tCJFw==}
     engines: {node: '>=10'}
     cpu: [s390x]
     os: [linux]
 
-  '@swc/core-linux-x64-gnu@1.15.21':
-    resolution: {integrity: sha512-D0RokxtM+cPvSqJIKR6uja4hbD+scI9ezo95mBhfSyLUs9wnPPl26sLp1ZPR/EXRdYm3F3S6RUtVi+8QXhT24Q==}
+  '@swc/core-linux-x64-gnu@1.15.24':
+    resolution: {integrity: sha512-IpLYfposPA/XLxYOKpRfeccl1p5dDa3+okZDHHTchBkXEaVCnq5MADPmIWwIYj1tudt7hORsEHccG5no6IUQRw==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
 
-  '@swc/core-linux-x64-musl@1.15.21':
-    resolution: {integrity: sha512-nER8u7VeRfmU6fMDzl1NQAbbB/G7O2avmvCOwIul1uGkZ2/acbPH+DCL9h5+0yd/coNcxMBTL6NGepIew+7C2w==}
+  '@swc/core-linux-x64-musl@1.15.24':
+    resolution: {integrity: sha512-JHy3fMSc0t/EPWgo74+OK5TGr51aElnzqfUPaiRf2qJ/BfX5CUCfMiWVBuhI7qmVMBnk1jTRnL/xZnOSHDPLYg==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
 
-  '@swc/core-win32-arm64-msvc@1.15.21':
-    resolution: {integrity: sha512-+/AgNBnjYugUA8C0Do4YzymgvnGbztv7j8HKSQLvR/DQgZPoXQ2B3PqB2mTtGh/X5DhlJWiqnunN35JUgWcAeQ==}
+  '@swc/core-win32-arm64-msvc@1.15.24':
+    resolution: {integrity: sha512-Txj+qUH1z2bUd1P3JvwByfjKFti3cptlAxhWgmunBUUxy/IW3CXLZ6l6Gk4liANadKkU71nIU1X30Z5vpMT3BA==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [win32]
 
-  '@swc/core-win32-ia32-msvc@1.15.21':
-    resolution: {integrity: sha512-IkSZj8PX/N4HcaFhMQtzmkV8YSnuNoJ0E6OvMwFiOfejPhiKXvl7CdDsn1f4/emYEIDO3fpgZW9DTaCRMDxaDA==}
+  '@swc/core-win32-ia32-msvc@1.15.24':
+    resolution: {integrity: sha512-15D/nl3XwrhFpMv+MADFOiVwv3FvH9j8c6Rf8EXBT3Q5LoMh8YnDnSgPYqw1JzPnksvsBX6QPXLiPqmcR/Z4qQ==}
     engines: {node: '>=10'}
     cpu: [ia32]
     os: [win32]
 
-  '@swc/core-win32-x64-msvc@1.15.21':
-    resolution: {integrity: sha512-zUyWso7OOENB6e1N1hNuNn8vbvLsTdKQ5WKLgt/JcBNfJhKy/6jmBmqI3GXk/MyvQKd5SLvP7A0F36p7TeDqvw==}
+  '@swc/core-win32-x64-msvc@1.15.24':
+    resolution: {integrity: sha512-PR0PlTlPra2JbaDphrOAzm6s0v9rA0F17YzB+XbWD95B4g2cWcZY9LAeTa4xll70VLw9Jr7xBrlohqlQmelMFQ==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [win32]
 
-  '@swc/core@1.15.21':
-    resolution: {integrity: sha512-fkk7NJcBscrR3/F8jiqlMptRHP650NxqDnspBMrRe5d8xOoCy9MLL5kOBLFXjFLfMo3KQQHhk+/jUULOMlR1uQ==}
+  '@swc/core@1.15.24':
+    resolution: {integrity: sha512-5Hj8aNasue7yusUt8LGCUe/AjM7RMAce8ZoyDyiFwx7Al+GbYKL+yE7g4sJk8vEr1dKIkTRARkNIJENc4CjkBQ==}
     engines: {node: '>=10'}
     peerDependencies:
       '@swc/helpers': '>=0.5.17'
@@ -1812,36 +1812,36 @@ packages:
   '@tailwindcss/postcss@4.1.18':
     resolution: {integrity: sha512-Ce0GFnzAOuPyfV5SxjXGn0CubwGcuDB0zcdaPuCSzAa/2vII24JTkH+I6jcbXLb1ctjZMZZI6OjDaLPJQL1S0g==}
 
-  '@temporalio/activity@1.15.0':
-    resolution: {integrity: sha512-kKEIrHMTsANiEpDVZd+v3OT6kU20UtcvAK7iibJNzQnoZUGC7XnqdKQlBuGYBxgpJzD9ppGgskXRczW+XU5Kng==}
+  '@temporalio/activity@1.16.0':
+    resolution: {integrity: sha512-hmWt7uAvgV+U0sr2x4Z8jIpk5PnwlA0qkcfSlFTrzhp0NYD6GXHa+IPwHCu0wkkmjqfYwYEi/+fabApvsjmHRA==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/client@1.15.0':
-    resolution: {integrity: sha512-SxTGqRIa2+Vy4P9+06ZpUf4u7ZZmOXfx/kr9XvNqAApLxTMKjTQIg5OH5Wt4JLUtIR7dFkuHIyhewdRyG+hSsQ==}
+  '@temporalio/client@1.16.0':
+    resolution: {integrity: sha512-ojMgx6ozO8WEnF+AwK+pGxToV/bGLnKKwMwdG+pbV6w494Z98IXpqc7teDU2eTjuaEboPWRzZubTytjgpBbCHQ==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/common@1.15.0':
-    resolution: {integrity: sha512-tBfC3fdOExsNoS5krkMUXnaMtCRKj05Jts4+TH+cgHpbys68nslFvUQLqwPIw2x6155Divb9MF219a/75itbTg==}
+  '@temporalio/common@1.16.0':
+    resolution: {integrity: sha512-xim7gAIAjquHOXgZWOtzmovXJJYlczzcVdrCMfJB1/21ZTxS028X72na98mtFyl7tA+Z1vKRvdtyew/XPK8pMg==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/core-bridge@1.15.0':
-    resolution: {integrity: sha512-Qdrs5zju5MiOwmERCWzQ6uHZwn1JaQk/ppS2UHbxqZndjbAEFPDU9KQqFLkxWAicHMy7+LGPnA4DpVOANGlTZA==}
+  '@temporalio/core-bridge@1.16.0':
+    resolution: {integrity: sha512-ozuytog/OoS5KEqAOcPFIUzNyd7Ees2+faL2LohzxrkOdlUbtpyREJTyMCr8KC7M40lXrWktRD9tvQzZCjWmfg==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/nexus@1.15.0':
-    resolution: {integrity: sha512-E6CdIjskkbK2aObxcb76Z4V3o1D3QDxEtsxmuHX5D7HEABuYGdV+oeOzDyxMlfeY9GyIM9Nvky4XCiSz2h2XRA==}
+  '@temporalio/nexus@1.16.0':
+    resolution: {integrity: sha512-xvLgJyxxOvOidl/qAavc90URqvqca3djxlWR0rLQ/PDZUmj+F1RkYHU9APMF8ez6Ifw0G4/YW/APgy2XWCXg1g==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/proto@1.15.0':
-    resolution: {integrity: sha512-Awy4Fjzyba7Pg/CVZjjQ3x2CWkDL1qELyTZWcLlyjXq8bX694JVfBsmiMmF6tHn5/ySOIxDTcc0MSScZ0oKX5A==}
+  '@temporalio/proto@1.16.0':
+    resolution: {integrity: sha512-2zT4k0FP9pOi445ZviVceKy4+QdNXiydWRmmYnsg7gDbS3jCwe1Z+SBGdFBEIu/gQHyaR8a2a9Ru2hhDr7nFPw==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/worker@1.15.0':
-    resolution: {integrity: sha512-9e0AWP2OxYFgeztMdkoWYbDVqmNubreRkG7/frVKFT3xHdIOrFQ2W6Yomv61q3oKMXTIrpvjClHtiTjAUr70uA==}
+  '@temporalio/worker@1.16.0':
+    resolution: {integrity: sha512-iFsZ7rMjbk7v+YMIEuSwwQdKyjYLs9ONm3UjcMiwvDNAYCNUlcW8RZ2vC/l9hHqSBeZejWbntCHRzlUcjEOpJw==}
     engines: {node: '>= 20.0.0'}
 
-  '@temporalio/workflow@1.15.0':
-    resolution: {integrity: sha512-VaMhVtlA0hLLM/pna26vFSdn5W1Arq2+ccgItdbdRdZUa0X8eW2B7sl/PcUYQOWc4aMUGnvPATKUGUoFKyCxSg==}
+  '@temporalio/workflow@1.16.0':
+    resolution: {integrity: sha512-jP3qIkP75bvKRYptKPaCmhHzgIo0L0D6hjpYozNjj/7rLiX8x/Awco7eXUV3MpHQxZkoxTg6Kzyue/NCZmV5aQ==}
     engines: {node: '>= 20.0.0'}
 
   '@tsconfig/node10@1.0.12':
@@ -2352,8 +2352,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.10.13:
-    resolution: {integrity: sha512-BL2sTuHOdy0YT1lYieUxTw/QMtPBC3pmlJC6xk8BBYVv6vcw3SGdKemQ+Xsx9ik2F/lYDO9tqsFQH1r9PFuHKw==}
+  baseline-browser-mapping@2.10.17:
+    resolution: {integrity: sha512-HdrkN8eVG2CXxeifv/VdJ4A4RSra1DTW8dc/hdxzhGHN8QePs6gKaWM9pHPcpCoxYZJuOZ8drHmbdpLHjCYjLA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -2418,8 +2418,8 @@ packages:
   caniuse-lite@1.0.30001764:
     resolution: {integrity: sha512-9JGuzl2M+vPL+pz70gtMF9sHdMFbY9FJaQBi186cHKH3pSzDvzoUJUPV6fqiKIMyXbud9ZLg4F3Yza1vJ1+93g==}
 
-  caniuse-lite@1.0.30001784:
-    resolution: {integrity: sha512-WU346nBTklUV9YfUl60fqRbU5ZqyXlqvo1SgigE1OAXK5bFL8LL9q1K7aap3N739l4BvNqnkm3YrGHiY9sfUQw==}
+  caniuse-lite@1.0.30001787:
+    resolution: {integrity: sha512-mNcrMN9KeI68u7muanUpEejSLghOKlVhRqS/Za2IeyGllJ9I9otGpR9g3nsw7n4W378TE/LyIteA0+/FOZm4Kg==}
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -2710,8 +2710,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electron-to-chromium@1.5.330:
-    resolution: {integrity: sha512-jFNydB5kFtYUobh4IkWUnXeyDbjf/r9gcUEXe1xcrcUxIGfTdzPXA+ld6zBRbwvgIGVzDll/LTIiDztEtckSnA==}
+  electron-to-chromium@1.5.334:
+    resolution: {integrity: sha512-mgjZAz7Jyx1SRCwEpy9wefDS7GvNPazLthHg8eQMJ76wBdGQQDW33TCrUTvQ4wzpmOrv2zrFoD3oNufMdyMpog==}
 
   embla-carousel-react@8.6.0:
     resolution: {integrity: sha512-0/PjqU7geVmo6F734pmPqpyHqiM99olvyecY7zdweCw+6tKEXnrE90pBiBbMMU8s5tICemzpQ3hi5EpxzGW+JA==}
@@ -3893,9 +3893,9 @@ packages:
       sass:
         optional: true
 
-  nexus-rpc@0.0.1:
-    resolution: {integrity: sha512-hAWn8Hh2eewpB5McXR5EW81R3pR/ziuGhKCF3wFyUVCklanPqrIgMNr7jKCbzXeNVad0nUDfWpFRqh2u+zxQtw==}
-    engines: {node: '>= 18.0.0'}
+  nexus-rpc@0.0.2:
+    resolution: {integrity: sha512-IWjIExdVYlmwXuzHdY/Q3lXCv1gbqoAXPazQhy2w4Xgtgha3H0OOujEESVPQcFUFMWm+pAk2gKnb57g8S41JZg==}
+    engines: {node: '>= 20.0.0'}
 
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
@@ -3906,8 +3906,8 @@ packages:
       encoding:
         optional: true
 
-  node-releases@2.0.36:
-    resolution: {integrity: sha512-TdC8FSgHz8Mwtw9g5L4gR/Sh9XhSP/0DEkQxfEFXOpiul5IiHgHan2VhYYb6agDSfp4KuvltmGApc8HMgUrIkA==}
+  node-releases@2.0.37:
+    resolution: {integrity: sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==}
 
   nopt@5.0.0:
     resolution: {integrity: sha512-Tbj67rffqceeLpcRXrT7vKAN8CwfPeIBgM7E6iBkmKLV7bEMwpGgYLGv0jACUsECaa/vuxP0IjEont6umdMgtQ==}
@@ -4766,8 +4766,8 @@ packages:
     resolution: {integrity: sha512-7tP1PdV4vF+lYPnkMR0jMY5/la2ub5Fc/8VQrrU+lXkiM6C4TjVfGw7iKfyhnTQOsD+6Q/iKw0eFciziRgD58Q==}
     engines: {node: '>=10.13.0'}
 
-  webpack@5.105.4:
-    resolution: {integrity: sha512-jTywjboN9aHxFlToqb0K0Zs9SbBoW4zRUlGzI2tYNxVYcEi/IPpn+Xi4ye5jTLvX2YeLuic/IvxNot+Q1jMoOw==}
+  webpack@5.106.1:
+    resolution: {integrity: sha512-EW8af29ak8Oaf4T8k8YsajjrDBDYgnKZ5er6ljWFJsXABfTNowQfvHLftwcepVgdz+IoLSdEAbBiM9DFXoll9w==}
     engines: {node: '>=10.13.0'}
     hasBin: true
     peerDependencies:
@@ -4888,32 +4888,32 @@ snapshots:
       - encoding
       - supports-color
 
-  '@514labs/moose-cli-darwin-arm64@0.6.483':
+  '@514labs/moose-cli-darwin-arm64@0.6.505':
     optional: true
 
-  '@514labs/moose-cli-linux-arm64@0.6.483':
+  '@514labs/moose-cli-linux-arm64@0.6.505':
     optional: true
 
-  '@514labs/moose-cli-linux-x64@0.6.483':
+  '@514labs/moose-cli-linux-x64@0.6.505':
     optional: true
 
-  '@514labs/moose-cli@0.6.483':
+  '@514labs/moose-cli@0.6.505':
     optionalDependencies:
-      '@514labs/moose-cli-darwin-arm64': 0.6.483
-      '@514labs/moose-cli-linux-arm64': 0.6.483
-      '@514labs/moose-cli-linux-x64': 0.6.483
+      '@514labs/moose-cli-darwin-arm64': 0.6.505
+      '@514labs/moose-cli-linux-arm64': 0.6.505
+      '@514labs/moose-cli-linux-x64': 0.6.505
 
-  '@514labs/moose-lib@0.6.483(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.28)(typescript@5.9.3))':
+  '@514labs/moose-lib@0.6.505(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.28)(typescript@5.9.3))':
     dependencies:
       '@514labs/kafka-javascript': 1.7.1-patch
       '@clickhouse/client': 1.8.1
       '@clickhouse/client-web': 1.5.0
       '@kafkajs/confluent-schema-registry': 3.9.0
-      '@temporalio/activity': 1.15.0
-      '@temporalio/client': 1.15.0
-      '@temporalio/common': 1.15.0
-      '@temporalio/worker': 1.15.0(tslib@2.8.1)
-      '@temporalio/workflow': 1.15.0
+      '@temporalio/activity': 1.16.0
+      '@temporalio/client': 1.16.0
+      '@temporalio/common': 1.16.0
+      '@temporalio/worker': 1.16.0(tslib@2.8.1)
+      '@temporalio/workflow': 1.16.0
       commander: 13.1.0
       csv-parse: 5.6.0
       fastq: 1.17.1
@@ -6321,59 +6321,59 @@ snapshots:
 
   '@standard-schema/utils@0.3.0': {}
 
-  '@swc/core-darwin-arm64@1.15.21':
+  '@swc/core-darwin-arm64@1.15.24':
     optional: true
 
-  '@swc/core-darwin-x64@1.15.21':
+  '@swc/core-darwin-x64@1.15.24':
     optional: true
 
-  '@swc/core-linux-arm-gnueabihf@1.15.21':
+  '@swc/core-linux-arm-gnueabihf@1.15.24':
     optional: true
 
-  '@swc/core-linux-arm64-gnu@1.15.21':
+  '@swc/core-linux-arm64-gnu@1.15.24':
     optional: true
 
-  '@swc/core-linux-arm64-musl@1.15.21':
+  '@swc/core-linux-arm64-musl@1.15.24':
     optional: true
 
-  '@swc/core-linux-ppc64-gnu@1.15.21':
+  '@swc/core-linux-ppc64-gnu@1.15.24':
     optional: true
 
-  '@swc/core-linux-s390x-gnu@1.15.21':
+  '@swc/core-linux-s390x-gnu@1.15.24':
     optional: true
 
-  '@swc/core-linux-x64-gnu@1.15.21':
+  '@swc/core-linux-x64-gnu@1.15.24':
     optional: true
 
-  '@swc/core-linux-x64-musl@1.15.21':
+  '@swc/core-linux-x64-musl@1.15.24':
     optional: true
 
-  '@swc/core-win32-arm64-msvc@1.15.21':
+  '@swc/core-win32-arm64-msvc@1.15.24':
     optional: true
 
-  '@swc/core-win32-ia32-msvc@1.15.21':
+  '@swc/core-win32-ia32-msvc@1.15.24':
     optional: true
 
-  '@swc/core-win32-x64-msvc@1.15.21':
+  '@swc/core-win32-x64-msvc@1.15.24':
     optional: true
 
-  '@swc/core@1.15.21':
+  '@swc/core@1.15.24':
     dependencies:
       '@swc/counter': 0.1.3
       '@swc/types': 0.1.26
     optionalDependencies:
-      '@swc/core-darwin-arm64': 1.15.21
-      '@swc/core-darwin-x64': 1.15.21
-      '@swc/core-linux-arm-gnueabihf': 1.15.21
-      '@swc/core-linux-arm64-gnu': 1.15.21
-      '@swc/core-linux-arm64-musl': 1.15.21
-      '@swc/core-linux-ppc64-gnu': 1.15.21
-      '@swc/core-linux-s390x-gnu': 1.15.21
-      '@swc/core-linux-x64-gnu': 1.15.21
-      '@swc/core-linux-x64-musl': 1.15.21
-      '@swc/core-win32-arm64-msvc': 1.15.21
-      '@swc/core-win32-ia32-msvc': 1.15.21
-      '@swc/core-win32-x64-msvc': 1.15.21
+      '@swc/core-darwin-arm64': 1.15.24
+      '@swc/core-darwin-x64': 1.15.24
+      '@swc/core-linux-arm-gnueabihf': 1.15.24
+      '@swc/core-linux-arm64-gnu': 1.15.24
+      '@swc/core-linux-arm64-musl': 1.15.24
+      '@swc/core-linux-ppc64-gnu': 1.15.24
+      '@swc/core-linux-s390x-gnu': 1.15.24
+      '@swc/core-linux-x64-gnu': 1.15.24
+      '@swc/core-linux-x64-musl': 1.15.24
+      '@swc/core-win32-arm64-msvc': 1.15.24
+      '@swc/core-win32-ia32-msvc': 1.15.24
+      '@swc/core-win32-x64-msvc': 1.15.24
 
   '@swc/counter@0.1.3': {}
 
@@ -6454,71 +6454,71 @@ snapshots:
       postcss: 8.5.6
       tailwindcss: 4.1.18
 
-  '@temporalio/activity@1.15.0':
+  '@temporalio/activity@1.16.0':
     dependencies:
-      '@temporalio/client': 1.15.0
-      '@temporalio/common': 1.15.0
+      '@temporalio/client': 1.16.0
+      '@temporalio/common': 1.16.0
       abort-controller: 3.0.0
 
-  '@temporalio/client@1.15.0':
+  '@temporalio/client@1.16.0':
     dependencies:
       '@grpc/grpc-js': 1.14.3
-      '@temporalio/common': 1.15.0
-      '@temporalio/proto': 1.15.0
+      '@temporalio/common': 1.16.0
+      '@temporalio/proto': 1.16.0
       abort-controller: 3.0.0
       long: 5.3.2
       uuid: 11.1.0
 
-  '@temporalio/common@1.15.0':
+  '@temporalio/common@1.16.0':
     dependencies:
-      '@temporalio/proto': 1.15.0
+      '@temporalio/proto': 1.16.0
       long: 5.3.2
       ms: 3.0.0-canary.1
-      nexus-rpc: 0.0.1
+      nexus-rpc: 0.0.2
       proto3-json-serializer: 2.0.2
 
-  '@temporalio/core-bridge@1.15.0':
+  '@temporalio/core-bridge@1.16.0':
     dependencies:
       '@grpc/grpc-js': 1.14.3
-      '@temporalio/common': 1.15.0
+      '@temporalio/common': 1.16.0
 
-  '@temporalio/nexus@1.15.0':
+  '@temporalio/nexus@1.16.0':
     dependencies:
-      '@temporalio/client': 1.15.0
-      '@temporalio/common': 1.15.0
-      '@temporalio/proto': 1.15.0
+      '@temporalio/client': 1.16.0
+      '@temporalio/common': 1.16.0
+      '@temporalio/proto': 1.16.0
       long: 5.3.2
-      nexus-rpc: 0.0.1
+      nexus-rpc: 0.0.2
 
-  '@temporalio/proto@1.15.0':
+  '@temporalio/proto@1.16.0':
     dependencies:
       long: 5.3.2
       protobufjs: 7.5.4
 
-  '@temporalio/worker@1.15.0(tslib@2.8.1)':
+  '@temporalio/worker@1.16.0(tslib@2.8.1)':
     dependencies:
       '@grpc/grpc-js': 1.14.3
-      '@swc/core': 1.15.21
-      '@temporalio/activity': 1.15.0
-      '@temporalio/client': 1.15.0
-      '@temporalio/common': 1.15.0
-      '@temporalio/core-bridge': 1.15.0
-      '@temporalio/nexus': 1.15.0
-      '@temporalio/proto': 1.15.0
-      '@temporalio/workflow': 1.15.0
+      '@swc/core': 1.15.24
+      '@temporalio/activity': 1.16.0
+      '@temporalio/client': 1.16.0
+      '@temporalio/common': 1.16.0
+      '@temporalio/core-bridge': 1.16.0
+      '@temporalio/nexus': 1.16.0
+      '@temporalio/proto': 1.16.0
+      '@temporalio/workflow': 1.16.0
       abort-controller: 3.0.0
       heap-js: 2.7.1
       memfs: 4.57.1(tslib@2.8.1)
-      nexus-rpc: 0.0.1
+      nexus-rpc: 0.0.2
       proto3-json-serializer: 2.0.2
       protobufjs: 7.5.4
       rxjs: 7.8.2
       source-map: 0.7.6
-      source-map-loader: 4.0.2(webpack@5.105.4(@swc/core@1.15.21))
+      source-map-loader: 4.0.2(webpack@5.106.1(@swc/core@1.15.24))
       supports-color: 8.1.1
-      swc-loader: 0.2.7(@swc/core@1.15.21)(webpack@5.105.4(@swc/core@1.15.21))
+      swc-loader: 0.2.7(@swc/core@1.15.24)(webpack@5.106.1(@swc/core@1.15.24))
       unionfs: 4.6.0
-      webpack: 5.105.4(@swc/core@1.15.21)
+      webpack: 5.106.1(@swc/core@1.15.24)
     transitivePeerDependencies:
       - '@swc/helpers'
       - esbuild
@@ -6526,11 +6526,11 @@ snapshots:
       - uglify-js
       - webpack-cli
 
-  '@temporalio/workflow@1.15.0':
+  '@temporalio/workflow@1.16.0':
     dependencies:
-      '@temporalio/common': 1.15.0
-      '@temporalio/proto': 1.15.0
-      nexus-rpc: 0.0.1
+      '@temporalio/common': 1.16.0
+      '@temporalio/proto': 1.16.0
+      nexus-rpc: 0.0.2
 
   '@tsconfig/node10@1.0.12': {}
 
@@ -7088,7 +7088,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.10.13: {}
+  baseline-browser-mapping@2.10.17: {}
 
   baseline-browser-mapping@2.9.14: {}
 
@@ -7136,10 +7136,10 @@ snapshots:
 
   browserslist@4.28.2:
     dependencies:
-      baseline-browser-mapping: 2.10.13
-      caniuse-lite: 1.0.30001784
-      electron-to-chromium: 1.5.330
-      node-releases: 2.0.36
+      baseline-browser-mapping: 2.10.17
+      caniuse-lite: 1.0.30001787
+      electron-to-chromium: 1.5.334
+      node-releases: 2.0.37
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
 
   buffer-from@1.1.2: {}
@@ -7172,7 +7172,7 @@ snapshots:
 
   caniuse-lite@1.0.30001764: {}
 
-  caniuse-lite@1.0.30001784: {}
+  caniuse-lite@1.0.30001787: {}
 
   ccount@2.0.1: {}
 
@@ -7417,7 +7417,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electron-to-chromium@1.5.330: {}
+  electron-to-chromium@1.5.334: {}
 
   embla-carousel-react@8.6.0(react@19.2.1):
     dependencies:
@@ -8925,13 +8925,13 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  nexus-rpc@0.0.1: {}
+  nexus-rpc@0.0.2: {}
 
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
 
-  node-releases@2.0.36: {}
+  node-releases@2.0.37: {}
 
   nopt@5.0.0:
     dependencies:
@@ -9535,11 +9535,11 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
-  source-map-loader@4.0.2(webpack@5.105.4(@swc/core@1.15.21)):
+  source-map-loader@4.0.2(webpack@5.106.1(@swc/core@1.15.24)):
     dependencies:
       iconv-lite: 0.6.3
       source-map-js: 1.2.1
-      webpack: 5.105.4(@swc/core@1.15.21)
+      webpack: 5.106.1(@swc/core@1.15.24)
 
   source-map-support@0.5.21:
     dependencies:
@@ -9659,11 +9659,11 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  swc-loader@0.2.7(@swc/core@1.15.21)(webpack@5.105.4(@swc/core@1.15.21)):
+  swc-loader@0.2.7(@swc/core@1.15.24)(webpack@5.106.1(@swc/core@1.15.24)):
     dependencies:
-      '@swc/core': 1.15.21
+      '@swc/core': 1.15.24
       '@swc/counter': 0.1.3
-      webpack: 5.105.4(@swc/core@1.15.21)
+      webpack: 5.106.1(@swc/core@1.15.24)
 
   swr@2.3.8(react@19.2.1):
     dependencies:
@@ -9687,15 +9687,15 @@ snapshots:
       minizlib: 3.1.0
       yallist: 5.0.0
 
-  terser-webpack-plugin@5.4.0(@swc/core@1.15.21)(webpack@5.105.4(@swc/core@1.15.21)):
+  terser-webpack-plugin@5.4.0(@swc/core@1.15.24)(webpack@5.106.1(@swc/core@1.15.24)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.3.3
       terser: 5.46.1
-      webpack: 5.105.4(@swc/core@1.15.21)
+      webpack: 5.106.1(@swc/core@1.15.24)
     optionalDependencies:
-      '@swc/core': 1.15.21
+      '@swc/core': 1.15.24
 
   terser@5.46.1:
     dependencies:
@@ -9741,7 +9741,7 @@ snapshots:
     dependencies:
       typescript: 5.9.3
 
-  ts-node@10.9.2(@swc/core@1.15.21)(@types/node@20.19.28)(typescript@5.9.3):
+  ts-node@10.9.2(@swc/core@1.15.24)(@types/node@20.19.28)(typescript@5.9.3):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.12
@@ -9759,7 +9759,7 @@ snapshots:
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
     optionalDependencies:
-      '@swc/core': 1.15.21
+      '@swc/core': 1.15.24
 
   ts-patch@3.3.0:
     dependencies:
@@ -10016,7 +10016,7 @@ snapshots:
 
   webpack-sources@3.3.4: {}
 
-  webpack@5.105.4(@swc/core@1.15.21):
+  webpack@5.106.1(@swc/core@1.15.24):
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.8
@@ -10040,7 +10040,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.2
-      terser-webpack-plugin: 5.4.0(@swc/core@1.15.21)(webpack@5.105.4(@swc/core@1.15.21))
+      terser-webpack-plugin: 5.4.0(@swc/core@1.15.24)(webpack@5.106.1(@swc/core@1.15.24))
       watchpack: 2.5.1
       webpack-sources: 3.3.4
     transitivePeerDependencies:
