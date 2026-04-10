@@ -40,7 +40,7 @@ This guide assumes:
   database, then return here once you have a project the agent can run against.
 </Callout>
 
-Install the `514` CLI, link your local MooseStack project to its Fiveonefour counterpart, and run `514 agent init` so your coding agent has the harness and skills.
+Install the `514` CLI, sign in, link your local MooseStack project to its Fiveonefour counterpart, and run `514 agent init` so your coding agent has the harness and skills.
 
 <GuideStepper id="optimize-ch-setup" persist>
 <GuideStepper.Step
@@ -75,41 +75,42 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) 514
 </GuideStepper.Step>
 
 <GuideStepper.Step
-  id="link-fiveonefour-project"
+  id="auth-and-link"
   number={2}
-  title="Run 514 project link"
-  summary="Use the interactive chooser to connect this repo to the right Fiveonefour project."
+  title="Sign in and link your project"
+  summary="Authenticate with Fiveonefour and connect this repo to the right project."
 >
 <GuideStepper.WhatYouNeed>
 - Install step complete
+- A Fiveonefour account
 - The root of your MooseStack project open in the terminal
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
+- An authenticated CLI session
 - Local configuration that points at the right Fiveonefour project for the CLI and your agent
 - The project context the workflow will use when it creates baseline and candidate preview branches
 </GuideStepper.WhatYouGet>
 
-<GuideStepper.Checkpoint title="Start the interactive link flow">
+<GuideStepper.Checkpoint title="Sign in and verify">
+```bash
+514 auth login
+514 auth whoami
+```
+
+`514 auth login` opens a browser-based sign-in flow. Complete the sign-in and return to your terminal. `514 auth whoami` should print your account name or email. If not, rerun `514 auth login`.
+
+No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Link your project">
 Make sure you are in the root of your MooseStack project directory and run:
 
 ```bash
 514 project link
 ```
 
-`514 project link` is the default setup path in this guide. It opens the interactive flow, validates your repo context, checks whether you are signed in, and lets you choose the correct Fiveonefour project during the command. That linked project is where the workflow will create and compare the preview branches for the baseline and candidate runs.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint title="Finish auth only if project link asks for it">
-If `514 project link` prompts you to authenticate or fails with an auth-required message, complete sign-in and rerun the link command:
-
-```bash
-514 auth login
-514 auth whoami
-514 project link
-```
-
-No browser? Sign in at `https://www.fiveonefour.boreal.cloud/login` and retry. Once the link succeeds, the rest of the workflow can reuse that project context.
+This opens the interactive flow, validates your repo context, and lets you choose the correct Fiveonefour project. That linked project is where the workflow will create and compare the preview branches for the baseline and candidate runs.
 
 Related docs:
 

@@ -66,7 +66,44 @@ class ReplacingMergeTreeEngine(EngineConfig):
 
 @dataclass
 class AggregatingMergeTreeEngine(EngineConfig):
-    """Configuration for AggregatingMergeTree engine"""
+    """Configuration for AggregatingMergeTree engine, which stores pre-aggregated
+    values and aggregate states that are automatically merged during background
+    compaction.
+
+    Fields in the model that hold aggregate data must use the corresponding type
+    annotation so the correct ClickHouse column type is generated:
+
+    - ``Annotated[T, AggregateFunction(agg_func=..., param_types=[...])]`` produces
+      ``AggregateFunction(fn, ...types)``. Data is written via ``fnState(...)``
+      and queried with ``fnMerge(...)``.
+    - ``simple_aggregated(fn, arg_type)`` produces
+      ``SimpleAggregateFunction(fn, type)``. Stores the merged value directly
+      (no state/merge round-trip).
+
+    Non-annotated fields are treated as ordinary dimensions (part of the ORDER BY
+    key, etc.).
+
+    Example::
+
+        from moose_lib import (
+            OlapTable, OlapConfig, AggregatingMergeTreeEngine,
+            simple_aggregated, AggregateFunction,
+        )
+        from typing import Annotated
+        from pydantic import BaseModel
+        from datetime import datetime
+
+        class DailyStats(BaseModel):
+            date: datetime
+            user_id: str
+            total_views: simple_aggregated("sum", int)
+            avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+
+        stats = OlapTable[DailyStats]("daily_stats", OlapConfig(
+            engine=AggregatingMergeTreeEngine(),
+            order_by_fields=["date", "user_id"],
+        ))
+    """
 
     pass
 

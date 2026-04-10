@@ -15,7 +15,10 @@ pub mod settings;
 pub mod ts_compilation_watcher;
 pub mod watcher;
 use super::metrics::Metrics;
-use crate::utilities::{constants, docker::DockerClient};
+use crate::utilities::constants;
+use crate::utilities::docker::DockerClient;
+use crate::utilities::docker_provider::DockerInfraProvider;
+use crate::utilities::infra_provider::InfraProvider;
 use clap::Parser;
 use commands::{
     Commands, ComponentSubCommands, DbCommands, DocsCommands, GenerateCommand, HarnessSubCommands,
@@ -41,7 +44,7 @@ use routines::scripts::{
     terminate_workflow, unpause_workflow,
 };
 use routines::templates::{list_available_templates, prompt_for_template_name};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use settings::Settings;
 use std::collections::HashMap;
@@ -65,20 +68,17 @@ use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE,
-    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
-use crate::framework::core::migration_plan::{
-    BackfillCheckResult, MigrationPlanWithBeforeAfter, MIGRATION_SCHEMA,
-};
+use crate::framework::core::migration_plan::{BackfillCheckResult, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
-    confirm_renames_and_classify, migration_destructive_gate, print_migration_rejected_guidance,
-    ConfirmationPolicy, MigrationGateOutcome,
+    migration_destructive_gate, print_migration_rejected_guidance, ConfirmationPolicy,
+    MigrationGateOutcome,
 };
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
@@ -431,6 +431,7 @@ fn override_project_config_from_url(
 async fn run_local_infrastructure_with_timeout(
     project: &Arc<Project>,
     settings: &Settings,
+    provider: Box<dyn InfraProvider + Send>,
 ) -> anyhow::Result<()> {
     let timeout_duration = Duration::from_secs(settings.dev.infrastructure_timeout_seconds);
 
@@ -439,8 +440,15 @@ async fn run_local_infrastructure_with_timeout(
         let project = project.clone();
         let settings = settings.clone();
         move || {
-            let docker_client = DockerClient::new(&settings);
-            run_local_infrastructure(&project, &settings, &docker_client)
+            run_local_infrastructure(&project, &settings, provider.as_ref()).map_err(|e| {
+                anyhow::anyhow!(
+                    "{}: {}",
+                    e.message.action,
+                    e.error
+                        .map(|err| format!("{err:#}"))
+                        .unwrap_or_else(|| e.message.details)
+                )
+            })
         }
     });
 
@@ -448,14 +456,16 @@ async fn run_local_infrastructure_with_timeout(
         Ok(Ok(result)) => result,
         Ok(Err(e)) => Err(e.into()),
         Err(_) => Err(anyhow::anyhow!(
-            "Docker container startup and validation timed out after {} seconds.\n\n\
-                This usually happens when Docker is in an unresponsive state.\n\n\
+            "Infrastructure startup and validation timed out after {} seconds.\n\n\
                 Troubleshooting steps:\n\
                 • Check if Docker is running: `docker info`\n\
                 • Stop existing containers: `docker stop $(docker ps -aq)`\n\
                 • Restart Docker Desktop (if using Desktop)\n\
                 • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
                 • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • Dockerless mode: check logs in .moose/native_infra/\n\
+                • Docker mode: check if Docker is running with `docker info`\n\
+                • Docker mode: stop existing containers with `docker stop $(docker ps -aq)`\n\
                 • If the issue persists, you can increase the timeout in your Moose configuration:\n\
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\
@@ -670,6 +680,7 @@ pub async fn top_command_handler(
             yes_all,
             yes_destructive,
             yes_rename,
+            dockerless,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -681,6 +692,9 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
             project.log_payloads = *log_payloads;
+            if *dockerless {
+                project.dev.dockerless = true;
+            }
 
             if *log_payloads {
                 info!("Payload logging enabled");
@@ -709,7 +723,23 @@ pub async fn top_command_handler(
 
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
-                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                let provider: Box<dyn InfraProvider + Send> = if *dockerless {
+                    info!("Using native binaries for ClickHouse and Temporal (--dockerless mode)");
+                    Box::new(
+                        crate::utilities::native_infra::NativeInfraProvider::new(&settings)
+                            .map_err(|e| {
+                                RoutineFailure::error(Message {
+                                    action: "Dev".to_string(),
+                                    details: format!(
+                                        "Failed to initialize native infrastructure: {e}"
+                                    ),
+                                })
+                            })?,
+                    )
+                } else {
+                    Box::new(DockerInfraProvider::new(&settings))
+                };
+                run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
                         RoutineFailure::error(Message {
@@ -954,7 +984,9 @@ pub async fn top_command_handler(
 
             // If start_include_dependencies is true, manage Docker containers like dev mode
             if *start_include_dependencies {
-                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                let provider: Box<dyn InfraProvider + Send> =
+                    Box::new(DockerInfraProvider::new(&settings));
+                run_local_infrastructure_with_timeout(&project_arc, &settings, provider)
                     .await
                     .map_err(|e| {
                         RoutineFailure::error(Message {
@@ -1068,8 +1100,22 @@ pub async fn top_command_handler(
         Commands::Migrate {
             clickhouse_url,
             redis_url,
+            validate,
         } => {
             info!("Running migrate command");
+
+            if *validate {
+                // Validate-only mode: no ClickHouse or Redis needed
+                let project = load_project(commands)?;
+                if !project.features.migrate_with_deltas {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Validate".to_string(),
+                        "Migration validation requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
+                    )));
+                }
+                return validate_migrations(&project);
+            }
+
             let mut project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1121,8 +1167,12 @@ pub async fn top_command_handler(
 
             check_project_name(&project_arc.name())?;
 
-            let docker_client = DockerClient::new(&settings);
-            let _ = clean_project(&project_arc, &docker_client)?;
+            // Kill native infrastructure processes first (before Docker cleanup which
+            // may fail if Docker is unavailable, e.g. when using --dockerless mode).
+            crate::utilities::native_infra::kill_native_processes(&project_arc);
+
+            let provider = DockerInfraProvider::new(&settings);
+            let _ = clean_project(&project_arc, &provider)?;
 
             wait_for_usage_capture(capture_handle).await;
 
@@ -1714,6 +1764,152 @@ pub async fn top_command_handler(
     }
 }
 
+/// Validate migration files without executing them.
+///
+/// Loads all migration files from ./migrations/, verifies the delta sequence
+/// is consistent (fold succeeds from empty map), and reports any issues.
+fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+    use crate::framework::core::migration_file::MigrationHistory;
+    use std::path::Path;
+
+    let migrations_dir = Path::new("./migrations");
+    if !migrations_dir.exists() {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Validate".to_string(),
+            "No migrations directory found".to_string(),
+        )));
+    }
+
+    let history = MigrationHistory::load_from_dir(migrations_dir).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Validate".to_string(),
+            format!("Failed to load migration files: {}", e),
+        ))
+    })?;
+
+    if history.is_empty() {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Validate".to_string(),
+            "No migration files found in ./migrations/".to_string(),
+        )));
+    }
+
+    println!("Validating {} migration file(s)...\n", history.files.len());
+
+    // Display each migration
+    for file in &history.files {
+        println!("  {} ({} delta(s))", file.id, file.deltas.len());
+        for delta in &file.deltas {
+            println!("    - {}", delta.summary());
+        }
+    }
+    println!();
+
+    // Test fold: reconstruct map from empty
+    let default_database = &project.clickhouse_config.db_name;
+    let mut fold_ok = true;
+    match history.reconstruct_olap_map(default_database) {
+        Ok(map) => {
+            println!(
+                "✓ Fold succeeded: {} table(s), {} view(s), {} MV(s)",
+                map.tables.len(),
+                map.views.len(),
+                map.materialized_views.len()
+            );
+        }
+        Err(e) => {
+            println!("✗ Fold failed: {}", e);
+            fold_ok = false;
+        }
+    }
+
+    // Check for conflicts between migrations that share a parent hash
+    // Group migrations by parent_state_hash
+    let mut by_parent: std::collections::HashMap<
+        &str,
+        Vec<&crate::framework::core::migration_file::MigrationFile>,
+    > = std::collections::HashMap::new();
+    for file in &history.files {
+        by_parent
+            .entry(&file.parent_state_hash)
+            .or_default()
+            .push(file);
+    }
+
+    let mut conflict_count = 0;
+    for (hash, files) in &by_parent {
+        if files.len() > 1 {
+            // Multiple migrations from the same parent — check for conflicts
+            // Compare each pair
+            for i in 0..files.len() {
+                for j in (i + 1)..files.len() {
+                    let conflicts = MigrationHistory::detect_conflicts(
+                        &[files[i].clone()],
+                        &[files[j].clone()],
+                        default_database,
+                    );
+                    for conflict in &conflicts {
+                        conflict_count += 1;
+                        match conflict {
+                            crate::framework::core::migration_file::MigrationConflict::SameTableModified {
+                                table_id,
+                                branch_a_migration,
+                                branch_b_migration,
+                            } => {
+                                println!(
+                                    "⚠ Conflict: table '{}' modified by both '{}' and '{}' (parent: {}..)",
+                                    table_id,
+                                    branch_a_migration,
+                                    branch_b_migration,
+                                    &hash[..12.min(hash.len())]
+                                );
+                            }
+                            crate::framework::core::migration_file::MigrationConflict::TableDroppedAndModified {
+                                table_id,
+                                dropper,
+                                modifier,
+                            } => {
+                                println!(
+                                    "⚠ Conflict: table '{}' dropped by '{}' but modified by '{}' (parent: {}..)",
+                                    table_id,
+                                    dropper,
+                                    modifier,
+                                    &hash[..12.min(hash.len())]
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if conflict_count > 0 || !fold_ok {
+        let mut issues = Vec::new();
+        if !fold_ok {
+            issues.push("fold failed".to_string());
+        }
+        if conflict_count > 0 {
+            issues.push(format!("{} conflict(s)", conflict_count));
+        }
+        println!("\n✗ Validation failed: {}", issues.join(", "));
+        return Err(RoutineFailure::error(Message::new(
+            "Validate".to_string(),
+            issues.join(", "),
+        )));
+    }
+
+    println!("\n✓ All migrations valid, no conflicts detected");
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Validate".to_string(),
+        format!(
+            "{} migration file(s) validated successfully",
+            history.files.len()
+        ),
+    )))
+}
+
 /// Runs confirmation gates (rename + destructive), builds the final migration
 /// plan with optional backfill SQL, and saves or prints the result.
 ///
@@ -1729,6 +1925,267 @@ async fn confirm_and_save_migration(
     no_auto_backfill_sql: bool,
     save: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
+    // If delta migrations are not enabled, use the legacy plan.yaml path
+    if !project.features.migrate_with_deltas {
+        return confirm_and_save_migration_legacy(
+            project,
+            result,
+            yes_all,
+            yes_destructive,
+            yes_rename,
+            no_auto_backfill_sql,
+            save,
+        )
+        .await;
+    }
+
+    let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
+    let migration_policy = ConfirmationPolicy {
+        accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
+        accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
+        is_dev: false,
+    };
+
+    // Step 1: Rename gate on raw InfraChanges (mutates changes in place).
+    // This must happen before delta generation since renames affect the structural diff.
+    use crate::framework::core::plan_risk::rename_confirmation_gate;
+    let approved_drops =
+        match rename_confirmation_gate(&mut result.changes, &migration_policy).await? {
+            Some(drops) => drops,
+            None => {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Migration".to_string(),
+                    "generation cancelled during rename confirmation".to_string(),
+                )));
+            }
+        };
+
+    // Step 2: Generate deltas from snapshot diff.
+    let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
+        &result.changes.olap_changes,
+        &result.default_database,
+    );
+
+    // Step 3: Classify risk from deltas, excluding drops already approved during rename.
+    use crate::framework::core::plan_risk::classify_risk_from_deltas;
+    let mut risk = classify_risk_from_deltas(&infra_deltas);
+    risk.exclude_approved_drops(&approved_drops);
+
+    // Step 4: Destructive gate — prompt for production confirmation.
+    match migration_destructive_gate(&risk, &migration_policy).await? {
+        MigrationGateOutcome::Rejected { tables } => {
+            print_migration_rejected_guidance(&tables, &project.language);
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation aborted".to_string(),
+            )));
+        }
+        MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
+    }
+
+    // Step 6: Fill policies from the risk classification.
+    crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
+
+    // Legacy MigrationPlan for backfill detection only.
+    let db_migration = result.to_migration_plan().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Plan".to_string(),
+                details: "Failed to order migration operations".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    // Check for backfill opportunities (uses legacy MigrationPlan for detection only)
+    if !no_auto_backfill_sql {
+        let candidates = db_migration.detect_backfill_candidates(
+            &result.remote_state.tables,
+            &project.clickhouse_config.db_name,
+        );
+
+        if !candidates.is_empty() {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Backfill".to_string(),
+                    details: "Checking versioned table backfill opportunities...".to_string(),
+                },
+            );
+        }
+
+        for check in &candidates {
+            match check {
+                BackfillCheckResult::Candidate(c) => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Equivalent".to_string(),
+                            details: format!(
+                                "`{}` <- `{}`",
+                                c.target_table_name, c.source_table_name
+                            ),
+                        },
+                    );
+
+                    let should_append = {
+                        use std::io::IsTerminal;
+                        if std::io::stdin().is_terminal() && stdout().is_terminal() {
+                            let answer = prompt_user(
+                                "Append backfill operation to migration? [Y/n]",
+                                Some("Y"),
+                                None,
+                            )?;
+                            !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                        } else {
+                            info!("Non-interactive mode: auto-appending backfill SQL");
+                            true
+                        }
+                    };
+
+                    if should_append {
+                        // Extract column names from the SQL for the BackfillTable delta
+                        infra_deltas.push(
+                            crate::framework::core::infra_delta::InfraDelta::BackfillTable {
+                                source_table: c.source_table_name.clone(),
+                                target_table: c.target_table_name.clone(),
+                                columns: vec![],
+                                sql: c.sql.clone(),
+                            },
+                        );
+                        display::show_message_wrapper(
+                            MessageType::Success,
+                            Message {
+                                action: "Appended".to_string(),
+                                details: format!(
+                                    "Backfill: `{}` <- `{}`",
+                                    c.target_table_name, c.source_table_name
+                                ),
+                            },
+                        );
+                    } else {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message {
+                                action: "Skipped".to_string(),
+                                details: "auto-backfill by user choice".to_string(),
+                            },
+                        );
+                    }
+                }
+                BackfillCheckResult::NonEquivalent {
+                    target,
+                    source,
+                    reason,
+                } => {
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Skipped".to_string(),
+                            details: format!(
+                                "auto-backfill for `{target}`: schema is not \
+                                 equivalent to `{source}`\n  - Mismatch: {reason}"
+                            ),
+                        },
+                    );
+                }
+                BackfillCheckResult::Duplicate { target, source } => {
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Exists".to_string(),
+                            details: format!(
+                                "Backfill SQL already exists for `{target}` <- \
+                                 `{source}`; no duplicate appended"
+                            ),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    if save {
+        if infra_deltas.is_empty() {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "no changes to write".to_string(),
+            )));
+        }
+
+        std::fs::create_dir_all("./migrations").map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+
+        let parent_hash = result.remote_state.olap_hash();
+        let migration_file = crate::framework::core::migration_file::MigrationFile::new(
+            "migration".to_string(),
+            parent_hash,
+            infra_deltas,
+        );
+        let migration_yaml = migration_file.to_yaml().map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "Failed to serialize".to_string()),
+                e,
+            )
+        })?;
+        let migration_path = format!("./migrations/{}.yaml", migration_file.id);
+        std::fs::write(&migration_path, &migration_yaml).map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Migration".to_string(), "plan writing failed.".to_string()),
+                e,
+            )
+        })?;
+
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "Migration".to_string(),
+                details: format!(
+                    "Written to {} ({} delta(s))",
+                    migration_path,
+                    migration_file.deltas.len()
+                ),
+            },
+        );
+    } else {
+        if infra_deltas.is_empty() {
+            println!("No changes detected.");
+        } else {
+            println!("Changes ({} delta(s)):\n", infra_deltas.len());
+            for (i, delta) in infra_deltas.iter().enumerate() {
+                println!("  {}. {}", i + 1, delta.summary());
+            }
+        }
+    }
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Migration".to_string(),
+        "generated".to_string(),
+    )))
+}
+
+/// Legacy migration generation path (plan.yaml + state snapshots).
+/// Used when `features.migrate_with_deltas` is false.
+async fn confirm_and_save_migration_legacy(
+    project: &Project,
+    result: &mut MigrationPlanWithBeforeAfter,
+    yes_all: bool,
+    yes_destructive: bool,
+    yes_rename: bool,
+    no_auto_backfill_sql: bool,
+    save: bool,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+    use crate::framework::core::plan_risk::confirm_renames_and_classify;
+    use crate::utilities::constants::{
+        MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    };
+    use tracing::warn;
+
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),

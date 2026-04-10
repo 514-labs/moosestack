@@ -3085,28 +3085,37 @@ async fn shutdown(
 
     // Step 4: Shutdown Docker containers (if needed)
     if !project.is_production {
-        let should_shutdown_containers = settings.should_shutdown_containers();
-
-        if should_shutdown_containers && project.should_load_infra() {
-            let docker = DockerClient::new(settings);
-            info!("Starting container shutdown process");
-
-            with_timing("Stop Containers", || {
-                with_spinner_completion(
-                    "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
-                    "Docker containers stopped",
-                    || {
-                        let _ = docker.stop_containers(project);
-                    },
-                    !SHOW_TIMING.load(Ordering::Relaxed),
-                )
-            });
-
-            info!("Container shutdown complete");
-        } else if !project.should_load_infra() {
-            info!("Skipping container shutdown: load_infra is set to false for this instance");
+        if project.dev.dockerless {
+            info!("Skipping Docker shutdown: using native infrastructure (--dockerless mode)");
         } else {
-            info!("Skipping container shutdown due to settings configuration");
+            let should_shutdown_containers = settings.should_shutdown_containers();
+
+            if should_shutdown_containers && project.should_load_infra() {
+                let docker = DockerClient::new(settings);
+                info!("Starting container shutdown process");
+
+                with_timing("Stop Containers", || {
+                    with_spinner_completion(
+                        "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
+                        "Docker containers stopped",
+                        || {
+                            let _ = docker.stop_containers(project);
+                        },
+                        !SHOW_TIMING.load(Ordering::Relaxed),
+                    )
+                });
+
+                info!("Container shutdown complete");
+            } else if !project.should_load_infra() {
+                info!("Skipping container shutdown: load_infra is set to false for this instance");
+            } else {
+                info!("Skipping container shutdown due to settings configuration");
+            }
+        }
+
+        // Step 5: Kill native processes if --dockerless mode was used.
+        if project.dev.dockerless {
+            crate::utilities::native_infra::kill_native_processes(project);
         }
     }
 
