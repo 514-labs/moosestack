@@ -168,12 +168,24 @@ pub struct ApprovedColumnDrop {
 /// A `TableChange::Removed` followed by a `TableChange::Added` with the same
 /// name is treated as a recreate rather than two independent operations.
 /// `ColumnChange::Renamed` is non-destructive and is intentionally skipped.
+///
+/// Tables that are part of a version bump (same `source_primitive.name` with
+/// version change) are excluded — they are handled by the version-bump gate
+/// instead of the destructive gate.
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
+    // Extract version bumps so their Removed/Added entries don't show as destructive.
+    let (_bumps, remaining_changes) =
+        crate::framework::core::version_bump::extract_version_bumps(&changes.olap_changes);
+
+    classify_plan_risk_from_changes(&remaining_changes)
+}
+
+/// Core risk classification logic operating on a slice of `OlapChange`s.
+fn classify_plan_risk_from_changes(olap_changes: &[OlapChange]) -> PlanRisk {
     let mut destructive_changes = Vec::new();
 
     // Collect (database, name) pairs for tables that are both removed and added (recreates).
-    let removed_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let removed_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Removed(t)) => {
@@ -183,8 +195,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         })
         .collect();
 
-    let added_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let added_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Added(t)) => {
@@ -199,7 +210,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         .copied()
         .collect();
 
-    for change in &changes.olap_changes {
+    for change in olap_changes {
         match change {
             OlapChange::Table(TableChange::Removed(table)) => {
                 let key = (table.database.as_deref(), table.name.as_str());

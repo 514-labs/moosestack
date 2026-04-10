@@ -622,9 +622,13 @@ pub struct InfraPlan {
 /// Used by both display and execution to guarantee consistency. Converts high-level
 /// infrastructure changes into a sequence of atomic OLAP operations.
 ///
-/// The operations are ordered in two phases:
+/// The operations are ordered in three phases:
 /// 1. Teardown operations (drops, removals) executed first
 /// 2. Setup operations (creates, adds) executed second
+/// 3. Version-bump operations (create new → backfill → drop old) executed last
+///
+/// Version bumps are extracted before the normal ordering pass so that the old
+/// table is still available for backfill.
 ///
 /// # Arguments
 /// * `changes` - The infrastructure changes to convert
@@ -632,16 +636,6 @@ pub struct InfraPlan {
 ///
 /// # Returns
 /// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
-///
-/// # Example
-/// ```ignore
-/// let operations = infra_changes_to_operations(&plan.changes, "my_database")?;
-/// // Display path
-/// show_operations(&operations);
-/// // Execution path
-/// execute_operations(&operations);
-/// // Both use the same operations!
-/// ```
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
@@ -649,22 +643,52 @@ pub fn infra_changes_to_operations(
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
+    infra_changes_to_operations_with_version_bumps(changes, default_database, &[])
+}
+
+/// Like [`infra_changes_to_operations`] but also includes version-bump operations
+/// derived from user decisions.
+///
+/// Version-bump changes are extracted from `olap_changes` before the normal
+/// teardown/setup ordering. Their operations (create → backfill → drop) are
+/// appended after the normal phases, ensuring the old table is still live
+/// when the backfill runs.
+pub fn infra_changes_to_operations_with_version_bumps(
+    changes: &InfraChanges,
+    default_database: &str,
+    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
+    use crate::framework::core::version_bump;
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    // Convert OLAP changes to atomic operations with dependency ordering
-    let (teardown_ops, setup_ops) = order_olap_changes(&changes.olap_changes, default_database)?;
+    // Extract version bumps from changes so they don't participate in the
+    // normal teardown/setup ordering.
+    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+
+    // Normal two-phase ordering on the non-bump changes.
+    let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
 
     let mut operations = Vec::new();
 
-    // Add teardown operations first (drops, removals)
+    // Phase 1: Teardown (drops, removals)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
 
-    // Add setup operations second (creates, adds)
+    // Phase 2: Setup (creates, adds)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
+
+    // Phase 3: Version bumps (create new → backfill → drop old)
+    let bump_ops = version_bump::version_bump_decisions_to_operations(
+        version_bump_decisions,
+        default_database,
+    );
+    operations.extend(bump_ops);
 
     Ok(operations)
 }

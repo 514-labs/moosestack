@@ -75,7 +75,9 @@ use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
-use crate::framework::core::migration_plan::{BackfillCheckResult, MigrationPlanWithBeforeAfter};
+use crate::framework::core::migration_plan::{
+    BackfillCheckResult, MigrationPlan, MigrationPlanWithBeforeAfter,
+};
 use crate::framework::core::plan_risk::{
     migration_destructive_gate, print_migration_rejected_guidance, ConfirmationPolicy,
     MigrationGateOutcome,
@@ -1960,18 +1962,73 @@ async fn confirm_and_save_migration(
             }
         };
 
-    // Step 2: Generate deltas from snapshot diff.
+    // Step 2: Version bump detection and prompting.
+    // Extract version bumps before delta generation so they get correct ordering
+    // (create new → backfill → drop old) instead of the default (drop old, create new).
+    use crate::framework::core::version_bump;
+    let (version_bumps, remaining_changes) =
+        version_bump::extract_version_bumps(&result.changes.olap_changes);
+
+    let version_bump_decisions = if !version_bumps.is_empty() {
+        match version_bump::version_bump_gate(version_bumps, &result.default_database, accept_all)
+            .await?
+        {
+            Some(decisions) => decisions,
+            None => {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Migration".to_string(),
+                    "generation cancelled during version bump confirmation".to_string(),
+                )));
+            }
+        }
+    } else {
+        vec![]
+    };
+
+    // Step 3: Generate deltas from the remaining (non-version-bump) changes.
     let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
-        &result.changes.olap_changes,
+        &remaining_changes,
         &result.default_database,
     );
 
-    // Step 3: Classify risk from deltas, excluding drops already approved during rename.
+    // Prepend version bump deltas (create → backfill → drop) before other deltas
+    // so the new table exists before anything that might reference it.
+    let bump_deltas = version_bump::version_bump_decisions_to_deltas(
+        &version_bump_decisions,
+        &result.default_database,
+    );
+    if !bump_deltas.is_empty() {
+        let mut combined = bump_deltas;
+        combined.append(&mut infra_deltas);
+        infra_deltas = combined;
+    }
+
+    // Step 4: Classify risk from deltas, excluding drops already approved during rename.
+    // Version bumps are already excluded from the remaining changes, and their DropTable
+    // deltas (if any) have pre-filled policies from the version bump gate.
     use crate::framework::core::plan_risk::classify_risk_from_deltas;
     let mut risk = classify_risk_from_deltas(&infra_deltas);
     risk.exclude_approved_drops(&approved_drops);
 
-    // Step 4: Destructive gate — prompt for production confirmation.
+    // Exclude version-bump drops from the destructive gate (user already confirmed them).
+    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
+        .iter()
+        .filter(|d| !d.keep_old)
+        .map(|d| d.bump.old_table.name.clone())
+        .collect();
+    risk.destructive_changes.retain(|dc| {
+        if let crate::framework::core::plan_risk::DestructiveChange::TableDrop {
+            table_name_with_suffix,
+            ..
+        } = dc
+        {
+            !vb_drop_names.contains(table_name_with_suffix)
+        } else {
+            true
+        }
+    });
+
+    // Step 5: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
@@ -1986,7 +2043,7 @@ async fn confirm_and_save_migration(
     // Step 6: Fill policies from the risk classification.
     crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
 
-    // Legacy MigrationPlan for backfill detection only.
+    // Legacy MigrationPlan for backfill detection only (non-version-bump tables).
     let db_migration = result.to_migration_plan().map_err(|e| {
         RoutineFailure::new(
             Message {
@@ -1997,7 +2054,8 @@ async fn confirm_and_save_migration(
         )
     })?;
 
-    // Check for backfill opportunities (uses legacy MigrationPlan for detection only)
+    // Check for backfill opportunities for non-version-bump versioned tables.
+    // (Version bump backfills are already handled above.)
     if !no_auto_backfill_sql {
         let candidates = db_migration.detect_backfill_candidates(
             &result.remote_state.tables,
@@ -2044,7 +2102,6 @@ async fn confirm_and_save_migration(
                     };
 
                     if should_append {
-                        // Extract column names from the SQL for the BackfillTable delta
                         infra_deltas.push(
                             crate::framework::core::infra_delta::InfraDelta::BackfillTable {
                                 source_table: c.source_table_name.clone(),
@@ -2102,6 +2159,32 @@ async fn confirm_and_save_migration(
                     );
                 }
             }
+        }
+    }
+
+    // Generate EXTERNALLY_MANAGED files for retained old tables.
+    if version_bump_decisions.iter().any(|d| d.keep_old) {
+        let source_dir = project.project_location.join(&project.source_dir);
+        if let Err(e) = version_bump::write_retained_table_files(
+            &version_bump_decisions,
+            &source_dir,
+            &project.language,
+        ) {
+            display::show_message_wrapper(
+                MessageType::Warning,
+                Message {
+                    action: "Warning".to_string(),
+                    details: format!("Failed to write retained table files: {e}"),
+                },
+            );
+        } else {
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table file(s) for retained tables".to_string(),
+                },
+            );
         }
     }
 
@@ -2203,7 +2286,48 @@ async fn confirm_and_save_migration_legacy(
         }
     };
 
-    match migration_destructive_gate(&risk, &migration_policy).await? {
+    // Version bump detection and prompting (legacy path).
+    use crate::framework::core::version_bump;
+    let (version_bumps, _remaining) =
+        version_bump::extract_version_bumps(&result.changes.olap_changes);
+
+    let version_bump_decisions = if !version_bumps.is_empty() {
+        match version_bump::version_bump_gate(version_bumps, &result.default_database, accept_all)
+            .await?
+        {
+            Some(decisions) => decisions,
+            None => {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Migration".to_string(),
+                    "generation cancelled during version bump confirmation".to_string(),
+                )));
+            }
+        }
+    } else {
+        vec![]
+    };
+
+    // Exclude version bump table drops from the destructive gate
+    // since the user already confirmed them via the version bump gate.
+    let mut filtered_risk = risk;
+    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
+        .iter()
+        .filter(|d| !d.keep_old)
+        .map(|d| d.bump.old_table.name.clone())
+        .collect();
+    filtered_risk.destructive_changes.retain(|dc| match dc {
+        crate::framework::core::plan_risk::DestructiveChange::TableDrop {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        crate::framework::core::plan_risk::DestructiveChange::TableRecreate {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        _ => true,
+    });
+
+    match migration_destructive_gate(&filtered_risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
             return Ok(RoutineSuccess::success(Message::new(
@@ -2214,7 +2338,12 @@ async fn confirm_and_save_migration_legacy(
         MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
     }
 
-    let mut db_migration = result.to_migration_plan().map_err(|e| {
+    let mut db_migration = MigrationPlan::from_infra_plan_with_version_bumps(
+        &result.changes,
+        &result.default_database,
+        &version_bump_decisions,
+    )
+    .map_err(|e| {
         RoutineFailure::new(
             Message {
                 action: "Plan".to_string(),
@@ -2328,6 +2457,32 @@ async fn confirm_and_save_migration_legacy(
                     );
                 }
             }
+        }
+    }
+
+    // Generate EXTERNALLY_MANAGED files for retained old tables.
+    if version_bump_decisions.iter().any(|d| d.keep_old) {
+        let source_dir = project.project_location.join(&project.source_dir);
+        if let Err(e) = version_bump::write_retained_table_files(
+            &version_bump_decisions,
+            &source_dir,
+            &project.language,
+        ) {
+            display::show_message_wrapper(
+                MessageType::Warning,
+                Message {
+                    action: "Warning".to_string(),
+                    details: format!("Failed to write retained table files: {e}"),
+                },
+            );
+        } else {
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table file(s) for retained tables".to_string(),
+                },
+            );
         }
     }
 

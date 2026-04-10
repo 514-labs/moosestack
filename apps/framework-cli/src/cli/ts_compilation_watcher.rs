@@ -458,10 +458,52 @@ async fn watch(
                                                     .await?;
 
                                                     spinner_handle.pause();
-                                                    let risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
+                                                    let mut risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
                                                         Some(risk) => risk,
                                                         None => return Ok(false),
                                                     };
+
+                                                    // Version bump detection and prompting.
+                                                    use crate::framework::core::version_bump;
+                                                    let (version_bumps, _remaining) =
+                                                        version_bump::extract_version_bumps(&plan_result.changes.olap_changes);
+
+                                                    let accept_all = confirmation_policy.accept_destructive;
+                                                    let version_bump_decisions = if !version_bumps.is_empty() {
+                                                        match version_bump::version_bump_gate(
+                                                            version_bumps,
+                                                            &project.clickhouse_config.db_name,
+                                                            accept_all,
+                                                        )
+                                                        .await?
+                                                        {
+                                                            Some(decisions) => decisions,
+                                                            None => return Ok(false),
+                                                        }
+                                                    } else {
+                                                        vec![]
+                                                    };
+
+                                                    // Exclude version-bump drops from the destructive gate.
+                                                    let vb_drop_names: std::collections::HashSet<String> =
+                                                        version_bump_decisions
+                                                            .iter()
+                                                            .filter(|d| !d.keep_old)
+                                                            .map(|d| d.bump.old_table.name.clone())
+                                                            .collect();
+                                                    risk.destructive_changes.retain(|dc| {
+                                                        use crate::framework::core::plan_risk::DestructiveChange;
+                                                        match dc {
+                                                            DestructiveChange::TableDrop { table_name_with_suffix, .. } => {
+                                                                !vb_drop_names.contains(table_name_with_suffix)
+                                                            }
+                                                            DestructiveChange::TableRecreate { table_name_with_suffix, .. } => {
+                                                                !vb_drop_names.contains(table_name_with_suffix)
+                                                            }
+                                                            _ => true,
+                                                        }
+                                                    });
+
                                                     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
                                                         return Ok(false);
                                                     }
@@ -476,7 +518,7 @@ async fn watch(
 
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
-                                                            framework::core::execute::execute_online_change(
+                                                            framework::core::execute::execute_online_change_with_version_bumps(
                                                                 &project,
                                                                 &plan_result,
                                                                 route_update_channel.clone(),
@@ -484,6 +526,7 @@ async fn watch(
                                                                 &mut project_registries,
                                                                 metrics.clone(),
                                                                 &settings,
+                                                                &version_bump_decisions,
                                                             )
                                                             .await
                                                         })

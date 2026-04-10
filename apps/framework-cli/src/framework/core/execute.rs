@@ -66,6 +66,7 @@ pub struct ExecutionContext<'a> {
     pub api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     pub webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     pub metrics: Arc<Metrics>,
+    pub version_bump_decisions: Vec<crate::framework::core::version_bump::VersionBumpDecision>,
 }
 
 /// Executes the initial infrastructure changes when the system starts up.
@@ -105,7 +106,16 @@ pub async fn execute_initial_infra_change(
                 olap::bootstrap_rls(ctx.project, &desired_policies).await?;
             }
 
-            olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
+            if ctx.version_bump_decisions.is_empty() {
+                olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
+            } else {
+                olap::execute_changes_with_version_bumps(
+                    ctx.project,
+                    &ctx.plan.changes.olap_changes,
+                    &ctx.version_bump_decisions,
+                )
+                .await?;
+            }
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if ctx.project.features.streaming_engine {
@@ -184,12 +194,59 @@ pub async fn execute_online_change(
     metrics: Arc<Metrics>,
     settings: &Settings,
 ) -> Result<(), ExecutionError> {
-    // This probably can be parallelized through Tokio Spawn
-    // Check if infrastructure execution is bypassed
+    execute_online_change_inner(
+        project,
+        plan,
+        api_changes_channel,
+        webapp_changes_channel,
+        process_registries,
+        metrics,
+        settings,
+        &[],
+    )
+    .await
+}
+
+/// Like [`execute_online_change`] but also executes version-bump operations
+/// (create new → backfill → drop old) after the normal change phases.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_online_change_with_version_bumps(
+    project: &Project,
+    plan: &InfraPlan,
+    api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
+    process_registries: &mut ProcessRegistries,
+    metrics: Arc<Metrics>,
+    settings: &Settings,
+    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+) -> Result<(), ExecutionError> {
+    execute_online_change_inner(
+        project,
+        plan,
+        api_changes_channel,
+        webapp_changes_channel,
+        process_registries,
+        metrics,
+        settings,
+        version_bump_decisions,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_online_change_inner(
+    project: &Project,
+    plan: &InfraPlan,
+    api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
+    process_registries: &mut ProcessRegistries,
+    metrics: Arc<Metrics>,
+    settings: &Settings,
+    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+) -> Result<(), ExecutionError> {
     if settings.should_bypass_infrastructure_execution() {
         tracing::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
     } else {
-        // Only execute OLAP changes if OLAP is enabled and not bypassed
         if project.features.olap {
             let desired_policies: Vec<_> = plan
                 .target_infra_map
@@ -201,16 +258,22 @@ pub async fn execute_online_change(
                 olap::bootstrap_rls(project, &desired_policies).await?;
             }
 
-            olap::execute_changes(project, &plan.changes.olap_changes).await?;
+            if version_bump_decisions.is_empty() {
+                olap::execute_changes(project, &plan.changes.olap_changes).await?;
+            } else {
+                olap::execute_changes_with_version_bumps(
+                    project,
+                    &plan.changes.olap_changes,
+                    version_bump_decisions,
+                )
+                .await?;
+            }
         }
-        // Only execute streaming changes if streaming engine is enabled and not bypassed
         if project.features.streaming_engine {
             stream::execute_changes(project, &plan.changes.streaming_engine_changes).await?;
         }
     }
 
-    // In prod, the webserver is part of the current process that gets spawned. As such
-    // it is initialized from 0 and we don't need to apply diffs to it.
     api::execute_changes(
         &plan.target_infra_map,
         &plan.changes.api_changes,
@@ -219,7 +282,6 @@ pub async fn execute_online_change(
     .await
     .map_err(Box::new)?;
 
-    // Send WebApp changes through the channel
     tracing::info!(
         "🔄 Processing {} WebApp changes during online change",
         plan.changes.web_app_changes.len()

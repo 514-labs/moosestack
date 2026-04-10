@@ -171,6 +171,60 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Execute OLAP changes with version-bump awareness.
+///
+/// Non-bump changes follow the standard two-phase ordering (teardown → setup).
+/// Version-bump operations are executed afterwards in the correct order:
+/// create new table → backfill → drop old table.
+pub async fn execute_changes_with_version_bumps(
+    project: &Project,
+    changes: &[OlapChange],
+    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+) -> Result<(), OlapChangesError> {
+    use crate::framework::core::infrastructure_map::TableChange;
+    use crate::framework::core::version_bump;
+
+    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(changes);
+
+    if !remaining_changes.is_empty() {
+        execute_changes(project, &remaining_changes).await?;
+    }
+
+    let db_name = &project.clickhouse_config.db_name;
+    for decision in version_bump_decisions {
+        let create = vec![OlapChange::Table(TableChange::Added(
+            decision.bump.new_table.clone(),
+        ))];
+        execute_changes(project, &create).await?;
+
+        if decision.backfill {
+            if let version_bump::BackfillEligibility::Eligible { sql } =
+                version_bump::check_backfill_eligibility(&decision.bump, db_name)
+            {
+                let client = clickhouse::create_client(project.clickhouse_config.clone());
+                clickhouse::run_query(&sql, &client).await.map_err(|e| {
+                    OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
+                        error: e,
+                        resource: Some(format!(
+                            "backfill {} → {}",
+                            decision.bump.old_table.name, decision.bump.new_table.name
+                        )),
+                    })
+                })?;
+            }
+        }
+
+        if !decision.keep_old {
+            let drop = vec![OlapChange::Table(TableChange::Removed(
+                decision.bump.old_table.clone(),
+            ))];
+            execute_changes(project, &drop).await?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Execute OLAP changes via the InfraDelta path.
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Separated from `execute_changes` because RLS bootstrap

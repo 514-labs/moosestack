@@ -28,10 +28,24 @@ impl MigrationPlan {
         infra_plan_changes: &InfraChanges,
         default_database: &str,
     ) -> Result<Self, PlanOrderingError> {
-        let operations = crate::framework::core::plan::infra_changes_to_operations(
-            infra_plan_changes,
-            default_database,
-        )?;
+        Self::from_infra_plan_with_version_bumps(infra_plan_changes, default_database, &[])
+    }
+
+    /// Creates a migration plan with explicit version-bump handling.
+    ///
+    /// Version bump operations (create → backfill → drop) are appended after
+    /// the normal teardown/setup phases.
+    pub fn from_infra_plan_with_version_bumps(
+        infra_plan_changes: &InfraChanges,
+        default_database: &str,
+        version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+    ) -> Result<Self, PlanOrderingError> {
+        let operations =
+            crate::framework::core::plan::infra_changes_to_operations_with_version_bumps(
+                infra_plan_changes,
+                default_database,
+                version_bump_decisions,
+            )?;
 
         Ok(MigrationPlan {
             created_at: Utc::now(),
