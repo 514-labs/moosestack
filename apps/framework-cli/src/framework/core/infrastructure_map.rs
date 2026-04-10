@@ -3638,6 +3638,49 @@ impl InfrastructureMap {
             }
         }
     }
+
+    /// Compute a deterministic SHA-256 hash of the OLAP portion of this infrastructure map.
+    ///
+    /// The hash covers: tables, views, materialized_views, dmv1_views,
+    /// select_row_policies, and sql_resources. Non-OLAP fields (topics, APIs,
+    /// processes) are excluded since they are computed from code, not from deltas.
+    ///
+    /// Used as `parent_state_hash` in migration files for conflict detection
+    /// across branches.
+    pub fn olap_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+
+        #[derive(serde::Serialize)]
+        struct OlapSnapshot<'a> {
+            tables: &'a HashMap<String, Table>,
+            views: &'a HashMap<String, super::infrastructure::view::View>,
+            materialized_views:
+                &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+            dmv1_views: &'a HashMap<String, Dmv1View>,
+            select_row_policies: &'a HashMap<String, SelectRowPolicy>,
+            sql_resources: &'a HashMap<String, SqlResource>,
+        }
+
+        let snapshot = OlapSnapshot {
+            tables: &self.tables,
+            views: &self.views,
+            materialized_views: &self.materialized_views,
+            dmv1_views: &self.dmv1_views,
+            select_row_policies: &self.select_row_policies,
+            sql_resources: &self.sql_resources,
+        };
+
+        // Serialize to JSON, sort keys for determinism, then hash
+        let json_value =
+            serde_json::to_value(&snapshot).expect("OLAP snapshot serialization should never fail");
+        let sorted_value = crate::utilities::json::sort_json_keys(json_value);
+        let json_bytes =
+            serde_json::to_vec(&sorted_value).expect("sorted JSON serialization should never fail");
+
+        let mut hasher = Sha256::new();
+        hasher.update(&json_bytes);
+        format!("{:x}", hasher.finalize())
+    }
 }
 
 /// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
