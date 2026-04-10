@@ -133,6 +133,10 @@ These flags control the interactive confirmation prompts during plan generation:
 | `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
 | `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
 
+<Callout type="info" title="Versioned table backfills" compact>
+If you are using planned migrations for a breaking OLAP table change, see [Schema Versioning](/moosestack/olap/schema-versioning) for the end-to-end version bump and generated backfill workflow.
+</Callout>
+
 ## Drift Detection
 
 Drift occurs when the target database's schema changes between the time you generate a plan and the time you apply it.
