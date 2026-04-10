@@ -647,12 +647,6 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Docker Compose Deployment",
         languages: ["typescript", "python"],
       },
-      {
-        type: "page",
-        slug: "moosestack/deploying/monitoring",
-        title: "Monitoring (moved)",
-        languages: ["typescript", "python"],
-      },
     ],
   },
 

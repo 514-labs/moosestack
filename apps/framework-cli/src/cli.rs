@@ -1169,9 +1169,9 @@ pub async fn top_command_handler(
 
             check_project_name(&project_arc.name())?;
 
-            // Kill native infrastructure processes first (before Docker cleanup which
+            // Stop native infrastructure first (before Docker cleanup which
             // may fail if Docker is unavailable, e.g. when using --dockerless mode).
-            crate::utilities::native_infra::kill_native_processes(&project_arc);
+            crate::utilities::native_infra::stop_native_infra(&project_arc);
 
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
