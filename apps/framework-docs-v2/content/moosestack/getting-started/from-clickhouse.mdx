@@ -6,7 +6,6 @@ category: getting-started
 ---
 
 import { Callout, ToggleBlock, ZoomImg, MuxVideo, BulletPointsCard, IconBadge, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
-import { PathConfig } from "@/lib/path-config";
 
 # Use Moose with Your Existing ClickHouse
 
@@ -244,7 +243,7 @@ Check what Moose created from your tables in the `app/main.py` file:
 
 <Callout type="info" title="Import Pattern">
 <div>Your generated table models are imported here so Moose can detect them.</div>
-<div className="text-sm mt-2">Learn more about export pattern: <a href="/moosestack/local-dev-environment?lang=python#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moosestack/migrate?lang=python" className="text-blue-500 hover:underline">hosted</a></div>
+<div className="text-sm mt-2">Learn more about export pattern: <a href="/moosestack/runtime?lang=python#finding-dependencies" className="text-blue-500 hover:underline">local development</a> / <a href="/moosestack/migrate?lang=python" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
   </LanguageTabContent>
   <LanguageTabContent value="typescript">
@@ -257,7 +256,7 @@ Check what Moose created from your tables in the `app/index.ts` file:
 
 <Callout type="info" title="Export Pattern">
 <div>Your generated table models are exported here so Moose can detect them.</div>
-<div className="text-sm mt-2">Learn more about export pattern: <a href="/moosestack/local-dev-environment?lang=typescript#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moosestack/migrate?lang=typescript" className="text-blue-500 hover:underline">hosted</a></div>
+<div className="text-sm mt-2">Learn more about export pattern: <a href="/moosestack/runtime?lang=typescript#finding-dependencies" className="text-blue-500 hover:underline">local development</a> / <a href="/moosestack/migrate?lang=typescript" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
   </LanguageTabContent>
 </LanguageTabs>
