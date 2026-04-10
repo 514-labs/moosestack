@@ -211,7 +211,11 @@ export const waitForInfrastructureChanges = async (
 };
 
 /**
- * Kills any remaining moose-cli processes
+ * Kills any remaining moose-cli processes and native infrastructure
+ * (ClickHouse, Temporal) that may have been orphaned between test suites.
+ *
+ * Uses both process-name matching AND port-based killing to ensure
+ * stale processes don't hold ports across sequential test suites.
  */
 export const killRemainingProcesses = async (
   options: ProcessOptions = {},
@@ -225,7 +229,11 @@ export const killRemainingProcesses = async (
       windowsHide: true,
     });
     log.debug("Killed any remaining moose-cli processes");
+  } catch (error) {
+    log.warn("Error killing moose-cli processes");
+  }
 
+  try {
     await execAsync(
       "pkill -9 -f 'moose-runner|streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
       {
@@ -235,11 +243,26 @@ export const killRemainingProcesses = async (
       },
     );
     log.debug("Killed any remaining Python processes");
+  } catch (error) {
+    log.warn("Error killing Python processes");
+  }
 
-    // Kill native infrastructure processes that may have been orphaned when
-    // moose-cli was killed with SIGKILL in dockerless mode.
+  try {
+    // Kill native infrastructure by name AND by port.
+    // Using fuser ensures we catch processes even if the name pattern doesn't match.
+    // Ports: 18123 (CH HTTP), 19000 (CH native), 9181 (Keeper TCP), 9234 (Keeper Raft),
+    //        19092 (devkafka), 7233 (Temporal)
     await execAsync(
-      "pkill -9 -f 'clickhouse server' || true; pkill -9 -f 'temporal server' || true",
+      [
+        "pkill -9 -f 'clickhouse server' || true",
+        "pkill -9 -f 'temporal server' || true",
+        "fuser -k 18123/tcp 2>/dev/null || true",
+        "fuser -k 19000/tcp 2>/dev/null || true",
+        "fuser -k 9181/tcp 2>/dev/null || true",
+        "fuser -k 9234/tcp 2>/dev/null || true",
+        "fuser -k 19092/tcp 2>/dev/null || true",
+        "fuser -k 7233/tcp 2>/dev/null || true",
+      ].join("; "),
       {
         timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
         killSignal: "SIGKILL",
@@ -248,7 +271,26 @@ export const killRemainingProcesses = async (
     );
     log.debug("Killed any remaining native infrastructure processes");
   } catch (error) {
-    log.warn("Error killing remaining processes", error);
+    log.warn("Error killing native infrastructure processes");
+  }
+
+  // Wait for the ClickHouse port to be released before returning.
+  // Without this, the next test suite may connect to a dying ClickHouse.
+  try {
+    for (let i = 0; i < 10; i++) {
+      const { stdout } = await execAsync(
+        "fuser 18123/tcp 2>/dev/null || echo free",
+        { timeout: 5000 },
+      );
+      if (stdout.trim() === "free") {
+        log.debug("Port 18123 is free");
+        break;
+      }
+      log.debug(`Port 18123 still in use, waiting... (attempt ${i + 1})`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  } catch (error) {
+    log.warn("Error checking port availability");
   }
 };
 

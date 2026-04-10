@@ -184,7 +184,7 @@ describe("moose seed clickhouse with seedFilter", function () {
     );
 
     // Wait for all ReplicatedMergeTree replicas to exit readonly mode
-    await waitForClickhouseReplicasReady(30_000, { logger: testLogger });
+    await waitForClickhouseReplicasReady(60_000, { logger: testLogger });
 
     testLogger.info("Infrastructure ready");
   });
