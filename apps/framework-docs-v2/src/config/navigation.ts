@@ -637,6 +637,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/deploying/serverless-deployment",
+        title: "Serverless (Lambda / Cloud Run)",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
         slug: "moosestack/deploying/deploying-on-an-offline-server",
         title: "Offline Deployment",
         languages: ["typescript", "python"],

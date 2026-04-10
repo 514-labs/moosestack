@@ -1,0 +1,344 @@
+---
+title: Serverless Deployment
+description: Deploy Moose consumption APIs to AWS Lambda or Google Cloud Run
+order: 6
+category: deployment
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Serverless Deployment
+
+Moose supports a serverless deployment mode that packages your [consumption APIs](/moosestack/apis) and [OlapTables](/moosestack/olap/model-table) with S3-backed engines into a single container image. This image runs on AWS Lambda (via Lambda Web Adapter) or Google Cloud Run with no changes — the same image works on both platforms.
+
+<Callout type="info" title="What runs in serverless mode">
+Serverless mode runs your **consumption APIs** backed by **S3 and IcebergS3 OlapTables**. It does not include streaming ingestion, workflows, or MergeTree-based tables — those require the full Moose deployment. Use serverless mode when you need lightweight, read-oriented API endpoints over data already in S3 or Iceberg.
+</Callout>
+
+## How It Works
+
+In serverless mode, `moose function` boots an embedded [ClickHouse](https://clickhouse.com/) instance configured to read directly from S3/Iceberg storage, starts your consumption API subprocess, and serves HTTP requests through a lightweight proxy:
+
+```
+                     ┌─────────────────────────────────────┐
+  HTTP request ──────▶  moose function (port 8080)         │
+                     │    │                                 │
+                     │    ├── /health ──▶ "ok"              │
+                     │    │                                 │
+                     │    └── /* ──▶ Consumption API (:4001)│
+                     │                    │                 │
+                     │                    ▼                 │
+                     │              ClickHouse (embedded)   │
+                     │                    │                 │
+                     │                    ▼                 │
+                     │              S3 / Iceberg Storage    │
+                     └─────────────────────────────────────┘
+```
+
+The embedded ClickHouse instance requires no external ClickHouse server, no Keeper, and no replication — it reads directly from your object storage.
+
+## Supported Table Engines
+
+Only tables using S3-compatible engines are available in serverless mode:
+
+| Engine | Description |
+|--------|-------------|
+| `S3` | Direct read/write access to files in S3 |
+| `IcebergS3` | Read-only access to Iceberg tables stored in S3 |
+
+Tables using other engines (MergeTree, ReplacingMergeTree, Kafka, etc.) are automatically skipped with a warning.
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+- A Moose project with at least one S3 or IcebergS3 OlapTable and a consumption API
+- AWS credentials configured if your S3 buckets require authentication
+
+## Quick Start
+
+### 1. Define an S3-backed OlapTable
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/ingest/models.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from "@514labs/moose-lib";
+
+export interface SalesRecord {
+  order_id: string;
+  product: string;
+  quantity: number;
+  revenue: number;
+  order_date: Date;
+}
+
+export const Sales = new OlapTable<SalesRecord>("sales", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://my-bucket/sales/data/*.parquet",
+  format: "Parquet",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/ingest/models.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3Engine
+
+class SalesRecord:
+    order_id: str
+    product: str
+    quantity: int
+    revenue: float
+    order_date: str
+
+sales = OlapTable[SalesRecord]("sales", OlapConfig(
+    engine=S3Engine(
+        path="s3://my-bucket/sales/data/*.parquet",
+        format="Parquet",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+    )
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### 2. Create a Consumption API
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/apis/revenue.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { Sales } from "../ingest/models";
+
+interface QueryParams {
+  product?: string;
+}
+
+interface RevenueResult {
+  total_orders: number;
+  total_revenue: number;
+  avg_order_value: number;
+}
+
+export const RevenueApi = new Api<QueryParams, RevenueResult[]>(
+  "revenue",
+  async ({ product }, { client, sql }) => {
+    const query = sql.statement`
+      SELECT
+        count(*) as total_orders,
+        sum(revenue) as total_revenue,
+        avg(revenue) as avg_order_value
+      FROM ${Sales}
+      ${product ? sql`WHERE product = ${product}` : sql``}
+    `;
+
+    const data = await client.query.execute<RevenueResult>(query);
+    return await data.json();
+  },
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/apis/revenue.py" copy
+from moose_lib import Api, MooseClient
+from app.ingest.models import sales
+
+def revenue_handler(params, client: MooseClient):
+    product_filter = ""
+    if params.get("product"):
+        product_filter = f"WHERE product = '{params['product']}'"
+
+    query = f"""
+        SELECT
+            count(*) as total_orders,
+            sum(revenue) as total_revenue,
+            avg(revenue) as avg_order_value
+        FROM {sales.table_name}
+        {product_filter}
+    """
+
+    return client.query.execute(query).json()
+
+revenue_api = Api("revenue", revenue_handler)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### 3. Build the Serverless Image
+
+```bash filename="Terminal" copy
+moose build --serverless
+```
+
+This generates a Docker image optimized for serverless platforms. By default it builds for `arm64` (Graviton on Lambda, cost-efficient on Cloud Run). To build for a specific architecture:
+
+```bash filename="Terminal" copy
+# ARM64 only (default, recommended for cost efficiency)
+moose build --serverless --arm64
+
+# AMD64 only
+moose build --serverless --amd64
+
+# Both architectures
+moose build --serverless --amd64 --arm64
+```
+
+After the build completes, verify the image:
+
+```bash filename="Terminal" copy
+docker images | grep moose-df-deployment
+```
+
+### 4. Test Locally
+
+Run the image locally to verify everything works before deploying:
+
+```bash filename="Terminal" copy
+docker run --rm -p 8080:8080 \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  moose-df-deployment-aarch64-unknown-linux-gnu:latest
+```
+
+Then test your API:
+
+```bash filename="Terminal" copy
+# Health check
+curl http://localhost:8080/health
+
+# Query your API
+curl "http://localhost:8080/consumption/revenue?product=widgets"
+```
+
+## Deploying to AWS Lambda
+
+<Callout type="info" title="Lambda Web Adapter">
+The serverless image includes the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter), which translates Lambda invocation events into HTTP requests. It activates automatically when running on Lambda and is a no-op on other platforms.
+</Callout>
+
+### Push to ECR
+
+```bash filename="Terminal" copy
+# Create repository
+aws ecr create-repository --repository-name moose-serverless
+
+# Login to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  123456789.dkr.ecr.us-east-1.amazonaws.com
+
+# Tag and push
+docker tag moose-df-deployment-aarch64-unknown-linux-gnu:latest \
+  123456789.dkr.ecr.us-east-1.amazonaws.com/moose-serverless:latest
+
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/moose-serverless:latest
+```
+
+### Create Lambda Function
+
+```bash filename="Terminal" copy
+aws lambda create-function \
+  --function-name moose-api \
+  --package-type Image \
+  --code ImageUri=123456789.dkr.ecr.us-east-1.amazonaws.com/moose-serverless:latest \
+  --role arn:aws:iam::123456789:role/lambda-execution-role \
+  --architectures arm64 \
+  --memory-size 1024 \
+  --timeout 30 \
+  --environment "Variables={AWS_ACCESS_KEY_ID=your-key,AWS_SECRET_ACCESS_KEY=your-secret}"
+```
+
+<Callout type="warning" title="Memory and Timeout">
+ClickHouse and Node.js run inside the container, so allocate at least **1024 MB** of memory. Set the timeout to **30 seconds** or more to allow for cold starts where ClickHouse needs to initialize.
+</Callout>
+
+### Add a Function URL or API Gateway
+
+To expose your Lambda function as an HTTP endpoint:
+
+```bash filename="Terminal" copy
+# Option 1: Lambda Function URL (simplest)
+aws lambda create-function-url-config \
+  --function-name moose-api \
+  --auth-type NONE
+
+# Option 2: API Gateway (more control over routing, auth, throttling)
+# See AWS documentation for API Gateway setup
+```
+
+## Deploying to Google Cloud Run
+
+Cloud Run natively supports container images with HTTP servers, so no adapter is needed.
+
+### Push to Artifact Registry
+
+```bash filename="Terminal" copy
+# Create repository
+gcloud artifacts repositories create moose-serverless \
+  --repository-format=docker \
+  --location=us-central1
+
+# Configure Docker auth
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+# Tag and push
+docker tag moose-df-deployment-aarch64-unknown-linux-gnu:latest \
+  us-central1-docker.pkg.dev/my-project/moose-serverless/moose-api:latest
+
+docker push us-central1-docker.pkg.dev/my-project/moose-serverless/moose-api:latest
+```
+
+### Deploy to Cloud Run
+
+```bash filename="Terminal" copy
+gcloud run deploy moose-api \
+  --image us-central1-docker.pkg.dev/my-project/moose-serverless/moose-api:latest \
+  --platform managed \
+  --region us-central1 \
+  --port 8080 \
+  --memory 1Gi \
+  --cpu 1 \
+  --timeout 30 \
+  --set-env-vars "AWS_ACCESS_KEY_ID=your-key,AWS_SECRET_ACCESS_KEY=your-secret" \
+  --allow-unauthenticated
+```
+
+## Environment Variables
+
+The serverless container recognizes the following environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | HTTP port to listen on (set automatically by Lambda/Cloud Run) | `8080` |
+| `AWS_ACCESS_KEY_ID` | AWS credentials for S3 access | - |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials for S3 access | - |
+| `AWS_DEFAULT_REGION` | AWS region for S3 access | - |
+
+<Callout type="info" title="PORT is set automatically">
+Both AWS Lambda Web Adapter and Google Cloud Run set the `PORT` environment variable automatically. You don't need to configure it unless testing locally.
+</Callout>
+
+## Running Locally with `moose function`
+
+For development and testing, you can run serverless mode directly without Docker:
+
+```bash filename="Terminal" copy
+moose function
+```
+
+This boots the embedded ClickHouse instance, creates S3/IcebergS3 tables, starts the consumption API subprocess, and listens on port 8080. Override the port with:
+
+```bash filename="Terminal" copy
+moose function --port 3000
+```
+
+## Limitations
+
+- **TypeScript only** for the initial release. Python support is planned.
+- Only **S3** and **IcebergS3** table engines are supported. Tables with other engines are skipped.
+- **No streaming ingestion** — serverless mode is for read-oriented consumption APIs.
+- **No workflows** — Temporal workflows are not available in serverless mode.
+- **Cold starts** — The first request after a cold start takes a few seconds while ClickHouse initializes. Subsequent requests within the same container instance are fast.
+- **Stateless** — The embedded ClickHouse stores no persistent data. All reads come from S3/Iceberg storage.

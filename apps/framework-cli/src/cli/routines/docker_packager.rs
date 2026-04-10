@@ -1140,6 +1140,291 @@ pub fn build_dockerfile(
     )))
 }
 
+/// Generate a Dockerfile optimized for serverless deployment (Lambda / Cloud Run).
+///
+/// Produces a single image that works on both AWS Lambda (via Web Adapter) and
+/// GCP Cloud Run. The Lambda Web Adapter is a no-op on non-Lambda platforms.
+pub fn create_serverless_dockerfile(project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+    let internal_dir = project.internal_dir_with_routine_failure_err()?;
+    let packager_dir = internal_dir.join("packager");
+    fs::create_dir_all(&packager_dir).map_err(|err| {
+        RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to create packager directory".to_string(),
+            ),
+            err,
+        )
+    })?;
+
+    let file_path = packager_dir.join("Dockerfile.serverless");
+
+    let node_version = {
+        let package_json_path = project.project_location.join("package.json");
+        determine_node_version_from_package_json(&package_json_path).to_major_string()
+    };
+
+    let source_dir = &project.source_dir;
+
+    let dockerfile_content = format!(
+        r#"FROM node:{node_version}-bookworm-slim
+
+# Install curl (for Moose CLI download) and ca-certificates (for S3/HTTPS)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN npm config set update-notifier false && npm install -g pnpm@latest
+
+# ClickHouse binary (cached layer)
+COPY --from=clickhouse/clickhouse-server:25.3 /usr/bin/clickhouse /usr/local/bin/clickhouse
+
+# Moose CLI (downloaded during build for target architecture)
+ARG DOWNLOAD_URL
+RUN echo "DOWNLOAD_URL: ${{DOWNLOAD_URL}}"
+RUN curl -Lo /usr/local/bin/moose ${{DOWNLOAD_URL}} && chmod +x /usr/local/bin/moose
+RUN moose --version
+
+# User project
+WORKDIR /app
+COPY package.json ./
+COPY tsconfig.json ./
+COPY moose.config.toml ./
+COPY {source_dir} ./{source_dir}
+
+# Copy lock file if present
+COPY pnpm-lock.yam[l] package-lock.jso[n] yarn.loc[k] ./
+
+# Install dependencies
+RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then npm install; \
+    elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
+    else npm install; fi
+
+# Pre-compile TypeScript
+RUN MOOSE_SOURCE_DIR='{source_dir}' npx moose-tspc
+ENV MOOSE_USE_COMPILED=true
+
+# AWS Lambda Web Adapter (no-op on non-Lambda platforms)
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.0 \
+    /lambda-adapter /opt/extensions/lambda-adapter
+
+ENV PORT=8080
+ENV AWS_LWA_PORT=8080
+ENV AWS_LWA_READINESS_CHECK_PATH=/health
+EXPOSE 8080
+
+ENTRYPOINT ["moose", "function", "--port", "8080"]
+"#
+    );
+
+    fs::write(&file_path, &dockerfile_content).map_err(|err| {
+        RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to write serverless Dockerfile".to_string(),
+            ),
+            err,
+        )
+    })?;
+
+    info!("Created serverless Dockerfile at: {:?}", file_path);
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Created".to_string(),
+        format!("serverless Dockerfile at {}", file_path.display()),
+    )))
+}
+
+/// Build a serverless Docker image from the generated Dockerfile.
+///
+/// Stages project files into `.moose/packager/`, then calls `docker buildx`
+/// for the requested architectures. Defaults to arm64-only when neither
+/// `--amd64` nor `--arm64` is specified (Graviton for Lambda, cost-efficient
+/// for Cloud Run).
+pub fn build_serverless_dockerfile(
+    project: &Project,
+    docker_client: &DockerClient,
+    is_amd64: bool,
+    is_arm64: bool,
+    release_channel: &str,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    let internal_dir = project.internal_dir_with_routine_failure_err()?;
+    let packager_dir = internal_dir.join("packager");
+
+    ensure_docker_running(docker_client).map_err(|err| {
+        RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to ensure docker is running".to_string(),
+            ),
+            err,
+        )
+    })?;
+
+    let dockerfile_path = packager_dir.join("Dockerfile.serverless");
+    if !dockerfile_path.exists() {
+        return Err(RoutineFailure::error(Message::new(
+            "Failed".to_string(),
+            "Serverless Dockerfile not found. Run create_serverless_dockerfile first.".to_string(),
+        )));
+    }
+
+    // Copy project files to packager directory
+    let project_root = &project.project_location;
+    let items_to_copy = vec![
+        &project.source_dir,
+        PACKAGE_JSON,
+        TSCONFIG_JSON,
+        PROJECT_CONFIG_FILE,
+        OLD_PROJECT_CONFIG_FILE,
+    ];
+
+    for item in &items_to_copy {
+        let src = project_root.join(item);
+        let dest = packager_dir.join(item);
+        if src.is_dir() {
+            copy_dir_recursive(&src, &dest).map_err(|err| {
+                RoutineFailure::new(
+                    Message::new("Failed".to_string(), format!("to copy {item}")),
+                    err,
+                )
+            })?;
+        } else if src.exists() {
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            fs::copy(&src, &dest).map_err(|err| {
+                RoutineFailure::new(
+                    Message::new("Failed".to_string(), format!("to copy {item}")),
+                    err,
+                )
+            })?;
+        }
+    }
+
+    // Copy lock file if present
+    if let Some(lock_file_path) = get_lock_file_path(project_root) {
+        if let Some(lock_file_name) = lock_file_path.file_name() {
+            let dest = packager_dir.join(lock_file_name);
+            fs::copy(&lock_file_path, &dest).map_err(|err| {
+                RoutineFailure::new(
+                    Message::new("Failed".to_string(), "to copy lock file".to_string()),
+                    err,
+                )
+            })?;
+        }
+    }
+
+    // CLI version for download URL
+    let mut cli_version = constants::CLI_VERSION;
+    if cli_version == "0.0.1" {
+        cli_version = "0.6.34";
+    }
+
+    let release_channel = if cli_version.contains("-ci-") || cli_version.contains("dev") {
+        if release_channel == "stable" {
+            warn!(
+                "CI version {} detected but release_channel is set to 'stable'. \
+                Overriding to 'dev' channel as CI versions are only available in dev.",
+                cli_version
+            );
+        }
+        "dev"
+    } else {
+        release_channel
+    };
+
+    info!(
+        "Building serverless Docker image with CLI version {} from {} channel",
+        cli_version, release_channel
+    );
+
+    // Default to arm64 only when neither flag is specified (optimal for Lambda Graviton / Cloud Run)
+    let (build_amd64, build_arm64) = if !is_amd64 && !is_arm64 {
+        (false, true)
+    } else {
+        (is_amd64, is_arm64)
+    };
+
+    let dockerfile_for_buildx = Some(dockerfile_path.as_path());
+
+    if build_amd64 {
+        with_spinner_completion(
+            "Creating serverless linux/amd64 image",
+            "Serverless linux/amd64 image created successfully",
+            || {
+                docker_client.buildx(
+                    &packager_dir,
+                    cli_version,
+                    "linux/amd64",
+                    "x86_64-unknown-linux-gnu",
+                    release_channel,
+                    dockerfile_for_buildx,
+                )
+            },
+            !project.is_production,
+        )
+        .map_err(|err| {
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to create serverless amd64 image".to_string(),
+                ),
+                err,
+            )
+        })?;
+    }
+
+    if build_arm64 {
+        with_spinner_completion(
+            "Creating serverless linux/arm64 image",
+            "Serverless linux/arm64 image created successfully",
+            || {
+                docker_client.buildx(
+                    &packager_dir,
+                    cli_version,
+                    "linux/arm64",
+                    "aarch64-unknown-linux-gnu",
+                    release_channel,
+                    dockerfile_for_buildx,
+                )
+            },
+            !project.is_production,
+        )
+        .map_err(|err| {
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to create serverless arm64 image".to_string(),
+                ),
+                err,
+            )
+        })?;
+    }
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Successfully".to_string(),
+        "created serverless docker image for deployment".to_string(),
+    )))
+}
+
+/// Recursively copy a directory.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 /// Reads and parses pnpm-workspace.yaml to get package patterns
 fn read_workspace_config(workspace_root: &Path) -> Result<Vec<String>, RoutineFailure> {
     let workspace_yaml_path = workspace_root.join("pnpm-workspace.yaml");

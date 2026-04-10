@@ -49,6 +49,9 @@ pub enum Commands {
         /// Build for arm64 architecture
         #[arg(long)]
         arm64: bool,
+        /// Build container image for serverless deployment (Lambda/Cloud Run)
+        #[arg(long, default_value = "false")]
+        serverless: bool,
     },
     /// Checks the project for non-runtime errors
     #[command(visible_alias = "c")]
@@ -258,6 +261,17 @@ pub enum Commands {
         /// Port of the dev server to proxy to (auto-detected from project config if omitted)
         #[arg(long)]
         port: Option<u16>,
+    },
+    /// Run as a serverless function (clickhouse-local + consumption APIs over S3/IcebergS3)
+    #[command(visible_alias = "fn")]
+    Function {
+        /// HTTP port to listen on
+        #[arg(long, default_value = "8080")]
+        port: u16,
+
+        /// ClickHouse local HTTP port (internal, not exposed externally)
+        #[arg(long, default_value = "9000")]
+        ch_port: u16,
     },
     /// Manage Kafka-related operations
     #[command(visible_alias = "k")]
