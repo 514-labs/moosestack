@@ -36,7 +36,6 @@ use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
 use crate::project::ProjectFileError;
 use crate::utilities::constants::LIB_DIR;
-use crate::utilities::constants::MIGRATIONS_DIR;
 use crate::utilities::constants::PACKAGE_JSON;
 use crate::utilities::constants::PROJECT_CONFIG_FILE;
 use crate::utilities::constants::REQUIREMENTS_TXT;
@@ -190,6 +189,8 @@ pub fn build_package(project: &Project) -> Result<PathBuf, BuildError> {
     // Copy project files to packager directory
     let project_root_path = project.project_location.clone();
 
+    let migrations_dir = project.migration_config.resolved_dir();
+
     // Files to include in the package
     let files_to_copy = match project.language {
         SupportedLanguages::Typescript => {
@@ -198,7 +199,7 @@ pub fn build_package(project: &Project) -> Result<PathBuf, BuildError> {
                 PROJECT_CONFIG_FILE,
                 PACKAGE_JSON,
                 TSCONFIG_JSON,
-                MIGRATIONS_DIR,
+                migrations_dir,
             ]
         }
         SupportedLanguages::Python => {
@@ -207,7 +208,7 @@ pub fn build_package(project: &Project) -> Result<PathBuf, BuildError> {
                 PROJECT_CONFIG_FILE,
                 REQUIREMENTS_TXT,
                 SETUP_PY,
-                MIGRATIONS_DIR,
+                migrations_dir,
             ]
         }
     };

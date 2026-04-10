@@ -3,8 +3,8 @@ use crate::cli::display::with_spinner_completion;
 use crate::cli::routines::util::ensure_docker_running;
 use crate::framework::languages::SupportedLanguages;
 use crate::utilities::constants::{
-    MIGRATIONS_DIR, OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT,
-    SETUP_PY, TSCONFIG_JSON,
+    OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT, SETUP_PY,
+    TSCONFIG_JSON,
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
@@ -18,6 +18,24 @@ use crate::{
     cli::display::{show_message_wrapper, Message, MessageType},
     project::Project,
 };
+
+/// Generates a Docker COPY line for the migrations directory using the bracket
+/// glob trick so the COPY is a no-op when the directory doesn't exist.
+///
+/// For `"migrations"` this produces:
+///   `COPY --chown=moose:moose ./migration[s] ./migrations`
+///
+/// For `"local-migrations"` this produces:
+///   `COPY --chown=moose:moose ./local-migration[s] ./local-migrations`
+fn docker_migrations_copy_line(dir: &str) -> String {
+    let bracketed = if dir.len() > 1 {
+        let (prefix, last) = dir.split_at(dir.len() - 1);
+        format!("{}[{}]", prefix, last)
+    } else {
+        format!("[{}]", dir)
+    };
+    format!("COPY --chown=moose:moose ./{} ./{}", bracketed, dir)
+}
 
 use serde_json::Value as JsonValue;
 use std::fs;
@@ -297,7 +315,7 @@ COPY_PACKAGE_FILE
 COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
-COPY --chown=moose:moose ./migration[s] ./migrations
+COPY_MIGRATIONS_DIR
 
 
 # Placeholder for the language specific install command
@@ -621,6 +639,10 @@ WORKDIR /application"#,
 
                 dockerfile = dockerfile.replace("COPY_PACKAGE_FILE", &copy_from_build);
                 dockerfile = dockerfile.replace(
+                    "COPY_MIGRATIONS_DIR",
+                    &docker_migrations_copy_line(project.migration_config.resolved_dir()),
+                );
+                dockerfile = dockerfile.replace(
                     "INSTALL_COMMAND",
                     "# Dependencies copied from monorepo build stage",
                 );
@@ -666,6 +688,10 @@ COPY --chown=moose:moose ./{} ./{}"#,
             );
             let install = DOCKER_FILE_COMMON
                 .replace("COPY_PACKAGE_FILE", &copy_package_content)
+                .replace(
+                    "COPY_MIGRATIONS_DIR",
+                    &docker_migrations_copy_line(project.migration_config.resolved_dir()),
+                )
                 .replace("INSTALL_COMMAND", "RUN pip install -r requirements.txt")
                 // No TypeScript compilation for Python projects
                 .replace("TYPESCRIPT_COMPILE_STEP", "");
@@ -754,6 +780,7 @@ pub fn build_dockerfile(
 
     // Copy app & etc to packager directory
     let project_root_path = project.project_location.clone();
+    let migrations_dir = project.migration_config.resolved_dir();
     let items_to_copy = vec![
         &project.source_dir,
         PACKAGE_JSON,
@@ -762,7 +789,7 @@ pub fn build_dockerfile(
         TSCONFIG_JSON,
         PROJECT_CONFIG_FILE,
         OLD_PROJECT_CONFIG_FILE,
-        MIGRATIONS_DIR,
+        migrations_dir,
     ];
 
     // Handle lock file copying for TypeScript projects only (may be from parent directories for monorepos)
@@ -915,10 +942,21 @@ pub fn build_dockerfile(
                             ),
                         )
                         .replace(
-                            "COPY --chown=moose:moose ./migration[s]",
-                            &format!(
-                                "COPY --chown=moose:moose {relative_project_path}/migration[s]"
+                            &docker_migrations_copy_line(
+                                project.migration_config.resolved_dir(),
                             ),
+                            &{
+                                let dir = project.migration_config.resolved_dir();
+                                let bracketed = if dir.len() > 1 {
+                                    let (prefix, last) = dir.split_at(dir.len() - 1);
+                                    format!("{}[{}]", prefix, last)
+                                } else {
+                                    format!("[{}]", dir)
+                                };
+                                format!(
+                                    "COPY --chown=moose:moose {relative_project_path}/{bracketed} ./{dir}"
+                                )
+                            },
                         );
 
                     // Write the adjusted Dockerfile to the workspace root
@@ -1490,6 +1528,10 @@ fn create_standard_typescript_dockerfile_content(
         .replace(
             "COPY_PACKAGE_FILE",
             &format!("\n                    {copy_section}"),
+        )
+        .replace(
+            "COPY_MIGRATIONS_DIR",
+            &docker_migrations_copy_line(project.migration_config.resolved_dir()),
         )
         .replace("INSTALL_COMMAND", &install_command)
         // Pre-compile TypeScript with moose plugins for faster worker startup
