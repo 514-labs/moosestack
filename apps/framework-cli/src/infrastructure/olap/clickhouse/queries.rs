@@ -7691,13 +7691,13 @@ ORDER BY (`event_time`)
     }
 
     #[test]
-    fn test_create_table_query_drops_constraint_for_non_mergetree() {
+    fn test_create_table_query_keeps_constraint_for_non_mergetree() {
         use crate::framework::core::infrastructure::table::ConstraintType;
         use crate::infrastructure::olap::clickhouse::model::ClickHouseConstraint;
 
         let table = ClickHouseTable {
             version: Some(Version::from_string("1".to_string())),
-            name: "test_drops_constraints".to_string(),
+            name: "test_keeps_constraints_non_mt".to_string(),
             columns: vec![ClickHouseColumn {
                 name: "id".to_string(),
                 column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
@@ -7724,7 +7724,7 @@ ORDER BY (`event_time`)
             indexes: vec![],
             projections: vec![],
             constraints: vec![ClickHouseConstraint {
-                name: "should_be_ignored".to_string(),
+                name: "should_be_kept".to_string(),
                 expression: "id > 0".to_string(),
                 constraint_type: ConstraintType::Check,
             }],
@@ -7739,8 +7739,8 @@ ORDER BY (`event_time`)
             "Engine must be non-MergeTree for this test"
         );
         assert!(
-            !query.contains("CONSTRAINT"),
-            "Non-MergeTree DDL should NOT contain constraints. Got: {}",
+            query.contains("CONSTRAINT"),
+            "Non-MergeTree DDL should also contain constraints. Got: {}",
             query
         );
     }
