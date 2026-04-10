@@ -5,8 +5,9 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
-    ClickHouseInt, ClickHouseProjection, ClickHouseTable, DefaultExpressionKind,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseConstraint,
+    ClickHouseFloat, ClickHouseIndex, ClickHouseInt, ClickHouseProjection, ClickHouseTable,
+    DefaultExpressionKind,
 };
 
 use super::errors::ClickhouseError;
@@ -103,7 +104,19 @@ pub fn std_column_to_clickhouse_column(
             && !matches!(column_type, ClickHouseColumnType::Array(_))
             && !matches!(column_type, ClickHouseColumnType::Nested(_))
         {
-            column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
+            // For LowCardinality, Nullable must wrap the inner type:
+            // LowCardinality(Nullable(String)) instead of Nullable(LowCardinality(String))
+            if let ClickHouseColumnType::LowCardinality(inner) = column_type {
+                if matches!(*inner, ClickHouseColumnType::Nullable(_)) {
+                    column_type = ClickHouseColumnType::LowCardinality(inner);
+                } else {
+                    column_type = ClickHouseColumnType::LowCardinality(Box::new(
+                        ClickHouseColumnType::Nullable(inner),
+                    ));
+                }
+            } else {
+                column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
+            }
         }
     }
 
@@ -391,6 +404,15 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             .map(|p| ClickHouseProjection {
                 name: p.name.clone(),
                 body: p.body.clone(),
+            })
+            .collect(),
+        constraints: table
+            .constraints
+            .iter()
+            .map(|c| ClickHouseConstraint {
+                name: c.name.clone(),
+                expression: c.expression.clone(),
+                constraint_type: c.constraint_type.clone(),
             })
             .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
@@ -830,6 +852,7 @@ mod tests {
                 name: "proj_by_id".to_string(),
                 body: "SELECT _part_offset ORDER BY id".to_string(),
             }],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -843,6 +866,96 @@ mod tests {
         assert_eq!(
             ch_table.projections[0].body,
             "SELECT _part_offset ORDER BY id"
+        );
+    }
+
+    #[test]
+    fn test_constraint_mapping_preserves_fields() {
+        use crate::framework::core::infrastructure::table::{
+            Column, ColumnType, ConstraintType, OrderBy, TableConstraint,
+        };
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let table = Table {
+            name: "test_constraint_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![
+                TableConstraint {
+                    name: "positive_id".to_string(),
+                    expression: "length(id) > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "assumed_positive".to_string(),
+                    expression: "length(id) > 0".to_string(),
+                    constraint_type: ConstraintType::Assume,
+                },
+                TableConstraint {
+                    name: "unparsed_test".to_string(),
+                    expression: "x > 0".to_string(),
+                    constraint_type: ConstraintType::Unparsed("UNKNOWN".to_string()),
+                },
+            ],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert_eq!(ch_table.constraints.len(), 3);
+
+        assert_eq!(ch_table.constraints[0].name, "positive_id");
+        assert_eq!(ch_table.constraints[0].expression, "length(id) > 0");
+        assert_eq!(
+            ch_table.constraints[0].constraint_type,
+            ConstraintType::Check
+        );
+
+        assert_eq!(ch_table.constraints[1].name, "assumed_positive");
+        assert_eq!(ch_table.constraints[1].expression, "length(id) > 0");
+        assert_eq!(
+            ch_table.constraints[1].constraint_type,
+            ConstraintType::Assume
+        );
+
+        assert_eq!(ch_table.constraints[2].name, "unparsed_test");
+        assert_eq!(ch_table.constraints[2].expression, "x > 0");
+        assert_eq!(
+            ch_table.constraints[2].constraint_type,
+            ConstraintType::Unparsed("UNKNOWN".to_string())
         );
     }
 
@@ -885,6 +998,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -910,6 +1024,54 @@ mod tests {
             codec: None,
             materialized: None,
             alias: None,
+        }
+    }
+
+    #[test]
+    fn test_low_cardinality_nullable_mapping() {
+        use serde_json::Value;
+
+        // Test that a non-required LowCardinality column becomes LowCardinality(Nullable(T))
+        let col = Column {
+            data_type: ColumnType::String,
+            required: false, // This should trigger the Nullable wrapping
+            annotations: vec![("LowCardinality".to_string(), Value::Bool(true))],
+            ..make_column("test_col")
+        };
+        let ch_col = std_column_to_clickhouse_column(col).unwrap();
+        assert!(
+            matches!(
+                ch_col.column_type,
+                ClickHouseColumnType::LowCardinality(ref inner) if matches!(**inner, ClickHouseColumnType::Nullable(_))
+            ),
+            "Expected LowCardinality(Nullable(T)), got {:?}",
+            ch_col.column_type
+        );
+
+        // Test that if we somehow have a ColumnType that maps to Nullable already
+        // (we simulate this by creating an Optional type, though Moose model usually represents
+        // this with `required: false`), we do not double wrap.
+        // In the current mapper, `required: false` is the primary way Nullable is introduced.
+        // We'll test the wrapping logic handles an already Nullable type.
+
+        let col_already_nullable = Column {
+            data_type: ColumnType::Nullable(Box::new(ColumnType::String)),
+            required: false, // Will become Nullable
+            annotations: vec![("LowCardinality".to_string(), Value::Bool(true))],
+            ..make_column("test_col_2")
+        };
+        // The mapping logic wraps the mapped inner type.
+        // Let's verify we don't end up with LowCardinality(Nullable(Nullable(T)))
+        let ch_col_2 = std_column_to_clickhouse_column(col_already_nullable).unwrap();
+
+        if let ClickHouseColumnType::LowCardinality(inner) = &ch_col_2.column_type {
+            if let ClickHouseColumnType::Nullable(inner_inner) = &**inner {
+                assert!(
+                    !matches!(**inner_inner, ClickHouseColumnType::Nullable(_)),
+                    "Expected no double Nullable wrapping, got {:?}",
+                    ch_col_2.column_type
+                );
+            }
         }
     }
 

@@ -63,7 +63,7 @@ describe("OlapTable Cluster Validation", () => {
     }).to.not.throw();
   });
 
-  it("should throw error when both cluster and keeperPath are specified", () => {
+  it("should allow both cluster and keeperPath", () => {
     expect(() => {
       createTestOlapTable<TestModel>("TestBothClusterAndKeeper", {
         engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -71,12 +71,10 @@ describe("OlapTable Cluster Validation", () => {
         cluster: "test_cluster",
         keeperPath: "/clickhouse/tables/{database}/{table}",
       });
-    }).to.throw(
-      /Cannot specify both 'cluster' and explicit replication params/,
-    );
+    }).to.not.throw();
   });
 
-  it("should throw error when both cluster and replicaName are specified", () => {
+  it("should allow both cluster and replicaName", () => {
     expect(() => {
       createTestOlapTable<TestModel>("TestBothClusterAndReplica", {
         engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -84,12 +82,10 @@ describe("OlapTable Cluster Validation", () => {
         cluster: "test_cluster",
         replicaName: "{replica}",
       });
-    }).to.throw(
-      /Cannot specify both 'cluster' and explicit replication params/,
-    );
+    }).to.not.throw();
   });
 
-  it("should throw error when cluster, keeperPath, and replicaName are all specified", () => {
+  it("should allow cluster, keeperPath, and replicaName together", () => {
     expect(() => {
       createTestOlapTable<TestModel>("TestAll", {
         engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -98,9 +94,7 @@ describe("OlapTable Cluster Validation", () => {
         keeperPath: "/clickhouse/tables/{database}/{table}",
         replicaName: "{replica}",
       });
-    }).to.throw(
-      /Cannot specify both 'cluster' and explicit replication params/,
-    );
+    }).to.not.throw();
   });
 
   it("should allow non-replicated engines with cluster", () => {

@@ -1,7 +1,9 @@
 use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
+use crate::framework::core::infrastructure::table::{
+    Column, Table, TableConstraint, TableIndex, TableProjection,
+};
 use crate::framework::core::infrastructure::view::{Dmv1View, View};
 use crate::framework::core::infrastructure_map::{
     Change, ColumnChange, InfrastructureMap, OlapChange, TableChange,
@@ -128,6 +130,18 @@ pub enum InfraDelta {
         projection_name: String,
     },
 
+    /// Add a constraint to a table
+    AddTableConstraint {
+        table_id: String,
+        constraint: TableConstraint,
+    },
+
+    /// Drop a constraint from a table
+    DropTableConstraint {
+        table_id: String,
+        constraint_name: String,
+    },
+
     /// Set or change the SAMPLE BY expression
     ModifySampleBy {
         table_id: String,
@@ -242,6 +256,12 @@ pub enum DeltaApplyErrorKind {
     ProjectionNotFound {
         table_id: String,
         projection_name: String,
+    },
+
+    #[error("constraint '{constraint_name}' not found in table '{table_id}'")]
+    ConstraintNotFound {
+        table_id: String,
+        constraint_name: String,
     },
 }
 
@@ -465,6 +485,38 @@ impl InfraDelta {
                 table.projections.remove(pos);
             }
 
+            InfraDelta::AddTableConstraint {
+                table_id,
+                constraint,
+            } => {
+                let table = map.tables.get_mut(table_id).ok_or_else(|| {
+                    DeltaApplyErrorKind::TableNotFound {
+                        table_id: table_id.clone(),
+                    }
+                })?;
+                table.constraints.push(constraint.clone());
+            }
+
+            InfraDelta::DropTableConstraint {
+                table_id,
+                constraint_name,
+            } => {
+                let table = map.tables.get_mut(table_id).ok_or_else(|| {
+                    DeltaApplyErrorKind::TableNotFound {
+                        table_id: table_id.clone(),
+                    }
+                })?;
+                let pos = table
+                    .constraints
+                    .iter()
+                    .position(|c| c.name == *constraint_name)
+                    .ok_or_else(|| DeltaApplyErrorKind::ConstraintNotFound {
+                        table_id: table_id.clone(),
+                        constraint_name: constraint_name.clone(),
+                    })?;
+                table.constraints.remove(pos);
+            }
+
             InfraDelta::ModifySampleBy {
                 table_id,
                 expression,
@@ -619,6 +671,14 @@ impl InfraDelta {
                 table_id,
                 projection_name,
             } => format!("Drop projection '{}' from '{}'", projection_name, table_id),
+            InfraDelta::AddTableConstraint {
+                table_id,
+                constraint,
+            } => format!("Add constraint '{}' to '{}'", constraint.name, table_id),
+            InfraDelta::DropTableConstraint {
+                table_id,
+                constraint_name,
+            } => format!("Drop constraint '{}' from '{}'", constraint_name, table_id),
             InfraDelta::ModifySampleBy { table_id, .. } => {
                 format!("Modify SAMPLE BY for '{}'", table_id)
             }
@@ -913,6 +973,46 @@ impl InfraDelta {
                 vec![AtomicOlapOperation::DropTableProjection {
                     table,
                     projection_name: projection_name.clone(),
+                    dependency_info: empty_deps,
+                }]
+            }
+            InfraDelta::AddTableConstraint {
+                table_id,
+                constraint,
+            } => {
+                let table = match map.tables.get(table_id) {
+                    Some(t) => t.clone(),
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
+                };
+                vec![AtomicOlapOperation::AddTableConstraint {
+                    table,
+                    constraint: constraint.clone(),
+                    dependency_info: empty_deps,
+                }]
+            }
+            InfraDelta::DropTableConstraint {
+                table_id,
+                constraint_name,
+            } => {
+                let table = match map.tables.get(table_id) {
+                    Some(t) => t.clone(),
+                    None => {
+                        tracing::warn!(
+                            "Table '{}' not found in map during delta lowering, skipping operation",
+                            table_id
+                        );
+                        return vec![];
+                    }
+                };
+                vec![AtomicOlapOperation::DropTableConstraint {
+                    table,
+                    constraint_name: constraint_name.clone(),
                     dependency_info: empty_deps,
                 }]
             }
@@ -1392,6 +1492,46 @@ fn decompose_table_update(
         }
     }
 
+    // Constraint changes
+    let before_constraints: HashMap<&str, &TableConstraint> = before
+        .constraints
+        .iter()
+        .map(|c| (c.name.as_str(), c))
+        .collect();
+    let after_constraints: HashMap<&str, &TableConstraint> = after
+        .constraints
+        .iter()
+        .map(|c| (c.name.as_str(), c))
+        .collect();
+
+    for name in before_constraints.keys() {
+        if !after_constraints.contains_key(name) {
+            deltas.push(InfraDelta::DropTableConstraint {
+                table_id: table_id.to_string(),
+                constraint_name: name.to_string(),
+            });
+        }
+    }
+    for (name, constraint) in &after_constraints {
+        if let Some(before_constraint) = before_constraints.get(name) {
+            if *before_constraint != *constraint {
+                deltas.push(InfraDelta::DropTableConstraint {
+                    table_id: table_id.to_string(),
+                    constraint_name: name.to_string(),
+                });
+                deltas.push(InfraDelta::AddTableConstraint {
+                    table_id: table_id.to_string(),
+                    constraint: (*constraint).clone(),
+                });
+            }
+        } else {
+            deltas.push(InfraDelta::AddTableConstraint {
+                table_id: table_id.to_string(),
+                constraint: (*constraint).clone(),
+            });
+        }
+    }
+
     // SAMPLE BY changes
     if before.sample_by != after.sample_by {
         match &after.sample_by {
@@ -1509,6 +1649,7 @@ mod tests {
                 primitive_type:
                     crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
             },
+            constraints: vec![],
         }
     }
 
@@ -1543,6 +1684,17 @@ mod tests {
         TableProjection {
             name: name.to_string(),
             body: "SELECT id, name ORDER BY name".to_string(),
+        }
+    }
+
+    fn make_test_constraint(
+        name: &str,
+        expr: &str,
+    ) -> crate::framework::core::infrastructure::table::TableConstraint {
+        crate::framework::core::infrastructure::table::TableConstraint {
+            name: name.to_string(),
+            expression: expr.to_string(),
+            constraint_type: crate::framework::core::infrastructure::table::ConstraintType::Check,
         }
     }
 
@@ -1837,6 +1989,111 @@ mod tests {
         };
         drop_delta.apply(&mut map, TEST_DB).unwrap();
         assert_eq!(map.tables.get(&table_id).unwrap().projections.len(), 0);
+    }
+
+    // ── Constraint operations ────────────────────────────────────
+
+    #[test]
+    fn test_apply_add_and_drop_constraint() {
+        let mut map = empty_map();
+        let table = make_test_table("events");
+        let table_id = table.id(TEST_DB);
+        map.tables.insert(table_id.clone(), table);
+
+        let constraint = make_test_constraint("check_id", "id > 0");
+        let add_delta = InfraDelta::AddTableConstraint {
+            table_id: table_id.clone(),
+            constraint: constraint.clone(),
+        };
+        add_delta.apply(&mut map, TEST_DB).unwrap();
+        assert_eq!(map.tables.get(&table_id).unwrap().constraints.len(), 1);
+
+        let drop_delta = InfraDelta::DropTableConstraint {
+            table_id: table_id.clone(),
+            constraint_name: "check_id".to_string(),
+        };
+        drop_delta.apply(&mut map, TEST_DB).unwrap();
+        assert_eq!(map.tables.get(&table_id).unwrap().constraints.len(), 0);
+    }
+
+    #[test]
+    fn test_apply_drop_constraint_not_found_errors() {
+        let mut map = empty_map();
+        let table = make_test_table("events");
+        let table_id = table.id(TEST_DB);
+        map.tables.insert(table_id.clone(), table);
+
+        let delta = InfraDelta::DropTableConstraint {
+            table_id: table_id.clone(),
+            constraint_name: "nonexistent".to_string(),
+        };
+        let result = delta.apply(&mut map, TEST_DB);
+        assert!(matches!(
+            result,
+            Err(DeltaApplyErrorKind::ConstraintNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn test_decompose_constraint_changes() {
+        let before = make_test_table("events");
+        let mut after = make_test_table("events");
+        after.constraints = vec![make_test_constraint("check_positive", "id > 0")];
+
+        let table_id = before.id(TEST_DB);
+        let mut deltas = vec![];
+        decompose_table_update(&table_id, &before, &after, &[], &mut deltas);
+
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_positive"
+        ));
+    }
+
+    #[test]
+    fn test_decompose_constraint_modification() {
+        let mut before = make_test_table("events");
+        before.constraints = vec![make_test_constraint("check_positive", "id > 0")];
+
+        let mut after = make_test_table("events");
+        after.constraints = vec![make_test_constraint("check_positive", "id >= 1")];
+
+        let table_id = before.id(TEST_DB);
+        let mut deltas = vec![];
+        decompose_table_update(&table_id, &before, &after, &[], &mut deltas);
+
+        assert_eq!(deltas.len(), 2);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_positive"
+        ));
+        assert!(matches!(
+            &deltas[1],
+            InfraDelta::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_positive" && constraint.expression == "id >= 1"
+        ));
+    }
+
+    #[test]
+    fn test_decompose_constraint_removal() {
+        let mut before = make_test_table("events");
+        before.constraints = vec![make_test_constraint("check_positive", "id > 0")];
+
+        let after = make_test_table("events");
+
+        let table_id = before.id(TEST_DB);
+        let mut deltas = vec![];
+        decompose_table_update(&table_id, &before, &after, &[], &mut deltas);
+
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_positive"
+        ));
     }
 
     // ── SAMPLE BY ───────────────────────────────────────────────

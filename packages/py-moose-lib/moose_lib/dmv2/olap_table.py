@@ -147,6 +147,9 @@ class OlapConfig(BaseModel):
                  Use this to enable replicated tables across ClickHouse clusters.
                  The cluster must be defined in moose.config.toml (dev environment only).
                  Example: cluster="prod_cluster"
+        constraints: Optional table-level ClickHouse constraints.
+                     - **CHECK** — validated on INSERT.
+                     - **ASSUME** — optimizer hint only (no enforcement).
     """
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None
@@ -178,6 +181,21 @@ class OlapConfig(BaseModel):
         body: str
 
     projections: list[TableProjection] = []
+
+    class TableConstraint(BaseModel):
+        """A table-level constraint in ClickHouse.
+
+        Attributes:
+            name: Unique identifier for the constraint.
+            expression: The SQL expression that must hold (e.g. ``"len(col) <= 32"``).
+            type: ``"CHECK"`` is validated on INSERT; ``"ASSUME"`` is an optimizer hint only.
+        """
+
+        name: str
+        expression: str
+        type: Literal["CHECK", "ASSUME"]
+
+    constraints: list[TableConstraint] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 
     class SeedFilter(BaseModel):
@@ -349,39 +367,6 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 f"OlapTable with name {name} and version {config.version or 'unversioned'} already exists"
             )
         _tables[registry_key] = self
-
-        # Validate cluster and explicit replication params are not both specified
-        if config.cluster:
-            from moose_lib.blocks import (
-                ReplicatedMergeTreeEngine,
-                ReplicatedReplacingMergeTreeEngine,
-                ReplicatedAggregatingMergeTreeEngine,
-                ReplicatedSummingMergeTreeEngine,
-                ReplicatedCollapsingMergeTreeEngine,
-                ReplicatedVersionedCollapsingMergeTreeEngine,
-            )
-
-            if isinstance(
-                config.engine,
-                (
-                    ReplicatedMergeTreeEngine,
-                    ReplicatedReplacingMergeTreeEngine,
-                    ReplicatedAggregatingMergeTreeEngine,
-                    ReplicatedSummingMergeTreeEngine,
-                    ReplicatedCollapsingMergeTreeEngine,
-                    ReplicatedVersionedCollapsingMergeTreeEngine,
-                ),
-            ):
-                if (
-                    config.engine.keeper_path is not None
-                    or config.engine.replica_name is not None
-                ):
-                    raise ValueError(
-                        f"OlapTable {name}: Cannot specify both 'cluster' and explicit replication params "
-                        f"('keeper_path' or 'replica_name'). "
-                        f"Use 'cluster' for auto-injected params, or use explicit 'keeper_path' and "
-                        f"'replica_name' without 'cluster'."
-                    )
 
         # Check if using legacy enum-based engine configuration
         if config.engine and isinstance(config.engine, ClickHouseEngines):

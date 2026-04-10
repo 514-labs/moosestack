@@ -1,4 +1,6 @@
-use crate::framework::core::infrastructure::table::{DataEnum, JsonOptions, OrderBy};
+use crate::framework::core::infrastructure::table::{
+    ConstraintType, DataEnum, JsonOptions, OrderBy,
+};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use chrono::{DateTime, FixedOffset};
@@ -722,6 +724,13 @@ pub struct ClickHouseProjection {
     pub body: String,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClickHouseConstraint {
+    pub name: String,
+    pub expression: String,
+    pub constraint_type: ConstraintType,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
@@ -737,6 +746,7 @@ pub struct ClickHouseTable {
     pub indexes: Vec<ClickHouseIndex>,
     /// Projections for alternative data ordering within parts
     pub projections: Vec<ClickHouseProjection>,
+    pub constraints: Vec<ClickHouseConstraint>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support

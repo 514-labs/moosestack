@@ -486,6 +486,7 @@ interface TableJson {
   }[];
   /** Optional table projections */
   projections?: TableProjection[];
+  constraints?: { name: string; expression: string; constraint_type: string }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
   /** Optional database name for multi-database support. */
@@ -1193,6 +1194,16 @@ export const toInfraMap = (registry: MooseInternalRegistry) => {
         })) || [],
       projections:
         ("projections" in table.config && table.config.projections) || [],
+      constraints:
+        "constraints" in table.config && table.config.constraints ?
+          table.config.constraints.map(
+            (c: { name: string; expression: string; type: string }) => ({
+              name: c.name,
+              expression: c.expression,
+              constraint_type: c.type,
+            }),
+          )
+        : [],
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,

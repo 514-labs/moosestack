@@ -588,22 +588,28 @@ const isStringAnyRecord = (t: ts.Type, checker: ts.TypeChecker): boolean => {
  * Check if a type is a Record<K, V> type (generic map/dictionary type)
  */
 const isRecordType = (t: ts.Type, checker: ts.TypeChecker): boolean => {
+  if (checker.isArrayType(t)) {
+    return false;
+  }
   const indexInfos = checker.getIndexInfosOfType(t);
   return indexInfos && indexInfos.length === 1;
 };
 
 /**
- * Detects a tag-like object type that only carries metadata, e.g. { _tag: ... }
+ * Detects a tag-like object type that only carries metadata.
+ * A meta-object is one whose properties ALL start with `_`, e.g.
+ *   { _tag: ... }                                        (Key, ClickHouseDefault)
+ *   { _simpleAggregationFunction: ..., _argType: ... }   (SimpleAggregated)
  */
-const isSingleUnderscoreMetaObject = (
+const isUnderscoreMetaObject = (
   t: ts.Type,
   checker: ts.TypeChecker,
 ): boolean => {
   const props = checker.getPropertiesOfType(t);
-  if (props.length !== 1) return false;
-  const onlyProp = props[0];
-  const name = onlyProp.name;
-  return typeof name === "string" && name.startsWith("_");
+  if (props.length === 0) return false;
+  return props.every(
+    (p) => typeof p.name === "string" && p.name.startsWith("_"),
+  );
 };
 
 /**
@@ -794,7 +800,7 @@ const tsTypeToDataType = (
   // clean up intersection type tags
   if (nonNull.isIntersection()) {
     const nonTagTypes = nonNull.types.filter(
-      (candidate) => !isSingleUnderscoreMetaObject(candidate, checker),
+      (candidate) => !isUnderscoreMetaObject(candidate, checker),
     );
 
     if (nonTagTypes.length == 1) {
@@ -901,7 +907,7 @@ const tsTypeToDataType = (
     annotations.push(["simpleAggregationFunction", simpleAggregationFunction]);
   }
 
-  const lowCardinalitySymbol = t.getProperty("_LowCardinality");
+  const lowCardinalitySymbol = nonNull.getProperty("_LowCardinality");
   if (lowCardinalitySymbol !== undefined) {
     const lowCardinalityType = checker.getNonNullableType(
       checker.getTypeOfSymbol(lowCardinalitySymbol),

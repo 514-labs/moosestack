@@ -395,6 +395,7 @@ mod tests {
                 primitive_type:
                     crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
             },
+            constraints: vec![],
         }
     }
 

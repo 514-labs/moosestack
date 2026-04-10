@@ -419,7 +419,168 @@ pipeline = IngestPipeline[CompositeShared]("composite_shared", IngestPipelineCon
   </LanguageTabContent>
 </LanguageTabs>
 
-**Key Point**: Complex types including nested objects and arrays work consistently across all infrastructure.
+### Adding Table Constraints
+
+You can attach **ClickHouse table-level constraints** to an `OlapTable`
+or to the **`table`** portion of an `IngestPipeline` config (when `table` is an object).
+
+#### The `TableConstraint` type
+
+Constraints are defined using the `TableConstraint` type:
+
+| Field | Type | Purpose |
+| ----- | ---- | ------- |
+| `name` | `string` | Unique constraint name in ClickHouse. |
+| `expression` | `string` | SQL predicate (what appears inside the constraint body in DDL). |
+| `type` | `"CHECK"` \| `"ASSUME"` | Constraint kind (see below). |
+
+In TypeScript this is the `TableConstraint` interface from `@514labs/moose-lib`. In Python it is `OlapConfig.TableConstraint` (nested class on `OlapConfig`).
+
+##### `type`: `CHECK` vs `ASSUME`
+
+- **`CHECK`** — ClickHouse **validates** this predicate on **INSERT** (and similar write paths) **when the engine applies constraint checking** for that table. If validation does not apply (for example, read-only or external engines where you never insert into that table), the constraint may still appear in DDL but has nothing to enforce at insert time.
+- **`ASSUME`** — **Optimizer-only**: ClickHouse **does not** enforce this on insert. It tells the planner that the predicate always holds so it may rewrite queries (e.g. replace expressions with materialized columns). If the data violates the assumption, **query results can be wrong**; use only when you are sure the property holds.
+
+#### `OlapTable` example
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/datamodels/user.ts"
+import { Key, OlapTable, TableConstraint } from "@514labs/moose-lib";
+
+export interface User {
+  id: Key<string>;
+  name: string;
+  age: number;
+  name_len: number;
+}
+
+const ageConstraint: TableConstraint = {
+  name: "valid_age",
+  expression: "age >= 0",
+  type: "CHECK",
+};
+
+const nameLenConstraint: TableConstraint = {
+  name: "assume_name_len",
+  expression: "length(name) = name_len",
+  type: "ASSUME",
+};
+
+export const UserTable = new OlapTable<User>("User", {
+  constraints: [ageConstraint, nameLenConstraint],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig, Key, MergeTreeEngine, MooseModel
+
+class User(MooseModel):
+    id: Key[str]
+    name: str
+    age: int
+    name_len: int
+
+age_constraint = OlapConfig.TableConstraint(
+    name="valid_age",
+    expression="age >= 0",
+    type="CHECK",
+)
+
+name_len_constraint = OlapConfig.TableConstraint(
+    name="assume_name_len",
+    expression="length(name) = name_len",
+    type="ASSUME",
+)
+
+UserTable = OlapTable(
+    User,
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        constraints=[age_constraint, name_len_constraint],
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### `IngestPipeline` example
+
+Pass constraints on the **`table`** key alongside engine and `orderByFields` / `orderByExpression` as usual:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/datamodels/events_pipeline.ts"
+import {
+  Key,
+  IngestPipeline,
+  ClickHouseEngines,
+  TableConstraint,
+} from "@514labs/moose-lib";
+
+export interface Event {
+  id: Key<string>;
+  value: number;
+}
+
+const nonNegative: TableConstraint = {
+  name: "value_non_negative",
+  expression: "value >= 0",
+  type: "CHECK",
+};
+
+export const eventsPipeline = new IngestPipeline<Event>("events", {
+  ingestApi: true,
+  stream: true,
+  table: {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
+    constraints: [nonNegative],
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/datamodels/events_pipeline.py"
+from moose_lib import (
+    IngestPipeline,
+    IngestPipelineConfig,
+    OlapConfig,
+    Key,
+    MergeTreeEngine,
+    MooseModel,
+)
+
+class Event(MooseModel):
+    id: Key[str]
+    value: float
+
+value_non_negative = OlapConfig.TableConstraint(
+    name="value_non_negative",
+    expression="value >= 0",
+    type="CHECK",
+)
+
+events_pipeline = IngestPipeline[Event](
+    "events",
+    IngestPipelineConfig(
+        ingest_api=True,
+        stream=True,
+        table=OlapConfig(
+            engine=MergeTreeEngine(),
+            order_by_fields=["id"],
+            constraints=[value_non_negative],
+        ),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### ASSUME and the query optimizer
+
+For `ASSUME`, ClickHouse may rewrite queries using the declared predicate—for example, if `ASSUME` ties a function to a stored column, filters using the function might be turned into filters on that column. **`ASSUME` does not validate rows on insert**; only **`CHECK`** does, on engines/paths where insert-time checking applies.
 
 ### ClickHouse-Specific Types (Standalone vs IngestPipeline)
 

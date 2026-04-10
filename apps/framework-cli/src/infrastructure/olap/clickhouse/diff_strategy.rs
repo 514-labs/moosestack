@@ -6,7 +6,8 @@
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
-    Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
+    table_constraints_equal_ignore_order, Column, ColumnType, DataEnum, EnumValue, JsonOptions,
+    Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
     ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
@@ -785,10 +786,13 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&before.constraints, &after.constraints);
         if !column_changes.is_empty()
             || before.indexes != after.indexes
             || before.projections != after.projections
             || sample_by_changed
+            || constraints_changed
         {
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
@@ -869,6 +873,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1864,6 +1869,7 @@ mod tests {
             table_settings: Some(table_settings),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

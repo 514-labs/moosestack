@@ -74,6 +74,7 @@ import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import {
   verifyTableIndexes,
   verifyTableProjections,
+  verifyTableConstraints,
   getTableDDL,
 } from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
@@ -836,6 +837,47 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ) {
               throw new Error(
                 `proj_by_user not updated with value column. DDL: ${ddl}`,
+              );
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
+
+      it("should create constraints defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        await verifyTableConstraints(
+          "ConstraintTest",
+          ["val_positive", "assume_short_status"],
+          "local",
+        );
+      });
+
+      it("should plan/apply constraint modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+
+        // Change the CHECK constraint expression and add a new constraint
+        contents = contents.replace("value >= 0", "value >= 1");
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("ConstraintTest", "local");
+            if (
+              !ddl.includes("CONSTRAINT val_positive") ||
+              !ddl.includes("value >= 1")
+            ) {
+              throw new Error(
+                `val_positive not updated to 'value >= 1'. DDL: ${ddl}`,
               );
             }
           },

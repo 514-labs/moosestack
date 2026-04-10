@@ -515,6 +515,71 @@ pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
 pub(crate) static RE_ENGINE_KEYWORD: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\sENGINE\s*=").unwrap());
 
+/// Split `body` on top-level commas, respecting nested parentheses / brackets
+/// and single-quoted, double-quoted, and backtick-quoted strings.
+// TODO: parse from `sqlparser::tokenizer::Tokenizer` tokens instead of raw string
+fn split_top_level_csv_items(body: &str) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+    let mut escape = false;
+    for ch in body.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        let in_any_quote = in_single_quote || in_double_quote || in_backtick;
+        match ch {
+            '\\' if in_any_quote => {
+                current.push(ch);
+                escape = true;
+            }
+            '\'' if !in_double_quote && !in_backtick => {
+                in_single_quote = !in_single_quote;
+                current.push(ch);
+            }
+            '"' if !in_single_quote && !in_backtick => {
+                in_double_quote = !in_double_quote;
+                current.push(ch);
+            }
+            '`' if !in_single_quote && !in_double_quote => {
+                in_backtick = !in_backtick;
+                current.push(ch);
+            }
+            '(' if !in_any_quote => {
+                paren_depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_any_quote => {
+                paren_depth -= 1;
+                current.push(ch);
+            }
+            '[' if !in_any_quote => {
+                bracket_depth += 1;
+                current.push(ch);
+            }
+            ']' if !in_any_quote => {
+                bracket_depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_any_quote && paren_depth == 0 && bracket_depth == 0 => {
+                items.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        items.push(current.trim().to_string());
+    }
+    items
+}
+
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
 // so we're stuck with this
@@ -529,46 +594,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
     let body = &sql[start..end];
-
-    // Split top-level comma-separated items, respecting nested parentheses
-    let mut items: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    for ch in body.chars() {
-        if escape {
-            current.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => {
-                current.push(ch);
-                escape = true;
-            }
-            '\'' => {
-                in_string = !in_string;
-                current.push(ch);
-            }
-            '(' if !in_string => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_string => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if !in_string && depth == 0 => {
-                items.push(current.trim().to_string());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.trim().is_empty() {
-        items.push(current.trim().to_string());
-    }
+    let items = split_top_level_csv_items(body);
 
     for item in items
         .into_iter()
@@ -697,46 +723,7 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
     let body = &sql[start..end];
-
-    // Split top-level comma-separated items, respecting nested parentheses
-    let mut items: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    for ch in body.chars() {
-        if escape {
-            current.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => {
-                current.push(ch);
-                escape = true;
-            }
-            '\'' => {
-                in_string = !in_string;
-                current.push(ch);
-            }
-            '(' if !in_string => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_string => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if !in_string && depth == 0 => {
-                items.push(current.trim().to_string());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.trim().is_empty() {
-        items.push(current.trim().to_string());
-    }
+    let items = split_top_level_csv_items(body);
 
     for item in items
         .into_iter()
@@ -798,6 +785,204 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
         result.push(ParsedProjection {
             name,
             body: projection_body,
+        });
+    }
+
+    result
+}
+
+/// Parsed constraint from a CREATE TABLE statement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedConstraint {
+    pub name: String,
+    pub constraint_type: String,
+    pub expression: String,
+}
+
+/// Extract constraints from a CREATE TABLE statement.
+///
+/// Strip one balanced layer of outer parentheses from a string, if present.
+/// Returns the inner content trimmed. If the outermost `(` and `)` are not
+/// balanced (e.g. `(a > 0) AND (b < 10)`), the original string is returned.
+fn strip_outer_parens(s: &str) -> &str {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
+        return trimmed;
+    }
+    // Verify the opening paren matches the closing one (not two separate groups)
+    let mut depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let chars: Vec<char> = inner.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        let next_ch = if i + 1 < chars.len() {
+            chars[i + 1]
+        } else {
+            '\0'
+        };
+
+        // Handle backslash escapes inside quotes
+        if ch == '\\' && (in_single_quote || in_double_quote || in_backtick) {
+            i += 2;
+            continue;
+        }
+
+        // Handle escaping by doubling quotes
+        if ch == '\'' && in_single_quote && next_ch == '\'' {
+            i += 2;
+            continue;
+        }
+
+        if ch == '\'' && !in_double_quote && !in_backtick {
+            in_single_quote = !in_single_quote;
+        } else if ch == '"' && !in_single_quote && !in_backtick {
+            in_double_quote = !in_double_quote;
+        } else if ch == '`' && !in_single_quote && !in_double_quote {
+            in_backtick = !in_backtick;
+        }
+
+        // Only consider parens outside of quotes
+        if !in_single_quote && !in_double_quote && !in_backtick {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // The first ')' closes the opening paren before end — not a single wrapper
+                        return trimmed;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        i += 1;
+    }
+
+    if depth == 0 {
+        inner.trim()
+    } else {
+        trimmed
+    }
+}
+
+/// Parses the column definition body between `(` and `ENGINE` to find
+/// `CONSTRAINT <name> <type> <expression>` items. Uses the same top-level comma
+/// splitting logic as [`extract_indexes_from_create_table`] to handle
+/// nested parentheses correctly.
+pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint> {
+    let mut result: Vec<ParsedConstraint> = Vec::new();
+    let upper = sql.to_uppercase();
+
+    // Find opening '(' after CREATE TABLE ...
+    let open_paren_pos = upper.find('(');
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start());
+    if open_paren_pos.is_none() || engine_pos.is_none() {
+        return result;
+    }
+    let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
+    let mut body = sql[start..end].trim();
+    if body.ends_with(')') {
+        body = &body[..body.len() - 1];
+    }
+
+    let items = split_top_level_csv_items(body);
+
+    for item in items
+        .into_iter()
+        .filter(|s| s.to_uppercase().starts_with("CONSTRAINT "))
+    {
+        let trimmed = item.trim();
+        // Strip leading "CONSTRAINT "
+        let after_keyword = match trimmed
+            .get(..11)
+            .filter(|prefix| prefix.to_uppercase() == "CONSTRAINT ")
+        {
+            Some(_) => trimmed[11..].trim_start(),
+            None => continue,
+        };
+
+        // Name is the next token, handle backtick or double quoting
+        let (name, after_name) = if after_keyword.starts_with('`') || after_keyword.starts_with('"')
+        {
+            let quote_char = after_keyword.chars().next().unwrap();
+            // Find the matching closing quote properly respecting UTF-8 char boundaries
+            let mut end_idx = None;
+            let mut chars = after_keyword.char_indices().skip(1);
+            while let Some((idx, ch)) = chars.next() {
+                if ch == quote_char {
+                    // Check if it's an escaped quote (e.g. `` or "")
+                    let next_is_quote = chars
+                        .clone()
+                        .next()
+                        .is_some_and(|(_, next_ch)| next_ch == quote_char);
+                    if next_is_quote {
+                        chars.next(); // skip the second quote
+                        continue;
+                    }
+                    end_idx = Some(idx);
+                    break;
+                }
+            }
+
+            if let Some(idx) = end_idx {
+                let escaped_quote = format!("{}{}", quote_char, quote_char);
+                let unescaped_quote = quote_char.to_string();
+                let name = after_keyword[1..idx].replace(&escaped_quote, &unescaped_quote); // extract and unescape
+                let after_name = after_keyword[idx + 1..].trim_start();
+                (name, after_name)
+            } else {
+                // Fallback if no closing quote
+                let name_end = after_keyword
+                    .find(|c: char| c.is_whitespace())
+                    .unwrap_or(after_keyword.len());
+                let name = after_keyword[1..name_end].to_string();
+                let after_name = after_keyword[name_end..].trim_start();
+                (name, after_name)
+            }
+        } else {
+            let name_end = after_keyword
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(after_keyword.len());
+            let name = after_keyword[..name_end].to_string();
+            let after_name = after_keyword[name_end..].trim_start();
+            (name, after_name)
+        };
+
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        let type_end = after_name
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after_name.len());
+        let constraint_type = after_name[..type_end].trim().to_string();
+        if constraint_type.is_empty() {
+            continue;
+        }
+
+        let raw_expression = after_name[type_end..].trim();
+        if raw_expression.is_empty() {
+            continue;
+        }
+
+        // Strip one layer of outer parentheses if present.
+        // The DDL generator wraps expressions in (...) for SQL safety, and ClickHouse
+        // persists that wrapping. Stripping here ensures the parsed expression matches
+        // the user's original model and avoids perpetual plan diffs.
+        let expression = strip_outer_parens(raw_expression).to_string();
+
+        result.push(ParsedConstraint {
+            name,
+            constraint_type,
+            expression,
         });
     }
 
@@ -2954,6 +3139,194 @@ ORDER BY id"#;
             "SELECT   _part_offset\n        WHERE   status = 'hello  world'\n        ORDER BY   id",
             "Raw body should be trimmed but internal whitespace preserved"
         );
+    }
+
+    #[test]
+    fn test_extract_constraints_from_create_table() {
+        // Test 1: No constraints -> assert empty Vec
+        let sql_no_constraints = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        assert!(extract_constraints_from_create_table(sql_no_constraints).is_empty());
+
+        // Test 2: Single CHECK constraint
+        let sql_single_check = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_1 CHECK value > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_check);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 3: Single ASSUME constraint
+        let sql_single_assume = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_assume);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_2");
+        assert_eq!(constraints[0].constraint_type, "ASSUME");
+        assert_eq!(constraints[0].expression, "value < 100");
+
+        // Test 4: Multiple constraints
+        let sql_multiple = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    CONSTRAINT constr_1 CHECK value > 0,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let constraints = extract_constraints_from_create_table(sql_multiple);
+        assert_eq!(constraints.len(), 2);
+
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        assert_eq!(constraints[1].name, "constr_2");
+        assert_eq!(constraints[1].constraint_type, "ASSUME");
+        assert_eq!(constraints[1].expression, "value < 100");
+
+        // Test 5: Constraints appearing alongside indexes/projections
+        let sql_mixed = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    INDEX idx_1 value TYPE minmax GRANULARITY 1,
+    CONSTRAINT constr_1 CHECK value > 0,
+    PROJECTION proj_1 (SELECT * ORDER BY value)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_mixed);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 6: Constraint expressions with nested parentheses
+        let sql_nested_parens = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_nested CHECK (value > 0 AND (value < 100 OR value = 200))
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_nested_parens);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_nested");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "value > 0 AND (value < 100 OR value = 200)"
+        );
+
+        // Test 7: Constraint expressions containing quoted strings and escaped quotes
+        let sql_quoted = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_quoted CHECK (status = 'active' AND reason != 'isn\'t it')
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_quoted);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_quoted");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "status = 'active' AND reason != 'isn\\'t it'"
+        );
+
+        // Test 8: Constraint names with backticks and spaces
+        let sql_backticks_spaces = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT `not null` CHECK length(id) > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_backticks_spaces);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "length(id) > 0");
+
+        // Test 9: Constraint names with multibyte UTF-8 characters
+        let sql_utf8 = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `foo🔥bar` CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_utf8);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "foo🔥bar");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 10: Constraint names with double quotes
+        let sql_double_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT "not null" CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_double_quotes);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 11: Constraint names with commas inside quotes
+        let sql_comma_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `comma,name` CHECK id > 0,
+    CONSTRAINT "comma,name2" CHECK id > 1
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_comma_quotes);
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0].name, "comma,name");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+        assert_eq!(constraints[1].name, "comma,name2");
+        assert_eq!(constraints[1].constraint_type, "CHECK");
+        assert_eq!(constraints[1].expression, "id > 1");
+    }
+
+    #[test]
+    fn test_strip_outer_parens() {
+        // Simple wrapper
+        assert_eq!(strip_outer_parens("(id > 0)"), "id > 0");
+        // No wrapper
+        assert_eq!(strip_outer_parens("id > 0"), "id > 0");
+        // Two separate groups — NOT a single wrapper
+        assert_eq!(
+            strip_outer_parens("(a > 0) AND (b < 10)"),
+            "(a > 0) AND (b < 10)"
+        );
+        // Nested: outer wraps inner groups
+        assert_eq!(
+            strip_outer_parens("(a > 0 AND (b < 10))"),
+            "a > 0 AND (b < 10)"
+        );
+        // Double-wrapped (user wrote parens + DDL added parens)
+        assert_eq!(strip_outer_parens("((id > 0))"), "(id > 0)");
+        // Empty parens
+        assert_eq!(strip_outer_parens("()"), "");
+        // Whitespace
+        assert_eq!(strip_outer_parens("  ( id > 0 )  "), "id > 0");
     }
 
     // Regression tests for backtick handling in INNER JOIN SQL with special-character
