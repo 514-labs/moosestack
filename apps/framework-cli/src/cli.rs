@@ -2,6 +2,7 @@
 pub(crate) mod display;
 
 mod commands;
+pub mod function;
 pub mod local_webserver;
 pub mod logger;
 pub mod processing_coordinator;
@@ -31,7 +32,9 @@ use rmcp::ServiceExt;
 use routines::auth::{display_hash_token_result, generate_hash_token};
 use routines::build::build_package;
 use routines::clean::clean_project;
-use routines::docker_packager::{build_dockerfile, create_dockerfile};
+use routines::docker_packager::{
+    build_dockerfile, build_serverless_dockerfile, create_dockerfile, create_serverless_dockerfile,
+};
 use routines::harness::run_harness_init;
 use routines::kafka_pull::write_external_topics;
 use routines::metrics_console::run_console;
@@ -301,6 +304,7 @@ fn determine_environment(command: &Commands) -> crate::utilities::dotenv::MooseE
         // Production commands
         Commands::Prod { .. } => MooseEnvironment::Production,
         Commands::Build { .. } => MooseEnvironment::Production,
+        Commands::Function { .. } => MooseEnvironment::Production,
 
         // All other commands default to development
         _ => MooseEnvironment::Development,
@@ -612,12 +616,13 @@ pub async fn top_command_handler(
             docker,
             amd64,
             arm64,
+            serverless,
         } => {
             info!("Running build command");
             let project_arc = Arc::new(load_project(commands)?);
             check_project_name(&project_arc.name())?;
 
-            let activity = if *docker {
+            let activity = if *serverless || *docker {
                 ActivityType::DockerCommand
             } else {
                 ActivityType::BuildCommand
@@ -631,7 +636,23 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            let result = if *docker {
+            let result = if *serverless {
+                let docker_client = DockerClient::new(&settings);
+                create_serverless_dockerfile(&project_arc)?.show();
+
+                let _ = build_serverless_dockerfile(
+                    &project_arc,
+                    &docker_client,
+                    *amd64,
+                    *arm64,
+                    settings.release_channel(),
+                )?;
+
+                RoutineSuccess::success(Message::new(
+                    "Built".to_string(),
+                    "Serverless Docker image(s)".to_string(),
+                ))
+            } else if *docker {
                 let docker_client = DockerClient::new(&settings);
                 create_dockerfile(&project_arc)?.show();
 
@@ -1047,6 +1068,38 @@ pub async fn top_command_handler(
                 "production infrastructure".to_string(),
             )))
         }
+        Commands::Function { port, ch_port } => {
+            info!("Running function command");
+            info!("Moose Version: {}", CLI_VERSION);
+
+            let project = load_project(commands)?;
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::ProdCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            check_project_name(&project.name())?;
+
+            function::run_function(&project, &settings, *port, *ch_port)
+                .await
+                .map_err(|e| {
+                    RoutineFailure::error(Message {
+                        action: "Function".to_string(),
+                        details: format!("Failed to run function mode: {e}"),
+                    })
+                })?;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            Ok(RoutineSuccess::success(Message::new(
+                "Ran".to_string(),
+                "serverless function".to_string(),
+            )))
+        }
         Commands::Plan {
             url,
             token,
@@ -1170,6 +1223,12 @@ pub async fn top_command_handler(
             // Kill native infrastructure processes first (before Docker cleanup which
             // may fail if Docker is unavailable, e.g. when using --dockerless mode).
             crate::utilities::native_infra::kill_native_processes(&project_arc);
+
+            // Clean up function-mode data directory (.moose/function/)
+            let function_dir = project_arc.project_location.join(".moose/function");
+            if function_dir.exists() {
+                std::fs::remove_dir_all(&function_dir).ok();
+            }
 
             let provider = DockerInfraProvider::new(&settings);
             let _ = clean_project(&project_arc, &provider)?;
@@ -2151,14 +2210,12 @@ async fn confirm_and_save_migration(
                 ),
             },
         );
+    } else if infra_deltas.is_empty() {
+        println!("No changes detected.");
     } else {
-        if infra_deltas.is_empty() {
-            println!("No changes detected.");
-        } else {
-            println!("Changes ({} delta(s)):\n", infra_deltas.len());
-            for (i, delta) in infra_deltas.iter().enumerate() {
-                println!("  {}. {}", i + 1, delta.summary());
-            }
+        println!("Changes ({} delta(s)):\n", infra_deltas.len());
+        for (i, delta) in infra_deltas.iter().enumerate() {
+            println!("  {}. {}", i + 1, delta.summary());
         }
     }
 
