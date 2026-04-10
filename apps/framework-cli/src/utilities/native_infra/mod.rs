@@ -1,5 +1,6 @@
 pub mod binary_manager;
 pub mod clickhouse;
+pub mod devredis;
 pub mod errors;
 pub mod temporal;
 
@@ -13,26 +14,70 @@ use binary_manager::BinaryManager;
 use errors::NativeInfraError;
 use std::path::Path;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::runtime::Handle;
 use tracing::info;
 
 /// Relative path from project root to the native infrastructure directory.
 pub const NATIVE_INFRA_DIR: &str = ".moose/native_infra";
 
-/// Fully native infrastructure provider: ClickHouse + Temporal as local processes.
+/// Holds handles to embedded servers so they can be shut down from anywhere.
+struct EmbeddedHandles {
+    devredis: Option<devredis::DevRedisHandle>,
+}
+
+/// Global storage for embedded server handles.
+static EMBEDDED_HANDLES: OnceLock<Arc<Mutex<Option<EmbeddedHandles>>>> = OnceLock::new();
+
+fn handles_lock() -> &'static Arc<Mutex<Option<EmbeddedHandles>>> {
+    EMBEDDED_HANDLES.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+/// Shut down all native infrastructure: embedded servers and native child processes.
 ///
-/// No Docker dependency. ClickHouse and Temporal run as native child processes.
-/// Embedded devkafka and devredis support is added by subsequent PRs.
+/// Signals embedded devredis to stop and kills ClickHouse/Temporal via PID files.
+/// Safe to call even when native infra was never started — all operations are no-ops
+/// when there is nothing to shut down.
+pub fn stop_native_infra(project: &Project) {
+    shutdown_embedded_servers();
+    kill_native_processes(project);
+}
+
+/// Shut down any running embedded servers.
+///
+/// This is safe to call from both sync and async contexts — it signals shutdown
+/// without awaiting. The embedded tasks will stop on their own.
+fn shutdown_embedded_servers() {
+    let lock = handles_lock();
+    let mut guard = lock.lock().unwrap();
+
+    if let Some(handles) = guard.as_mut() {
+        if let Some(dr) = handles.devredis.take() {
+            info!("Signaling embedded devredis to shut down");
+            dr.signal_shutdown();
+            // Handle is dropped here, releasing the Arc<Listener>.
+        }
+    }
+}
+
+/// Fully native infrastructure provider: devredis + ClickHouse + Temporal as local processes.
+///
+/// No Docker dependency. devredis runs as an embedded tokio task.
+/// ClickHouse and Temporal run as native child processes.
 pub struct NativeInfraProvider {
     /// Binary manager for downloading/caching native binaries.
     binary_manager: BinaryManager,
+    /// Handle to the tokio runtime for spawning embedded servers.
+    rt_handle: Handle,
 }
 
 impl NativeInfraProvider {
     pub fn new(_settings: &Settings) -> Result<Self, NativeInfraError> {
         Ok(Self {
             binary_manager: BinaryManager::new()?,
+            rt_handle: Handle::current(),
         })
     }
 
@@ -67,6 +112,37 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn start(&self, project: &Project) -> Result<(), RoutineFailure> {
+        // Start embedded devredis (Redis needed early for leadership/presence)
+        let devredis_handle = with_timing("Start devredis", || {
+            with_spinner_completion(
+                "Starting native Redis (devredis)",
+                "Native Redis (devredis) started",
+                || {
+                    let port = project.redis_config.port;
+                    let handle = self
+                        .rt_handle
+                        .block_on(devredis::start_embedded(port))
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    Ok::<_, anyhow::Error>(handle)
+                },
+                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            )
+        })
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new("Failed".to_string(), "to start devredis".to_string()),
+                e,
+            )
+        })?;
+
+        // Store embedded handles for later shutdown
+        {
+            let mut guard = handles_lock().lock().unwrap();
+            *guard = Some(EmbeddedHandles {
+                devredis: Some(devredis_handle),
+            });
+        }
+
         // Start native ClickHouse
         let ch_binary =
             clickhouse::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
@@ -94,6 +170,9 @@ impl InfraProvider for NativeInfraProvider {
             )
         })
         .map_err(|e| {
+            // Roll back: shut down devredis since ClickHouse failed
+            info!("ClickHouse startup failed, rolling back devredis");
+            shutdown_embedded_servers();
             RoutineFailure::new(
                 Message::new(
                     "Failed".to_string(),
@@ -130,9 +209,10 @@ impl InfraProvider for NativeInfraProvider {
         });
 
         if let Err(e) = temporal_result {
-            // Roll back: kill ClickHouse since we failed to start Temporal
-            info!("Temporal startup failed, rolling back ClickHouse");
+            // Roll back: kill ClickHouse and devredis since we failed to start Temporal
+            info!("Temporal startup failed, rolling back ClickHouse and devredis");
             kill_pid_file(&clickhouse::pid_file_path(project));
+            shutdown_embedded_servers();
             return Err(RoutineFailure::new(
                 Message::new("Failed".to_string(), "to start native Temporal".to_string()),
                 e,
@@ -143,10 +223,7 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn stop(&self, project: &Project, _settings: &Settings) -> Result<(), RoutineFailure> {
-        // Kill native child processes via their PID files
-        kill_pid_file(&clickhouse::pid_file_path(project));
-        kill_pid_file(&temporal::pid_file_path(project));
-
+        stop_native_infra(project);
         Ok(())
     }
 
@@ -335,7 +412,7 @@ pub fn kill_pid_file(pid_path: &Path) {
 ///
 /// Safe to call even when no native processes were started — missing PID files
 /// are silently ignored.
-pub fn kill_native_processes(project: &Project) {
+fn kill_native_processes(project: &Project) {
     let native_dir = project.project_location.join(NATIVE_INFRA_DIR);
     if !native_dir.exists() {
         return;
