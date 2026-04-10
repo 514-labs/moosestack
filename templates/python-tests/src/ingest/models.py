@@ -592,6 +592,34 @@ projection_test_table = OlapTable[ProjectionTest](
 )
 
 
+# =======Constraint Test Table=======
+class ConstraintTest(BaseModel):
+    id: Key[str]
+    value: float
+    status: str
+
+
+constraint_test_table = OlapTable[ConstraintTest](
+    "ConstraintTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id"],
+        constraints=[
+            OlapConfig.TableConstraint(
+                name="val_positive",
+                expression="value >= 0",
+                type="CHECK",
+            ),
+            OlapConfig.TableConstraint(
+                name="assume_short_status",
+                expression="length(status) <= 64",
+                type="ASSUME",
+            ),
+        ],
+    ),
+)
+
+
 # =======Numeric Type Aliases Test=========
 # Demonstrates usage of Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64
 

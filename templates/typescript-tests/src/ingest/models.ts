@@ -26,6 +26,7 @@ import {
   ClickHouseCodec,
   LifeCycle,
   ClickHouseTTL,
+  TableConstraint,
 } from "@514labs/moose-lib";
 
 /**
@@ -489,6 +490,29 @@ export const ProjectionTestTable = new OlapTable<ProjectionTest>(
       {
         name: "proj_fields",
         body: "SELECT id, userId, timestamp ORDER BY userId",
+      },
+    ],
+  },
+);
+
+// =======Constraint Test Table=======
+export interface ConstraintTest {
+  id: Key<string>;
+  value: number;
+  status: string;
+}
+
+export const ConstraintTestTable = new OlapTable<ConstraintTest>(
+  "ConstraintTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
+    constraints: [
+      { name: "val_positive", expression: "value >= 0", type: "CHECK" },
+      {
+        name: "assume_short_status",
+        expression: "length(status) <= 64",
+        type: "ASSUME",
       },
     ],
   },
