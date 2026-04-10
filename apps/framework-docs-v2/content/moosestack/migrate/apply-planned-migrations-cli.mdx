@@ -33,6 +33,8 @@ moose migrate --clickhouse-url <CONNECTION_STRING>
 | Option | Description | Required |
 | :--- | :--- | :--- |
 | `--clickhouse-url` | The full connection string to the target ClickHouse database (e.g., `clickhouse://user:pass@host:9440/db`). | Yes |
+| `--migrations-dir` | Custom directory to read migration files from. Overrides `migration_config.dir`. Default: `migrations/`. | No |
+| `--validate` | Validate migration files without executing them (delta mode only). Does not require ClickHouse. | No |
 
 ## Execution Lifecycle
 

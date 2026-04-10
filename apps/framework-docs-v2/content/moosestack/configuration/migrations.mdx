@@ -15,12 +15,45 @@ Control how Moose handles database migrations and schema changes.
 
 # Allow destructive changes in production without a reviewed plan.yaml (default: false)
 # prod_auto_allow_destructive = false
+
+# Custom directory for migration artifacts (default: "migrations")
+# dir = "local-migrations"
 ```
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
 | `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | `[]` | List of migration operations to ignore during plan generation. |
 | `prod_auto_allow_destructive` | `MOOSE_MIGRATION_CONFIG__PROD_AUTO_ALLOW_DESTRUCTIVE` | `false` | When `false`, `moose prod` refuses to start if the computed infrastructure diff contains destructive operations (table drops, column drops, view removals, table recreates) and no `plan.yaml` is present. Set to `true` to allow unplanned destructive changes in production. |
+| `dir` | `MOOSE_MIGRATION_CONFIG__DIR` | `"migrations"` | Directory for migration artifacts (`plan.yaml`, delta files, `pending.yaml`). Applies to `moose generate migration --save`, `moose migrate`, `moose prod`, and dev mode. CLI flags (`--output-dir`, `--migrations-dir`) override this value. |
+
+## Custom Migration Directory
+
+By default, all migration artifacts are written to and read from the `migrations/` directory in your project root. You can change this globally via the config file or environment variable, or per-command via CLI flags.
+
+This is useful when teams need to separate local development migration artifacts from production-reviewed artifacts committed via CI:
+
+```toml filename="moose.config.toml"
+[migration_config]
+dir = "local-migrations"
+```
+
+Or via environment variable (useful in containers):
+
+```bash
+export MOOSE_MIGRATION_CONFIG__DIR=local-migrations
+```
+
+CLI flags take the highest precedence:
+
+```bash
+# Generate to a custom directory (overrides config)
+moose generate migration --save --output-dir custom-dir
+
+# Apply from a custom directory (overrides config)
+moose migrate --migrations-dir custom-dir
+```
+
+**Precedence order:** CLI flag > environment variable > config file > default (`"migrations"`)
 
 ## Available Operations
 

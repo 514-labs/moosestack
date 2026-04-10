@@ -107,7 +107,8 @@ moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 | :--- | :--- |
 | `--url` | The endpoint of your production Moose Admin API. |
 | `--token` | The authentication token for the Admin API. |
-| `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
+| `--save` | Writes the generated plan to the `migrations/` directory (or the directory configured in `migration_config.dir`). Without this, it performs a dry run. |
+| `--output-dir` | Custom output directory for migration artifacts. Overrides `migration_config.dir`. |
 
 ### via Serverless (`moose migrate`)
 
@@ -120,7 +121,8 @@ moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 | Option | Description |
 | :--- | :--- |
 | `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
-| `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
+| `--save` | Writes the generated plan to the `migrations/` directory (or the directory configured in `migration_config.dir`). Without this, it performs a dry run. |
+| `--output-dir` | Custom output directory for migration artifacts. Overrides `migration_config.dir`. |
 
 ### Confirmation flags
 
