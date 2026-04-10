@@ -325,7 +325,7 @@ Your project includes a complete example pipeline:
         </FileTree.Folder>
         <FileTree.Folder name="ingest" defaultOpen>
             <FileTree.File name="models.ts" />
-            <FileTree.File name="transform.ts" />
+            <FileTree.File name="transforms.ts" />
         </FileTree.Folder>
         <FileTree.Folder name="views">
             <FileTree.File name="barAggregated.ts" />
@@ -365,7 +365,7 @@ Your project includes a complete example pipeline:
   <LanguageTabContent value="typescript">
 ```ts filename="app/index.ts"
 export * from "./ingest/models";      // Data models & pipelines
-export * from "./ingest/transform";   // Transformation logic
+export * from "./ingest/transforms";  // Transformation logic
 export * from "./apis/bar";           // API endpoints
 export * from "./views/barAggregated"; // Materialized views
 export * from "./workflows/generator"; // Background workflows
