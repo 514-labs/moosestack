@@ -20,12 +20,15 @@ Docker build settings can be configured in `moose.config.toml` for project-wide 
 custom_dockerfile = false
 # Path to the Dockerfile relative to project root (Default: "./Dockerfile")
 dockerfile_path = "./Dockerfile"
+# Docker build context path relative to project root (Default: none, uses project root)
+# context_path = "../../.."
 ```
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
 | `custom_dockerfile` | `MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE` | `false` | When `true`, Moose writes the Dockerfile to your project root (via `moose generate dockerfile` or on first `moose build --docker`) and preserves it on subsequent runs so you can customize it. |
 | `dockerfile_path` | `MOOSE_DOCKER_CONFIG__DOCKERFILE_PATH` | `"./Dockerfile"` | Path to the Dockerfile relative to the project root. Only used when `custom_dockerfile` is `true`. |
+| `context_path` | `MOOSE_DOCKER_CONFIG__CONTEXT_PATH` | none | Docker build context path relative to the project root. Only used when `custom_dockerfile` is `true`. When set, Docker receives `-f` pointing to your Dockerfile and uses the resolved path as the build context. |
 
 ## Behavior
 
@@ -37,6 +40,36 @@ When `custom_dockerfile = true`:
 2. **Subsequent runs**: Moose detects the existing Dockerfile, skips generation to preserve your customizations, and builds from your Dockerfile.
 
 This lets you iterate on the Dockerfile — add system dependencies, configure caching, adjust build stages — while still using `moose build --docker` to build images.
+
+## Monorepo Usage
+
+When your Moose project lives inside a monorepo (e.g., at `services/analytics/`), the auto-generated Dockerfile handles the monorepo build context automatically. However, if you use a custom Dockerfile, you likely need `COPY` commands that reference files outside the project directory (like `pnpm-workspace.yaml` or shared packages at the monorepo root).
+
+Use `context_path` to set the Docker build context to the monorepo root:
+
+```toml filename="services/analytics/moose.config.toml"
+[docker_config]
+custom_dockerfile = true
+dockerfile_path = "./Dockerfile"
+context_path = "../../.."  # resolves to monorepo root
+```
+
+With this configuration, `moose build --docker` will:
+- Use the monorepo root as the Docker build context
+- Pass `-f services/analytics/Dockerfile` to Docker so it finds your Dockerfile
+
+Your Dockerfile can then reference monorepo-root-relative paths:
+
+```dockerfile
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
+COPY packages ./packages
+COPY services ./services
+```
+
+<Callout type="info" title="Docker Ignore">
+Place a `.dockerignore` file at the build context root (the monorepo root when using `context_path`) to control which files are sent to the Docker daemon. This is Docker's native mechanism — no Moose-specific ignore file is needed.
+</Callout>
 
 ## Related CLI Commands
 

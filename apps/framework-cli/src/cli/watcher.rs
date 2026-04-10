@@ -217,6 +217,7 @@ async fn watch(
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
     confirmation_policy: ConfirmationPolicy,
+    dev_baseline: Arc<InfrastructureMap>,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -317,20 +318,33 @@ async fn watch(
 
                                     match execution_result {
                                         Ok(_) => {
+                                            let stored_map = plan_result.target_infra_map;
+
                                             with_timing_async("Persist State", async {
                                                 state_storage
-                                                    .store_infrastructure_map(&plan_result.target_infra_map)
+                                                    .store_infrastructure_map(&stored_map)
                                                     .await
                                             })
                                             .await?;
 
+                                            // Generate pending migration (best-effort, delta mode only)
+                                            if project.features.migrate_with_deltas {
+                                                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+                                                    &dev_baseline,
+                                                    &stored_map,
+                                                    &project,
+                                                ) {
+                                                    tracing::warn!("Failed to write pending migration: {}", e);
+                                                }
+                                            }
+
                                             with_timing_async("OpenAPI Gen", async {
-                                                openapi(&project, &plan_result.target_infra_map).await
+                                                openapi(&project, &stored_map).await
                                             })
                                             .await?;
 
                                             let mut infra_ptr = infrastructure_map.write().await;
-                                            *infra_ptr = plan_result.target_infra_map
+                                            *infra_ptr = stored_map
                                         }
                                         Err(e) => {
                                             let error: anyhow::Error = e.into();
@@ -435,6 +449,7 @@ impl FileWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         confirmation_policy: ConfirmationPolicy,
+        dev_baseline: Arc<InfrastructureMap>,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
@@ -468,6 +483,7 @@ impl FileWatcher {
                 ignore_matcher,
                 app_dir,
                 confirmation_policy,
+                dev_baseline,
             )
             .await
         };

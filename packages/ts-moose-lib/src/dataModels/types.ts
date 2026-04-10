@@ -310,6 +310,35 @@ export enum ClickHouseEngines {
   MergeTree = "MergeTree",
   ReplacingMergeTree = "ReplacingMergeTree",
   SummingMergeTree = "SummingMergeTree",
+  /**
+   * Stores pre-aggregated values and aggregate states that are automatically
+   * merged during background compaction.
+   *
+   * Columns in `T` that hold aggregate data must be intersected with a tag
+   * type so the compiler plugin emits the correct ClickHouse column type:
+   *
+   * - `& Aggregated<FnName, ArgTypes>` — produces `AggregateFunction(fn, ...types)`.
+   *   Data is written via `fnState(...)` and queried with `fnMerge(...)`.
+   * - `& SimpleAggregated<FnName, ArgType>` — produces `SimpleAggregateFunction(fn, type)`.
+   *   Stores the merged value directly (no state/merge round-trip).
+   *
+   * Non-annotated columns are ordinary dimensions (ORDER BY key, etc.).
+   *
+   * @example
+   * ```typescript
+   * interface DailyStats {
+   *   date: DateTime;
+   *   userId: string;
+   *   totalViews: number & SimpleAggregated<"sum", number>;
+   *   avgRating: number & Aggregated<"avg", [number]>;
+   * }
+   *
+   * const stats = new OlapTable<DailyStats>("daily_stats", {
+   *   engine: ClickHouseEngines.AggregatingMergeTree,
+   *   orderByFields: ["date", "userId"],
+   * });
+   * ```
+   */
   AggregatingMergeTree = "AggregatingMergeTree",
   CollapsingMergeTree = "CollapsingMergeTree",
   VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",

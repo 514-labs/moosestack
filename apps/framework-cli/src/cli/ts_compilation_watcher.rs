@@ -293,6 +293,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
     confirmation_policy: ConfirmationPolicy,
+    dev_baseline: Arc<InfrastructureMap>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -490,19 +491,32 @@ async fn watch(
 
                                                     match execution_result {
                                                         Ok(_) => {
+                                                            let stored_map = plan_result.target_infra_map;
+
                                                             with_timing_async("Persist State", async {
                                                                 state_storage
                                                                     .store_infrastructure_map(
-                                                                        &plan_result.target_infra_map,
+                                                                        &stored_map,
                                                                     )
                                                                     .await
                                                             })
                                                             .await?;
 
+                                                            // Generate pending migration (best-effort, delta mode only)
+                                                            if project.features.migrate_with_deltas {
+                                                                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+                                                                    &dev_baseline,
+                                                                    &stored_map,
+                                                                    &project,
+                                                                ) {
+                                                                    tracing::warn!("Failed to write pending migration: {}", e);
+                                                                }
+                                                            }
+
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
                                                                     &project,
-                                                                    &plan_result.target_infra_map,
+                                                                    &stored_map,
                                                                 )
                                                                 .await
                                                             })
@@ -510,7 +524,7 @@ async fn watch(
 
                                                             let mut infra_ptr =
                                                                 infrastructure_map.write().await;
-                                                            *infra_ptr = plan_result.target_infra_map;
+                                                            *infra_ptr = stored_map;
                                                             Ok(true)
                                                         }
                                                         Err(e) => {
@@ -639,6 +653,7 @@ impl TsCompilationWatcher {
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
         confirmation_policy: ConfirmationPolicy,
+        dev_baseline: Arc<InfrastructureMap>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -655,6 +670,7 @@ impl TsCompilationWatcher {
                 shutdown_rx,
                 initial_handle,
                 confirmation_policy,
+                dev_baseline,
             )
             .await
         };

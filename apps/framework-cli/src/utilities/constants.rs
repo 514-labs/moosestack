@@ -106,6 +106,12 @@ pub static SHOW_TIMING: AtomicBool = AtomicBool::new(false);
 /// This is set once at the start of `start_development_mode`.
 pub static IS_DEV_MODE: AtomicBool = AtomicBool::new(false);
 
+/// ClickHouse binary release version for native (--dockerless) mode.
+pub const CLICKHOUSE_BINARY_VERSION: &str = "25.8.18.1-lts";
+
+/// Temporal CLI version for native (--dockerless) mode.
+pub const TEMPORAL_CLI_VERSION: &str = "1.3.0";
+
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
