@@ -179,6 +179,12 @@ pub struct DockerConfig {
     /// Path to custom Dockerfile (relative to project root)
     #[serde(default = "default_dockerfile_path")]
     pub dockerfile_path: String,
+
+    /// Docker build context path, relative to project root.
+    /// Only used when custom_dockerfile is true.
+    /// Example: "../../.." to use monorepo root as context.
+    #[serde(default)]
+    pub context_path: Option<String>,
 }
 
 impl Default for DockerConfig {
@@ -186,6 +192,7 @@ impl Default for DockerConfig {
         Self {
             custom_dockerfile: false,
             dockerfile_path: default_dockerfile_path(),
+            context_path: None,
         }
     }
 }
@@ -783,5 +790,48 @@ pub mod tests {
             !config.prod_auto_allow_destructive,
             "Deserializing an empty [migration_config] must not auto-allow destructive changes"
         );
+    }
+
+    #[test]
+    fn docker_config_default_has_no_context_path() {
+        let config = DockerConfig::default();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_without_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_with_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            context_path = "../../.."
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert_eq!(config.context_path.as_deref(), Some("../../.."));
+    }
+
+    #[test]
+    fn docker_config_deserializes_empty() {
+        let config: DockerConfig = toml::from_str("").unwrap();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
     }
 }
