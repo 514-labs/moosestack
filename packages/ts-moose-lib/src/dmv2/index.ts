@@ -46,8 +46,8 @@ export type SimpleAggregated<
   _argType?: ArgType;
 };
 
-export {
-  OlapTable,
+export { OlapTable } from "./sdk/olapTable";
+export type {
   OlapConfig,
   S3QueueTableSettings,
   TableConstraint,
