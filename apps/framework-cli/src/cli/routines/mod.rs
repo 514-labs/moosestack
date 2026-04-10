@@ -135,7 +135,9 @@ use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
-use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
+use crate::utilities::constants::{
+    KEY_REMOTE_CLICKHOUSE_URL, MIGRATIONS_DIR, MIGRATION_FILE, STORE_CRED_PROMPT,
+};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
@@ -1024,6 +1026,7 @@ pub async fn start_production_mode(
             &current_state.tables,
             &plan.target_infra_map,
             &*state_storage,
+            MIGRATIONS_DIR,
         )
         .await?;
     };

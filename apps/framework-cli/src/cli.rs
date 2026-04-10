@@ -68,7 +68,8 @@ use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATIONS_DIR,
+    PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -883,6 +884,7 @@ pub async fn top_command_handler(
                 yes_destructive,
                 yes_rename,
                 no_auto_backfill_sql,
+                output_dir,
             }) => {
                 info!("Running generate migration command");
 
@@ -948,6 +950,8 @@ pub async fn top_command_handler(
                     )
                 })?;
 
+                let migrations_dir = output_dir.as_deref().unwrap_or(MIGRATIONS_DIR);
+
                 let outcome = confirm_and_save_migration(
                     &project,
                     &mut result,
@@ -956,6 +960,7 @@ pub async fn top_command_handler(
                     *yes_rename,
                     *no_auto_backfill_sql,
                     *save,
+                    migrations_dir,
                 )
                 .await;
 
@@ -1101,8 +1106,11 @@ pub async fn top_command_handler(
             clickhouse_url,
             redis_url,
             validate,
+            migrations_dir,
         } => {
             info!("Running migrate command");
+
+            let resolved_migrations_dir = migrations_dir.as_deref().unwrap_or(MIGRATIONS_DIR);
 
             if *validate {
                 // Validate-only mode: no ClickHouse or Redis needed
@@ -1113,7 +1121,7 @@ pub async fn top_command_handler(
                         "Migration validation requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
                     )));
                 }
-                return validate_migrations(&project);
+                return validate_migrations(&project, resolved_migrations_dir);
             }
 
             let mut project = load_project(commands)?;
@@ -1144,7 +1152,12 @@ pub async fn top_command_handler(
 
             override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
 
-            routines::migrate::execute_migration(&project, resolved_redis_url.as_deref()).await?;
+            routines::migrate::execute_migration(
+                &project,
+                resolved_redis_url.as_deref(),
+                resolved_migrations_dir,
+            )
+            .await?;
 
             wait_for_usage_capture(capture_handle).await;
 
@@ -1768,15 +1781,18 @@ pub async fn top_command_handler(
 ///
 /// Loads all migration files from ./migrations/, verifies the delta sequence
 /// is consistent (fold succeeds from empty map), and reports any issues.
-fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+fn validate_migrations(
+    project: &Project,
+    migrations_dir_str: &str,
+) -> Result<RoutineSuccess, RoutineFailure> {
     use crate::framework::core::migration_file::MigrationHistory;
     use std::path::Path;
 
-    let migrations_dir = Path::new("./migrations");
+    let migrations_dir = Path::new(migrations_dir_str);
     if !migrations_dir.exists() {
         return Ok(RoutineSuccess::success(Message::new(
             "Validate".to_string(),
-            "No migrations directory found".to_string(),
+            format!("No migrations directory found at {}", migrations_dir_str),
         )));
     }
 
@@ -1790,7 +1806,7 @@ fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailu
     if history.is_empty() {
         return Ok(RoutineSuccess::success(Message::new(
             "Validate".to_string(),
-            "No migration files found in ./migrations/".to_string(),
+            format!("No migration files found in {}/", migrations_dir_str),
         )));
     }
 
@@ -1916,6 +1932,7 @@ fn validate_migrations(project: &Project) -> Result<RoutineSuccess, RoutineFailu
 /// Extracted from the `generate migration` handler so that early-returns
 /// (rename cancellation, destructive rejection) do not bypass the caller's
 /// `wait_for_usage_capture` call.
+#[allow(clippy::too_many_arguments)]
 async fn confirm_and_save_migration(
     project: &Project,
     result: &mut MigrationPlanWithBeforeAfter,
@@ -1924,6 +1941,7 @@ async fn confirm_and_save_migration(
     yes_rename: bool,
     no_auto_backfill_sql: bool,
     save: bool,
+    migrations_dir: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     // If delta migrations are not enabled, use the legacy plan.yaml path
     if !project.features.migrate_with_deltas {
@@ -1935,6 +1953,7 @@ async fn confirm_and_save_migration(
             yes_rename,
             no_auto_backfill_sql,
             save,
+            migrations_dir,
         )
         .await;
     }
@@ -2113,7 +2132,8 @@ async fn confirm_and_save_migration(
             )));
         }
 
-        std::fs::create_dir_all("./migrations").map_err(|e| {
+        let migrations_path = std::path::Path::new(migrations_dir);
+        std::fs::create_dir_all(migrations_path).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
                 e,
@@ -2132,7 +2152,7 @@ async fn confirm_and_save_migration(
                 e,
             )
         })?;
-        let migration_path = format!("./migrations/{}.yaml", migration_file.id);
+        let migration_path = migrations_path.join(format!("{}.yaml", migration_file.id));
         std::fs::write(&migration_path, &migration_yaml).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
@@ -2146,7 +2166,7 @@ async fn confirm_and_save_migration(
                 action: "Migration".to_string(),
                 details: format!(
                     "Written to {} ({} delta(s))",
-                    migration_path,
+                    migration_path.display(),
                     migration_file.deltas.len()
                 ),
             },
@@ -2170,6 +2190,7 @@ async fn confirm_and_save_migration(
 
 /// Legacy migration generation path (plan.yaml + state snapshots).
 /// Used when `features.migrate_with_deltas` is false.
+#[allow(clippy::too_many_arguments)]
 async fn confirm_and_save_migration_legacy(
     project: &Project,
     result: &mut MigrationPlanWithBeforeAfter,
@@ -2178,12 +2199,10 @@ async fn confirm_and_save_migration_legacy(
     yes_rename: bool,
     no_auto_backfill_sql: bool,
     save: bool,
+    migrations_dir: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
     use crate::framework::core::plan_risk::confirm_renames_and_classify;
-    use crate::utilities::constants::{
-        MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
-    };
     use tracing::warn;
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
@@ -2342,7 +2361,8 @@ async fn confirm_and_save_migration_legacy(
     })?;
 
     if save {
-        std::fs::create_dir_all("./migrations").map_err(|e| {
+        let migrations_path = std::path::Path::new(migrations_dir);
+        std::fs::create_dir_all(migrations_path).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
                 e,
@@ -2362,14 +2382,16 @@ async fn confirm_and_save_migration_legacy(
             "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
             plan_yaml
         );
-        std::fs::write(MIGRATION_FILE, plan_yaml_with_header.as_str()).map_err(|e| {
+        let plan_file = migrations_path.join("plan.yaml");
+        std::fs::write(&plan_file, plan_yaml_with_header.as_str()).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
                 e,
             )
         })?;
+        let before_state_file = migrations_path.join("remote_state.json");
         std::fs::write(
-            MIGRATION_BEFORE_STATE_FILE,
+            &before_state_file,
             serde_json::to_string_pretty(&result.remote_state).map_err(|e| {
                 RoutineFailure::new(
                     Message::new("Error".to_string(), "serializing remote state.".to_string()),
@@ -2383,8 +2405,9 @@ async fn confirm_and_save_migration_legacy(
                 e,
             )
         })?;
+        let after_state_file = migrations_path.join("local_infra_map.json");
         std::fs::write(
-            MIGRATION_AFTER_STATE_FILE,
+            &after_state_file,
             serde_json::to_string_pretty(&result.local_infra_map).map_err(|e| {
                 RoutineFailure::new(
                     Message::new("Error".to_string(), "serializing local state.".to_string()),

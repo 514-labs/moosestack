@@ -97,6 +97,10 @@ pub enum Commands {
         /// Does not require ClickHouse or Redis.
         #[arg(long)]
         validate: bool,
+
+        /// Directory containing migration files (default: migrations/)
+        #[arg(long)]
+        migrations_dir: Option<String>,
     },
 
     /// View some data from a table or stream
@@ -409,6 +413,10 @@ pub enum GenerateCommand {
         /// Disable automatic backfill SQL generation for versioned tables
         #[arg(long)]
         no_auto_backfill_sql: bool,
+
+        /// Output directory for migration files (default: migrations/)
+        #[arg(long)]
+        output_dir: Option<String>,
     },
 }
 

@@ -14,10 +14,7 @@ use crate::infrastructure::olap::clickhouse::{
 };
 use crate::infrastructure::olap::clickhouse::{normalize_table_for_diff, IgnorableOperation};
 use crate::project::Project;
-use crate::utilities::constants::{
-    CLICKHOUSE_MACRO_CLUSTER_NAME_RULES, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
-    MIGRATION_FILE,
-};
+use crate::utilities::constants::CLICKHOUSE_MACRO_CLUSTER_NAME_RULES;
 use anyhow::Result;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -41,17 +38,23 @@ enum DriftStatus {
 }
 
 /// Load and parse migration files from disk
-fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
-    // Check if all required migration files exist
-    let missing_files: Vec<&str> = [
-        MIGRATION_FILE,
-        MIGRATION_BEFORE_STATE_FILE,
-        MIGRATION_AFTER_STATE_FILE,
-    ]
-    .iter()
-    .filter(|path| !std::path::Path::new(path).exists())
-    .copied()
-    .collect();
+fn load_migration_files(db_name: &str, migrations_dir: &str) -> Result<MigrationFiles> {
+    let migrations_path = std::path::Path::new(migrations_dir);
+    let plan_file = migrations_path.join("plan.yaml");
+    let before_state_file = migrations_path.join("remote_state.json");
+    let after_state_file = migrations_path.join("local_infra_map.json");
+
+    let expected_files = [
+        plan_file.as_path(),
+        before_state_file.as_path(),
+        after_state_file.as_path(),
+    ];
+
+    let missing_files: Vec<String> = expected_files
+        .iter()
+        .filter(|path| !path.exists())
+        .map(|path| path.display().to_string())
+        .collect();
 
     if !missing_files.is_empty() {
         anyhow::bail!(
@@ -62,28 +65,28 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
              moose generate migration --clickhouse-url <url> --save\n\
              \n\
              This will create:\n\
-             - {} (the migration plan to execute)\n\
-             - {} (snapshot of remote state)\n\
-             - {} (snapshot of local code)\n\
+             - {}/plan.yaml (the migration plan to execute)\n\
+             - {}/remote_state.json (snapshot of remote state)\n\
+             - {}/local_infra_map.json (snapshot of local code)\n\
              \n\
              After reviewing the plan, run:\n\
              moose migrate --clickhouse-url <url>\n",
             missing_files.join(", "),
-            MIGRATION_FILE,
-            MIGRATION_BEFORE_STATE_FILE,
-            MIGRATION_AFTER_STATE_FILE
+            migrations_dir,
+            migrations_dir,
+            migrations_dir
         );
     }
 
     // Load and parse files
-    let plan_content = std::fs::read_to_string(MIGRATION_FILE)?;
+    let plan_content = std::fs::read_to_string(&plan_file)?;
     let plan: MigrationPlan =
         serde_json::from_value(serde_yaml::from_str::<serde_json::Value>(&plan_content)?)?;
 
-    let before_content = std::fs::read_to_string(MIGRATION_BEFORE_STATE_FILE)?;
+    let before_content = std::fs::read_to_string(&before_state_file)?;
     let mut state_before: InfrastructureMap = serde_json::from_str(&before_content)?;
 
-    let after_content = std::fs::read_to_string(MIGRATION_AFTER_STATE_FILE)?;
+    let after_content = std::fs::read_to_string(&after_state_file)?;
     let mut state_after: InfrastructureMap = serde_json::from_str(&after_content)?;
 
     // Re-key tables so the HashMap keys match the current project's db_name.
@@ -687,13 +690,17 @@ pub async fn execute_migration_deltas(
     clickhouse_config: &ClickHouseConfig,
     current_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
+    migrations_dir_str: &str,
 ) -> Result<()> {
     use crate::framework::core::migration_file::MigrationHistory;
     use std::path::Path;
 
-    let migrations_dir = Path::new("./migrations");
+    let migrations_dir = Path::new(migrations_dir_str);
     if !migrations_dir.exists() {
-        println!("No migrations directory found — nothing to apply");
+        println!(
+            "No migrations directory found at {} — nothing to apply",
+            migrations_dir_str
+        );
         return Ok(());
     }
 
@@ -701,7 +708,7 @@ pub async fn execute_migration_deltas(
         .map_err(|e| anyhow::anyhow!("Failed to load migration files: {}", e))?;
 
     if history.is_empty() {
-        println!("No migration files found in ./migrations/");
+        println!("No migration files found in {}/", migrations_dir_str);
         return Ok(());
     }
 
@@ -810,6 +817,7 @@ pub async fn execute_migration_deltas(
 pub async fn execute_migration(
     project: &Project,
     redis_url: Option<&str>,
+    migrations_dir: &str,
 ) -> Result<(), RoutineFailure> {
     let clickhouse_config = &project.clickhouse_config;
 
@@ -900,6 +908,7 @@ pub async fn execute_migration(
                 clickhouse_config,
                 &current_infra_map,
                 state_storage.as_ref(),
+                migrations_dir,
             )
             .await
             .map_err(|e| {
@@ -920,6 +929,7 @@ pub async fn execute_migration(
                 current_tables,
                 &target_infra_map,
                 state_storage.as_ref(),
+                migrations_dir,
             )
             .await
             .map_err(|e| {
@@ -956,14 +966,19 @@ pub async fn execute_migration_plan(
     current_tables: &HashMap<String, Table>,
     target_infra_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
+    migrations_dir: &str,
 ) -> Result<()> {
     println!("Executing migration plan...");
 
     // Load migration files, re-keying tables to the current project's db_name
-    let files = load_migration_files(&clickhouse_config.db_name)?;
+    let files = load_migration_files(&clickhouse_config.db_name, migrations_dir)?;
 
+    let plan_file_display = std::path::Path::new(migrations_dir).join("plan.yaml");
     // Display plan info
-    println!("✓ Loaded approved migration plan from {:?}", MIGRATION_FILE);
+    println!(
+        "✓ Loaded approved migration plan from {:?}",
+        plan_file_display
+    );
     println!("  Plan created: {}", files.plan.created_at);
     println!("  Total operations: {}", files.plan.total_operations());
     println!();
