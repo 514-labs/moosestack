@@ -1120,9 +1120,19 @@ pub async fn top_command_handler(
                         "Migration validation requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
                     )));
                 }
+                let user_provided = migrations_dir.is_some();
                 let resolved_migrations_dir = migrations_dir
                     .as_deref()
                     .unwrap_or_else(|| project.migration_config.resolved_dir());
+                if user_provided && !std::path::Path::new(resolved_migrations_dir).exists() {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Migrate".to_string(),
+                        format!(
+                            "--migrations-dir '{}' does not exist",
+                            resolved_migrations_dir
+                        ),
+                    )));
+                }
                 return validate_migrations(&project, resolved_migrations_dir);
             }
 
@@ -1154,9 +1164,21 @@ pub async fn top_command_handler(
 
             override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
 
+            let user_provided_migrations_dir = migrations_dir.is_some();
             let resolved_migrations_dir = migrations_dir
                 .as_deref()
                 .unwrap_or_else(|| project.migration_config.resolved_dir());
+            if user_provided_migrations_dir
+                && !std::path::Path::new(resolved_migrations_dir).exists()
+            {
+                return Err(RoutineFailure::error(Message::new(
+                    "Migrate".to_string(),
+                    format!(
+                        "--migrations-dir '{}' does not exist",
+                        resolved_migrations_dir
+                    ),
+                )));
+            }
 
             routines::migrate::execute_migration(
                 &project,
@@ -2384,11 +2406,19 @@ async fn confirm_and_save_migration_legacy(
             warn!("Error writing migration schema file: {e:?}");
         };
 
-        let plan_yaml_with_header = format!(
-            "# yaml-language-server: $schema=../.moose/migration_schema.json\n\n{}",
-            plan_yaml
-        );
         let plan_file = migrations_path.join("plan.yaml");
+        let schema_rel_path = pathdiff::diff_paths(
+            project
+                .internal_dir_with_routine_failure_err()?
+                .join("migration_schema.json"),
+            migrations_path,
+        )
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "../.moose/migration_schema.json".to_string());
+        let plan_yaml_with_header = format!(
+            "# yaml-language-server: $schema={}\n\n{}",
+            schema_rel_path, plan_yaml
+        );
         std::fs::write(&plan_file, plan_yaml_with_header.as_str()).map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),

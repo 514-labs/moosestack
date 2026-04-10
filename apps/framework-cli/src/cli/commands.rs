@@ -415,7 +415,7 @@ pub enum GenerateCommand {
         no_auto_backfill_sql: bool,
 
         /// Output directory for migration files (default: migrations/)
-        #[arg(long)]
+        #[arg(long, requires = "save")]
         output_dir: Option<String>,
     },
 }

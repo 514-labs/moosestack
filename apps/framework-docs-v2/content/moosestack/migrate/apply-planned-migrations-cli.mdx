@@ -40,11 +40,12 @@ moose migrate --clickhouse-url <CONNECTION_STRING>
 
 When `moose migrate` is executed:
 
-1.  **Load Plan:** Reads `migrations/plan.yaml` from the current directory.
-2.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against `remote_state.json`.
-3.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
-4.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
-5.  **Report Success:** Exits with code 0 if all operations succeed.
+1.  **Resolve Directory:** Determines the migrations directory from `--migrations-dir` (if provided), then `migration_config.dir` (if set in config or `MOOSE_MIGRATION_CONFIG__DIR`), then the default `migrations/`.
+2.  **Load Plan:** Reads `plan.yaml` from the resolved migrations directory.
+3.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against `remote_state.json` in the same directory.
+4.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
+5.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
+6.  **Report Success:** Exits with code 0 if all operations succeed.
 
 ## Failure Modes
 

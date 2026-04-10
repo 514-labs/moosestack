@@ -3227,6 +3227,7 @@ dependencies = [
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp 0.31.0",
  "opentelemetry_sdk 0.31.0",
+ "pathdiff",
  "pbkdf2",
  "percent-encoding",
  "petgraph 0.8.3",
