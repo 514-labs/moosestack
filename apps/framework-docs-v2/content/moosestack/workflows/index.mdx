@@ -79,14 +79,14 @@ def run_task1(ctx: TaskContext[Foo]) -> Bar:
 def run_task2(ctx: TaskContext[Bar]) -> None:
     print(f"{ctx.input.greeting} (count: {ctx.input.counter})")
 
-task1 = Task[Foo, Bar](
-    name="task1",
-    config=TaskConfig(run=run_task1, on_complete=[task2])
-)
-
 task2 = Task[Bar, None](
     name="task2",
     config=TaskConfig(run=run_task2)
+)
+
+task1 = Task[Foo, Bar](
+    name="task1",
+    config=TaskConfig(run=run_task1, on_complete=[task2])
 )
 
 myworkflow = Workflow(

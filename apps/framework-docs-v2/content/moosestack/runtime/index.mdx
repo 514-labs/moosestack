@@ -13,7 +13,7 @@ The Moose Runtime is the execution engine for your MooseStack application. It co
 *   **Managing Data Schemas**: It automatically applies changes to ClickHouse and Redpanda based on your code.
 *   **Running Your Application**: It provides the server that runs your APIs, streaming consumers, data synchronization (e.g. Kafka to ClickHouse) workflows, and other server-side processes defined in your code.
 
-This integrated approach provides the best experience for most applications. However, if you only need schema management for ClickHouse (the `olap` feature), you can [use Moose as a library without the full runtime server](/guides/using-moose-as-a-library).
+This integrated approach provides the best experience for most applications. However, if you only need ClickHouse schema management and type-safe queries inside an existing app, start with the guides for [Embed ClickHouse analytics in Next.js](/moosestack/getting-started/existing-app/next-js) or [Embed ClickHouse analytics in Fastify](/moosestack/getting-started/existing-app/fastify).
 
 ## Execution Modes
 
@@ -74,6 +74,6 @@ This "strict declaration" rule ensures that your running infrastructure always m
 ## Next Steps
 
 *   **[Configure Development](/moosestack/configuration/dev-environment)**: Learn how to add your own Docker containers and scripts.
-*   **[Networking Reference](/moosestack/configuration/networking)**: See the default ports and URLs Moose uses.
+*   **[Networking Reference](/moosestack/configuration/dev-environment#networking-reference)**: See the default ports and URLs Moose uses.
 *   **[Project Configuration](/moosestack/configuration)**: Learn about `moose.config.toml` and feature flags.
 *   **[Deployment](/moosestack/deploying)**: Learn how to package and run Moose in production.
