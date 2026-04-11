@@ -412,12 +412,12 @@ const waitForStreamingDockerlessMode = async (
   log: ScopedLogger,
 ): Promise<void> => {
   const startTime = Date.now();
-  // Short stabilization delay after infrastructure reports healthy.
+  // Moderate stabilization delay after infrastructure reports healthy.
   // Consumer groups use auto.offset.reset=earliest, so data produced before
-  // consumers join will still be consumed. Tests should use generous
-  // waitForDBWrite timeouts (120s+) to handle variable consumer startup times
-  // rather than relying on a long blind wait here.
-  const STABILIZATION_DELAY_MS = 10_000;
+  // consumers join will still be consumed. Tests use generous waitForDBWrite
+  // timeouts (120s) on top of this delay, giving a total consumer readiness
+  // budget of ~150s.
+  const STABILIZATION_DELAY_MS = 30_000;
   const budgetMs = Math.max(0, remainingMs);
 
   if (budgetMs === 0) {

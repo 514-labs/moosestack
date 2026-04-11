@@ -65,7 +65,6 @@ import {
   stopDevProcess,
   logger,
   waitForInfrastructureChanges,
-  ingestAndVerify,
   PlanOutput,
   getTableChanges,
   runMoosePlanJson,
@@ -1603,46 +1602,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
-        // Send records and verify they appear in ClickHouse, with retry-send
-        // cycles to handle variable consumer group startup times. Since
-        // auto.offset.reset=earliest, re-sent data will also be consumed.
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        await ingestAndVerify(
-          async () => {
-            for (let i = 0; i < recordsToSend; i++) {
-              await withRetries(
-                async () => {
-                  const response = await fetch(
-                    `${SERVER_CONFIG.url}/ingest/Foo`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        primaryKey: i === 0 ? eventId : randomUUID(),
-                        timestamp: TEST_DATA.TIMESTAMP,
-                        optionalText: `Hello world ${i}`,
-                      }),
-                    },
-                  );
-                  if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(`${response.status}: ${text}`);
-                  }
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/Foo`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    primaryKey: i === 0 ? eventId : randomUUID(),
+                    timestamp: TEST_DATA.TIMESTAMP,
+                    optionalText: `Hello world ${i}`,
+                  }),
                 },
-                { attempts: 5, delayMs: 500 },
               );
-            }
-          },
-          async () => {
-            await waitForDBWrite(
-              devProcess!,
-              "Bar",
-              recordsToSend,
-              45_000,
-              "local",
-            );
-          },
-          { logger: testLogger },
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          120_000,
+          "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
 
@@ -2467,46 +2456,38 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
-        // Send records with retry-send cycles for slow consumer startup
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        await ingestAndVerify(
-          async () => {
-            for (let i = 0; i < recordsToSend; i++) {
-              await withRetries(
-                async () => {
-                  const response = await fetch(
-                    `${SERVER_CONFIG.url}/ingest/foo`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        primary_key: i === 0 ? eventId : randomUUID(),
-                        baz: "QUUX",
-                        timestamp: TEST_DATA.TIMESTAMP,
-                        optional_text:
-                          i === 0 ? "Hello from Python" : `Test message ${i}`,
-                      }),
-                    },
-                  );
-                  if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(`${response.status}: ${text}`);
-                  }
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/foo`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    primary_key: i === 0 ? eventId : randomUUID(),
+                    baz: "QUUX",
+                    timestamp: TEST_DATA.TIMESTAMP,
+                    optional_text:
+                      i === 0 ? "Hello from Python" : `Test message ${i}`,
+                  }),
                 },
-                { attempts: 5, delayMs: 500 },
               );
-            }
-          },
-          async () => {
-            await waitForDBWrite(
-              devProcess!,
-              "Bar",
-              recordsToSend,
-              45_000,
-              "local",
-            );
-          },
-          { logger: testLogger },
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          120_000,
+          "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
 
