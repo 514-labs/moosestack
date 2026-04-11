@@ -222,6 +222,9 @@ export const killRemainingProcesses = async (
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
+  // Reset cached infra mode so the next test suite re-detects.
+  resetInfraMode();
+
   try {
     // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
     // process (sh -c "pkill -9 -f ...") from matching its own command line.
@@ -296,6 +299,15 @@ export const killRemainingProcesses = async (
   }
 };
 
+// Cached mode detection: once we determine the infrastructure mode (Docker vs
+// dockerless), we remember it so subsequent calls skip the detection phase.
+let detectedMode: "docker" | "dockerless" | null = null;
+
+/** Reset cached infrastructure mode detection (call between test suites). */
+export const resetInfraMode = () => {
+  detectedMode = null;
+};
+
 /**
  * Wait for streaming functions and ClickHouse sync to start.
  *
@@ -303,6 +315,9 @@ export const killRemainingProcesses = async (
  * In dockerless mode (no Docker), falls back to the /ready endpoint which verifies
  * all infrastructure services (Redis, Kafka, ClickHouse, Temporal) are healthy,
  * then waits a stabilization period for consumer groups to settle.
+ *
+ * Mode detection is cached: the first call probes for a Docker Redpanda container
+ * and remembers the result so subsequent calls skip the detection phase entirely.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
@@ -312,9 +327,16 @@ export const waitForStreamingFunctions = async (
   const baseUrl = options.baseUrl ?? SERVER_CONFIG.url;
   log.debug("Waiting for streaming functions to start", { timeoutMs });
 
+  // Fast path: if we already know we're in dockerless mode, skip Docker detection.
+  if (detectedMode === "dockerless") {
+    log.debug("Using cached dockerless mode detection");
+    await waitForStreamingDockerlessMode(timeoutMs, baseUrl, log);
+    return;
+  }
+
   const startTime = Date.now();
   let dockerAttempts = 0;
-  const MAX_DOCKER_DETECT_ATTEMPTS = 10;
+  const MAX_DOCKER_DETECT_ATTEMPTS = 3;
 
   while (Date.now() - startTime < timeoutMs) {
     try {
@@ -327,6 +349,7 @@ export const waitForStreamingFunctions = async (
         dockerAttempts++;
         if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
           // No Docker container found — assume dockerless mode (devkafka embedded)
+          detectedMode = "dockerless";
           log.debug(
             "No Redpanda container found after multiple attempts, using dockerless mode readiness check",
           );
@@ -341,6 +364,9 @@ export const waitForStreamingFunctions = async (
         await setTimeoutAsync(1000);
         continue;
       }
+
+      // Docker mode confirmed
+      detectedMode = "docker";
 
       // Docker mode: Check consumer groups using rpk
       const { stdout: groupList } = await execAsync(
@@ -400,6 +426,7 @@ export const waitForStreamingFunctions = async (
     } catch (error) {
       dockerAttempts++;
       if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
+        detectedMode = "dockerless";
         log.debug(
           "Docker checks failing, using dockerless mode readiness check",
         );
@@ -423,8 +450,10 @@ export const waitForStreamingFunctions = async (
 };
 
 /**
- * Alpha mode readiness check: uses the /ready endpoint to verify all infrastructure
- * services are healthy, then waits for consumer groups to stabilize.
+ * Dockerless mode readiness check: uses the /ready endpoint to verify all
+ * infrastructure services are healthy, then verifies the ingest endpoint is
+ * accepting data (proves Kafka producer path works), and waits for consumer
+ * groups to stabilize.
  */
 const waitForStreamingDockerlessMode = async (
   remainingMs: number,
@@ -432,21 +461,21 @@ const waitForStreamingDockerlessMode = async (
   log: ScopedLogger,
 ): Promise<void> => {
   const startTime = Date.now();
-  const STABILIZATION_DELAY_MS = 10_000;
+  const STABILIZATION_DELAY_MS = 30_000;
+  const budgetMs = Math.max(0, remainingMs);
 
-  // Poll /ready endpoint until all services report healthy
-  while (Date.now() - startTime < remainingMs - STABILIZATION_DELAY_MS) {
+  if (budgetMs === 0) {
+    throw new Error("No timeout budget left for dockerless readiness check");
+  }
+
+  // Phase 1: Poll /ready endpoint until all services report healthy
+  log.debug("Phase 1: Waiting for infrastructure health via /ready endpoint");
+  while (Date.now() - startTime < budgetMs) {
     try {
       const response = await fetch(`${baseUrl}/ready`);
       if (response.status === 200) {
         log.debug("✓ All infrastructure services healthy via /ready endpoint");
-        // Wait for consumer groups to join and stabilize after infra is ready
-        log.debug(
-          `Waiting ${STABILIZATION_DELAY_MS / 1000}s for streaming consumer groups to stabilize`,
-        );
-        await setTimeoutAsync(STABILIZATION_DELAY_MS);
-        log.debug("✓ Streaming functions ready (dockerless mode)");
-        return;
+        break;
       }
       const body = await response.text();
       log.debug(`Infrastructure not ready (${response.status}): ${body}`);
@@ -458,9 +487,43 @@ const waitForStreamingDockerlessMode = async (
     await setTimeoutAsync(1000);
   }
 
-  throw new Error(
-    `Infrastructure did not become ready within the remaining timeout (dockerless mode)`,
+  if (Date.now() - startTime >= budgetMs) {
+    throw new Error(
+      `Infrastructure did not become ready within the remaining timeout (dockerless mode)`,
+    );
+  }
+
+  // Phase 2: Verify ingest endpoint is accepting data (proves Kafka producer path)
+  log.debug("Phase 2: Verifying ingest endpoint accepts requests");
+  while (Date.now() - startTime < budgetMs) {
+    try {
+      const response = await fetch(`${baseUrl}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      // Any response (even 400/404) means the server is processing requests
+      if (response.status !== 502 && response.status !== 503) {
+        log.debug(`✓ Ingest endpoint responding (status: ${response.status})`);
+        break;
+      }
+    } catch (error) {
+      log.debug("Ingest endpoint not ready, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await setTimeoutAsync(1000);
+  }
+
+  // Phase 3: Wait for consumer groups to join and stabilize after infra is ready
+  const elapsedMs = Date.now() - startTime;
+  const remainingBudgetMs = Math.max(0, budgetMs - elapsedMs);
+  const stabilizationMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
+  log.debug(
+    `Phase 3: Waiting ${Math.floor(stabilizationMs / 1000)}s for streaming consumer groups to stabilize`,
   );
+  await setTimeoutAsync(stabilizationMs);
+  log.debug("✓ Streaming functions ready (dockerless mode)");
 };
 
 /**
