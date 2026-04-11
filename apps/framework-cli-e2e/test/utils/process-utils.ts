@@ -11,6 +11,10 @@ export interface ProcessOptions {
   baseUrl?: string;
   /** Skip Docker detection and use dockerless readiness checks directly */
   dockerless?: boolean;
+  /** Override the Phase 3 stabilization delay in dockerless mode (default: 30_000ms).
+   *  Use a shorter delay (e.g. 5_000) for schema-only tests that don't need
+   *  streaming functions ready — they only verify DDL changes. */
+  stabilizationDelayMs?: number;
 }
 
 declare const require: any;
@@ -317,7 +321,12 @@ export const waitForStreamingFunctions = async (
   });
 
   if (options.dockerless) {
-    await waitForStreamingDockerlessMode(timeoutMs, baseUrl, log);
+    await waitForStreamingDockerlessMode(
+      timeoutMs,
+      baseUrl,
+      log,
+      options.stabilizationDelayMs,
+    );
     return;
   }
 
@@ -406,10 +415,13 @@ export const waitForStreamingFunctions = async (
  * accepting data (proves Kafka producer path works), and waits for consumer
  * groups to stabilize.
  */
+const DEFAULT_STABILIZATION_DELAY_MS = 30_000;
+
 const waitForStreamingDockerlessMode = async (
   remainingMs: number,
   baseUrl: string,
   log: ScopedLogger,
+  overrideStabilizationMs?: number,
 ): Promise<void> => {
   const startTime = Date.now();
   // Moderate stabilization delay after infrastructure reports healthy.
@@ -417,7 +429,9 @@ const waitForStreamingDockerlessMode = async (
   // consumers join will still be consumed. Tests use generous waitForDBWrite
   // timeouts (120s) on top of this delay, giving a total consumer readiness
   // budget of ~150s.
-  const STABILIZATION_DELAY_MS = 30_000;
+  // Schema-only tests can pass a shorter delay since they only verify DDL.
+  const STABILIZATION_DELAY_MS =
+    overrideStabilizationMs ?? DEFAULT_STABILIZATION_DELAY_MS;
   const budgetMs = Math.max(0, remainingMs);
 
   if (budgetMs === 0) {

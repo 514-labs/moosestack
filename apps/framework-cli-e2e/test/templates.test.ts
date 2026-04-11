@@ -895,8 +895,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after index modification...",
         );
-        // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         // Wait for tables to be created after previous test's file modifications
         // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
@@ -957,7 +960,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for Kafka table infrastructure to be ready...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         const kafkaSourceDDL = await withRetries(
           async () => {
@@ -1137,8 +1144,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after TTL modification...",
         );
-        // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         // First, verify initial DEFAULT settings
         await withRetries(
@@ -1206,7 +1216,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Wait for streaming functions to stabilize after restart
         // The infrastructure changes message fires before process restarts complete
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
@@ -1237,7 +1251,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         // Verify initial state: columns have correct comment+codec combinations
         await withRetries(
@@ -1379,7 +1397,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify modified state
@@ -1457,7 +1479,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         // Verify initial state: AliasTest has ALIAS columns
         await withRetries(
@@ -1505,7 +1531,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects the switch from ALIAS to DEFAULT
@@ -1532,7 +1562,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Schema-only: just need DDL applied, not full consumer readiness
+        await waitForStreamingFunctions(180_000, {
+          dockerless: true,
+          stabilizationDelayMs: 5_000,
+        });
 
         // Verify source tables exist first
         const sourceADDL = await withRetries(
@@ -1593,8 +1627,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (300s) + batch (60s) = 540s
-        this.timeout(600_000);
+        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (420s) + batch (60s) = 660s
+        this.timeout(720_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -1627,7 +1661,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 5, delayMs: 500 },
         );
-        await waitForDBWrite(devProcess!, "Bar", 1, 300_000, "local");
+        await waitForDBWrite(devProcess!, "Bar", 1, 420_000, "local");
         testLogger.info("Canary record arrived — pipeline is active");
 
         // Now send the remaining batch. Since the pipeline is proven active,

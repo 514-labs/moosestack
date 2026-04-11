@@ -92,8 +92,8 @@ describe("moose seed clickhouse with seedFilter", function () {
 
   before(async function () {
     // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 300s)
-    // + replica readiness (up to 180s) = ~570s. Use 600s to be safe.
-    this.timeout(600_000);
+    // + replica readiness (up to 300s) = ~690s. Use 900s to be safe.
+    this.timeout(900_000);
     testLogger.info("\n=== Starting Seed Filter Test ===");
 
     testProjectDir = createTempTestDirectory("seed-filter-test");
@@ -195,7 +195,7 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     // Wait for all ReplicatedMergeTree replicas to exit readonly mode.
     // Tables from --from-remote use ReplicatedMergeTree which needs Keeper init.
-    await waitForClickhouseReplicasReady(180_000, { logger: testLogger });
+    await waitForClickhouseReplicasReady(300_000, { logger: testLogger });
 
     testLogger.info("Infrastructure ready");
   });

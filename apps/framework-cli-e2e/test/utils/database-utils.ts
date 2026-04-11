@@ -38,9 +38,9 @@ export const waitForClickhouseReplicasReady = async (
         });
         const readonlyReplicas: any[] = await result.json();
         if (readonlyReplicas.length > 0) {
-          // Issue SYSTEM RESTART REPLICA starting at poll 5 and every 10 polls
+          // Issue SYSTEM RESTART REPLICA starting at poll 3 and every 5 polls
           // thereafter to nudge replicas out of readonly mode.
-          if (pollCount >= 5 && pollCount - lastRestartPoll >= 10) {
+          if (pollCount >= 3 && pollCount - lastRestartPoll >= 5) {
             lastRestartPoll = pollCount;
             for (const r of readonlyReplicas) {
               try {
