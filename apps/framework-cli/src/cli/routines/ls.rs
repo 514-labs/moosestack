@@ -426,11 +426,7 @@ pub async fn ls(
             .map(|d| DictionaryInfo {
                 name: d.id(&default_database),
                 source_type: d.source.source_type_label().to_string(),
-                layout: format!("{:?}", d.layout)
-                    .split(['{', ' '])
-                    .next()
-                    .unwrap_or("unknown")
-                    .to_string(),
+                layout: d.layout.layout_type_label().to_string(),
             })
             .collect(),
     };
