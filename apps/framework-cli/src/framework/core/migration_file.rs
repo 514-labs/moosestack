@@ -374,6 +374,7 @@ impl MigrationHistory {
             materialized_views: HashMap::new(),
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
             moose_version: None,
         };
 

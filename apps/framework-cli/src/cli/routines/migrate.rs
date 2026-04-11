@@ -2,6 +2,7 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
+use crate::framework::core::infrastructure::dictionary::OlapDictionary;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_file::MigrationFile;
@@ -38,6 +39,8 @@ enum DriftStatus {
         extra_tables: Vec<String>,
         missing_tables: Vec<String>,
         changed_tables: Vec<String>,
+        extra_dicts: Vec<String>,
+        missing_dicts: Vec<String>,
     },
 }
 
@@ -128,7 +131,7 @@ fn strip_non_schema_fields(
         .collect()
 }
 
-/// Detects drift by comparing three snapshots of table state.
+/// Detects drift by comparing three snapshots of table and dictionary state.
 ///
 /// Uses `normalize_table_for_diff` — the same normalization the plan diff uses —
 /// so that "empty olap_changes" ↔ NoDrift / AlreadyAtTarget.
@@ -137,6 +140,9 @@ fn strip_non_schema_fields(
 /// * `current_tables` - What's in the database right now (after reconciliation)
 /// * `expected_tables` - What was in the database when the migration plan was generated
 /// * `target_tables` - What the current code defines as the desired state
+/// * `current_dicts` - Dictionaries in the database right now
+/// * `expected_dicts` - Dictionaries when the plan was generated
+/// * `target_dicts` - Dictionaries defined by current code
 ///
 /// # Returns
 /// * `DriftStatus::NoDrift` - Database matches expected state, safe to proceed
@@ -146,6 +152,9 @@ fn detect_drift(
     current_tables: &HashMap<String, Table>,
     expected_tables: &HashMap<String, Table>,
     target_tables: &HashMap<String, Table>,
+    current_dicts: &HashMap<String, OlapDictionary>,
+    expected_dicts: &HashMap<String, OlapDictionary>,
+    target_dicts: &HashMap<String, OlapDictionary>,
     ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
     let current_no_metadata = strip_non_schema_fields(current_tables, ignore_operations);
@@ -153,13 +162,30 @@ fn detect_drift(
     let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
 
     // Check 1: Did the DB change since the plan was generated?
-    if current_no_metadata == expected_no_metadata {
+    // Compare both tables and dictionary key sets (names)
+    let tables_match = current_no_metadata == expected_no_metadata;
+    let dicts_match = current_dicts
+        .keys()
+        .collect::<std::collections::HashSet<_>>()
+        == expected_dicts
+            .keys()
+            .collect::<std::collections::HashSet<_>>();
+
+    if tables_match && dicts_match {
         return DriftStatus::NoDrift;
     }
 
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
-    if current_no_metadata == target_no_metadata {
+    let tables_at_target = current_no_metadata == target_no_metadata;
+    let dicts_at_target = current_dicts
+        .keys()
+        .collect::<std::collections::HashSet<_>>()
+        == target_dicts
+            .keys()
+            .collect::<std::collections::HashSet<_>>();
+
+    if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
     }
 
@@ -195,10 +221,24 @@ fn detect_drift(
         );
     }
 
+    let extra_dicts: Vec<String> = current_dicts
+        .keys()
+        .filter(|k| !expected_dicts.contains_key(*k))
+        .cloned()
+        .collect();
+
+    let missing_dicts: Vec<String> = expected_dicts
+        .keys()
+        .filter(|k| !current_dicts.contains_key(*k))
+        .cloned()
+        .collect();
+
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
         changed_tables,
+        extra_dicts,
+        missing_dicts,
     }
 }
 
@@ -255,6 +295,8 @@ fn report_drift(drift: &DriftStatus) {
         extra_tables,
         missing_tables,
         changed_tables,
+        extra_dicts,
+        missing_dicts,
     } = drift
     {
         println!("\n❌ Migration validation failed - database state has changed since plan was generated\n");
@@ -267,6 +309,12 @@ fn report_drift(drift: &DriftStatus) {
         }
         if !changed_tables.is_empty() {
             println!("  Tables with schema changes: {:?}", changed_tables);
+        }
+        if !extra_dicts.is_empty() {
+            println!("  Dictionaries added to database: {:?}", extra_dicts);
+        }
+        if !missing_dicts.is_empty() {
+            println!("  Dictionaries removed from database: {:?}", missing_dicts);
         }
     }
 }
@@ -468,10 +516,10 @@ fn validate_table_databases_and_clusters(
             | SerializableOlapOperation::DropRowPolicy { .. } => {
                 // Row policies reference tables but don't need cluster validation
             }
-            SerializableOlapOperation::CreateDictionary { .. }
-            | SerializableOlapOperation::ReplaceDictionary { .. }
-            | SerializableOlapOperation::DropDictionary { .. } => {
-                // Dictionary cluster info is embedded in the DDL SQL, skip validation
+            SerializableOlapOperation::CreateDictionary { dict }
+            | SerializableOlapOperation::ReplaceDictionary { dict }
+            | SerializableOlapOperation::DropDictionary { dict } => {
+                validate(&dict.database, &dict.cluster_name, &dict.name);
             }
         }
     }
@@ -1061,11 +1109,10 @@ pub async fn execute_migration(
             })?;
         } else {
             // Legacy plan.yaml migration path
-            let current_tables = &current_infra_map.tables;
             execute_migration_plan(
                 project,
                 clickhouse_config,
-                current_tables,
+                &current_infra_map,
                 &target_infra_map,
                 state_storage.as_ref(),
             )
@@ -1101,7 +1148,7 @@ pub async fn execute_migration(
 pub async fn execute_migration_plan(
     project: &Project,
     clickhouse_config: &ClickHouseConfig,
-    current_tables: &HashMap<String, Table>,
+    current_infra_map: &InfrastructureMap,
     target_infra_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
 ) -> Result<()> {
@@ -1124,9 +1171,12 @@ pub async fn execute_migration_plan(
     // Validate migration plan
     println!("Validating migration plan...");
     let drift = detect_drift(
-        current_tables,
+        &current_infra_map.tables,
         &files.state_before.tables,
         &target_infra_map.tables,
+        &current_infra_map.olap_dictionaries,
+        &files.state_before.olap_dictionaries,
+        &target_infra_map.olap_dictionaries,
         &project.migration_config.ignore_operations,
     );
 
@@ -1142,6 +1192,7 @@ pub async fn execute_migration_plan(
             let ignore_ops = &project.migration_config.ignore_operations;
             if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
                 != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
+                || files.state_after.olap_dictionaries != target_infra_map.olap_dictionaries
             {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
@@ -1271,7 +1322,15 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
         target.insert("comments".to_string(), create_test_table("comments"));
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1286,7 +1345,15 @@ mod tests {
 
         let target = current.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::AlreadyAtTarget));
     }
 
@@ -1303,12 +1370,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert_eq!(extra_tables, vec!["comments".to_string()]);
                 assert!(missing_tables.is_empty());
@@ -1330,12 +1406,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert!(extra_tables.is_empty());
                 assert_eq!(missing_tables.len(), 2);
@@ -1359,12 +1444,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert!(extra_tables.is_empty());
                 assert!(missing_tables.is_empty());
@@ -1407,12 +1501,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert_eq!(extra_tables, vec!["analytics".to_string()]);
                 assert_eq!(missing_tables, vec!["posts".to_string()]);
@@ -1428,7 +1531,15 @@ mod tests {
         let expected = HashMap::new();
         let target = HashMap::new();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1444,7 +1555,15 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
 
         // Current == Expected, but different from Target
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1467,7 +1586,15 @@ mod tests {
         target.insert("users".to_string(), target_table);
 
         // Without ignoring TTL, drift is detected
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected { changed_tables, .. } => {
                 assert_eq!(changed_tables, vec!["users".to_string()]);
@@ -1480,6 +1607,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyTableTtl],
         );
         assert!(matches!(result, DriftStatus::NoDrift));
@@ -1503,7 +1633,15 @@ mod tests {
         target.insert("users".to_string(), target_table);
 
         // Without ignoring column TTL, drift is detected
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected { changed_tables, .. } => {
                 assert_eq!(changed_tables, vec!["users".to_string()]);
@@ -1516,6 +1654,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyColumnTtl],
         );
         assert!(matches!(result, DriftStatus::NoDrift));
@@ -1547,6 +1688,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyTableTtl],
         );
         match result {
@@ -1909,6 +2053,155 @@ mod tests {
         );
     }
 
+    // ─── T1a: dictionary drift detection ──────────────────────────────────────
+
+    fn create_test_dict(name: &str) -> OlapDictionary {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_extra_dict_in_current() {
+        // current has an extra dictionary not in expected → DriftDetected
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("dict_a".to_string(), create_test_dict("dict_a"));
+        let expected_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+        let target_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        match result {
+            DriftStatus::DriftDetected {
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert_eq!(extra_dicts, vec!["dict_a".to_string()]);
+                assert!(missing_dicts.is_empty());
+            }
+            _ => panic!("Expected DriftDetected"),
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_missing_dict_in_current() {
+        // expected has a dictionary that is absent in current → DriftDetected
+        // (target also has it, so current != target → not AlreadyAtTarget)
+        let tables: HashMap<String, Table> = HashMap::new();
+        let current_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("dict_b".to_string(), create_test_dict("dict_b"));
+        let target_dicts = expected_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        match result {
+            DriftStatus::DriftDetected {
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert!(extra_dicts.is_empty());
+                assert_eq!(missing_dicts, vec!["dict_b".to_string()]);
+            }
+            _ => panic!("Expected DriftDetected"),
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_no_dict_drift_when_dicts_match() {
+        // current and expected have the same dictionaries → NoDrift (tables also match)
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut dicts = HashMap::new();
+        dicts.insert("dict_c".to_string(), create_test_dict("dict_c"));
+        let mut target_dicts = dicts.clone();
+        target_dicts.insert("dict_d".to_string(), create_test_dict("dict_d"));
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &dicts,
+            &dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Expected NoDrift when current == expected dicts"
+        );
+    }
+
+    // ─── T1b: validate_table_databases_and_clusters covers dict ops ───────────
+
+    #[test]
+    fn test_validate_dict_cluster_invalid() {
+        // CreateDictionary with an unconfigured cluster → error
+        let clusters = Some(vec![ClusterConfig {
+            name: "prod_cluster".to_string(),
+        }]);
+        let mut dict = create_test_dict("my_dict");
+        dict.cluster_name = Some("unknown_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_err(), "Expected error for invalid cluster");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown_cluster"),
+            "Error should mention the invalid cluster: {err}"
+        );
+    }
+
     #[test]
     fn test_format_partial_delta_failure_first_delta_no_succeeded_section() {
         use crate::framework::core::infra_delta::InfraDelta;
@@ -1949,5 +2242,35 @@ mod tests {
             !output.contains("0 delta(s)"),
             "should not say '0 delta(s)' when first delta fails:\n{output}"
         );
+    }
+
+    #[test]
+    fn test_validate_dict_database_invalid() {
+        // ReplaceDictionary with an unconfigured database → error
+        let mut dict = create_test_dict("my_dict");
+        dict.database = Some("unconfigured_db".to_string());
+
+        let operations = vec![SerializableOlapOperation::ReplaceDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_err(), "Expected error for invalid database");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unconfigured_db"),
+            "Error should mention the invalid database: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_dict_valid_cluster_passes() {
+        // DropDictionary with a configured cluster → ok
+        let clusters = Some(vec![ClusterConfig {
+            name: "my_cluster".to_string(),
+        }]);
+        let mut dict = create_test_dict("my_dict");
+        dict.cluster_name = Some("my_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::DropDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_ok(), "Expected Ok for valid cluster");
     }
 }
