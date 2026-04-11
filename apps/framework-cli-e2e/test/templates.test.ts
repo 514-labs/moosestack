@@ -266,7 +266,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
-        includeDocker: false,
+        includeDocker: config.isTestsVariant,
       });
     });
 

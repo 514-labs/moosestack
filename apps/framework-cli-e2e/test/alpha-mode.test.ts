@@ -238,30 +238,38 @@ describe("moose dev --dockerless (native infrastructure)", function () {
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Verify no native ClickHouse processes remain
-    try {
-      execSync('pgrep -f "clickhouse.*config-file.*native_infra"', {
-        encoding: "utf-8",
-      });
-      // If pgrep succeeds, processes still exist — that's a failure
-      expect.fail(
-        "ClickHouse native process should have been terminated on shutdown",
-      );
-    } catch {
-      // pgrep exits non-zero when no process matches — this is the success path
-      testLogger.info("No lingering ClickHouse native processes found");
-    }
+    const hasClickHouseProcess = (() => {
+      try {
+        execSync('pgrep -f "clickhouse.*config-file.*native_infra"', {
+          stdio: "ignore",
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    expect(
+      hasClickHouseProcess,
+      "ClickHouse native process should have been terminated on shutdown",
+    ).to.be.false;
+    testLogger.info("No lingering ClickHouse native processes found");
 
     // Verify no native Temporal processes remain
-    try {
-      execSync('pgrep -f "temporal.*db-filename.*native_infra"', {
-        encoding: "utf-8",
-      });
-      expect.fail(
-        "Temporal native process should have been terminated on shutdown",
-      );
-    } catch {
-      testLogger.info("No lingering Temporal native processes found");
-    }
+    const hasTemporalProcess = (() => {
+      try {
+        execSync('pgrep -f "temporal.*db-filename.*native_infra"', {
+          stdio: "ignore",
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    expect(
+      hasTemporalProcess,
+      "Temporal native process should have been terminated on shutdown",
+    ).to.be.false;
+    testLogger.info("No lingering Temporal native processes found");
 
     // devkafka and devredis are embedded in-process — no separate processes to check.
 
