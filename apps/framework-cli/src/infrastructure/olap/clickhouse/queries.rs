@@ -2891,16 +2891,13 @@ fn build_replication_params(
 ) -> Result<Vec<String>, ClickhouseError> {
     match (keeper_path, replica_name) {
         (Some(path), Some(name)) if !path.is_empty() && !name.is_empty() => {
+            // Dev mode without cluster: override remote keeper paths with local
+            // dev paths.  Tables from --from-remote carry the remote's keeper_path
+            // which doesn't exist in the local embedded Keeper, leaving replicas
+            // permanently stuck in readonly mode.
             if is_dev && cluster_name.is_none() {
-                // Dev mode without cluster: override remote keeper paths with
-                // local dev paths.  Tables from --from-remote carry the remote's
-                // keeper_path which doesn't exist in the local embedded Keeper,
-                // leaving replicas permanently stuck in readonly mode.
                 Ok(vec![
-                    format!(
-                        "'/clickhouse/tables/{{database}}/{{shard}}/{}'",
-                        table_name
-                    ),
+                    format!("'/clickhouse/tables/{{database}}/{{shard}}/{}'", table_name),
                     "'{replica}'".to_string(),
                 ])
             } else {
@@ -6159,7 +6156,9 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     }
 
     #[test]
-    fn test_replication_params_dev_no_cluster_with_keeper_args_succeeds() {
+    fn test_replication_params_dev_no_cluster_with_keeper_args_overrides_to_local() {
+        // In dev mode without cluster, remote keeper paths are overridden with
+        // local dev paths so embedded Keeper can manage the replicas.
         let result = build_replication_params(
             &Some("/clickhouse/tables/{database}/{table}".to_string()),
             &Some("{replica}".to_string()),
@@ -6172,7 +6171,10 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         assert!(result.is_ok());
         let params = result.unwrap();
         assert_eq!(params.len(), 2);
-        assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(
+            params[0],
+            "'/clickhouse/tables/{database}/{shard}/test_table'"
+        );
         assert_eq!(params[1], "'{replica}'");
     }
 
