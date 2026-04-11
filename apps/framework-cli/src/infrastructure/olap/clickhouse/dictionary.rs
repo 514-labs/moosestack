@@ -312,6 +312,20 @@ pub enum DictionarySource {
     External(ExternalDictionarySource),
 }
 
+impl DictionarySource {
+    /// Human-readable lowercase label for the source type, used by CLI display commands.
+    ///
+    /// Co-located with the enum so that any variant shape change (e.g. tuple → struct)
+    /// causes a compile error here, caught immediately by `cargo test`.
+    pub fn source_type_label(&self) -> &'static str {
+        match self {
+            DictionarySource::Table(_) => "table",
+            DictionarySource::Query(_) => "query",
+            DictionarySource::External(_) => "external",
+        }
+    }
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 /// ClickHouse dictionary layout type and its configuration parameters.
@@ -2527,5 +2541,39 @@ mod tests {
             }
             other => panic!("expected External(Http(..)) fallback, got {:?}", other),
         }
+    }
+
+    // ─── source_type_label ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_source_type_label_table() {
+        let source = DictionarySource::Table(DictionaryTableSource {
+            table: "t".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        assert_eq!(source.source_type_label(), "table");
+    }
+
+    #[test]
+    fn test_source_type_label_query() {
+        let source = DictionarySource::Query(DictionaryQuerySource {
+            query: "SELECT 1".to_string(),
+            invalidate_query: None,
+        });
+        assert_eq!(source.source_type_label(), "query");
+    }
+
+    #[test]
+    fn test_source_type_label_external() {
+        let source =
+            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+                url: "http://example.com".to_string(),
+                format: "JSONEachRow".to_string(),
+                method: None,
+                where_clause: None,
+            }));
+        assert_eq!(source.source_type_label(), "external");
     }
 }
