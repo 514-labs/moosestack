@@ -302,11 +302,11 @@ pub enum ExternalDictionarySource {
 }
 
 /// Wrapper that adds one nesting level around `ExternalDictionarySource` to
-/// avoid a conflict when both `DictionarySource` and `ExternalDictionarySource`
-/// use `#[serde(tag = "type")]` — both enums would otherwise try to emit a
-/// `"type"` key at the same JSON level.
+/// avoid a conflict: `DictionarySource` uses `#[serde(tag = "type")]` while
+/// `ExternalDictionarySource` uses `#[serde(tag = "source_type")]`, so they
+/// each emit their discriminant key at their own JSON level without collision.
 ///
-/// JSON shape: `{ "type": "EXTERNAL", "externalSource": { "type": "HTTP", … } }`
+/// JSON shape: `{ "type": "EXTERNAL", "externalSource": { "source_type": "HTTP", … } }`
 ///
 /// The TypeScript SDK's `serializeExternalSource` produces exactly this shape.
 /// See: <https://github.com/serde-rs/serde/issues/1799>
@@ -2495,8 +2495,8 @@ mod tests {
             "wrapper field must be externalSource (camelCase); got: {json}"
         );
         assert!(
-            json.contains(r#""type":"HTTP""#),
-            "inner type must be HTTP; got: {json}"
+            json.contains(r#""source_type":"HTTP""#),
+            "inner source_type must be HTTP; got: {json}"
         );
         // Round-trip
         let restored: DictionarySource = serde_json::from_str(&json).unwrap();
