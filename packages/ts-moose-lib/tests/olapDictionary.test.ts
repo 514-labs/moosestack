@@ -484,11 +484,42 @@ describe("OlapDictionary", () => {
       const source = json.source as any;
       expect(source.type).to.equal("EXTERNAL");
       expect(source.externalSource).to.exist;
-      expect(source.externalSource.type).to.equal("HTTP");
+      expect(source.externalSource.source_type).to.equal("HTTP");
       expect(source.externalSource.url).to.equal(
         "https://api.example.com/products",
       );
       expect(source.externalSource.format).to.equal("JSONEachRow");
+    });
+
+    // Regression: ExternalDictionarySource uses #[serde(tag = "source_type")] in Rust,
+    // so the inner discriminant key must be "source_type", not "type".
+    // Before the fix, serializeExternalSource() emitted { type: "HTTP" } which would
+    // cause Rust deserialization of all external-source dictionaries to fail.
+    it("EXTERNAL source inner discriminant must use key 'source_type' not 'type'", () => {
+      const dict = new OlapDictionary<ProductLookup>("dict_ext_discriminant", {
+        externalSource: {
+          type: "http",
+          url: "https://api.example.com/data",
+          format: "JSONEachRow",
+          method: "GET",
+        },
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      const json = dict.toJson();
+      const source = json.source as any;
+      expect(source.type).to.equal("EXTERNAL");
+      expect(source.externalSource).to.exist;
+
+      // Must use "source_type" (Rust serde tag) — NOT "type"
+      expect(source.externalSource).to.have.property("source_type");
+      expect(source.externalSource.source_type).to.equal("HTTP");
+      expect(source.externalSource).not.to.have.property(
+        "type",
+        "inner ExternalDictionarySource must use 'source_type' not 'type' as discriminant",
+      );
     });
 
     it("should appear in toInfraMap olapDictionaries", () => {
@@ -796,6 +827,29 @@ describe("OlapDictionary", () => {
 
       const query = sql`dictGet(${dict}, 'ProductName', product_id)`;
       expect(query.strings.join("")).to.include("'mydb.dict_interp_db'");
+    });
+
+    // Regression: sql template interpolation of a dictionary must escape single quotes
+    // in the qualified name, consistent with get()/getOrDefault()/has() which all call
+    // .replace(/'/g, "''"). Without the fix, a dict name containing a single quote
+    // produces malformed SQL.
+    it("sql template interpolation escapes single quotes in dictionary name", () => {
+      const source = makeSourceTable();
+      // Construct a dict whose qualified name contains a single quote by setting the
+      // database to a string with an apostrophe (e.g. "it's_db").
+      const dict = new OlapDictionary<ProductLookup>("dict_escape", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+        database: "it's_db",
+      });
+
+      const query = sql`dictGet(${dict}, 'ProductName', product_id)`;
+      const rendered = query.strings.join("");
+      // Single quote in database name must be doubled: it's → it''s
+      expect(rendered).to.include("'it''s_db.dict_escape'");
+      expect(rendered).not.to.include("'it's_db.dict_escape'");
     });
   });
 
