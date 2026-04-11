@@ -198,7 +198,11 @@ fn validate_dictionary_config(plan: &InfraPlan) -> Result<(), ValidationError> {
             });
             let is_dict_source = !shadowed_by_table
                 && plan.target_infra_map.olap_dictionaries.values().any(|d| {
-                    d.name == ts.table
+                    // Exclude the dictionary being validated to avoid self-matching
+                    // (e.g. dict "foo" with source table "foo" must not trigger
+                    // dict-to-dict error against itself when no table "foo" exists).
+                    d.name != dict.name
+                        && d.name == ts.table
                         && d.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
                 });
             if is_dict_source {
@@ -958,5 +962,36 @@ mod tests {
         let result = validate(&project, &plan);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dictionary_self_name_source_table_missing_not_dict_to_dict() {
+        // Regression test: a dict named "foo" using DictionarySource::Table("foo")
+        // when no table "foo" exists must produce "source table does not exist",
+        // NOT a spurious "dict-to-dict chaining" error caused by the inner any()
+        // matching the dictionary against itself.
+        let dict = make_dict(
+            "foo",
+            table_source("foo"), // same name as the dictionary itself, no matching table
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let mut plan = create_test_plan(vec![]); // no tables
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("local_foo".to_string(), dict);
+
+        let project = create_test_project(None);
+        let result = validate(&project, &plan);
+
+        assert!(matches!(
+            result,
+            Err(ValidationError::DictionaryValidation(msg))
+                if msg.contains("does not exist") && !msg.contains("chaining")
+        ));
     }
 }
