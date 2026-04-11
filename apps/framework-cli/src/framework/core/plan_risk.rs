@@ -229,29 +229,6 @@ fn is_cache_layout(
     )
 }
 
-/// Returns a short human-readable name for a `DictionaryLayout` variant.
-fn layout_variant_name(
-    layout: &crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout,
-) -> &'static str {
-    use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
-    match layout {
-        DictionaryLayout::Flat => "Flat",
-        DictionaryLayout::Hashed { .. } => "Hashed",
-        DictionaryLayout::SparseHashed { .. } => "SparseHashed",
-        DictionaryLayout::HashedArray { .. } => "HashedArray",
-        DictionaryLayout::RangeHashed { .. } => "RangeHashed",
-        DictionaryLayout::Cache { .. } => "Cache",
-        DictionaryLayout::SsdCache { .. } => "SsdCache",
-        DictionaryLayout::Direct => "Direct",
-        DictionaryLayout::IpTrie { .. } => "IpTrie",
-        DictionaryLayout::ComplexKeyHashed { .. } => "ComplexKeyHashed",
-        DictionaryLayout::ComplexKeySparseHashed { .. } => "ComplexKeySparseHashed",
-        DictionaryLayout::ComplexKeyHashedArray { .. } => "ComplexKeyHashedArray",
-        DictionaryLayout::ComplexKeyCache { .. } => "ComplexKeyCache",
-        DictionaryLayout::ComplexKeySsdCache { .. } => "ComplexKeySsdCache",
-        DictionaryLayout::ComplexKeyDirect => "ComplexKeyDirect",
-    }
-}
 
 /// Walks the OLAP changes and collects every operation that may cause data loss.
 ///
@@ -347,7 +324,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                     operational_risks.push(OperationalRisk::DictionaryReplace {
                         database: after.database.clone(),
                         dictionary_name: after.name.clone(),
-                        layout_type: layout_variant_name(&after.layout).to_string(),
+                        layout_type: after.layout.layout_type_label().to_string(),
                     });
                 }
             }
@@ -1653,6 +1630,7 @@ mod tests {
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
             metadata: None,
+            version: None,
         }
     }
 
