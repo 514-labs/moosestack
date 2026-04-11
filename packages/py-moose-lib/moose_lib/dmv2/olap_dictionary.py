@@ -487,7 +487,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             self.source_tables = [_format_table_reference(config.source_table)]
         elif config.source_tables:
             self.source_tables = [
-                _format_table_reference(t) for t in config.source_tables
+                _format_table_reference(tbl) for tbl in config.source_tables
             ]
         else:
             self.source_tables = []
