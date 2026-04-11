@@ -2151,14 +2151,12 @@ async fn confirm_and_save_migration(
                 ),
             },
         );
+    } else if infra_deltas.is_empty() {
+        println!("No changes detected.");
     } else {
-        if infra_deltas.is_empty() {
-            println!("No changes detected.");
-        } else {
-            println!("Changes ({} delta(s)):\n", infra_deltas.len());
-            for (i, delta) in infra_deltas.iter().enumerate() {
-                println!("  {}. {}", i + 1, delta.summary());
-            }
+        println!("Changes ({} delta(s)):\n", infra_deltas.len());
+        for (i, delta) in infra_deltas.iter().enumerate() {
+            println!("  {}. {}", i + 1, delta.summary());
         }
     }
 

@@ -104,7 +104,7 @@ impl DictionaryColumn {
             parts.push("IS_OBJECT_ID 1".to_string());
         }
         if let Some(ref c) = self.comment {
-            parts.push(format!("COMMENT '{}'", c.replace('\'', "\\'")));
+            parts.push(format!("COMMENT '{}'", escape_clickhouse_string(c)));
         }
 
         parts.join(" ")
@@ -497,7 +497,7 @@ impl DictionaryLayout {
                 write_buffer_size,
                 max_stored_keys,
             } => {
-                let mut params = vec![format!("PATH '{}'", path.replace('\'', "\\'"))];
+                let mut params = vec![format!("PATH '{}'", escape_clickhouse_string(path))];
                 if let Some(v) = block_size {
                     params.push(format!("BLOCK_SIZE {}", v));
                 }
@@ -576,7 +576,7 @@ impl DictionaryLayout {
                 write_buffer_size,
                 max_stored_keys,
             } => {
-                let mut params = vec![format!("PATH '{}'", path.replace('\'', "\\'"))];
+                let mut params = vec![format!("PATH '{}'", escape_clickhouse_string(path))];
                 if let Some(v) = block_size {
                     params.push(format!("BLOCK_SIZE {}", v));
                 }
@@ -917,6 +917,14 @@ pub struct OlapDictionary {
     pub metadata: Option<Metadata>,
 }
 
+/// Escapes a string for use inside single-quoted ClickHouse string literals.
+///
+/// Backslashes must be escaped first (before single quotes) to avoid double-escaping:
+/// `test\'s` → `test\\'s` (wrong) vs `test\\'s` via this helper (correct).
+fn escape_clickhouse_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 impl OlapDictionary {
     /// Returns a unique identifier for this dictionary.
     ///
@@ -953,14 +961,11 @@ impl OlapDictionary {
         let pk_set: std::collections::HashSet<&str> =
             self.primary_key.iter().map(|k| k.as_str()).collect();
 
-        // Primary key columns first (in declaration order), then attribute columns
-        let mut pk_lines: Vec<String> = Vec::new();
+        // Collect non-PK attribute columns
         let mut attr_lines: Vec<String> = Vec::new();
 
         for col in &self.columns {
-            if pk_set.contains(col.name.as_str()) {
-                pk_lines.push(col.to_ddl());
-            } else {
+            if !pk_set.contains(col.name.as_str()) {
                 attr_lines.push(col.to_ddl());
             }
         }
@@ -1008,17 +1013,23 @@ impl OlapDictionary {
                 }
                 params.push(format!("TABLE '{}'", t.table));
                 if let Some(ref w) = t.where_clause {
-                    params.push(format!("WHERE '{}'", w.replace('\'', "\\'")));
+                    params.push(format!("WHERE '{}'", escape_clickhouse_string(w)));
                 }
                 if let Some(ref iq) = t.invalidate_query {
-                    params.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
+                    params.push(format!(
+                        "INVALIDATE_QUERY '{}'",
+                        escape_clickhouse_string(iq)
+                    ));
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
             DictionarySource::Query(q) => {
-                let mut params = vec![format!("QUERY '{}'", q.query.replace('\'', "\\'"))];
+                let mut params = vec![format!("QUERY '{}'", escape_clickhouse_string(&q.query))];
                 if let Some(ref iq) = q.invalidate_query {
-                    params.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
+                    params.push(format!(
+                        "INVALIDATE_QUERY '{}'",
+                        escape_clickhouse_string(iq)
+                    ));
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
@@ -1040,7 +1051,7 @@ impl OlapDictionary {
                         format!("DB '{}'", c.db),
                     ];
                     if let Some(ref q) = c.query {
-                        params.push(format!("QUERY '{}'", q.replace('\'', "\\'")));
+                        params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
                         params.push(format!("TABLE '{}'", c.table));
                     }
@@ -1061,7 +1072,7 @@ impl OlapDictionary {
                         format!("DB '{}'", m.db),
                     ];
                     if let Some(ref q) = m.query {
-                        params.push(format!("QUERY '{}'", q.replace('\'', "\\'")));
+                        params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
                         params.push(format!("TABLE '{}'", m.table));
                     }
@@ -1079,7 +1090,7 @@ impl OlapDictionary {
                         format!("DB '{}'", p.db),
                     ];
                     if let Some(ref q) = p.query {
-                        params.push(format!("QUERY '{}'", q.replace('\'', "\\'")));
+                        params.push(format!("QUERY '{}'", escape_clickhouse_string(q)));
                     } else {
                         params.push(format!("TABLE '{}'", p.table));
                     }
@@ -1146,7 +1157,7 @@ impl OlapDictionary {
         let pairs: Vec<String> = self
             .settings
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+            .map(|(k, v)| format!("{}='{}'", k, escape_clickhouse_string(v)))
             .collect();
         Some(format!("SETTINGS({})", pairs.join(", ")))
     }
@@ -1193,7 +1204,10 @@ impl OlapDictionary {
         ];
 
         if let Some(ref iq) = self.invalidate_query {
-            parts.push(format!("INVALIDATE_QUERY '{}'", iq.replace('\'', "\\'")));
+            parts.push(format!(
+                "INVALIDATE_QUERY '{}'",
+                escape_clickhouse_string(iq)
+            ));
         }
 
         if let Some(settings) = self.settings_ddl() {
@@ -1201,7 +1215,7 @@ impl OlapDictionary {
         }
 
         if let Some(ref c) = self.comment {
-            parts.push(format!("COMMENT '{}'", c.replace('\'', "\\'")));
+            parts.push(format!("COMMENT '{}'", escape_clickhouse_string(c)));
         }
 
         parts.join("\n")
@@ -1478,7 +1492,11 @@ impl OlapDictionary {
                         })
                     }
                     None => {
-                        // Fallback: shouldn't happen in practice
+                        // Fallback: shouldn't happen — proto external source type (ext.t) is missing
+                        tracing::warn!(
+                            "OlapDictionary proto external source type (ext.t) is None; \
+                             defaulting to empty HTTP source — possible proto corruption or version mismatch"
+                        );
                         ExternalDictionarySource::Http(DictionaryHttpSource {
                             url: String::new(),
                             format: "JSONEachRow".to_string(),
@@ -2424,5 +2442,38 @@ mod tests {
             sql.contains("INVALIDATE_QUERY 'SELECT max(ts) FROM it\\'s_changelog'"),
             "single quote in top-level INVALIDATE_QUERY must be escaped; got: {sql}"
         );
+    }
+
+    // ─── Proto fallback (T4) ──────────────────────────────────────────────────
+
+    /// When a proto ExternalSource has `ext.t = None` (proto corruption or future version),
+    /// `from_proto` must not panic — it should fall back to an empty HTTP source.
+    #[test]
+    fn test_from_proto_external_source_none_t_falls_back_to_http() {
+        use crate::proto::infrastructure_map::{
+            olap_dictionary, DictionaryExternalSource as ProtoDictionaryExternalSource,
+            OlapDictionary as ProtoOlapDictionary,
+        };
+
+        let mut proto = ProtoOlapDictionary::new();
+        // Build an ExternalSource proto where the `t` oneof is unset (None).
+        let ext = ProtoDictionaryExternalSource {
+            t: None,
+            ..Default::default()
+        };
+        proto.source = Some(olap_dictionary::Source::ExternalSource(ext));
+
+        // Must not panic; the fallback arm logs a warning and returns Http.
+        let dict = OlapDictionary::from_proto(proto);
+        match dict.source {
+            DictionarySource::External(ExternalDictionarySource::Http(h)) => {
+                assert!(h.url.is_empty(), "fallback HTTP url should be empty");
+                assert_eq!(
+                    h.format, "JSONEachRow",
+                    "fallback HTTP format should be JSONEachRow"
+                );
+            }
+            other => panic!("expected External(Http(..)) fallback, got {:?}", other),
+        }
     }
 }
