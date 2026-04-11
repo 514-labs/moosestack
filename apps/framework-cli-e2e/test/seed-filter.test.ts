@@ -107,6 +107,18 @@ describe("moose seed clickhouse with seedFilter", function () {
       `"${CLI_PATH}" init test-seed-filter typescript-empty --from-remote "${REMOTE_HTTPS_URL}" --location "${testProjectDir}"`,
     );
     testLogger.debug("Init output:", initResult.stdout);
+    if (initResult.stderr) {
+      testLogger.warn("Init stderr:", initResult.stderr);
+    }
+
+    // Verify generated files exist
+    const configPath = path.join(testProjectDir, "moose.config.toml");
+    if (!fs.existsSync(configPath)) {
+      throw new Error(
+        `moose.config.toml not found after init. Dir contents: ${fs.readdirSync(testProjectDir).join(", ")}`,
+      );
+    }
+    testLogger.info("moose.config.toml exists");
 
     // 2. Point at local moose-lib
     const packageJsonPath = path.join(testProjectDir, "package.json");
@@ -149,6 +161,10 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     fs.writeFileSync(indexPath, indexContent);
     testLogger.info("Injected seedFilter into commits table");
+    testLogger.info(
+      "Generated index.ts (first 1000 chars):",
+      indexContent.slice(0, 1000),
+    );
 
     // 4. Install dependencies
     testLogger.info("Installing dependencies...");
@@ -163,6 +179,25 @@ describe("moose seed clickhouse with seedFilter", function () {
         else reject(new Error(`npm install failed with code ${code}`));
       });
     });
+
+    // Verify moose-tspc is available after install
+    const tspcPath = path.join(
+      testProjectDir,
+      "node_modules",
+      ".bin",
+      "moose-tspc",
+    );
+    if (!fs.existsSync(tspcPath)) {
+      const binDir = path.join(testProjectDir, "node_modules", ".bin");
+      const binContents =
+        fs.existsSync(binDir) ?
+          fs.readdirSync(binDir).join(", ")
+        : "(dir missing)";
+      throw new Error(
+        `moose-tspc not found at ${tspcPath}. .bin contents: ${binContents}`,
+      );
+    }
+    testLogger.info("moose-tspc binary verified");
 
     // 5. Start moose dev
     testLogger.info("Starting moose dev...");
@@ -187,23 +222,41 @@ describe("moose seed clickhouse with seedFilter", function () {
       testLogger.error("moose dev spawn error:", err);
     });
 
+    // Capture output so we can include it in failure messages for CI.
+    const allStdout: string[] = [];
+    const allStderr: string[] = [];
     devProcess.stdout?.on("data", (data: Buffer) => {
-      testLogger.debug("stdout:", data.toString().trim());
+      const line = data.toString().trim();
+      allStdout.push(line);
+      testLogger.debug("stdout:", line);
     });
     devProcess.stderr?.on("data", (data: Buffer) => {
-      testLogger.debug("stderr:", data.toString().trim());
+      const line = data.toString().trim();
+      allStderr.push(line);
+      testLogger.debug("stderr:", line);
     });
 
     // Use 600s (not the default 300s) because dockerless mode downloads
     // the ClickHouse binary (~1.5 GB) on first run, which can take 200s+
     // on CI even with the GitHub Actions cache step.
-    await waitForServerStart(
-      devProcess,
-      600_000,
-      SERVER_CONFIG.startupMessage,
-      SERVER_CONFIG.url,
-      { logger: testLogger },
-    );
+    try {
+      await waitForServerStart(
+        devProcess,
+        600_000,
+        SERVER_CONFIG.startupMessage,
+        SERVER_CONFIG.url,
+        { logger: testLogger },
+      );
+    } catch (e: any) {
+      // Re-throw with captured output so CI test reports show the real error.
+      const lastStdout = allStdout.slice(-30).join("\n");
+      const lastStderr = allStderr.slice(-30).join("\n");
+      throw new Error(
+        `${e.message}\n\n` +
+          `--- Last stdout (${allStdout.length} chunks) ---\n${lastStdout}\n\n` +
+          `--- Last stderr (${allStderr.length} chunks) ---\n${lastStderr}`,
+      );
+    }
 
     // Wait for all ReplicatedMergeTree replicas to exit readonly mode.
     // Tables from --from-remote use ReplicatedMergeTree which needs Keeper init.
