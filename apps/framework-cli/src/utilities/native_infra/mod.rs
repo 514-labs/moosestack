@@ -78,13 +78,18 @@ pub struct NativeInfraProvider {
     binary_manager: BinaryManager,
     /// Handle to the tokio runtime for spawning embedded servers.
     rt_handle: Handle,
+    /// Whether the CLI-level `scripts` feature flag is enabled.
+    /// Mirrors the check in `dev.rs`: Temporal is needed when
+    /// `settings.features.scripts || project.features.workflows`.
+    scripts_enabled: bool,
 }
 
 impl NativeInfraProvider {
-    pub fn new(_settings: &Settings) -> Result<Self, NativeInfraError> {
+    pub fn new(settings: &Settings) -> Result<Self, NativeInfraError> {
         Ok(Self {
             binary_manager: BinaryManager::new()?,
             rt_handle: Handle::current(),
+            scripts_enabled: settings.features.scripts,
         })
     }
 
@@ -102,9 +107,11 @@ impl InfraProvider for NativeInfraProvider {
         let _ch_binary =
             clickhouse::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
 
-        info!("Ensuring native Temporal binary is available...");
-        let _temporal_binary =
-            temporal::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
+        if self.scripts_enabled || project.features.workflows {
+            info!("Ensuring native Temporal binary is available...");
+            let _temporal_binary =
+                temporal::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
+        }
 
         // Generate ClickHouse config
         clickhouse::write_config(project).map_err(Self::map_native_err)?;
@@ -142,34 +149,40 @@ impl InfraProvider for NativeInfraProvider {
             )
         })?;
 
-        // Start embedded devkafka
-        let devkafka_handle = with_timing("Start devkafka", || {
-            with_spinner_completion(
-                "Starting native Kafka (devkafka)",
-                "Native Kafka (devkafka) started",
-                || {
-                    let port = devkafka::broker_port(&project.redpanda_config);
-                    let handle = self
-                        .rt_handle
-                        .block_on(devkafka::start_embedded("127.0.0.1", port))
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    Ok::<_, anyhow::Error>(handle)
-                },
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-        })
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Failed".to_string(), "to start devkafka".to_string()),
-                e,
-            )
-        })?;
+        // Start embedded devkafka (only when streaming is enabled)
+        let devkafka_handle = if project.features.streaming_engine {
+            let handle = with_timing("Start devkafka", || {
+                with_spinner_completion(
+                    "Starting native Kafka (devkafka)",
+                    "Native Kafka (devkafka) started",
+                    || {
+                        let port = devkafka::broker_port(&project.redpanda_config);
+                        let handle = self
+                            .rt_handle
+                            .block_on(devkafka::start_embedded("127.0.0.1", port))
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        Ok::<_, anyhow::Error>(handle)
+                    },
+                    !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            })
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Failed".to_string(), "to start devkafka".to_string()),
+                    e,
+                )
+            })?;
+            Some(handle)
+        } else {
+            info!("Skipping devkafka: streaming_engine feature is disabled");
+            None
+        };
 
         // Store embedded handles for later shutdown
         {
             let mut guard = handles_lock().lock().unwrap();
             *guard = Some(EmbeddedHandles {
-                devkafka: Some(devkafka_handle),
+                devkafka: devkafka_handle,
                 devredis: Some(devredis_handle),
             });
         }
@@ -213,41 +226,45 @@ impl InfraProvider for NativeInfraProvider {
             )
         })?;
 
-        // Start native Temporal
-        let temporal_result = with_timing("Start Temporal", || {
-            with_spinner_completion(
-                "Starting native Temporal dev server",
-                "Native Temporal started",
-                || {
-                    let temporal_binary = temporal::ensure_binary(&self.binary_manager)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let mut child = temporal::start_command(&temporal_binary, project)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let pid = child.id().ok_or_else(|| {
-                        let _ = child.start_kill();
-                        anyhow::anyhow!("Temporal process exited immediately after spawn")
-                    })?;
-                    if let Err(e) =
-                        write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
-                    {
-                        let _ = child.start_kill();
-                        return Err(anyhow::anyhow!("{}", e));
-                    }
-                    Ok::<(), anyhow::Error>(())
-                },
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-        });
+        // Start native Temporal (only when workflows or scripts are enabled)
+        if self.scripts_enabled || project.features.workflows {
+            let temporal_result = with_timing("Start Temporal", || {
+                with_spinner_completion(
+                    "Starting native Temporal dev server",
+                    "Native Temporal started",
+                    || {
+                        let temporal_binary = temporal::ensure_binary(&self.binary_manager)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        let mut child = temporal::start_command(&temporal_binary, project)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        let pid = child.id().ok_or_else(|| {
+                            let _ = child.start_kill();
+                            anyhow::anyhow!("Temporal process exited immediately after spawn")
+                        })?;
+                        if let Err(e) =
+                            write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
+                        {
+                            let _ = child.start_kill();
+                            return Err(anyhow::anyhow!("{}", e));
+                        }
+                        Ok::<(), anyhow::Error>(())
+                    },
+                    !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            });
 
-        if let Err(e) = temporal_result {
-            // Roll back: kill ClickHouse and devredis since we failed to start Temporal
-            info!("Temporal startup failed, rolling back ClickHouse and devredis");
-            kill_pid_file(&clickhouse::pid_file_path(project));
-            shutdown_embedded_servers();
-            return Err(RoutineFailure::new(
-                Message::new("Failed".to_string(), "to start native Temporal".to_string()),
-                e,
-            ));
+            if let Err(e) = temporal_result {
+                // Roll back: kill ClickHouse and devredis since we failed to start Temporal
+                info!("Temporal startup failed, rolling back ClickHouse and devredis");
+                kill_pid_file(&clickhouse::pid_file_path(project));
+                shutdown_embedded_servers();
+                return Err(RoutineFailure::new(
+                    Message::new("Failed".to_string(), "to start native Temporal".to_string()),
+                    e,
+                ));
+            }
+        } else {
+            info!("Skipping Temporal: workflows feature is disabled");
         }
 
         Ok(())
