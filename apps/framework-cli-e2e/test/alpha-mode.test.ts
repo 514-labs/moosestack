@@ -215,7 +215,7 @@ describe("moose dev --dockerless (native infrastructure)", function () {
     testLogger.info("Data ingested successfully", { eventId });
 
     // Wait for the data to appear in ClickHouse
-    await waitForDBWrite(devProcess!, "UserActivity", 1, 60_000);
+    await waitForDBWrite(devProcess!, "UserActivity", 1, 120_000);
     testLogger.info("Data verified in ClickHouse");
 
     // Verify the specific record

@@ -1629,7 +1629,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          60_000,
+          120_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
@@ -1737,7 +1737,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 120_000, "local");
           await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
@@ -1774,7 +1774,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "ArrayOutput",
             testData.length,
-            60_000,
+            120_000,
             "local",
             `inputId = '${inputId}'`,
           );
@@ -1829,7 +1829,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "LargeMessageDeadLetter",
             1,
-            60_000,
+            120_000,
             "local",
           );
 
@@ -2129,7 +2129,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          await waitForDBWrite(devProcess!, "JsonTest", 1);
+          await waitForDBWrite(devProcess!, "JsonTest", 1, 120_000);
 
           // Verify row exists and payload is present
           const client = createClient(CLICKHOUSE_CONFIG);
@@ -2196,7 +2196,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "UserEventOutput",
             1,
-            60_000,
+            120_000,
             "local",
             `userId = '${userId}'`,
           );
@@ -2392,7 +2392,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "DateTimePrecisionOutput",
             1,
-            60_000,
+            120_000,
             "local",
           );
 
@@ -2484,7 +2484,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          60_000,
+          120_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
@@ -2564,7 +2564,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 120_000, "local");
           await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
@@ -2601,7 +2601,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "ArrayOutput",
             testData.length,
-            60_000,
+            120_000,
             "local",
             `input_id = '${inputId}'`,
           );
@@ -2759,7 +2759,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "UserEventOutput",
             1,
-            60_000,
+            120_000,
             "local",
             `user_id = '${userId}'`,
           );
@@ -2958,7 +2958,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "DateTimePrecisionOutput",
             1,
-            60_000,
+            120_000,
             "local",
           );
 
@@ -3173,7 +3173,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               nsDevProcess!,
               "FooDeadLetter",
               1,
-              60_000,
+              120_000,
               "local",
             );
 

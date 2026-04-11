@@ -19,7 +19,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 
-import { TIMEOUTS, CLICKHOUSE_CONFIG } from "./constants";
+import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
 import {
   waitForServerStart,
   createTempTestDirectory,
@@ -176,15 +176,24 @@ describe("moose seed clickhouse with seedFilter", function () {
       testLogger.error("moose dev spawn error:", err);
     });
 
+    devProcess.stdout?.on("data", (data: Buffer) => {
+      testLogger.debug("stdout:", data.toString().trim());
+    });
+    devProcess.stderr?.on("data", (data: Buffer) => {
+      testLogger.debug("stderr:", data.toString().trim());
+    });
+
     await waitForServerStart(
       devProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      "development server started",
-      "http://localhost:4000",
+      SERVER_CONFIG.startupMessage,
+      SERVER_CONFIG.url,
+      { logger: testLogger },
     );
 
-    // Wait for all ReplicatedMergeTree replicas to exit readonly mode
-    await waitForClickhouseReplicasReady(120_000, { logger: testLogger });
+    // Wait for all ReplicatedMergeTree replicas to exit readonly mode.
+    // Tables from --from-remote use ReplicatedMergeTree which needs Keeper init.
+    await waitForClickhouseReplicasReady(180_000, { logger: testLogger });
 
     testLogger.info("Infrastructure ready");
   });

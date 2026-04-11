@@ -412,7 +412,12 @@ const waitForStreamingDockerlessMode = async (
   log: ScopedLogger,
 ): Promise<void> => {
   const startTime = Date.now();
-  const STABILIZATION_DELAY_MS = 45_000;
+  // Short stabilization delay after infrastructure reports healthy.
+  // Consumer groups use auto.offset.reset=earliest, so data produced before
+  // consumers join will still be consumed. Tests should use generous
+  // waitForDBWrite timeouts (120s+) to handle variable consumer startup times
+  // rather than relying on a long blind wait here.
+  const STABILIZATION_DELAY_MS = 10_000;
   const budgetMs = Math.max(0, remainingMs);
 
   if (budgetMs === 0) {
@@ -466,12 +471,16 @@ const waitForStreamingDockerlessMode = async (
     await setTimeoutAsync(1000);
   }
 
-  // Phase 3: Wait for consumer groups to join and stabilize after infra is ready
+  // Phase 3: Brief stabilization wait for consumer groups to begin joining.
+  // devkafka does not support ListGroups/DescribeGroups, so we cannot actively
+  // verify consumer group state. Instead, we use a short buffer here and rely
+  // on generous waitForDBWrite timeouts in tests (auto.offset.reset=earliest
+  // guarantees data will eventually be consumed).
   const elapsedMs = Date.now() - startTime;
   const remainingBudgetMs = Math.max(0, budgetMs - elapsedMs);
   const stabilizationMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
   log.debug(
-    `Phase 3: Waiting ${Math.floor(stabilizationMs / 1000)}s for streaming consumer groups to stabilize`,
+    `Phase 3: Waiting ${Math.floor(stabilizationMs / 1000)}s for initial consumer group stabilization`,
   );
   await setTimeoutAsync(stabilizationMs);
   log.debug("✓ Streaming functions ready (dockerless mode)");
