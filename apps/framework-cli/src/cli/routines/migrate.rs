@@ -8,7 +8,9 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
-use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
+use crate::infrastructure::olap::clickhouse::dictionary::{
+    DictionarySource, ExternalDictionarySource, OlapDictionary,
+};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -17,6 +19,7 @@ use crate::project::Project;
 use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
+use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -97,12 +100,49 @@ fn load_migration_files() -> Result<MigrationFiles> {
 /// Strips metadata (source file paths, descriptions) from dictionaries before comparison.
 /// Matches the metadata-stripping done for tables to avoid false drift positives when
 /// dictionary source files are reorganized without schema changes.
+///
+/// Also masks credentials in external dictionary sources to prevent false drift when
+/// comparing against serialized state files (which have credentials masked).
 fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
     dicts
         .iter()
         .map(|(name, dict)| {
             let mut dict = dict.clone();
             dict.metadata = None;
+
+            // Mask credentials in external sources to match serialized state
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        if s.password.is_some() {
+                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        if s.access_key_id.is_some() {
+                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                        if s.secret_access_key.is_some() {
+                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                    }
+                }
+            }
+
             (name.clone(), dict)
         })
         .collect()
