@@ -5,7 +5,6 @@
 
 use super::{RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint};
-use crate::framework::core::infrastructure::dictionary::DictionarySource;
 use crate::framework::core::infrastructure::function_process::FunctionProcess;
 use crate::framework::core::infrastructure::topic::Topic;
 use crate::framework::core::infrastructure::topic_sync_process::TopicToTableSyncProcess;
@@ -426,11 +425,7 @@ pub async fn ls(
             .filter(|d| name.is_none_or(|n| d.name.contains(n)))
             .map(|d| DictionaryInfo {
                 name: d.id(&default_database),
-                source_type: match &d.source {
-                    DictionarySource::Table(_) => "table".to_string(),
-                    DictionarySource::Query(_) => "query".to_string(),
-                    DictionarySource::External(_) => "external".to_string(),
-                },
+                source_type: d.source.source_type_label().to_string(),
                 layout: format!("{:?}", d.layout)
                     .split(['{', ' '])
                     .next()
