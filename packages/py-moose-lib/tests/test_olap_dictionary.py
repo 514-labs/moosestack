@@ -426,6 +426,44 @@ def test_source_query_serialization():
     assert src["query"] == "SELECT a, b FROM t"
 
 
+def test_serialize_table_source_with_invalidate_query():
+    table = OlapTable[Lookup](name="tbl_inv_ser")
+    config = OlapDictionaryConfig(
+        source_table=table,
+        primary_key=["lookup_id"],
+        layout=HashedLayout(),
+    )
+    result = _serialize_dict_source(config, invalidate_query="SELECT max(ts) FROM tbl")
+    assert result["type"] == "TABLE"
+    assert result["invalidateQuery"] == "SELECT max(ts) FROM tbl"
+    assert "invalidate_query" not in result
+
+
+def test_serialize_query_source_with_invalidate_query():
+    config = OlapDictionaryConfig(
+        source_query="SELECT a, b FROM t",
+        source_tables=[OlapTable[Lookup](name="tbl_sq_inv")],
+        primary_key=["a"],
+        layout=HashedLayout(),
+    )
+    result = _serialize_dict_source(config, invalidate_query="SELECT max(ts) FROM tbl")
+    assert result["type"] == "QUERY"
+    assert result["invalidateQuery"] == "SELECT max(ts) FROM tbl"
+    assert "invalidate_query" not in result
+
+
+def test_serialize_table_source_without_invalidate_query_has_no_key():
+    table = OlapTable[Lookup](name="tbl_no_inv_ser")
+    config = OlapDictionaryConfig(
+        source_table=table,
+        primary_key=["lookup_id"],
+        layout=HashedLayout(),
+    )
+    result = _serialize_dict_source(config)
+    assert result["type"] == "TABLE"
+    assert "invalidateQuery" not in result
+
+
 def test_source_external_serialization():
     config = OlapDictionaryConfig(
         external_source=HttpSource(url="http://api.example.com", format="JSONEachRow"),
@@ -1281,6 +1319,13 @@ def test_infra_map_invalidate_query():
     assert "max" in iq
     assert "updated_at" in iq
     assert "tbl_inv" in iq
+    # invalidateQuery must also appear inside the source dict so Rust emits
+    # INVALIDATE_QUERY inside SOURCE(CLICKHOUSE(...))
+    src_iq = d["source"].get("invalidateQuery")
+    assert src_iq is not None, "invalidateQuery must be present inside source dict"
+    assert "max" in src_iq
+    assert "updated_at" in src_iq
+    assert "tbl_inv" in src_iq
 
 
 def test_infra_map_comment():
