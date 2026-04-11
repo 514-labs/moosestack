@@ -5566,6 +5566,7 @@ mod tests {
             cluster_name: None,
             primary_key_expression: None,
             seed_filter: Default::default(),
+            constraints: vec![],
         };
 
         let dict = OlapDictionary {
