@@ -1355,6 +1355,11 @@ pub fn olap_changes_to_deltas(changes: &[OlapChange], default_database: &str) ->
                     should_truncate: *should_truncate,
                 });
             }
+
+            // ── OlapDictionary ───────────────────────────────────
+            // Dictionary changes are not represented in the delta migration
+            // format — they are handled by the plan-based migration path.
+            OlapChange::OlapDictionary(_) => {}
         }
         i += 1;
     }
