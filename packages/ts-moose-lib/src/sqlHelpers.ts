@@ -295,7 +295,8 @@ export class Sql {
       } else if (isDictionary(child)) {
         // Interpolating a dictionary renders as the string-literal form used in dictGet().
         // e.g. sql`dictGet(${ProductDict}, 'attr', id)` → dictGet('db.dict_name', 'attr', id)
-        this.strings[pos] += `'${child.getQualifiedName()}'`;
+        this.strings[pos] +=
+          `'${child.getQualifiedName().replace(/'/g, "''")}'`;
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;
