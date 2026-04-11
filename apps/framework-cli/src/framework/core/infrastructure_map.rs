@@ -2026,7 +2026,7 @@ impl InfrastructureMap {
 
         for (id, dict) in self_dicts {
             if let Some(target_dict) = target_dicts.get(id) {
-                if dict != target_dict {
+                if !dicts_equal_ignore_metadata(dict, target_dict) {
                     tracing::debug!("Dictionary '{}' has differences", id);
                     if respect_life_cycle && dict.life_cycle.is_drop_protected() {
                         tracing::warn!(
@@ -3964,6 +3964,24 @@ fn columns_are_equivalent(
 /// # Returns
 /// `true` if the topics are equal ignoring metadata, `false` otherwise
 fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
+/// Check if two dictionaries are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first dictionary to compare
+/// * `b` - The second dictionary to compare
+///
+/// # Returns
+/// `true` if the dictionaries are equal ignoring metadata, `false` otherwise
+fn dicts_equal_ignore_metadata(a: &OlapDictionary, b: &OlapDictionary) -> bool {
     let mut a = a.clone();
     let mut b = b.clone();
     a.metadata = None;
@@ -10070,6 +10088,141 @@ mod diff_select_row_policy_tests {
         assert_eq!(
             restored.olap_dictionaries[&dict_id].primary_key,
             dict.primary_key,
+        );
+    }
+}
+
+#[cfg(test)]
+mod diff_dictionaries_metadata_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+        DictionaryTableSource, OlapDictionary,
+    };
+    use std::collections::HashMap;
+
+    fn simple_dict() -> OlapDictionary {
+        OlapDictionary {
+            name: "test_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            metadata: None,
+        }
+    }
+
+    /// Metadata-only changes must NOT produce an update change.
+    #[test]
+    fn test_diff_dictionaries_ignores_metadata_only_changes() {
+        let mut current_dict = simple_dict();
+        current_dict.metadata = Some(Metadata {
+            description: None,
+            source: Some(SourceLocation {
+                file: "app/old_file.ts".to_string(),
+            }),
+        });
+
+        let mut target_dict = simple_dict();
+        target_dict.metadata = Some(Metadata {
+            description: Some("new description".to_string()),
+            source: Some(SourceLocation {
+                file: "app/new_file.ts".to_string(),
+            }),
+        });
+
+        let dict_id = current_dict.id("local");
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id, target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            false,
+        );
+
+        assert!(
+            olap_changes.is_empty(),
+            "metadata-only change must not produce an OlapChange, got: {:?}",
+            olap_changes
+        );
+        assert!(
+            filtered_changes.is_empty(),
+            "metadata-only change must not be filtered either"
+        );
+    }
+
+    /// Real schema changes (e.g., different source table) MUST still emit an update.
+    #[test]
+    fn test_diff_dictionaries_emits_update_on_real_change() {
+        let current_dict = simple_dict();
+
+        let mut target_dict = simple_dict();
+        // Change the source table — a real schema change
+        target_dict.source = DictionarySource::Table(DictionaryTableSource {
+            table: "accounts".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+
+        let dict_id = current_dict.id("local");
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id, target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            false,
+        );
+
+        assert_eq!(
+            olap_changes.len(),
+            1,
+            "a real schema change must produce exactly one update"
+        );
+        assert!(
+            matches!(
+                &olap_changes[0],
+                OlapChange::OlapDictionary(Change::Updated { .. })
+            ),
+            "expected an OlapDictionary Updated change"
         );
     }
 }
