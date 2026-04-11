@@ -857,7 +857,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
 
 
-def _serialize_dict_source(config) -> dict:
+def _serialize_dict_source(config, invalidate_query: Optional[str] = None) -> dict:
     """Serialize OlapDictionaryConfig source to the JSON shape Rust expects.
 
     Rust's ``DictionarySource`` is an internally-tagged enum::
@@ -869,6 +869,15 @@ def _serialize_dict_source(config) -> dict:
     The ``EXTERNAL`` variant uses a nested ``source`` field to avoid the serde
     duplicate-key issue that arises when two nested internally-tagged enums share
     the same ``"type"`` discriminator key.
+
+    Args:
+        config: The ``OlapDictionaryConfig`` instance whose source fields are
+            serialized.
+        invalidate_query: Optional raw SQL string for ``INVALIDATE_QUERY``.
+            When provided it is included as ``"invalidateQuery"`` inside the
+            ``TABLE`` or ``QUERY`` source dict so that Rust emits the clause
+            inside ``SOURCE(CLICKHOUSE(...))``.  Ignored for ``EXTERNAL``
+            sources which carry their own ``invalidate_query`` field.
     """
     from moose_lib.dmv2.olap_table import OlapTable
     from moose_lib.dmv2.view import View
@@ -880,9 +889,15 @@ def _serialize_dict_source(config) -> dict:
             database = src.config.database
         elif isinstance(src, View):
             database = getattr(src, "database", None)
-        return {"type": "TABLE", "table": src.name, "database": database}
+        result: dict = {"type": "TABLE", "table": src.name, "database": database}
+        if invalidate_query is not None:
+            result["invalidateQuery"] = invalidate_query
+        return result
     if config.source_query is not None:
-        return {"type": "QUERY", "query": config.source_query}
+        result = {"type": "QUERY", "query": config.source_query}
+        if invalidate_query is not None:
+            result["invalidateQuery"] = invalidate_query
+        return result
     if config.external_source is not None:
         from pydantic import SecretStr
 
@@ -1330,7 +1345,7 @@ def to_infra_map() -> dict:
             name=d.name,
             database=d.config.database,
             cluster_name=d.config.cluster,
-            source=_serialize_dict_source(d.config),
+            source=_serialize_dict_source(d.config, invalidate_query=invalidate_query),
             primary_key=d.config.primary_key,
             columns=_serialize_dict_columns(d._column_list, d.config.columns),
             layout=d.config.layout.model_dump(exclude_none=True),
