@@ -234,6 +234,41 @@ new OlapDictionary(
 }
 
 /**
+ * Returns CJS JavaScript for a fixture that registers a single EXTERNAL-source
+ * OlapDictionary backed by an HTTP endpoint. Validates the full TS→Rust JSON
+ * contract for external sources including the "source_type" discriminant key.
+ */
+function externalSourceFixture(): string {
+  return `
+'use strict';
+const { OlapDictionary } = require(${JSON.stringify(DIST_INDEX)});
+
+const schema = {};
+const columns = [
+  { name: 'ProductId', data_type: 'String' },
+  { name: 'ProductName', data_type: 'String' },
+];
+
+new OlapDictionary(
+  'dict_external_http',
+  {
+    externalSource: {
+      type: 'http',
+      url: 'http://example.com/api/products',
+      format: 'JSONEachRow',
+      method: 'GET',
+    },
+    primaryKey: ['ProductId'],
+    layout: { type: 'HASHED' },
+    lifetime: 3600,
+  },
+  schema,
+  columns
+);
+`;
+}
+
+/**
  * Returns CJS JavaScript that intentionally creates an invalid OlapDictionary
  * (no source set). The constructor throws, causing the process to exit non-zero.
  */
@@ -872,6 +907,52 @@ describe("OlapDictionary infra map round-trip", () => {
 
     it("stderr contains an error message", () => {
       expect(cachedResult.stderr).to.be.a("string").and.to.not.be.empty;
+    });
+  });
+
+  describe("subprocess: EXTERNAL source — full CLI round-trip via moose-runner", () => {
+    let tmpDir: string | undefined;
+    let cachedResult: ReturnType<typeof runSerializer>;
+    let infraMap: Record<string, any>;
+
+    before(function (this: Mocha.Context) {
+      this.timeout(30_000);
+      tmpDir = createTempProject(externalSourceFixture());
+      cachedResult = runSerializer(tmpDir);
+      if (cachedResult.exitCode !== 0) {
+        throw new Error(
+          `moose-runner failed:\nstdout: ${cachedResult.stdout}\nstderr: ${cachedResult.stderr}`,
+        );
+      }
+      infraMap = parseDelimitedOutput(cachedResult.stdout);
+    });
+
+    after(() => {
+      if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("subprocess exits cleanly", () => {
+      expect(cachedResult.exitCode).to.equal(0);
+    });
+
+    it("emits type = 'EXTERNAL' on the outer source", () => {
+      const dict = infraMap.olapDictionaries["dict_external_http"];
+      expect(dict.source.type).to.equal("EXTERNAL");
+    });
+
+    it("emits externalSource with 'source_type' discriminant (not 'type')", () => {
+      const dict = infraMap.olapDictionaries["dict_external_http"];
+      const extSrc = dict.source.externalSource;
+      expect(extSrc).to.have.property("source_type", "HTTP");
+      expect(extSrc).not.to.have.property("type");
+    });
+
+    it("includes HTTP-specific fields", () => {
+      const dict = infraMap.olapDictionaries["dict_external_http"];
+      const extSrc = dict.source.externalSource;
+      expect(extSrc).to.have.property("url", "http://example.com/api/products");
+      expect(extSrc).to.have.property("format", "JSONEachRow");
+      expect(extSrc).to.have.property("method", "GET");
     });
   });
 });
