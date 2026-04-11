@@ -516,10 +516,9 @@ describe("OlapDictionary", () => {
       // Must use "source_type" (Rust serde tag) — NOT "type"
       expect(source.externalSource).to.have.property("source_type");
       expect(source.externalSource.source_type).to.equal("HTTP");
-      expect(source.externalSource).not.to.have.property(
-        "type",
-        "inner ExternalDictionarySource must use 'source_type' not 'type' as discriminant",
-      );
+      // Regression guard: Rust's ExternalDictionarySource uses #[serde(tag = "source_type")],
+      // so the inner object must NOT have a "type" property.
+      expect(source.externalSource).not.to.have.property("type");
     });
 
     it("should appear in toInfraMap olapDictionaries", () => {
