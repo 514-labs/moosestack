@@ -9,12 +9,7 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
-<<<<<<< HEAD
-use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
-=======
 use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
-use crate::infrastructure::olap::clickhouse::IgnorableOperation;
->>>>>>> 936c1901f (Move OlapDictionary to clickhouse infra folder and fix drift detection)
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
@@ -107,6 +102,20 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     })
 }
 
+/// Strips metadata (source file paths, descriptions) from dictionaries before comparison.
+/// Matches the metadata-stripping done for tables to avoid false drift positives when
+/// dictionary source files are reorganized without schema changes.
+fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
+    dicts
+        .iter()
+        .map(|(name, dict)| {
+            let mut dict = dict.clone();
+            dict.metadata = None;
+            (name.clone(), dict)
+        })
+        .collect()
+}
+
 /// Normalizes every table for drift detection.
 ///
 /// Applies `normalize_table_for_diff` (same as the plan diff) plus additional
@@ -120,7 +129,7 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
 /// - `database`: `None` means "use default". DB-reconciled tables get
 ///   `Some(actual_db)`, which is semantically equal when it IS the default.
 ///   A real database change surfaces as a different `Table::id()` key.
-fn strip_non_schema_fields(
+fn strip_metadata_and_ignored_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
 ) -> HashMap<String, Table> {
@@ -162,14 +171,19 @@ fn detect_drift(
     target_dicts: &HashMap<String, OlapDictionary>,
     ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
-    let current_no_metadata = strip_non_schema_fields(current_tables, ignore_operations);
-    let expected_no_metadata = strip_non_schema_fields(expected_tables, ignore_operations);
-    let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
+    // Strip metadata and ignored fields to avoid false drift
+    let current_no_metadata = strip_metadata_and_ignored_fields(current_tables, ignore_operations);
+    let expected_no_metadata =
+        strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
+    let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
+    let current_dicts_no_metadata = strip_dict_metadata(current_dicts);
+    let expected_dicts_no_metadata = strip_dict_metadata(expected_dicts);
+    let target_dicts_no_metadata = strip_dict_metadata(target_dicts);
 
     // Check 1: Did the DB change since the plan was generated?
     // Compare both tables and dictionaries with full content equality
     let tables_match = current_no_metadata == expected_no_metadata;
-    let dicts_match = current_dicts == expected_dicts;
+    let dicts_match = current_dicts_no_metadata == expected_dicts_no_metadata;
 
     if tables_match && dicts_match {
         return DriftStatus::NoDrift;
@@ -178,7 +192,7 @@ fn detect_drift(
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
     let tables_at_target = current_no_metadata == target_no_metadata;
-    let dicts_at_target = current_dicts == target_dicts;
+    let dicts_at_target = current_dicts_no_metadata == target_dicts_no_metadata;
 
     if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
@@ -216,22 +230,23 @@ fn detect_drift(
         );
     }
 
-    let extra_dicts: Vec<String> = current_dicts
+    let extra_dicts: Vec<String> = current_dicts_no_metadata
         .keys()
-        .filter(|k| !expected_dicts.contains_key(*k))
+        .filter(|k| !expected_dicts_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let missing_dicts: Vec<String> = expected_dicts
+    let missing_dicts: Vec<String> = expected_dicts_no_metadata
         .keys()
-        .filter(|k| !current_dicts.contains_key(*k))
+        .filter(|k| !current_dicts_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let changed_dicts: Vec<String> = current_dicts
+    let changed_dicts: Vec<String> = current_dicts_no_metadata
         .keys()
         .filter(|k| {
-            expected_dicts.contains_key(*k) && current_dicts.get(*k) != expected_dicts.get(*k)
+            expected_dicts_no_metadata.contains_key(*k)
+                && current_dicts_no_metadata.get(*k) != expected_dicts_no_metadata.get(*k)
         })
         .cloned()
         .collect();
@@ -559,24 +574,6 @@ fn validate_table_databases_and_clusters(
                 .join(", ");
             error_message.push_str(&db_list);
             error_message.push_str("]\n");
-        }
-
-        if !malformed_cluster_macros.is_empty() {
-            if !invalid_tables.is_empty() {
-                error_message.push('\n');
-            }
-            error_message.push_str(
-                "One or more tables specify a cluster name with invalid ClickHouse macro syntax:\n\n",
-            );
-            for (table_name, cluster) in &malformed_cluster_macros {
-                error_message.push_str(&format!(
-                    "  • Table '{}' specifies cluster '{}'\n",
-                    table_name, cluster
-                ));
-            }
-            error_message.push('\n');
-            error_message.push_str(CLICKHOUSE_MACRO_CLUSTER_NAME_RULES);
-            error_message.push('\n');
         }
 
         // Report cluster errors
@@ -1183,8 +1180,8 @@ pub async fn execute_migration_plan(
             // saved-plan copy: if ignore_ops changed since plan generation the
             // plan is stale and this check correctly triggers regeneration.
             let ignore_ops = &project.migration_config.ignore_operations;
-            if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
-                != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
+            if strip_metadata_and_ignored_fields(&files.state_after.tables, ignore_ops)
+                != strip_metadata_and_ignored_fields(&target_infra_map.tables, ignore_ops)
                 || files.state_after.olap_dictionaries != target_infra_map.olap_dictionaries
             {
                 anyhow::bail!(
