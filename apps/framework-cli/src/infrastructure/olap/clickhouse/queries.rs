@@ -2891,7 +2891,21 @@ fn build_replication_params(
 ) -> Result<Vec<String>, ClickhouseError> {
     match (keeper_path, replica_name) {
         (Some(path), Some(name)) if !path.is_empty() && !name.is_empty() => {
-            Ok(vec![format!("'{}'", path), format!("'{}'", name)])
+            if is_dev && cluster_name.is_none() {
+                // Dev mode without cluster: override remote keeper paths with
+                // local dev paths.  Tables from --from-remote carry the remote's
+                // keeper_path which doesn't exist in the local embedded Keeper,
+                // leaving replicas permanently stuck in readonly mode.
+                Ok(vec![
+                    format!(
+                        "'/clickhouse/tables/{{database}}/{{shard}}/{}'",
+                        table_name
+                    ),
+                    "'{replica}'".to_string(),
+                ])
+            } else {
+                Ok(vec![format!("'{}'", path), format!("'{}'", name)])
+            }
         }
         (None, None) => {
             // The {uuid} macro only works with ON CLUSTER queries

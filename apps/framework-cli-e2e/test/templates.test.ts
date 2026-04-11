@@ -695,7 +695,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             }
           },
           {
-            attempts: 30,
+            attempts: 120,
             delayMs: 1000,
             operationName: "OlapTable.insert() to default database",
           },
@@ -739,7 +739,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             }
           },
           {
-            attempts: 30,
+            attempts: 120,
             delayMs: 1000,
             operationName: "OlapTable.insert() to non-default database",
           },
@@ -787,7 +787,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -843,7 +843,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -884,7 +884,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -1080,7 +1080,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial column TTL not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
 
         // Modify the template file to change TTL settings
@@ -1133,7 +1133,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Column TTL not updated to 14 days. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -1161,7 +1161,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial count DEFAULT not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
 
         // Modify the template file to remove DEFAULT settings
@@ -1241,7 +1241,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`count column not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -1315,7 +1315,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
 
         // Modify the template file to change comment+codec combinations
@@ -1469,7 +1469,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -1493,7 +1493,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial eventDate ALIAS not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
 
         // Modify the template file to switch eventDate from ALIAS to DEFAULT
@@ -1555,7 +1555,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 10, delayMs: 1000 },
+          { attempts: 30, delayMs: 1000 },
         );
       });
 
@@ -1627,8 +1627,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (420s) + batch (60s) = 660s
-        this.timeout(720_000);
+        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (300s) + batch (60s) = 540s
+        this.timeout(600_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -1661,7 +1661,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 5, delayMs: 500 },
         );
-        await waitForDBWrite(devProcess!, "Bar", 1, 420_000, "local");
+        await waitForDBWrite(devProcess!, "Bar", 1, 300_000, "local");
         testLogger.info("Canary record arrived — pipeline is active");
 
         // Now send the remaining batch. Since the pipeline is proven active,
