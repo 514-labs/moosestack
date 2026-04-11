@@ -116,6 +116,27 @@ fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<Strin
         .collect()
 }
 
+/// Returns true when the plan's `state_after` (desired end state) still matches the
+/// current code — i.e. the plan was not generated before additional code changes.
+///
+/// Metadata (source file paths, descriptions) is stripped before comparison so that
+/// reorganising source files without changing the schema does not produce a false
+/// "please regenerate" bail-out.
+fn plan_target_matches_code(
+    state_after_tables: &HashMap<String, Table>,
+    code_tables: &HashMap<String, Table>,
+    state_after_dicts: &HashMap<String, OlapDictionary>,
+    code_dicts: &HashMap<String, OlapDictionary>,
+) -> bool {
+    // Tables: use ignore_operations=[] because we want an exact schema match here
+    let state_after_tables_stripped = strip_metadata_and_ignored_fields(state_after_tables, &[]);
+    let code_tables_stripped = strip_metadata_and_ignored_fields(code_tables, &[]);
+    let state_after_dicts_stripped = strip_dict_metadata(state_after_dicts);
+    let code_dicts_stripped = strip_dict_metadata(code_dicts);
+    state_after_tables_stripped == code_tables_stripped
+        && state_after_dicts_stripped == code_dicts_stripped
+}
+
 /// Normalizes every table for drift detection.
 ///
 /// Applies `normalize_table_for_diff` (same as the plan diff) plus additional
@@ -1174,16 +1195,15 @@ pub async fn execute_migration_plan(
         DriftStatus::NoDrift => {
             println!("  ✓ Current = Expected (no drift detected)");
 
-            // Check target matches code (normalize both sides so only
-            // DDL-relevant fields are compared, consistent with detect_drift).
-            // We intentionally use the *current* project ignore_ops, not a
-            // saved-plan copy: if ignore_ops changed since plan generation the
-            // plan is stale and this check correctly triggers regeneration.
-            let ignore_ops = &project.migration_config.ignore_operations;
-            if strip_metadata_and_ignored_fields(&files.state_after.tables, ignore_ops)
-                != strip_metadata_and_ignored_fields(&target_infra_map.tables, ignore_ops)
-                || files.state_after.olap_dictionaries != target_infra_map.olap_dictionaries
-            {
+            // Check target matches code (tables and dictionaries).
+            // Uses plan_target_matches_code() which strips metadata before comparing,
+            // so reorganising source files without schema changes won't false-bail.
+            if !plan_target_matches_code(
+                &files.state_after.tables,
+                &target_infra_map.tables,
+                &files.state_after.olap_dictionaries,
+                &target_infra_map.olap_dictionaries,
+            ) {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
                      The migration was perhaps generated before additional code changes.\n\
@@ -2262,5 +2282,79 @@ mod tests {
         let operations = vec![SerializableOlapOperation::DropDictionary { dict }];
         let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
         assert!(result.is_ok(), "Expected Ok for valid cluster");
+    }
+
+    // ── plan_target_matches_code ───────────────────────────────────────────────
+
+    /// Regression test: metadata-only difference must NOT trigger a "regenerate plan" bail.
+    ///
+    /// Before the fix, `files.state_after.olap_dictionaries` was compared directly
+    /// against `target_infra_map.olap_dictionaries` without stripping metadata.
+    /// A source-file reorganisation (same schema, different `metadata.source.file`)
+    /// would produce a false mismatch, incorrectly telling the user to regenerate.
+    #[test]
+    fn test_plan_target_matches_code_metadata_only_diff_is_ignored() {
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let dict_without_metadata = create_test_dict("my_dict");
+
+        let mut dict_with_metadata = create_test_dict("my_dict");
+        dict_with_metadata.metadata = Some(Metadata {
+            description: Some("some description".to_string()),
+            source: Some(SourceLocation {
+                file: "/old/path/to/source.ts".to_string(),
+            }),
+        });
+
+        let mut state_after_dicts = HashMap::new();
+        state_after_dicts.insert("my_dict".to_string(), dict_with_metadata);
+
+        let mut code_dicts = HashMap::new();
+        code_dicts.insert("my_dict".to_string(), dict_without_metadata);
+
+        // Same schema, different metadata → must match (no false bail-out)
+        assert!(
+            plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            "Metadata-only difference should not be treated as a plan/code mismatch"
+        );
+    }
+
+    #[test]
+    fn test_plan_target_matches_code_schema_diff_is_detected() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let dict_v1 = create_test_dict("my_dict");
+
+        // dict_v2 has a different layout — genuine schema change
+        let mut dict_v2 = create_test_dict("my_dict");
+        dict_v2.layout = DictionaryLayout::Flat;
+
+        let mut state_after_dicts = HashMap::new();
+        state_after_dicts.insert("my_dict".to_string(), dict_v1);
+
+        let mut code_dicts = HashMap::new();
+        code_dicts.insert("my_dict".to_string(), dict_v2);
+
+        // Schema changed → must be detected as a mismatch
+        assert!(
+            !plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            "Schema difference should be detected as a plan/code mismatch"
+        );
+    }
+
+    #[test]
+    fn test_plan_target_matches_code_identical_is_match() {
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut dicts = HashMap::new();
+        dicts.insert("my_dict".to_string(), create_test_dict("my_dict"));
+
+        assert!(
+            plan_target_matches_code(&tables, &tables, &dicts, &dicts.clone()),
+            "Identical state_after and code should match"
+        );
     }
 }
