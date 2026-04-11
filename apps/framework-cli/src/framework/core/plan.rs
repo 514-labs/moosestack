@@ -99,6 +99,44 @@ impl ReconciliationFilter {
             })
             .collect();
     }
+
+    /// Re-prefix only table IDs that are known to come from the source default database.
+    ///
+    /// This is used by remote inframap reconciliation when callers send a mixed set of IDs:
+    /// some from the caller's default database and some explicit cross-database IDs.
+    /// Re-prefixing only the allowlisted IDs avoids rewriting explicit cross-database IDs
+    /// that merely start with the same prefix text.
+    pub fn reprefix_table_ids_with_allowlist(
+        &mut self,
+        source_db: &str,
+        target_db: &str,
+        default_table_ids: &HashSet<String>,
+    ) {
+        if source_db == target_db || source_db.is_empty() {
+            return;
+        }
+
+        if default_table_ids.is_empty() {
+            self.reprefix_table_ids(source_db, target_db);
+            return;
+        }
+
+        let prefix = format!("{source_db}_");
+        self.table_ids = self
+            .table_ids
+            .iter()
+            .map(|id| {
+                if !default_table_ids.contains(id) {
+                    return id.clone();
+                }
+
+                match id.strip_prefix(&prefix) {
+                    Some(rest) => format!("{target_db}_{rest}"),
+                    None => id.clone(),
+                }
+            })
+            .collect();
+    }
 }
 
 /// Errors that can occur during the planning process.
@@ -1921,5 +1959,26 @@ mod tests {
         filter.reprefix_table_ids("local", "prod");
         assert!(filter.table_ids.contains("prod_users_0_0"));
         assert!(filter.table_ids.contains("other_db_orders_0_0"));
+    }
+
+    #[test]
+    fn reprefix_table_ids_with_allowlist_only_reprefixes_allowlisted_ids() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "prod_users_0_0".to_string(),
+                "prod_eu_orders_1_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        let default_table_ids = HashSet::from(["prod_users_0_0".to_string()]);
+
+        filter.reprefix_table_ids_with_allowlist("prod", "staging", &default_table_ids);
+
+        assert!(filter.table_ids.contains("staging_users_0_0"));
+        assert!(filter.table_ids.contains("prod_eu_orders_1_0"));
+        assert_eq!(filter.table_ids.len(), 2);
     }
 }

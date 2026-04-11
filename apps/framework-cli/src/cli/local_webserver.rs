@@ -3534,8 +3534,9 @@ pub struct InfraMapResponse {
 /// persisted map's filter during reconciliation.
 ///
 /// Supported params (all comma-separated):
-///   `source_db`         – the caller's default database, used to re-prefix table IDs
-///   `extra_table_ids`   – table IDs to add to the filter
+///   `source_db`                 – the caller's default database, used to re-prefix table IDs
+///   `extra_table_ids`           – table IDs to add to the filter
+///   `extra_default_table_ids`   – subset of `extra_table_ids` that came from `source_db`
 ///   `extra_sql_ids`     – SQL resource IDs
 ///   `extra_mv_ids`      – materialized view IDs
 ///   `extra_view_ids`    – view IDs
@@ -3565,6 +3566,7 @@ fn parse_extra_reconciliation_filter(
     }
 
     let table_ids = csv_set(&params, "extra_table_ids");
+    let default_table_ids = csv_set(&params, "extra_default_table_ids");
     let sql_resource_ids = csv_set(&params, "extra_sql_ids");
     let materialized_view_ids = csv_set(&params, "extra_mv_ids");
     let view_ids = csv_set(&params, "extra_view_ids");
@@ -3588,7 +3590,15 @@ fn parse_extra_reconciliation_filter(
     };
 
     if let Some(source_db) = params.get("source_db") {
-        filter.reprefix_table_ids(source_db, server_default_db);
+        if default_table_ids.is_empty() {
+            filter.reprefix_table_ids(source_db, server_default_db);
+        } else {
+            filter.reprefix_table_ids_with_allowlist(
+                source_db,
+                server_default_db,
+                &default_table_ids,
+            );
+        }
     }
 
     Some(filter)
@@ -4086,6 +4096,20 @@ mod tests {
 
         let deserialized_response = deserialized.unwrap();
         assert_eq!(deserialized_response.status, "success");
+    }
+
+    #[test]
+    fn test_parse_extra_reconciliation_filter_reprefixes_only_allowlisted_default_ids() {
+        let query = Some(
+            "source_db=prod&extra_table_ids=prod_users_0_0,prod_eu_orders_1_0&extra_default_table_ids=prod_users_0_0",
+        );
+
+        let filter =
+            parse_extra_reconciliation_filter(query, "staging").expect("filter should parse");
+
+        assert!(filter.table_ids.contains("staging_users_0_0"));
+        assert!(filter.table_ids.contains("prod_eu_orders_1_0"));
+        assert_eq!(filter.table_ids.len(), 2);
     }
 
     #[test]

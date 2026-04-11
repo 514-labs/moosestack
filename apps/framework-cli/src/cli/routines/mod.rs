@@ -1111,6 +1111,7 @@ fn append_extra_filter_query_params(
     url: &mut reqwest::Url,
     filter: &ReconciliationFilter,
     source_db: &str,
+    source_default_table_ids: &HashSet<String>,
 ) {
     fn csv(ids: &std::collections::HashSet<String>) -> String {
         let mut sorted: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
@@ -1122,6 +1123,9 @@ fn append_extra_filter_query_params(
     pairs.append_pair("source_db", source_db);
     if !filter.table_ids.is_empty() {
         pairs.append_pair("extra_table_ids", &csv(&filter.table_ids));
+    }
+    if !source_default_table_ids.is_empty() {
+        pairs.append_pair("extra_default_table_ids", &csv(source_default_table_ids));
     }
     if !filter.sql_resource_ids.is_empty() {
         pairs.append_pair("extra_sql_ids", &csv(&filter.sql_resource_ids));
@@ -1162,7 +1166,24 @@ pub(crate) async fn get_remote_inframap_protobuf(
     // when Redis hasn't been updated yet (e.g. after applying a migration).
     if let Some(local_map) = local_infra_map {
         let filter = ReconciliationFilter::from_infra_map(local_map);
-        append_extra_filter_query_params(&mut target_url, &filter, &local_map.default_database);
+        let source_default_table_ids: HashSet<String> = local_map
+            .tables
+            .values()
+            .filter(|table| {
+                table
+                    .database
+                    .as_deref()
+                    .unwrap_or(&local_map.default_database)
+                    == local_map.default_database
+            })
+            .map(|table| table.id(&local_map.default_database))
+            .collect();
+        append_extra_filter_query_params(
+            &mut target_url,
+            &filter,
+            &local_map.default_database,
+            &source_default_table_ids,
+        );
     }
 
     let auth_token = token
