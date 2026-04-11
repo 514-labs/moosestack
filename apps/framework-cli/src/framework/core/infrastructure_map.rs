@@ -8749,6 +8749,150 @@ mod diff_orchestration_worker_tests {
     }
 
     #[test]
+    fn test_mask_credentials_masks_dict_user_fields() {
+        // Regression: mask_credentials_for_json_export() must scrub both `user` and
+        // `password` for dictionary external sources that have a user field.
+        // Prior to the fix, only `password` was masked; a runtime-resolved username
+        // would have been persisted to JSON in plaintext.
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
+            DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
+            DictionarySource, ExternalDictionarySource,
+        };
+
+        let make_dict = |name: &str, source: ExternalDictionarySource| -> OlapDictionary {
+            OlapDictionary {
+                name: name.to_string(),
+                database: None,
+                cluster_name: None,
+                source: DictionarySource::External(source),
+                primary_key: vec!["id".to_string()],
+                columns: vec![DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                }],
+                layout: DictionaryLayout::Hashed {
+                    initial_array_size: None,
+                    max_load_factor: None,
+                },
+                lifetime: DictionaryLifetime::Single { seconds: 3600 },
+                invalidate_query: None,
+                settings: std::collections::HashMap::new(),
+                comment: None,
+                life_cycle: LifeCycle::FullyManaged,
+                metadata: None,
+            }
+        };
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(
+            "ch".to_string(),
+            make_dict(
+                "ch",
+                ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+                    host: "host".to_string(),
+                    port: 9000,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "mysql".to_string(),
+            make_dict(
+                "mysql",
+                ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+                    host: "host".to_string(),
+                    port: 3306,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "pg".to_string(),
+            make_dict(
+                "pg",
+                ExternalDictionarySource::Postgresql(DictionaryPostgresqlSource {
+                    host: "host".to_string(),
+                    port: 5432,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "mongo".to_string(),
+            make_dict(
+                "mongo",
+                ExternalDictionarySource::Mongodb(DictionaryMongoDbSource {
+                    host: "host".to_string(),
+                    port: 27017,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    collection: "coll".to_string(),
+                }),
+            ),
+        );
+
+        let masked = map.mask_credentials_for_json_export();
+
+        let check = |name: &str| {
+            let d = masked.olap_dictionaries.get(name).unwrap();
+            if let DictionarySource::External(ref ext) = d.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                    }
+                    _ => panic!("{name}: unexpected source variant"),
+                }
+            } else {
+                panic!("{name}: expected External source");
+            }
+        };
+
+        check("ch");
+        check("mysql");
+        check("pg");
+        check("mongo");
+    }
+
+    #[test]
     fn test_ignore_string_low_cardinality_differences_integration() {
         use crate::framework::core::infrastructure::table::{
             Column, ColumnType, IntType, OrderBy, Table,
@@ -10962,6 +11106,7 @@ mod dictionary_runtime_env_tests {
         DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
         DictionaryRedisSource, DictionaryS3Source, DictionarySource, ExternalDictionarySource,
     };
+    use serial_test::serial;
     use std::collections::HashMap;
 
     fn base_dict(source: ExternalDictionarySource) -> OlapDictionary {
@@ -11006,6 +11151,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_clickhouse_credentials() {
         std::env::set_var("DICT_CH_USER", "resolved_user");
         std::env::set_var("DICT_CH_PASS", "resolved_pass");
@@ -11037,6 +11183,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_mysql_credentials() {
         std::env::set_var("DICT_MYSQL_USER", "mysql_user");
         std::env::set_var("DICT_MYSQL_PASS", "mysql_pass");
@@ -11068,6 +11215,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_postgresql_credentials() {
         std::env::set_var("DICT_PG_USER", "pg_user");
         std::env::set_var("DICT_PG_PASS", "pg_pass");
@@ -11099,6 +11247,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_redis_credentials() {
         std::env::set_var("DICT_REDIS_PASS", "redis_pass");
 
@@ -11123,6 +11272,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_mongodb_credentials() {
         std::env::set_var("DICT_MONGO_USER", "mongo_user");
         std::env::set_var("DICT_MONGO_PASS", "mongo_pass");
@@ -11151,6 +11301,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_s3_credentials() {
         std::env::set_var("DICT_S3_KEY_ID", "s3_key_id");
         std::env::set_var("DICT_S3_SECRET", "s3_secret");
@@ -11177,6 +11328,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_missing_env_var_returns_error() {
         std::env::remove_var("DICT_MISSING_VAR");
 
@@ -11207,6 +11359,7 @@ mod dictionary_runtime_env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dictionary_static_credentials_passthrough() {
         let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
             host: "localhost".to_string(),
