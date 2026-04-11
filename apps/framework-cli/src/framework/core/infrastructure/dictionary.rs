@@ -302,11 +302,11 @@ pub enum ExternalDictionarySource {
 }
 
 /// Wrapper that adds one nesting level around `ExternalDictionarySource` to
-/// avoid a conflict when both `DictionarySource` and `ExternalDictionarySource`
-/// use `#[serde(tag = "type")]` — both enums would otherwise try to emit a
-/// `"type"` key at the same JSON level.
+/// avoid a conflict: `DictionarySource` uses `#[serde(tag = "type")]` while
+/// `ExternalDictionarySource` uses `#[serde(tag = "source_type")]`, so they
+/// each emit their discriminant key at their own JSON level without collision.
 ///
-/// JSON shape: `{ "type": "EXTERNAL", "externalSource": { "type": "HTTP", … } }`
+/// JSON shape: `{ "type": "EXTERNAL", "externalSource": { "source_type": "HTTP", … } }`
 ///
 /// The TypeScript SDK's `serializeExternalSource` produces exactly this shape.
 /// See: <https://github.com/serde-rs/serde/issues/1799>
@@ -2463,6 +2463,39 @@ mod tests {
         let json = serde_json::to_string(&dict).unwrap();
         let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
         assert_eq!(dict, restored);
+    }
+
+    #[test]
+    fn test_serde_external_source_nested_shape() {
+        // Verify the JSON shape matches what the TypeScript SDK produces:
+        // { "type": "EXTERNAL", "externalSource": { "source_type": "HTTP", … } }
+        let mut dict = simple_dict("my_dict");
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
+                url: "https://example.com/data".to_string(),
+                format: "JSONEachRow".to_string(),
+                method: None,
+                where_clause: None,
+            }),
+        });
+        let json = serde_json::to_string(&dict.source).unwrap();
+        // Outer discriminant at top level
+        assert!(
+            json.contains(r#""type":"EXTERNAL""#),
+            "outer type must be EXTERNAL; got: {json}"
+        );
+        // Inner discriminant nested under externalSource
+        assert!(
+            json.contains(r#""externalSource""#),
+            "wrapper field must be externalSource (camelCase); got: {json}"
+        );
+        assert!(
+            json.contains(r#""source_type":"HTTP""#),
+            "inner source_type must be HTTP; got: {json}"
+        );
+        // Round-trip
+        let restored: DictionarySource = serde_json::from_str(&json).unwrap();
+        assert_eq!(dict.source, restored);
     }
 
     #[test]
