@@ -312,6 +312,20 @@ pub enum DictionarySource {
     External(ExternalDictionarySource),
 }
 
+impl DictionarySource {
+    /// Human-readable lowercase label for the source type, used by CLI display commands.
+    ///
+    /// Co-located with the enum so that any variant shape change (e.g. tuple → struct)
+    /// causes a compile error here, caught immediately by `cargo test`.
+    pub fn source_type_label(&self) -> &'static str {
+        match self {
+            DictionarySource::Table(_) => "table",
+            DictionarySource::Query(_) => "query",
+            DictionarySource::External(_) => "external",
+        }
+    }
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 /// ClickHouse dictionary layout type and its configuration parameters.
