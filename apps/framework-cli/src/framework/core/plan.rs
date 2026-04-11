@@ -46,7 +46,6 @@ pub struct ReconciliationFilter {
     pub materialized_view_ids: HashSet<String>,
     pub view_ids: HashSet<String>,
     pub select_row_policy_ids: HashSet<String>,
-    pub dictionary_ids: HashSet<String>,
 }
 
 impl ReconciliationFilter {
@@ -62,7 +61,6 @@ impl ReconciliationFilter {
             materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
             view_ids: infra_map.views.keys().cloned().collect(),
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
-            dictionary_ids: infra_map.olap_dictionaries.keys().cloned().collect(),
         }
     }
 }
@@ -1037,7 +1035,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
@@ -1066,7 +1063,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         // Test 2: Non-empty filter = only include if in set
@@ -1135,7 +1131,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         // Reconcile the infrastructure map
@@ -1222,7 +1217,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1286,7 +1280,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1352,7 +1345,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1416,7 +1408,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1525,7 +1516,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1591,7 +1581,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1647,7 +1636,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1702,7 +1690,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1764,7 +1751,6 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
-            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
