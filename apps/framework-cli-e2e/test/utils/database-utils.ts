@@ -196,6 +196,46 @@ export const waitForDBWrite = async (
 };
 
 /**
+ * Sends data to an ingest endpoint and verifies it reaches ClickHouse, with
+ * automatic retry-send cycles to handle slow consumer group startup.
+ *
+ * In dockerless mode, consumer groups may take variable time to join after
+ * infrastructure reports ready. Since auto.offset.reset=earliest, re-sent data
+ * will be consumed alongside earlier data. waitForDBWrite uses count >= check,
+ * so duplicate records from retries don't cause false failures.
+ *
+ * @param sendFn - Async function that sends data to the ingest endpoint
+ * @param verifyFn - Async function that verifies data appeared in ClickHouse
+ *                   (typically wraps waitForDBWrite with a per-cycle timeout)
+ * @param options - maxCycles (default 3), logger
+ */
+export const ingestAndVerify = async (
+  sendFn: () => Promise<void>,
+  verifyFn: () => Promise<void>,
+  options?: { maxCycles?: number; logger?: ScopedLogger },
+): Promise<void> => {
+  const maxCycles = options?.maxCycles ?? 3;
+  const log = options?.logger ?? dbLogger;
+
+  for (let cycle = 1; cycle <= maxCycles; cycle++) {
+    await sendFn();
+    try {
+      await verifyFn();
+      return; // Data verified in ClickHouse
+    } catch (error) {
+      if (cycle < maxCycles) {
+        log.info(
+          `Pipeline verify cycle ${cycle}/${maxCycles} failed, re-sending data...`,
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      } else {
+        throw error; // Final cycle failed — propagate
+      }
+    }
+  }
+};
+
+/**
  * Waits for materialized view to update with expected data
  */
 export const waitForMaterializedViewUpdate = async (
