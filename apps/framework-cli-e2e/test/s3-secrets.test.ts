@@ -89,7 +89,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120_000, { dockerless: true });
       testLogger.info("All components ready");
     });
 
@@ -261,7 +261,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120_000, { dockerless: true });
       testLogger.info("All components ready");
     });
 

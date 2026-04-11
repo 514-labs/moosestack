@@ -254,7 +254,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
       testLogger.info("Waiting for streaming functions to be ready...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120_000, { dockerless: true });
       testLogger.info(
         "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
       );
@@ -896,7 +896,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after index modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         // Wait for tables to be created after previous test's file modifications
         // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
@@ -957,7 +957,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for Kafka table infrastructure to be ready...",
         );
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         const kafkaSourceDDL = await withRetries(
           async () => {
@@ -1138,7 +1138,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after TTL modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         // First, verify initial DEFAULT settings
         await withRetries(
@@ -1206,7 +1206,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Wait for streaming functions to stabilize after restart
         // The infrastructure changes message fires before process restarts complete
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
@@ -1237,7 +1237,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         // Verify initial state: columns have correct comment+codec combinations
         await withRetries(
@@ -1379,7 +1379,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
         testLogger.info("Streaming functions stabilized");
 
         // Verify modified state
@@ -1457,7 +1457,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
         );
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         // Verify initial state: AliasTest has ALIAS columns
         await withRetries(
@@ -1505,7 +1505,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects the switch from ALIAS to DEFAULT
@@ -1532,7 +1532,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         // Verify source tables exist first
         const sourceADDL = await withRetries(
@@ -1598,7 +1598,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         const eventId = randomUUID();
 
@@ -2451,7 +2451,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000);
+        await waitForStreamingFunctions(180_000, { dockerless: true });
 
         const eventId = randomUUID();
 

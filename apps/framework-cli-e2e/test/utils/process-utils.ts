@@ -9,6 +9,8 @@ export interface ProcessOptions {
   logger?: ScopedLogger;
   /** Override the base URL for server requests (default: SERVER_CONFIG.url) */
   baseUrl?: string;
+  /** Skip Docker detection and use dockerless readiness checks directly */
+  dockerless?: boolean;
 }
 
 declare const require: any;
@@ -222,9 +224,6 @@ export const killRemainingProcesses = async (
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
-  // Reset cached infra mode so the next test suite re-detects.
-  resetInfraMode();
-
   try {
     // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
     // process (sh -c "pkill -9 -f ...") from matching its own command line.
@@ -299,25 +298,12 @@ export const killRemainingProcesses = async (
   }
 };
 
-// Cached mode detection: once we determine the infrastructure mode (Docker vs
-// dockerless), we remember it so subsequent calls skip the detection phase.
-let detectedMode: "docker" | "dockerless" | null = null;
-
-/** Reset cached infrastructure mode detection (call between test suites). */
-export const resetInfraMode = () => {
-  detectedMode = null;
-};
-
 /**
  * Wait for streaming functions and ClickHouse sync to start.
  *
- * In Docker mode, checks Redpanda consumer groups via `rpk group list`.
- * In dockerless mode (no Docker), falls back to the /ready endpoint which verifies
- * all infrastructure services (Redis, Kafka, ClickHouse, Temporal) are healthy,
- * then waits a stabilization period for consumer groups to settle.
- *
- * Mode detection is cached: the first call probes for a Docker Redpanda container
- * and remembers the result so subsequent calls skip the detection phase entirely.
+ * When `options.dockerless` is true, uses the /ready endpoint + ingest probe
+ * directly (no Docker overhead). Otherwise checks Redpanda consumer groups
+ * via `rpk group list` inside the Docker container.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
@@ -325,57 +311,37 @@ export const waitForStreamingFunctions = async (
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
   const baseUrl = options.baseUrl ?? SERVER_CONFIG.url;
-  log.debug("Waiting for streaming functions to start", { timeoutMs });
+  log.debug("Waiting for streaming functions to start", {
+    timeoutMs,
+    dockerless: !!options.dockerless,
+  });
 
-  // Fast path: if we already know we're in dockerless mode, skip Docker detection.
-  if (detectedMode === "dockerless") {
-    log.debug("Using cached dockerless mode detection");
+  if (options.dockerless) {
     await waitForStreamingDockerlessMode(timeoutMs, baseUrl, log);
     return;
   }
 
   const startTime = Date.now();
-  let dockerAttempts = 0;
-  const MAX_DOCKER_DETECT_ATTEMPTS = 3;
 
   while (Date.now() - startTime < timeoutMs) {
     try {
-      // Find the Redpanda container (there's only one per test run)
       const { stdout: containerName } = await execAsync(
         `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
       );
 
       if (!containerName.trim()) {
-        dockerAttempts++;
-        if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
-          // No Docker container found — assume dockerless mode (devkafka embedded)
-          detectedMode = "dockerless";
-          log.debug(
-            "No Redpanda container found after multiple attempts, using dockerless mode readiness check",
-          );
-          await waitForStreamingDockerlessMode(
-            timeoutMs - (Date.now() - startTime),
-            baseUrl,
-            log,
-          );
-          return;
-        }
         log.debug("Waiting for Redpanda container to start");
         await setTimeoutAsync(1000);
         continue;
       }
 
-      // Docker mode confirmed
-      detectedMode = "docker";
-
-      // Docker mode: Check consumer groups using rpk
       const { stdout: groupList } = await execAsync(
         `docker exec ${containerName.trim()} rpk group list`,
       );
 
       log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
-      const lines = groupList.split("\n").slice(1); // Skip header
+      const lines = groupList.split("\n").slice(1);
 
       const flowGroups = lines.filter((line) => line.includes("flow-"));
       const stableFlowGroups = flowGroups.filter((line) =>
@@ -389,8 +355,6 @@ export const waitForStreamingFunctions = async (
         line.includes("Stable"),
       );
 
-      // Wait for each group type independently: if groups of that type
-      // exist, all must be stable. At least one group type must be present.
       const hasAnyGroups =
         flowGroups.length > 0 || clickhouseSyncGroups.length > 0;
       const allFlowGroupsStable =
@@ -424,19 +388,6 @@ export const waitForStreamingFunctions = async (
       );
       await setTimeoutAsync(1000);
     } catch (error) {
-      dockerAttempts++;
-      if (dockerAttempts >= MAX_DOCKER_DETECT_ATTEMPTS) {
-        detectedMode = "dockerless";
-        log.debug(
-          "Docker checks failing, using dockerless mode readiness check",
-        );
-        await waitForStreamingDockerlessMode(
-          timeoutMs - (Date.now() - startTime),
-          baseUrl,
-          log,
-        );
-        return;
-      }
       log.debug("Error checking consumer groups, retrying", {
         error: error instanceof Error ? error.message : String(error),
       });

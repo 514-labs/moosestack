@@ -99,7 +99,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120_000, { dockerless: true });
 
       testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
@@ -233,7 +233,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120_000, { dockerless: true });
 
       testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
