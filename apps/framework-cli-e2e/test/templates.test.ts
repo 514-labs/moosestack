@@ -1593,8 +1593,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // Budget: waitForStreamingFunctions (up to 180s) + send (~15s) + DB wait (180s) = 375s
-        this.timeout(480_000);
+        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (300s) + batch (60s) = 540s
+        this.timeout(600_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -1604,15 +1604,43 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
+        // Send a canary record first and wait for it to appear in ClickHouse.
+        // This absorbs variable consumer startup time (can be 30s-300s after
+        // schema changes) in a single long wait. Once the canary appears, the
+        // full pipeline (ingest → Kafka → transform → ClickHouse) is proven active.
+        testLogger.info("Sending canary record to prove pipeline is active...");
+        await withRetries(
+          async () => {
+            const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                primaryKey: eventId,
+                timestamp: TEST_DATA.TIMESTAMP,
+                optionalText: "canary",
+              }),
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`${response.status}: ${text}`);
+            }
+          },
+          { attempts: 5, delayMs: 500 },
+        );
+        await waitForDBWrite(devProcess!, "Bar", 1, 300_000, "local");
+        testLogger.info("Canary record arrived — pipeline is active");
+
+        // Now send the remaining batch. Since the pipeline is proven active,
+        // these records should flow through quickly.
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        for (let i = 0; i < recordsToSend; i++) {
+        for (let i = 1; i < recordsToSend; i++) {
           await withRetries(
             async () => {
               const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  primaryKey: i === 0 ? eventId : randomUUID(),
+                  primaryKey: randomUUID(),
                   timestamp: TEST_DATA.TIMESTAMP,
                   optionalText: `Hello world ${i}`,
                 }),
@@ -1629,7 +1657,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          180_000,
+          60_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
@@ -2447,8 +2475,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        // Budget: waitForStreamingFunctions (up to 180s) + send (~15s) + DB wait (180s) = 375s
-        this.timeout(480_000);
+        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (300s) + batch (60s) = 540s
+        this.timeout(600_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -2458,19 +2486,45 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
+        // Send a canary record first and wait for it to appear in ClickHouse.
+        // This absorbs variable consumer startup time (can be 30s-300s after
+        // schema changes) in a single long wait.
+        testLogger.info("Sending canary record to prove pipeline is active...");
+        await withRetries(
+          async () => {
+            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                primary_key: eventId,
+                baz: "QUUX",
+                timestamp: TEST_DATA.TIMESTAMP,
+                optional_text: "canary",
+              }),
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`${response.status}: ${text}`);
+            }
+          },
+          { attempts: 5, delayMs: 500 },
+        );
+        await waitForDBWrite(devProcess!, "Bar", 1, 300_000, "local");
+        testLogger.info("Canary record arrived — pipeline is active");
+
+        // Now send the remaining batch.
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        for (let i = 0; i < recordsToSend; i++) {
+        for (let i = 1; i < recordsToSend; i++) {
           await withRetries(
             async () => {
               const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  primary_key: i === 0 ? eventId : randomUUID(),
+                  primary_key: randomUUID(),
                   baz: "QUUX",
                   timestamp: TEST_DATA.TIMESTAMP,
-                  optional_text:
-                    i === 0 ? "Hello from Python" : `Test message ${i}`,
+                  optional_text: `Test message ${i}`,
                 }),
               });
               if (!response.ok) {
@@ -2485,7 +2539,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          180_000,
+          60_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
