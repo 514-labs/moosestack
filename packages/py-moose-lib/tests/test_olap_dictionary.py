@@ -434,7 +434,7 @@ def test_source_external_serialization():
     )
     src = _serialize_dict_source(config)
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["type"] == "HTTP"
+    assert src["source"]["source_type"] == "HTTP"
     assert src["source"]["url"] == "http://api.example.com"
     assert src["source"]["format"] == "JSONEachRow"
 
@@ -453,7 +453,7 @@ def test_source_mongodb_serialization():
     )
     src = _serialize_dict_source(config)
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["type"] == "MONGODB"
+    assert src["source"]["source_type"] == "MONGODB"
     assert src["source"]["host"] == "mongo.example.com"
     assert src["source"]["collection"] == "products"
 
@@ -633,6 +633,67 @@ def test_all_external_source_types_have_type_field():
         assert hasattr(src, "type"), f"{src.__class__.__name__} missing 'type'"
         d = src.model_dump(exclude_none=True)
         assert "type" in d
+
+
+def test_external_source_discriminant_uses_source_type_key():
+    """Regression: Rust's ExternalDictionarySource uses #[serde(tag = "source_type")].
+
+    Python must emit {"source_type": "HTTP", ...} inside source dict — not {"type": "HTTP", ...}
+    — so Rust can correctly deserialize the discriminated union variant.
+    """
+    config = OlapDictionaryConfig(
+        external_source=HttpSource(url="http://api.example.com", format="JSONEachRow"),
+        primary_key=["lookup_id"],
+        layout=HashedLayout(),
+    )
+    result = _serialize_dict_source(config)
+    inner = result["source"]
+    assert (
+        "source_type" in inner
+    ), f"Missing 'source_type' discriminant key — got: {list(inner.keys())}"
+    assert inner["source_type"] == "HTTP"
+    assert "type" not in inner, "Stale 'type' key must not appear in serialized output"
+
+
+def test_all_external_source_types_emit_source_type_discriminant():
+    """Regression: all 8 external source types must use 'source_type' as the discriminant key."""
+    test_cases = [
+        (HttpSource(url="http://x.com", format="CSV"), "HTTP"),
+        (
+            ClickHouseRemoteSource(
+                host="h", port=9000, user="u", password="p", db="d", table="t"
+            ),
+            "CLICK_HOUSE",
+        ),
+        (MysqlSource(host="h", user="u", password="p", db="d", table="t"), "MYSQL"),
+        (
+            PostgresqlSource(host="h", user="u", password="p", db="d", table="t"),
+            "POSTGRESQL",
+        ),
+        (RedisSource(host="h", storage_type="simple"), "REDIS"),
+        (
+            MongoDbSource(host="h", user="u", password="p", db="d", collection="c"),
+            "MONGODB",
+        ),
+        (ExecutableSource(command="cmd", format="CSV"), "EXECUTABLE"),
+        (S3Source(url="s3://bucket/file", format="CSV"), "S3"),
+    ]
+    for ext_src, expected_value in test_cases:
+        config = OlapDictionaryConfig(
+            external_source=ext_src,
+            primary_key=["id"],
+            layout=HashedLayout(),
+        )
+        result = _serialize_dict_source(config)
+        inner = result["source"]
+        cls = ext_src.__class__.__name__
+        assert (
+            "source_type" in inner
+        ), f"{cls}: missing 'source_type' key — got: {list(inner.keys())}"
+        assert (
+            inner["source_type"] == expected_value
+        ), f"{cls}: expected source_type={expected_value!r}, got {inner.get('source_type')!r}"
+        assert "type" not in inner, f"{cls}: stale 'type' key still present"
 
 
 # ─── Integration: dmv2_serializer subprocess round-trip ──────────────────────
@@ -991,7 +1052,7 @@ def test_serialize_clickhouse_remote_source():
     result = _serialize_dict_source(config)
     inner = result["source"]
     assert result["type"] == "EXTERNAL"
-    assert inner["type"] == "CLICK_HOUSE"
+    assert inner["source_type"] == "CLICK_HOUSE"
     assert inner["host"] == "ch.host"
     assert inner["whereClause"] == "id > 0"
     assert inner["invalidateQuery"] == "SELECT max(ts) FROM mytable"
@@ -1014,7 +1075,7 @@ def test_serialize_mysql_source():
     )
     result = _serialize_dict_source(config)
     inner = result["source"]
-    assert inner["type"] == "MYSQL"
+    assert inner["source_type"] == "MYSQL"
     assert inner["whereClause"] == "active=1"
     assert inner["invalidateQuery"] == "SELECT max(updated_at) FROM t"
 
@@ -1034,7 +1095,7 @@ def test_serialize_postgresql_source():
     )
     result = _serialize_dict_source(config)
     inner = result["source"]
-    assert inner["type"] == "POSTGRESQL"
+    assert inner["source_type"] == "POSTGRESQL"
     assert inner["whereClause"] == "status='active'"
     assert inner["invalidateQuery"] == "SELECT max(rev) FROM t"
 
@@ -1046,7 +1107,7 @@ def test_serialize_redis_source():
     )
     result = _serialize_dict_source(config)
     inner = result["source"]
-    assert inner["type"] == "REDIS"
+    assert inner["source_type"] == "REDIS"
     assert inner["storageType"] == "hash_map"
     assert inner["dbIndex"] == 3
     assert "storage_type" not in inner
@@ -1062,7 +1123,7 @@ def test_serialize_executable_source():
     )
     result = _serialize_dict_source(config)
     inner = result["source"]
-    assert inner["type"] == "EXECUTABLE"
+    assert inner["source_type"] == "EXECUTABLE"
     assert inner["implicitKey"] is True
     assert "implicit_key" not in inner
 
@@ -1079,7 +1140,7 @@ def test_serialize_s3_source():
     )
     result = _serialize_dict_source(config)
     inner = result["source"]
-    assert inner["type"] == "S3"
+    assert inner["source_type"] == "S3"
     assert inner["accessKeyId"] == "AKIAIOSFODNN7"
     assert inner["secretAccessKey"] == "wJalrXUtnFEMI"
     assert "access_key_id" not in inner
@@ -1373,7 +1434,7 @@ def test_serializer_external_source_end_to_end():
     assert "dict_items_ext" in dicts
     src = dicts["dict_items_ext"]["source"]
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["type"] == "HTTP"
+    assert src["source"]["source_type"] == "HTTP"
     assert src["source"]["url"] == "http://api.example.com/items"
     # camelCase must be used, not snake_case
     assert "whereClause" in src["source"]
