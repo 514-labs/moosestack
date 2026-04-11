@@ -2660,7 +2660,9 @@ mod tests {
         // Must not panic; the fallback arm logs a warning and returns Http.
         let dict = OlapDictionary::from_proto(proto);
         match dict.source {
-            DictionarySource::External(ExternalDictionarySource::Http(h)) => {
+            DictionarySource::External {
+                source: ExternalDictionarySource::Http(h),
+            } => {
                 assert!(h.url.is_empty(), "fallback HTTP url should be empty");
                 assert_eq!(
                     h.format, "JSONEachRow",
