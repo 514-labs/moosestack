@@ -409,11 +409,12 @@ pub fn generate_retained_python(table: &Table) -> String {
     )
 }
 
-/// Write retained-table files and add imports to the root module.
+/// Write one file per retained table and add imports to the root module.
 ///
-/// For each `keep_old=true` decision, appends the table definition to
-/// `retainedTables.ts` / `retained_tables.py` and ensures the root
-/// module (`index.ts` / `main.py`) imports it.
+/// For each `keep_old=true` decision, writes a dedicated file (e.g.
+/// `retained_Events_1_0.ts`) containing the table definition with
+/// `EXTERNALLY_MANAGED` lifecycle, then ensures the root module
+/// (`index.ts` / `main.py`) imports it.
 pub fn write_retained_table_files(
     decisions: &[VersionBumpDecision],
     source_dir: &std::path::Path,
@@ -429,51 +430,34 @@ pub fn write_retained_table_files(
         return Ok(());
     }
 
-    match language {
-        SupportedLanguages::Typescript => {
-            let file_name = "retainedTables.ts";
-            let file_path = source_dir.join(file_name);
-            let root_file = source_dir.join("index.ts");
-
-            let mut content = String::new();
-            for table in &tables_to_retain {
-                content.push_str(&generate_retained_typescript(table));
-                content.push('\n');
+    for table in &tables_to_retain {
+        let (file_name, root_name, content, import_line) = match language {
+            SupportedLanguages::Typescript => {
+                let name = format!("retained_{}.ts", table.name);
+                let import = format!("import \"./{}\";", name.trim_end_matches(".ts"));
+                (
+                    name,
+                    "index.ts",
+                    generate_retained_typescript(table),
+                    import,
+                )
             }
-
-            append_or_create(&file_path, &content)?;
-
-            let import_line = format!("import \"./{}\";", file_name.trim_end_matches(".ts"));
-            ensure_import(&root_file, &import_line)?;
-        }
-        SupportedLanguages::Python => {
-            let file_name = "retained_tables.py";
-            let file_path = source_dir.join(file_name);
-            let root_file = source_dir.join("main.py");
-
-            let mut content = String::new();
-            for table in &tables_to_retain {
-                content.push_str(&generate_retained_python(table));
-                content.push('\n');
+            SupportedLanguages::Python => {
+                let name = format!("retained_{}.py", table.name);
+                let import = format!("from .{} import *", name.trim_end_matches(".py"));
+                (name, "main.py", generate_retained_python(table), import)
             }
+        };
 
-            append_or_create(&file_path, &content)?;
-
-            let import_line = format!("from .{} import *", file_name.trim_end_matches(".py"));
-            ensure_import(&root_file, &import_line)?;
+        let file_path = source_dir.join(&file_name);
+        if file_path.exists() {
+            continue;
         }
+
+        std::fs::write(&file_path, content)?;
+        ensure_import(&source_dir.join(root_name), &import_line)?;
     }
 
-    Ok(())
-}
-
-fn append_or_create(path: &std::path::Path, content: &str) -> Result<(), std::io::Error> {
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
-    file.write_all(content.as_bytes())?;
     Ok(())
 }
 
