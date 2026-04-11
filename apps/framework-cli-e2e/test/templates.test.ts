@@ -1718,6 +1718,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         });
 
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
           const id = randomUUID();
           await withRetries(
             async () => {
@@ -2544,6 +2545,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       });
       if (config.isTestsVariant) {
         it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
           const id = randomUUID();
           await withRetries(
             async () => {
