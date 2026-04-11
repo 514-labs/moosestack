@@ -440,7 +440,9 @@ function externalTypeToRust(type: ExternalSource["type"]): string {
 function serializeExternalSource(ext: ExternalSource): Record<string, unknown> {
   const { type, ...rest } = ext;
   // Convert camelCase config fields to the expected format
-  const inner: Record<string, unknown> = { type: externalTypeToRust(type) };
+  const inner: Record<string, unknown> = {
+    source_type: externalTypeToRust(type),
+  };
 
   // Map camelCase user fields to camelCase JSON (matching Rust struct serde)
   for (const [key, value] of Object.entries(rest)) {
