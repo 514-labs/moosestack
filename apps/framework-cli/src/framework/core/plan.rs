@@ -643,15 +643,15 @@ pub fn infra_changes_to_operations(
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
-    infra_changes_to_operations_with_version_bumps(changes, default_database, &[])
+    order_olap_changes_to_ops(&changes.olap_changes, default_database)
 }
 
-/// Like [`infra_changes_to_operations`] but also includes version-bump operations
-/// derived from user decisions.
+/// Like [`infra_changes_to_operations`] but version-bump `Removed`/`Added` pairs
+/// are extracted from `olap_changes` and replaced with correctly-ordered
+/// operations (create new → backfill → drop old) derived from `version_bump_decisions`.
 ///
-/// Version-bump changes are extracted from `olap_changes` before the normal
-/// teardown/setup ordering. Their operations (create → backfill → drop) are
-/// appended after the normal phases, ensuring the old table is still live
+/// The remaining (non-bump) changes go through the normal teardown/setup phases,
+/// then the version-bump operations are appended so the old table is still live
 /// when the backfill runs.
 pub fn infra_changes_to_operations_with_version_bumps(
     changes: &InfraChanges,
@@ -662,34 +662,38 @@ pub fn infra_changes_to_operations_with_version_bumps(
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
     use crate::framework::core::version_bump;
-    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    // Extract version bumps from changes so they don't participate in the
-    // normal teardown/setup ordering.
     let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
 
-    // Normal two-phase ordering on the non-bump changes.
-    let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
+    let mut operations = order_olap_changes_to_ops(&remaining_changes, default_database)?;
+
+    operations.extend(version_bump::version_bump_decisions_to_operations(
+        version_bump_decisions,
+        default_database,
+    ));
+
+    Ok(operations)
+}
+
+/// Shared helper: order `OlapChange`s into teardown → setup `SerializableOlapOperation`s.
+fn order_olap_changes_to_ops(
+    olap_changes: &[crate::framework::core::infrastructure_map::OlapChange],
+    default_database: &str,
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
+    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
+
+    let (teardown_ops, setup_ops) = order_olap_changes(olap_changes, default_database)?;
 
     let mut operations = Vec::new();
-
-    // Phase 1: Teardown (drops, removals)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
-
-    // Phase 2: Setup (creates, adds)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
-
-    // Phase 3: Version bumps (create new → backfill → drop old)
-    let bump_ops = version_bump::version_bump_decisions_to_operations(
-        version_bump_decisions,
-        default_database,
-    );
-    operations.extend(bump_ops);
-
     Ok(operations)
 }
 

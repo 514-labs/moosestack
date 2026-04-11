@@ -70,7 +70,9 @@ pub fn write_pending_migration(
                     version_bump::check_backfill_eligibility(&bump, default_database),
                     version_bump::BackfillEligibility::Eligible { .. }
                 );
-                let keep_old = target.tables.contains_key(&bump.old_table.name);
+                let keep_old = target
+                    .tables
+                    .contains_key(&bump.old_table.id(default_database));
                 version_bump::VersionBumpDecision {
                     bump,
                     backfill,
