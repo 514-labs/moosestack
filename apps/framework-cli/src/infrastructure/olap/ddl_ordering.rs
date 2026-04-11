@@ -787,14 +787,16 @@ impl AtomicOlapOperation {
         // - Resources that depend on this resource must be removed first
         // - This resource is removed afterwards
 
-        // Special cases for views and materialized views:
-        // In teardown, we want views and materialized views to be dropped before their source and target tables
+        // Special cases for views, materialized views, and dictionaries:
+        // In teardown, these must be dropped before their source and target tables,
+        // since they hold references to those tables (ClickHouse enforces this order).
         match self {
             AtomicOlapOperation::RunTeardownSql { .. }
             | AtomicOlapOperation::DropDmv1View { .. }
             | AtomicOlapOperation::DropView { .. }
             | AtomicOlapOperation::DropMaterializedView { .. }
-            | AtomicOlapOperation::DropRowPolicy { .. } => {
+            | AtomicOlapOperation::DropRowPolicy { .. }
+            | AtomicOlapOperation::DropDictionary { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -5188,5 +5190,127 @@ mod tests {
                 "re-added projection must use the new body"
             );
         }
+    }
+
+    #[test]
+    fn test_dictionary_teardown_before_source_table() {
+        // Regression test for: DropDictionary must be dropped BEFORE its source table.
+        //
+        // A ClickHouse dictionary that uses a TABLE source holds a reference to that
+        // table. Attempting to DROP the source table while the dictionary still exists
+        // will fail. The teardown ordering must therefore be:
+        //   1. DropDictionary  (dictionary gone first)
+        //   2. DropTable       (source table dropped after)
+        //
+        // Before the fix, DropDictionary was missing from the special-case teardown
+        // edge-reversal branch, so the default path produced the wrong direction:
+        // source table first, then dictionary — causing ClickHouse errors.
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+
+        let source_table = Table {
+            name: "source_table".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DBBlock,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        let dict = OlapDictionary {
+            name: "my_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: source_table.name.clone(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            metadata: None,
+        };
+
+        // The dictionary pulls from source_table, so teardown must drop dict first.
+        let source_table_sig = InfrastructureSignature::Table {
+            id: source_table.id(DEFAULT_DATABASE_NAME),
+        };
+
+        let op_drop_dict = AtomicOlapOperation::DropDictionary {
+            dict: dict.clone(),
+            dependency_info: DependencyInfo {
+                pulls_data_from: vec![source_table_sig.clone()],
+                pushes_data_to: vec![],
+            },
+        };
+
+        // The source table has the dictionary as a dependent (dict must go first).
+        let op_drop_table = AtomicOlapOperation::DropTable {
+            table: source_table.clone(),
+            dependency_info: DependencyInfo {
+                pulls_data_from: vec![],
+                pushes_data_to: vec![],
+            },
+        };
+
+        let operations = vec![op_drop_table.clone(), op_drop_dict.clone()];
+        let ordered =
+            order_operations_by_dependencies(&operations, true, DEFAULT_DATABASE_NAME).unwrap();
+
+        assert_eq!(ordered.len(), 2);
+
+        let dict_pos = ordered.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropDictionary { dict, .. } if dict.name == "my_dict")
+        });
+        let table_pos = ordered.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTable { table, .. } if table.name == "source_table")
+        });
+
+        assert!(dict_pos.is_some(), "DropDictionary not found in output");
+        assert!(table_pos.is_some(), "DropTable not found in output");
+        assert!(
+            dict_pos.unwrap() < table_pos.unwrap(),
+            "Dictionary must be dropped before its source table, but got dict_pos={} table_pos={}",
+            dict_pos.unwrap(),
+            table_pos.unwrap()
+        );
     }
 }
