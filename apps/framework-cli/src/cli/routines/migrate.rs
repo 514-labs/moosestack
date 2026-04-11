@@ -94,6 +94,20 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
+/// Strips metadata (source file paths, descriptions) from dictionaries before comparison.
+/// Matches the metadata-stripping done for tables to avoid false drift positives when
+/// dictionary source files are reorganized without schema changes.
+fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
+    dicts
+        .iter()
+        .map(|(name, dict)| {
+            let mut dict = dict.clone();
+            dict.metadata = None;
+            (name.clone(), dict)
+        })
+        .collect()
+}
+
 /// Strips both metadata and ignored fields from tables
 fn strip_metadata_and_ignored_fields(
     tables: &HashMap<String, Table>,
@@ -144,11 +158,14 @@ fn detect_drift(
     let expected_no_metadata =
         strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
     let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
+    let current_dicts_no_metadata = strip_dict_metadata(current_dicts);
+    let expected_dicts_no_metadata = strip_dict_metadata(expected_dicts);
+    let target_dicts_no_metadata = strip_dict_metadata(target_dicts);
 
     // Check 1: Did the DB change since the plan was generated?
     // Compare both tables and dictionaries with full content equality
     let tables_match = current_no_metadata == expected_no_metadata;
-    let dicts_match = current_dicts == expected_dicts;
+    let dicts_match = current_dicts_no_metadata == expected_dicts_no_metadata;
 
     if tables_match && dicts_match {
         return DriftStatus::NoDrift;
@@ -157,7 +174,7 @@ fn detect_drift(
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
     let tables_at_target = current_no_metadata == target_no_metadata;
-    let dicts_at_target = current_dicts == target_dicts;
+    let dicts_at_target = current_dicts_no_metadata == target_dicts_no_metadata;
 
     if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
@@ -185,22 +202,23 @@ fn detect_drift(
         .cloned()
         .collect();
 
-    let extra_dicts: Vec<String> = current_dicts
+    let extra_dicts: Vec<String> = current_dicts_no_metadata
         .keys()
-        .filter(|k| !expected_dicts.contains_key(*k))
+        .filter(|k| !expected_dicts_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let missing_dicts: Vec<String> = expected_dicts
+    let missing_dicts: Vec<String> = expected_dicts_no_metadata
         .keys()
-        .filter(|k| !current_dicts.contains_key(*k))
+        .filter(|k| !current_dicts_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let changed_dicts: Vec<String> = current_dicts
+    let changed_dicts: Vec<String> = current_dicts_no_metadata
         .keys()
         .filter(|k| {
-            expected_dicts.contains_key(*k) && current_dicts.get(*k) != expected_dicts.get(*k)
+            expected_dicts_no_metadata.contains_key(*k)
+                && current_dicts_no_metadata.get(*k) != expected_dicts_no_metadata.get(*k)
         })
         .cloned()
         .collect();
