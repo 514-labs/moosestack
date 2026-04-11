@@ -458,6 +458,32 @@ def test_source_mongodb_serialization():
     assert src["source"]["collection"] == "products"
 
 
+def test_external_source_secrets_are_unwrapped():
+    """SecretStr credentials must reach Rust as plain strings, not as '**********'.
+
+    Regression test: Pydantic v2's model_dump() serializes SecretStr fields as the
+    masked string '**********' in default (json) mode, so isinstance(v, SecretStr)
+    is always False and get_secret_value() is never reached.  The fix is to use
+    mode='python' so SecretStr objects are preserved through the dump.
+    """
+    config = OlapDictionaryConfig(
+        external_source=MysqlSource(
+            host="db.example.com",
+            user="admin",
+            password="supersecret",
+            db="catalog",
+            table="products",
+        ),
+        primary_key=["id"],
+        layout=HashedLayout(),
+    )
+    src = _serialize_dict_source(config)
+    assert src["type"] == "EXTERNAL"
+    assert (
+        src["source"]["password"] == "supersecret"
+    ), "SecretStr was not unwrapped — model_dump() likely masked it as '**********'"
+
+
 # ─── Layout serialization ─────────────────────────────────────────────────────
 
 
