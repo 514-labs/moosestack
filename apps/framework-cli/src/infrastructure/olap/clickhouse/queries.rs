@@ -2891,9 +2891,20 @@ fn build_replication_params(
 ) -> Result<Vec<String>, ClickhouseError> {
     match (keeper_path, replica_name) {
         (Some(path), Some(name)) if !path.is_empty() && !name.is_empty() => {
-            // Explicit keeper_path and replica_name were provided by the user.
-            // Preserve them as-is regardless of dev/prod mode.
-            Ok(vec![format!("'{}'", path), format!("'{}'", name)])
+            // Dev mode without cluster: check if the keeper path contains macro
+            // placeholders (e.g. {database}, {table}).  Paths with macros are
+            // intentionally set by the user and should be preserved.  Static
+            // paths (no macros) come from --from-remote imports and contain
+            // literal UUIDs from the remote server that don't work with the
+            // local embedded Keeper, so override them with local dev paths.
+            if is_dev && cluster_name.is_none() && !path.contains('{') {
+                Ok(vec![
+                    format!("'/clickhouse/tables/{{database}}/{{shard}}/{}'", table_name),
+                    "'{replica}'".to_string(),
+                ])
+            } else {
+                Ok(vec![format!("'{}'", path), format!("'{}'", name)])
+            }
         }
         (None, None) => {
             // The {uuid} macro only works with ON CLUSTER queries
@@ -6164,6 +6175,31 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         let params = result.unwrap();
         assert_eq!(params.len(), 2);
         assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_static_path_overrides_to_local() {
+        // In dev mode without cluster, static keeper paths (no macro placeholders)
+        // are overridden with local dev paths.  These typically come from
+        // --from-remote imports where the remote server uses literal UUID paths
+        // that don't work with the local embedded Keeper.
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/e4e54432-1101-4ec9-943d-da21f477321c/1".to_string()),
+            &Some("{replica}".to_string()),
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.len(), 2);
+        assert_eq!(
+            params[0],
+            "'/clickhouse/tables/{database}/{shard}/test_table'"
+        );
         assert_eq!(params[1], "'{replica}'");
     }
 
