@@ -172,6 +172,13 @@ describe("moose seed clickhouse with seedFilter", function () {
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_ACCEPT_DESTRUCTIVE: "1",
+        // Explicitly disable streaming and workflows via env vars.
+        // db_to_dmv2 already writes these to moose.config.toml, but env var
+        // overrides are more reliable and match how alpha-mode.test.ts works.
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_TELEMETRY__ENABLED: "false",
+        RUST_LOG: "info",
       },
     });
     devProcess.on("error", (err) => {
