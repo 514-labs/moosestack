@@ -412,7 +412,7 @@ const waitForStreamingDockerlessMode = async (
   log: ScopedLogger,
 ): Promise<void> => {
   const startTime = Date.now();
-  const STABILIZATION_DELAY_MS = 30_000;
+  const STABILIZATION_DELAY_MS = 45_000;
   const budgetMs = Math.max(0, remainingMs);
 
   if (budgetMs === 0) {
