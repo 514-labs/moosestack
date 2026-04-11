@@ -1501,6 +1501,58 @@ impl ClickhouseEngine {
         }
     }
 
+    /// Strip keeper_path and replica_name from replicated engine variants.
+    ///
+    /// Used during `--from-remote` code generation: the remote server's keeper
+    /// paths (literal UUIDs or internal paths) are meaningless for the local dev
+    /// environment.  Stripping them lets `build_replication_params` auto-inject
+    /// correct local paths at table-creation time.
+    pub fn strip_keeper_paths(self) -> Self {
+        match self {
+            ClickhouseEngine::ReplicatedMergeTree { .. } => ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            },
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                ver, is_deleted, ..
+            } => ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                ver,
+                is_deleted,
+            },
+            ClickhouseEngine::ReplicatedAggregatingMergeTree { .. } => {
+                ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                }
+            }
+            ClickhouseEngine::ReplicatedSummingMergeTree { columns, .. } => {
+                ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    columns,
+                }
+            }
+            ClickhouseEngine::ReplicatedCollapsingMergeTree { sign, .. } => {
+                ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    sign,
+                }
+            }
+            ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree { sign, version, .. } => {
+                ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    sign,
+                    version,
+                }
+            }
+            other => other,
+        }
+    }
+
     /// Convert engine to string for proto storage (no sensitive data)
     pub fn to_proto_string(&self) -> String {
         match self {
@@ -6276,6 +6328,49 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected InvalidParameters error"),
         }
+    }
+
+    #[test]
+    fn test_strip_keeper_paths_replicated_merge_tree() {
+        let engine = ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path: Some("/clickhouse/tables/uuid-1234/1".to_string()),
+            replica_name: Some("{replica}".to_string()),
+        };
+        let stripped = engine.strip_keeper_paths();
+        assert_eq!(
+            stripped,
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_strip_keeper_paths_non_replicated_unchanged() {
+        let engine = ClickhouseEngine::MergeTree;
+        let stripped = engine.strip_keeper_paths();
+        assert_eq!(stripped, ClickhouseEngine::MergeTree);
+    }
+
+    #[test]
+    fn test_strip_keeper_paths_replicated_replacing_preserves_ver() {
+        let engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: Some("/some/path".to_string()),
+            replica_name: Some("r1".to_string()),
+            ver: Some("version_col".to_string()),
+            is_deleted: Some("deleted_col".to_string()),
+        };
+        let stripped = engine.strip_keeper_paths();
+        assert_eq!(
+            stripped,
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                ver: Some("version_col".to_string()),
+                is_deleted: Some("deleted_col".to_string()),
+            }
+        );
     }
 
     #[test]
