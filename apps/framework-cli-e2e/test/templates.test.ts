@@ -178,6 +178,7 @@ const buildDevEnv = (
     MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
     MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
     MOOSE_ACCEPT_DESTRUCTIVE: "1",
+    MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
   };
   if (language === "python") {
     env.VIRTUAL_ENV = path.join(projectDir, ".venv");
