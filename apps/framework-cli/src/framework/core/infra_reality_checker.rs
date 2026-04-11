@@ -904,14 +904,18 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             .map(|(db, name)| format!("{}_{}", db, name))
             .collect();
 
+        // Use `.iter()` and take the map key directly — same pattern as missing_row_policies.
+        // Using `d.id(default_db)` would compute from `project.clickhouse_config.db_name`,
+        // which may differ from the key that was used when the map was built, causing
+        // `reconcile_with_reality`'s `olap_dictionaries.remove()` to silently no-op.
         let missing_dictionaries: Vec<String> = infra_map
             .olap_dictionaries
-            .values()
-            .filter(|d| {
+            .iter()
+            .filter(|(_, d)| {
                 let db = d.database.as_deref().unwrap_or(default_db);
                 !actual_dictionaries.contains(&(db.to_string(), d.name.clone()))
             })
-            .map(|d| d.id(default_db))
+            .map(|(key, _)| key.clone())
             .collect();
 
         // Structural comparison (mismatched) is deferred — list_dictionaries returns names only.
@@ -2183,9 +2187,8 @@ mod tests {
         let mock_client = make_simple_mock(vec![]);
         let mut infra_map = make_empty_infra_map();
         let dict = make_simple_dict("dict_products");
-        infra_map
-            .olap_dictionaries
-            .insert(format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name), dict);
+        let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
+        infra_map.olap_dictionaries.insert(map_key.clone(), dict);
 
         let checker = InfraRealityChecker::new(mock_client);
         let discrepancies = checker
@@ -2195,7 +2198,8 @@ mod tests {
 
         assert!(discrepancies.unmapped_dictionaries.is_empty());
         assert_eq!(discrepancies.missing_dictionaries.len(), 1);
-        assert_eq!(discrepancies.missing_dictionaries[0], "test_dict_products");
+        // ID must equal the map key so reconcile_with_reality can remove it.
+        assert_eq!(discrepancies.missing_dictionaries[0], map_key);
     }
 
     #[test]
@@ -2246,5 +2250,40 @@ mod tests {
             mismatched_dictionaries: vec![],
         };
         assert!(!discrepancies.is_empty());
+    }
+
+    /// Regression test: the ID reported in `missing_dictionaries` must be the actual map key,
+    /// not a re-computed `d.id(project.clickhouse_config.db_name)`.
+    ///
+    /// Before the fix, `missing_dictionaries` used `.values().map(|d| d.id(default_db))` where
+    /// `default_db` came from `project.clickhouse_config.db_name` ("test" in tests).
+    /// The infra map keys are inserted as `d.id(infra_map.default_database)` ("local" in tests).
+    /// When `project.db_name != infra_map.default_database`, the computed ID ("test_dict_foo")
+    /// differed from the map key ("local_dict_foo"), so `reconcile_with_reality`'s
+    /// `olap_dictionaries.remove(&missing_dict_id)` silently no-oped and left stale entries.
+    #[tokio::test]
+    async fn test_missing_dictionary_id_matches_map_key() {
+        // project.clickhouse_config.db_name = "test" (from create_test_project)
+        // infra_map.default_database = DEFAULT_DATABASE_NAME = "local"
+        // → the map key is "local_dict_foo", not "test_dict_foo"
+        let mock_client = make_simple_mock(vec![]); // nothing in reality
+        let mut infra_map = make_empty_infra_map();
+        let dict = make_simple_dict("dict_foo");
+        let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name); // "local_dict_foo"
+        infra_map.olap_dictionaries.insert(map_key.clone(), dict);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let discrepancies = checker
+            .check_reality(&create_test_project(), &infra_map)
+            .await
+            .unwrap();
+
+        assert_eq!(discrepancies.missing_dictionaries.len(), 1);
+        assert_eq!(
+            discrepancies.missing_dictionaries[0], map_key,
+            "missing_dictionaries must report the actual map key so that \
+             reconcile_with_reality can remove it; got '{}', want '{}'",
+            discrepancies.missing_dictionaries[0], map_key
+        );
     }
 }
