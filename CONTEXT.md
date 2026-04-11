@@ -33,3 +33,5 @@ Location: `packages/ts-moose-lib/tests/` (mocha)
 - camelCase field names, SCREAMING_SNAKE_CASE enum values (matches Rust `#[serde(rename_all)]`)
 - Run `pnpm typecheck` and `pnpm test` in `packages/ts-moose-lib/` before committing
 - Run `pnpm format` (Prettier) before committing
+- Run `pnpm build` before subprocess tests — `olapDictionaryInfraMap.test.ts` requires `dist/` to exist
+- **ALWAYS run MooseStack end-to-end tests** (`cd apps/framework-cli-e2e && pnpm test`) to validate the TS↔Rust JSON contract — `pnpm test` alone will not catch CLI deserialization failures
