@@ -91,9 +91,11 @@ describe("moose seed clickhouse with seedFilter", function () {
   let testProjectDir: string;
 
   before(async function () {
-    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 300s)
-    // + replica readiness (up to 300s) = ~690s. Use 900s to be safe.
-    this.timeout(900_000);
+    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 600s)
+    // + replica readiness (up to 300s) = ~990s.
+    // The server start budget is 600s to allow for ClickHouse binary download
+    // (~1.5 GB) on CI cache miss plus TS compilation + table creation.
+    this.timeout(1_200_000);
     testLogger.info("\n=== Starting Seed Filter Test ===");
 
     testProjectDir = createTempTestDirectory("seed-filter-test");
@@ -192,9 +194,12 @@ describe("moose seed clickhouse with seedFilter", function () {
       testLogger.debug("stderr:", data.toString().trim());
     });
 
+    // Use 600s (not the default 300s) because dockerless mode downloads
+    // the ClickHouse binary (~1.5 GB) on first run, which can take 200s+
+    // on CI even with the GitHub Actions cache step.
     await waitForServerStart(
       devProcess,
-      TIMEOUTS.SERVER_STARTUP_MS,
+      600_000,
       SERVER_CONFIG.startupMessage,
       SERVER_CONFIG.url,
       { logger: testLogger },

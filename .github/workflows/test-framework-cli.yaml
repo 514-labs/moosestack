@@ -1000,6 +1000,14 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Cache ClickHouse binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.moose/binaries
+          key: ${{ runner.os }}-${{ runner.arch }}-moose-binaries-${{ hashFiles('apps/framework-cli/src/utilities/constants.rs') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-moose-binaries-
+
       - name: Run Init From Remote & Seed E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "moose seed clickhouse with seedFilter"
 
