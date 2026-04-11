@@ -1606,18 +1606,15 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         for (let i = 0; i < recordsToSend; i++) {
           await withRetries(
             async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/Foo`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    primaryKey: i === 0 ? eventId : randomUUID(),
-                    timestamp: TEST_DATA.TIMESTAMP,
-                    optionalText: `Hello world ${i}`,
-                  }),
-                },
-              );
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primaryKey: i === 0 ? eventId : randomUUID(),
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optionalText: `Hello world ${i}`,
+                }),
+              });
               if (!response.ok) {
                 const text = await response.text();
                 throw new Error(`${response.status}: ${text}`);
@@ -2460,20 +2457,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         for (let i = 0; i < recordsToSend; i++) {
           await withRetries(
             async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/foo`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    primary_key: i === 0 ? eventId : randomUUID(),
-                    baz: "QUUX",
-                    timestamp: TEST_DATA.TIMESTAMP,
-                    optional_text:
-                      i === 0 ? "Hello from Python" : `Test message ${i}`,
-                  }),
-                },
-              );
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: i === 0 ? eventId : randomUUID(),
+                  baz: "QUUX",
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optional_text:
+                    i === 0 ? "Hello from Python" : `Test message ${i}`,
+                }),
+              });
               if (!response.ok) {
                 const text = await response.text();
                 throw new Error(`${response.status}: ${text}`);
