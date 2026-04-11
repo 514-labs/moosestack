@@ -91,7 +91,9 @@ describe("moose seed clickhouse with seedFilter", function () {
   let testProjectDir: string;
 
   before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 300s)
+    // + replica readiness (up to 180s) = ~570s. Use 600s to be safe.
+    this.timeout(600_000);
     testLogger.info("\n=== Starting Seed Filter Test ===");
 
     testProjectDir = createTempTestDirectory("seed-filter-test");

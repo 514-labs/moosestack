@@ -1593,7 +1593,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+        // Budget: waitForStreamingFunctions (up to 180s) + send (~15s) + DB wait (180s) = 375s
+        this.timeout(480_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -1628,7 +1629,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          120_000,
+          180_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
@@ -2446,7 +2447,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+        // Budget: waitForStreamingFunctions (up to 180s) + send (~15s) + DB wait (180s) = 375s
+        this.timeout(480_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -2483,7 +2485,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           devProcess!,
           "Bar",
           recordsToSend,
-          120_000,
+          180_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
