@@ -429,7 +429,7 @@ pub async fn ls(
                 source_type: match &d.source {
                     DictionarySource::Table(_) => "table".to_string(),
                     DictionarySource::Query(_) => "query".to_string(),
-                    DictionarySource::External(_) => "external".to_string(),
+                    DictionarySource::External { .. } => "external".to_string(),
                 },
                 layout: format!("{:?}", d.layout)
                     .split(['{', ' '])
