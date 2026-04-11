@@ -475,10 +475,10 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::CreateView { .. }
         | AtomicOlapOperation::DropView { .. }
         | AtomicOlapOperation::CreateRowPolicy { .. }
-        | AtomicOlapOperation::DropRowPolicy { .. }
-        | AtomicOlapOperation::CreateDictionary { .. }
-        | AtomicOlapOperation::ReplaceDictionary { .. }
-        | AtomicOlapOperation::DropDictionary { .. } => None,
+        | AtomicOlapOperation::DropRowPolicy { .. } => None,
+        AtomicOlapOperation::CreateDictionary { dict, .. } => dict.cluster_name.as_deref(),
+        AtomicOlapOperation::ReplaceDictionary { after, .. } => after.cluster_name.as_deref(),
+        AtomicOlapOperation::DropDictionary { dict, .. } => dict.cluster_name.as_deref(),
     }
 }
 
@@ -537,17 +537,35 @@ pub async fn execute_changes(
     let mut db_to_clusters: HashMap<String, HashSet<String>> = HashMap::new();
 
     for op in setup_plan {
-        if let AtomicOlapOperation::CreateTable { table, .. } = op {
-            // Get database (defaults to project.clickhouse_config.db_name)
-            let db = table.database.as_ref().unwrap_or(db_name);
-
-            // If table has cluster, track it
-            if let Some(cluster) = &table.cluster_name {
-                db_to_clusters
-                    .entry(db.clone())
-                    .or_default()
-                    .insert(cluster.clone());
+        match op {
+            AtomicOlapOperation::CreateTable { table, .. } => {
+                let db = table.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &table.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
             }
+            AtomicOlapOperation::CreateDictionary { dict, .. } => {
+                let db = dict.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &dict.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
+            }
+            AtomicOlapOperation::ReplaceDictionary { after, .. } => {
+                let db = after.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &after.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
+            }
+            _ => {}
         }
     }
 
@@ -777,7 +795,10 @@ fn extract_cluster_name_from_serializable(op: &SerializableOlapOperation) -> Opt
         | SerializableOlapOperation::DropView { .. }
         | SerializableOlapOperation::RawSql { .. }
         | SerializableOlapOperation::CreateRowPolicy { .. }
-        | SerializableOlapOperation::DropRowPolicy { .. } => None,
+        | SerializableOlapOperation::DropRowPolicy { .. }
+        | SerializableOlapOperation::CreateDictionary { .. }
+        | SerializableOlapOperation::ReplaceDictionary { .. }
+        | SerializableOlapOperation::DropDictionary { .. } => None,
     }
 }
 
@@ -3374,14 +3395,10 @@ impl OlapOperations for ConfiguredDBClient {
             db_name
         );
 
-        let query = format!(
-            "SELECT name FROM system.dictionaries WHERE database = '{}' ORDER BY name",
-            db_name
-        );
-
         let mut cursor = self
             .client
-            .query(&query)
+            .query("SELECT name FROM system.dictionaries WHERE database = ? ORDER BY name")
+            .bind(db_name)
             .fetch::<DictionaryNameRow>()
             .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?;
 
