@@ -2157,6 +2157,7 @@ mod tests {
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
             metadata: None,
+            version: None,
         }
     }
 
