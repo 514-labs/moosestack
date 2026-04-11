@@ -17,7 +17,7 @@ pub fn handle(
         (2, 0, 7),  // ListOffsets
         (3, 1, 12), // Metadata
         (8, 2, 8),  // OffsetCommit
-        (9, 1, 7),  // OffsetFetch (capped at v7; v8 uses groups-based format)
+        (9, 1, 8),  // OffsetFetch
         (10, 0, 3), // FindCoordinator
         (11, 0, 9), // JoinGroup
         (12, 0, 4), // Heartbeat
