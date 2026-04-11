@@ -210,12 +210,21 @@ fn validate_dictionary_config(plan: &InfraPlan) -> Result<(), ValidationError> {
                 t.name == ts.table
                     && t.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
             });
+            // Compute the database of the dictionary being validated once, so we can
+            // use both name AND database to identify "self" — two dictionaries in
+            // different databases can share the same name.
+            let dict_db = dict.database.as_deref().unwrap_or(default_db);
             let is_dict_source = !shadowed_by_table
                 && plan.target_infra_map.olap_dictionaries.values().any(|d| {
                     // Exclude the dictionary being validated to avoid self-matching
                     // (e.g. dict "foo" with source table "foo" must not trigger
                     // dict-to-dict error against itself when no table "foo" exists).
-                    d.name != dict.name
+                    // Both name AND database must match to identify "self"; using only
+                    // name would incorrectly exclude a different dict with the same name
+                    // but a different database.
+                    let is_self = d.name == dict.name
+                        && d.database.as_deref().unwrap_or(default_db) == dict_db;
+                    !is_self
                         && d.name == ts.table
                         && d.database.as_deref().unwrap_or(default_db) == source_db_for_dict_check
                 });
@@ -1042,5 +1051,133 @@ mod tests {
             Err(ValidationError::DictionaryValidation(msg))
                 if msg.contains("does not exist") && !msg.contains("chaining")
         ));
+    }
+
+    // Helper: table_source with an explicit database override.
+    fn table_source_with_db(table: &str, database: &str) -> DictionarySource {
+        DictionarySource::Table(DictionaryTableSource {
+            table: table.to_string(),
+            database: Some(database.to_string()),
+            where_clause: None,
+            invalidate_query: None,
+        })
+    }
+
+    // Helper: make_dict with an explicit database field set.
+    fn make_dict_with_db(
+        name: &str,
+        database: &str,
+        source: DictionarySource,
+        primary_key: Vec<String>,
+        columns: Vec<DictionaryColumn>,
+        layout: DictionaryLayout,
+    ) -> OlapDictionary {
+        OlapDictionary {
+            database: Some(database.to_string()),
+            ..make_dict(name, source, primary_key, columns, layout)
+        }
+    }
+
+    #[test]
+    fn test_dictionary_dict_to_dict_self_exclusion_requires_name_and_db() {
+        // Scenario A — cross-database same-name dicts must NOT trigger dict-to-dict error.
+        //
+        // Dict A  (name="foo", database="db1") sources from table "foo" in "db1".
+        // Dict B  (name="foo", database="db2") is an unrelated dictionary.
+        // A real table "foo" exists in "db1" so dict A's source table is legitimate.
+        //
+        // Before the fix the self-exclusion guard `d.name != dict.name` would allow
+        // Dict B (same name "foo") to pass the filter when validating Dict A, making
+        // it look like dict A chains off a dictionary — a false positive.
+        // With the fix the guard compares name+database, so Dict B (different database)
+        // is correctly treated as a different dictionary and does NOT trigger the error.
+
+        let hashed_layout = || DictionaryLayout::Hashed {
+            initial_array_size: None,
+            max_load_factor: None,
+        };
+
+        // Table "foo" in "db1" — the legitimate source for dict A.
+        let mut source_table = create_test_table("foo", None);
+        source_table.database = Some("db1".to_string());
+
+        // Dict A: name="foo", database="db1", sources from table "foo" in "db1".
+        let dict_a = make_dict_with_db(
+            "foo",
+            "db1",
+            table_source_with_db("foo", "db1"),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            hashed_layout(),
+        );
+
+        // Dict B: name="foo", database="db2", uses a query source (not relevant here).
+        let dict_b = make_dict_with_db(
+            "foo",
+            "db2",
+            query_source(),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            hashed_layout(),
+        );
+
+        let mut plan = create_test_plan(vec![source_table]);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("db1_foo".to_string(), dict_a);
+        plan.target_infra_map
+            .olap_dictionaries
+            .insert("db2_foo".to_string(), dict_b);
+
+        let project = create_test_project(None);
+        // Must succeed: dict A sources from a real table, not from dict B.
+        assert!(
+            validate(&project, &plan).is_ok(),
+            "Expected Ok — Dict A sources from a table, not from Dict B (different database)"
+        );
+
+        // Scenario B — a dict sourcing from another dict in the SAME database must still error.
+        //
+        // Dict C (name="bar", database="db1") sources from table "baz_dict" in "db1".
+        // Dict D (name="baz_dict", database="db1") exists.  No table named "baz_dict".
+        // This is genuine dict-to-dict chaining and must be rejected.
+
+        let dict_c = make_dict_with_db(
+            "bar",
+            "db1",
+            table_source_with_db("baz_dict", "db1"),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            hashed_layout(),
+        );
+
+        let dict_d = make_dict_with_db(
+            "baz_dict",
+            "db1",
+            query_source(),
+            vec!["id".to_string()],
+            vec![make_dict_column("id")],
+            hashed_layout(),
+        );
+
+        let mut plan2 = create_test_plan(vec![]); // no tables
+        plan2
+            .target_infra_map
+            .olap_dictionaries
+            .insert("db1_bar".to_string(), dict_c);
+        plan2
+            .target_infra_map
+            .olap_dictionaries
+            .insert("db1_baz_dict".to_string(), dict_d);
+
+        let project2 = create_test_project(None);
+        assert!(
+            matches!(
+                validate(&project2, &plan2),
+                Err(ValidationError::DictionaryValidation(msg))
+                    if msg.contains("chaining")
+            ),
+            "Expected dict-to-dict chaining error when source dict is in the same database"
+        );
     }
 }
