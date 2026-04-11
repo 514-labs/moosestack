@@ -15,8 +15,7 @@ use crate::infrastructure::olap::clickhouse::{
 use crate::infrastructure::olap::clickhouse::{normalize_table_for_diff, IgnorableOperation};
 use crate::project::Project;
 use crate::utilities::constants::{
-    CLICKHOUSE_MACRO_CLUSTER_NAME_RULES, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
-    MIGRATION_FILE,
+    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
 use itertools::Itertools;
