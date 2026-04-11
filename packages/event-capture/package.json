@@ -6,7 +6,7 @@
     "url": "https://github.com/514-labs/moosestack"
   },
   "dependencies": {
-    "mixpanel": "^0.18.0",
+    "mixpanel": "^0.21.0",
     "next": "catalog:"
   },
   "peerDependencies": {
@@ -20,8 +20,8 @@
     "./event-library": "./events/eventLibrary.ts"
   },
   "devDependencies": {
-    "@types/react": "^19.0.1",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1"
+    "@types/react": "^19.2.14",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   }
 }
