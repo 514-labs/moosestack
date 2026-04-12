@@ -472,9 +472,9 @@ def test_source_external_serialization():
     )
     src = _serialize_dict_source(config)
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["source_type"] == "HTTP"
-    assert src["source"]["url"] == "http://api.example.com"
-    assert src["source"]["format"] == "JSONEachRow"
+    assert src["externalSource"]["source_type"] == "HTTP"
+    assert src["externalSource"]["url"] == "http://api.example.com"
+    assert src["externalSource"]["format"] == "JSONEachRow"
 
 
 def test_source_mongodb_serialization():
@@ -491,9 +491,9 @@ def test_source_mongodb_serialization():
     )
     src = _serialize_dict_source(config)
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["source_type"] == "MONGODB"
-    assert src["source"]["host"] == "mongo.example.com"
-    assert src["source"]["collection"] == "products"
+    assert src["externalSource"]["source_type"] == "MONGODB"
+    assert src["externalSource"]["host"] == "mongo.example.com"
+    assert src["externalSource"]["collection"] == "products"
 
 
 def test_external_source_secrets_are_unwrapped():
@@ -518,7 +518,7 @@ def test_external_source_secrets_are_unwrapped():
     src = _serialize_dict_source(config)
     assert src["type"] == "EXTERNAL"
     assert (
-        src["source"]["password"] == "supersecret"
+        src["externalSource"]["password"] == "supersecret"
     ), "SecretStr was not unwrapped — model_dump() likely masked it as '**********'"
 
 
@@ -685,7 +685,7 @@ def test_external_source_discriminant_uses_source_type_key():
         layout=HashedLayout(),
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert (
         "source_type" in inner
     ), f"Missing 'source_type' discriminant key — got: {list(inner.keys())}"
@@ -723,7 +723,7 @@ def test_all_external_source_types_emit_source_type_discriminant():
             layout=HashedLayout(),
         )
         result = _serialize_dict_source(config)
-        inner = result["source"]
+        inner = result["externalSource"]
         cls = ext_src.__class__.__name__
         assert (
             "source_type" in inner
@@ -1021,7 +1021,7 @@ def test_external_source_fields_are_camelcase(source, snake_key, camel_key):
         layout=HashedLayout(),
     )
     src = _serialize_dict_source(config)
-    inner = src["source"]
+    inner = src["externalSource"]
     assert camel_key in inner, (
         f"Expected camelCase key '{camel_key}' in serialized source, "
         f"got keys: {list(inner.keys())}"
@@ -1088,7 +1088,7 @@ def test_serialize_clickhouse_remote_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert result["type"] == "EXTERNAL"
     assert inner["source_type"] == "CLICK_HOUSE"
     assert inner["host"] == "ch.host"
@@ -1112,7 +1112,7 @@ def test_serialize_mysql_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert inner["source_type"] == "MYSQL"
     assert inner["whereClause"] == "active=1"
     assert inner["invalidateQuery"] == "SELECT max(updated_at) FROM t"
@@ -1132,7 +1132,7 @@ def test_serialize_postgresql_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert inner["source_type"] == "POSTGRESQL"
     assert inner["whereClause"] == "status='active'"
     assert inner["invalidateQuery"] == "SELECT max(rev) FROM t"
@@ -1144,7 +1144,7 @@ def test_serialize_redis_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert inner["source_type"] == "REDIS"
     assert inner["storageType"] == "hash_map"
     assert inner["dbIndex"] == 3
@@ -1160,7 +1160,7 @@ def test_serialize_executable_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert inner["source_type"] == "EXECUTABLE"
     assert inner["implicitKey"] is True
     assert "implicit_key" not in inner
@@ -1177,7 +1177,7 @@ def test_serialize_s3_source():
         external_source=src, primary_key=["id"], layout=HashedLayout()
     )
     result = _serialize_dict_source(config)
-    inner = result["source"]
+    inner = result["externalSource"]
     assert inner["source_type"] == "S3"
     assert inner["accessKeyId"] == "AKIAIOSFODNN7"
     assert inner["secretAccessKey"] == "wJalrXUtnFEMI"
@@ -1479,11 +1479,11 @@ def test_serializer_external_source_end_to_end():
     assert "dict_items_ext" in dicts
     src = dicts["dict_items_ext"]["source"]
     assert src["type"] == "EXTERNAL"
-    assert src["source"]["source_type"] == "HTTP"
-    assert src["source"]["url"] == "http://api.example.com/items"
+    assert src["externalSource"]["source_type"] == "HTTP"
+    assert src["externalSource"]["url"] == "http://api.example.com/items"
     # camelCase must be used, not snake_case
-    assert "whereClause" in src["source"]
-    assert "where_clause" not in src["source"]
+    assert "whereClause" in src["externalSource"]
+    assert "where_clause" not in src["externalSource"]
 
 
 def test_serializer_layout_with_params():
