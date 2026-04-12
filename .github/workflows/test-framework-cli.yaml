@@ -395,7 +395,7 @@ jobs:
     if: needs.detect-changes.outputs.should_run == 'true'
     name: "Test E2E TS Tests: ${{ matrix.suite-name }} (Node ${{ matrix.node-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 15
+    timeout-minutes: 25
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -406,11 +406,13 @@ jobs:
       matrix:
         node-version: [20, 22, 24]
         package-manager: [npm]
-        suite-name: [main, migration, dotenv, db-pull, s3-secrets, s3-engine]
+        suite-name: [default, main, migration, dotenv, db-pull, s3-secrets, s3-engine]
         include:
           - package-manager: npm
             pm-name: npm
             pm-version: bundled
+          - suite-name: default
+            suite-grep: "typescript template default"
           - suite-name: main
             suite-grep: "typescript template tests main"
           - suite-name: migration
@@ -548,7 +550,7 @@ jobs:
     if: needs.detect-changes.outputs.should_run == 'true'
     name: "Test E2E PY Tests: ${{ matrix.suite-name }} (Python ${{ matrix.python-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 15
+    timeout-minutes: 25
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -558,8 +560,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-        suite-name: [main, dotenv, db-pull, s3-secrets, s3-engine]
+        suite-name: [default, main, dotenv, db-pull, s3-secrets, s3-engine]
         include:
+          - suite-name: default
+            suite-grep: "python template default"
           - suite-name: main
             suite-grep: "python template tests main"
           - suite-name: dotenv

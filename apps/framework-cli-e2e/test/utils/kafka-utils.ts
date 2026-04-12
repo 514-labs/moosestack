@@ -99,6 +99,99 @@ export const waitForKafkaReady = async (
  * If no relevant consumer groups appear within 10 consecutive checks,
  * assumes streaming is not active and returns early.
  */
+/**
+ * List all Kafka topics using the admin API.
+ * Used to verify topic creation in dockerless mode (replaces `docker exec rpk topic list`).
+ */
+export const listKafkaTopics = async (
+  options: KafkaOptions = {},
+): Promise<string[]> => {
+  const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
+
+  const kafka = new Kafka({
+    clientId: "e2e-topic-lister",
+    brokers: [brokerAddress],
+    logLevel: logLevel.NOTHING,
+    retry: { retries: 3 },
+  });
+
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    const topics = await admin.listTopics();
+    log.debug(`Listed ${topics.length} topics`, { topics });
+    return topics;
+  } finally {
+    try {
+      await admin.disconnect();
+    } catch {
+      // Best effort disconnect
+    }
+  }
+};
+
+/**
+ * Consume a single message from a Kafka topic.
+ * Used to verify DLQ messages in dockerless mode (replaces `docker exec rpk topic consume`).
+ * Returns the message value as a string, or null if no message was consumed within the timeout.
+ */
+export const consumeKafkaMessage = async (
+  topic: string,
+  timeoutMs: number = 30_000,
+  options: KafkaOptions = {},
+): Promise<string | null> => {
+  const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
+
+  const kafka = new Kafka({
+    clientId: "e2e-dlq-consumer",
+    brokers: [brokerAddress],
+    logLevel: logLevel.NOTHING,
+    retry: { retries: 3 },
+  });
+
+  const consumer = kafka.consumer({
+    groupId: `e2e-dlq-reader-${Date.now()}`,
+  });
+
+  let messageValue: string | null = null;
+
+  try {
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: true });
+
+    const consumePromise = new Promise<void>((resolve) => {
+      consumer.run({
+        eachMessage: async ({ message }) => {
+          if (message.value) {
+            messageValue = message.value.toString();
+            log.debug(`Consumed message from ${topic}`, {
+              value: messageValue.substring(0, 200),
+            });
+            resolve();
+          }
+        },
+      });
+    });
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
+
+    await Promise.race([consumePromise, timeoutPromise]);
+    return messageValue;
+  } finally {
+    try {
+      await consumer.disconnect();
+    } catch {
+      // Best effort disconnect
+    }
+  }
+};
+
 export const waitForConsumerGroupsStable = async (
   timeoutMs: number = 60_000,
   options: KafkaOptions = {},

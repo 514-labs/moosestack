@@ -6,7 +6,7 @@
  *
  * We keep all template tests in a single file to ensure they run sequentially.
  * This is necessary because:
- * 1. Each template test spins up the same infrastructure (Docker containers, ports, etc.)
+ * 1. Each template test spins up the same infrastructure (native ClickHouse, devkafka, devredis, etc.)
  * 2. Running tests in parallel would cause port conflicts and resource contention
  * 3. The cleanup process for one test could interfere with another test's setup
  *
@@ -69,6 +69,8 @@ import {
   PlanOutput,
   getTableChanges,
   runMoosePlanJson,
+  listKafkaTopics,
+  consumeKafkaMessage,
 } from "./utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import {
@@ -980,9 +982,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        if (!kafkaSourceDDL.includes("redpanda:9092")) {
+        // In dockerless mode, devkafka runs at 127.0.0.1:19092
+        if (!kafkaSourceDDL.includes("127.0.0.1:19092")) {
           throw new Error(
-            `Kafka table should have broker 'redpanda:9092'. DDL: ${kafkaSourceDDL}`,
+            `Kafka table should have broker '127.0.0.1:19092'. DDL: ${kafkaSourceDDL}`,
           );
         }
 
@@ -3210,40 +3213,27 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               await clickhouse.close();
             }
           } else {
-            const { stdout: containerName } = await execAsync(
-              `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+            // In dockerless mode, use kafkajs to verify DLQ topics and messages
+            const topics = await listKafkaTopics();
+            const dlqTopic = topics.find(
+              (t: string) =>
+                t.includes("FooDeadLetterQueue") &&
+                t.startsWith(`${NAMESPACE}.`),
             );
-            expect(containerName.trim()).to.not.be.empty;
-
-            const { stdout: topicList } = await execAsync(
-              `docker exec ${containerName.trim()} rpk topic list`,
-            );
-            const dlqTopic = topicList
-              .split("\n")
-              .map((l: string) => l.trim().split(/\s+/)[0])
-              .find(
-                (t: string) =>
-                  t &&
-                  t.includes("FooDeadLetterQueue") &&
-                  t.startsWith(`${NAMESPACE}.`),
-              );
             expect(dlqTopic, "Namespace-prefixed DLQ topic should exist").to.not
               .be.undefined;
 
             await withRetries(
               async () => {
-                const { stdout: messages } = await execAsync(
-                  `docker exec ${containerName.trim()} rpk topic consume ${dlqTopic} --num 1 --format '%v\\n' --offset start`,
-                  { timeout: 30_000 },
-                );
-                expect(messages.trim()).to.not.be.empty;
-                const record = JSON.parse(messages.trim());
+                const message = await consumeKafkaMessage(dlqTopic!, 30_000);
+                expect(message).to.not.be.null;
+                const record = JSON.parse(message!);
                 expect(record).to.have.nested.property(
                   "originalRecord.primary_key",
                   eventId,
                 );
                 testLogger.info(
-                  `✅ DLQ record verified on Redpanda topic ${dlqTopic}`,
+                  `✅ DLQ record verified on Kafka topic ${dlqTopic}`,
                 );
               },
               { attempts: 10, delayMs: 3_000 },
@@ -3254,23 +3244,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it(`should have namespace-prefixed Kafka topics including DLQ (${config.language})`, async function () {
           this.timeout(60_000);
 
-          const { stdout: containerName } = await execAsync(
-            `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
-          );
+          // Use kafkajs admin API to list topics (dockerless mode, no Docker rpk)
+          const topicNames = await listKafkaTopics();
 
-          expect(containerName.trim()).to.not.be.empty;
-
-          const { stdout: topicList } = await execAsync(
-            `docker exec ${containerName.trim()} rpk topic list`,
-          );
-
-          testLogger.info("Kafka topics:\n" + topicList);
-
-          const lines = topicList.split("\n");
-          const topicNames = lines
-            .slice(1)
-            .map((line: string) => line.trim().split(/\s+/)[0])
-            .filter(Boolean);
+          testLogger.info("Kafka topics:\n" + topicNames.join("\n"));
 
           const namespacedTopics = topicNames.filter((t: string) =>
             t.startsWith(`${NAMESPACE}.`),
