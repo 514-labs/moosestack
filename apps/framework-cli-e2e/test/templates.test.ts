@@ -63,6 +63,7 @@ import {
   cleanupTestSuite,
   performGlobalCleanup,
   stopDevProcess,
+  killRemainingProcesses,
   logger,
   waitForInfrastructureChanges,
   PlanOutput,
@@ -3041,13 +3042,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         before(async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          // Stop the main dev server and its containers to free ports
+          // Stop the main dev server and its native infra to free ports
           testLogger.info("Stopping main dev server for namespace DLQ test...");
           await stopDevProcess(devProcess);
-          await execAsync(
-            `docker compose -f .moose/docker-compose.yml -p ${config.appName} down -v`,
-            { cwd: TEST_PROJECT_DIR },
-          );
+          await killRemainingProcesses();
 
           testLogger.info(
             "Initializing fresh project with namespace for DLQ test...",
