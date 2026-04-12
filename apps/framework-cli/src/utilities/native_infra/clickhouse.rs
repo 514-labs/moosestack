@@ -40,9 +40,11 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 
     let ch = &project.clickhouse_config;
 
-    // Write users.xml — defines the admin user in a separate file so
-    // `<user_directories>` can reference it alongside a writable
-    // `<local_directory>` for SQL-created roles and row policies.
+    // Write users.xml — defines the admin user, profiles, and quotas in a
+    // separate file loaded via ClickHouse's `users_config` setting.
+    // By placing this in the same directory as config.xml with the default name
+    // "users.xml", ClickHouse auto-discovers it and also auto-creates a
+    // `local_directory` user directory for SQL-created roles / row policies.
     let users_xml = format!(
         r#"<?xml version="1.0"?>
 <clickhouse>
@@ -58,6 +60,14 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             <access_management>1</access_management>
         </{user}>
     </users>
+
+    <profiles>
+        <default/>
+    </profiles>
+
+    <quotas>
+        <default/>
+    </quotas>
 </clickhouse>
 "#,
         user = ch.user,
@@ -87,12 +97,12 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <user_files_path>{data_path}/user_files/</user_files_path>
     <format_schema_path>{data_path}/format_schemas/</format_schema_path>
 
-    <!-- User definitions are in users.xml; writable access storage for
-         SQL-created roles and row policies is in local_directory. -->
+    <!-- Point to users.xml for user definitions, profiles, and quotas. -->
+    <users_config>{users_path}</users_config>
+
+    <!-- Writable access storage for SQL-created roles and row policies
+         (required for RLS support). -->
     <user_directories>
-        <users_xml>
-            <path>{users_path}</path>
-        </users_xml>
         <local_directory>
             <path>{data_path}/access/</path>
         </local_directory>
@@ -144,14 +154,6 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             </invalidCertificateHandler>
         </client>
     </openSSL>
-
-    <profiles>
-        <default/>
-    </profiles>
-
-    <quotas>
-        <default/>
-    </quotas>
 
     <!-- Macros for replicated engine table paths -->
     <macros>
