@@ -23,7 +23,7 @@ import { promisify } from "util";
 import { createClient } from "@clickhouse/client";
 
 // Import constants and utilities
-import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
+import { TIMEOUTS } from "./constants";
 
 import {
   waitForServerStart,
@@ -31,6 +31,10 @@ import {
   createTempTestDirectory,
   cleanupTestSuite,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
+  buildClickHouseConfig,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -48,8 +52,13 @@ const TEMPLATE_SOURCE_DIR = path.resolve(
 
 const testLogger = logger.scope("migration-test");
 
+const PORTS = getTestPorts(10);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
+const CH_CONFIG = buildClickHouseConfig(PORTS);
+
 // Build ClickHouse connection URL for migration commands
-const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123/${CLICKHOUSE_CONFIG.database}`;
+const CLICKHOUSE_URL = `http://${CH_CONFIG.username}:${CH_CONFIG.password}@localhost:${PORTS.clickhouseHttpPort}/${CH_CONFIG.database}`;
 
 describe("typescript template tests - migration", () => {
   let outerMooseProcess: ChildProcess;
@@ -117,8 +126,8 @@ describe("typescript template tests - migration", () => {
       cwd: outerMooseDir,
       env: {
         ...process.env,
+        ...PORT_ENV,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
@@ -130,14 +139,14 @@ describe("typescript template tests - migration", () => {
     await waitForServerStart(
       outerMooseProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      SERVER_CONFIG.startupMessage,
-      SERVER_CONFIG.url,
+      SERVER.startupMessage,
+      SERVER.url,
     );
 
     testLogger.info("✓ Infrastructure ready (ClickHouse + Keeper running)");
 
     // Clean up any existing test tables
-    await cleanupClickhouseData();
+    await cleanupClickhouseData({ clickhouseConfig: CH_CONFIG });
     testLogger.info("✓ ClickHouse cleaned");
   });
 
@@ -203,7 +212,7 @@ describe("typescript template tests - migration", () => {
       testLogger.info("Migrate output:", stdout);
 
       // Verify tables were created in ClickHouse
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(CH_CONFIG);
 
       const result = await client.query({
         query: "SHOW TABLES",
@@ -249,7 +258,7 @@ describe("typescript template tests - migration", () => {
       testLogger.info("Setting up initial state...");
 
       // Check if tables already exist (from previous tests)
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(CH_CONFIG);
       const tablesCheck = await client.query({
         query: "SHOW TABLES",
         format: "JSONEachRow",
@@ -308,7 +317,7 @@ describe("typescript template tests - migration", () => {
       testLogger.info("Manually modifying database to create drift...");
 
       await client.command({
-        query: `ALTER TABLE ${CLICKHOUSE_CONFIG.database}.Bar ADD COLUMN drift_column String`,
+        query: `ALTER TABLE ${CH_CONFIG.database}.Bar ADD COLUMN drift_column String`,
       });
       testLogger.info("✓ Added drift_column to Bar table");
 

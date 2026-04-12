@@ -115,7 +115,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 
     <!-- Embedded Keeper (replaces separate clickhouse-keeper container) -->
     <keeper_server>
-        <tcp_port>9181</tcp_port>
+        <tcp_port>{keeper_port}</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>{data_path}/coordination/log</log_storage_path>
         <snapshot_storage_path>{data_path}/coordination/snapshots</snapshot_storage_path>
@@ -128,7 +128,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             <server>
                 <id>1</id>
                 <hostname>127.0.0.1</hostname>
-                <port>9234</port>
+                <port>{keeper_raft_port}</port>
             </server>
         </raft_configuration>
     </keeper_server>
@@ -136,7 +136,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <zookeeper>
         <node>
             <host>127.0.0.1</host>
-            <port>9181</port>
+            <port>{keeper_port}</port>
         </node>
     </zookeeper>
 
@@ -170,6 +170,8 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 "#,
         http_port = ch.host_port,
         native_port = ch.native_port,
+        keeper_port = ch.keeper_port,
+        keeper_raft_port = ch.keeper_raft_port,
         db_name = ch.db_name,
         data_path = data_dir.join("data").display(),
         log_dir = data_dir.join("logs").display(),

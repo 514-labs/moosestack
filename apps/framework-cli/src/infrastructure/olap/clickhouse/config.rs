@@ -19,6 +19,14 @@ fn default_native_port() -> i32 {
     9000
 }
 
+fn default_keeper_port() -> i32 {
+    9181
+}
+
+fn default_keeper_raft_port() -> i32 {
+    9234
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClusterConfig {
     pub name: String,
@@ -34,6 +42,12 @@ pub struct ClickHouseConfig {
     pub host_port: i32, // e.g. 18123
     #[serde(default = "default_native_port")]
     pub native_port: i32, // e.g. 9000
+    /// Embedded Keeper TCP port (ZooKeeper protocol). Only used in native/dockerless mode.
+    #[serde(default = "default_keeper_port")]
+    pub keeper_port: i32, // e.g. 9181
+    /// Embedded Keeper Raft consensus port. Only used in native/dockerless mode.
+    #[serde(default = "default_keeper_raft_port")]
+    pub keeper_raft_port: i32, // e.g. 9234
     /// Optional path on the host machine to mount as the ClickHouse data volume.
     /// If not specified, a Docker-managed volume will be used.
     #[serde(default)]
@@ -64,6 +78,8 @@ impl Default for ClickHouseConfig {
             host: "localhost".to_string(),
             host_port: 18123,
             native_port: default_native_port(),
+            keeper_port: default_keeper_port(),
+            keeper_raft_port: default_keeper_raft_port(),
             host_data_path: None,
             additional_databases: Vec::new(),
             clusters: None,
@@ -207,6 +223,8 @@ pub fn parse_clickhouse_connection_string_with_metadata(
         host: host.clone(),
         host_port: http_port,
         native_port,
+        keeper_port: default_keeper_port(),
+        keeper_raft_port: default_keeper_raft_port(),
         host_data_path: None,
         additional_databases: Vec::new(),
         clusters: None,

@@ -1,0 +1,106 @@
+/**
+ * Port configuration for E2E test suites.
+ *
+ * Each test file uses a unique port offset so that multiple test suites
+ * can run in parallel on the same machine without port conflicts.
+ */
+
+/**
+ * All infrastructure ports used by a single Moose dev server instance.
+ */
+export interface TestPorts {
+  /** Moose HTTP ingestion / API server */
+  httpPort: number;
+  /** Moose management / console server */
+  managementPort: number;
+  /** ClickHouse HTTP port */
+  clickhouseHttpPort: number;
+  /** ClickHouse native TCP port */
+  clickhouseNativePort: number;
+  /** Embedded ClickHouse Keeper (ZooKeeper) TCP port */
+  keeperPort: number;
+  /** Embedded ClickHouse Keeper Raft consensus port */
+  keeperRaftPort: number;
+  /** Kafka / devkafka broker port */
+  kafkaPort: number;
+  /** Redis / devredis port */
+  redisPort: number;
+  /** Temporal gRPC port */
+  temporalPort: number;
+}
+
+/**
+ * Default ports (offset 0) — matches the moose dev defaults.
+ */
+const BASE_PORTS: TestPorts = {
+  httpPort: 4000,
+  managementPort: 5001,
+  clickhouseHttpPort: 18123,
+  clickhouseNativePort: 19000,
+  keeperPort: 9181,
+  keeperRaftPort: 9234,
+  kafkaPort: 19092,
+  redisPort: 6379,
+  temporalPort: 7233,
+};
+
+/**
+ * Compute a unique set of ports for a test suite.
+ *
+ * @param offset - A unique offset per test file (e.g. 0, 10, 20, 30, …).
+ *                 Each port is incremented by this value.
+ */
+export function getTestPorts(offset: number): TestPorts {
+  return {
+    httpPort: BASE_PORTS.httpPort + offset,
+    managementPort: BASE_PORTS.managementPort + offset,
+    clickhouseHttpPort: BASE_PORTS.clickhouseHttpPort + offset,
+    clickhouseNativePort: BASE_PORTS.clickhouseNativePort + offset,
+    keeperPort: BASE_PORTS.keeperPort + offset,
+    keeperRaftPort: BASE_PORTS.keeperRaftPort + offset,
+    kafkaPort: BASE_PORTS.kafkaPort + offset,
+    redisPort: BASE_PORTS.redisPort + offset,
+    temporalPort: BASE_PORTS.temporalPort + offset,
+  };
+}
+
+/**
+ * Build the MOOSE_* environment variables that configure all infrastructure
+ * ports for a `moose dev --dockerless` process.
+ */
+export function buildPortEnv(ports: TestPorts): Record<string, string> {
+  return {
+    MOOSE_HTTP_SERVER_CONFIG__PORT: `${ports.httpPort}`,
+    MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT: `${ports.managementPort}`,
+    MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${ports.clickhouseHttpPort}`,
+    MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${ports.clickhouseNativePort}`,
+    MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${ports.keeperPort}`,
+    MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${ports.keeperRaftPort}`,
+    MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${ports.kafkaPort}`,
+    MOOSE_REDIS_CONFIG__PORT: `${ports.redisPort}`,
+    MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${ports.temporalPort}`,
+  };
+}
+
+/**
+ * Build a ClickHouse client config object for the given ports.
+ */
+export function buildClickHouseConfig(ports: TestPorts) {
+  return {
+    url: `http://localhost:${ports.clickhouseHttpPort}`,
+    username: "panda",
+    password: "pandapass",
+    database: "local",
+  };
+}
+
+/**
+ * Build a server config object for the given ports.
+ */
+export function buildServerConfig(ports: TestPorts) {
+  return {
+    url: `http://localhost:${ports.httpPort}`,
+    managementUrl: `http://localhost:${ports.managementPort}`,
+    startupMessage: `Your local development server is running at: http://localhost:${ports.httpPort}/ingest`,
+  };
+}

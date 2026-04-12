@@ -6,8 +6,23 @@ import { logger, ScopedLogger } from "./logger";
 
 const dbLogger = logger.scope("utils:database");
 
+/** Default ClickHouse config used when no override is provided. */
+// eslint-disable-next-line prefer-const
+let chConfig: typeof CLICKHOUSE_CONFIG = CLICKHOUSE_CONFIG;
+
+/** Resolve ClickHouse config: use override from options, or fall back to default. */
+const resolveChConfig = (options?: DatabaseOptions) =>
+  options?.clickhouseConfig ?? chConfig;
+
 export interface DatabaseOptions {
   logger?: ScopedLogger;
+  /** Override the ClickHouse connection config (default: CLICKHOUSE_CONFIG from constants) */
+  clickhouseConfig?: {
+    url: string;
+    username: string;
+    password: string;
+    database: string;
+  };
 }
 
 /**
@@ -22,6 +37,7 @@ export const waitForClickhouseReplicasReady = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   const attempts = Math.ceil(timeoutMs / 1000);
   let lastRestartPoll = 0;
   let pollCount = 0;
@@ -29,7 +45,7 @@ export const waitForClickhouseReplicasReady = async (
   await withRetries(
     async () => {
       pollCount++;
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query:
@@ -86,11 +102,12 @@ export const cleanupClickhouseData = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.info("Cleaning up ClickHouse data");
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: "SHOW TABLES",
@@ -146,6 +163,7 @@ export const waitForDBWrite = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
@@ -153,7 +171,7 @@ export const waitForDBWrite = async (
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName}${whereCondition}`,
@@ -246,6 +264,7 @@ export const waitForMaterializedViewUpdate = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.debug(`Waiting for materialized view ${tableName} to update`, {
     expectedRows,
   });
@@ -254,7 +273,7 @@ export const waitForMaterializedViewUpdate = async (
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName}`,
@@ -296,12 +315,13 @@ export const verifyClickhouseData = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT * FROM ${fullTableName} WHERE ${primaryKeyField} = '${eventId}'`,
@@ -349,7 +369,7 @@ export const verifyRecordCount = async (
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName} WHERE ${whereClause}`,
@@ -423,7 +443,7 @@ export const getTableSchema = async (
 ): Promise<ClickHouseColumn[]> => {
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const client = createClient(chConfig);
   try {
     const result = await client.query({
       query: `DESCRIBE TABLE ${fullTableName}`,
@@ -445,7 +465,7 @@ export const getTableDDL = async (
 ): Promise<string> => {
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const client = createClient(chConfig);
   try {
     const result = await client.query({
       query: `SHOW CREATE TABLE ${fullTableName}`,
@@ -543,7 +563,7 @@ export const verifyTableConstraints = async (
  * Lists all tables in the specified database (or current database if not specified)
  */
 export const getAllTables = async (database?: string): Promise<string[]> => {
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const client = createClient(chConfig);
   try {
     const query = database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";
     const result = await client.query({
@@ -869,13 +889,14 @@ export const verifyVersionedTables = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.debug(`Verifying versioned tables for ${baseTableName}`, {
     expectedVersions,
   });
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const query =
           database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";

@@ -19,16 +19,19 @@ import * as path from "path";
 import { promisify } from "util";
 import { createClient } from "@clickhouse/client";
 
-import { TIMEOUTS, CLICKHOUSE_CONFIG } from "./constants";
+import { TIMEOUTS } from "./constants";
 import {
   waitForServerStart,
   cleanupClickhouseData,
   createTempTestDirectory,
   cleanupTestSuite,
-  getTableSchema,
   setupPythonProject,
   setupTypeScriptProject,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
+  buildClickHouseConfig,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -42,9 +45,14 @@ const MOOSE_TS_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/ts-moose-lib",
 );
-const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123?database=${CLICKHOUSE_CONFIG.database}`;
 
 const testLogger = logger.scope("db-pull-defaults-test");
+
+const PORTS = getTestPorts(30);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
+const CH_CONFIG = buildClickHouseConfig(PORTS);
+const CLICKHOUSE_URL = `http://${CH_CONFIG.username}:${CH_CONFIG.password}@localhost:${PORTS.clickhouseHttpPort}?database=${CH_CONFIG.database}`;
 
 describe("python template tests - db-pull code generation", () => {
   let devProcess: ChildProcess;
@@ -78,10 +86,10 @@ describe("python template tests - db-pull code generation", () => {
       cwd: testProjectDir,
       env: {
         ...process.env,
+        ...PORT_ENV,
         VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
         PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
@@ -92,15 +100,15 @@ describe("python template tests - db-pull code generation", () => {
     await waitForServerStart(
       devProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      "development server started",
-      "http://localhost:4000",
+      SERVER.startupMessage,
+      SERVER.url,
     );
 
     testLogger.info("✓ Infrastructure ready");
 
     // Clean ClickHouse and create test table
-    await cleanupClickhouseData();
-    client = createClient(CLICKHOUSE_CONFIG);
+    await cleanupClickhouseData({ clickhouseConfig: CH_CONFIG });
+    client = createClient(CH_CONFIG);
   });
 
   after(async function () {
@@ -242,7 +250,7 @@ describe("python template tests - db-pull code generation", () => {
     testLogger.info("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
+      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}" --save`,
       {
         cwd: testProjectDir,
         env: {
@@ -265,7 +273,7 @@ describe("python template tests - db-pull code generation", () => {
 
     try {
       const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
+        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}"`,
         {
           cwd: testProjectDir,
           env: {
@@ -297,10 +305,14 @@ describe("python template tests - db-pull code generation", () => {
     // ============ STEP 6: Verify Table Schema ============
     testLogger.info("\n--- Verifying table schema after migration ---");
 
-    const schema = await getTableSchema(TEST_TABLE_NAME);
+    const schemaResult = await client.query({
+      query: `DESCRIBE TABLE ${TEST_TABLE_NAME}`,
+      format: "JSONEachRow",
+    });
+    const schema: any[] = await schemaResult.json();
     testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
 
-    const sampleHashCol = schema.find((col) => col.name === "sample_hash");
+    const sampleHashCol = schema.find((col: any) => col.name === "sample_hash");
     testLogger.info(
       "sample_hash column:",
       JSON.stringify(sampleHashCol, null, 2),
@@ -309,7 +321,7 @@ describe("python template tests - db-pull code generation", () => {
     expect(sampleHashCol!.default_type).to.equal("DEFAULT");
     expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
 
-    const hourStampCol = schema.find((col) => col.name === "hour_stamp");
+    const hourStampCol = schema.find((col: any) => col.name === "hour_stamp");
     expect(hourStampCol).to.exist;
     expect(hourStampCol!.default_type).to.equal("DEFAULT");
     expect(hourStampCol!.default_expression).to.equal(
@@ -455,8 +467,8 @@ describe("typescript template tests - db-pull code generation", () => {
       cwd: testProjectDir,
       env: {
         ...process.env,
+        ...PORT_ENV,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
@@ -467,15 +479,15 @@ describe("typescript template tests - db-pull code generation", () => {
     await waitForServerStart(
       devProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      "development server started",
-      "http://localhost:4000",
+      SERVER.startupMessage,
+      SERVER.url,
     );
 
     testLogger.info("✓ Infrastructure ready");
 
     // Clean ClickHouse and create test table
-    await cleanupClickhouseData();
-    client = createClient(CLICKHOUSE_CONFIG);
+    await cleanupClickhouseData({ clickhouseConfig: CH_CONFIG });
+    client = createClient(CH_CONFIG);
   });
 
   after(async function () {
@@ -609,7 +621,7 @@ describe("typescript template tests - db-pull code generation", () => {
     testLogger.info("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
+      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}" --save`,
       {
         cwd: testProjectDir,
         env: {
@@ -632,7 +644,7 @@ describe("typescript template tests - db-pull code generation", () => {
 
     try {
       const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
+        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}"`,
         {
           cwd: testProjectDir,
           env: {
@@ -664,7 +676,11 @@ describe("typescript template tests - db-pull code generation", () => {
     // ============ STEP 6: Verify Table Schema ============
     testLogger.info("\n--- Verifying table schema after migration ---");
 
-    const schema = await getTableSchema(TEST_TABLE_NAME);
+    const schemaResult = await client.query({
+      query: `DESCRIBE TABLE ${TEST_TABLE_NAME}`,
+      format: "JSONEachRow",
+    });
+    const schema: any[] = await schemaResult.json();
     testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
 
     const sampleHashCol = schema.find((col) => col.name === "sample_hash");

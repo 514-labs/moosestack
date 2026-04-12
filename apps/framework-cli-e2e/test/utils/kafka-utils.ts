@@ -7,6 +7,8 @@ const kafkaLogger = logger.scope("utils:kafka");
 
 export interface KafkaOptions {
   logger?: ScopedLogger;
+  /** Override the Kafka broker port (default: 19092) */
+  port?: number;
 }
 
 const execAsync = promisify(require("child_process").exec);
@@ -14,7 +16,7 @@ const execAsync = promisify(require("child_process").exec);
 // Use 127.0.0.1 (IPv4) explicitly because devkafka binds to 127.0.0.1
 // and "localhost" may resolve to ::1 (IPv6) first on some CI runners.
 const KAFKA_HOST = "127.0.0.1";
-const KAFKA_PORT = 19092;
+const DEFAULT_KAFKA_PORT = 19092;
 
 /**
  * Check if Kafka broker is ready to accept connections
@@ -24,25 +26,26 @@ export const isKafkaReady = async (
   options: KafkaOptions = {},
 ): Promise<boolean> => {
   const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
 
   try {
     // Try to establish a TCP connection to Kafka using bash's /dev/tcp
     // The connection check is wrapped with an outer timeout enforced by execAsync
-    const command = `bash -c "echo > /dev/tcp/${KAFKA_HOST}/${KAFKA_PORT}" 2>/dev/null && echo "success" || echo "failed"`;
+    const command = `bash -c "echo > /dev/tcp/${KAFKA_HOST}/${port}" 2>/dev/null && echo "success" || echo "failed"`;
 
     const { stdout } = await execAsync(command, { timeout: 3000 });
     const ready = stdout.trim() === "success";
     if (ready) {
       log.debug("Kafka broker is ready", {
         host: KAFKA_HOST,
-        port: KAFKA_PORT,
+        port,
       });
     }
     return ready;
   } catch (error) {
     log.debug("Kafka connection check failed", {
       host: KAFKA_HOST,
-      port: KAFKA_PORT,
+      port,
     });
     return false;
   }
@@ -59,9 +62,10 @@ export const waitForKafkaReady = async (
   options: KafkaOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
   log.debug("Waiting for Kafka broker to be ready", {
     host: KAFKA_HOST,
-    port: KAFKA_PORT,
+    port,
     timeout,
   });
 
@@ -70,7 +74,7 @@ export const waitForKafkaReady = async (
 
   await withRetries(
     async () => {
-      const ready = await isKafkaReady({ logger: log });
+      const ready = await isKafkaReady({ logger: log, port });
       if (!ready) {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
         throw new Error(
@@ -100,7 +104,8 @@ export const waitForConsumerGroupsStable = async (
   options: KafkaOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? kafkaLogger;
-  const brokerAddress = `${KAFKA_HOST}:${KAFKA_PORT}`;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
 
   const kafka = new Kafka({
     clientId: "e2e-group-checker",

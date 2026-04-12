@@ -29,6 +29,9 @@ import {
   removeTestProject,
   cleanupTestSuite,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
 } from "./utils";
 import { captureProcessOutput } from "./utils/process-utils";
 
@@ -43,6 +46,10 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 );
 
 const testLogger = logger.scope("s3-secrets-test");
+
+const PORTS = getTestPorts(40);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
 
 describe("typescript template tests - S3Queue Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -71,12 +78,12 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
+          ...PORT_ENV,
           // Set dummy credentials for both S3Queue and S3 engine testing
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
           MOOSE_FEATURES__WORKFLOWS: "false",
           MOOSE_TELEMETRY__ENABLED: "false",
           MOOSE_ACCEPT_DESTRUCTIVE: "1",
@@ -86,12 +93,15 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: true,
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
@@ -147,8 +157,8 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       // Create a clean environment without the test credentials
       const envWithoutCredentials: NodeJS.ProcessEnv = {
         ...process.env,
+        ...PORT_ENV,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
         MOOSE_ACCEPT_DESTRUCTIVE: "1",
@@ -245,6 +255,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
+          ...PORT_ENV,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
           // Set dummy credentials for both S3Queue and S3 engine testing
@@ -252,7 +263,6 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
           MOOSE_FEATURES__WORKFLOWS: "false",
           MOOSE_TELEMETRY__ENABLED: "false",
           MOOSE_ACCEPT_DESTRUCTIVE: "1",
@@ -262,12 +272,15 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: true,
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
@@ -322,10 +335,10 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       // Create a clean environment without the test credentials
       const envWithoutCredentials: NodeJS.ProcessEnv = {
         ...process.env,
+        ...PORT_ENV,
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
         MOOSE_ACCEPT_DESTRUCTIVE: "1",

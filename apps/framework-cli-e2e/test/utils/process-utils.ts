@@ -225,67 +225,83 @@ export const waitForInfrastructureChanges = async (
  * stale processes don't hold ports across sequential test suites.
  */
 export const killRemainingProcesses = async (
-  options: ProcessOptions = {},
+  options: ProcessOptions & {
+    /** When provided, only kill processes on these ports (for port-isolated tests).
+     *  When omitted, kills all moose processes and default ports. */
+    ports?: number[];
+  } = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
+  // Default infrastructure ports used when no override is provided.
+  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 7233];
+  const portsToKill = options.ports ?? defaultPorts;
+  const portsToWait = options.ports ? options.ports : [18123, 9181, 9234];
+
+  // Only kill by process name when doing a global cleanup (no port override).
+  if (!options.ports) {
+    try {
+      // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
+      // process (sh -c "pkill -9 -f ...") from matching its own command line.
+      await execAsync("pkill -9 -f '[m]oose-cli' || true", {
+        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+      });
+      log.debug("Killed any remaining moose-cli processes");
+    } catch (error) {
+      log.warn("Error killing moose-cli processes");
+    }
+
+    try {
+      await execAsync(
+        "pkill -9 -f '[m]oose-runner|[s]treaming_function_runner|[p]ython_worker_wrapper|[c]onsumption.*localhost' || true",
+        {
+          timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+          killSignal: "SIGKILL",
+          windowsHide: true,
+        },
+      );
+      log.debug("Killed any remaining Python processes");
+    } catch (error) {
+      log.warn("Error killing Python processes");
+    }
+
+    try {
+      await execAsync(
+        [
+          "pkill -9 -f '[c]lickhouse server' || true",
+          "pkill -9 -f '[t]emporal server' || true",
+        ].join("; "),
+        {
+          timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+          killSignal: "SIGKILL",
+          windowsHide: true,
+        },
+      );
+      log.debug("Killed native infrastructure by name");
+    } catch (error) {
+      log.warn("Error killing native infrastructure by name");
+    }
+  }
+
+  // Kill processes holding the specified ports.
   try {
-    // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
-    // process (sh -c "pkill -9 -f ...") from matching its own command line.
-    await execAsync("pkill -9 -f '[m]oose-cli' || true", {
+    const fuserCmds = portsToKill.map(
+      (p) => `fuser -k ${p}/tcp 2>/dev/null || true`,
+    );
+    await execAsync(fuserCmds.join("; "), {
       timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
       killSignal: "SIGKILL",
       windowsHide: true,
     });
-    log.debug("Killed any remaining moose-cli processes");
+    log.debug("Killed processes on ports", { ports: portsToKill });
   } catch (error) {
-    log.warn("Error killing moose-cli processes");
+    log.warn("Error killing processes by port");
   }
 
-  try {
-    await execAsync(
-      "pkill -9 -f '[m]oose-runner|[s]treaming_function_runner|[p]ython_worker_wrapper|[c]onsumption.*localhost' || true",
-      {
-        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-        killSignal: "SIGKILL",
-        windowsHide: true,
-      },
-    );
-    log.debug("Killed any remaining Python processes");
-  } catch (error) {
-    log.warn("Error killing Python processes");
-  }
-
-  try {
-    // Kill native infrastructure by name AND by port.
-    // Using fuser ensures we catch processes even if the name pattern doesn't match.
-    // Ports: 18123 (CH HTTP), 19000 (CH native), 9181 (Keeper TCP), 9234 (Keeper Raft),
-    //        19092 (devkafka), 7233 (Temporal)
-    await execAsync(
-      [
-        "pkill -9 -f '[c]lickhouse server' || true",
-        "pkill -9 -f '[t]emporal server' || true",
-        "fuser -k 18123/tcp 2>/dev/null || true",
-        "fuser -k 19000/tcp 2>/dev/null || true",
-        "fuser -k 9181/tcp 2>/dev/null || true",
-        "fuser -k 9234/tcp 2>/dev/null || true",
-        "fuser -k 19092/tcp 2>/dev/null || true",
-        "fuser -k 7233/tcp 2>/dev/null || true",
-      ].join("; "),
-      {
-        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-        killSignal: "SIGKILL",
-        windowsHide: true,
-      },
-    );
-    log.debug("Killed any remaining native infrastructure processes");
-  } catch (error) {
-    log.warn("Error killing native infrastructure processes");
-  }
-
-  // Wait for ClickHouse and Keeper ports to be released before returning.
-  // Without this, the next test suite may fail to bind these ports.
-  for (const port of [18123, 9181, 9234]) {
+  // Wait for key ports to be released before returning.
+  for (const port of portsToWait) {
     try {
       for (let i = 0; i < 10; i++) {
         const { stdout } = await execAsync(

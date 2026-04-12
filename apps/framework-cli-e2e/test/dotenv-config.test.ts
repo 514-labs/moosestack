@@ -26,6 +26,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   logger,
+  getTestPorts,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -42,6 +43,8 @@ const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 
 const testLogger = logger.scope("dotenv-config-test");
+
+const PORTS = getTestPorts(20);
 
 describe("typescript template tests - .env file configuration", function () {
   let devProcess: ChildProcess | null = null;
@@ -94,7 +97,18 @@ describe("typescript template tests - .env file configuration", function () {
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        // Infrastructure ports from port isolation (offset 20).
+        // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
+        // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
+        // files set the HTTP port (9990/9991/9992) and this test verifies
+        // .env precedence. System env vars would override .env values.
+        MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
+        MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
+        MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
+        MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
+        MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
+        MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
+        MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
@@ -217,7 +231,18 @@ describe("python template tests - .env file configuration", function () {
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        // Infrastructure ports from port isolation (offset 20).
+        // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
+        // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
+        // files set the HTTP port (9980/9981/9982) and this test verifies
+        // .env precedence. System env vars would override .env values.
+        MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
+        MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
+        MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
+        MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
+        MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
+        MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
+        MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",

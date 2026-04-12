@@ -28,6 +28,9 @@ import {
   setupPythonProject,
   cleanupTestSuite,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -41,6 +44,10 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 );
 
 const testLogger = logger.scope("s3-engine-test");
+
+const PORTS = getTestPorts(50);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
 
 describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -69,12 +76,10 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
-          // Set dummy credentials for both S3 engine and S3Queue testing
-          // Both use the same env vars for consistency
+          ...PORT_ENV,
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
           MOOSE_FEATURES__WORKFLOWS: "false",
           MOOSE_TELEMETRY__ENABLED: "false",
           MOOSE_ACCEPT_DESTRUCTIVE: "1",
@@ -84,12 +89,15 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: true,
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
@@ -148,14 +156,12 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
+          ...PORT_ENV,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set dummy credentials for both S3 engine and S3Queue testing
-          // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
           MOOSE_FEATURES__WORKFLOWS: "false",
           MOOSE_TELEMETRY__ENABLED: "false",
           MOOSE_ACCEPT_DESTRUCTIVE: "1",
@@ -165,12 +171,15 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: true,
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
