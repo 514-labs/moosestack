@@ -102,11 +102,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev with incremental compilation...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -146,11 +150,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -228,11 +236,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],

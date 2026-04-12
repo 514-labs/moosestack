@@ -1,5 +1,6 @@
 import { TIMEOUTS, SERVER_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
+import { waitForConsumerGroupsStable } from "./kafka-utils";
 import { logger, ScopedLogger } from "./logger";
 import { ChildProcess } from "child_process";
 
@@ -485,18 +486,25 @@ const waitForStreamingDockerlessMode = async (
     await setTimeoutAsync(1000);
   }
 
-  // Phase 3: Brief stabilization wait for consumer groups to begin joining.
-  // devkafka does not support ListGroups/DescribeGroups, so we cannot actively
-  // verify consumer group state. Instead, we use a short buffer here and rely
-  // on generous waitForDBWrite timeouts in tests (auto.offset.reset=earliest
-  // guarantees data will eventually be consumed).
+  // Phase 3: Poll devkafka for consumer groups reaching Stable state.
+  // devkafka now supports ListGroups/DescribeGroups, so we actively verify
+  // consumer group state instead of using a blind delay. If polling fails
+  // (e.g., streaming is disabled), falls back to a short delay.
   const elapsedMs = Date.now() - startTime;
   const remainingBudgetMs = Math.max(0, budgetMs - elapsedMs);
-  const stabilizationMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
+  const pollTimeoutMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
   log.debug(
-    `Phase 3: Waiting ${Math.floor(stabilizationMs / 1000)}s for initial consumer group stabilization`,
+    `Phase 3: Polling consumer groups for Stable state (timeout: ${Math.floor(pollTimeoutMs / 1000)}s)`,
   );
-  await setTimeoutAsync(stabilizationMs);
+  try {
+    await waitForConsumerGroupsStable(pollTimeoutMs, { logger: log });
+  } catch (error) {
+    const fallbackMs = Math.min(5000, remainingBudgetMs);
+    log.debug(
+      `Consumer group polling ended: ${error instanceof Error ? error.message : String(error)}, using ${fallbackMs}ms fallback`,
+    );
+    await setTimeoutAsync(fallbackMs);
+  }
   log.debug("✓ Streaming functions ready (dockerless mode)");
 };
 

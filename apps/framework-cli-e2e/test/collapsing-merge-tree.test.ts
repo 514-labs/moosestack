@@ -79,12 +79,16 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         stdio: "pipe",
         cwd: testDir,
         env: {
           ...process.env,
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
       });
 
@@ -97,7 +101,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120000, { dockerless: true });
 
       testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
@@ -109,6 +113,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, testDir, appName, {
         logPrefix: "TypeScript CollapsingMergeTree test",
+        includeDocker: false,
       });
     });
 
@@ -208,7 +213,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         stdio: "pipe",
         cwd: testDir,
         env: {
@@ -216,6 +221,10 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
           VIRTUAL_ENV: path.join(testDir, ".venv"),
           PATH: `${path.join(testDir, ".venv", "bin")}:${process.env.PATH}`,
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
       });
 
@@ -228,7 +237,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120000, { dockerless: true });
 
       testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
@@ -240,6 +249,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, testDir, appName, {
         logPrefix: "Python CollapsingMergeTree test",
+        includeDocker: false,
       });
     });
 

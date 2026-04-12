@@ -117,9 +117,16 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
+        env: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
+        },
       });
 
       // Wait for both the warning message and the specific file name
@@ -192,9 +199,16 @@ unloaded_table = OlapTable[UnloadedTestModel](
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
+        env: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
+        },
       });
 
       // Wait for both the warning message and the specific file name
@@ -272,9 +286,16 @@ export const myTable = OlapTable<MyModel>({
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
+        env: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
+        },
       });
 
       // Capture all output
@@ -347,9 +368,16 @@ declare module "some-module" {
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
+        env: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+          MOOSE_FEATURES__WORKFLOWS: "false",
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_ACCEPT_DESTRUCTIVE: "1",
+        },
       });
 
       // Capture all output
