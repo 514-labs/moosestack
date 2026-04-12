@@ -11021,14 +11021,15 @@ mod diff_dictionaries_tests {
 
     #[test]
     fn test_diff_dict_update_blocked_by_lifecycle() {
+        // before: DeletionProtected — diff_dictionaries checks dict (before) lifecycle
         let mut before_dict = simple_dict("dict_e");
-        before_dict.life_cycle = LifeCycle::FullyManaged;
+        before_dict.life_cycle = LifeCycle::DeletionProtected;
         let mut before = HashMap::new();
         before.insert("local_dict_e".to_string(), before_dict);
 
         let mut after_dict = simple_dict("dict_e");
         after_dict.lifetime = DictionaryLifetime::Single { seconds: 1 };
-        after_dict.life_cycle = LifeCycle::DeletionProtected;
+        after_dict.life_cycle = LifeCycle::FullyManaged;
         let mut after = HashMap::new();
         after.insert("local_dict_e".to_string(), after_dict);
 
