@@ -100,6 +100,11 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <!-- Point to users.xml for user definitions, profiles, and quotas. -->
     <users_config>{users_path}</users_config>
 
+    <!-- Allow custom per-query settings with the SQL_ prefix.
+         RLS row policies use getSetting('SQL_moose_rls_...') for dynamic
+         tenant scoping via ClickHouse query-level settings. -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+
     <!-- Writable access storage for SQL-created roles and row policies
          (required for RLS support). -->
     <user_directories>
