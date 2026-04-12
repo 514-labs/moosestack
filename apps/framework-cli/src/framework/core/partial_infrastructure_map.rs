@@ -725,6 +725,7 @@ impl PartialInfrastructureMap {
         project_root: &Path,
     ) -> Result<InfrastructureMap, DmV2LoadingError> {
         let tables = self.convert_tables(default_database)?;
+        let olap_dictionaries = self.convert_dictionaries(default_database);
         let topics = self.convert_topics();
         let api_endpoints = self.convert_api_endpoints(main_file, &topics);
         let topic_to_table_sync_processes =
@@ -757,7 +758,7 @@ impl PartialInfrastructureMap {
             materialized_views: self.materialized_views,
             views: self.views,
             select_row_policies: self.select_row_policies,
-            olap_dictionaries: self.olap_dictionaries,
+            olap_dictionaries,
             moose_version: None,
         };
 
@@ -870,6 +871,29 @@ impl PartialInfrastructureMap {
                 let table = table.canonicalize();
 
                 Ok((table.id(default_database), table))
+            })
+            .collect()
+    }
+
+    /// Converts dictionary definitions into complete [`OlapDictionary`] instances.
+    ///
+    /// When a dictionary carries a `version`, the version suffix is baked into `name`
+    /// (e.g. `"my_dict"` + `"0.1"` → `"my_dict_0_1"`) so that versioned dictionaries are
+    /// distinct ClickHouse objects that can coexist side-by-side. The HashMap is re-keyed
+    /// using `dict.id(default_database)` for canonical lookup.
+    fn convert_dictionaries(
+        &self,
+        default_database: &str,
+    ) -> HashMap<String, crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary> {
+        self.olap_dictionaries
+            .values()
+            .map(|dict| {
+                let mut dict = dict.clone();
+                if let Some(ref v) = dict.version {
+                    dict.name = format!("{}_{}", dict.name, v.as_suffix());
+                }
+                let id = dict.id(default_database);
+                (id, dict)
             })
             .collect()
     }
@@ -1857,6 +1881,7 @@ mod tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: Some(Metadata {
                 description: None,
                 source: Some(SourceLocation {
