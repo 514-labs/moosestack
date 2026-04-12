@@ -58,14 +58,6 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             <access_management>1</access_management>
         </{user}>
     </users>
-
-    <profiles>
-        <default/>
-    </profiles>
-
-    <quotas>
-        <default/>
-    </quotas>
 </clickhouse>
 "#,
         user = ch.user,
@@ -152,6 +144,14 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             </invalidCertificateHandler>
         </client>
     </openSSL>
+
+    <profiles>
+        <default/>
+    </profiles>
+
+    <quotas>
+        <default/>
+    </quotas>
 
     <!-- Macros for replicated engine table paths -->
     <macros>
