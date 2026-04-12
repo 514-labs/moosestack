@@ -914,7 +914,9 @@ def _serialize_dict_source(config, invalidate_query: Optional[str] = None) -> di
         # Rename discriminant: Python model uses `type`, but Rust's ExternalDictionarySource
         # is tagged with #[serde(tag = "source_type")], so we must emit "source_type".
         ext["source_type"] = ext.pop("type")
-        return {"type": "EXTERNAL", "source": ext}
+        # Rust's ExternalDictionarySourceWrapper has field `external_source` which with
+        # #[serde(rename_all = "camelCase")] deserializes from JSON key "externalSource".
+        return {"type": "EXTERNAL", "externalSource": ext}
     raise ValueError("OlapDictionaryConfig has no source set")
 
 
