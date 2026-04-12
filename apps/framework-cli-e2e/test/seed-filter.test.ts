@@ -24,7 +24,6 @@ import {
   waitForServerStart,
   createTempTestDirectory,
   cleanupTestSuite,
-  waitForClickhouseReplicasReady,
   logger,
 } from "./utils";
 
@@ -45,6 +44,38 @@ const SEED_WHERE = "author = 'Alexey Milovidov' AND files_added > 10";
 const SEED_LIMIT = 10;
 
 const testLogger = logger.scope("seed-filter-test");
+
+/**
+ * Run a seed command with retries.  Replicas may briefly be readonly after
+ * server start (embedded Keeper), so we retry on ClickHouse readonly errors.
+ */
+async function seedWithRetry(
+  cmd: string,
+  cwd: string,
+  retries = 10,
+  delayMs = 3000,
+): Promise<{ stdout: string; stderr: string }> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await execAsync(cmd, { cwd });
+    } catch (err: any) {
+      const msg = (err.stderr || err.message || "").toString();
+      const isReadonly =
+        msg.includes("readonly") ||
+        msg.includes("TABLE_IS_READ_ONLY") ||
+        msg.includes("READONLY");
+      if (isReadonly && attempt < retries) {
+        testLogger.debug(
+          `Seed attempt ${attempt}/${retries} hit readonly replica, retrying in ${delayMs}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("seedWithRetry: unreachable");
+}
 
 async function localRowCount(tableName: string): Promise<number> {
   const client = createClient(CLICKHOUSE_CONFIG);
@@ -91,11 +122,10 @@ describe("moose seed clickhouse with seedFilter", function () {
   let testProjectDir: string;
 
   before(async function () {
-    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 600s)
-    // + replica readiness (up to 300s) = ~990s.
+    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 600s).
     // The server start budget is 600s to allow for ClickHouse binary download
     // (~1.5 GB) on CI cache miss plus TS compilation + table creation.
-    this.timeout(1_200_000);
+    this.timeout(900_000);
     testLogger.info("\n=== Starting Seed Filter Test ===");
 
     testProjectDir = createTempTestDirectory("seed-filter-test");
@@ -258,10 +288,6 @@ describe("moose seed clickhouse with seedFilter", function () {
       );
     }
 
-    // Wait for all ReplicatedMergeTree replicas to exit readonly mode.
-    // Tables from --from-remote use ReplicatedMergeTree which needs Keeper init.
-    await waitForClickhouseReplicasReady(300_000, { logger: testLogger });
-
     testLogger.info("Infrastructure ready");
   });
 
@@ -280,9 +306,9 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     await truncateTable("commits");
 
-    await execAsync(
+    await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits`,
-      { cwd: testProjectDir },
+      testProjectDir,
     );
 
     const count = await localRowCount("commits");
@@ -300,9 +326,9 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     await truncateTable("commits");
 
-    await execAsync(
+    await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits --limit 5`,
-      { cwd: testProjectDir },
+      testProjectDir,
     );
 
     const count = await localRowCount("commits");
@@ -318,9 +344,9 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     await truncateTable("commits");
 
-    await execAsync(
+    await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits --all`,
-      { cwd: testProjectDir },
+      testProjectDir,
     );
 
     const count = await localRowCount("commits");
