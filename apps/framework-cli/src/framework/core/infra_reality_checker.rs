@@ -2160,6 +2160,7 @@ mod tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
+            version: None,
             metadata: None,
         }
     }
