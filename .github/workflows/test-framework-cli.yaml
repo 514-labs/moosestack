@@ -395,6 +395,7 @@ jobs:
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -534,6 +535,7 @@ jobs:
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
     runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
     # Add explicit read-only permissions
     permissions:
       contents: read

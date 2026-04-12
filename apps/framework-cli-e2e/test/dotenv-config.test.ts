@@ -20,8 +20,6 @@ import {
   stopDevProcess,
   waitForServerStart,
   killRemainingProcesses,
-  cleanupDocker,
-  globalDockerCleanup,
   removeTestProject,
   createTempTestDirectory,
   cleanupLeftoverTestDirectories,
@@ -54,7 +52,7 @@ describe("typescript template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await globalDockerCleanup();
+    await killRemainingProcesses();
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
@@ -173,7 +171,7 @@ describe("python template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await globalDockerCleanup();
+    await killRemainingProcesses();
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
