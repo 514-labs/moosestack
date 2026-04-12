@@ -36,26 +36,16 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     })?;
 
     let config_path = data_dir.join("config.xml");
+    let users_path = data_dir.join("users.xml");
 
     let ch = &project.clickhouse_config;
-    let config_xml = format!(
+
+    // Write users.xml — defines the admin user in a separate file so
+    // `<user_directories>` can reference it alongside a writable
+    // `<local_directory>` for SQL-created roles and row policies.
+    let users_xml = format!(
         r#"<?xml version="1.0"?>
 <clickhouse>
-    <logger>
-        <level>warning</level>
-        <log>{log_dir}/clickhouse-server.log</log>
-        <errorlog>{log_dir}/clickhouse-server.err.log</errorlog>
-    </logger>
-
-    <http_port>{http_port}</http_port>
-    <tcp_port>{native_port}</tcp_port>
-    <listen_host>127.0.0.1</listen_host>
-
-    <path>{data_path}/</path>
-    <tmp_path>{data_path}/tmp/</tmp_path>
-    <user_files_path>{data_path}/user_files/</user_files_path>
-    <format_schema_path>{data_path}/format_schemas/</format_schema_path>
-
     <users>
         <{user}>
             <password>{password}</password>
@@ -76,10 +66,41 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <quotas>
         <default/>
     </quotas>
+</clickhouse>
+"#,
+        user = ch.user,
+        password = ch.password,
+    );
 
-    <!-- Writable access storage for roles, row policies, etc.
-         The Docker image includes this by default; native binary needs it explicitly. -->
+    std::fs::write(&users_path, users_xml).map_err(|e| NativeInfraError::WriteConfig {
+        path: users_path.clone(),
+        source: e,
+    })?;
+
+    let config_xml = format!(
+        r#"<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>{log_dir}/clickhouse-server.log</log>
+        <errorlog>{log_dir}/clickhouse-server.err.log</errorlog>
+    </logger>
+
+    <http_port>{http_port}</http_port>
+    <tcp_port>{native_port}</tcp_port>
+    <listen_host>127.0.0.1</listen_host>
+
+    <path>{data_path}/</path>
+    <tmp_path>{data_path}/tmp/</tmp_path>
+    <user_files_path>{data_path}/user_files/</user_files_path>
+    <format_schema_path>{data_path}/format_schemas/</format_schema_path>
+
+    <!-- User definitions are in users.xml; writable access storage for
+         SQL-created roles and row policies is in local_directory. -->
     <user_directories>
+        <users_xml>
+            <path>{users_path}</path>
+        </users_xml>
         <local_directory>
             <path>{data_path}/access/</path>
         </local_directory>
@@ -142,11 +163,10 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 "#,
         http_port = ch.host_port,
         native_port = ch.native_port,
-        user = ch.user,
-        password = ch.password,
         db_name = ch.db_name,
         data_path = data_dir.join("data").display(),
         log_dir = data_dir.join("logs").display(),
+        users_path = users_path.display(),
     );
 
     std::fs::write(&config_path, config_xml).map_err(|e| NativeInfraError::WriteConfig {
