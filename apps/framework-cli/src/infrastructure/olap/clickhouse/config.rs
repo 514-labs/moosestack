@@ -19,11 +19,11 @@ fn default_native_port() -> i32 {
     9000
 }
 
-fn default_keeper_port() -> i32 {
+pub(crate) fn default_keeper_port() -> i32 {
     9181
 }
 
-fn default_keeper_raft_port() -> i32 {
+pub(crate) fn default_keeper_raft_port() -> i32 {
     9234
 }
 
