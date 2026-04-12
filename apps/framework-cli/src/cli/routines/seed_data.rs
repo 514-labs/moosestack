@@ -129,14 +129,20 @@ struct SeedingQueryParams<'a> {
     remote_password: &'a str,
     order_by_clause: &'a str,
     where_clause: &'a str,
+    use_ssl: bool,
     limit: usize,
     offset: usize,
 }
 
 /// Builds the seeding SQL query for a specific table
 fn build_seeding_query(params: &SeedingQueryParams) -> String {
+    let remote_fn = if params.use_ssl {
+        "remoteSecure"
+    } else {
+        "remote"
+    };
     format!(
-        "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause} {order_by_clause} LIMIT {limit} OFFSET {offset}",
+        "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM {remote_fn}('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause} {order_by_clause} LIMIT {limit} OFFSET {offset}",
         local_db = params.local_db,
         table_name = params.table_name,
         remote_host_and_port = params.remote_host_and_port,
@@ -158,9 +164,11 @@ fn build_count_query(
     remote_user: &str,
     remote_password: &str,
     where_clause: &str,
+    use_ssl: bool,
 ) -> String {
+    let remote_fn = if use_ssl { "remoteSecure" } else { "remote" };
     format!(
-        "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause}"
+        "SELECT count() FROM {remote_fn}('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {where_clause}"
     )
 }
 
@@ -216,18 +224,18 @@ async fn get_remote_table_count(
     local_clickhouse: &ClickHouseClient,
     remote_host_and_port: &str,
     remote_db: &str,
+    remote_config: &ClickHouseConfig,
     table_name: &str,
-    remote_user: &str,
-    remote_password: &str,
     where_clause: &str,
 ) -> Result<usize, RoutineFailure> {
     let count_sql = build_count_query(
         remote_host_and_port,
         remote_db,
         table_name,
-        remote_user,
-        remote_password,
+        &remote_config.user,
+        &remote_config.password,
         where_clause,
+        remote_config.use_ssl,
     );
 
     let body = match local_clickhouse.execute_sql(&count_sql).await {
@@ -282,13 +290,13 @@ async fn seed_single_table(
         .unwrap_or_default();
 
     // Get total row count (with seed filter WHERE applied)
+    let remote_db = db.unwrap_or(&remote_config.db_name);
     let remote_total = get_remote_table_count(
         local_clickhouse,
         &remote_host_and_port,
-        db.unwrap_or(&remote_config.db_name),
+        remote_db,
+        remote_config,
         &table.name,
-        &remote_config.user,
-        &remote_config.password,
         &where_clause,
     )
     .await
@@ -325,11 +333,12 @@ async fn seed_single_table(
             local_db,
             table_name: &table.name,
             remote_host_and_port: &remote_host_and_port,
-            remote_db: db.unwrap_or(&remote_config.db_name),
+            remote_db,
             remote_user: &remote_config.user,
             remote_password: &remote_config.password,
             order_by_clause: &order_by_clause,
             where_clause: &where_clause,
+            use_ssl: remote_config.use_ssl,
             limit: batch_limit,
             offset: copied_total,
         });
@@ -1141,7 +1150,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_seeding_query() {
+    fn test_build_seeding_query_ssl() {
         let params = SeedingQueryParams {
             local_db: "local_db",
             table_name: "my_table",
@@ -1151,6 +1160,7 @@ mod tests {
             remote_password: "pass",
             order_by_clause: "ORDER BY id DESC",
             where_clause: "",
+            use_ssl: true,
             limit: 1000,
             offset: 500,
         };
@@ -1160,9 +1170,54 @@ mod tests {
     }
 
     #[test]
-    fn test_build_count_query() {
-        let query = build_count_query("host:9440", "remote_db", "my_table", "user", "pass", "");
-        let expected = "SELECT count() FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass') ";
+    fn test_build_seeding_query_no_ssl() {
+        let params = SeedingQueryParams {
+            local_db: "local_db",
+            table_name: "my_table",
+            remote_host_and_port: "host:9000",
+            remote_db: "remote_db",
+            remote_user: "user",
+            remote_password: "pass",
+            order_by_clause: "ORDER BY id DESC",
+            where_clause: "",
+            use_ssl: false,
+            limit: 1000,
+            offset: 500,
+        };
+        let query = build_seeding_query(&params);
+        let expected = "INSERT INTO `local_db`.`my_table` SELECT * FROM remote('host:9000', 'remote_db', 'my_table', 'user', 'pass')  ORDER BY id DESC LIMIT 1000 OFFSET 500";
+        assert_eq!(query, expected);
+    }
+
+    #[test]
+    fn test_build_count_query_ssl() {
+        let query = build_count_query(
+            "host:9440",
+            "remote_db",
+            "my_table",
+            "user",
+            "pass",
+            "",
+            true,
+        );
+        let expected =
+            "SELECT count() FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass') ";
+        assert_eq!(query, expected);
+    }
+
+    #[test]
+    fn test_build_count_query_no_ssl() {
+        let query = build_count_query(
+            "host:9000",
+            "remote_db",
+            "my_table",
+            "user",
+            "pass",
+            "",
+            false,
+        );
+        let expected =
+            "SELECT count() FROM remote('host:9000', 'remote_db', 'my_table', 'user', 'pass') ";
         assert_eq!(query, expected);
     }
 
@@ -1247,6 +1302,7 @@ mod tests {
             remote_password: "pass",
             order_by_clause: "ORDER BY id DESC",
             where_clause: "WHERE user_id = 10",
+            use_ssl: true,
             limit: 100,
             offset: 0,
         };
@@ -1265,6 +1321,7 @@ mod tests {
             "user",
             "pass",
             "WHERE user_id = 10",
+            true,
         );
         assert!(query.contains("WHERE user_id = 10"));
         assert!(query.starts_with("SELECT count() FROM remoteSecure("));

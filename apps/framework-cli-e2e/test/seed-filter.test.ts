@@ -4,12 +4,16 @@
 /**
  * E2E tests for the seedFilter feature on OlapTable.
  *
- * Uses play.clickhouse.com (git_clickhouse database) as a real remote source
+ * Uses the local native ClickHouse as both source and destination
  * to verify:
  *   1. seedFilter.limit restricts seeded rows
  *   2. seedFilter.where filters seeded rows
  *   3. --limit CLI flag overrides seedFilter.limit
  *   4. --all bypasses both seedFilter.limit and CLI --limit
+ *
+ * A separate "seed_source" database is created in the same ClickHouse
+ * instance and populated with test data. The seed command uses
+ * `remote()` (non-TLS) to copy data between databases.
  */
 
 import { exec, spawn, ChildProcess } from "child_process";
@@ -24,6 +28,7 @@ import {
   waitForServerStart,
   createTempTestDirectory,
   cleanupTestSuite,
+  setupTypeScriptProject,
   logger,
 } from "./utils";
 
@@ -35,18 +40,40 @@ const MOOSE_TS_LIB_PATH = path.resolve(
   "../../../packages/ts-moose-lib",
 );
 
-const REMOTE_CLICKHOUSE_URL =
-  "clickhouse://explorer:@play.clickhouse.com:9440/git_clickhouse";
-const REMOTE_HTTPS_URL =
-  "https://explorer:@play.clickhouse.com:443/?database=git_clickhouse";
+/** The "remote" ClickHouse URL the seed command connects to — same instance, different database. */
+const SEED_SOURCE_DB = "seed_source";
+const SEED_SOURCE_TABLE = "items";
+const SEED_SOURCE_URL = `clickhouse://panda:pandapass@127.0.0.1:9000/${SEED_SOURCE_DB}`;
 
-const SEED_WHERE = "author = 'Alexey Milovidov' AND files_added > 10";
+const SEED_WHERE = "value > 20";
 const SEED_LIMIT = 10;
+/** Total source rows that match the WHERE clause (value 21-49 = 29 per cycle * 2 cycles). */
+const MATCHING_ROWS = 58;
+const TOTAL_SOURCE_ROWS = 100;
 
 const testLogger = logger.scope("seed-filter-test");
 
 /**
- * Run a seed command with retries.  Replicas may briefly be readonly after
+ * OlapTable definition written into the project after init.
+ * The table schema matches the source data exactly.
+ */
+const TABLE_MODEL_SOURCE = `
+import { OlapTable } from "@514labs/moose-lib";
+
+export interface Items {
+  id: number;
+  name: string;
+  value: number;
+}
+
+export const itemsTable = new OlapTable<Items>("${SEED_SOURCE_TABLE}", {
+  orderByFields: ["id"],
+  seedFilter: { limit: ${SEED_LIMIT}, where: "${SEED_WHERE}" },
+});
+`;
+
+/**
+ * Run a seed command with retries. Replicas may briefly be readonly after
  * server start (embedded Keeper), so we retry on ClickHouse readonly errors.
  */
 async function seedWithRetry(
@@ -59,9 +86,6 @@ async function seedWithRetry(
     try {
       const result = await execAsync(cmd, { cwd });
 
-      // The seed command exits 0 even when remoteSecure() fails, putting
-      // failures into a summary line like "✗ table: failed to copy - ...".
-      // Detect this and treat it as a retryable error.
       const stdout = (result.stdout || "").toString();
       const stderr = (result.stderr || "").toString();
       testLogger.debug(
@@ -85,7 +109,6 @@ async function seedWithRetry(
 
       return result;
     } catch (err: any) {
-      // If we threw the "reported failure" error above, don't re-wrap it
       if (
         err.message &&
         err.message.startsWith("Seed command reported failure")
@@ -93,7 +116,6 @@ async function seedWithRetry(
         throw err;
       }
 
-      // Combine all error sources for matching and diagnostics
       const allOutput = [err.stdout || "", err.stderr || "", err.message || ""]
         .map((s: string) => s.toString())
         .join("\n");
@@ -167,120 +189,90 @@ async function truncateTable(tableName: string): Promise<void> {
   }
 }
 
+/**
+ * Create the seed_source database and populate it with test data.
+ * Schema matches the OlapTable definition exactly (id Int64, name String, value Int64).
+ */
+async function createSourceData(): Promise<void> {
+  const client = createClient(CLICKHOUSE_CONFIG);
+  try {
+    await client.command({
+      query: `CREATE DATABASE IF NOT EXISTS ${SEED_SOURCE_DB}`,
+    });
+    await client.command({
+      query: `
+        CREATE TABLE IF NOT EXISTS ${SEED_SOURCE_DB}.${SEED_SOURCE_TABLE} (
+          id Int64,
+          name String,
+          value Int64
+        ) ENGINE = MergeTree() ORDER BY id
+      `,
+    });
+    await client.command({
+      query: `TRUNCATE TABLE ${SEED_SOURCE_DB}.${SEED_SOURCE_TABLE}`,
+    });
+    await client.command({
+      query: `
+        INSERT INTO ${SEED_SOURCE_DB}.${SEED_SOURCE_TABLE}
+        SELECT
+          number AS id,
+          concat('name_', toString(number)) AS name,
+          number % 50 AS value
+        FROM numbers(${TOTAL_SOURCE_ROWS})
+      `,
+    });
+
+    // Verify source data
+    const result = await client.query({
+      query: `SELECT count() as cnt FROM ${SEED_SOURCE_DB}.${SEED_SOURCE_TABLE} WHERE ${SEED_WHERE}`,
+      format: "JSONEachRow",
+    });
+    const rows: any[] = await result.json();
+    const matchCount = parseInt(rows[0].cnt, 10);
+    testLogger.info(
+      `Source data created: ${TOTAL_SOURCE_ROWS} total rows, ${matchCount} matching WHERE clause`,
+    );
+    if (matchCount !== MATCHING_ROWS) {
+      throw new Error(
+        `Expected ${MATCHING_ROWS} matching rows but got ${matchCount}`,
+      );
+    }
+  } finally {
+    await client.close();
+  }
+}
+
 describe("moose seed clickhouse with seedFilter", function () {
   let devProcess: ChildProcess | null = null;
   let testProjectDir: string;
 
   before(async function () {
-    // Budget: init from remote (~30s) + npm install (~60s) + server start (up to 600s).
-    // The server start budget is 600s to allow for ClickHouse binary download
-    // (~1.5 GB) on CI cache miss plus TS compilation + table creation.
     this.timeout(900_000);
     testLogger.info("\n=== Starting Seed Filter Test ===");
 
     testProjectDir = createTempTestDirectory("seed-filter-test");
     testLogger.info("Test project dir:", testProjectDir);
 
-    // 1. Init project from play.clickhouse.com (git_clickhouse database — only 3 tables)
-    testLogger.info("Initializing project from play.clickhouse.com...");
-    const initResult = await execAsync(
-      `"${CLI_PATH}" init test-seed-filter typescript-empty --from-remote "${REMOTE_HTTPS_URL}" --location "${testProjectDir}"`,
-    );
-    testLogger.debug("Init output:", initResult.stdout);
-    if (initResult.stderr) {
-      testLogger.warn("Init stderr:", initResult.stderr);
-    }
-
-    // Verify generated files exist
-    const configPath = path.join(testProjectDir, "moose.config.toml");
-    if (!fs.existsSync(configPath)) {
-      throw new Error(
-        `moose.config.toml not found after init. Dir contents: ${fs.readdirSync(testProjectDir).join(", ")}`,
-      );
-    }
-    testLogger.info("moose.config.toml exists");
-
-    // 2. Point at local moose-lib
-    const packageJsonPath = path.join(testProjectDir, "package.json");
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-    packageJson.dependencies["@514labs/moose-lib"] =
-      `file:${MOOSE_TS_LIB_PATH}`;
-    fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-
-    // 3. Add seedFilter to the commits table definition
-    const indexPath = path.join(testProjectDir, "app", "index.ts");
-    let indexContent = fs.readFileSync(indexPath, "utf-8");
-
-    // The generated OlapTable for commits will look like:
-    //   export const commitsTable = new OlapTable<Commits>("commits", { ... });
-    // We need to inject seedFilter into the config object.
-    const commitsTableRegex = /(new OlapTable<Commits>\("commits",\s*\{)/;
-    if (commitsTableRegex.test(indexContent)) {
-      indexContent = indexContent.replace(
-        commitsTableRegex,
-        `$1\n  seedFilter: { limit: ${SEED_LIMIT}, where: "${SEED_WHERE}" },`,
-      );
-    } else {
-      // Fallback: try matching without generic parameter
-      const altRegex = /(new OlapTable\s*<[^>]*>\s*\(\s*"commits"\s*,\s*\{)/;
-      if (altRegex.test(indexContent)) {
-        indexContent = indexContent.replace(
-          altRegex,
-          `$1\n  seedFilter: { limit: ${SEED_LIMIT}, where: "${SEED_WHERE}" },`,
-        );
-      } else {
-        testLogger.error(
-          "Could not find commits OlapTable in generated code. File content:",
-          indexContent.slice(0, 2000),
-        );
-        throw new Error(
-          "Failed to inject seedFilter into commits table definition",
-        );
-      }
-    }
-
-    fs.writeFileSync(indexPath, indexContent);
-    testLogger.info("Injected seedFilter into commits table");
-    testLogger.info(
-      "Generated index.ts (first 1000 chars):",
-      indexContent.slice(0, 1000),
-    );
-
-    // 4. Install dependencies
-    testLogger.info("Installing dependencies...");
-    await new Promise<void>((resolve, reject) => {
-      const installCmd = spawn("npm", ["install"], {
-        stdio: "inherit",
-        cwd: testProjectDir,
-      });
-      installCmd.on("error", reject);
-      installCmd.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`npm install failed with code ${code}`));
-      });
-    });
-
-    // Verify moose-tspc is available after install
-    const tspcPath = path.join(
+    // 1. Init a plain TypeScript project (no --from-remote)
+    testLogger.info("Setting up TypeScript project...");
+    await setupTypeScriptProject(
       testProjectDir,
-      "node_modules",
-      ".bin",
-      "moose-tspc",
+      "typescript-empty",
+      CLI_PATH,
+      MOOSE_TS_LIB_PATH,
+      "test-seed-filter",
+      "npm",
+      { logger: testLogger },
     );
-    if (!fs.existsSync(tspcPath)) {
-      const binDir = path.join(testProjectDir, "node_modules", ".bin");
-      const binContents =
-        fs.existsSync(binDir) ?
-          fs.readdirSync(binDir).join(", ")
-        : "(dir missing)";
-      throw new Error(
-        `moose-tspc not found at ${tspcPath}. .bin contents: ${binContents}`,
-      );
-    }
-    testLogger.info("moose-tspc binary verified");
 
-    // 5. Start moose dev
-    testLogger.info("Starting moose dev...");
+    // 2. Write our OlapTable definition
+    testLogger.info("Writing OlapTable definition with seedFilter...");
+    const indexPath = path.join(testProjectDir, "app", "index.ts");
+    fs.writeFileSync(indexPath, TABLE_MODEL_SOURCE);
+    testLogger.info("Wrote table model to", indexPath);
+
+    // 3. Start moose dev --dockerless
+    testLogger.info("Starting moose dev --dockerless...");
     devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       stdio: "pipe",
       cwd: testProjectDir,
@@ -289,9 +281,6 @@ describe("moose seed clickhouse with seedFilter", function () {
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_ACCEPT_DESTRUCTIVE: "1",
-        // Explicitly disable streaming and workflows via env vars.
-        // db_to_dmv2 already writes these to moose.config.toml, but env var
-        // overrides are more reliable and match how alpha-mode.test.ts works.
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
         MOOSE_FEATURES__WORKFLOWS: "false",
         MOOSE_TELEMETRY__ENABLED: "false",
@@ -302,7 +291,6 @@ describe("moose seed clickhouse with seedFilter", function () {
       testLogger.error("moose dev spawn error:", err);
     });
 
-    // Capture output so we can include it in failure messages for CI.
     const allStdout: string[] = [];
     const allStderr: string[] = [];
     devProcess.stdout?.on("data", (data: Buffer) => {
@@ -316,9 +304,6 @@ describe("moose seed clickhouse with seedFilter", function () {
       testLogger.debug("stderr:", line);
     });
 
-    // Use 600s (not the default 300s) because dockerless mode downloads
-    // the ClickHouse binary (~1.5 GB) on first run, which can take 200s+
-    // on CI even with the GitHub Actions cache step.
     try {
       await waitForServerStart(
         devProcess,
@@ -328,7 +313,6 @@ describe("moose seed clickhouse with seedFilter", function () {
         { logger: testLogger },
       );
     } catch (e: any) {
-      // Re-throw with captured output so CI test reports show the real error.
       const lastStdout = allStdout.slice(-30).join("\n");
       const lastStderr = allStderr.slice(-30).join("\n");
       throw new Error(
@@ -338,30 +322,35 @@ describe("moose seed clickhouse with seedFilter", function () {
       );
     }
 
-    // Verify the commits table was actually created before running seed tests.
-    testLogger.info("Verifying commits table exists in ClickHouse...");
+    // 4. Verify the items table was created
+    testLogger.info("Verifying items table exists in ClickHouse...");
     const client = createClient(CLICKHOUSE_CONFIG);
     try {
       const result = await client.query({
-        query: `SELECT name, engine FROM system.tables WHERE database = 'local' AND name = 'commits'`,
+        query: `SELECT name, engine FROM system.tables WHERE database = 'local' AND name = '${SEED_SOURCE_TABLE}'`,
         format: "JSONEachRow",
       });
       const tables: any[] = await result.json();
       if (tables.length === 0) {
-        // List all tables for diagnostics
         const allResult = await client.query({
           query: `SELECT database, name, engine FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')`,
           format: "JSONEachRow",
         });
         const allTables: any[] = await allResult.json();
         throw new Error(
-          `commits table not found in local database. Available tables: ${JSON.stringify(allTables)}`,
+          `${SEED_SOURCE_TABLE} table not found in local database. Available tables: ${JSON.stringify(allTables)}`,
         );
       }
-      testLogger.info(`commits table verified: engine=${tables[0].engine}`);
+      testLogger.info(
+        `${SEED_SOURCE_TABLE} table verified: engine=${tables[0].engine}`,
+      );
     } finally {
       await client.close();
     }
+
+    // 5. Create source database and populate with test data
+    testLogger.info("Creating source data in seed_source database...");
+    await createSourceData();
 
     testLogger.info("Infrastructure ready");
   });
@@ -369,6 +358,18 @@ describe("moose seed clickhouse with seedFilter", function () {
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
     testLogger.info("\n=== Cleaning up Seed Filter Test ===");
+
+    // Clean up source database
+    try {
+      const client = createClient(CLICKHOUSE_CONFIG);
+      await client.command({
+        query: `DROP DATABASE IF EXISTS ${SEED_SOURCE_DB}`,
+      });
+      await client.close();
+    } catch {
+      // Best effort cleanup
+    }
+
     await cleanupTestSuite(devProcess, testProjectDir, "test-seed-filter", {
       logPrefix: "Seed Filter Test",
       includeDocker: false,
@@ -379,18 +380,21 @@ describe("moose seed clickhouse with seedFilter", function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
     testLogger.info("\n--- Seed with seedFilter defaults ---");
 
-    await truncateTable("commits");
+    await truncateTable(SEED_SOURCE_TABLE);
 
     await seedWithRetry(
-      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits`,
+      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE}`,
       testProjectDir,
     );
 
-    const count = await localRowCount("commits");
+    const count = await localRowCount(SEED_SOURCE_TABLE);
     testLogger.info(`Seeded ${count} rows (expected ${SEED_LIMIT})`);
     expect(count).to.equal(SEED_LIMIT);
 
-    const violations = await localWhereViolationCount("commits", SEED_WHERE);
+    const violations = await localWhereViolationCount(
+      SEED_SOURCE_TABLE,
+      SEED_WHERE,
+    );
     testLogger.info(`WHERE violations: ${violations} (expected 0)`);
     expect(violations).to.equal(0);
   });
@@ -399,17 +403,20 @@ describe("moose seed clickhouse with seedFilter", function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
     testLogger.info("\n--- Seed with --limit 5 ---");
 
-    await truncateTable("commits");
+    await truncateTable(SEED_SOURCE_TABLE);
 
     await seedWithRetry(
-      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits --limit 5`,
+      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE} --limit 5`,
       testProjectDir,
     );
 
-    const count = await localRowCount("commits");
+    const count = await localRowCount(SEED_SOURCE_TABLE);
     testLogger.info(`Seeded ${count} rows (expected 5)`);
     expect(count).to.equal(5);
-    const violations = await localWhereViolationCount("commits", SEED_WHERE);
+    const violations = await localWhereViolationCount(
+      SEED_SOURCE_TABLE,
+      SEED_WHERE,
+    );
     expect(violations).to.equal(0);
   });
 
@@ -417,16 +424,18 @@ describe("moose seed clickhouse with seedFilter", function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
     testLogger.info("\n--- Seed with --all ---");
 
-    await truncateTable("commits");
+    await truncateTable(SEED_SOURCE_TABLE);
 
     await seedWithRetry(
-      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${REMOTE_CLICKHOUSE_URL}" --table commits --all`,
+      `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE} --all`,
       testProjectDir,
     );
 
-    const count = await localRowCount("commits");
-    testLogger.info(`Seeded ${count} rows (expected > ${SEED_LIMIT})`);
-    // WHERE author='Alexey Milovidov' AND files_added > 10 → ~41 rows
-    expect(count).to.be.within(SEED_LIMIT + 1, 200);
+    const count = await localRowCount(SEED_SOURCE_TABLE);
+    testLogger.info(
+      `Seeded ${count} rows (expected ${MATCHING_ROWS}, all matching WHERE)`,
+    );
+    // --all bypasses limit but WHERE clause still applies
+    expect(count).to.equal(MATCHING_ROWS);
   });
 });
