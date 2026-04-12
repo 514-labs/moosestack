@@ -842,6 +842,7 @@ mod tests {
             settings: Default::default(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         };
         let dict_id = dict.id("local");

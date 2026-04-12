@@ -8644,6 +8644,7 @@ mod diff_orchestration_worker_tests {
                 settings: std::collections::HashMap::new(),
                 comment: None,
                 life_cycle: LifeCycle::FullyManaged,
+                version: None,
                 metadata: None,
             }
         };
@@ -10167,6 +10168,7 @@ mod diff_select_row_policy_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         };
 
@@ -10221,6 +10223,7 @@ mod diff_select_row_policy_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         };
 
@@ -10290,6 +10293,7 @@ mod dictionary_runtime_env_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         }
     }
@@ -10579,6 +10583,7 @@ mod diff_dictionaries_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
+            version: None,
             metadata: None,
         }
     }

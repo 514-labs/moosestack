@@ -856,4 +856,7 @@ message OlapDictionary {
   LifeCycle life_cycle = 14;
   // Optional metadata (description, source file)
   optional Metadata metadata = 15;
+  // Optional version string (e.g. "0.1"). When set, the version suffix is baked
+  // into `name` (e.g. "my_dict_0_1") so versioned dictionaries are distinct objects.
+  optional string version = 16;
 }
