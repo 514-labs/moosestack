@@ -10006,6 +10006,7 @@ mod diff_select_row_policy_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         };
 
@@ -10060,6 +10061,7 @@ mod diff_select_row_policy_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         };
 
@@ -10130,6 +10132,7 @@ mod diff_dictionaries_metadata_tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::default(),
+            version: None,
             metadata: None,
         }
     }
@@ -10224,5 +10227,92 @@ mod diff_dictionaries_metadata_tests {
             ),
             "expected an OlapDictionary Updated change"
         );
+    }
+}
+
+#[cfg(test)]
+mod diff_dictionaries_version_tests {
+    use super::*;
+    use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+        DictionaryTableSource, OlapDictionary,
+    };
+    use std::collections::HashMap;
+
+    fn versioned_dict(name: &str, version: &str) -> OlapDictionary {
+        let v = Version::from_string(version.to_string());
+        let versioned_name = format!("{}_{}", name, v.as_suffix());
+        OlapDictionary {
+            name: versioned_name,
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: Some(v),
+            metadata: None,
+        }
+    }
+
+    /// Two dictionaries with the same base name but different versions are independent
+    /// objects — one in current map and another in target map must produce Add+Remove,
+    /// not an Update.
+    #[test]
+    fn test_diff_dict_different_versions_are_separate() {
+        let dict_v1 = versioned_dict("my_dict", "0.1");
+        let dict_v2 = versioned_dict("my_dict", "0.2");
+
+        let mut current = HashMap::new();
+        current.insert(dict_v1.id("local"), dict_v1.clone());
+
+        let mut target = HashMap::new();
+        target.insert(dict_v2.id("local"), dict_v2.clone());
+
+        let mut olap_changes: Vec<OlapChange> = Vec::new();
+        let mut filtered_changes: Vec<FilteredChange> = Vec::new();
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            false,
+        );
+
+        // v1 should be removed, v2 should be added — no Update
+        assert_eq!(
+            olap_changes.len(),
+            2,
+            "expected Remove(v1) + Add(v2), got {olap_changes:?}"
+        );
+        let has_removed = olap_changes
+            .iter()
+            .any(|c| matches!(c, OlapChange::OlapDictionary(Change::Removed { .. })));
+        let has_added = olap_changes
+            .iter()
+            .any(|c| matches!(c, OlapChange::OlapDictionary(Change::Added { .. })));
+        assert!(has_removed, "missing Remove change for v1");
+        assert!(has_added, "missing Add change for v2");
     }
 }
