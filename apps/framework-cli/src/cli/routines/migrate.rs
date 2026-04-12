@@ -100,15 +100,60 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     })
 }
 
-/// Strips metadata (source file paths, descriptions) from dictionaries before comparison.
-/// Matches the metadata-stripping done for tables to avoid false drift positives when
-/// dictionary source files are reorganized without schema changes.
+/// Normalizes dictionaries for drift comparison by stripping:
+/// - `metadata` (source file paths, descriptions): avoids false drift when files are reorganized
+/// - credential fields: avoids false drift because `state_before` JSON files store credentials
+///   as `CREDENTIAL_PLACEHOLDER` (via the custom Serialize impl), while the live infra map
+///   has real credentials. Both sides are normalized to `CREDENTIAL_PLACEHOLDER` so the
+///   comparison is credential-agnostic.
 fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionarySource, ExternalDictionarySource,
+    };
+    use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
     dicts
         .iter()
         .map(|(name, dict)| {
             let mut dict = dict.clone();
             dict.metadata = None;
+            // Normalize credentials so state_before (CREDENTIAL_PLACEHOLDER) compares equal
+            // to the live infra map (real credentials). Both become CREDENTIAL_PLACEHOLDER.
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        if s.password.is_some() {
+                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        if s.access_key_id.is_some() {
+                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                        if s.secret_access_key.is_some() {
+                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                    }
+                }
+            }
             (name.clone(), dict)
         })
         .collect()
@@ -1853,6 +1898,114 @@ mod tests {
     }
 
     // ─── T1a: dictionary drift detection ──────────────────────────────────────
+
+    /// Build an OlapDictionary with an external ClickHouse source using the given credentials.
+    fn make_external_ch_dict(name: &str, user: &str, password: &str) -> OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, DictionarySource, ExternalDictionarySource,
+        };
+        let mut dict = create_test_dict(name);
+        dict.source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
+            DictionaryClickHouseSource {
+                host: "remotehost".to_string(),
+                port: 9000,
+                user: user.to_string(),
+                password: password.to_string(),
+                db: "remote_db".to_string(),
+                table: "remote_table".to_string(),
+                query: None,
+                where_clause: None,
+                invalidate_query: None,
+            },
+        ));
+        dict
+    }
+
+    // Regression: when state_before was saved with masked credentials (CREDENTIAL_PLACEHOLDER)
+    // but the live infra map has real credentials, detect_drift must return NoDrift — not
+    // DriftDetected — because credentials should be normalized out before comparison.
+    #[test]
+    fn test_detect_drift_no_false_drift_when_expected_has_masked_credentials() {
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected_dicts = loaded from state_before JSON — credentials masked to CREDENTIAL_PLACEHOLDER
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+        );
+
+        // current_dicts = from current infra map with real credentials
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "admin", "s3cr3t"),
+        );
+
+        // target_dicts = also from code with real credentials
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Credential-only differences between state_before and live state must not cause false drift"
+        );
+    }
+
+    // When the DB was externally changed (schema AND credentials differ from expected),
+    // drift must still be detected even though credentials are normalized away.
+    //
+    // Scenario: plan was created with DB in Hashed layout (expected has PLACEHOLDER creds + Hashed).
+    // The DB was externally switched to Flat (current has real creds + Flat).
+    // Target (code) still wants Hashed. → DriftDetected.
+    #[test]
+    fn test_detect_drift_still_detected_when_db_schema_changed_externally() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected = state_before snapshot: DB had Hashed layout, credentials masked
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+        );
+        // (expected layout stays Hashed from create_test_dict default)
+
+        // current = DB was externally changed to Flat (schema changed — true drift)
+        let mut current_dict = make_external_ch_dict("ext_dict", "admin", "s3cr3t");
+        current_dict.layout = DictionaryLayout::Flat;
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("ext_dict".to_string(), current_dict);
+
+        // target = code still wants Hashed (same as what the plan targeted)
+        let target_dicts = expected_dicts.clone(); // same layout as expected (Hashed)
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::DriftDetected { .. }),
+            "Schema drift (Flat vs Hashed) must still be detected even when credentials are normalized"
+        );
+    }
 
     fn create_test_dict(name: &str) -> OlapDictionary {
         use crate::infrastructure::olap::clickhouse::dictionary::{
