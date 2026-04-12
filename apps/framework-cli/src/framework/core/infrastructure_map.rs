@@ -8786,6 +8786,7 @@ mod diff_orchestration_worker_tests {
                 settings: std::collections::HashMap::new(),
                 comment: None,
                 life_cycle: LifeCycle::FullyManaged,
+                version: None,
                 metadata: None,
             }
         };
@@ -11382,5 +11383,240 @@ mod dictionary_runtime_env_tests {
         } else {
             panic!("Expected ClickHouse source");
         }
+    }
+}
+
+#[cfg(test)]
+mod diff_dictionaries_tests {
+    use super::*;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+        DictionaryTableSource,
+    };
+    use std::collections::HashMap;
+
+    fn simple_dict(name: &str) -> OlapDictionary {
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "val".to_string(),
+                type_string: "String".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    fn run_diff(
+        before: HashMap<String, OlapDictionary>,
+        after: HashMap<String, OlapDictionary>,
+    ) -> (Vec<OlapChange>, Vec<FilteredChange>) {
+        let mut olap_changes = Vec::new();
+        let mut filtered = Vec::new();
+        InfrastructureMap::diff_dictionaries(
+            &before,
+            &after,
+            "local",
+            &mut olap_changes,
+            &mut filtered,
+            true,
+        );
+        (olap_changes, filtered)
+    }
+
+    // ─── Added ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_added() {
+        let before = HashMap::new();
+        let mut after = HashMap::new();
+        after.insert("local_dict_a".to_string(), simple_dict("dict_a"));
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Added(d)) if d.name == "dict_a"
+        ));
+    }
+
+    // ─── Removed ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_removed() {
+        let mut before = HashMap::new();
+        before.insert("local_dict_b".to_string(), simple_dict("dict_b"));
+        let after = HashMap::new();
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Removed(d)) if d.name == "dict_b"
+        ));
+    }
+
+    // ─── Updated ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_updated() {
+        let mut before = HashMap::new();
+        before.insert("local_dict_c".to_string(), simple_dict("dict_c"));
+
+        let mut updated = simple_dict("dict_c");
+        updated.lifetime = DictionaryLifetime::Single { seconds: 9999 };
+        let mut after = HashMap::new();
+        after.insert("local_dict_c".to_string(), updated);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Updated { before, .. }) if before.name == "dict_c"
+        ));
+    }
+
+    // ─── Unchanged ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_unchanged() {
+        let mut map = HashMap::new();
+        map.insert("local_dict_d".to_string(), simple_dict("dict_d"));
+
+        let (changes, filtered) = run_diff(map.clone(), map);
+        assert!(changes.is_empty());
+        assert!(filtered.is_empty());
+    }
+
+    // ─── Lifecycle: update blocked ────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_update_blocked_by_lifecycle() {
+        let mut before_dict = simple_dict("dict_e");
+        before_dict.life_cycle = LifeCycle::FullyManaged;
+        let mut before = HashMap::new();
+        before.insert("local_dict_e".to_string(), before_dict);
+
+        let mut after_dict = simple_dict("dict_e");
+        after_dict.lifetime = DictionaryLifetime::Single { seconds: 1 };
+        after_dict.life_cycle = LifeCycle::DeletionProtected;
+        let mut after = HashMap::new();
+        after.insert("local_dict_e".to_string(), after_dict);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        // Update should be blocked → no raw change, one filtered change
+        assert!(
+            changes.is_empty(),
+            "Expected no raw changes for lifecycle-blocked update"
+        );
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Updated { .. })
+        ));
+    }
+
+    // ─── Lifecycle: removal blocked ───────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_removal_blocked_by_lifecycle() {
+        let mut before_dict = simple_dict("dict_f");
+        before_dict.life_cycle = LifeCycle::DeletionProtected;
+        let mut before = HashMap::new();
+        before.insert("local_dict_f".to_string(), before_dict);
+        let after = HashMap::new();
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert!(changes.is_empty());
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Removed(d)) if d.name == "dict_f"
+        ));
+    }
+
+    // ─── Lifecycle: creation blocked ──────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_creation_blocked_by_lifecycle() {
+        let before = HashMap::new();
+
+        let mut new_dict = simple_dict("dict_g");
+        new_dict.life_cycle = LifeCycle::ExternallyManaged;
+        let mut after = HashMap::new();
+        after.insert("local_dict_g".to_string(), new_dict);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert!(changes.is_empty());
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Added(d)) if d.name == "dict_g"
+        ));
+    }
+
+    // ─── Canonical ID: different default_database ─────────────────────────────
+
+    #[test]
+    fn test_diff_dict_canonical_id_matches_across_default_db() {
+        // A dict with database=None keyed under "dev_dict_h" (dev default) should match
+        // the same dict keyed under "prod_dict_h" (prod default) when diff_dictionaries
+        // is called with default_database = "dev".
+        let dict = simple_dict("dict_h"); // database = None
+
+        let mut before = HashMap::new();
+        before.insert("dev_dict_h".to_string(), dict.clone()); // keyed with dev default
+
+        let mut after = HashMap::new();
+        after.insert("prod_dict_h".to_string(), dict); // keyed with prod default
+
+        let mut olap_changes = Vec::new();
+        let mut filtered = Vec::new();
+        // Pass "dev" as default_database — both sides' canonical ID becomes "dev_dict_h"
+        InfrastructureMap::diff_dictionaries(
+            &before,
+            &after,
+            "dev",
+            &mut olap_changes,
+            &mut filtered,
+            true,
+        );
+
+        // Same schema under the same canonical ID → no changes
+        assert!(olap_changes.is_empty(), "Same dict under different stored keys should not produce changes when canonical ID matches");
+        assert!(filtered.is_empty());
     }
 }
