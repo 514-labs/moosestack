@@ -76,6 +76,8 @@ impl ReconciliationFilter {
         self.view_ids.extend(other.view_ids.iter().cloned());
         self.select_row_policy_ids
             .extend(other.select_row_policy_ids.iter().cloned());
+        self.dictionary_ids
+            .extend(other.dictionary_ids.iter().cloned());
     }
 
     /// Re-prefix table IDs from `source_db` to `target_db`.
