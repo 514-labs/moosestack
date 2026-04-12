@@ -677,6 +677,24 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
     println!("  4. Run migrate again");
 }
 
+fn validate_parent_state_hash(
+    file: &crate::framework::core::migration_file::MigrationFile,
+    current_hash: &str,
+) -> Result<()> {
+    if file.parent_state_hash != current_hash {
+        return Err(
+            crate::framework::core::migration_file::MigrationHistoryError::HashMismatch {
+                migration_id: file.id.clone(),
+                expected: file.parent_state_hash.clone(),
+                actual: current_hash.to_string(),
+            }
+            .into(),
+        );
+    }
+
+    Ok(())
+}
+
 /// Execute migration from delta files (MigrationHistory).
 ///
 /// Loads MigrationHistory from the migrations directory, filters to unapplied
@@ -747,15 +765,7 @@ pub async fn execute_migration_deltas(
     for file in &unapplied {
         // Validate parent state hash before applying
         let current_hash = map.olap_hash();
-        if file.parent_state_hash != current_hash {
-            tracing::warn!(
-                "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'. \
-                 This migration may have been generated against a different base state.",
-                file.id,
-                &file.parent_state_hash[..12.min(file.parent_state_hash.len())],
-                &current_hash[..12.min(current_hash.len())],
-            );
-        }
+        validate_parent_state_hash(file, &current_hash)?;
 
         println!(
             "\n▶ Applying migration '{}' ({} delta(s))...",
@@ -1109,6 +1119,49 @@ mod tests {
             alias: None,
         });
         table
+    }
+
+    #[test]
+    fn test_validate_parent_state_hash_accepts_matching_hash() {
+        let hash = "a".repeat(64);
+        let file = crate::framework::core::migration_file::MigrationFile {
+            id: "20260410_120000_add_column".to_string(),
+            description: "add column".to_string(),
+            parent_state_hash: hash.clone(),
+            deltas: vec![],
+            created_at: chrono::Utc::now(),
+        };
+
+        assert!(validate_parent_state_hash(&file, &hash).is_ok());
+    }
+
+    #[test]
+    fn test_validate_parent_state_hash_rejects_mismatch() {
+        use crate::framework::core::migration_file::MigrationHistoryError;
+
+        let file = crate::framework::core::migration_file::MigrationFile {
+            id: "20260410_120000_add_column".to_string(),
+            description: "add column".to_string(),
+            parent_state_hash: "a".repeat(64),
+            deltas: vec![],
+            created_at: chrono::Utc::now(),
+        };
+
+        let err = validate_parent_state_hash(&file, &"b".repeat(64)).unwrap_err();
+        let hash_mismatch = err
+            .downcast_ref::<MigrationHistoryError>()
+            .expect("error should downcast to MigrationHistoryError");
+
+        assert!(matches!(
+            hash_mismatch,
+            MigrationHistoryError::HashMismatch {
+                migration_id,
+                expected,
+                actual,
+            } if migration_id == "20260410_120000_add_column"
+                && expected == &"a".repeat(64)
+                && actual == &"b".repeat(64)
+        ));
     }
 
     #[test]
