@@ -2008,6 +2008,45 @@ mod tests {
         dict
     }
 
+    // Regression: when expected dict has a source file in its metadata but current has
+    // none, detect_drift must return NoDrift — not DriftDetected — because dict metadata
+    // must be stripped before comparison, just as table metadata is.
+    #[test]
+    fn test_detect_drift_no_false_drift_with_dict_metadata_difference() {
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let mut expected_dict = create_test_dict("my_dict");
+        expected_dict.metadata = Some(Metadata {
+            description: None,
+            source: Some(SourceLocation {
+                file: "/old/path/my_dict.ts".to_string(),
+            }),
+        });
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("my_dict".to_string(), expected_dict);
+
+        // current and target have no metadata (metadata stripped after introspection / runtime)
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("my_dict".to_string(), create_test_dict("my_dict"));
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Metadata-only differences in dicts must not cause false drift"
+        );
+    }
+
     // Regression: when state_before was saved with masked credentials (CREDENTIAL_PLACEHOLDER)
     // but the live infra map has real credentials, detect_drift must return NoDrift — not
     // DriftDetected — because credentials should be normalized out before comparison.
