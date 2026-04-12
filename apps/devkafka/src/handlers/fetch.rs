@@ -103,7 +103,24 @@ async fn do_fetch(broker: &Broker, request: &FetchRequest) -> (FetchResponse, i6
                         total_bytes += batch.raw_batch.len() as i64;
                     }
                     if !records.is_empty() {
+                        tracing::debug!(
+                            topic = %topic_req.topic.0,
+                            partition = partition_req.partition,
+                            fetch_offset = partition_req.fetch_offset,
+                            batches = batches.len(),
+                            bytes = records.len(),
+                            high_watermark = partition.latest_offset(),
+                            "Fetch returned data"
+                        );
                         part_resp.records = Some(records.freeze());
+                    } else if partition_req.fetch_offset > partition.latest_offset() {
+                        tracing::warn!(
+                            topic = %topic_req.topic.0,
+                            partition = partition_req.partition,
+                            fetch_offset = partition_req.fetch_offset,
+                            latest_offset = partition.latest_offset(),
+                            "Fetch offset beyond end of partition (stale offset?)"
+                        );
                     }
                 } else {
                     part_resp.error_code = error::UNKNOWN_TOPIC_OR_PARTITION;

@@ -69,7 +69,6 @@ import {
   getTableChanges,
   runMoosePlanJson,
 } from "./utils";
-import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import {
   verifyTableIndexes,
@@ -1636,7 +1635,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
 
-        await triggerWorkflow("generator");
+        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
+        // so skip triggerWorkflow. The MV is already populated by the 50 records above.
         await waitForMaterializedViewUpdate(
           "BarAggregated",
           1,
@@ -2491,7 +2491,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
 
-        await triggerWorkflow("generator");
+        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
+        // so skip triggerWorkflow. The MV is already populated by the records above.
         await waitForMaterializedViewUpdate(
           "bar_aggregated",
           1,
