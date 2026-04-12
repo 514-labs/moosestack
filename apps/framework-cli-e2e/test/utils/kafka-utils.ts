@@ -11,7 +11,9 @@ export interface KafkaOptions {
 
 const execAsync = promisify(require("child_process").exec);
 
-const KAFKA_HOST = "localhost";
+// Use 127.0.0.1 (IPv4) explicitly because devkafka binds to 127.0.0.1
+// and "localhost" may resolve to ::1 (IPv6) first on some CI runners.
+const KAFKA_HOST = "127.0.0.1";
 const KAFKA_PORT = 19092;
 
 /**

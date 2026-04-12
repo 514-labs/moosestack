@@ -439,8 +439,15 @@ const waitForStreamingDockerlessMode = async (
     throw new Error("No timeout budget left for dockerless readiness check");
   }
 
-  // Phase 1: Poll /ready endpoint until all services report healthy
-  log.debug("Phase 1: Waiting for infrastructure health via /ready endpoint");
+  // Phase 1: Poll /ready endpoint until at least ClickHouse is healthy.
+  // In dockerless mode the rdkafka metadata health check (used by /ready for
+  // Redpanda) is flaky with devkafka — the 2-second timeout is too tight for
+  // a fresh BaseConsumer to connect + fetch metadata reliably. Rather than
+  // blocking on full 200 OK, we accept the response once ClickHouse is in the
+  // "healthy" list and let Phase 3 verify Kafka via kafkajs.
+  log.debug(
+    "Phase 1: Waiting for infrastructure health via /ready endpoint (ClickHouse required)",
+  );
   while (Date.now() - startTime < budgetMs) {
     try {
       const response = await fetch(`${baseUrl}/ready`);
@@ -448,7 +455,21 @@ const waitForStreamingDockerlessMode = async (
         log.debug("✓ All infrastructure services healthy via /ready endpoint");
         break;
       }
+      // Parse the body to check if ClickHouse is already healthy even when
+      // the overall status is 503 (e.g. Redpanda flapping).
       const body = await response.text();
+      try {
+        const status = JSON.parse(body);
+        const healthy: string[] = status.healthy ?? [];
+        if (healthy.includes("ClickHouse") && healthy.includes("Redis")) {
+          log.debug(
+            `✓ Core services healthy (${healthy.join(", ")}), proceeding despite overall 503`,
+          );
+          break;
+        }
+      } catch {
+        // JSON parse failure — fall through to retry
+      }
       log.debug(`Infrastructure not ready (${response.status}): ${body}`);
     } catch (error) {
       log.debug("Error checking /ready endpoint, retrying", {
