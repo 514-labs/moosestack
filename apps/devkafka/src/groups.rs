@@ -18,6 +18,18 @@ pub enum GroupState {
     Stable,
 }
 
+impl GroupState {
+    /// Return the Kafka protocol string representation of this state.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GroupState::Empty => "Empty",
+            GroupState::PreparingRebalance => "PreparingRebalance",
+            GroupState::CompletingRebalance => "CompletingRebalance",
+            GroupState::Stable => "Stable",
+        }
+    }
+}
+
 /// A single member of a consumer group.
 #[allow(dead_code)]
 pub struct GroupMember {

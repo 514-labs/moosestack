@@ -120,6 +120,12 @@ impl Broker {
             RequestKind::InitProducerId(req) => Ok(ResponseKind::InitProducerId(
                 handlers::init_producer_id::handle(self, req, api_version),
             )),
+            RequestKind::DescribeGroups(req) => Ok(ResponseKind::DescribeGroups(
+                handlers::describe_groups::handle(self, req, api_version).await,
+            )),
+            RequestKind::ListGroups(req) => Ok(ResponseKind::ListGroups(
+                handlers::list_groups::handle(self, req, api_version).await,
+            )),
             RequestKind::SaslHandshake(req) => Ok(ResponseKind::SaslHandshake(
                 handlers::sasl_handshake::handle(self, req, api_version),
             )),
