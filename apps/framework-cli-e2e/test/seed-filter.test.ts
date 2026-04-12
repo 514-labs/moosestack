@@ -57,8 +57,42 @@ async function seedWithRetry(
 ): Promise<{ stdout: string; stderr: string }> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      return await execAsync(cmd, { cwd });
+      const result = await execAsync(cmd, { cwd });
+
+      // The seed command exits 0 even when remoteSecure() fails, putting
+      // failures into a summary line like "✗ table: failed to copy - ...".
+      // Detect this and treat it as a retryable error.
+      const stdout = (result.stdout || "").toString();
+      const stderr = (result.stderr || "").toString();
+      testLogger.debug(
+        `Seed attempt ${attempt} output:\n  stdout: ${stdout.slice(0, 1000)}\n  stderr: ${stderr.slice(0, 500)}`,
+      );
+
+      const hasSeedFailure =
+        stdout.includes("failed to copy") || stdout.includes("\u2717");
+      if (hasSeedFailure && attempt < retries) {
+        testLogger.warn(
+          `Seed attempt ${attempt}/${retries} exited 0 but output indicates failure, retrying in ${delayMs}ms:\n  ${stdout.slice(0, 500)}`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      if (hasSeedFailure) {
+        throw new Error(
+          `Seed command reported failure after ${attempt} attempt(s):\n${stdout}`,
+        );
+      }
+
+      return result;
     } catch (err: any) {
+      // If we threw the "reported failure" error above, don't re-wrap it
+      if (
+        err.message &&
+        err.message.startsWith("Seed command reported failure")
+      ) {
+        throw err;
+      }
+
       // Combine all error sources for matching and diagnostics
       const allOutput = [err.stdout || "", err.stderr || "", err.message || ""]
         .map((s: string) => s.toString())
@@ -71,13 +105,16 @@ async function seedWithRetry(
           `  message: ${(err.message || "").toString().slice(0, 500)}`,
       );
 
-      const isReadonly =
+      const isRetryable =
         allOutput.includes("readonly") ||
         allOutput.includes("TABLE_IS_READ_ONLY") ||
-        allOutput.includes("READONLY");
-      if (isReadonly && attempt < retries) {
+        allOutput.includes("READONLY") ||
+        allOutput.includes("failed to copy") ||
+        allOutput.includes("Connection refused") ||
+        allOutput.includes("NETWORK_ERROR");
+      if (isRetryable && attempt < retries) {
         testLogger.debug(
-          `Seed attempt ${attempt}/${retries} hit readonly replica, retrying in ${delayMs}ms`,
+          `Seed attempt ${attempt}/${retries} hit retryable error, retrying in ${delayMs}ms`,
         );
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
