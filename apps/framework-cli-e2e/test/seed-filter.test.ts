@@ -65,10 +65,10 @@ async function seedWithRetry(
         .join("\n");
 
       testLogger.warn(
-        `Seed attempt ${attempt}/${retries} failed (exit code ${err.code ?? "?"}):`,
-        `\n  stdout: ${(err.stdout || "").toString().slice(0, 500)}`,
-        `\n  stderr: ${(err.stderr || "").toString().slice(0, 500)}`,
-        `\n  message: ${(err.message || "").toString().slice(0, 500)}`,
+        `Seed attempt ${attempt}/${retries} failed (exit code ${err.code ?? "?"}):\n` +
+          `  stdout: ${(err.stdout || "").toString().slice(0, 500)}\n` +
+          `  stderr: ${(err.stderr || "").toString().slice(0, 500)}\n` +
+          `  message: ${(err.message || "").toString().slice(0, 500)}`,
       );
 
       const isReadonly =
