@@ -77,6 +77,14 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
         <default/>
     </quotas>
 
+    <!-- Writable access storage for roles, row policies, etc.
+         The Docker image includes this by default; native binary needs it explicitly. -->
+    <user_directories>
+        <local_directory>
+            <path>{data_path}/access/</path>
+        </local_directory>
+    </user_directories>
+
     <!-- Embedded Keeper (replaces separate clickhouse-keeper container) -->
     <keeper_server>
         <tcp_port>9181</tcp_port>
