@@ -59,11 +59,22 @@ async function seedWithRetry(
     try {
       return await execAsync(cmd, { cwd });
     } catch (err: any) {
-      const msg = (err.stderr || err.message || "").toString();
+      // Combine all error sources for matching and diagnostics
+      const allOutput = [err.stdout || "", err.stderr || "", err.message || ""]
+        .map((s: string) => s.toString())
+        .join("\n");
+
+      testLogger.warn(
+        `Seed attempt ${attempt}/${retries} failed (exit code ${err.code ?? "?"}):`,
+        `\n  stdout: ${(err.stdout || "").toString().slice(0, 500)}`,
+        `\n  stderr: ${(err.stderr || "").toString().slice(0, 500)}`,
+        `\n  message: ${(err.message || "").toString().slice(0, 500)}`,
+      );
+
       const isReadonly =
-        msg.includes("readonly") ||
-        msg.includes("TABLE_IS_READ_ONLY") ||
-        msg.includes("READONLY");
+        allOutput.includes("readonly") ||
+        allOutput.includes("TABLE_IS_READ_ONLY") ||
+        allOutput.includes("READONLY");
       if (isReadonly && attempt < retries) {
         testLogger.debug(
           `Seed attempt ${attempt}/${retries} hit readonly replica, retrying in ${delayMs}ms`,
@@ -71,7 +82,9 @@ async function seedWithRetry(
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
-      throw err;
+      throw new Error(
+        `Seed command failed after ${attempt} attempt(s):\n${allOutput}`,
+      );
     }
   }
   throw new Error("seedWithRetry: unreachable");
@@ -286,6 +299,31 @@ describe("moose seed clickhouse with seedFilter", function () {
           `--- Last stdout (${allStdout.length} chunks) ---\n${lastStdout}\n\n` +
           `--- Last stderr (${allStderr.length} chunks) ---\n${lastStderr}`,
       );
+    }
+
+    // Verify the commits table was actually created before running seed tests.
+    testLogger.info("Verifying commits table exists in ClickHouse...");
+    const client = createClient(CLICKHOUSE_CONFIG);
+    try {
+      const result = await client.query({
+        query: `SELECT name, engine FROM system.tables WHERE database = 'local' AND name = 'commits'`,
+        format: "JSONEachRow",
+      });
+      const tables: any[] = await result.json();
+      if (tables.length === 0) {
+        // List all tables for diagnostics
+        const allResult = await client.query({
+          query: `SELECT database, name, engine FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')`,
+          format: "JSONEachRow",
+        });
+        const allTables: any[] = await allResult.json();
+        throw new Error(
+          `commits table not found in local database. Available tables: ${JSON.stringify(allTables)}`,
+        );
+      }
+      testLogger.info(`commits table verified: engine=${tables[0].engine}`);
+    } finally {
+      await client.close();
     }
 
     testLogger.info("Infrastructure ready");

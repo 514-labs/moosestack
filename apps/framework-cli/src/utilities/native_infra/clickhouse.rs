@@ -109,6 +109,21 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     </distributed_ddl>
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
 
+    <!-- OpenSSL client config for outgoing TLS (e.g. remoteSecure()).
+         The Docker ClickHouse image includes this by default; we must set
+         it explicitly so the native binary loads system CA certificates. -->
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+
     <!-- Macros for replicated engine table paths -->
     <macros>
         <shard>01</shard>

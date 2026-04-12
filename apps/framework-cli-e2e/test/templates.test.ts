@@ -177,8 +177,6 @@ const buildDevEnv = (
     TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
     MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
     MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-    MOOSE_ACCEPT_DESTRUCTIVE: "1",
-    MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
   };
   if (language === "python") {
     env.VIRTUAL_ENV = path.join(projectDir, ".venv");
@@ -235,7 +233,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Starting dev server...");
       const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+      devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: devEnv,
@@ -254,7 +252,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
       testLogger.info("Waiting for streaming functions to be ready...");
-      await waitForStreamingFunctions(120_000, { dockerless: true });
+      await waitForStreamingFunctions();
       testLogger.info(
         "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
       );
@@ -266,7 +264,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
-        includeDocker: config.isTestsVariant,
       });
     });
 
@@ -695,7 +692,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             }
           },
           {
-            attempts: 120,
+            attempts: 30,
             delayMs: 1000,
             operationName: "OlapTable.insert() to default database",
           },
@@ -739,7 +736,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             }
           },
           {
-            attempts: 120,
+            attempts: 30,
             delayMs: 1000,
             operationName: "OlapTable.insert() to non-default database",
           },
@@ -787,7 +784,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -843,7 +840,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -884,7 +881,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -895,11 +892,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after index modification...",
         );
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
 
         // Wait for tables to be created after previous test's file modifications
         // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
@@ -960,11 +954,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for Kafka table infrastructure to be ready...",
         );
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
 
         const kafkaSourceDDL = await withRetries(
           async () => {
@@ -1080,7 +1070,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial column TTL not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
 
         // Modify the template file to change TTL settings
@@ -1133,7 +1123,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Column TTL not updated to 14 days. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -1144,11 +1134,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after TTL modification...",
         );
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
 
         // First, verify initial DEFAULT settings
         await withRetries(
@@ -1161,7 +1148,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial count DEFAULT not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
 
         // Modify the template file to remove DEFAULT settings
@@ -1216,11 +1203,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Wait for streaming functions to stabilize after restart
         // The infrastructure changes message fires before process restarts complete
         testLogger.info("Waiting for streaming functions to stabilize...");
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
@@ -1241,7 +1224,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`count column not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -1251,11 +1234,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
 
         // Verify initial state: columns have correct comment+codec combinations
         await withRetries(
@@ -1315,7 +1294,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
 
         // Modify the template file to change comment+codec combinations
@@ -1397,11 +1376,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
         testLogger.info("Streaming functions stabilized");
 
         // Verify modified state
@@ -1469,7 +1444,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
@@ -1479,11 +1454,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
         );
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
 
         // Verify initial state: AliasTest has ALIAS columns
         await withRetries(
@@ -1493,7 +1464,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               throw new Error(`Initial eventDate ALIAS not found. DDL: ${ddl}`);
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
 
         // Modify the template file to switch eventDate from ALIAS to DEFAULT
@@ -1531,11 +1502,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects the switch from ALIAS to DEFAULT
@@ -1555,18 +1522,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               );
             }
           },
-          { attempts: 30, delayMs: 1000 },
+          { attempts: 10, delayMs: 1000 },
         );
       });
 
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        // Schema-only: just need DDL applied, not full consumer readiness
-        await waitForStreamingFunctions(180_000, {
-          dockerless: true,
-          stabilizationDelayMs: 5_000,
-        });
+        await waitForStreamingFunctions(180_000);
 
         // Verify source tables exist first
         const sourceADDL = await withRetries(
@@ -1627,54 +1590,25 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // Budget: waitForStreamingFunctions (up to 180s) + canary wait (300s) + batch (60s) = 540s
-        this.timeout(600_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000);
 
         const eventId = randomUUID();
 
-        // Send a canary record first and wait for it to appear in ClickHouse.
-        // This absorbs variable consumer startup time (can be 30s-300s after
-        // schema changes) in a single long wait. Once the canary appears, the
-        // full pipeline (ingest → Kafka → transform → ClickHouse) is proven active.
-        testLogger.info("Sending canary record to prove pipeline is active...");
-        await withRetries(
-          async () => {
-            const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                primaryKey: eventId,
-                timestamp: TEST_DATA.TIMESTAMP,
-                optionalText: "canary",
-              }),
-            });
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`${response.status}: ${text}`);
-            }
-          },
-          { attempts: 5, delayMs: 500 },
-        );
-        await waitForDBWrite(devProcess!, "Bar", 1, 300_000, "local");
-        testLogger.info("Canary record arrived — pipeline is active");
-
-        // Now send the remaining batch. Since the pipeline is proven active,
-        // these records should flow through quickly.
+        // Send multiple records to trigger batch write
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        for (let i = 1; i < recordsToSend; i++) {
+        for (let i = 0; i < recordsToSend; i++) {
           await withRetries(
             async () => {
               const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  primaryKey: randomUUID(),
+                  primaryKey: i === 0 ? eventId : randomUUID(),
                   timestamp: TEST_DATA.TIMESTAMP,
                   optionalText: `Hello world ${i}`,
                 }),
@@ -1687,6 +1621,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             { attempts: 5, delayMs: 500 },
           );
         }
+
         await waitForDBWrite(
           devProcess!,
           "Bar",
@@ -1781,7 +1716,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         });
 
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
           const id = randomUUID();
           await withRetries(
             async () => {
@@ -1800,7 +1734,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 120_000, "local");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
           await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
@@ -1837,7 +1771,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "ArrayOutput",
             testData.length,
-            120_000,
+            60_000,
             "local",
             `inputId = '${inputId}'`,
           );
@@ -1892,7 +1826,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "LargeMessageDeadLetter",
             1,
-            120_000,
+            60_000,
             "local",
           );
 
@@ -2192,7 +2126,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          await waitForDBWrite(devProcess!, "JsonTest", 1, 120_000);
+          await waitForDBWrite(devProcess!, "JsonTest", 1);
 
           // Verify row exists and payload is present
           const client = createClient(CLICKHOUSE_CONFIG);
@@ -2259,7 +2193,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "UserEventOutput",
             1,
-            120_000,
+            60_000,
             "local",
             `userId = '${userId}'`,
           );
@@ -2455,7 +2389,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "DateTimePrecisionOutput",
             1,
-            120_000,
+            60_000,
             "local",
           );
 
@@ -2509,16 +2443,16 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000);
 
         const eventId = randomUUID();
 
+        // Send multiple records to trigger batch write like typescript tests
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
         for (let i = 0; i < recordsToSend; i++) {
           await withRetries(
@@ -2542,11 +2476,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             { attempts: 5, delayMs: 500 },
           );
         }
+
         await waitForDBWrite(
           devProcess!,
           "Bar",
           recordsToSend,
-          120_000,
+          60_000,
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
@@ -2608,7 +2543,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       });
       if (config.isTestsVariant) {
         it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
           const id = randomUUID();
           await withRetries(
             async () => {
@@ -2627,7 +2561,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 120_000, "local");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
           await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
@@ -2664,7 +2598,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "ArrayOutput",
             testData.length,
-            120_000,
+            60_000,
             "local",
             `input_id = '${inputId}'`,
           );
@@ -2822,7 +2756,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "UserEventOutput",
             1,
-            120_000,
+            60_000,
             "local",
             `user_id = '${userId}'`,
           );
@@ -3021,7 +2955,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             devProcess!,
             "DateTimePrecisionOutput",
             1,
-            120_000,
+            60_000,
             "local",
           );
 
@@ -3236,7 +3170,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               nsDevProcess!,
               "FooDeadLetter",
               1,
-              120_000,
+              60_000,
               "local",
             );
 

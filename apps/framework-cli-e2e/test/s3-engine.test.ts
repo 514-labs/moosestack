@@ -64,7 +64,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+      devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: {
@@ -74,8 +74,6 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
       });
 
@@ -87,7 +85,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120_000, { dockerless: true });
+      await waitForStreamingFunctions();
       testLogger.info("All components ready");
     });
 
@@ -99,7 +97,6 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         APP_NAMES.TYPESCRIPT_TESTS,
         {
           logPrefix: "TypeScript S3 Engine Test (With Env Vars)",
-          includeDocker: false,
         },
       );
     });
@@ -141,7 +138,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+      devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: {
@@ -153,8 +150,6 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
       });
 
@@ -166,7 +161,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120_000, { dockerless: true });
+      await waitForStreamingFunctions();
       testLogger.info("All components ready");
     });
 
@@ -178,7 +173,6 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         APP_NAMES.PYTHON_TESTS,
         {
           logPrefix: "Python S3 Engine Test (With Env Vars)",
-          includeDocker: false,
         },
       );
     });
