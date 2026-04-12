@@ -94,6 +94,65 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
+/// Normalizes dictionaries for drift comparison by stripping:
+/// - `metadata` (source file paths, descriptions): avoids false drift when files are reorganized
+/// - credential fields: avoids false drift because `state_before` JSON files store credentials
+///   as `CREDENTIAL_PLACEHOLDER` (via the custom Serialize impl), while the live infra map
+///   has real credentials. Both sides are normalized to `CREDENTIAL_PLACEHOLDER` so the
+///   comparison is credential-agnostic.
+fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionarySource, ExternalDictionarySource,
+    };
+    use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+    dicts
+        .iter()
+        .map(|(name, dict)| {
+            let mut dict = dict.clone();
+            dict.metadata = None;
+            // Normalize credentials so state_before (CREDENTIAL_PLACEHOLDER) compares equal
+            // to the live infra map (real credentials). Both become CREDENTIAL_PLACEHOLDER.
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        if s.password.is_some() {
+                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        if s.access_key_id.is_some() {
+                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                        if s.secret_access_key.is_some() {
+                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                    }
+                }
+            }
+            (name.clone(), dict)
+        })
+        .collect()
+}
+
 /// Strips both metadata and ignored fields from tables
 fn strip_metadata_and_ignored_fields(
     tables: &HashMap<String, Table>,
@@ -145,10 +204,17 @@ fn detect_drift(
         strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
     let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
 
+    // Strip dict metadata and credentials so state_before JSON (which has CREDENTIAL_PLACEHOLDER)
+    // compares equal to the live infra map (real credentials), and file-path-only changes don't
+    // trigger false drift.
+    let current_dicts_normalized = strip_dict_metadata(current_dicts);
+    let expected_dicts_normalized = strip_dict_metadata(expected_dicts);
+    let target_dicts_normalized = strip_dict_metadata(target_dicts);
+
     // Check 1: Did the DB change since the plan was generated?
     // Compare both tables and dictionaries with full content equality
     let tables_match = current_no_metadata == expected_no_metadata;
-    let dicts_match = current_dicts == expected_dicts;
+    let dicts_match = current_dicts_normalized == expected_dicts_normalized;
 
     if tables_match && dicts_match {
         return DriftStatus::NoDrift;
@@ -157,7 +223,7 @@ fn detect_drift(
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
     let tables_at_target = current_no_metadata == target_no_metadata;
-    let dicts_at_target = current_dicts == target_dicts;
+    let dicts_at_target = current_dicts_normalized == target_dicts_normalized;
 
     if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
@@ -185,22 +251,23 @@ fn detect_drift(
         .cloned()
         .collect();
 
-    let extra_dicts: Vec<String> = current_dicts
+    let extra_dicts: Vec<String> = current_dicts_normalized
         .keys()
-        .filter(|k| !expected_dicts.contains_key(*k))
+        .filter(|k| !expected_dicts_normalized.contains_key(*k))
         .cloned()
         .collect();
 
-    let missing_dicts: Vec<String> = expected_dicts
+    let missing_dicts: Vec<String> = expected_dicts_normalized
         .keys()
-        .filter(|k| !current_dicts.contains_key(*k))
+        .filter(|k| !current_dicts_normalized.contains_key(*k))
         .cloned()
         .collect();
 
-    let changed_dicts: Vec<String> = current_dicts
+    let changed_dicts: Vec<String> = current_dicts_normalized
         .keys()
         .filter(|k| {
-            expected_dicts.contains_key(*k) && current_dicts.get(*k) != expected_dicts.get(*k)
+            expected_dicts_normalized.contains_key(*k)
+                && current_dicts_normalized.get(*k) != expected_dicts_normalized.get(*k)
         })
         .cloned()
         .collect();
@@ -1547,6 +1614,102 @@ mod tests {
     }
 
     // ─── T1a: dictionary drift detection ──────────────────────────────────────
+
+    /// Build an OlapDictionary with an external ClickHouse source using the given credentials.
+    fn make_external_ch_dict(name: &str, user: &str, password: &str) -> OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, DictionarySource, ExternalDictionarySource,
+        };
+        let mut dict = create_test_dict(name);
+        dict.source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
+            DictionaryClickHouseSource {
+                host: "remotehost".to_string(),
+                port: 9000,
+                user: user.to_string(),
+                password: password.to_string(),
+                db: "remote_db".to_string(),
+                table: "remote_table".to_string(),
+                query: None,
+                where_clause: None,
+                invalidate_query: None,
+            },
+        ));
+        dict
+    }
+
+    // Regression: when expected dict has a source file in its metadata but current has
+    // none, detect_drift must return NoDrift — not DriftDetected — because dict metadata
+    // must be stripped before comparison, just as table metadata is.
+    #[test]
+    fn test_detect_drift_no_false_drift_with_dict_metadata_difference() {
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let mut expected_dict = create_test_dict("my_dict");
+        expected_dict.metadata = Some(Metadata {
+            description: None,
+            source: Some(SourceLocation {
+                file: "/old/path/my_dict.ts".to_string(),
+            }),
+        });
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("my_dict".to_string(), expected_dict);
+
+        // current and target have no metadata (metadata stripped after introspection / runtime)
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("my_dict".to_string(), create_test_dict("my_dict"));
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Metadata-only differences in dicts must not cause false drift"
+        );
+    }
+
+    // Regression: when state_before was saved with masked credentials but the live infra
+    // map has real credentials, detect_drift must return NoDrift.
+    #[test]
+    fn test_detect_drift_no_false_drift_when_expected_has_masked_credentials() {
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+        );
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "admin", "s3cr3t"),
+        );
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Credential-only differences must not cause false drift"
+        );
+    }
 
     fn create_test_dict(name: &str) -> OlapDictionary {
         use crate::infrastructure::olap::clickhouse::dictionary::{
