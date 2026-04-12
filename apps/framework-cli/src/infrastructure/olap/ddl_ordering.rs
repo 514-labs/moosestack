@@ -5599,6 +5599,7 @@ mod tests {
             settings: std::collections::HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
+            version: None,
             metadata: None,
         };
 

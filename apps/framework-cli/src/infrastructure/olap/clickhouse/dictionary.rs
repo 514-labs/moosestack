@@ -41,6 +41,7 @@ use crate::proto::infrastructure_map::{
 
 use crate::framework::core::infrastructure::table::{deserialize_nullable_as_default, Metadata};
 use crate::framework::core::infrastructure::{DataLineage, InfrastructureSignature};
+use crate::framework::versions::Version;
 
 // ─── Column attributes ────────────────────────────────────────────────────────
 
@@ -929,6 +930,11 @@ pub struct OlapDictionary {
     #[serde(default, deserialize_with = "deserialize_nullable_as_default")]
     pub life_cycle: LifeCycle,
 
+    /// Optional version string (e.g. "0.1"). When set, the version suffix is baked
+    /// into `name` (e.g. "my_dict_0_1") so versioned dictionaries are distinct objects.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub version: Option<Version>,
+
     /// Optional metadata (description, source file)
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub metadata: Option<Metadata>,
@@ -945,10 +951,13 @@ fn escape_clickhouse_string(s: &str) -> String {
 impl OlapDictionary {
     /// Returns a unique identifier for this dictionary.
     ///
-    /// Format: `{database}_{name}` to ensure uniqueness across databases.
+    /// Format: `{database}_{name}` (or `{database}_{name}_{version_suffix}` when versioned).
     pub fn id(&self, default_database: &str) -> String {
         let db = self.database.as_deref().unwrap_or(default_database);
-        format!("{}_{}", db, self.name)
+        let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
+            format!("{}_{}", self.name, v.as_suffix())
+        });
+        format!("{}_{}", db, base_id)
     }
 
     /// Returns the quoted dictionary name for SQL
@@ -1277,15 +1286,24 @@ impl OlapDictionary {
 
     /// Short display string for logging/UI
     pub fn short_display(&self) -> String {
-        format!("OlapDictionary: {}", self.name)
+        match &self.version {
+            Some(v) => format!("OlapDictionary: {} v{}", self.name, v),
+            None => format!("OlapDictionary: {}", self.name),
+        }
     }
 
     /// Expanded display string with more details
     pub fn expanded_display(&self) -> String {
-        format!(
-            "OlapDictionary: {} (layout: {:?}, lifetime: {:?})",
-            self.name, &self.layout, &self.lifetime
-        )
+        match &self.version {
+            Some(v) => format!(
+                "OlapDictionary: {} v{} (layout: {:?}, lifetime: {:?})",
+                self.name, v, &self.layout, &self.lifetime
+            ),
+            None => format!(
+                "OlapDictionary: {} (layout: {:?}, lifetime: {:?})",
+                self.name, &self.layout, &self.lifetime
+            ),
+        }
     }
 
     // ─── Proto conversion ─────────────────────────────────────────────────
@@ -1438,6 +1456,7 @@ impl OlapDictionary {
                     special_fields: Default::default(),
                 }
             })),
+            version: self.version.as_ref().map(|v| v.to_string()),
             source,
             special_fields: Default::default(),
         }
@@ -1619,6 +1638,7 @@ impl OlapDictionary {
             settings: proto.settings,
             comment: proto.comment,
             life_cycle,
+            version: proto.version.map(Version::from_string),
             metadata,
         }
     }
@@ -1715,6 +1735,7 @@ mod tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
+            version: None,
             metadata: None,
         }
     }
@@ -2575,5 +2596,46 @@ mod tests {
                 where_clause: None,
             }));
         assert_eq!(source.source_type_label(), "external");
+    }
+
+    // ─── Versioning ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_id_without_version() {
+        let dict = simple_dict("my_dict");
+        assert_eq!(dict.id("local"), "local_my_dict");
+        assert_eq!(dict.id("prod"), "prod_my_dict");
+    }
+
+    #[test]
+    fn test_id_with_version() {
+        let mut dict = simple_dict("my_dict");
+        dict.version = Some(Version::from_string("0.1".to_string()));
+        // Version suffix is appended to id but NOT to name
+        assert_eq!(dict.id("local"), "local_my_dict_0_1");
+        assert_eq!(dict.name, "my_dict");
+    }
+
+    #[test]
+    fn test_proto_round_trip_with_version() {
+        let mut dict = simple_dict("my_dict");
+        dict.version = Some(Version::from_string("1.2".to_string()));
+
+        let proto = dict.to_proto();
+        assert_eq!(proto.version, Some("1.2".to_string()));
+
+        let restored = OlapDictionary::from_proto(proto);
+        assert_eq!(restored.version, dict.version);
+        assert_eq!(restored.name, dict.name);
+    }
+
+    #[test]
+    fn test_proto_round_trip_without_version() {
+        let dict = simple_dict("my_dict");
+        let proto = dict.to_proto();
+        assert_eq!(proto.version, None);
+
+        let restored = OlapDictionary::from_proto(proto);
+        assert_eq!(restored.version, None);
     }
 }
