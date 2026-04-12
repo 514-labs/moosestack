@@ -5,7 +5,7 @@
  * E2E tests for `moose dev --dockerless` (fully native infrastructure).
  *
  * Validates the full lifecycle: init -> start -> verify infra -> send data -> stop -> verify cleanup.
- * Alpha mode starts devredis, devkafka, ClickHouse, and Temporal as local processes — no Docker.
+ * Dockerless mode starts ClickHouse and Temporal as native binaries, with devkafka and devredis embedded in-process — no Docker.
  */
 
 import { spawn, ChildProcess, execSync } from "child_process";
@@ -139,6 +139,7 @@ describe("moose dev --dockerless (native infrastructure)", function () {
       cwd: projectDir,
       env: {
         ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         MOOSE_TELEMETRY__ENABLED: "false",
         MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
