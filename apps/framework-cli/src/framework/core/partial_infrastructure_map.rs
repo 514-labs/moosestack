@@ -891,6 +891,7 @@ impl PartialInfrastructureMap {
                 let mut dict = dict.clone();
                 if let Some(ref v) = dict.version {
                     dict.name = format!("{}_{}", dict.name, v.as_suffix());
+                    dict.version = None; // Clear version after baking it into the name so dict.id() doesn't apply the suffix twice
                 }
                 let id = dict.id(default_database);
                 (id, dict)
@@ -1909,6 +1910,76 @@ mod tests {
         assert_eq!(
             normalized_file, "app/datamodels/UserDict.ts",
             "dictionary source path should be normalized to relative; got: {normalized_file}"
+        );
+    }
+
+    /// Regression: convert_dictionaries() must not double-apply the version suffix.
+    /// When dict.version is Some("0.1"), the function bakes "_0_1" into dict.name
+    /// and then must clear dict.version so that dict.id() does not append "_0_1" again.
+    #[test]
+    fn test_convert_dictionaries_no_double_version_suffix() {
+        use crate::framework::versions::Version;
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+
+        let version = Version::from_string("0.1".to_string());
+        let dict = OlapDictionary {
+            name: "my_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: Some(version),
+            metadata: None,
+        };
+
+        let mut partial: PartialInfrastructureMap =
+            serde_json::from_str("{}").expect("empty PartialInfrastructureMap");
+        partial
+            .olap_dictionaries
+            .insert("my_dict".to_string(), dict);
+
+        let converted = partial.convert_dictionaries("local");
+
+        assert_eq!(converted.len(), 1, "expected exactly one dictionary");
+        let id = converted.keys().next().unwrap();
+        assert_eq!(
+            id, "local_my_dict_0_1",
+            "id should have version suffix exactly once; got: {id}"
+        );
+        let dict = converted.values().next().unwrap();
+        assert_eq!(
+            dict.name, "my_dict_0_1",
+            "name should have version suffix baked in; got: {}",
+            dict.name
+        );
+        assert!(
+            dict.version.is_none(),
+            "version should be cleared after baking into name"
         );
     }
 }
