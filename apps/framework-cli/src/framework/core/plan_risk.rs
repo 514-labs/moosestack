@@ -229,7 +229,6 @@ fn is_cache_layout(
     )
 }
 
-
 /// Walks the OLAP changes and collects every operation that may cause data loss.
 ///
 /// A `TableChange::Removed` followed by a `TableChange::Added` with the same
@@ -1629,6 +1628,7 @@ mod tests {
             settings: HashMap::new(),
             comment: None,
             life_cycle: LifeCycle::FullyManaged,
+            version: None,
             metadata: None,
             version: None,
         }
