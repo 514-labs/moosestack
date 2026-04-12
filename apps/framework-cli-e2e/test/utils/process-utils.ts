@@ -283,23 +283,25 @@ export const killRemainingProcesses = async (
     log.warn("Error killing native infrastructure processes");
   }
 
-  // Wait for the ClickHouse port to be released before returning.
-  // Without this, the next test suite may connect to a dying ClickHouse.
-  try {
-    for (let i = 0; i < 10; i++) {
-      const { stdout } = await execAsync(
-        "fuser 18123/tcp 2>/dev/null || echo free",
-        { timeout: 5000 },
-      );
-      if (stdout.trim() === "free") {
-        log.debug("Port 18123 is free");
-        break;
+  // Wait for ClickHouse and Keeper ports to be released before returning.
+  // Without this, the next test suite may fail to bind these ports.
+  for (const port of [18123, 9181, 9234]) {
+    try {
+      for (let i = 0; i < 10; i++) {
+        const { stdout } = await execAsync(
+          `fuser ${port}/tcp 2>/dev/null || echo free`,
+          { timeout: 5000 },
+        );
+        if (stdout.trim() === "free") {
+          log.debug(`Port ${port} is free`);
+          break;
+        }
+        log.debug(`Port ${port} still in use, waiting... (attempt ${i + 1})`);
+        await new Promise((r) => setTimeout(r, 1000));
       }
-      log.debug(`Port 18123 still in use, waiting... (attempt ${i + 1})`);
-      await new Promise((r) => setTimeout(r, 1000));
+    } catch (error) {
+      log.warn(`Error checking port ${port} availability`);
     }
-  } catch (error) {
-    log.warn("Error checking port availability");
   }
 };
 
