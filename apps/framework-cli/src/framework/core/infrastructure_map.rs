@@ -8865,19 +8865,19 @@ mod diff_orchestration_worker_tests {
             if let DictionarySource::External(ref ext) = d.source {
                 match ext {
                     ExternalDictionarySource::ClickHouse(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Mysql(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Postgresql(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Mongodb(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     _ => panic!("{name}: unexpected source variant"),
