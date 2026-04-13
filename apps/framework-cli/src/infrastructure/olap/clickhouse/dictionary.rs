@@ -316,7 +316,6 @@ pub struct ExternalDictionarySourceWrapper {
     pub external_source: ExternalDictionarySource,
 }
 
-
 /// Dictionary data source — exactly one must be set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -326,7 +325,7 @@ pub enum DictionarySource {
     /// Read from an arbitrary SQL query on the local ClickHouse
     Query(DictionaryQuerySource),
     /// Read from an external system
-    External { source: ExternalDictionarySource },
+    External(ExternalDictionarySourceWrapper),
 }
 
 impl DictionarySource {
@@ -1616,7 +1615,9 @@ impl OlapDictionary {
                         })
                     }
                 };
-                DictionarySource::External { source: ext_source }
+                DictionarySource::External(ExternalDictionarySourceWrapper {
+                    external_source: ext_source,
+                })
             }
             None => {
                 // Fallback: shouldn't happen in practice — proto is missing source field
@@ -1715,7 +1716,7 @@ impl DataLineage for OlapDictionary {
                     id: Self::table_reference_to_id(&table_ref, default_database),
                 }]
             }
-            DictionarySource::Query(_) | DictionarySource::External { .. } => vec![],
+            DictionarySource::Query(_) | DictionarySource::External(_) => vec![],
         }
     }
 
@@ -2141,14 +2142,14 @@ mod tests {
     #[test]
     fn test_data_lineage_external_source_no_deps() {
         let mut dict = simple_dict("my_dict");
-        dict.source = DictionarySource::External {
-            source: ExternalDictionarySource::Http(DictionaryHttpSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://example.com".to_string(),
                 format: "JSONEachRow".to_string(),
                 method: None,
                 where_clause: None,
             }),
-        };
+        });
         assert!(dict.pulls_data_from("local").is_empty());
     }
 
@@ -2278,25 +2279,26 @@ mod tests {
     #[test]
     fn test_proto_round_trip_external_http_source() {
         let mut dict = simple_dict("my_dict");
-        dict.source = DictionarySource::External {
-            source: ExternalDictionarySource::Http(DictionaryHttpSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://data.example.com/dict".to_string(),
                 format: "CSV".to_string(),
                 method: Some("GET".to_string()),
                 where_clause: None,
             }),
-        };
+        });
         let proto = dict.to_proto();
         let restored = OlapDictionary::from_proto(proto);
-        if let DictionarySource::External {
-            source: ExternalDictionarySource::Http(h),
-        } = &restored.source
-        {
-            assert_eq!(h.url, "http://data.example.com/dict");
-            assert_eq!(h.format, "CSV");
-            assert_eq!(h.method.as_deref(), Some("GET"));
+        if let DictionarySource::External(wrapper) = &restored.source {
+            if let ExternalDictionarySource::Http(h) = &wrapper.external_source {
+                assert_eq!(h.url, "http://data.example.com/dict");
+                assert_eq!(h.format, "CSV");
+                assert_eq!(h.method.as_deref(), Some("GET"));
+            } else {
+                panic!("Expected HTTP external source");
+            }
         } else {
-            panic!("Expected HTTP external source");
+            panic!("Expected External source");
         }
     }
 
@@ -2402,24 +2404,24 @@ mod tests {
     #[test]
     fn test_serde_external_source_json() {
         let mut dict = simple_dict("my_dict");
-        dict.source = DictionarySource::External {
-            source: ExternalDictionarySource::Http(DictionaryHttpSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://data.example.com".to_string(),
                 format: "JSONEachRow".to_string(),
                 method: None,
                 where_clause: None,
             }),
-        };
+        });
         let json = serde_json::to_string(&dict).unwrap();
-        // Verify the JSON uses a nested "source" field (no duplicate "type" keys)
+        // Verify the JSON uses a nested "externalSource" field (no duplicate "type" keys)
         assert!(json.contains(r#""type":"EXTERNAL""#));
-        assert!(json.contains(r#""source":{"type":"HTTP""#));
+        assert!(json.contains(r#""externalSource":{"source_type":"HTTP""#));
         let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
         assert!(matches!(
             restored.source,
-            DictionarySource::External {
-                source: ExternalDictionarySource::Http(_)
-            }
+            DictionarySource::External(ExternalDictionarySourceWrapper {
+                external_source: ExternalDictionarySource::Http(_)
+            })
         ));
     }
 
@@ -2428,8 +2430,8 @@ mod tests {
     #[test]
     fn test_mysql_source_ddl() {
         let mut dict = simple_dict("my_dict");
-        dict.source = DictionarySource::External {
-            source: ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Mysql(DictionaryMysqlSource {
                 host: "mysql.example.com".to_string(),
                 port: 3306,
                 user: "user".to_string(),
@@ -2440,7 +2442,7 @@ mod tests {
                 where_clause: None,
                 invalidate_query: None,
             }),
-        };
+        });
         let sql = dict.to_create_if_not_exists_sql();
         assert!(sql.contains("SOURCE(MYSQL(HOST 'mysql.example.com' PORT 3306"));
     }
@@ -2448,14 +2450,14 @@ mod tests {
     #[test]
     fn test_s3_source_ddl() {
         let mut dict = simple_dict("my_dict");
-        dict.source = DictionarySource::External {
-            source: ExternalDictionarySource::S3(DictionaryS3Source {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::S3(DictionaryS3Source {
                 url: "s3://bucket/data.csv".to_string(),
                 format: "CSV".to_string(),
                 access_key_id: None,
                 secret_access_key: None,
             }),
-        };
+        });
         let sql = dict.to_create_if_not_exists_sql();
         assert!(sql.contains("SOURCE(S3(URL 's3://bucket/data.csv' FORMAT 'CSV'))"));
     }
@@ -2528,7 +2530,6 @@ mod tests {
         let restored: DictionarySource = serde_json::from_str(&json).unwrap();
         assert_eq!(dict.source, restored);
     }
-
 
     // ─── SQL escaping regressions ─────────────────────────────────────────────
 
@@ -2770,14 +2771,16 @@ mod tests {
         // Must not panic; the fallback arm logs a warning and returns Http.
         let dict = OlapDictionary::from_proto(proto);
         match dict.source {
-            DictionarySource::External {
-                source: ExternalDictionarySource::Http(h),
-            } => {
-                assert!(h.url.is_empty(), "fallback HTTP url should be empty");
-                assert_eq!(
-                    h.format, "JSONEachRow",
-                    "fallback HTTP format should be JSONEachRow"
-                );
+            DictionarySource::External(wrapper) => {
+                if let ExternalDictionarySource::Http(h) = wrapper.external_source {
+                    assert!(h.url.is_empty(), "fallback HTTP url should be empty");
+                    assert_eq!(
+                        h.format, "JSONEachRow",
+                        "fallback HTTP format should be JSONEachRow"
+                    );
+                } else {
+                    panic!("expected External(Http(..)) fallback, got non-Http");
+                }
             }
             other => panic!("expected External(Http(..)) fallback, got {:?}", other),
         }
