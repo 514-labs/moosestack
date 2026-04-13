@@ -9,7 +9,6 @@ use crate::framework::core::infrastructure::view::{Dmv1View, View};
 use crate::framework::core::infrastructure_map::{
     Change, ColumnChange, InfrastructureMap, OlapChange, TableChange,
 };
-use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
 use crate::infrastructure::olap::ddl_ordering::{AtomicOlapOperation, DependencyInfo};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
