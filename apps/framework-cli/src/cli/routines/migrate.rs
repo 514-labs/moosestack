@@ -464,7 +464,7 @@ fn validate_table_databases_and_clusters(
                         cluster,
                         resource_name
                     );
-                    malformed_cluster_macros.push((resource_name.to_string(), cluster.clone()));
+                    invalid_resource_clusters.push((resource_name.to_string(), cluster.clone()));
                 }
                 None => {
                     // Plain cluster name — must appear in the configured list
