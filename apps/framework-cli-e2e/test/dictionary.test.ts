@@ -225,6 +225,16 @@ export const newIndexTestLookupDict = new OlapDictionary<IndexTestLookup2>(
 
         console.log("✓ Added new dictionary file 'newDictTest.ts'");
 
+        // Export the new file from index.ts so moose can discover it.
+        // Moose uses index.ts as the entry point for TypeScript resource discovery;
+        // files not transitively reachable from it are invisible to the planner.
+        const indexPath = path.join(testProjectDir, "src", "index.ts");
+        fs.appendFileSync(
+          indexPath,
+          '\nexport * from "./views/newDictTest";\n',
+        );
+        console.log("✓ Exported 'newDictTest' from src/index.ts");
+
         const plan = await runMoosePlanJson(testProjectDir);
 
         const hasDict = hasDictionaryAdded(plan, "dict_new_index_test_lookup");
