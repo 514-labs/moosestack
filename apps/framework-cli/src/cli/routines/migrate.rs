@@ -9,6 +9,7 @@ use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter}
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
 use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
+use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
@@ -425,33 +426,51 @@ fn validate_table_databases_and_clusters(
     tracing::info!("Configured cluster names: {:?}", cluster_names);
 
     // Helper to validate database and cluster options for any resource (table, dictionary, etc.)
-    let mut validate =
-        |db_opt: &Option<String>, cluster_opt: &Option<String>, resource_name: &str| {
-            tracing::info!(
-                "Validating resource '{}' with cluster: {:?}",
-                resource_name,
-                cluster_opt
-            );
-            // Validate database
-            if let Some(db) = db_opt {
-                if db != primary_database && !additional_databases.contains(db) {
-                    invalid_resources.push((resource_name.to_string(), db.clone()));
-                }
+    let mut validate = |db_opt: &Option<String>,
+                        cluster_opt: &Option<String>,
+                        resource_name: &str| {
+        tracing::info!(
+            "Validating resource '{}' with cluster: {:?}",
+            resource_name,
+            cluster_opt
+        );
+        // Validate database
+        if let Some(db) = db_opt {
+            if db != primary_database && !additional_databases.contains(db) {
+                invalid_resources.push((resource_name.to_string(), db.clone()));
             }
-            // Validate cluster
-            if let Some(cluster) = cluster_opt {
-                tracing::info!(
-                    "Checking if cluster '{}' is in {:?}",
-                    cluster,
-                    cluster_names
-                );
-                // Fail if cluster is not in the configured list (or if list is empty)
-                if cluster_names.is_empty() || !cluster_names.contains(cluster) {
-                    tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
+        }
+        // Validate cluster
+        if let Some(cluster) = cluster_opt {
+            tracing::info!(
+                "Checking if cluster '{}' is in {:?}",
+                cluster,
+                cluster_names
+            );
+            match macro_use_legal(cluster) {
+                Some(true) => {
+                    // Valid ClickHouse macro (e.g. `{cluster}`) — skip list check
+                }
+                Some(false) => {
+                    // Malformed macro syntax
+                    tracing::info!(
+                        "Cluster '{}' uses malformed macro syntax for '{}'",
+                        cluster,
+                        resource_name
+                    );
                     invalid_resource_clusters.push((resource_name.to_string(), cluster.clone()));
                 }
+                None => {
+                    // Plain cluster name — must appear in the configured list
+                    if cluster_names.is_empty() || !cluster_names.contains(cluster) {
+                        tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
+                        invalid_resource_clusters
+                            .push((resource_name.to_string(), cluster.clone()));
+                    }
+                }
             }
-        };
+        }
+    };
 
     for operation in operations {
         match operation {
@@ -1853,6 +1872,32 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("unconfigured_cluster"));
+    }
+
+    #[test]
+    fn test_validate_cluster_macro_syntax_passes_without_config() {
+        // ClickHouse macro cluster names like `{cluster}` must be allowed
+        // even when no clusters are configured in moose.config.toml, because
+        // they are resolved by ClickHouse at runtime.
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("{cluster}".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        // No clusters configured — {cluster} macro should still pass
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_ok(), "ClickHouse macro cluster name should pass");
+    }
+
+    #[test]
+    fn test_validate_cluster_malformed_macro_rejected() {
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("}{".to_string()); // malformed macro
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_err(), "Malformed macro cluster name should fail");
     }
 
     #[test]
