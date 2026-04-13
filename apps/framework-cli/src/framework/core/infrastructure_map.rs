@@ -3816,6 +3816,22 @@ impl InfrastructureMap {
                 self.topic_to_table_sync_processes.insert(sync.id(), sync);
             }
         }
+
+        // Re-key dictionaries if their canonical ID changed with the new default_database.
+        // Dictionaries without an explicit `database` field are keyed by default_database,
+        // so a snapshot saved with `default_database = "local"` will have stale keys
+        // after fixup_default_db() updates the default.
+        if self
+            .olap_dictionaries
+            .iter()
+            .any(|(id, d)| id != &d.id(db_name))
+        {
+            let existing_dicts = mem::take(&mut self.olap_dictionaries);
+            for (_, d) in existing_dicts {
+                let new_id = d.id(db_name);
+                self.olap_dictionaries.insert(new_id, d);
+            }
+        }
     }
 
     /// Compute a deterministic SHA-256 hash of the OLAP portion of this infrastructure map.
