@@ -2531,6 +2531,115 @@ mod tests {
         );
     }
 
+    // ─── External source credential escaping (T3b) ───────────────────────────
+
+    /// Passwords containing single quotes and backslashes must be escaped in the
+    /// generated DDL for external ClickHouse sources. This prevents SQL injection
+    /// and malformed DDL when credentials contain special characters.
+    #[test]
+    fn test_external_source_password_special_chars_escaped() {
+        let dict = OlapDictionary {
+            name: "ext_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
+                DictionaryClickHouseSource {
+                    host: "ch.example.com".to_string(),
+                    port: 9000,
+                    user: "ad'min".to_string(), // single quote in username
+                    password: "p'ass\\word".to_string(), // single quote + backslash in password
+                    db: "mydb".to_string(),
+                    table: "users".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                },
+            )),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        };
+
+        let sql = dict.to_create_if_not_exists_sql();
+
+        // Single quote in username must be escaped to \'
+        assert!(
+            sql.contains("USER 'ad\\'min'"),
+            "single quote in user must be escaped; got: {sql}"
+        );
+        // Backslash escaped first → \\, then single quote → \'
+        assert!(
+            sql.contains("PASSWORD 'p\\'ass\\\\word'"),
+            "single quote and backslash in password must be escaped; got: {sql}"
+        );
+    }
+
+    /// Backslash-only credential must be escaped without double-escaping.
+    #[test]
+    fn test_external_source_backslash_only_credential_escaped() {
+        let dict = OlapDictionary {
+            name: "bs_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
+                DictionaryClickHouseSource {
+                    host: "ch.example.com".to_string(),
+                    port: 9000,
+                    user: "user".to_string(),
+                    password: "back\\slash".to_string(), // one backslash
+                    db: "mydb".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                },
+            )),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        };
+
+        let sql = dict.to_create_if_not_exists_sql();
+
+        // Single backslash → double backslash in output
+        assert!(
+            sql.contains("PASSWORD 'back\\\\slash'"),
+            "backslash in password must be doubled; got: {sql}"
+        );
+    }
+
     // ─── Proto fallback (T4) ──────────────────────────────────────────────────
 
     /// When a proto ExternalSource has `ext.t = None` (proto corruption or future version),
