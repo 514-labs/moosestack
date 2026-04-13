@@ -2203,10 +2203,11 @@ mod tests {
     fn make_external_ch_dict(name: &str, user: &str, password: &str) -> OlapDictionary {
         use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryClickHouseSource, DictionarySource, ExternalDictionarySource,
+            ExternalDictionarySourceWrapper,
         };
         let mut dict = create_test_dict(name);
-        dict.source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
-            DictionaryClickHouseSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
                 host: "remotehost".to_string(),
                 port: 9000,
                 user: user.to_string(),
@@ -2216,8 +2217,8 @@ mod tests {
                 query: None,
                 where_clause: None,
                 invalidate_query: None,
-            },
-        ));
+            }),
+        });
         dict
     }
 
