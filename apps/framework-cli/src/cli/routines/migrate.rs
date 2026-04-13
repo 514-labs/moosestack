@@ -17,7 +17,8 @@ use crate::infrastructure::olap::clickhouse::{
 use crate::infrastructure::olap::clickhouse::{normalize_table_for_diff, IgnorableOperation};
 use crate::project::Project;
 use crate::utilities::constants::{
-    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    CLICKHOUSE_MACRO_CLUSTER_NAME_RULES, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE,
 };
 use anyhow::Result;
 use itertools::Itertools;
@@ -105,10 +106,14 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
 
 /// Normalizes dictionaries for drift comparison by stripping:
 /// - `metadata` (source file paths, descriptions): avoids false drift when files are reorganized
-/// - credential fields: avoids false drift because `state_before` JSON files store credentials
-///   as `CREDENTIAL_PLACEHOLDER` (via the custom Serialize impl), while the live infra map
-///   has real credentials. Both sides are normalized to `CREDENTIAL_PLACEHOLDER` so the
-///   comparison is credential-agnostic.
+/// - **password** fields only: avoids false drift because `state_before` JSON files store
+///   passwords as `CREDENTIAL_PLACEHOLDER` (via `mask_credentials_for_json_export`), while the
+///   live infra map has real passwords. Both sides are normalized to `CREDENTIAL_PLACEHOLDER`
+///   so the comparison is password-agnostic.
+///
+/// Usernames are intentionally **not** normalized: `mask_credentials_for_json_export` leaves
+/// them in plain-text in persisted JSON, so both sides already have the real username and a
+/// username change produces visible drift.
 fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
     use crate::infrastructure::olap::clickhouse::dictionary::{
         DictionarySource, ExternalDictionarySource,
@@ -120,24 +125,23 @@ fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<Strin
         .map(|(name, dict)| {
             let mut dict = dict.clone();
             dict.metadata = None;
-            // Normalize credentials so state_before (CREDENTIAL_PLACEHOLDER) compares equal
-            // to the live infra map (real credentials). Both become CREDENTIAL_PLACEHOLDER.
+            // Normalize only passwords (not usernames) so that state_before JSON
+            // (password = CREDENTIAL_PLACEHOLDER) compares equal to the live infra map
+            // (password = real value). Usernames are stored in plain-text in the JSON
+            // by mask_credentials_for_json_export, so they must not be normalized here —
+            // a username change must surface as drift.
             if let DictionarySource::External(ref mut ext) = dict.source {
                 match ext {
                     ExternalDictionarySource::ClickHouse(s) => {
-                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
                     ExternalDictionarySource::Mysql(s) => {
-                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
                     ExternalDictionarySource::Postgresql(s) => {
-                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
                     ExternalDictionarySource::Mongodb(s) => {
-                        s.user = CREDENTIAL_PLACEHOLDER.to_string();
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
                     }
                     ExternalDictionarySource::Redis(s) => {
@@ -418,6 +422,7 @@ fn validate_table_databases_and_clusters(
 ) -> Result<()> {
     let mut invalid_resources = Vec::new();
     let mut invalid_resource_clusters = Vec::new();
+    let mut malformed_cluster_macros = Vec::new();
 
     // Get configured cluster names
     let cluster_names: Vec<String> = clusters
@@ -460,7 +465,7 @@ fn validate_table_databases_and_clusters(
                         cluster,
                         resource_name
                     );
-                    invalid_resource_clusters.push((resource_name.to_string(), cluster.clone()));
+                    malformed_cluster_macros.push((resource_name.to_string(), cluster.clone()));
                 }
                 None => {
                     // Plain cluster name — must appear in the configured list
@@ -620,12 +625,36 @@ fn validate_table_databases_and_clusters(
     }
 
     // Build error message if we found any issues
-    let has_errors = !invalid_resources.is_empty() || !invalid_resource_clusters.is_empty();
+    let has_errors = !invalid_resources.is_empty()
+        || !invalid_resource_clusters.is_empty()
+        || !malformed_cluster_macros.is_empty();
     if has_errors {
         let mut error_message = String::new();
 
+        // Report malformed macro errors first (actionable: fix the syntax, not the config)
+        if !malformed_cluster_macros.is_empty() {
+            error_message.push_str(
+                "One or more resources specify cluster names with invalid ClickHouse macro syntax:\n\n",
+            );
+
+            for (resource_name, cluster) in &malformed_cluster_macros {
+                error_message.push_str(&format!(
+                    "  • Resource '{}' specifies cluster '{}'\n",
+                    resource_name, cluster
+                ));
+            }
+
+            error_message.push('\n');
+            error_message.push_str(CLICKHOUSE_MACRO_CLUSTER_NAME_RULES);
+            error_message.push('\n');
+        }
+
         // Report database errors
         if !invalid_resources.is_empty() {
+            if !malformed_cluster_macros.is_empty() {
+                error_message.push('\n');
+            }
+
             error_message.push_str(
                 "One or more resources specify databases that are not configured in moose.config.toml:\n\n",
             );
@@ -663,7 +692,7 @@ fn validate_table_databases_and_clusters(
 
         // Report cluster errors
         if !invalid_resource_clusters.is_empty() {
-            if !invalid_resources.is_empty() {
+            if !malformed_cluster_macros.is_empty() || !invalid_resources.is_empty() {
                 error_message.push('\n');
             }
 
@@ -2186,11 +2215,13 @@ mod tests {
 
         let tables: HashMap<String, Table> = HashMap::new();
 
-        // expected_dicts = loaded from state_before JSON — credentials masked to CREDENTIAL_PLACEHOLDER
+        // expected_dicts = loaded from state_before JSON.
+        // mask_credentials_for_json_export masks only passwords, NOT usernames.
+        // So the realistic state_before JSON has: user = "admin" (plain-text), password = PLACEHOLDER.
         let mut expected_dicts = HashMap::new();
         expected_dicts.insert(
             "ext_dict".to_string(),
-            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+            make_external_ch_dict("ext_dict", "admin", CREDENTIAL_PLACEHOLDER),
         );
 
         // current_dicts = from current infra map with real credentials
@@ -2214,7 +2245,7 @@ mod tests {
         );
         assert!(
             matches!(result, DriftStatus::NoDrift),
-            "Credential-only differences between state_before and live state must not cause false drift"
+            "Password-only differences between state_before and live state must not cause false drift"
         );
     }
 
@@ -2608,6 +2639,93 @@ mod tests {
         assert!(
             plan_target_matches_code(&tables, &tables, &dicts, &dicts.clone()),
             "Identical state_after and code should match"
+        );
+    }
+
+    // ─── strip_dict_metadata: username drift visibility ───────────────────────
+
+    /// Username changes must surface as drift (i.e., not return NoDrift).
+    ///
+    /// `mask_credentials_for_json_export` leaves usernames in plain-text in the
+    /// persisted JSON, so `strip_dict_metadata` must NOT normalise them to
+    /// CREDENTIAL_PLACEHOLDER — otherwise a username change is invisible.
+    ///
+    /// When the DB already reflects the new username (user changed in code AND in DB),
+    /// the result is `AlreadyAtTarget` (plan is stale, DB is already correct).
+    /// When the plan was generated with the old username but the DB still has the
+    /// old username, the result is `DriftDetected`. Either way it must not be `NoDrift`.
+    #[test]
+    fn test_detect_drift_username_change_is_not_invisible() {
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected = state_before: original user "alice", password masked (realistic state_before)
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "alice", CREDENTIAL_PLACEHOLDER),
+        );
+
+        // current = live infra: user changed to "bob", real password
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "bob", "s3cr3t"),
+        );
+
+        // target = code now uses "bob" (username updated in code too)
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        // AlreadyAtTarget is also acceptable — plan is stale but DB is already correct.
+        // The key invariant is that it must NOT be NoDrift (which would silently ignore
+        // a username change and proceed with a stale migration plan).
+        assert!(
+            !matches!(result, DriftStatus::NoDrift),
+            "Username change (alice → bob) must not produce NoDrift — got {:?}",
+            result
+        );
+    }
+
+    // ─── validate_table_databases_and_clusters: malformed macro error message ─
+
+    /// A malformed macro cluster name must produce an error that mentions the
+    /// macro syntax rules, not a generic "cluster not configured" message.
+    #[test]
+    fn test_validate_cluster_malformed_macro_error_message_mentions_rules() {
+        use crate::utilities::constants::CLICKHOUSE_MACRO_CLUSTER_NAME_RULES;
+
+        let mut table = create_test_table("events");
+        table.cluster_name = Some("}{".to_string()); // malformed macro
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+
+        assert!(result.is_err(), "Malformed macro should produce an error");
+        let err = result.unwrap_err().to_string();
+        // Error must mention the resource and the bad cluster value
+        assert!(
+            err.contains("}{"),
+            "Error should include the malformed cluster name: {err}"
+        );
+        // Error must contain rule guidance, not "not configured in moose.config.toml"
+        let rules_excerpt = &CLICKHOUSE_MACRO_CLUSTER_NAME_RULES[..40]; // first 40 chars
+        assert!(
+            err.contains(rules_excerpt),
+            "Error should include CLICKHOUSE_MACRO_CLUSTER_NAME_RULES guidance: {err}"
+        );
+        assert!(
+            !err.contains("not configured in moose.config.toml"),
+            "Malformed macro error should not say 'not configured in moose.config.toml': {err}"
         );
     }
 }
