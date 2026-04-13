@@ -391,6 +391,12 @@ pub fn classify_risk_from_deltas(
                     view_name: view.name.clone(),
                 });
             }
+            InfraDelta::DropDictionary { dict } => {
+                destructive_changes.push(DestructiveChange::DictionaryDrop {
+                    database: dict.database.clone(),
+                    dictionary_name: dict.name.clone(),
+                });
+            }
             _ => {}
         }
     }
@@ -1630,7 +1636,6 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             version: None,
             metadata: None,
-            version: None,
         }
     }
 
@@ -1737,5 +1742,71 @@ mod tests {
         let risk = classify_plan_risk(&changes);
         assert!(!risk.is_destructive());
         assert!(!risk.has_operational_risks());
+    }
+
+    // ── classify_risk_from_deltas — dictionary coverage ──────────────────────
+
+    #[test]
+    fn delta_drop_dictionary_is_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let dict = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let deltas = vec![InfraDelta::DropDictionary { dict }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            risk.is_destructive(),
+            "DropDictionary delta must be classified as destructive"
+        );
+        assert!(
+            matches!(
+                &risk.destructive_changes[0],
+                DestructiveChange::DictionaryDrop { dictionary_name, .. }
+                    if dictionary_name == "dict_orders"
+            ),
+            "Expected DictionaryDrop for 'dict_orders', got {:?}",
+            risk.destructive_changes
+        );
+    }
+
+    #[test]
+    fn delta_create_dictionary_is_not_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let dict = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let deltas = vec![InfraDelta::CreateDictionary { dict }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            !risk.is_destructive(),
+            "CreateDictionary delta must not be classified as destructive"
+        );
+    }
+
+    #[test]
+    fn delta_replace_dictionary_is_not_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let before = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let after = make_simple_dict(
+            "dict_orders",
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let deltas = vec![InfraDelta::ReplaceDictionary { before, after }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            !risk.is_destructive(),
+            "ReplaceDictionary delta must not be classified as destructive"
+        );
     }
 }
