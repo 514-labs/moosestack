@@ -13,7 +13,7 @@
  * 6. Resolved environment variable values are correctly used in infrastructure
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as path from "path";
 
@@ -32,6 +32,11 @@ import {
   getTestPorts,
   buildPortEnv,
   buildServerConfig,
+  buildMooseDevEnv,
+  getCleanupOptionsForMode,
+  isDockerlessMode,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 import { captureProcessOutput } from "./utils/process-utils";
 
@@ -46,6 +51,7 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 );
 
 const testLogger = logger.scope("s3-secrets-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const PORTS = getTestPorts(40);
 const PORT_ENV = buildPortEnv(PORTS);
@@ -73,22 +79,17 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          ...PORT_ENV,
-          // Set dummy credentials for both S3Queue and S3 engine testing
-          // Both use the same env vars for consistency
+        projectDir: TEST_PROJECT_DIR,
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_FEATURES__WORKFLOWS: "false",
-          MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
-      });
+      }).devProcess;
 
       await waitForServerStart(
         devProcess,
@@ -99,7 +100,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
       testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions(120000, {
-        dockerless: true,
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
         baseUrl: SERVER.url,
       });
       testLogger.info("All components ready");
@@ -113,7 +114,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         APP_NAMES.TYPESCRIPT_TESTS,
         {
           logPrefix: "TypeScript S3Queue Test (With Env Vars)",
-          includeDocker: false,
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
         },
       );
     });
@@ -155,22 +156,20 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
       // Start dev server WITHOUT the required environment variables
       // Create a clean environment without the test credentials
-      const envWithoutCredentials: NodeJS.ProcessEnv = {
-        ...process.env,
-        ...PORT_ENV,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
-      };
+      const envWithoutCredentials = buildMooseDevEnv({
+        projectDir: TEST_PROJECT_DIR,
+        portEnv: PORT_ENV,
+      });
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: envWithoutCredentials,
-      });
+        projectDir: TEST_PROJECT_DIR,
+        mode: E2E_DEV_MODE,
+        extraEnv: envWithoutCredentials,
+      }).devProcess;
 
       // Capture both stdout and stderr to check for error messages
       const output = captureProcessOutput(devProcess);
@@ -250,24 +249,18 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          ...PORT_ENV,
-          VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-          PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set dummy credentials for both S3Queue and S3 engine testing
-          // Both use the same env vars for consistency
+        projectDir: TEST_PROJECT_DIR,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_FEATURES__WORKFLOWS: "false",
-          MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
         },
-      });
+      }).devProcess;
 
       await waitForServerStart(
         devProcess,
@@ -278,7 +271,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
 
       testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions(120000, {
-        dockerless: true,
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
         baseUrl: SERVER.url,
       });
       testLogger.info("All components ready");
@@ -292,7 +285,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         APP_NAMES.PYTHON_TESTS,
         {
           logPrefix: "Python S3Queue Test (With Env Vars)",
-          includeDocker: false,
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
         },
       );
     });
@@ -333,24 +326,22 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
 
       // Start dev server WITHOUT the required environment variables
       // Create a clean environment without the test credentials
-      const envWithoutCredentials: NodeJS.ProcessEnv = {
-        ...process.env,
-        ...PORT_ENV,
-        VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-        PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
-      };
+      const envWithoutCredentials = buildMooseDevEnv({
+        language: "python",
+        projectDir: TEST_PROJECT_DIR,
+        portEnv: PORT_ENV,
+      });
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: envWithoutCredentials,
-      });
+        projectDir: TEST_PROJECT_DIR,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        extraEnv: envWithoutCredentials,
+      }).devProcess;
 
       // Capture both stdout and stderr to check for error messages
       const output = captureProcessOutput(devProcess);

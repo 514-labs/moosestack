@@ -12,7 +12,7 @@
  * 5. Insert data and verify defaults are applied
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -32,6 +32,10 @@ import {
   buildPortEnv,
   buildServerConfig,
   buildClickHouseConfig,
+  buildPythonVenvPaths,
+  getCleanupOptionsForMode,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -47,6 +51,7 @@ const MOOSE_TS_LIB_PATH = path.resolve(
 );
 
 const testLogger = logger.scope("db-pull-defaults-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const PORTS = getTestPorts(30);
 const PORT_ENV = buildPortEnv(PORTS);
@@ -81,21 +86,20 @@ describe("python template tests - db-pull code generation", () => {
 
     // Start moose dev for infrastructure
     testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    const pythonPaths = buildPythonVenvPaths(testProjectDir);
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: testProjectDir,
-      env: {
-        ...process.env,
-        ...PORT_ENV,
-        VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-        PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      projectDir: testProjectDir,
+      language: "python",
+      mode: E2E_DEV_MODE,
+      portEnv: PORT_ENV,
+      extraEnv: {
+        VIRTUAL_ENV: pythonPaths.virtualEnv,
+        PATH: `${pythonPaths.binPath}:${process.env.PATH}`,
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
-    });
+    }).devProcess;
 
     await waitForServerStart(
       devProcess,
@@ -121,7 +125,7 @@ describe("python template tests - db-pull code generation", () => {
 
     await cleanupTestSuite(devProcess, testProjectDir, "py-db-pull-defaults", {
       logPrefix: "Python db-pull Defaults Test",
-      includeDocker: false,
+      ...getCleanupOptionsForMode(E2E_DEV_MODE),
     });
   });
 
@@ -462,19 +466,16 @@ describe("typescript template tests - db-pull code generation", () => {
 
     // Start moose dev for infrastructure
     testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: testProjectDir,
-      env: {
-        ...process.env,
-        ...PORT_ENV,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      projectDir: testProjectDir,
+      mode: E2E_DEV_MODE,
+      portEnv: PORT_ENV,
+      extraEnv: {
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
-    });
+    }).devProcess;
 
     await waitForServerStart(
       devProcess,
@@ -500,7 +501,7 @@ describe("typescript template tests - db-pull code generation", () => {
 
     await cleanupTestSuite(devProcess, testProjectDir, "ts-db-pull-defaults", {
       logPrefix: "TypeScript db-pull Defaults Test",
-      includeDocker: false,
+      ...getCleanupOptionsForMode(E2E_DEV_MODE),
     });
   });
 

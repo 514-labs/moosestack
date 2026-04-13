@@ -14,7 +14,7 @@
  * and we can ensure proper setup/teardown between template tests.
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -60,11 +60,16 @@ import {
   verifyWebAppHealth,
   verifyWebAppQuery,
   verifyWebAppPostEndpoint,
+  buildMooseDevEnv,
   cleanupTestSuite,
+  getCleanupOptionsForMode,
+  isDockerlessMode,
   performGlobalCleanup,
   stopDevProcess,
   killRemainingProcesses,
   logger,
+  resolveE2eDevMode,
+  startMooseDev,
   waitForInfrastructureChanges,
   PlanOutput,
   getTableChanges,
@@ -82,6 +87,7 @@ import {
 import { createClient } from "@clickhouse/client";
 
 const testLogger = logger.scope("templates-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -173,22 +179,16 @@ const buildDevEnv = (
   language: string,
   projectDir: string,
 ): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-    MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-    MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-    MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-    MOOSE_FEATURES__WORKFLOWS: "false",
-    MOOSE_TELEMETRY__ENABLED: "false",
-    MOOSE_ACCEPT_DESTRUCTIVE: "1",
-  };
-  if (language === "python") {
-    env.VIRTUAL_ENV = path.join(projectDir, ".venv");
-    env.PATH = `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`;
-  }
-  return env;
+  return buildMooseDevEnv({
+    language,
+    projectDir,
+    extraEnv: {
+      TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+      TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+      MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+      MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+    },
+  });
 };
 
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
@@ -239,11 +239,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Starting dev server...");
       const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
 
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: devEnv,
-      });
+        projectDir: TEST_PROJECT_DIR,
+        language: config.language,
+        mode: E2E_DEV_MODE,
+        extraEnv: devEnv,
+      }).devProcess;
 
       await waitForServerStart(
         devProcess,
@@ -258,7 +261,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       testLogger.info("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
       testLogger.info("Waiting for streaming functions to be ready...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
+      });
       testLogger.info(
         "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
       );
@@ -270,7 +275,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
-        includeDocker: false,
+        ...getCleanupOptionsForMode(E2E_DEV_MODE),
       });
     });
 
@@ -900,7 +905,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after index modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         // Wait for tables to be created after previous test's file modifications
         // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
@@ -961,7 +968,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for Kafka table infrastructure to be ready...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         const kafkaSourceDDL = await withRetries(
           async () => {
@@ -1095,7 +1104,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after TTL modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         // First, verify initial DEFAULT settings
         await withRetries(
@@ -1163,7 +1174,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Wait for streaming functions to stabilize after restart
         // The infrastructure changes message fires before process restarts complete
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
@@ -1194,7 +1207,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         // Verify initial state: columns have correct comment+codec combinations
         await withRetries(
@@ -1336,7 +1351,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify modified state
@@ -1414,7 +1431,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info(
           "Waiting for streaming functions to stabilize before ALIAS→DEFAULT test...",
         );
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         // Verify initial state: AliasTest has ALIAS columns
         await withRetries(
@@ -1462,7 +1481,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         testLogger.info("Infrastructure changes completed");
 
         testLogger.info("Waiting for streaming functions to stabilize...");
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
         testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects the switch from ALIAS to DEFAULT
@@ -1489,7 +1510,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Merge engine table with correct DDL", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         // Verify source tables exist first
         const sourceADDL = await withRetries(
@@ -1555,7 +1578,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         const eventId = randomUUID();
 
@@ -2405,7 +2430,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        await waitForStreamingFunctions(180_000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+        });
 
         const eventId = randomUUID();
 
@@ -3025,11 +3052,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
           };
 
-          nsDevProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-            stdio: "pipe",
+          nsDevProcess = startMooseDev({
+            cliPath: CLI_PATH,
             cwd: nsProjectDir,
-            env: devEnv,
-          });
+            projectDir: nsProjectDir,
+            language: config.language,
+            mode: E2E_DEV_MODE,
+            extraEnv: devEnv,
+          }).devProcess;
 
           await waitForServerStart(
             nsDevProcess!,
@@ -3041,7 +3071,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             "Server started with namespace, waiting for Kafka...",
           );
           await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-          await waitForStreamingFunctions(120000, { dockerless: true });
+          await waitForStreamingFunctions(120000, {
+            dockerless: isDockerlessMode(E2E_DEV_MODE),
+          });
           await waitForInfrastructureReady();
           testLogger.info(
             "All components ready with namespace, starting DLQ tests...",
@@ -3052,7 +3084,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
           await cleanupTestSuite(nsDevProcess, nsProjectDir, NS_APP_NAME, {
             logPrefix: `${config.displayName} (namespace)`,
-            includeDocker: false,
+            ...getCleanupOptionsForMode(E2E_DEV_MODE),
           });
           // Namespace DLQ tests are the tail of this suite. The parent after()
           // hook only needs the original project directory for cleanup, not a

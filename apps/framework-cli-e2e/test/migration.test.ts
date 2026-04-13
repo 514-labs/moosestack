@@ -15,7 +15,7 @@
  * 4. State is stored in ClickHouse (not Redis)
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -35,6 +35,9 @@ import {
   buildPortEnv,
   buildServerConfig,
   buildClickHouseConfig,
+  getCleanupOptionsForMode,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -51,6 +54,7 @@ const TEMPLATE_SOURCE_DIR = path.resolve(
 );
 
 const testLogger = logger.scope("migration-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const PORTS = getTestPorts(10);
 const PORT_ENV = buildPortEnv(PORTS);
@@ -121,19 +125,16 @@ describe("typescript template tests - migration", () => {
 
     // Start outer moose dev (just for infrastructure - ClickHouse + Keeper)
     testLogger.info("\nStarting outer moose dev for infrastructure...");
-    outerMooseProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    outerMooseProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: outerMooseDir,
-      env: {
-        ...process.env,
-        ...PORT_ENV,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      projectDir: outerMooseDir,
+      mode: E2E_DEV_MODE,
+      portEnv: PORT_ENV,
+      extraEnv: {
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
-    });
+    }).devProcess;
 
     // Wait for moose dev to start (ClickHouse ready)
     await waitForServerStart(
@@ -155,7 +156,7 @@ describe("typescript template tests - migration", () => {
     testLogger.info("\n=== Cleaning up Migration Tests ===");
     await cleanupTestSuite(outerMooseProcess, outerMooseDir, "ts-migrate", {
       logPrefix: "Migration Tests",
-      includeDocker: false,
+      ...getCleanupOptionsForMode(E2E_DEV_MODE),
     });
   });
 

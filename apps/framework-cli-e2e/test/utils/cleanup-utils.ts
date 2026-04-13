@@ -18,6 +18,8 @@ export interface CleanupOptions {
   timeout?: number;
   /** Whether to clean up Docker resources (defaults to true) */
   includeDocker?: boolean;
+  /** Optional dev mode to derive includeDocker when omitted */
+  mode?: "dockerless" | "docker";
   /** Optional directory containing the Moose .moose/docker-compose.yml state */
   dockerProjectDir?: string;
   /** Optional prefix for log messages */
@@ -43,11 +45,13 @@ export async function cleanupTestSuite(
   options: CleanupOptions = {},
 ): Promise<void> {
   const {
-    includeDocker = true,
+    includeDocker,
+    mode,
     dockerProjectDir = testProjectDir,
     logPrefix = "Test suite",
     logger: log = cleanupLogger,
   } = options;
+  const shouldIncludeDocker = includeDocker ?? mode !== "dockerless";
 
   try {
     if (logPrefix) {
@@ -59,7 +63,7 @@ export async function cleanupTestSuite(
     await stopDevProcess(devProcess, { logger: log });
 
     // Step 2: Clean up Docker resources (if enabled)
-    if (includeDocker) {
+    if (shouldIncludeDocker) {
       log.debug("Cleaning up Docker resources", { appName, dockerProjectDir });
       await cleanupDocker(dockerProjectDir, appName, { logger: log });
     }

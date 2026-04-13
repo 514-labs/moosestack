@@ -8,7 +8,7 @@
  * These tests follow the same pattern as the main template tests - setup once, test multiple scenarios.
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -27,6 +27,9 @@ import {
   setupPythonProject,
   logger,
   getTestPorts,
+  buildMooseDevEnv,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -43,6 +46,7 @@ const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 
 const testLogger = logger.scope("dotenv-config-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const PORTS = getTestPorts(20);
 
@@ -91,30 +95,30 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Start dev server
     testLogger.info("Starting dev server for .env configuration tests...");
-    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        // Infrastructure ports from port isolation (offset 20).
-        // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
-        // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
-        // files set the HTTP port (9990/9991/9992) and this test verifies
-        // .env precedence. System env vars would override .env values.
-        MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
-        MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
-        MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
-        MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
-        MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
-        MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
-        MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
-        MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
-      },
-    });
+      projectDir: TEST_PROJECT_DIR,
+      mode: E2E_DEV_MODE,
+      extraEnv: buildMooseDevEnv({
+        projectDir: TEST_PROJECT_DIR,
+        extraEnv: {
+          // Infrastructure ports from port isolation (offset 20).
+          // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
+          // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
+          // files set the HTTP port (9990/9991/9992) and this test verifies
+          // .env precedence. System env vars would override .env values.
+          MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
+          MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
+          MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
+          MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
+          MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
+          MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
+          MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }),
+    }).devProcess;
 
     // Wait for server to start
     // If .env files work correctly, it should start on port 9992 (from .env.local)
@@ -223,32 +227,32 @@ describe("python template tests - .env file configuration", function () {
     testLogger.info(
       "Starting dev server for Python .env configuration tests...",
     );
-    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-        PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        // Infrastructure ports from port isolation (offset 20).
-        // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
-        // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
-        // files set the HTTP port (9980/9981/9982) and this test verifies
-        // .env precedence. System env vars would override .env values.
-        MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
-        MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
-        MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
-        MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
-        MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
-        MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
-        MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
-        MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
-      },
-    });
+      projectDir: TEST_PROJECT_DIR,
+      language: "python",
+      mode: E2E_DEV_MODE,
+      extraEnv: buildMooseDevEnv({
+        language: "python",
+        projectDir: TEST_PROJECT_DIR,
+        extraEnv: {
+          // Infrastructure ports from port isolation (offset 20).
+          // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
+          // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
+          // files set the HTTP port (9980/9981/9982) and this test verifies
+          // .env precedence. System env vars would override .env values.
+          MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
+          MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
+          MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
+          MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
+          MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
+          MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
+          MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }),
+    }).devProcess;
 
     // Wait for server to start
     // If .env files work correctly, it should start on port 9982 (from .env.local)
