@@ -13,19 +13,17 @@ import { execSync } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
-import { promisify } from "util";
 import http from "http";
 
 import { TIMEOUTS, SERVER_CONFIG } from "./constants";
 import { createTempTestDirectory, performGlobalCleanup } from "./utils";
-
-const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../template-packages/_staging_typescript-tests",
 );
+const MOOSE_LIB_DIR = path.resolve(__dirname, "../../../packages/ts-moose-lib");
 const COMPOSE_FIXTURE = path.resolve(
   __dirname,
   "fixtures/docker-compose.prod-test.yml",
@@ -105,14 +103,38 @@ describe("Prod Docker Mode", function () {
     console.log("Copying typescript-tests template...");
     fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
 
-    // 2. Install dependencies (needed for lockfile so Docker can npm ci)
-    console.log("Installing npm dependencies...");
+    // 2. Pack local ts-moose-lib and inject into project so Docker uses it
+    // instead of pulling @514labs/moose-lib@latest from npm.
+    console.log("Packing local ts-moose-lib...");
     let startMs = Date.now();
-    await execAsync("npm install", { cwd: testProjectDir });
+    const tgzFilename = execSync("pnpm pack", {
+      cwd: MOOSE_LIB_DIR,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
     let elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-    console.log(`  npm install completed in ${elapsed}s`);
+    console.log(`  packed in ${elapsed}s: ${tgzFilename}`);
+
+    // Place tgz inside the source dir so it's included in the Docker build
+    // context (the Dockerfile does COPY ./src ./src).
+    const tgzSource = path.join(MOOSE_LIB_DIR, tgzFilename);
+    const tgzDest = path.join(testProjectDir, "src", "moose-lib.tgz");
+    fs.copyFileSync(tgzSource, tgzDest);
+    fs.unlinkSync(tgzSource);
+
+    const pkgJsonPath = path.join(testProjectDir, "package.json");
+    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+    for (const depKey of ["dependencies", "devDependencies"] as const) {
+      if (pkgJson[depKey]?.["@514labs/moose-lib"]) {
+        pkgJson[depKey]["@514labs/moose-lib"] = "file:./src/moose-lib.tgz";
+      }
+    }
+    fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + "\n");
+    console.log("  Patched package.json to use local moose-lib");
 
     // 3. Build Docker image via moose-cli
+    // No local npm install needed -- Docker handles dependency installation.
+    // Without a lockfile, the Dockerfile uses a non-strict install command.
     console.log("Building Docker image with moose-cli build --docker...");
     startMs = Date.now();
     try {
