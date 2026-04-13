@@ -3837,8 +3837,9 @@ impl InfrastructureMap {
     /// Compute a deterministic SHA-256 hash of the OLAP portion of this infrastructure map.
     ///
     /// The hash covers: tables, views, materialized_views, dmv1_views,
-    /// select_row_policies, and sql_resources. Non-OLAP fields (topics, APIs,
-    /// processes) are excluded since they are computed from code, not from deltas.
+    /// select_row_policies, sql_resources, and olap_dictionaries. Non-OLAP
+    /// fields (topics, APIs, processes) are excluded since they are computed
+    /// from code, not from deltas.
     ///
     /// Used as `parent_state_hash` in migration files for conflict detection
     /// across branches.
@@ -3854,6 +3855,10 @@ impl InfrastructureMap {
             dmv1_views: &'a HashMap<String, Dmv1View>,
             select_row_policies: &'a HashMap<String, SelectRowPolicy>,
             sql_resources: &'a HashMap<String, SqlResource>,
+            olap_dictionaries: &'a HashMap<
+                String,
+                crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+            >,
         }
 
         let snapshot = OlapSnapshot {
@@ -3863,6 +3868,7 @@ impl InfrastructureMap {
             dmv1_views: &self.dmv1_views,
             select_row_policies: &self.select_row_policies,
             sql_resources: &self.sql_resources,
+            olap_dictionaries: &self.olap_dictionaries,
         };
 
         // Serialize to JSON, sort keys for determinism, then hash
@@ -10036,6 +10042,60 @@ mod diff_select_row_policy_tests {
         );
     }
 
+    /// `olap_hash()` must include dictionaries: adding a dictionary must change the hash
+    /// so that migration conflict detection catches dictionary-only branch divergences.
+    #[test]
+    fn test_olap_hash_changes_when_dictionary_added() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+
+        let mut infra_map = InfrastructureMap::default();
+        let hash_before = infra_map.olap_hash();
+
+        let dict = OlapDictionary {
+            name: "hash_test_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        };
+
+        infra_map.olap_dictionaries.insert(dict.id("local"), dict);
+        let hash_after = infra_map.olap_hash();
+
+        assert_ne!(
+            hash_before, hash_after,
+            "olap_hash() must change when a dictionary is added; \
+             dictionaries are missing from OlapSnapshot"
+        );
+    }
+
     /// Regression test: olap_dictionaries must survive a JSON round-trip via
     /// save_to_json() → load_from_json(). The custom serde shadow struct was
     /// previously missing this field, causing silent data loss on every persist.
@@ -10330,5 +10390,425 @@ mod diff_dictionaries_version_tests {
             .any(|c| matches!(c, OlapChange::OlapDictionary(Change::Added { .. })));
         assert!(has_removed, "missing Remove change for v1");
         assert!(has_added, "missing Add change for v2");
+    }
+}
+
+#[cfg(test)]
+mod diff_dictionaries_lifecycle_tests {
+    use super::*;
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+        DictionaryTableSource, OlapDictionary,
+    };
+    use std::collections::HashMap;
+
+    fn base_dict(name: &str, life_cycle: LifeCycle) -> OlapDictionary {
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    /// DeletionProtected lifecycle must block DROP but not UPDATE.
+    #[test]
+    fn test_diff_dict_drop_blocked_by_deletion_protected() {
+        let dict = base_dict("my_dict", LifeCycle::DeletionProtected);
+        let dict_id = dict.id("local");
+
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), dict);
+        let target: HashMap<String, OlapDictionary> = HashMap::new(); // removed in target
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            true,
+        );
+
+        assert!(
+            olap_changes.is_empty(),
+            "DeletionProtected must block the DROP, got: {olap_changes:?}"
+        );
+        assert_eq!(
+            filtered_changes.len(),
+            1,
+            "expected exactly one filtered change, got: {filtered_changes:?}"
+        );
+        assert!(
+            filtered_changes[0].reason.contains("DROP blocked"),
+            "filtered reason should mention DROP blocked, got: {}",
+            filtered_changes[0].reason
+        );
+    }
+
+    /// ExternallyManaged lifecycle must block UPDATE (CREATE OR REPLACE).
+    #[test]
+    fn test_diff_dict_update_blocked_by_externally_managed() {
+        let current_dict = base_dict("my_dict", LifeCycle::ExternallyManaged);
+        let dict_id = current_dict.id("local");
+
+        // Target has a real schema change (different source table)
+        let mut target_dict = base_dict("my_dict", LifeCycle::ExternallyManaged);
+        target_dict.source = DictionarySource::Table(DictionaryTableSource {
+            table: "other_src".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id.clone(), target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            true,
+        );
+
+        assert!(
+            olap_changes.is_empty(),
+            "ExternallyManaged must block the UPDATE, got: {olap_changes:?}"
+        );
+        assert_eq!(
+            filtered_changes.len(),
+            1,
+            "expected exactly one filtered change, got: {filtered_changes:?}"
+        );
+        assert!(
+            filtered_changes[0].reason.to_uppercase().contains("UPDATE"),
+            "filtered reason should mention UPDATE, got: {}",
+            filtered_changes[0].reason
+        );
+    }
+
+    /// ExternallyManaged lifecycle must block CREATE (new dictionary in target).
+    #[test]
+    fn test_diff_dict_create_blocked_by_externally_managed() {
+        let dict = base_dict("my_dict", LifeCycle::ExternallyManaged);
+        let dict_id = dict.id("local");
+
+        let current: HashMap<String, OlapDictionary> = HashMap::new(); // doesn't exist yet
+        let mut target = HashMap::new();
+        target.insert(dict_id.clone(), dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            true,
+        );
+
+        assert!(
+            olap_changes.is_empty(),
+            "ExternallyManaged must block the CREATE, got: {olap_changes:?}"
+        );
+        assert_eq!(
+            filtered_changes.len(),
+            1,
+            "expected exactly one filtered change, got: {filtered_changes:?}"
+        );
+        assert!(
+            filtered_changes[0].reason.contains("CREATE blocked"),
+            "filtered reason should mention CREATE blocked, got: {}",
+            filtered_changes[0].reason
+        );
+    }
+
+    /// FullyManaged lifecycle must allow DROP when respect_life_cycle is true.
+    #[test]
+    fn test_diff_dict_drop_allowed_for_fully_managed() {
+        let dict = base_dict("my_dict", LifeCycle::FullyManaged);
+        let dict_id = dict.id("local");
+
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), dict);
+        let target: HashMap<String, OlapDictionary> = HashMap::new();
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            true,
+        );
+
+        assert_eq!(
+            olap_changes.len(),
+            1,
+            "FullyManaged dict removal must produce a Remove change"
+        );
+        assert!(
+            matches!(
+                &olap_changes[0],
+                OlapChange::OlapDictionary(Change::Removed(_))
+            ),
+            "expected Removed change, got: {:?}",
+            olap_changes[0]
+        );
+        assert!(
+            filtered_changes.is_empty(),
+            "no changes should be filtered for FullyManaged"
+        );
+    }
+
+    /// DeletionProtected lifecycle must allow UPDATE (only DROP is blocked).
+    #[test]
+    fn test_diff_dict_update_allowed_for_deletion_protected() {
+        let current_dict = base_dict("my_dict", LifeCycle::DeletionProtected);
+        let dict_id = current_dict.id("local");
+
+        let mut target_dict = base_dict("my_dict", LifeCycle::DeletionProtected);
+        target_dict.source = DictionarySource::Table(DictionaryTableSource {
+            table: "other_src".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id.clone(), target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            true,
+        );
+
+        assert_eq!(
+            olap_changes.len(),
+            1,
+            "DeletionProtected must allow UPDATE, got: {olap_changes:?}"
+        );
+        assert!(
+            matches!(
+                &olap_changes[0],
+                OlapChange::OlapDictionary(Change::Updated { .. })
+            ),
+            "expected Updated change"
+        );
+        assert!(
+            filtered_changes.is_empty(),
+            "no changes should be filtered for DeletionProtected update"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mask_credentials_dictionary_tests {
+    use super::*;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
+        DictionaryRedisSource, DictionaryS3Source, DictionarySource, DictionaryTableSource,
+        ExternalDictionarySource, OlapDictionary,
+    };
+    use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+    use std::collections::HashMap;
+
+    fn dict_with_source(name: &str, source: DictionarySource) -> OlapDictionary {
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source,
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        }
+    }
+
+    /// `mask_credentials_for_json_export` must mask passwords in ClickHouse external
+    /// source dictionaries while leaving the username as-is (by design — only passwords
+    /// are considered sensitive enough to mask in persisted JSON files).
+    #[test]
+    fn test_mask_credentials_for_json_export_clickhouse_dict() {
+        let source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
+            DictionaryClickHouseSource {
+                host: "ch.example.com".to_string(),
+                port: 9000,
+                user: "admin".to_string(),
+                password: "s3cr3t".to_string(),
+                db: "mydb".to_string(),
+                table: "users".to_string(),
+                query: None,
+                where_clause: None,
+                invalidate_query: None,
+            },
+        ));
+        let dict = dict_with_source("ch_dict", source);
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(dict.id("local"), dict);
+
+        let masked = map.mask_credentials_for_json_export();
+        let masked_dict = masked.olap_dictionaries.values().next().unwrap();
+
+        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) =
+            &masked_dict.source
+        {
+            assert_eq!(
+                s.password, CREDENTIAL_PLACEHOLDER,
+                "ClickHouse dict password must be masked"
+            );
+            // username is intentionally NOT masked in JSON export (only password)
+            assert_eq!(s.user, "admin", "ClickHouse dict user must NOT be masked");
+        } else {
+            panic!("Expected ClickHouse external source");
+        }
+    }
+
+    /// Redis optional password must be masked when present.
+    #[test]
+    fn test_mask_credentials_for_json_export_redis_dict() {
+        let source =
+            DictionarySource::External(ExternalDictionarySource::Redis(DictionaryRedisSource {
+                host: "redis.example.com".to_string(),
+                port: 6379,
+                password: Some("redis_secret".to_string()),
+                db_index: None,
+                storage_type: "simple".to_string(),
+            }));
+        let dict = dict_with_source("redis_dict", source);
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(dict.id("local"), dict);
+
+        let masked = map.mask_credentials_for_json_export();
+        let masked_dict = masked.olap_dictionaries.values().next().unwrap();
+
+        if let DictionarySource::External(ExternalDictionarySource::Redis(s)) = &masked_dict.source
+        {
+            assert_eq!(
+                s.password.as_deref(),
+                Some(CREDENTIAL_PLACEHOLDER),
+                "Redis dict password must be masked when present"
+            );
+        } else {
+            panic!("Expected Redis external source");
+        }
+    }
+
+    /// S3 access keys must be masked when present.
+    #[test]
+    fn test_mask_credentials_for_json_export_s3_dict() {
+        let source = DictionarySource::External(ExternalDictionarySource::S3(DictionaryS3Source {
+            url: "s3://bucket/data.csv".to_string(),
+            format: "CSV".to_string(),
+            access_key_id: Some("AKIAIOSFODNN7EXAMPLE".to_string()),
+            secret_access_key: Some("wJalrXUtnFEMI/K7MDENG".to_string()),
+        }));
+        let dict = dict_with_source("s3_dict", source);
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(dict.id("local"), dict);
+
+        let masked = map.mask_credentials_for_json_export();
+        let masked_dict = masked.olap_dictionaries.values().next().unwrap();
+
+        if let DictionarySource::External(ExternalDictionarySource::S3(s)) = &masked_dict.source {
+            assert_eq!(
+                s.access_key_id.as_deref(),
+                Some(CREDENTIAL_PLACEHOLDER),
+                "S3 dict access_key_id must be masked"
+            );
+            assert_eq!(
+                s.secret_access_key.as_deref(),
+                Some(CREDENTIAL_PLACEHOLDER),
+                "S3 dict secret_access_key must be masked"
+            );
+        } else {
+            panic!("Expected S3 external source");
+        }
+    }
+
+    /// Table-source dictionaries have no credentials — masking must be a no-op.
+    #[test]
+    fn test_mask_credentials_for_json_export_table_source_dict_untouched() {
+        let source = DictionarySource::Table(DictionaryTableSource {
+            table: "users".to_string(),
+            database: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let dict = dict_with_source("table_dict", source.clone());
+        let dict_id = dict.id("local");
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(dict_id.clone(), dict);
+
+        let masked = map.mask_credentials_for_json_export();
+        // Source should be unchanged
+        assert_eq!(
+            masked.olap_dictionaries[&dict_id].source, source,
+            "Table-source dict must not be modified by credential masking"
+        );
     }
 }
