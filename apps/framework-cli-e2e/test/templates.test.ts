@@ -71,7 +71,6 @@ import {
   runMoosePlanJson,
   listKafkaTopics,
   consumeKafkaMessage,
-  ingestAndVerify,
 } from "./utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import {
@@ -170,179 +169,6 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   },
 ];
 
-/**
- * Sanitize the test project for dockerless mode.
- *
- * devkafka is purely in-memory and cannot handle the ~49 consumer groups
- * created by the tests template (22 IngestPipelines × stream + DLQ + transforms).
- * This overwhelms devkafka and causes the Foo → Bar ingestion pipeline to fail.
- *
- * This function aggressively reduces consumer groups to ~5-8 by:
- * 1. Removing Kafka/S3Queue/S3 engine imports from entry files
- * 2. Disabling `stream` and `dead_letter_queue` on all IngestPipelines except Foo and Bar
- * 3. Truncating transforms to keep only Foo→Bar, Foo consumer, and DLQ consumer
- * 4. Removing consumer registrations (e.g. OlapTable.insert consumer) from models
- *
- * Tests that depend on the removed infrastructure are skipped at runtime.
- */
-const sanitizeProjectForDockerless = async (
-  projectDir: string,
-  language: "typescript" | "python",
-): Promise<void> => {
-  // Phase 1: Remove Kafka/S3Queue/S3 engine imports from entry file
-  const entryFile =
-    language === "typescript" ?
-      path.join(projectDir, "src/index.ts")
-    : path.join(projectDir, "src/main.py");
-  try {
-    let content = await fs.promises.readFile(entryFile, "utf8");
-    if (language === "typescript") {
-      content = content.replace(
-        /^export \* from "\.\/ingest\/kafkaTests".*\n/m,
-        "",
-      );
-      content = content.replace(
-        /^export \* from "\.\/ingest\/s3QueueTests".*\n/m,
-        "",
-      );
-      content = content.replace(
-        /^export \* from "\.\/ingest\/s3Tests".*\n/m,
-        "",
-      );
-    } else {
-      content = content.replace(
-        /^from src\.ingest import kafka_tests.*\n/m,
-        "",
-      );
-      content = content.replace(
-        /^from src\.ingest import s3_queue_tests.*\n/m,
-        "",
-      );
-      content = content.replace(/^from src\.ingest import s3_tests.*\n/m, "");
-    }
-    await fs.promises.writeFile(entryFile, content, "utf8");
-    testLogger.info(
-      `Phase 1: Removed Kafka/S3Queue/S3 imports from ${path.basename(entryFile)}`,
-    );
-  } catch {
-    testLogger.debug(`No entry file to sanitize (${entryFile})`);
-  }
-
-  // Phase 2: Disable streaming on all non-essential IngestPipelines in models
-  const modelsFile =
-    language === "typescript" ?
-      path.join(projectDir, "src/ingest/models.ts")
-    : path.join(projectDir, "src/ingest/models.py");
-  try {
-    let models = await fs.promises.readFile(modelsFile, "utf8");
-    if (language === "typescript") {
-      // Globally disable stream on all pipelines
-      models = models.replace(/\bstream:\s*true\b/g, "stream: false");
-      // Globally disable deadLetterQueue object configs
-      models = models.replace(
-        /deadLetterQueue:\s*\{[^}]*\}/g,
-        "deadLetterQueue: false",
-      );
-      // Re-enable Foo pipeline: find and restore stream: true
-      // FooPipeline definition: new IngestPipeline<Foo>("Foo", { table: false, stream: false, ...
-      models = models.replace(
-        /new IngestPipeline<Foo>\("Foo",\s*\{([^}]*)\}/,
-        (match, inner) =>
-          match.replace("stream: false", "stream: true").replace(
-            "deadLetterQueue: false",
-            `deadLetterQueue: {
-    destination: deadLetterTable,
-  }`,
-          ),
-      );
-      // Re-enable Bar pipeline
-      models = models.replace(
-        /new IngestPipeline<Bar>\("Bar",\s*\{([^}]*)\}/,
-        (match) => match.replace("stream: false", "stream: true"),
-      );
-      // Remove the olapInsertTestTriggerStream.addConsumer block
-      models = models.replace(
-        /\/\/ Consumer that tests OlapTable[\s\S]*?version: "olap-insert-test"\s*\},?\s*\);\s*\n/,
-        "",
-      );
-    } else {
-      // Python: disable stream and DLQ on all pipelines
-      models = models.replace(/\bstream=True\b/g, "stream=False");
-      models = models.replace(
-        /\bdead_letter_queue=True\b/g,
-        "dead_letter_queue=False",
-      );
-      // Re-enable Foo pipeline
-      models = models.replace(
-        /fooModel = IngestPipeline\[Foo\]\(\s*"Foo",\s*IngestPipelineConfig\(([^)]*)\)\s*,?\s*\)/,
-        (match) =>
-          match
-            .replace("stream=False", "stream=True")
-            .replace("dead_letter_queue=False", "dead_letter_queue=True"),
-      );
-      // Re-enable Bar pipeline
-      models = models.replace(
-        /barModel = IngestPipeline\[Bar\]\(\s*"Bar",\s*IngestPipelineConfig\(([^)]*)\)\s*,?\s*\)/,
-        (match) =>
-          match
-            .replace("stream=False", "stream=True")
-            .replace("dead_letter_queue=False", "dead_letter_queue=True"),
-      );
-      // Remove olap_insert_test_trigger_stream.add_consumer block
-      models = models.replace(
-        /# Consumer that tests OlapTable[\s\S]*?ConsumerConfig\(version="olap-insert-test"\)\s*\)\s*\n/,
-        "",
-      );
-    }
-    await fs.promises.writeFile(modelsFile, models, "utf8");
-    testLogger.info(
-      `Phase 2: Disabled streaming on non-essential pipelines in ${path.basename(modelsFile)}`,
-    );
-  } catch (err) {
-    testLogger.warn(`Failed to sanitize models: ${err}`);
-  }
-
-  // Phase 3: Truncate transforms to keep only Foo→Bar, Foo consumer, and DLQ consumer
-  const transformsFile =
-    language === "typescript" ?
-      path.join(projectDir, "src/ingest/transforms.ts")
-    : path.join(projectDir, "src/ingest/transforms.py");
-  try {
-    const transforms = await fs.promises.readFile(transformsFile, "utf8");
-    // Find the cut point: the comment before the array transform
-    const tsCutMarker = "// Test transform that returns an array";
-    const pyCutMarker = "# Test transform that returns a list";
-    const cutMarker = language === "typescript" ? tsCutMarker : pyCutMarker;
-    const cutIndex = transforms.indexOf(cutMarker);
-    if (cutIndex > 0) {
-      let truncated = transforms.substring(0, cutIndex).trimEnd() + "\n";
-      if (language === "typescript") {
-        // Remove unused imports that would trigger module side effects
-        truncated = truncated.replace(
-          /^import\s*\{[^}]*\}\s*from\s*"\.\/indexSignatureTests".*\n/m,
-          "",
-        );
-        // Clean up unused arrayInputStream from models import
-        truncated = truncated.replace(/, arrayInputStream/, "");
-      }
-      await fs.promises.writeFile(transformsFile, truncated, "utf8");
-      testLogger.info(
-        `Phase 3: Truncated transforms to essential Foo→Bar pipeline only`,
-      );
-    } else {
-      testLogger.debug(
-        `Cut marker not found in transforms file, skipping truncation`,
-      );
-    }
-  } catch (err) {
-    testLogger.warn(`Failed to truncate transforms: ${err}`);
-  }
-
-  testLogger.info(
-    `Dockerless sanitization complete — consumer groups reduced to ~5-8`,
-  );
-};
-
 const buildDevEnv = (
   language: string,
   projectDir: string,
@@ -407,13 +233,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           MOOSE_PY_LIB_PATH,
           config.appName,
         );
-      }
-
-      // In dockerless mode, sanitize background-polling tables (Kafka engine,
-      // S3Queue) that would degrade ClickHouse by connecting to unreachable
-      // services. Only the tests variant has these tables.
-      if (config.isTestsVariant) {
-        await sanitizeProjectForDockerless(TEST_PROJECT_DIR, config.language);
       }
 
       // Start dev server
@@ -767,1537 +586,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
-    // Create test case based on language
-    if (config.language === "typescript") {
-      it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS * 3);
-
-        // This test runs before file modification tests, so the pipeline is
-        // clean from the before() hook — no special stabilization needed.
-        await waitForStreamingFunctions(180_000, { dockerless: true });
-
-        // Pipeline probe: verify end-to-end data flow before sending the
-        // full batch. Consumer groups may still be joining even after
-        // waitForStreamingFunctions returns — the probe retries until one
-        // record flows Foo → transform → Bar → ClickHouse.
-        await ingestAndVerify(
-          async () => {
-            const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                primaryKey: randomUUID(),
-                timestamp: TEST_DATA.TIMESTAMP,
-                optionalText: "pipeline-probe",
-              }),
-            });
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(
-                `Probe ingest failed: ${response.status}: ${text}`,
-              );
-            }
-          },
-          async () => {
-            await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
-          },
-          { maxCycles: 20, logger: testLogger },
-        );
-        testLogger.info("Pipeline probe OK — data flowing end-to-end");
-
-        const eventId = randomUUID();
-
-        // Send multiple records to trigger batch write.
-        // Use ingestAndVerify to handle slow consumer group startup in
-        // dockerless mode — it re-sends data if the first verify cycle fails.
-        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        await ingestAndVerify(
-          async () => {
-            for (let i = 0; i < recordsToSend; i++) {
-              await withRetries(
-                async () => {
-                  const response = await fetch(
-                    `${SERVER_CONFIG.url}/ingest/Foo`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        primaryKey: i === 0 ? eventId : randomUUID(),
-                        timestamp: TEST_DATA.TIMESTAMP,
-                        optionalText: `Hello world ${i}`,
-                      }),
-                    },
-                  );
-                  if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(`${response.status}: ${text}`);
-                  }
-                },
-                { attempts: 5, delayMs: 500 },
-              );
-            }
-          },
-          async () => {
-            await waitForDBWrite(
-              devProcess!,
-              "Bar",
-              recordsToSend,
-              120_000,
-              "local",
-            );
-          },
-          { maxCycles: 3, logger: testLogger },
-        );
-        await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
-
-        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
-        // so skip triggerWorkflow. The MV is already populated by the 50 records above.
-        await waitForMaterializedViewUpdate(
-          "BarAggregated",
-          1,
-          60_000,
-          "local",
-        );
-        await verifyConsumptionApi(
-          "bar?orderBy=totalRows&startDay=18&endDay=18&limit=1",
-          [
-            {
-              // output_format_json_quote_64bit_integers is true by default in ClickHouse
-              dayOfMonth: "18",
-              totalRows: "1",
-            },
-          ],
-        );
-
-        // Test versioned API (V1)
-        await verifyVersionedConsumptionApi(
-          "bar/1?orderBy=totalRows&startDay=18&endDay=18&limit=1",
-          [
-            {
-              dayOfMonth: "18",
-              totalRows: "1",
-              metadata: {
-                version: "1.0",
-                queryParams: {
-                  orderBy: "totalRows",
-                  limit: 1,
-                  startDay: 18,
-                  endDay: 18,
-                },
-              },
-            },
-          ],
-        );
-
-        // Verify consumer logs
-        await verifyConsumerLogs(TEST_PROJECT_DIR, [
-          "Received Foo event:",
-          `Primary Key: ${eventId}`,
-          "Optional Text: Hello world",
-        ]);
-
-        if (config.isTestsVariant) {
-          await verifyConsumerLogs(TEST_PROJECT_DIR, [
-            "from_http",
-            "from_send",
-          ]);
-        }
-      });
-      if (config.isTestsVariant) {
-        it("should verify sql helpers (join, raw, append) work correctly (TS)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // The sql-helpers-test API queries BarAggregatedMV which was populated by the generator workflow
-          // in the previous test. It exercises sql.join(), sql.raw(), and Sql.append() from moose-lib.
-          await verifyConsumptionApi("sql-helpers-test?minDay=1&maxDay=31", [
-            {
-              // The API selects dayOfMonth and totalRows from BarAggregated
-              dayOfMonth: "placeholder",
-              totalRows: "placeholder",
-            },
-          ]);
-
-          // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
-          await withRetries(async () => {
-            const response = await fetch(
-              `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
-            );
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(
-                `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
-              );
-            }
-            const json = (await response.json()) as any[];
-            expect(json).to.be.an("array").that.is.not.empty;
-            // When includeTimestamp=true, the response should include query_time from NOW()
-            expect(json[0]).to.have.property("query_time");
-          });
-        });
-
-        it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          const id = randomUUID();
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/GeoTypes`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(geoPayloadTs(id)),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
-          await verifyClickhouseData("GeoTypes", id, "id", "local");
-        });
-
-        it("should send array transform results as individual Kafka messages (TS)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const inputId = randomUUID();
-          const testData = ["item1", "item2", "item3", "item4", "item5"];
-
-          // Send one input record with an array in the data field
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/array-input`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id: inputId,
-                    data: testData,
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // Wait for all output records to be written to the database
-          await waitForDBWrite(
-            devProcess!,
-            "ArrayOutput",
-            testData.length,
-            60_000,
-            "local",
-            `inputId = '${inputId}'`,
-          );
-
-          // Verify that we have exactly 'testData.length' records in the output table
-          await verifyClickhouseData(
-            "ArrayOutput",
-            inputId,
-            "inputId",
-            "local",
-          );
-
-          // Verify the count of records
-          await verifyRecordCount(
-            "ArrayOutput",
-            `inputId = '${inputId}'`,
-            testData.length,
-            "local",
-          );
-        });
-
-        it("should send large messages that exceed Kafka limit to DLQ (TS)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const largeMessageId = randomUUID();
-
-          // Send a message that will generate ~2MB output (exceeds typical Kafka limit of 1MB)
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/LargeMessageInput`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id: largeMessageId,
-                    timestamp: new Date().toISOString(),
-                    multiplier: 2, // Generate 2MB message
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // Wait for the message to be sent to DLQ (not to the output table)
-          await waitForDBWrite(
-            devProcess!,
-            "LargeMessageDeadLetter",
-            1,
-            60_000,
-            "local",
-          );
-
-          // Verify the DLQ received the failed message with the correct metadata
-          const clickhouse = createClient({
-            url: CLICKHOUSE_CONFIG.url,
-            username: CLICKHOUSE_CONFIG.username,
-            password: CLICKHOUSE_CONFIG.password,
-            database: CLICKHOUSE_CONFIG.database,
-          });
-
-          const result = await clickhouse.query({
-            query: `SELECT * FROM local.LargeMessageDeadLetter WHERE originalRecord.id = '${largeMessageId}'`,
-            format: "JSONEachRow",
-          });
-
-          const data = await result.json();
-
-          if (data.length === 0) {
-            throw new Error(
-              `Expected to find DLQ record for id ${largeMessageId}`,
-            );
-          }
-
-          const dlqRecord: any = data[0];
-
-          // Verify DLQ record has the expected fields
-          if (!dlqRecord.errorMessage) {
-            throw new Error("Expected errorMessage in DLQ record");
-          }
-
-          if (!dlqRecord.errorType) {
-            throw new Error("Expected errorType in DLQ record");
-          }
-
-          if (dlqRecord.source !== "transform") {
-            throw new Error(
-              `Expected source to be 'transform', got '${dlqRecord.source}'`,
-            );
-          }
-
-          // Verify the error is related to message size
-          if (
-            !dlqRecord.errorMessage.toLowerCase().includes("too large") &&
-            !dlqRecord.errorMessage.toLowerCase().includes("size")
-          ) {
-            testLogger.warn(
-              `Warning: Error message might not be about size: ${dlqRecord.errorMessage}`,
-            );
-          }
-
-          testLogger.info(
-            `✅ Large message successfully sent to DLQ: ${dlqRecord.errorMessage}`,
-          );
-
-          // Verify that the large message did NOT make it to the output table
-          const outputResult = await clickhouse.query({
-            query: `SELECT COUNT(*) as count FROM local.LargeMessageOutput WHERE id = '${largeMessageId}'`,
-            format: "JSONEachRow",
-          });
-
-          const outputData: any[] = await outputResult.json();
-          const outputCount = parseInt(outputData[0].count);
-
-          if (outputCount !== 0) {
-            throw new Error(
-              `Expected 0 records in output table, found ${outputCount}`,
-            );
-          }
-
-          await clickhouse.close();
-        });
-
-        it("should include Consumption API in proxy health check (healthy)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Verify that the proxy health endpoint includes "Consumption API" in healthy list
-          // Expected healthy services: Redis, ClickHouse, Redpanda, Consumption API
-          await verifyProxyHealth([
-            "Redis",
-            "ClickHouse",
-            "Redpanda",
-            "Consumption API",
-          ]);
-
-          testLogger.info(
-            "✅ Proxy health check correctly includes Consumption API",
-          );
-        });
-
-        it("should have working internal health endpoint (/_moose_internal/health)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Verify the consumption API internal health endpoint works
-          await verifyConsumptionApiInternalHealth();
-
-          testLogger.info("✅ Internal health endpoint works correctly");
-        });
-
-        it("should serve WebApp at custom mountPath with Express framework", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Test Express WebApp health endpoint
-          await verifyWebAppHealth("/express", "bar-express-api");
-
-          // Test Express WebApp query endpoint (GET)
-          await verifyWebAppQuery("/express/query", { limit: "5" });
-
-          // Test Express WebApp data endpoint (POST)
-          await verifyWebAppPostEndpoint(
-            "/express/data",
-            {
-              orderBy: "totalRows",
-              limit: 5,
-              startDay: 1,
-              endDay: 31,
-            },
-            200,
-            (json) => {
-              if (!json.success) {
-                throw new Error("Expected success to be true");
-              }
-              if (!Array.isArray(json.data)) {
-                throw new Error("Expected data to be an array");
-              }
-              if (json.params.orderBy !== "totalRows") {
-                throw new Error("Expected orderBy to be totalRows");
-              }
-            },
-          );
-        });
-
-        it("should serve WebApp at custom mountPath with Fastify framework", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Test Fastify WebApp health endpoint
-          await verifyWebAppHealth("/fastify", "bar-fastify-api");
-
-          // Test Fastify WebApp query endpoint (GET)
-          await verifyWebAppQuery("/fastify/query", { limit: "5" });
-
-          // Test Fastify WebApp data endpoint (POST)
-          await verifyWebAppPostEndpoint(
-            "/fastify/data",
-            {
-              orderBy: "totalRows",
-              limit: 5,
-              startDay: 1,
-              endDay: 31,
-            },
-            200,
-            (json) => {
-              if (!json.success) {
-                throw new Error("Expected success to be true");
-              }
-              if (!Array.isArray(json.data)) {
-                throw new Error("Expected data to be an array");
-              }
-              if (json.params.orderBy !== "totalRows") {
-                throw new Error("Expected orderBy to be totalRows");
-              }
-            },
-          );
-        });
-
-        it("should handle multiple WebApp endpoints independently", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Verify Express WebApp is accessible
-          await verifyWebAppEndpoint("/express/health", 200);
-
-          // Verify Fastify WebApp is accessible
-          await verifyWebAppEndpoint("/fastify/health", 200);
-
-          // Verify regular Api endpoint still works alongside WebApp
-          const apiResponse = await fetch(
-            `${SERVER_CONFIG.url}/api/bar?orderBy=totalRows&startDay=1&endDay=31&limit=5`,
-          );
-          expect(apiResponse.ok).to.be.true;
-          const apiData = await apiResponse.json();
-          expect(apiData).to.be.an("array");
-        });
-
-        it("should serve MCP server at /tools with proper header forwarding", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Send an MCP tools/list request to verify the server is working
-          // This tests that the proxy properly forwards response headers
-          const mcpRequest = {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/list",
-            params: {},
-          };
-
-          const response = await fetch(`${SERVER_CONFIG.url}/tools`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json, text/event-stream",
-            },
-            body: JSON.stringify(mcpRequest),
-          });
-
-          // Log response details for debugging
-          if (!response.ok) {
-            const errorText = await response.text();
-            testLogger.error(
-              `MCP request failed with status ${response.status}`,
-            );
-            testLogger.error(`Response body: ${errorText}`);
-            throw new Error(
-              `MCP request failed: ${response.status} ${response.statusText} - ${errorText}`,
-            );
-          }
-
-          // Verify response status
-          expect(response.ok).to.be.true;
-          expect(response.status).to.equal(200);
-
-          // Verify Content-Type header is present (this is what the fix ensures)
-          const contentType = response.headers.get("content-type");
-          expect(contentType).to.exist;
-          expect(contentType).to.include("application/json");
-
-          // Verify response is valid JSON-RPC
-          const data = await response.json();
-          expect(data).to.be.an("object");
-          expect(data).to.have.property("jsonrpc", "2.0");
-          expect(data).to.have.property("id", 1);
-
-          // Verify the response contains tools
-          expect(data).to.have.property("result");
-          expect(data.result).to.have.property("tools");
-          expect(data.result.tools).to.be.an("array");
-
-          // Verify query_clickhouse tool is listed
-          const queryTool = data.result.tools.find(
-            (tool: any) => tool.name === "query_clickhouse",
-          );
-          expect(queryTool).to.exist;
-          expect(queryTool).to.have.property("description");
-
-          testLogger.info("✅ MCP server works correctly through proxy");
-        });
-
-        it("should create JSON table and accept extra fields in payload", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const id = randomUUID();
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/JsonTest`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id,
-                    timestamp: new Date(TEST_DATA.TIMESTAMP * 1000),
-                    payloadWithConfig: {
-                      name: "alpha",
-                      count: 3,
-                      extraField: "allowed",
-                      nested: { another: "field" },
-                    },
-                    payloadBasic: {
-                      name: "beta",
-                      count: 5,
-                      anotherExtra: "also-allowed",
-                    },
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // DDL should show JSON types for both fields
-          const ddl = await getTableDDL("JsonTest");
-          const fieldName =
-            config.language === "python" ?
-              "payload_with_config"
-            : "payloadWithConfig";
-          const basicFieldName =
-            config.language === "python" ? "payload_basic" : "payloadBasic";
-          if (!ddl.includes(`\`${fieldName}\` JSON`)) {
-            throw new Error(`JsonTest DDL missing JSON ${fieldName}: ${ddl}`);
-          }
-          if (!ddl.includes(`\`${basicFieldName}\` JSON`)) {
-            throw new Error(
-              `JsonTest DDL missing JSON ${basicFieldName}: ${ddl}`,
-            );
-          }
-
-          await waitForDBWrite(devProcess!, "JsonTest", 1);
-
-          // Verify row exists and payload is present
-          const client = createClient(CLICKHOUSE_CONFIG);
-          const result = await client.query({
-            query: `SELECT id, getSubcolumn(${fieldName}, 'name') as name FROM JsonTest WHERE id = '${id}'`,
-            format: "JSONEachRow",
-          });
-          const rows: any[] = await result.json();
-          if (!rows.length || rows[0].name == null) {
-            throw new Error("JSON payload not stored as expected");
-          }
-        });
-
-        // Index signature test for TypeScript (ENG-1617)
-        // Tests that IngestApi accepts payloads with extra fields when the type has an index signature.
-        // Extra fields are passed through to streaming functions and stored in a JSON column.
-        //
-        // KEY CONCEPTS:
-        // - IngestApi/Stream: CAN have index signatures (accept variable fields)
-        // - OlapTable: CANNOT have index signatures (ClickHouse requires fixed schema)
-        // - Transform: Receives ALL fields, outputs to fixed schema with JSON column for extras
-
-        it("should pass extra fields to streaming function via index signature", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const userId = randomUUID();
-          const timestamp = new Date().toISOString();
-
-          // Send data with known fields plus arbitrary extra fields
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    // Known fields defined in the type
-                    timestamp: timestamp,
-                    eventName: "page_view",
-                    userId: userId,
-                    orgId: "org-123",
-                    // Extra fields - allowed by index signature, passed to streaming function
-                    customProperty: "custom-value",
-                    pageUrl: "/dashboard",
-                    sessionDuration: 120,
-                    nested: {
-                      level1: "value1",
-                      level2: { deep: "nested" },
-                    },
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // Wait for the transform to process and write to output table
-          await waitForDBWrite(
-            devProcess!,
-            "UserEventOutput",
-            1,
-            60_000,
-            "local",
-            `userId = '${userId}'`,
-          );
-
-          // Verify the data was written correctly
-          const client = createClient(CLICKHOUSE_CONFIG);
-          const result = await client.query({
-            query: `
-              SELECT 
-                userId,
-                eventName,
-                orgId,
-                properties
-              FROM local.UserEventOutput 
-              WHERE userId = '${userId}'
-            `,
-            format: "JSONEachRow",
-          });
-
-          const rows: any[] = await result.json();
-          await client.close();
-
-          if (rows.length === 0) {
-            throw new Error(
-              `No data found in UserEventOutput for userId ${userId}`,
-            );
-          }
-
-          const row = rows[0];
-
-          // Verify known fields are correctly passed through
-          if (row.eventName !== "page_view") {
-            throw new Error(
-              `Expected eventName to be 'page_view', got '${row.eventName}'`,
-            );
-          }
-          if (row.orgId !== "org-123") {
-            throw new Error(
-              `Expected orgId to be 'org-123', got '${row.orgId}'`,
-            );
-          }
-
-          // Verify extra fields are stored in the properties JSON column
-          if (row.properties === undefined) {
-            throw new Error("Expected properties JSON column to exist");
-          }
-
-          // Parse properties if it's a string (ClickHouse may return JSON as string)
-          const properties =
-            typeof row.properties === "string" ?
-              JSON.parse(row.properties)
-            : row.properties;
-
-          // Verify extra fields were received by streaming function and stored in properties
-          if (properties.customProperty !== "custom-value") {
-            throw new Error(
-              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
-            );
-          }
-          if (properties.pageUrl !== "/dashboard") {
-            throw new Error(
-              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
-            );
-          }
-          // Note: ClickHouse JSON may return numbers as strings
-          if (Number(properties.sessionDuration) !== 120) {
-            throw new Error(
-              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
-            );
-          }
-          if (
-            !properties.nested ||
-            properties.nested.level1 !== "value1" ||
-            !properties.nested.level2 ||
-            properties.nested.level2.deep !== "nested"
-          ) {
-            throw new Error(
-              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
-            );
-          }
-
-          testLogger.info(
-            "✅ Index signature test passed - extra fields received by streaming function and stored in properties column",
-          );
-        });
-
-        // OpenAPI schema sanity check for TypeScript
-        it("should generate OpenAPI schema with DateTime types for ingest APIs", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const response = await fetch(
-            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
-          );
-          expect(response.ok).to.be.true;
-
-          const yamlText = await response.text();
-          const spec = yaml.load(yamlText) as any;
-
-          // Basic structure check
-          expect(spec.openapi).to.exist;
-          expect(spec.paths).to.exist;
-          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
-          expect(spec.components?.schemas).to.exist;
-
-          // Verify Date schema is properly formatted as string with date-time format
-          // NOT as an empty object (which was the old buggy behavior)
-          const dateSchema = spec.components.schemas.Date;
-          expect(dateSchema).to.exist;
-          expect(dateSchema.type).to.equal("string");
-          expect(dateSchema.format).to.equal("date-time");
-
-          // Verify DateTimePrecisionTestData schema has proper DateTime field formats
-          const dtSchema = spec.components.schemas.DateTimePrecisionTestData;
-          expect(dtSchema).to.exist;
-          expect(dtSchema.type).to.equal("object");
-
-          const dateTimeFields = [
-            "createdAt",
-            "timestampMs",
-            "timestampUsDate",
-            "timestampUsString",
-            "timestampNs",
-            "createdAtString",
-          ];
-
-          for (const field of dateTimeFields) {
-            const fieldSchema = dtSchema.properties?.[field];
-            expect(
-              fieldSchema,
-              `Field '${field}' should exist in DateTimePrecisionTestData`,
-            ).to.exist;
-            expect(
-              fieldSchema.type,
-              `Field '${field}' should have type: string`,
-            ).to.equal("string");
-            expect(
-              fieldSchema.format,
-              `Field '${field}' should have format: date-time`,
-            ).to.equal("date-time");
-          }
-
-          testLogger.info(
-            "✅ OpenAPI schema sanity check passed - all DateTime fields correctly formatted as string/date-time",
-          );
-        });
-
-        // DateTime precision test for TypeScript
-        it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const testId = randomUUID();
-          const now = new Date();
-          // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
-          const timestampWithMicroseconds = now
-            .toISOString()
-            .replace(/\.\d{3}Z$/, ".123456Z");
-          // Nanoseconds
-          const timestampWithNanoseconds = now
-            .toISOString()
-            .replace(/\.\d{3}Z$/, ".123456789Z");
-
-          testLogger.info(
-            `Testing DateTime precision with timestamp: ${timestampWithMicroseconds}`,
-          );
-
-          // Ingest to DateTimePrecisionInput (which has a transform to Output)
-          const response = await fetch(
-            `${SERVER_CONFIG.url}/ingest/DateTimePrecisionInput`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: testId,
-                createdAt: now.toISOString(),
-                timestampMs: now.toISOString(),
-                timestampUsDate: timestampWithMicroseconds,
-                timestampUsString: timestampWithMicroseconds,
-                timestampNs: timestampWithNanoseconds,
-                createdAtString: now.toISOString(),
-              }),
-            },
-          );
-
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(
-              `Failed to ingest DateTimePrecisionInput: ${response.status}: ${text}`,
-            );
-          }
-
-          // Wait for transform to process and write to output table
-          await waitForDBWrite(
-            devProcess!,
-            "DateTimePrecisionOutput",
-            1,
-            60_000,
-            "local",
-          );
-
-          // Query the output data and verify precision
-          const client = createClient(CLICKHOUSE_CONFIG);
-          const result = await client.query({
-            query: `
-            SELECT 
-              id,
-              toString(createdAt) as createdAt,
-              toString(timestampMs) as timestampMs,
-              toString(timestampUsDate) as timestampUsDate,
-              toString(timestampUsString) as timestampUsString,
-              toString(timestampNs) as timestampNs,
-              toString(createdAtString) as createdAtString
-            FROM local.DateTimePrecisionOutput 
-            WHERE id = '${testId}'
-          `,
-            format: "JSONEachRow",
-          });
-
-          const data: any[] = await result.json();
-
-          if (data.length === 0) {
-            throw new Error(
-              `No data found for DateTimePrecisionOutput with id ${testId}`,
-            );
-          }
-
-          const row = data[0];
-          testLogger.info("Retrieved row:", row);
-
-          // Verify that DateTime64String<6> preserves microseconds
-          if (!row.timestampUsString.includes(".123456")) {
-            throw new Error(
-              `Expected timestampUsString to preserve microseconds (.123456), got: ${row.timestampUsString}`,
-            );
-          }
-
-          // Verify that DateTime64String<9> preserves nanoseconds
-          if (!row.timestampNs.includes(".123456789")) {
-            throw new Error(
-              `Expected timestampNs to preserve nanoseconds (.123456789), got: ${row.timestampNs}`,
-            );
-          }
-
-          testLogger.info(
-            "✅ DateTime precision test passed - microseconds preserved",
-          );
-        });
-      }
-    } else {
-      it("should successfully ingest data and verify through consumption API", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS * 3);
-
-        // This test runs before file modification tests, so the pipeline is
-        // clean from the before() hook — no special stabilization needed.
-        await waitForStreamingFunctions(180_000, { dockerless: true });
-
-        // Pipeline probe: verify end-to-end data flow before sending the
-        // full batch. Consumer groups may still be joining even after
-        // waitForStreamingFunctions returns — the probe retries until one
-        // record flows foo → transform → Bar → ClickHouse.
-        await ingestAndVerify(
-          async () => {
-            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                primary_key: randomUUID(),
-                baz: "QUUX",
-                timestamp: TEST_DATA.TIMESTAMP,
-                optional_text: "pipeline-probe",
-              }),
-            });
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(
-                `Probe ingest failed: ${response.status}: ${text}`,
-              );
-            }
-          },
-          async () => {
-            await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
-          },
-          { maxCycles: 20, logger: testLogger },
-        );
-        testLogger.info("Pipeline probe OK — data flowing end-to-end");
-
-        const eventId = randomUUID();
-
-        // Send multiple records to trigger batch write.
-        // Use ingestAndVerify to handle slow consumer group startup in
-        // dockerless mode — it re-sends data if the first verify cycle fails.
-        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        await ingestAndVerify(
-          async () => {
-            for (let i = 0; i < recordsToSend; i++) {
-              await withRetries(
-                async () => {
-                  const response = await fetch(
-                    `${SERVER_CONFIG.url}/ingest/foo`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        primary_key: i === 0 ? eventId : randomUUID(),
-                        baz: "QUUX",
-                        timestamp: TEST_DATA.TIMESTAMP,
-                        optional_text:
-                          i === 0 ? "Hello from Python" : `Test message ${i}`,
-                      }),
-                    },
-                  );
-                  if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(`${response.status}: ${text}`);
-                  }
-                },
-                { attempts: 5, delayMs: 500 },
-              );
-            }
-          },
-          async () => {
-            await waitForDBWrite(
-              devProcess!,
-              "Bar",
-              recordsToSend,
-              120_000,
-              "local",
-            );
-          },
-          { maxCycles: 3, logger: testLogger },
-        );
-        await verifyClickhouseData("Bar", eventId, "primary_key", "local");
-
-        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
-        // so skip triggerWorkflow. The MV is already populated by the records above.
-        await waitForMaterializedViewUpdate(
-          "bar_aggregated",
-          1,
-          60_000,
-          "local",
-        );
-        await verifyConsumptionApi(
-          "bar?order_by=total_rows&start_day=18&end_day=18&limit=1",
-          [
-            {
-              day_of_month: 18,
-              total_rows: 1,
-              // Just verify structure - don't check exact values since generator adds random data
-              // Similar to typescript test
-            },
-          ],
-        );
-
-        // Test versioned API (V1)
-        await verifyVersionedConsumptionApi(
-          "bar/1?order_by=total_rows&start_day=18&end_day=18&limit=1",
-          [
-            {
-              day_of_month: 18,
-              total_rows: 1,
-              // Just verify structure - don't check exact values since generator adds random data
-              // Similar to typescript test
-              metadata: {
-                version: "1.0",
-                query_params: {
-                  order_by: "total_rows",
-                  limit: 1,
-                  start_day: 18,
-                  end_day: 18,
-                },
-              },
-            },
-          ],
-        );
-
-        // Verify consumer logs
-        await verifyConsumerLogs(TEST_PROJECT_DIR, [
-          "Received Foo event:",
-          `Primary Key: ${eventId}`,
-          "Optional Text: Hello from Python",
-        ]);
-
-        if (config.isTestsVariant) {
-          await verifyConsumerLogs(TEST_PROJECT_DIR, [
-            "from_http",
-            "from_send",
-          ]);
-        }
-      });
-      if (config.isTestsVariant) {
-        it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          const id = randomUUID();
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/geotypes`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(geoPayloadPy(id)),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
-          await verifyClickhouseData("GeoTypes", id, "id", "local");
-        });
-
-        it("should send array transform results as individual Kafka messages (PY)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const inputId = randomUUID();
-          const testData = ["item1", "item2", "item3", "item4", "item5"];
-
-          // Send one input record with an array in the data field
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/arrayinput`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id: inputId,
-                    data: testData,
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // Wait for all output records to be written to the database
-          await waitForDBWrite(
-            devProcess!,
-            "ArrayOutput",
-            testData.length,
-            60_000,
-            "local",
-            `input_id = '${inputId}'`,
-          );
-
-          // Verify that we have exactly 'testData.length' records in the output table
-          await verifyClickhouseData(
-            "ArrayOutput",
-            inputId,
-            "input_id",
-            "local",
-          );
-
-          // Verify the count of records
-          await verifyRecordCount(
-            "ArrayOutput",
-            `input_id = '${inputId}'`,
-            testData.length,
-            "local",
-          );
-        });
-
-        it("should serve WebApp at custom mountPath with FastAPI framework", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Test FastAPI WebApp health endpoint
-          await verifyWebAppHealth("/fastapi", "bar-fastapi-api");
-
-          // Test FastAPI WebApp query endpoint (GET)
-          await verifyWebAppQuery("/fastapi/query", { limit: "5" });
-
-          // Test FastAPI WebApp data endpoint (POST)
-          await verifyWebAppPostEndpoint(
-            "/fastapi/data",
-            {
-              order_by: "total_rows",
-              limit: 5,
-              start_day: 1,
-              end_day: 31,
-            },
-            200,
-            (json) => {
-              if (!json.success) {
-                throw new Error("Expected success to be true");
-              }
-              if (!Array.isArray(json.data)) {
-                throw new Error("Expected data to be an array");
-              }
-              if (json.params.order_by !== "total_rows") {
-                throw new Error("Expected order_by to be total_rows");
-              }
-            },
-          );
-        });
-
-        it("should serve OpenAPI documentation for FastAPI WebApp", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Test OpenAPI JSON schema endpoint
-          await verifyWebAppEndpoint("/fastapi/openapi.json", 200, (json) => {
-            if (!json.openapi) {
-              throw new Error(
-                "Expected OpenAPI schema to have 'openapi' field",
-              );
-            }
-            if (!json.info) {
-              throw new Error("Expected OpenAPI schema to have 'info' field");
-            }
-            if (!json.paths) {
-              throw new Error("Expected OpenAPI schema to have 'paths' field");
-            }
-            // Verify that paths include the mount_path prefix
-            const paths = Object.keys(json.paths);
-            if (paths.length === 0) {
-              throw new Error(
-                "Expected OpenAPI schema to have at least one path",
-              );
-            }
-            // Check that at least one path includes /health (should be /fastapi/health or just /health)
-            const hasHealthPath = paths.some((p) => p.includes("/health"));
-            if (!hasHealthPath) {
-              throw new Error(
-                `Expected OpenAPI schema to include /health path. Found paths: ${paths.join(", ")}`,
-              );
-            }
-          });
-
-          // Test interactive docs endpoint (Swagger UI)
-          await verifyWebAppEndpoint("/fastapi/docs", 200, undefined);
-        });
-
-        it("should handle multiple WebApp endpoints independently (PY)", async function () {
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          // Verify FastAPI WebApp is accessible
-          await verifyWebAppEndpoint("/fastapi/health", 200);
-
-          // Verify regular Api endpoint still works alongside WebApp
-          const apiResponse = await fetch(
-            `${SERVER_CONFIG.url}/api/bar?order_by=total_rows&start_day=1&end_day=31&limit=5`,
-          );
-          expect(apiResponse.ok).to.be.true;
-          const apiData = await apiResponse.json();
-          expect(apiData).to.be.an("array");
-        });
-
-        // Extra fields test for Python (ENG-1617)
-        // Tests that IngestApi accepts payloads with extra fields when the model has extra='allow'.
-        // Extra fields are passed through to streaming functions and stored in a JSON column.
-        //
-        // KEY CONCEPTS:
-        // - IngestApi/Stream with extra='allow': CAN accept variable fields
-        // - OlapTable: Requires fixed schema (ClickHouse needs to know columns)
-        // - Transform: Receives ALL fields via model_extra, outputs to fixed schema with JSON column
-        it("should pass extra fields to streaming function via Pydantic extra='allow' (PY)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const userId = randomUUID();
-          const timestamp = new Date().toISOString();
-
-          // Send data with known fields plus arbitrary extra fields
-          await withRetries(
-            async () => {
-              const response = await fetch(
-                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    // Known fields defined in the model (snake_case for Python)
-                    timestamp: timestamp,
-                    event_name: "page_view",
-                    user_id: userId,
-                    org_id: "org-123",
-                    // Extra fields - allowed by extra='allow', passed to streaming function
-                    customProperty: "custom-value",
-                    pageUrl: "/dashboard",
-                    sessionDuration: 120,
-                    nested: {
-                      level1: "value1",
-                      level2: { deep: "nested" },
-                    },
-                  }),
-                },
-              );
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-
-          // Wait for the transform to process and write to output table
-          await waitForDBWrite(
-            devProcess!,
-            "UserEventOutput",
-            1,
-            60_000,
-            "local",
-            `user_id = '${userId}'`,
-          );
-
-          // Verify the data was written correctly
-          const client = createClient(CLICKHOUSE_CONFIG);
-          const result = await client.query({
-            query: `
-              SELECT 
-                user_id,
-                event_name,
-                org_id,
-                properties
-              FROM local.UserEventOutput 
-              WHERE user_id = '${userId}'
-            `,
-            format: "JSONEachRow",
-          });
-
-          const rows: any[] = await result.json();
-          await client.close();
-
-          if (rows.length === 0) {
-            throw new Error(
-              `No data found in UserEventOutput for user_id ${userId}`,
-            );
-          }
-
-          const row = rows[0];
-
-          // Verify known fields are correctly passed through (snake_case for Python)
-          if (row.event_name !== "page_view") {
-            throw new Error(
-              `Expected event_name to be 'page_view', got '${row.event_name}'`,
-            );
-          }
-          if (row.org_id !== "org-123") {
-            throw new Error(
-              `Expected org_id to be 'org-123', got '${row.org_id}'`,
-            );
-          }
-
-          // Verify extra fields are stored in the properties JSON column
-          if (row.properties === undefined) {
-            throw new Error("Expected properties JSON column to exist");
-          }
-
-          // Parse properties if it's a string (ClickHouse may return JSON as string)
-          const properties =
-            typeof row.properties === "string" ?
-              JSON.parse(row.properties)
-            : row.properties;
-
-          // Verify extra fields were received by streaming function via model_extra
-          if (properties.customProperty !== "custom-value") {
-            throw new Error(
-              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
-            );
-          }
-          if (properties.pageUrl !== "/dashboard") {
-            throw new Error(
-              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
-            );
-          }
-          // Note: ClickHouse JSON may return numbers as strings
-          if (Number(properties.sessionDuration) !== 120) {
-            throw new Error(
-              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
-            );
-          }
-          if (
-            !properties.nested ||
-            properties.nested.level1 !== "value1" ||
-            !properties.nested.level2 ||
-            properties.nested.level2.deep !== "nested"
-          ) {
-            throw new Error(
-              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
-            );
-          }
-
-          testLogger.info(
-            "✅ Extra fields test passed (Python) - extra fields received by streaming function via model_extra and stored in properties column",
-          );
-        });
-
-        // OpenAPI schema sanity check for Python
-        it("should generate OpenAPI schema with DateTime types for ingest APIs (PY)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const response = await fetch(
-            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
-          );
-          expect(response.ok).to.be.true;
-
-          const yamlText = await response.text();
-          const spec = yaml.load(yamlText) as any;
-
-          // Basic structure check
-          expect(spec.openapi).to.exist;
-          expect(spec.paths).to.exist;
-          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
-
-          // Python inlines the schema in the path definition (Pydantic generates inline schemas)
-          const pathSchema =
-            spec.paths["/ingest/DateTimePrecisionInput"].post.requestBody
-              .content["application/json"].schema;
-          expect(pathSchema.title).to.equal("DateTimePrecisionTestData");
-          expect(pathSchema.type).to.equal("object");
-
-          // Verify each DateTime field has format: date-time
-          // Python uses snake_case field names
-          const dateTimeFields = [
-            "created_at",
-            "timestamp_ms",
-            "timestamp_us",
-            "timestamp_ns",
-          ];
-
-          for (const field of dateTimeFields) {
-            const fieldSchema = pathSchema.properties?.[field];
-            expect(
-              fieldSchema,
-              `Field '${field}' should exist in DateTimePrecisionTestData`,
-            ).to.exist;
-            expect(
-              fieldSchema.type,
-              `Field '${field}' should have type: string`,
-            ).to.equal("string");
-            expect(
-              fieldSchema.format,
-              `Field '${field}' should have format: date-time`,
-            ).to.equal("date-time");
-          }
-
-          // Verify no internal "tagging" properties are leaking into the schema
-          if (yamlText.includes("_clickhouse_")) {
-            throw new Error(
-              "Found _clickhouse_ internal properties leaking into OpenAPI schema (Python)",
-            );
-          }
-
-          testLogger.info(
-            "✅ OpenAPI schema sanity check passed (Python) - all DateTime fields correctly formatted",
-          );
-        });
-
-        // DateTime precision test for Python
-        it("should preserve microsecond precision with clickhouse_datetime64 annotations via streaming transform (PY)", async function () {
-          this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
-          this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-          const testId = randomUUID();
-          const now = new Date();
-          // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
-          const timestampWithMicroseconds = now
-            .toISOString()
-            .replace(/\.\d{3}Z$/, ".123456Z");
-          // Nanoseconds
-          const timestampWithNanoseconds = now
-            .toISOString()
-            .replace(/\.\d{3}Z$/, ".123456789Z");
-
-          testLogger.info(
-            `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
-          );
-
-          const payload = {
-            id: testId,
-            created_at: now.toISOString(),
-            timestamp_ms: timestampWithMicroseconds,
-            timestamp_us: timestampWithMicroseconds,
-            timestamp_ns: timestampWithNanoseconds,
-          };
-          testLogger.info("Sending payload:", JSON.stringify(payload, null, 2));
-
-          // Ingest to DateTimePrecisionInput (which has a transform to Output)
-          const response = await fetch(
-            // somehow we accidentally test for case insensitivity in the CLI
-            `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            },
-          );
-
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(
-              `Failed to ingest DateTimePrecisionInput (Python): ${response.status}: ${text}`,
-            );
-          }
-
-          // Wait for transform to process and write to output table
-          await waitForDBWrite(
-            devProcess!,
-            "DateTimePrecisionOutput",
-            1,
-            60_000,
-            "local",
-          );
-
-          // Query the output data and verify precision
-          const client = createClient(CLICKHOUSE_CONFIG);
-          const result = await client.query({
-            query: `
-              SELECT 
-                id,
-                toString(created_at) as created_at,
-                toString(timestamp_ms) as timestamp_ms,
-                toString(timestamp_us) as timestamp_us,
-                toString(timestamp_ns) as timestamp_ns
-              FROM local.DateTimePrecisionOutput 
-              WHERE id = '${testId}'
-            `,
-            format: "JSONEachRow",
-          });
-
-          const data: any[] = await result.json();
-
-          if (data.length === 0) {
-            throw new Error(
-              `No data found for DateTimePrecisionOutput (Python) with id ${testId}`,
-            );
-          }
-
-          const row = data[0];
-          testLogger.info(
-            "Retrieved row (Python):",
-            JSON.stringify(row, null, 2),
-          );
-
-          // Verify that datetime with clickhouse_datetime64(6) preserves microseconds
-          if (!row.timestamp_us.includes(".123456")) {
-            throw new Error(
-              `Expected timestamp_us to preserve microseconds (.123456), got: ${row.timestamp_us}`,
-            );
-          }
-
-          // Note: Python datetime truncates nanoseconds to microseconds, so we expect .123456 not .123456789
-          // Log if nanoseconds were truncated (expected behavior)
-          if (row.timestamp_ns.includes(".123456789")) {
-            testLogger.info(
-              "✅ Nanoseconds preserved in ClickHouse:",
-              row.timestamp_ns,
-            );
-          } else if (row.timestamp_ns.includes(".123456")) {
-            testLogger.info(
-              "⚠️  Nanoseconds truncated to microseconds (expected Python behavior):",
-              row.timestamp_ns,
-            );
-          } else {
-            testLogger.info(
-              "❌ No sub-second precision found in timestamp_ns:",
-              row.timestamp_ns,
-            );
-            throw new Error(
-              `Expected timestamp_ns to have at least microseconds (.123456), got: ${row.timestamp_ns}`,
-            );
-          }
-
-          testLogger.info(
-            "✅ DateTime precision test passed (Python) - microseconds preserved",
-          );
-        });
-      }
-    }
-
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {
@@ -2338,7 +626,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       });
 
       it("should insert data via OlapTable.insert() in consumer for both default and non-default databases", async function () {
-        this.skip(); // Streaming disabled for non-essential pipelines in dockerless mode
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
         testLogger.info(
@@ -2671,13 +958,59 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Kafka engine table and consume data via MV", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        // In dockerless mode, sanitizeProjectForDockerless removes the Kafka
-        // engine import to eliminate background consumer threads that degrade
-        // ClickHouse. The Kafka DDL test is skipped since the table won't exist.
         testLogger.info(
-          "Skipping Kafka engine DDL test — kafkaTests import removed for dockerless mode",
+          "Waiting for Kafka table infrastructure to be ready...",
         );
-        this.skip();
+        await waitForStreamingFunctions(180_000, { dockerless: true });
+
+        const kafkaSourceDDL = await withRetries(
+          async () => {
+            return await getTableDDL(
+              config.language === "typescript" ?
+                "KafkaTestSource"
+              : "kafka_test_source",
+              "local",
+            );
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+        testLogger.info(`Kafka source table DDL: ${kafkaSourceDDL}`);
+
+        if (!kafkaSourceDDL.includes("ENGINE = Kafka")) {
+          throw new Error(
+            `KafkaTestSource should use Kafka engine. DDL: ${kafkaSourceDDL}`,
+          );
+        }
+
+        // Template hardcodes 'redpanda:9092' as the broker. Verify it's present in DDL.
+        if (!kafkaSourceDDL.includes("redpanda:9092")) {
+          throw new Error(
+            `Kafka table should have broker 'redpanda:9092'. DDL: ${kafkaSourceDDL}`,
+          );
+        }
+
+        const destTableName =
+          config.language === "typescript" ?
+            "KafkaTestDest"
+          : "kafka_test_dest";
+        const kafkaDestDDL = await withRetries(
+          async () => {
+            return await getTableDDL(destTableName, "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+
+        if (!kafkaDestDDL.includes("ENGINE = MergeTree")) {
+          throw new Error(
+            `${destTableName} should use MergeTree engine. DDL: ${kafkaDestDDL}`,
+          );
+        }
+
+        // In dockerless mode, ClickHouse's Kafka engine can't connect to 'redpanda:9092'
+        // (no Docker DNS). DDL structure is verified above; skip the data flow check.
+        testLogger.info(
+          "✅ Kafka engine table DDL verified (data flow skipped in dockerless mode — broker 'redpanda:9092' is unreachable without Docker DNS)",
+        );
       });
 
       it("should plan/apply TTL modifications on existing tables", async function () {
@@ -3214,6 +1547,1438 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       });
     }
 
+    // Create test case based on language
+    if (config.language === "typescript") {
+      it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
+        // Wait for infrastructure to stabilize after previous test's file modification
+        testLogger.info(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000, { dockerless: true });
+
+        const eventId = randomUUID();
+
+        // Send multiple records to trigger batch write
+        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primaryKey: i === 0 ? eventId : randomUUID(),
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optionalText: `Hello world ${i}`,
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          60_000,
+          "local",
+        );
+        await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
+
+        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
+        // so skip triggerWorkflow. The MV is already populated by the 50 records above.
+        await waitForMaterializedViewUpdate(
+          "BarAggregated",
+          1,
+          60_000,
+          "local",
+        );
+        await verifyConsumptionApi(
+          "bar?orderBy=totalRows&startDay=18&endDay=18&limit=1",
+          [
+            {
+              // output_format_json_quote_64bit_integers is true by default in ClickHouse
+              dayOfMonth: "18",
+              totalRows: "1",
+            },
+          ],
+        );
+
+        // Test versioned API (V1)
+        await verifyVersionedConsumptionApi(
+          "bar/1?orderBy=totalRows&startDay=18&endDay=18&limit=1",
+          [
+            {
+              dayOfMonth: "18",
+              totalRows: "1",
+              metadata: {
+                version: "1.0",
+                queryParams: {
+                  orderBy: "totalRows",
+                  limit: 1,
+                  startDay: 18,
+                  endDay: 18,
+                },
+              },
+            },
+          ],
+        );
+
+        // Verify consumer logs
+        await verifyConsumerLogs(TEST_PROJECT_DIR, [
+          "Received Foo event:",
+          `Primary Key: ${eventId}`,
+          "Optional Text: Hello world",
+        ]);
+
+        // Workflows are disabled in dockerless mode, so generator workflow
+        // log lines like "from_http"/"from_send" are not expected here.
+      });
+      if (config.isTestsVariant) {
+        it("should verify sql helpers (join, raw, append) work correctly (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // The sql-helpers-test API queries BarAggregatedMV which was populated by the generator workflow
+          // in the previous test. It exercises sql.join(), sql.raw(), and Sql.append() from moose-lib.
+          await verifyConsumptionApi("sql-helpers-test?minDay=1&maxDay=31", [
+            {
+              // The API selects dayOfMonth and totalRows from BarAggregated
+              dayOfMonth: "placeholder",
+              totalRows: "placeholder",
+            },
+          ]);
+
+          // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
+          await withRetries(async () => {
+            const response = await fetch(
+              `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
+              );
+            }
+            const json = (await response.json()) as any[];
+            expect(json).to.be.an("array").that.is.not.empty;
+            // When includeTimestamp=true, the response should include query_time from NOW()
+            expect(json[0]).to.have.property("query_time");
+          });
+        });
+
+        it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/GeoTypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(geoPayloadTs(id)),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await verifyClickhouseData("GeoTypes", id, "id", "local");
+        });
+
+        it("should send array transform results as individual Kafka messages (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/array-input`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(
+            devProcess!,
+            "ArrayOutput",
+            testData.length,
+            60_000,
+            "local",
+            `inputId = '${inputId}'`,
+          );
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData(
+            "ArrayOutput",
+            inputId,
+            "inputId",
+            "local",
+          );
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `inputId = '${inputId}'`,
+            testData.length,
+            "local",
+          );
+        });
+
+        it("should send large messages that exceed Kafka limit to DLQ (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const largeMessageId = randomUUID();
+
+          // Send a message that will generate ~2MB output (exceeds typical Kafka limit of 1MB)
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/LargeMessageInput`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: largeMessageId,
+                    timestamp: new Date().toISOString(),
+                    multiplier: 2, // Generate 2MB message
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the message to be sent to DLQ (not to the output table)
+          await waitForDBWrite(
+            devProcess!,
+            "LargeMessageDeadLetter",
+            1,
+            60_000,
+            "local",
+          );
+
+          // Verify the DLQ received the failed message with the correct metadata
+          const clickhouse = createClient({
+            url: CLICKHOUSE_CONFIG.url,
+            username: CLICKHOUSE_CONFIG.username,
+            password: CLICKHOUSE_CONFIG.password,
+            database: CLICKHOUSE_CONFIG.database,
+          });
+
+          const result = await clickhouse.query({
+            query: `SELECT * FROM local.LargeMessageDeadLetter WHERE originalRecord.id = '${largeMessageId}'`,
+            format: "JSONEachRow",
+          });
+
+          const data = await result.json();
+
+          if (data.length === 0) {
+            throw new Error(
+              `Expected to find DLQ record for id ${largeMessageId}`,
+            );
+          }
+
+          const dlqRecord: any = data[0];
+
+          // Verify DLQ record has the expected fields
+          if (!dlqRecord.errorMessage) {
+            throw new Error("Expected errorMessage in DLQ record");
+          }
+
+          if (!dlqRecord.errorType) {
+            throw new Error("Expected errorType in DLQ record");
+          }
+
+          if (dlqRecord.source !== "transform") {
+            throw new Error(
+              `Expected source to be 'transform', got '${dlqRecord.source}'`,
+            );
+          }
+
+          // Verify the error is related to message size
+          if (
+            !dlqRecord.errorMessage.toLowerCase().includes("too large") &&
+            !dlqRecord.errorMessage.toLowerCase().includes("size")
+          ) {
+            testLogger.warn(
+              `Warning: Error message might not be about size: ${dlqRecord.errorMessage}`,
+            );
+          }
+
+          testLogger.info(
+            `✅ Large message successfully sent to DLQ: ${dlqRecord.errorMessage}`,
+          );
+
+          // Verify that the large message did NOT make it to the output table
+          const outputResult = await clickhouse.query({
+            query: `SELECT COUNT(*) as count FROM local.LargeMessageOutput WHERE id = '${largeMessageId}'`,
+            format: "JSONEachRow",
+          });
+
+          const outputData: any[] = await outputResult.json();
+          const outputCount = parseInt(outputData[0].count);
+
+          if (outputCount !== 0) {
+            throw new Error(
+              `Expected 0 records in output table, found ${outputCount}`,
+            );
+          }
+
+          await clickhouse.close();
+        });
+
+        it("should include Consumption API in proxy health check (healthy)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify that the proxy health endpoint includes "Consumption API" in healthy list
+          // Expected healthy services: Redis, ClickHouse, Redpanda, Consumption API
+          await verifyProxyHealth([
+            "Redis",
+            "ClickHouse",
+            "Redpanda",
+            "Consumption API",
+          ]);
+
+          testLogger.info(
+            "✅ Proxy health check correctly includes Consumption API",
+          );
+        });
+
+        it("should have working internal health endpoint (/_moose_internal/health)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify the consumption API internal health endpoint works
+          await verifyConsumptionApiInternalHealth();
+
+          testLogger.info("✅ Internal health endpoint works correctly");
+        });
+
+        it("should serve WebApp at custom mountPath with Express framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test Express WebApp health endpoint
+          await verifyWebAppHealth("/express", "bar-express-api");
+
+          // Test Express WebApp query endpoint (GET)
+          await verifyWebAppQuery("/express/query", { limit: "5" });
+
+          // Test Express WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/express/data",
+            {
+              orderBy: "totalRows",
+              limit: 5,
+              startDay: 1,
+              endDay: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.orderBy !== "totalRows") {
+                throw new Error("Expected orderBy to be totalRows");
+              }
+            },
+          );
+        });
+
+        it("should serve WebApp at custom mountPath with Fastify framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test Fastify WebApp health endpoint
+          await verifyWebAppHealth("/fastify", "bar-fastify-api");
+
+          // Test Fastify WebApp query endpoint (GET)
+          await verifyWebAppQuery("/fastify/query", { limit: "5" });
+
+          // Test Fastify WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/fastify/data",
+            {
+              orderBy: "totalRows",
+              limit: 5,
+              startDay: 1,
+              endDay: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.orderBy !== "totalRows") {
+                throw new Error("Expected orderBy to be totalRows");
+              }
+            },
+          );
+        });
+
+        it("should handle multiple WebApp endpoints independently", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify Express WebApp is accessible
+          await verifyWebAppEndpoint("/express/health", 200);
+
+          // Verify Fastify WebApp is accessible
+          await verifyWebAppEndpoint("/fastify/health", 200);
+
+          // Verify regular Api endpoint still works alongside WebApp
+          const apiResponse = await fetch(
+            `${SERVER_CONFIG.url}/api/bar?orderBy=totalRows&startDay=1&endDay=31&limit=5`,
+          );
+          expect(apiResponse.ok).to.be.true;
+          const apiData = await apiResponse.json();
+          expect(apiData).to.be.an("array");
+        });
+
+        it("should serve MCP server at /tools with proper header forwarding", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Send an MCP tools/list request to verify the server is working
+          // This tests that the proxy properly forwards response headers
+          const mcpRequest = {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/list",
+            params: {},
+          };
+
+          const response = await fetch(`${SERVER_CONFIG.url}/tools`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify(mcpRequest),
+          });
+
+          // Log response details for debugging
+          if (!response.ok) {
+            const errorText = await response.text();
+            testLogger.error(
+              `MCP request failed with status ${response.status}`,
+            );
+            testLogger.error(`Response body: ${errorText}`);
+            throw new Error(
+              `MCP request failed: ${response.status} ${response.statusText} - ${errorText}`,
+            );
+          }
+
+          // Verify response status
+          expect(response.ok).to.be.true;
+          expect(response.status).to.equal(200);
+
+          // Verify Content-Type header is present (this is what the fix ensures)
+          const contentType = response.headers.get("content-type");
+          expect(contentType).to.exist;
+          expect(contentType).to.include("application/json");
+
+          // Verify response is valid JSON-RPC
+          const data = await response.json();
+          expect(data).to.be.an("object");
+          expect(data).to.have.property("jsonrpc", "2.0");
+          expect(data).to.have.property("id", 1);
+
+          // Verify the response contains tools
+          expect(data).to.have.property("result");
+          expect(data.result).to.have.property("tools");
+          expect(data.result.tools).to.be.an("array");
+
+          // Verify query_clickhouse tool is listed
+          const queryTool = data.result.tools.find(
+            (tool: any) => tool.name === "query_clickhouse",
+          );
+          expect(queryTool).to.exist;
+          expect(queryTool).to.have.property("description");
+
+          testLogger.info("✅ MCP server works correctly through proxy");
+        });
+
+        it("should create JSON table and accept extra fields in payload", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/JsonTest`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id,
+                    timestamp: new Date(TEST_DATA.TIMESTAMP * 1000),
+                    payloadWithConfig: {
+                      name: "alpha",
+                      count: 3,
+                      extraField: "allowed",
+                      nested: { another: "field" },
+                    },
+                    payloadBasic: {
+                      name: "beta",
+                      count: 5,
+                      anotherExtra: "also-allowed",
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // DDL should show JSON types for both fields
+          const ddl = await getTableDDL("JsonTest");
+          const fieldName =
+            config.language === "python" ?
+              "payload_with_config"
+            : "payloadWithConfig";
+          const basicFieldName =
+            config.language === "python" ? "payload_basic" : "payloadBasic";
+          if (!ddl.includes(`\`${fieldName}\` JSON`)) {
+            throw new Error(`JsonTest DDL missing JSON ${fieldName}: ${ddl}`);
+          }
+          if (!ddl.includes(`\`${basicFieldName}\` JSON`)) {
+            throw new Error(
+              `JsonTest DDL missing JSON ${basicFieldName}: ${ddl}`,
+            );
+          }
+
+          await waitForDBWrite(devProcess!, "JsonTest", 1);
+
+          // Verify row exists and payload is present
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `SELECT id, getSubcolumn(${fieldName}, 'name') as name FROM JsonTest WHERE id = '${id}'`,
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          if (!rows.length || rows[0].name == null) {
+            throw new Error("JSON payload not stored as expected");
+          }
+        });
+
+        // Index signature test for TypeScript (ENG-1617)
+        // Tests that IngestApi accepts payloads with extra fields when the type has an index signature.
+        // Extra fields are passed through to streaming functions and stored in a JSON column.
+        //
+        // KEY CONCEPTS:
+        // - IngestApi/Stream: CAN have index signatures (accept variable fields)
+        // - OlapTable: CANNOT have index signatures (ClickHouse requires fixed schema)
+        // - Transform: Receives ALL fields, outputs to fixed schema with JSON column for extras
+
+        it("should pass extra fields to streaming function via index signature", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const userId = randomUUID();
+          const timestamp = new Date().toISOString();
+
+          // Send data with known fields plus arbitrary extra fields
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    // Known fields defined in the type
+                    timestamp: timestamp,
+                    eventName: "page_view",
+                    userId: userId,
+                    orgId: "org-123",
+                    // Extra fields - allowed by index signature, passed to streaming function
+                    customProperty: "custom-value",
+                    pageUrl: "/dashboard",
+                    sessionDuration: 120,
+                    nested: {
+                      level1: "value1",
+                      level2: { deep: "nested" },
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "UserEventOutput",
+            1,
+            60_000,
+            "local",
+            `userId = '${userId}'`,
+          );
+
+          // Verify the data was written correctly
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                userId,
+                eventName,
+                orgId,
+                properties
+              FROM local.UserEventOutput 
+              WHERE userId = '${userId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const rows: any[] = await result.json();
+          await client.close();
+
+          if (rows.length === 0) {
+            throw new Error(
+              `No data found in UserEventOutput for userId ${userId}`,
+            );
+          }
+
+          const row = rows[0];
+
+          // Verify known fields are correctly passed through
+          if (row.eventName !== "page_view") {
+            throw new Error(
+              `Expected eventName to be 'page_view', got '${row.eventName}'`,
+            );
+          }
+          if (row.orgId !== "org-123") {
+            throw new Error(
+              `Expected orgId to be 'org-123', got '${row.orgId}'`,
+            );
+          }
+
+          // Verify extra fields are stored in the properties JSON column
+          if (row.properties === undefined) {
+            throw new Error("Expected properties JSON column to exist");
+          }
+
+          // Parse properties if it's a string (ClickHouse may return JSON as string)
+          const properties =
+            typeof row.properties === "string" ?
+              JSON.parse(row.properties)
+            : row.properties;
+
+          // Verify extra fields were received by streaming function and stored in properties
+          if (properties.customProperty !== "custom-value") {
+            throw new Error(
+              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
+            );
+          }
+          if (properties.pageUrl !== "/dashboard") {
+            throw new Error(
+              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
+            );
+          }
+          // Note: ClickHouse JSON may return numbers as strings
+          if (Number(properties.sessionDuration) !== 120) {
+            throw new Error(
+              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
+            );
+          }
+          if (
+            !properties.nested ||
+            properties.nested.level1 !== "value1" ||
+            !properties.nested.level2 ||
+            properties.nested.level2.deep !== "nested"
+          ) {
+            throw new Error(
+              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
+            );
+          }
+
+          testLogger.info(
+            "✅ Index signature test passed - extra fields received by streaming function and stored in properties column",
+          );
+        });
+
+        // OpenAPI schema sanity check for TypeScript
+        it("should generate OpenAPI schema with DateTime types for ingest APIs", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
+          expect(response.ok).to.be.true;
+
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
+
+          // Basic structure check
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
+          expect(spec.components?.schemas).to.exist;
+
+          // Verify Date schema is properly formatted as string with date-time format
+          // NOT as an empty object (which was the old buggy behavior)
+          const dateSchema = spec.components.schemas.Date;
+          expect(dateSchema).to.exist;
+          expect(dateSchema.type).to.equal("string");
+          expect(dateSchema.format).to.equal("date-time");
+
+          // Verify DateTimePrecisionTestData schema has proper DateTime field formats
+          const dtSchema = spec.components.schemas.DateTimePrecisionTestData;
+          expect(dtSchema).to.exist;
+          expect(dtSchema.type).to.equal("object");
+
+          const dateTimeFields = [
+            "createdAt",
+            "timestampMs",
+            "timestampUsDate",
+            "timestampUsString",
+            "timestampNs",
+            "createdAtString",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = dtSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed - all DateTime fields correctly formatted as string/date-time",
+          );
+        });
+
+        // DateTime precision test for TypeScript
+        it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const testId = randomUUID();
+          const now = new Date();
+          // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
+          const timestampWithMicroseconds = now
+            .toISOString()
+            .replace(/\.\d{3}Z$/, ".123456Z");
+          // Nanoseconds
+          const timestampWithNanoseconds = now
+            .toISOString()
+            .replace(/\.\d{3}Z$/, ".123456789Z");
+
+          testLogger.info(
+            `Testing DateTime precision with timestamp: ${timestampWithMicroseconds}`,
+          );
+
+          // Ingest to DateTimePrecisionInput (which has a transform to Output)
+          const response = await fetch(
+            `${SERVER_CONFIG.url}/ingest/DateTimePrecisionInput`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: testId,
+                createdAt: now.toISOString(),
+                timestampMs: now.toISOString(),
+                timestampUsDate: timestampWithMicroseconds,
+                timestampUsString: timestampWithMicroseconds,
+                timestampNs: timestampWithNanoseconds,
+                createdAtString: now.toISOString(),
+              }),
+            },
+          );
+
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(
+              `Failed to ingest DateTimePrecisionInput: ${response.status}: ${text}`,
+            );
+          }
+
+          // Wait for transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "DateTimePrecisionOutput",
+            1,
+            60_000,
+            "local",
+          );
+
+          // Query the output data and verify precision
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+            SELECT 
+              id,
+              toString(createdAt) as createdAt,
+              toString(timestampMs) as timestampMs,
+              toString(timestampUsDate) as timestampUsDate,
+              toString(timestampUsString) as timestampUsString,
+              toString(timestampNs) as timestampNs,
+              toString(createdAtString) as createdAtString
+            FROM local.DateTimePrecisionOutput 
+            WHERE id = '${testId}'
+          `,
+            format: "JSONEachRow",
+          });
+
+          const data: any[] = await result.json();
+
+          if (data.length === 0) {
+            throw new Error(
+              `No data found for DateTimePrecisionOutput with id ${testId}`,
+            );
+          }
+
+          const row = data[0];
+          testLogger.info("Retrieved row:", row);
+
+          // Verify that DateTime64String<6> preserves microseconds
+          if (!row.timestampUsString.includes(".123456")) {
+            throw new Error(
+              `Expected timestampUsString to preserve microseconds (.123456), got: ${row.timestampUsString}`,
+            );
+          }
+
+          // Verify that DateTime64String<9> preserves nanoseconds
+          if (!row.timestampNs.includes(".123456789")) {
+            throw new Error(
+              `Expected timestampNs to preserve nanoseconds (.123456789), got: ${row.timestampNs}`,
+            );
+          }
+
+          testLogger.info(
+            "✅ DateTime precision test passed - microseconds preserved",
+          );
+        });
+      }
+    } else {
+      it("should successfully ingest data and verify through consumption API", async function () {
+        // Wait for infrastructure to stabilize after previous test's file modification
+        testLogger.info(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000, { dockerless: true });
+
+        const eventId = randomUUID();
+
+        // Send multiple records to trigger batch write like typescript tests
+        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: i === 0 ? eventId : randomUUID(),
+                  baz: "QUUX",
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optional_text:
+                    i === 0 ? "Hello from Python" : `Test message ${i}`,
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          60_000,
+          "local",
+        );
+        await verifyClickhouseData("Bar", eventId, "primary_key", "local");
+
+        // Workflows are disabled in dockerless mode (MOOSE_FEATURES__WORKFLOWS=false),
+        // so skip triggerWorkflow. The MV is already populated by the records above.
+        await waitForMaterializedViewUpdate(
+          "bar_aggregated",
+          1,
+          60_000,
+          "local",
+        );
+        await verifyConsumptionApi(
+          "bar?order_by=total_rows&start_day=18&end_day=18&limit=1",
+          [
+            {
+              day_of_month: 18,
+              total_rows: 1,
+              // Just verify structure - don't check exact values since generator adds random data
+              // Similar to typescript test
+            },
+          ],
+        );
+
+        // Test versioned API (V1)
+        await verifyVersionedConsumptionApi(
+          "bar/1?order_by=total_rows&start_day=18&end_day=18&limit=1",
+          [
+            {
+              day_of_month: 18,
+              total_rows: 1,
+              // Just verify structure - don't check exact values since generator adds random data
+              // Similar to typescript test
+              metadata: {
+                version: "1.0",
+                query_params: {
+                  order_by: "total_rows",
+                  limit: 1,
+                  start_day: 18,
+                  end_day: 18,
+                },
+              },
+            },
+          ],
+        );
+
+        // Verify consumer logs
+        await verifyConsumerLogs(TEST_PROJECT_DIR, [
+          "Received Foo event:",
+          `Primary Key: ${eventId}`,
+          "Optional Text: Hello from Python",
+        ]);
+
+        // Workflows are disabled in dockerless mode, so generator workflow
+        // log lines like "from_http"/"from_send" are not expected here.
+      });
+      if (config.isTestsVariant) {
+        it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/geotypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(geoPayloadPy(id)),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await verifyClickhouseData("GeoTypes", id, "id", "local");
+        });
+
+        it("should send array transform results as individual Kafka messages (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/arrayinput`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(
+            devProcess!,
+            "ArrayOutput",
+            testData.length,
+            60_000,
+            "local",
+            `input_id = '${inputId}'`,
+          );
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData(
+            "ArrayOutput",
+            inputId,
+            "input_id",
+            "local",
+          );
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `input_id = '${inputId}'`,
+            testData.length,
+            "local",
+          );
+        });
+
+        it("should serve WebApp at custom mountPath with FastAPI framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test FastAPI WebApp health endpoint
+          await verifyWebAppHealth("/fastapi", "bar-fastapi-api");
+
+          // Test FastAPI WebApp query endpoint (GET)
+          await verifyWebAppQuery("/fastapi/query", { limit: "5" });
+
+          // Test FastAPI WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/fastapi/data",
+            {
+              order_by: "total_rows",
+              limit: 5,
+              start_day: 1,
+              end_day: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.order_by !== "total_rows") {
+                throw new Error("Expected order_by to be total_rows");
+              }
+            },
+          );
+        });
+
+        it("should serve OpenAPI documentation for FastAPI WebApp", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test OpenAPI JSON schema endpoint
+          await verifyWebAppEndpoint("/fastapi/openapi.json", 200, (json) => {
+            if (!json.openapi) {
+              throw new Error(
+                "Expected OpenAPI schema to have 'openapi' field",
+              );
+            }
+            if (!json.info) {
+              throw new Error("Expected OpenAPI schema to have 'info' field");
+            }
+            if (!json.paths) {
+              throw new Error("Expected OpenAPI schema to have 'paths' field");
+            }
+            // Verify that paths include the mount_path prefix
+            const paths = Object.keys(json.paths);
+            if (paths.length === 0) {
+              throw new Error(
+                "Expected OpenAPI schema to have at least one path",
+              );
+            }
+            // Check that at least one path includes /health (should be /fastapi/health or just /health)
+            const hasHealthPath = paths.some((p) => p.includes("/health"));
+            if (!hasHealthPath) {
+              throw new Error(
+                `Expected OpenAPI schema to include /health path. Found paths: ${paths.join(", ")}`,
+              );
+            }
+          });
+
+          // Test interactive docs endpoint (Swagger UI)
+          await verifyWebAppEndpoint("/fastapi/docs", 200, undefined);
+        });
+
+        it("should handle multiple WebApp endpoints independently (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify FastAPI WebApp is accessible
+          await verifyWebAppEndpoint("/fastapi/health", 200);
+
+          // Verify regular Api endpoint still works alongside WebApp
+          const apiResponse = await fetch(
+            `${SERVER_CONFIG.url}/api/bar?order_by=total_rows&start_day=1&end_day=31&limit=5`,
+          );
+          expect(apiResponse.ok).to.be.true;
+          const apiData = await apiResponse.json();
+          expect(apiData).to.be.an("array");
+        });
+
+        // Extra fields test for Python (ENG-1617)
+        // Tests that IngestApi accepts payloads with extra fields when the model has extra='allow'.
+        // Extra fields are passed through to streaming functions and stored in a JSON column.
+        //
+        // KEY CONCEPTS:
+        // - IngestApi/Stream with extra='allow': CAN accept variable fields
+        // - OlapTable: Requires fixed schema (ClickHouse needs to know columns)
+        // - Transform: Receives ALL fields via model_extra, outputs to fixed schema with JSON column
+        it("should pass extra fields to streaming function via Pydantic extra='allow' (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const userId = randomUUID();
+          const timestamp = new Date().toISOString();
+
+          // Send data with known fields plus arbitrary extra fields
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    // Known fields defined in the model (snake_case for Python)
+                    timestamp: timestamp,
+                    event_name: "page_view",
+                    user_id: userId,
+                    org_id: "org-123",
+                    // Extra fields - allowed by extra='allow', passed to streaming function
+                    customProperty: "custom-value",
+                    pageUrl: "/dashboard",
+                    sessionDuration: 120,
+                    nested: {
+                      level1: "value1",
+                      level2: { deep: "nested" },
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "UserEventOutput",
+            1,
+            60_000,
+            "local",
+            `user_id = '${userId}'`,
+          );
+
+          // Verify the data was written correctly
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                user_id,
+                event_name,
+                org_id,
+                properties
+              FROM local.UserEventOutput 
+              WHERE user_id = '${userId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const rows: any[] = await result.json();
+          await client.close();
+
+          if (rows.length === 0) {
+            throw new Error(
+              `No data found in UserEventOutput for user_id ${userId}`,
+            );
+          }
+
+          const row = rows[0];
+
+          // Verify known fields are correctly passed through (snake_case for Python)
+          if (row.event_name !== "page_view") {
+            throw new Error(
+              `Expected event_name to be 'page_view', got '${row.event_name}'`,
+            );
+          }
+          if (row.org_id !== "org-123") {
+            throw new Error(
+              `Expected org_id to be 'org-123', got '${row.org_id}'`,
+            );
+          }
+
+          // Verify extra fields are stored in the properties JSON column
+          if (row.properties === undefined) {
+            throw new Error("Expected properties JSON column to exist");
+          }
+
+          // Parse properties if it's a string (ClickHouse may return JSON as string)
+          const properties =
+            typeof row.properties === "string" ?
+              JSON.parse(row.properties)
+            : row.properties;
+
+          // Verify extra fields were received by streaming function via model_extra
+          if (properties.customProperty !== "custom-value") {
+            throw new Error(
+              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
+            );
+          }
+          if (properties.pageUrl !== "/dashboard") {
+            throw new Error(
+              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
+            );
+          }
+          // Note: ClickHouse JSON may return numbers as strings
+          if (Number(properties.sessionDuration) !== 120) {
+            throw new Error(
+              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
+            );
+          }
+          if (
+            !properties.nested ||
+            properties.nested.level1 !== "value1" ||
+            !properties.nested.level2 ||
+            properties.nested.level2.deep !== "nested"
+          ) {
+            throw new Error(
+              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
+            );
+          }
+
+          testLogger.info(
+            "✅ Extra fields test passed (Python) - extra fields received by streaming function via model_extra and stored in properties column",
+          );
+        });
+
+        // OpenAPI schema sanity check for Python
+        it("should generate OpenAPI schema with DateTime types for ingest APIs (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
+          expect(response.ok).to.be.true;
+
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
+
+          // Basic structure check
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
+
+          // Python inlines the schema in the path definition (Pydantic generates inline schemas)
+          const pathSchema =
+            spec.paths["/ingest/DateTimePrecisionInput"].post.requestBody
+              .content["application/json"].schema;
+          expect(pathSchema.title).to.equal("DateTimePrecisionTestData");
+          expect(pathSchema.type).to.equal("object");
+
+          // Verify each DateTime field has format: date-time
+          // Python uses snake_case field names
+          const dateTimeFields = [
+            "created_at",
+            "timestamp_ms",
+            "timestamp_us",
+            "timestamp_ns",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = pathSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          // Verify no internal "tagging" properties are leaking into the schema
+          if (yamlText.includes("_clickhouse_")) {
+            throw new Error(
+              "Found _clickhouse_ internal properties leaking into OpenAPI schema (Python)",
+            );
+          }
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed (Python) - all DateTime fields correctly formatted",
+          );
+        });
+
+        // DateTime precision test for Python
+        it("should preserve microsecond precision with clickhouse_datetime64 annotations via streaming transform (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const testId = randomUUID();
+          const now = new Date();
+          // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
+          const timestampWithMicroseconds = now
+            .toISOString()
+            .replace(/\.\d{3}Z$/, ".123456Z");
+          // Nanoseconds
+          const timestampWithNanoseconds = now
+            .toISOString()
+            .replace(/\.\d{3}Z$/, ".123456789Z");
+
+          testLogger.info(
+            `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
+          );
+
+          const payload = {
+            id: testId,
+            created_at: now.toISOString(),
+            timestamp_ms: timestampWithMicroseconds,
+            timestamp_us: timestampWithMicroseconds,
+            timestamp_ns: timestampWithNanoseconds,
+          };
+          testLogger.info("Sending payload:", JSON.stringify(payload, null, 2));
+
+          // Ingest to DateTimePrecisionInput (which has a transform to Output)
+          const response = await fetch(
+            // somehow we accidentally test for case insensitivity in the CLI
+            `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            },
+          );
+
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(
+              `Failed to ingest DateTimePrecisionInput (Python): ${response.status}: ${text}`,
+            );
+          }
+
+          // Wait for transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "DateTimePrecisionOutput",
+            1,
+            60_000,
+            "local",
+          );
+
+          // Query the output data and verify precision
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                id,
+                toString(created_at) as created_at,
+                toString(timestamp_ms) as timestamp_ms,
+                toString(timestamp_us) as timestamp_us,
+                toString(timestamp_ns) as timestamp_ns
+              FROM local.DateTimePrecisionOutput 
+              WHERE id = '${testId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const data: any[] = await result.json();
+
+          if (data.length === 0) {
+            throw new Error(
+              `No data found for DateTimePrecisionOutput (Python) with id ${testId}`,
+            );
+          }
+
+          const row = data[0];
+          testLogger.info(
+            "Retrieved row (Python):",
+            JSON.stringify(row, null, 2),
+          );
+
+          // Verify that datetime with clickhouse_datetime64(6) preserves microseconds
+          if (!row.timestamp_us.includes(".123456")) {
+            throw new Error(
+              `Expected timestamp_us to preserve microseconds (.123456), got: ${row.timestamp_us}`,
+            );
+          }
+
+          // Note: Python datetime truncates nanoseconds to microseconds, so we expect .123456 not .123456789
+          // Log if nanoseconds were truncated (expected behavior)
+          if (row.timestamp_ns.includes(".123456789")) {
+            testLogger.info(
+              "✅ Nanoseconds preserved in ClickHouse:",
+              row.timestamp_ns,
+            );
+          } else if (row.timestamp_ns.includes(".123456")) {
+            testLogger.info(
+              "⚠️  Nanoseconds truncated to microseconds (expected Python behavior):",
+              row.timestamp_ns,
+            );
+          } else {
+            testLogger.info(
+              "❌ No sub-second precision found in timestamp_ns:",
+              row.timestamp_ns,
+            );
+            throw new Error(
+              `Expected timestamp_ns to have at least microseconds (.123456), got: ${row.timestamp_ns}`,
+            );
+          }
+
+          testLogger.info(
+            "✅ DateTime precision test passed (Python) - microseconds preserved",
+          );
+        });
+      }
+    }
+
     if (config.isTestsVariant) {
       describe("DLQ with namespace prefixing", function () {
         const NAMESPACE = "testns";
@@ -3255,9 +3020,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          // Apply the same dockerless sanitization to the namespace project
-          await sanitizeProjectForDockerless(nsProjectDir, config.language);
-
           const devEnv = {
             ...buildDevEnv(config.language, nsProjectDir),
             MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
@@ -3292,27 +3054,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             logPrefix: `${config.displayName} (namespace)`,
             includeDocker: false,
           });
-
-          // Restart the main dev server for any subsequent tests and the
-          // parent after() hook that expects devProcess to be running.
-          testLogger.info("Restarting main dev server after namespace test...");
-          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
-          devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-            stdio: "pipe",
-            cwd: TEST_PROJECT_DIR,
-            env: devEnv,
-          });
-
-          await waitForServerStart(
-            devProcess!,
-            TIMEOUTS.SERVER_STARTUP_MS,
-            SERVER_CONFIG.startupMessage,
-            SERVER_CONFIG.url,
-          );
-          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-          await waitForStreamingFunctions(120000, { dockerless: true });
-          await waitForInfrastructureReady();
-          testLogger.info("Main dev server restored after namespace test");
+          // Namespace DLQ tests are the tail of this suite. The parent after()
+          // hook only needs the original project directory for cleanup, not a
+          // restarted dev process.
+          devProcess = null;
         });
 
         it(`should route failed messages to a namespace-prefixed DLQ topic (${config.language})`, async function () {
@@ -3360,7 +3105,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               nsDevProcess!,
               "FooDeadLetter",
               1,
-              120_000,
+              60_000,
               "local",
             );
 

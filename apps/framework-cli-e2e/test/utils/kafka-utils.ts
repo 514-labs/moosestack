@@ -96,11 +96,8 @@ export const waitForKafkaReady = async (
  * Wait for consumer groups to reach Stable state by polling devkafka's
  * ListGroups/DescribeGroups APIs via kafkajs.
  *
- * After a restart, groups register gradually — we require the group count
- * AND stability to be unchanged for 5 consecutive checks (5s) before
- * returning, ensuring late-registering groups like clickhouse_sync are
- * included. If no groups appear within 30 consecutive checks, assumes
- * streaming is not active and returns early.
+ * If no relevant consumer groups appear within 10 consecutive checks,
+ * assumes streaming is not active and returns early.
  */
 /**
  * List all Kafka topics using the admin API.
@@ -213,14 +210,6 @@ export const waitForConsumerGroupsStable = async (
   const admin = kafka.admin();
   const startTime = Date.now();
   let noGroupsCount = 0;
-  // Track consecutive checks where the group count AND stability are unchanged.
-  // After a restart, groups register gradually — the first group(s) may become
-  // Stable before later ones (e.g. clickhouse_sync) have even registered.
-  // Requiring several consecutive stable-count checks ensures we don't return
-  // before the full set of consumer groups has appeared.
-  let stableConfirmations = 0;
-  let lastStableCount = 0;
-  const REQUIRED_CONFIRMATIONS = 5;
 
   try {
     await admin.connect();
@@ -237,16 +226,14 @@ export const waitForConsumerGroupsStable = async (
 
         if (relevantGroups.length === 0) {
           noGroupsCount++;
-          stableConfirmations = 0;
-          lastStableCount = 0;
-          if (noGroupsCount >= 60) {
+          if (noGroupsCount >= 10) {
             log.debug(
-              "No consumer groups found after 60s, assuming streaming is not active",
+              "No consumer groups found after 10s, assuming streaming is not active",
             );
             return;
           }
           log.debug(
-            `No consumer groups yet (${noGroupsCount}/60 before giving up)`,
+            `No consumer groups yet (${noGroupsCount}/10 before giving up)`,
           );
         } else {
           noGroupsCount = 0;
@@ -256,31 +243,16 @@ export const waitForConsumerGroupsStable = async (
           const allStable = described.groups.every((g) => g.state === "Stable");
 
           if (allStable) {
-            if (groupIds.length === lastStableCount) {
-              stableConfirmations++;
-            } else {
-              // Group count changed — new consumer registered
-              stableConfirmations = 1;
-              lastStableCount = groupIds.length;
-            }
-
-            if (stableConfirmations >= REQUIRED_CONFIRMATIONS) {
-              log.debug(
-                `All ${groupIds.length} consumer groups stable for ${stableConfirmations}s: ${groupIds.join(", ")}`,
-              );
-              return;
-            }
-
             log.debug(
-              `Groups stable (count: ${groupIds.length}, confirmations: ${stableConfirmations}/${REQUIRED_CONFIRMATIONS}): ${groupIds.join(", ")}`,
+              `All ${groupIds.length} consumer groups are Stable: ${groupIds.join(", ")}`,
             );
-          } else {
-            stableConfirmations = 0;
-            const states = described.groups.map(
-              (g) => `${g.groupId}=${g.state}`,
-            );
-            log.debug(`Waiting for groups: ${states.join(", ")}`);
+            // Brief settle after stabilization
+            await new Promise((r) => setTimeout(r, 2000));
+            return;
           }
+
+          const states = described.groups.map((g) => `${g.groupId}=${g.state}`);
+          log.debug(`Waiting for groups: ${states.join(", ")}`);
         }
       } catch (error) {
         log.debug("Error checking consumer groups, retrying", {
