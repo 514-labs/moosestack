@@ -31,6 +31,7 @@ struct MigrationFiles {
 }
 
 /// Result of drift detection
+#[derive(Debug)]
 enum DriftStatus {
     NoDrift,
     AlreadyAtTarget,
@@ -2387,6 +2388,60 @@ mod tests {
             matches!(result, DriftStatus::NoDrift),
             "Expected NoDrift when current == expected dicts"
         );
+    }
+
+    /// `detect_drift` must populate `changed_dicts` when a dictionary's content
+    /// differs between current and expected (e.g. different layout). Previously
+    /// only NoDrift / DriftDetected were asserted; the `changed_dicts` field was
+    /// never validated.
+    #[test]
+    fn test_detect_drift_changed_dict_populates_changed_dicts() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected has Hashed layout
+        let mut expected_dict = create_test_dict("dict_x");
+        expected_dict.layout = DictionaryLayout::Hashed {
+            initial_array_size: None,
+            max_load_factor: None,
+        };
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("local_dict_x".to_string(), expected_dict.clone());
+
+        // current has Flat layout (simulating external drift)
+        let mut current_dict = create_test_dict("dict_x");
+        current_dict.layout = DictionaryLayout::Flat;
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("local_dict_x".to_string(), current_dict);
+
+        // target == expected (no changes planned)
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &expected_dicts,
+            &[],
+        );
+
+        match result {
+            DriftStatus::DriftDetected {
+                changed_dicts,
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert_eq!(
+                    changed_dicts,
+                    vec!["local_dict_x".to_string()],
+                    "changed_dicts must contain the modified dictionary key"
+                );
+                assert!(extra_dicts.is_empty(), "no extra dicts expected");
+                assert!(missing_dicts.is_empty(), "no missing dicts expected");
+            }
+            other => panic!("Expected DriftDetected, got {other:?}"),
+        }
     }
 
     // ─── T1b: validate_table_databases_and_clusters covers dict ops ───────────
