@@ -1551,8 +1551,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // Server restart + ingestAndVerify retries need a generous timeout
-        this.timeout(TIMEOUTS.TEST_SETUP_MS * 2);
+        // Server restart + pipeline probe + ingestAndVerify retries need a generous timeout
+        this.timeout(TIMEOUTS.TEST_SETUP_MS * 3);
 
         // In the tests variant, file modification tests above triggered multiple
         // hot-reloads that leave devkafka consumer groups in an unstable state.
@@ -1584,6 +1584,38 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           });
           await waitForInfrastructureReady();
           testLogger.info("Dev server restarted with clean streaming pipeline");
+
+          // Pipeline probe: verify end-to-end data flow (Foo → transform → Bar → ClickHouse)
+          // before sending the full batch. Consumer group detection alone is insufficient
+          // because groups register gradually after restart and the sync consumer may not
+          // be active yet even when earlier groups report Stable.
+          testLogger.info(
+            "Probing pipeline: sending test records until data flows to ClickHouse...",
+          );
+          await ingestAndVerify(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primaryKey: randomUUID(),
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optionalText: "pipeline-probe",
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Probe failed: ${response.status}: ${text}`);
+              }
+            },
+            async () => {
+              await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
+            },
+            { maxCycles: 10, logger: testLogger },
+          );
+          testLogger.info(
+            "Pipeline probe successful - data flowing end-to-end",
+          );
         } else {
           // Default template: no file modifications, just wait for stabilization
           await waitForStreamingFunctions(180_000, { dockerless: true });
@@ -2447,8 +2479,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        // Server restart + ingestAndVerify retries need a generous timeout
-        this.timeout(TIMEOUTS.TEST_SETUP_MS * 2);
+        // Server restart + pipeline probe + ingestAndVerify retries need a generous timeout
+        this.timeout(TIMEOUTS.TEST_SETUP_MS * 3);
 
         // In the tests variant, file modification tests above triggered multiple
         // hot-reloads that leave devkafka consumer groups in an unstable state.
@@ -2480,6 +2512,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           });
           await waitForInfrastructureReady();
           testLogger.info("Dev server restarted with clean streaming pipeline");
+
+          // Pipeline probe: verify end-to-end data flow before sending the full batch.
+          testLogger.info(
+            "Probing pipeline: sending test records until data flows to ClickHouse...",
+          );
+          await ingestAndVerify(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: randomUUID(),
+                  baz: "QUUX",
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optional_text: "pipeline-probe",
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Probe failed: ${response.status}: ${text}`);
+              }
+            },
+            async () => {
+              await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
+            },
+            { maxCycles: 10, logger: testLogger },
+          );
+          testLogger.info(
+            "Pipeline probe successful - data flowing end-to-end",
+          );
         } else {
           // Default template: no file modifications, just wait for stabilization
           await waitForStreamingFunctions(180_000, { dockerless: true });
