@@ -770,7 +770,6 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             version: None,
             metadata: None,
-            version: None,
         }
     }
 
