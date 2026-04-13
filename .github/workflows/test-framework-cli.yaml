@@ -393,9 +393,9 @@ jobs:
     needs:
       [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: "Test E2E TS Tests: ${{ matrix.suite-name }} (Node ${{ matrix.node-version }})"
+    name: "Test E2E TS Tests: ${{ matrix.group-name }} (Node ${{ matrix.node-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 25
+    timeout-minutes: 20
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -406,25 +406,17 @@ jobs:
       matrix:
         node-version: [20, 22, 24]
         package-manager: [npm]
-        suite-name: [default, main, migration, dotenv, db-pull, s3-secrets, s3-engine]
+        group-name: [core, db-pull, s3]
         include:
           - package-manager: npm
             pm-name: npm
             pm-version: bundled
-          - suite-name: default
-            suite-grep: "typescript template default"
-          - suite-name: main
-            suite-grep: "typescript template tests main"
-          - suite-name: migration
-            suite-grep: "typescript template tests - migration"
-          - suite-name: dotenv
-            suite-grep: "typescript template tests - .env"
-          - suite-name: db-pull
+          - group-name: core
+            suite-grep: "typescript template tests main|typescript template tests - migration|typescript template tests - \\.env"
+          - group-name: db-pull
             suite-grep: "typescript template tests - db-pull"
-          - suite-name: s3-secrets
-            suite-grep: "typescript template tests - S3Queue"
-          - suite-name: s3-engine
-            suite-grep: "typescript template tests - S3 Engine"
+          - group-name: s3
+            suite-grep: "typescript template tests - S3Queue|typescript template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -463,7 +455,7 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
-      - name: "Run TypeScript E2E Tests (${{ matrix.suite-name }})"
+      - name: "Run TypeScript E2E Tests (${{ matrix.group-name }})"
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
         env:
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
@@ -548,9 +540,9 @@ jobs:
     needs:
       [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: "Test E2E PY Tests: ${{ matrix.suite-name }} (Python ${{ matrix.python-version }})"
+    name: "Test E2E PY Tests: ${{ matrix.group-name }} (Python ${{ matrix.python-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 25
+    timeout-minutes: 20
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -560,20 +552,14 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-        suite-name: [default, main, dotenv, db-pull, s3-secrets, s3-engine]
+        group-name: [core, db-pull, s3]
         include:
-          - suite-name: default
-            suite-grep: "python template default"
-          - suite-name: main
-            suite-grep: "python template tests main"
-          - suite-name: dotenv
-            suite-grep: "python template tests - .env"
-          - suite-name: db-pull
+          - group-name: core
+            suite-grep: "python template tests main|python template tests - \\.env"
+          - group-name: db-pull
             suite-grep: "python template tests - db-pull"
-          - suite-name: s3-secrets
-            suite-grep: "python template tests - S3Queue"
-          - suite-name: s3-engine
-            suite-grep: "python template tests - S3 Engine"
+          - group-name: s3
+            suite-grep: "python template tests - S3Queue|python template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -620,7 +606,7 @@ jobs:
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
 
-      - name: "Run Python E2E Tests (${{ matrix.suite-name }})"
+      - name: "Run Python E2E Tests (${{ matrix.group-name }})"
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
         env:
           TEST_PACKAGE_MANAGER: pip
