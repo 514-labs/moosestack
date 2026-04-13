@@ -596,6 +596,35 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // clean from the before() hook — no special stabilization needed.
         await waitForStreamingFunctions(180_000, { dockerless: true });
 
+        // Pipeline probe: verify end-to-end data flow before sending the
+        // full batch. Consumer groups may still be joining even after
+        // waitForStreamingFunctions returns — the probe retries until one
+        // record flows Foo → transform → Bar → ClickHouse.
+        await ingestAndVerify(
+          async () => {
+            const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                primaryKey: randomUUID(),
+                timestamp: TEST_DATA.TIMESTAMP,
+                optionalText: "pipeline-probe",
+              }),
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `Probe ingest failed: ${response.status}: ${text}`,
+              );
+            }
+          },
+          async () => {
+            await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
+          },
+          { maxCycles: 20, logger: testLogger },
+        );
+        testLogger.info("Pipeline probe OK — data flowing end-to-end");
+
         const eventId = randomUUID();
 
         // Send multiple records to trigger batch write.
@@ -1459,6 +1488,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // This test runs before file modification tests, so the pipeline is
         // clean from the before() hook — no special stabilization needed.
         await waitForStreamingFunctions(180_000, { dockerless: true });
+
+        // Pipeline probe: verify end-to-end data flow before sending the
+        // full batch. Consumer groups may still be joining even after
+        // waitForStreamingFunctions returns — the probe retries until one
+        // record flows foo → transform → Bar → ClickHouse.
+        await ingestAndVerify(
+          async () => {
+            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                primary_key: randomUUID(),
+                baz: "QUUX",
+                timestamp: TEST_DATA.TIMESTAMP,
+                optional_text: "pipeline-probe",
+              }),
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `Probe ingest failed: ${response.status}: ${text}`,
+              );
+            }
+          },
+          async () => {
+            await waitForDBWrite(devProcess!, "Bar", 1, 30_000, "local");
+          },
+          { maxCycles: 20, logger: testLogger },
+        );
+        testLogger.info("Pipeline probe OK — data flowing end-to-end");
 
         const eventId = randomUUID();
 
