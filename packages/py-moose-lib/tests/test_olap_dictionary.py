@@ -621,6 +621,7 @@ def test_infra_map_includes_dictionary():
     assert d["name"] == "dict_infra"
     assert d["primaryKey"] == ["lookup_id"]
     assert d["source"]["type"] == "TABLE"
+    assert d["layout"]["type"] == "HASHED"
     assert d["lifetime"]["type"] == "RANGE"
     assert d["lifetime"]["min"] == 60
     assert d["lifetime"]["max"] == 300
