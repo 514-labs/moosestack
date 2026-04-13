@@ -11007,7 +11007,7 @@ mod mask_credentials_dictionary_tests {
     use crate::infrastructure::olap::clickhouse::dictionary::{
         DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
         DictionaryRedisSource, DictionaryS3Source, DictionarySource, DictionaryTableSource,
-        ExternalDictionarySource, OlapDictionary,
+        ExternalDictionarySource, ExternalDictionarySourceWrapper, OlapDictionary,
     };
     use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
     use std::collections::HashMap;
@@ -11045,8 +11045,8 @@ mod mask_credentials_dictionary_tests {
     /// `dicts_equal_ignore_metadata` from detecting username changes.
     #[test]
     fn test_mask_credentials_for_json_export_clickhouse_dict() {
-        let source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
-            DictionaryClickHouseSource {
+        let source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
                 host: "ch.example.com".to_string(),
                 port: 9000,
                 user: "admin".to_string(),
@@ -11056,8 +11056,8 @@ mod mask_credentials_dictionary_tests {
                 query: None,
                 where_clause: None,
                 invalidate_query: None,
-            },
-        ));
+            }),
+        });
         let dict = dict_with_source("ch_dict", source);
 
         let mut map = InfrastructureMap::default();
@@ -11066,8 +11066,9 @@ mod mask_credentials_dictionary_tests {
         let masked = map.mask_credentials_for_json_export();
         let masked_dict = masked.olap_dictionaries.values().next().unwrap();
 
-        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) =
-            &masked_dict.source
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(s),
+        }) = &masked_dict.source
         {
             assert_eq!(
                 s.password, CREDENTIAL_PLACEHOLDER,
@@ -11082,14 +11083,15 @@ mod mask_credentials_dictionary_tests {
     /// Redis optional password must be masked when present.
     #[test]
     fn test_mask_credentials_for_json_export_redis_dict() {
-        let source =
-            DictionarySource::External(ExternalDictionarySource::Redis(DictionaryRedisSource {
+        let source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Redis(DictionaryRedisSource {
                 host: "redis.example.com".to_string(),
                 port: 6379,
                 password: Some("redis_secret".to_string()),
                 db_index: None,
                 storage_type: "simple".to_string(),
-            }));
+            }),
+        });
         let dict = dict_with_source("redis_dict", source);
 
         let mut map = InfrastructureMap::default();
@@ -11098,7 +11100,9 @@ mod mask_credentials_dictionary_tests {
         let masked = map.mask_credentials_for_json_export();
         let masked_dict = masked.olap_dictionaries.values().next().unwrap();
 
-        if let DictionarySource::External(ExternalDictionarySource::Redis(s)) = &masked_dict.source
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Redis(s),
+        }) = &masked_dict.source
         {
             assert_eq!(
                 s.password.as_deref(),
@@ -11113,12 +11117,14 @@ mod mask_credentials_dictionary_tests {
     /// S3 access keys must be masked when present.
     #[test]
     fn test_mask_credentials_for_json_export_s3_dict() {
-        let source = DictionarySource::External(ExternalDictionarySource::S3(DictionaryS3Source {
-            url: "s3://bucket/data.csv".to_string(),
-            format: "CSV".to_string(),
-            access_key_id: Some("AKIAIOSFODNN7EXAMPLE".to_string()),
-            secret_access_key: Some("wJalrXUtnFEMI/K7MDENG".to_string()),
-        }));
+        let source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::S3(DictionaryS3Source {
+                url: "s3://bucket/data.csv".to_string(),
+                format: "CSV".to_string(),
+                access_key_id: Some("AKIAIOSFODNN7EXAMPLE".to_string()),
+                secret_access_key: Some("wJalrXUtnFEMI/K7MDENG".to_string()),
+            }),
+        });
         let dict = dict_with_source("s3_dict", source);
 
         let mut map = InfrastructureMap::default();
@@ -11127,7 +11133,10 @@ mod mask_credentials_dictionary_tests {
         let masked = map.mask_credentials_for_json_export();
         let masked_dict = masked.olap_dictionaries.values().next().unwrap();
 
-        if let DictionarySource::External(ExternalDictionarySource::S3(s)) = &masked_dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::S3(s),
+        }) = &masked_dict.source
+        {
             assert_eq!(
                 s.access_key_id.as_deref(),
                 Some(CREDENTIAL_PLACEHOLDER),
