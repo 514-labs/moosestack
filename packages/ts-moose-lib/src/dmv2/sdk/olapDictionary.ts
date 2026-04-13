@@ -371,9 +371,13 @@ function serializeLifetime(
   lifetime: DictionaryLifetime,
 ): Record<string, unknown> {
   if (typeof lifetime === "number") {
-    if (!Number.isFinite(lifetime) || lifetime < 0) {
+    if (
+      !Number.isFinite(lifetime) ||
+      lifetime < 0 ||
+      !Number.isInteger(lifetime)
+    ) {
       throw new Error(
-        `OlapDictionary: lifetime must be a finite non-negative number (got ${lifetime}).`,
+        `OlapDictionary: lifetime must be a finite non-negative integer (got ${lifetime}).`,
       );
     }
     if (lifetime === 0) {
@@ -384,11 +388,13 @@ function serializeLifetime(
   if (
     !Number.isFinite(lifetime.min) ||
     !Number.isFinite(lifetime.max) ||
+    !Number.isInteger(lifetime.min) ||
+    !Number.isInteger(lifetime.max) ||
     lifetime.min < 0 ||
     lifetime.max < lifetime.min
   ) {
     throw new Error(
-      `OlapDictionary: lifetime range must use finite non-negative numbers with min <= max (got min=${lifetime.min}, max=${lifetime.max}).`,
+      `OlapDictionary: lifetime range must use finite non-negative integers with min <= max (got min=${lifetime.min}, max=${lifetime.max}).`,
     );
   }
   return { type: "RANGE", min: lifetime.min, max: lifetime.max };
