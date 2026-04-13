@@ -22,6 +22,7 @@ use std::hash::Hash;
 
 pub mod api_endpoint;
 pub mod consumption_webserver;
+pub mod dictionary;
 pub mod function_process;
 pub mod materialized_view;
 pub mod orchestration_worker;
