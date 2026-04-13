@@ -8,6 +8,7 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
+use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
 use crate::infrastructure::olap::clickhouse::errors::macro_use_legal;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -30,6 +31,7 @@ struct MigrationFiles {
 }
 
 /// Result of drift detection
+#[derive(Debug)]
 enum DriftStatus {
     NoDrift,
     AlreadyAtTarget,
@@ -37,6 +39,9 @@ enum DriftStatus {
         extra_tables: Vec<String>,
         missing_tables: Vec<String>,
         changed_tables: Vec<String>,
+        extra_dicts: Vec<String>,
+        missing_dicts: Vec<String>,
+        changed_dicts: Vec<String>,
     },
 }
 
@@ -98,6 +103,89 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     })
 }
 
+/// Normalizes dictionaries for drift comparison by stripping:
+/// - `metadata` (source file paths, descriptions): avoids false drift when files are reorganized
+/// - **password** fields only: avoids false drift because `state_before` JSON files store
+///   passwords as `CREDENTIAL_PLACEHOLDER` (via `mask_credentials_for_json_export`), while the
+///   live infra map has real passwords. Both sides are normalized to `CREDENTIAL_PLACEHOLDER`
+///   so the comparison is password-agnostic.
+///
+/// Usernames are intentionally **not** normalized: `mask_credentials_for_json_export` leaves
+/// them in plain-text in persisted JSON, so both sides already have the real username and a
+/// username change produces visible drift.
+fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<String, OlapDictionary> {
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionarySource, ExternalDictionarySource,
+    };
+    use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+    dicts
+        .iter()
+        .map(|(name, dict)| {
+            let mut dict = dict.clone();
+            dict.metadata = None;
+            // Normalize only passwords (not usernames) so that state_before JSON
+            // (password = CREDENTIAL_PLACEHOLDER) compares equal to the live infra map
+            // (password = real value). Usernames are stored in plain-text in the JSON
+            // by mask_credentials_for_json_export, so they must not be normalized here —
+            // a username change must surface as drift.
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        if s.password.is_some() {
+                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        if s.access_key_id.is_some() {
+                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                        if s.secret_access_key.is_some() {
+                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                        }
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                    }
+                }
+            }
+            (name.clone(), dict)
+        })
+        .collect()
+}
+
+/// Returns true when the plan's `state_after` (desired end state) still matches the
+/// current code — i.e. the plan was not generated before additional code changes.
+///
+/// Metadata (source file paths, descriptions) is stripped before comparison so that
+/// reorganising source files without changing the schema does not produce a false
+/// "please regenerate" bail-out.
+fn plan_target_matches_code(
+    state_after_tables: &HashMap<String, Table>,
+    code_tables: &HashMap<String, Table>,
+    state_after_dicts: &HashMap<String, OlapDictionary>,
+    code_dicts: &HashMap<String, OlapDictionary>,
+) -> bool {
+    // Tables: use ignore_operations=[] because we want an exact schema match here
+    let state_after_tables_stripped = strip_metadata_and_ignored_fields(state_after_tables, &[]);
+    let code_tables_stripped = strip_metadata_and_ignored_fields(code_tables, &[]);
+    let state_after_dicts_stripped = strip_dict_metadata(state_after_dicts);
+    let code_dicts_stripped = strip_dict_metadata(code_dicts);
+    state_after_tables_stripped == code_tables_stripped
+        && state_after_dicts_stripped == code_dicts_stripped
+}
+
 /// Normalizes every table for drift detection.
 ///
 /// Applies `normalize_table_for_diff` (same as the plan diff) plus additional
@@ -111,7 +199,7 @@ fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
 /// - `database`: `None` means "use default". DB-reconciled tables get
 ///   `Some(actual_db)`, which is semantically equal when it IS the default.
 ///   A real database change surfaces as a different `Table::id()` key.
-fn strip_non_schema_fields(
+fn strip_metadata_and_ignored_fields(
     tables: &HashMap<String, Table>,
     ignore_ops: &[IgnorableOperation],
 ) -> HashMap<String, Table> {
@@ -127,7 +215,7 @@ fn strip_non_schema_fields(
         .collect()
 }
 
-/// Detects drift by comparing three snapshots of table state.
+/// Detects drift by comparing three snapshots of table and dictionary state.
 ///
 /// Uses `normalize_table_for_diff` — the same normalization the plan diff uses —
 /// so that "empty olap_changes" ↔ NoDrift / AlreadyAtTarget.
@@ -136,6 +224,9 @@ fn strip_non_schema_fields(
 /// * `current_tables` - What's in the database right now (after reconciliation)
 /// * `expected_tables` - What was in the database when the migration plan was generated
 /// * `target_tables` - What the current code defines as the desired state
+/// * `current_dicts` - Dictionaries in the database right now
+/// * `expected_dicts` - Dictionaries when the plan was generated
+/// * `target_dicts` - Dictionaries defined by current code
 ///
 /// # Returns
 /// * `DriftStatus::NoDrift` - Database matches expected state, safe to proceed
@@ -145,20 +236,35 @@ fn detect_drift(
     current_tables: &HashMap<String, Table>,
     expected_tables: &HashMap<String, Table>,
     target_tables: &HashMap<String, Table>,
+    current_dicts: &HashMap<String, OlapDictionary>,
+    expected_dicts: &HashMap<String, OlapDictionary>,
+    target_dicts: &HashMap<String, OlapDictionary>,
     ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
-    let current_no_metadata = strip_non_schema_fields(current_tables, ignore_operations);
-    let expected_no_metadata = strip_non_schema_fields(expected_tables, ignore_operations);
-    let target_no_metadata = strip_non_schema_fields(target_tables, ignore_operations);
+    // Strip metadata and ignored fields to avoid false drift
+    let current_no_metadata = strip_metadata_and_ignored_fields(current_tables, ignore_operations);
+    let expected_no_metadata =
+        strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
+    let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
+    let current_dicts_no_metadata = strip_dict_metadata(current_dicts);
+    let expected_dicts_no_metadata = strip_dict_metadata(expected_dicts);
+    let target_dicts_no_metadata = strip_dict_metadata(target_dicts);
 
     // Check 1: Did the DB change since the plan was generated?
-    if current_no_metadata == expected_no_metadata {
+    // Compare both tables and dictionaries with full content equality
+    let tables_match = current_no_metadata == expected_no_metadata;
+    let dicts_match = current_dicts_no_metadata == expected_dicts_no_metadata;
+
+    if tables_match && dicts_match {
         return DriftStatus::NoDrift;
     }
 
     // Check 2: Are we already at the desired end state?
     // (handles cases where changes were manually applied or migration ran twice)
-    if current_no_metadata == target_no_metadata {
+    let tables_at_target = current_no_metadata == target_no_metadata;
+    let dicts_at_target = current_dicts_no_metadata == target_dicts_no_metadata;
+
+    if tables_at_target && dicts_at_target {
         return DriftStatus::AlreadyAtTarget;
     }
 
@@ -194,10 +300,34 @@ fn detect_drift(
         );
     }
 
+    let extra_dicts: Vec<String> = current_dicts_no_metadata
+        .keys()
+        .filter(|k| !expected_dicts_no_metadata.contains_key(*k))
+        .cloned()
+        .collect();
+
+    let missing_dicts: Vec<String> = expected_dicts_no_metadata
+        .keys()
+        .filter(|k| !current_dicts_no_metadata.contains_key(*k))
+        .cloned()
+        .collect();
+
+    let changed_dicts: Vec<String> = current_dicts_no_metadata
+        .keys()
+        .filter(|k| {
+            expected_dicts_no_metadata.contains_key(*k)
+                && current_dicts_no_metadata.get(*k) != expected_dicts_no_metadata.get(*k)
+        })
+        .cloned()
+        .collect();
+
     DriftStatus::DriftDetected {
         extra_tables,
         missing_tables,
         changed_tables,
+        extra_dicts,
+        missing_dicts,
+        changed_dicts,
     }
 }
 
@@ -254,6 +384,9 @@ fn report_drift(drift: &DriftStatus) {
         extra_tables,
         missing_tables,
         changed_tables,
+        extra_dicts,
+        missing_dicts,
+        changed_dicts,
     } = drift
     {
         println!("\n❌ Migration validation failed - database state has changed since plan was generated\n");
@@ -267,6 +400,15 @@ fn report_drift(drift: &DriftStatus) {
         if !changed_tables.is_empty() {
             println!("  Tables with schema changes: {:?}", changed_tables);
         }
+        if !extra_dicts.is_empty() {
+            println!("  Dictionaries added to database: {:?}", extra_dicts);
+        }
+        if !missing_dicts.is_empty() {
+            println!("  Dictionaries removed from database: {:?}", missing_dicts);
+        }
+        if !changed_dicts.is_empty() {
+            println!("  Dictionaries with content changes: {:?}", changed_dicts);
+        }
     }
 }
 
@@ -277,8 +419,8 @@ fn validate_table_databases_and_clusters(
     additional_databases: &[String],
     clusters: &Option<Vec<ClusterConfig>>,
 ) -> Result<()> {
-    let mut invalid_tables = Vec::new();
-    let mut invalid_clusters = Vec::new();
+    let mut invalid_resources = Vec::new();
+    let mut invalid_resource_clusters = Vec::new();
     let mut malformed_cluster_macros = Vec::new();
 
     // Get configured cluster names
@@ -289,17 +431,19 @@ fn validate_table_databases_and_clusters(
 
     tracing::info!("Configured cluster names: {:?}", cluster_names);
 
-    // Helper to validate database and cluster options
-    let mut validate = |db_opt: &Option<String>, cluster_opt: &Option<String>, table_name: &str| {
+    // Helper to validate database and cluster options for any resource (table, dictionary, etc.)
+    let mut validate = |db_opt: &Option<String>,
+                        cluster_opt: &Option<String>,
+                        resource_name: &str| {
         tracing::info!(
-            "Validating table '{}' with cluster: {:?}",
-            table_name,
+            "Validating resource '{}' with cluster: {:?}",
+            resource_name,
             cluster_opt
         );
         // Validate database
         if let Some(db) = db_opt {
             if db != primary_database && !additional_databases.contains(db) {
-                invalid_tables.push((table_name.to_string(), db.clone()));
+                invalid_resources.push((resource_name.to_string(), db.clone()));
             }
         }
         // Validate cluster
@@ -309,21 +453,25 @@ fn validate_table_databases_and_clusters(
                 cluster,
                 cluster_names
             );
-
             match macro_use_legal(cluster) {
-                Some(true) => {}
+                Some(true) => {
+                    // Valid ClickHouse macro (e.g. `{cluster}`) — skip list check
+                }
                 Some(false) => {
+                    // Malformed macro syntax
                     tracing::info!(
-                        "Cluster '{}' uses malformed macro syntax for table '{}'",
+                        "Cluster '{}' uses malformed macro syntax for '{}'",
                         cluster,
-                        table_name
+                        resource_name
                     );
-                    malformed_cluster_macros.push((table_name.to_string(), cluster.clone()));
+                    malformed_cluster_macros.push((resource_name.to_string(), cluster.clone()));
                 }
                 None => {
+                    // Plain cluster name — must appear in the configured list
                     if cluster_names.is_empty() || !cluster_names.contains(cluster) {
                         tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
-                        invalid_clusters.push((table_name.to_string(), cluster.clone()));
+                        invalid_resource_clusters
+                            .push((resource_name.to_string(), cluster.clone()));
                     }
                 }
             }
@@ -467,26 +615,53 @@ fn validate_table_databases_and_clusters(
             | SerializableOlapOperation::DropRowPolicy { .. } => {
                 // Row policies reference tables but don't need cluster validation
             }
+            SerializableOlapOperation::CreateDictionary { dict }
+            | SerializableOlapOperation::ReplaceDictionary { dict }
+            | SerializableOlapOperation::DropDictionary { dict } => {
+                validate(&dict.database, &dict.cluster_name, &dict.name);
+            }
         }
     }
 
     // Build error message if we found any issues
-    let has_errors = !invalid_tables.is_empty()
-        || !invalid_clusters.is_empty()
+    let has_errors = !invalid_resources.is_empty()
+        || !invalid_resource_clusters.is_empty()
         || !malformed_cluster_macros.is_empty();
     if has_errors {
         let mut error_message = String::new();
 
-        // Report database errors
-        if !invalid_tables.is_empty() {
+        // Report malformed macro errors first (actionable: fix the syntax, not the config)
+        if !malformed_cluster_macros.is_empty() {
             error_message.push_str(
-                "One or more tables specify databases that are not configured in moose.config.toml:\n\n",
+                "One or more resources specify cluster names with invalid ClickHouse macro syntax:\n\n",
             );
 
-            for (table_name, database) in &invalid_tables {
+            for (resource_name, cluster) in &malformed_cluster_macros {
                 error_message.push_str(&format!(
-                    "  • Table '{}' specifies database '{}'\n",
-                    table_name, database
+                    "  • Resource '{}' specifies cluster '{}'\n",
+                    resource_name, cluster
+                ));
+            }
+
+            error_message.push('\n');
+            error_message.push_str(CLICKHOUSE_MACRO_CLUSTER_NAME_RULES);
+            error_message.push('\n');
+        }
+
+        // Report database errors
+        if !invalid_resources.is_empty() {
+            if !malformed_cluster_macros.is_empty() {
+                error_message.push('\n');
+            }
+
+            error_message.push_str(
+                "One or more resources specify databases that are not configured in moose.config.toml:\n\n",
+            );
+
+            for (resource_name, database) in &invalid_resources {
+                error_message.push_str(&format!(
+                    "  • Resource '{}' specifies database '{}'\n",
+                    resource_name, database
                 ));
             }
 
@@ -498,7 +673,7 @@ fn validate_table_databases_and_clusters(
             error_message.push_str("additional_databases = [");
 
             let mut all_databases: Vec<String> = additional_databases.to_vec();
-            for (_, db) in &invalid_tables {
+            for (_, db) in &invalid_resources {
                 if !all_databases.contains(db) {
                     all_databases.push(db.clone());
                 }
@@ -514,38 +689,20 @@ fn validate_table_databases_and_clusters(
             error_message.push_str("]\n");
         }
 
-        if !malformed_cluster_macros.is_empty() {
-            if !invalid_tables.is_empty() {
-                error_message.push('\n');
-            }
-            error_message.push_str(
-                "One or more tables specify a cluster name with invalid ClickHouse macro syntax:\n\n",
-            );
-            for (table_name, cluster) in &malformed_cluster_macros {
-                error_message.push_str(&format!(
-                    "  • Table '{}' specifies cluster '{}'\n",
-                    table_name, cluster
-                ));
-            }
-            error_message.push('\n');
-            error_message.push_str(CLICKHOUSE_MACRO_CLUSTER_NAME_RULES);
-            error_message.push('\n');
-        }
-
         // Report cluster errors
-        if !invalid_clusters.is_empty() {
-            if !invalid_tables.is_empty() || !malformed_cluster_macros.is_empty() {
+        if !invalid_resource_clusters.is_empty() {
+            if !malformed_cluster_macros.is_empty() || !invalid_resources.is_empty() {
                 error_message.push('\n');
             }
 
             error_message.push_str(
-                "One or more tables specify clusters that are not configured in moose.config.toml:\n\n",
+                "One or more resources specify clusters that are not configured in moose.config.toml:\n\n",
             );
 
-            for (table_name, cluster) in &invalid_clusters {
+            for (resource_name, cluster) in &invalid_resource_clusters {
                 error_message.push_str(&format!(
-                    "  • Table '{}' specifies cluster '{}'\n",
-                    table_name, cluster
+                    "  • Resource '{}' specifies cluster '{}'\n",
+                    resource_name, cluster
                 ));
             }
 
@@ -554,7 +711,7 @@ fn validate_table_databases_and_clusters(
             );
 
             // Only show the missing clusters in the error message, not the already configured ones
-            let mut missing_clusters: Vec<String> = invalid_clusters
+            let mut missing_clusters: Vec<String> = invalid_resource_clusters
                 .iter()
                 .map(|(_, cluster)| cluster.clone())
                 .collect();
@@ -913,11 +1070,10 @@ pub async fn execute_migration(
             })?;
         } else {
             // Legacy plan.yaml migration path
-            let current_tables = &current_infra_map.tables;
             execute_migration_plan(
                 project,
                 clickhouse_config,
-                current_tables,
+                &current_infra_map,
                 &target_infra_map,
                 state_storage.as_ref(),
             )
@@ -953,7 +1109,7 @@ pub async fn execute_migration(
 pub async fn execute_migration_plan(
     project: &Project,
     clickhouse_config: &ClickHouseConfig,
-    current_tables: &HashMap<String, Table>,
+    current_infra_map: &InfrastructureMap,
     target_infra_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
 ) -> Result<()> {
@@ -976,9 +1132,12 @@ pub async fn execute_migration_plan(
     // Validate migration plan
     println!("Validating migration plan...");
     let drift = detect_drift(
-        current_tables,
+        &current_infra_map.tables,
         &files.state_before.tables,
         &target_infra_map.tables,
+        &current_infra_map.olap_dictionaries,
+        &files.state_before.olap_dictionaries,
+        &target_infra_map.olap_dictionaries,
         &project.migration_config.ignore_operations,
     );
 
@@ -986,15 +1145,15 @@ pub async fn execute_migration_plan(
         DriftStatus::NoDrift => {
             println!("  ✓ Current = Expected (no drift detected)");
 
-            // Check target matches code (normalize both sides so only
-            // DDL-relevant fields are compared, consistent with detect_drift).
-            // We intentionally use the *current* project ignore_ops, not a
-            // saved-plan copy: if ignore_ops changed since plan generation the
-            // plan is stale and this check correctly triggers regeneration.
-            let ignore_ops = &project.migration_config.ignore_operations;
-            if strip_non_schema_fields(&files.state_after.tables, ignore_ops)
-                != strip_non_schema_fields(&target_infra_map.tables, ignore_ops)
-            {
+            // Check target matches code (tables and dictionaries).
+            // Uses plan_target_matches_code() which strips metadata before comparing,
+            // so reorganising source files without schema changes won't false-bail.
+            if !plan_target_matches_code(
+                &files.state_after.tables,
+                &target_infra_map.tables,
+                &files.state_after.olap_dictionaries,
+                &target_infra_map.olap_dictionaries,
+            ) {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
                      The migration was perhaps generated before additional code changes.\n\
@@ -1123,7 +1282,15 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
         target.insert("comments".to_string(), create_test_table("comments"));
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1138,7 +1305,15 @@ mod tests {
 
         let target = current.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::AlreadyAtTarget));
     }
 
@@ -1155,12 +1330,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert_eq!(extra_tables, vec!["comments".to_string()]);
                 assert!(missing_tables.is_empty());
@@ -1182,12 +1366,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert!(extra_tables.is_empty());
                 assert_eq!(missing_tables.len(), 2);
@@ -1211,12 +1404,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert!(extra_tables.is_empty());
                 assert!(missing_tables.is_empty());
@@ -1259,12 +1461,21 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
                 missing_tables,
                 changed_tables,
+                ..
             } => {
                 assert_eq!(extra_tables, vec!["analytics".to_string()]);
                 assert_eq!(missing_tables, vec!["posts".to_string()]);
@@ -1280,7 +1491,15 @@ mod tests {
         let expected = HashMap::new();
         let target = HashMap::new();
 
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1296,7 +1515,15 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
 
         // Current == Expected, but different from Target
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -1319,7 +1546,15 @@ mod tests {
         target.insert("users".to_string(), target_table);
 
         // Without ignoring TTL, drift is detected
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected { changed_tables, .. } => {
                 assert_eq!(changed_tables, vec!["users".to_string()]);
@@ -1332,6 +1567,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyTableTtl],
         );
         assert!(matches!(result, DriftStatus::NoDrift));
@@ -1355,7 +1593,15 @@ mod tests {
         target.insert("users".to_string(), target_table);
 
         // Without ignoring column TTL, drift is detected
-        let result = detect_drift(&current, &expected, &target, &[]);
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
         match result {
             DriftStatus::DriftDetected { changed_tables, .. } => {
                 assert_eq!(changed_tables, vec!["users".to_string()]);
@@ -1368,6 +1614,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyColumnTtl],
         );
         assert!(matches!(result, DriftStatus::NoDrift));
@@ -1399,6 +1648,9 @@ mod tests {
             &current,
             &expected,
             &target,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &[IgnorableOperation::ModifyTableTtl],
         );
         match result {
@@ -1653,6 +1905,32 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_cluster_macro_syntax_passes_without_config() {
+        // ClickHouse macro cluster names like `{cluster}` must be allowed
+        // even when no clusters are configured in moose.config.toml, because
+        // they are resolved by ClickHouse at runtime.
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("{cluster}".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        // No clusters configured — {cluster} macro should still pass
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_ok(), "ClickHouse macro cluster name should pass");
+    }
+
+    #[test]
+    fn test_validate_cluster_malformed_macro_rejected() {
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("}{".to_string()); // malformed macro
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_err(), "Malformed macro cluster name should fail");
+    }
+
+    #[test]
     fn test_validate_projection_cluster_invalid() {
         let clusters = Some(vec![ClusterConfig {
             name: "my_cluster".to_string(),
@@ -1691,6 +1969,511 @@ mod tests {
         assert!(
             err.contains("another_bad_cluster"),
             "Error should mention the invalid cluster: {err}"
+        );
+    }
+
+    // ─── T1a: dictionary drift detection ──────────────────────────────────────
+
+    /// Build an OlapDictionary with an external ClickHouse source using the given credentials.
+    fn make_external_ch_dict(name: &str, user: &str, password: &str) -> OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, DictionarySource, ExternalDictionarySource,
+        };
+        let mut dict = create_test_dict(name);
+        dict.source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
+            DictionaryClickHouseSource {
+                host: "remotehost".to_string(),
+                port: 9000,
+                user: user.to_string(),
+                password: password.to_string(),
+                db: "remote_db".to_string(),
+                table: "remote_table".to_string(),
+                query: None,
+                where_clause: None,
+                invalidate_query: None,
+            },
+        ));
+        dict
+    }
+
+    // Regression: when state_before was saved with masked credentials (CREDENTIAL_PLACEHOLDER)
+    // but the live infra map has real credentials, detect_drift must return NoDrift — not
+    // DriftDetected — because credentials should be normalized out before comparison.
+    #[test]
+    fn test_detect_drift_no_false_drift_when_expected_has_masked_credentials() {
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected_dicts = loaded from state_before JSON.
+        // mask_credentials_for_json_export masks only passwords, NOT usernames.
+        // So the realistic state_before JSON has: user = "admin" (plain-text), password = PLACEHOLDER.
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "admin", CREDENTIAL_PLACEHOLDER),
+        );
+
+        // current_dicts = from current infra map with real credentials
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "admin", "s3cr3t"),
+        );
+
+        // target_dicts = also from code with real credentials
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Password-only differences between state_before and live state must not cause false drift"
+        );
+    }
+
+    // When the DB was externally changed (schema AND credentials differ from expected),
+    // drift must still be detected even though credentials are normalized away.
+    //
+    // Scenario: plan was created with DB in Hashed layout (expected has PLACEHOLDER creds + Hashed).
+    // The DB was externally switched to Flat (current has real creds + Flat).
+    // Target (code) still wants Hashed. → DriftDetected.
+    #[test]
+    fn test_detect_drift_still_detected_when_db_schema_changed_externally() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected = state_before snapshot: DB had Hashed layout, credentials masked
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+        );
+        // (expected layout stays Hashed from create_test_dict default)
+
+        // current = DB was externally changed to Flat (schema changed — true drift)
+        let mut current_dict = make_external_ch_dict("ext_dict", "admin", "s3cr3t");
+        current_dict.layout = DictionaryLayout::Flat;
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("ext_dict".to_string(), current_dict);
+
+        // target = code still wants Hashed (same as what the plan targeted)
+        let target_dicts = expected_dicts.clone(); // same layout as expected (Hashed)
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::DriftDetected { .. }),
+            "Schema drift (Flat vs Hashed) must still be detected even when credentials are normalized"
+        );
+    }
+
+    fn create_test_dict(name: &str) -> OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_extra_dict_in_current() {
+        // current has an extra dictionary not in expected → DriftDetected
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("dict_a".to_string(), create_test_dict("dict_a"));
+        let expected_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+        let target_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        match result {
+            DriftStatus::DriftDetected {
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert_eq!(extra_dicts, vec!["dict_a".to_string()]);
+                assert!(missing_dicts.is_empty());
+            }
+            _ => panic!("Expected DriftDetected"),
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_missing_dict_in_current() {
+        // expected has a dictionary that is absent in current → DriftDetected
+        // (target also has it, so current != target → not AlreadyAtTarget)
+        let tables: HashMap<String, Table> = HashMap::new();
+        let current_dicts: HashMap<String, OlapDictionary> = HashMap::new();
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("dict_b".to_string(), create_test_dict("dict_b"));
+        let target_dicts = expected_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        match result {
+            DriftStatus::DriftDetected {
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert!(extra_dicts.is_empty());
+                assert_eq!(missing_dicts, vec!["dict_b".to_string()]);
+            }
+            _ => panic!("Expected DriftDetected"),
+        }
+    }
+
+    #[test]
+    fn test_detect_drift_no_dict_drift_when_dicts_match() {
+        // current and expected have the same dictionaries → NoDrift (tables also match)
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut dicts = HashMap::new();
+        dicts.insert("dict_c".to_string(), create_test_dict("dict_c"));
+        let mut target_dicts = dicts.clone();
+        target_dicts.insert("dict_d".to_string(), create_test_dict("dict_d"));
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &dicts,
+            &dicts,
+            &target_dicts,
+            &[],
+        );
+        assert!(
+            matches!(result, DriftStatus::NoDrift),
+            "Expected NoDrift when current == expected dicts"
+        );
+    }
+
+    /// `detect_drift` must populate `changed_dicts` when a dictionary's content
+    /// differs between current and expected (e.g. different layout). Previously
+    /// only NoDrift / DriftDetected were asserted; the `changed_dicts` field was
+    /// never validated.
+    #[test]
+    fn test_detect_drift_changed_dict_populates_changed_dicts() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected has Hashed layout
+        let mut expected_dict = create_test_dict("dict_x");
+        expected_dict.layout = DictionaryLayout::Hashed {
+            initial_array_size: None,
+            max_load_factor: None,
+        };
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert("local_dict_x".to_string(), expected_dict.clone());
+
+        // current has Flat layout (simulating external drift)
+        let mut current_dict = create_test_dict("dict_x");
+        current_dict.layout = DictionaryLayout::Flat;
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert("local_dict_x".to_string(), current_dict);
+
+        // target == expected (no changes planned)
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &expected_dicts,
+            &[],
+        );
+
+        match result {
+            DriftStatus::DriftDetected {
+                changed_dicts,
+                extra_dicts,
+                missing_dicts,
+                ..
+            } => {
+                assert_eq!(
+                    changed_dicts,
+                    vec!["local_dict_x".to_string()],
+                    "changed_dicts must contain the modified dictionary key"
+                );
+                assert!(extra_dicts.is_empty(), "no extra dicts expected");
+                assert!(missing_dicts.is_empty(), "no missing dicts expected");
+            }
+            other => panic!("Expected DriftDetected, got {other:?}"),
+        }
+    }
+
+    // ─── T1b: validate_table_databases_and_clusters covers dict ops ───────────
+
+    #[test]
+    fn test_validate_dict_cluster_invalid() {
+        // CreateDictionary with an unconfigured cluster → error
+        let clusters = Some(vec![ClusterConfig {
+            name: "prod_cluster".to_string(),
+        }]);
+        let mut dict = create_test_dict("my_dict");
+        dict.cluster_name = Some("unknown_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_err(), "Expected error for invalid cluster");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown_cluster"),
+            "Error should mention the invalid cluster: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_dict_database_invalid() {
+        // ReplaceDictionary with an unconfigured database → error
+        let mut dict = create_test_dict("my_dict");
+        dict.database = Some("unconfigured_db".to_string());
+
+        let operations = vec![SerializableOlapOperation::ReplaceDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_err(), "Expected error for invalid database");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unconfigured_db"),
+            "Error should mention the invalid database: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_dict_valid_cluster_passes() {
+        // DropDictionary with a configured cluster → ok
+        let clusters = Some(vec![ClusterConfig {
+            name: "my_cluster".to_string(),
+        }]);
+        let mut dict = create_test_dict("my_dict");
+        dict.cluster_name = Some("my_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::DropDictionary { dict }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_ok(), "Expected Ok for valid cluster");
+    }
+
+    // ── plan_target_matches_code ───────────────────────────────────────────────
+
+    /// Regression test: metadata-only difference must NOT trigger a "regenerate plan" bail.
+    ///
+    /// Before the fix, `files.state_after.olap_dictionaries` was compared directly
+    /// against `target_infra_map.olap_dictionaries` without stripping metadata.
+    /// A source-file reorganisation (same schema, different `metadata.source.file`)
+    /// would produce a false mismatch, incorrectly telling the user to regenerate.
+    #[test]
+    fn test_plan_target_matches_code_metadata_only_diff_is_ignored() {
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let dict_without_metadata = create_test_dict("my_dict");
+
+        let mut dict_with_metadata = create_test_dict("my_dict");
+        dict_with_metadata.metadata = Some(Metadata {
+            description: Some("some description".to_string()),
+            source: Some(SourceLocation {
+                file: "/old/path/to/source.ts".to_string(),
+            }),
+        });
+
+        let mut state_after_dicts = HashMap::new();
+        state_after_dicts.insert("my_dict".to_string(), dict_with_metadata);
+
+        let mut code_dicts = HashMap::new();
+        code_dicts.insert("my_dict".to_string(), dict_without_metadata);
+
+        // Same schema, different metadata → must match (no false bail-out)
+        assert!(
+            plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            "Metadata-only difference should not be treated as a plan/code mismatch"
+        );
+    }
+
+    #[test]
+    fn test_plan_target_matches_code_schema_diff_is_detected() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        let dict_v1 = create_test_dict("my_dict");
+
+        // dict_v2 has a different layout — genuine schema change
+        let mut dict_v2 = create_test_dict("my_dict");
+        dict_v2.layout = DictionaryLayout::Flat;
+
+        let mut state_after_dicts = HashMap::new();
+        state_after_dicts.insert("my_dict".to_string(), dict_v1);
+
+        let mut code_dicts = HashMap::new();
+        code_dicts.insert("my_dict".to_string(), dict_v2);
+
+        // Schema changed → must be detected as a mismatch
+        assert!(
+            !plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            "Schema difference should be detected as a plan/code mismatch"
+        );
+    }
+
+    #[test]
+    fn test_plan_target_matches_code_identical_is_match() {
+        let tables: HashMap<String, Table> = HashMap::new();
+        let mut dicts = HashMap::new();
+        dicts.insert("my_dict".to_string(), create_test_dict("my_dict"));
+
+        assert!(
+            plan_target_matches_code(&tables, &tables, &dicts, &dicts.clone()),
+            "Identical state_after and code should match"
+        );
+    }
+
+    // ─── strip_dict_metadata: username drift visibility ───────────────────────
+
+    /// Username changes must surface as drift (i.e., not return NoDrift).
+    ///
+    /// `mask_credentials_for_json_export` leaves usernames in plain-text in the
+    /// persisted JSON, so `strip_dict_metadata` must NOT normalise them to
+    /// CREDENTIAL_PLACEHOLDER — otherwise a username change is invisible.
+    ///
+    /// When the DB already reflects the new username (user changed in code AND in DB),
+    /// the result is `AlreadyAtTarget` (plan is stale, DB is already correct).
+    /// When the plan was generated with the old username but the DB still has the
+    /// old username, the result is `DriftDetected`. Either way it must not be `NoDrift`.
+    #[test]
+    fn test_detect_drift_username_change_is_not_invisible() {
+        use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
+
+        let tables: HashMap<String, Table> = HashMap::new();
+
+        // expected = state_before: original user "alice", password masked (realistic state_before)
+        let mut expected_dicts = HashMap::new();
+        expected_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "alice", CREDENTIAL_PLACEHOLDER),
+        );
+
+        // current = live infra: user changed to "bob", real password
+        let mut current_dicts = HashMap::new();
+        current_dicts.insert(
+            "ext_dict".to_string(),
+            make_external_ch_dict("ext_dict", "bob", "s3cr3t"),
+        );
+
+        // target = code now uses "bob" (username updated in code too)
+        let target_dicts = current_dicts.clone();
+
+        let result = detect_drift(
+            &tables,
+            &tables,
+            &tables,
+            &current_dicts,
+            &expected_dicts,
+            &target_dicts,
+            &[],
+        );
+        // AlreadyAtTarget is also acceptable — plan is stale but DB is already correct.
+        // The key invariant is that it must NOT be NoDrift (which would silently ignore
+        // a username change and proceed with a stale migration plan).
+        assert!(
+            !matches!(result, DriftStatus::NoDrift),
+            "Username change (alice → bob) must not produce NoDrift — got {:?}",
+            result
+        );
+    }
+
+    // ─── validate_table_databases_and_clusters: malformed macro error message ─
+
+    /// A malformed macro cluster name must produce an error that mentions the
+    /// macro syntax rules, not a generic "cluster not configured" message.
+    #[test]
+    fn test_validate_cluster_malformed_macro_error_message_mentions_rules() {
+        use crate::utilities::constants::CLICKHOUSE_MACRO_CLUSTER_NAME_RULES;
+
+        let mut table = create_test_table("events");
+        table.cluster_name = Some("}{".to_string()); // malformed macro
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+
+        assert!(result.is_err(), "Malformed macro should produce an error");
+        let err = result.unwrap_err().to_string();
+        // Error must mention the resource and the bad cluster value
+        assert!(
+            err.contains("}{"),
+            "Error should include the malformed cluster name: {err}"
+        );
+        // Error must contain rule guidance, not "not configured in moose.config.toml"
+        let rules_excerpt = &CLICKHOUSE_MACRO_CLUSTER_NAME_RULES[..40]; // first 40 chars
+        assert!(
+            err.contains(rules_excerpt),
+            "Error should include CLICKHOUSE_MACRO_CLUSTER_NAME_RULES guidance: {err}"
+        );
+        assert!(
+            !err.contains("not configured in moose.config.toml"),
+            "Malformed macro error should not say 'not configured in moose.config.toml': {err}"
         );
     }
 }
