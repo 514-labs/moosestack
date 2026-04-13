@@ -536,8 +536,13 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
         Args:
             attr: Attribute column name to retrieve.
-            default: Default value (SQL expression) when the key is not found.
-            *keys: Key column expressions.
+            default: Default SQL expression when the key is not found. Must be
+                a valid SQL literal or expression — string values must be
+                single-quoted (e.g. ``"'Unknown'"``), numbers are passed as-is
+                (e.g. ``0``), and expressions like ``"toDate('2020-01-01')"``
+                are embedded verbatim. Bare Python strings without quotes are
+                treated as column/identifier references by ClickHouse.
+            *keys: Key column expressions (SQL fragments or column references).
 
         Returns:
             SQL fragment, e.g.
