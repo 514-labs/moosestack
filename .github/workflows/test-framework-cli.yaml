@@ -1008,6 +1008,64 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
+  test-e2e-prod-docker:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Prod Docker Mode
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Run Prod Docker E2E Test
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Prod Docker Mode"
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log || true
+
+      - name: Inspect Docker Logs
+        if: failure()
+        run: |
+          docker compose -p moose-prod-docker-test logs --tail=200 || true
+
   lints:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
@@ -1073,6 +1131,7 @@ jobs:
         test-e2e-row-level-security,
         test-e2e-otlp-export,
         test-e2e-init-from-remote-and-seed,
+        test-e2e-prod-docker,
         lints,
       ]
     if: always()
@@ -1107,6 +1166,7 @@ jobs:
              [[ "${{ needs.test-e2e-row-level-security.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-otlp-export.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-init-from-remote-and-seed.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-prod-docker.result }}" == "failure" ]] || \
              [[ "${{ needs.lints.result }}" == "failure" ]]; then
             echo "One or more required jobs failed"
             exit 1
@@ -1127,6 +1187,7 @@ jobs:
              [[ "${{ needs.test-e2e-row-level-security.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-otlp-export.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-init-from-remote-and-seed.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-prod-docker.result }}" == "success" ]] && \
              [[ "${{ needs.lints.result }}" == "success" ]]; then
             echo "All required jobs succeeded"
             exit 0
