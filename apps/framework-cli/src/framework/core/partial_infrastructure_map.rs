@@ -891,6 +891,9 @@ impl PartialInfrastructureMap {
                 let mut dict = dict.clone();
                 if let Some(ref v) = dict.version {
                     dict.name = format!("{}_{}", dict.name, v.as_suffix());
+                    // Clear version after baking it into the name so dict.id() does not
+                    // append the suffix a second time (it also derives the suffix from version).
+                    dict.version = None;
                 }
                 let id = dict.id(default_database);
                 (id, dict)
@@ -1909,6 +1912,52 @@ mod tests {
         assert_eq!(
             normalized_file, "app/datamodels/UserDict.ts",
             "dictionary source path should be normalized to relative; got: {normalized_file}"
+        );
+    }
+
+    /// Regression test: convert_dictionaries must not double-apply the version suffix.
+    ///
+    /// When a dictionary has `version = Some("0.1")`, the name is baked into
+    /// `"my_dict_0_1"` and then `dict.version` is cleared so that `dict.id()` does
+    /// not append the suffix a second time (it also derives the suffix from `version`).
+    /// Before the fix, the HashMap key was `"local_my_dict_0_1_0_1"`.
+    #[test]
+    fn test_convert_dictionaries_version_suffix_not_doubled() {
+        let partial: PartialInfrastructureMap = serde_json::from_value(serde_json::json!({
+            "olapDictionaries": {
+                "local_my_dict_0_1": {
+                    "name": "my_dict",
+                    "source": {
+                        "type": "TABLE",
+                        "table": "src"
+                    },
+                    "primaryKey": ["id"],
+                    "columns": [{ "name": "id", "typeString": "UInt64" }],
+                    "layout": { "type": "FLAT" },
+                    "lifetime": { "type": "SINGLE", "seconds": 3600 },
+                    "settings": {},
+                    "lifeCycle": "FULLY_MANAGED",
+                    "version": "0.1"
+                }
+            }
+        }))
+        .expect("PartialInfrastructureMap should deserialize");
+
+        let result = partial.convert_dictionaries("local");
+
+        // Exactly one key, correctly suffixed once
+        assert_eq!(result.len(), 1, "expected exactly one dictionary");
+        let key = result.keys().next().unwrap();
+        assert_eq!(
+            key, "local_my_dict_0_1",
+            "version suffix must appear exactly once in the key; got: {key}"
+        );
+        // name was baked, version cleared
+        let dict = result.values().next().unwrap();
+        assert_eq!(dict.name, "my_dict_0_1");
+        assert!(
+            dict.version.is_none(),
+            "dict.version must be None after baking into name"
         );
     }
 }
