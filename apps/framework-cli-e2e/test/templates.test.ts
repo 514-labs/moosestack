@@ -170,6 +170,67 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   },
 ];
 
+/**
+ * Sanitize the test project for dockerless mode.
+ *
+ * In dockerless mode, ClickHouse's Kafka engine tables and S3Queue tables
+ * spawn background threads that try to connect to unreachable services
+ * (e.g. `redpanda:9092`, fake S3 buckets). These threads degrade ClickHouse
+ * performance — DNS resolution of `redpanda` blocks for seconds per attempt,
+ * and the cumulative effect causes clickhouse_sync inserts to be too slow,
+ * breaking the ingestion pipeline tests.
+ *
+ * This function:
+ * 1. Rewrites the Kafka engine broker from `redpanda:9092` to `127.0.0.1:19092`
+ *    so ClickHouse connects to devkafka instead of blocking on DNS.
+ * 2. Removes S3Queue imports from the entry file — those tables poll fake S3
+ *    buckets that don't exist, adding unnecessary background work.
+ */
+const sanitizeProjectForDockerless = async (
+  projectDir: string,
+  language: "typescript" | "python",
+): Promise<void> => {
+  // 1. Fix Kafka engine broker address
+  const kafkaFile =
+    language === "typescript" ?
+      path.join(projectDir, "src/ingest/kafkaTests.ts")
+    : path.join(projectDir, "src/ingest/kafka_tests.py");
+  try {
+    let content = await fs.promises.readFile(kafkaFile, "utf8");
+    content = content.replace(/redpanda:9092/g, "127.0.0.1:19092");
+    await fs.promises.writeFile(kafkaFile, content, "utf8");
+    testLogger.info(
+      `Sanitized Kafka broker address → 127.0.0.1:19092 in ${path.basename(kafkaFile)}`,
+    );
+  } catch {
+    testLogger.debug(`No Kafka engine file to sanitize (${kafkaFile})`);
+  }
+
+  // 2. Remove S3Queue imports (background S3 polling with unreachable buckets)
+  const entryFile =
+    language === "typescript" ?
+      path.join(projectDir, "src/index.ts")
+    : path.join(projectDir, "src/main.py");
+  try {
+    let content = await fs.promises.readFile(entryFile, "utf8");
+    if (language === "typescript") {
+      content = content.replace(
+        /^export \* from "\.\/ingest\/s3QueueTests".*\n/m,
+        "",
+      );
+    } else {
+      content = content.replace(
+        /^from src\.ingest import s3_queue_tests.*\n/m,
+        "",
+      );
+    }
+    await fs.promises.writeFile(entryFile, content, "utf8");
+    testLogger.info(`Removed S3Queue imports from ${path.basename(entryFile)}`);
+  } catch {
+    testLogger.debug(`No entry file to sanitize (${entryFile})`);
+  }
+};
+
 const buildDevEnv = (
   language: string,
   projectDir: string,
@@ -234,6 +295,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           MOOSE_PY_LIB_PATH,
           config.appName,
         );
+      }
+
+      // In dockerless mode, sanitize background-polling tables (Kafka engine,
+      // S3Queue) that would degrade ClickHouse by connecting to unreachable
+      // services. Only the tests variant has these tables.
+      if (config.isTestsVariant) {
+        await sanitizeProjectForDockerless(TEST_PROJECT_DIR, config.language);
       }
 
       // Start dev server
@@ -2502,10 +2570,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        // Template hardcodes 'redpanda:9092' as the broker. Verify it's present in DDL.
-        if (!kafkaSourceDDL.includes("redpanda:9092")) {
+        // In dockerless mode, sanitizeProjectForDockerless rewrites the broker
+        // from 'redpanda:9092' to '127.0.0.1:19092' (devkafka) so ClickHouse
+        // doesn't block on DNS resolution of 'redpanda'.
+        if (!kafkaSourceDDL.includes("127.0.0.1:19092")) {
           throw new Error(
-            `Kafka table should have broker 'redpanda:9092'. DDL: ${kafkaSourceDDL}`,
+            `Kafka table should have broker '127.0.0.1:19092' (sanitized for dockerless). DDL: ${kafkaSourceDDL}`,
           );
         }
 
@@ -2526,10 +2596,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        // In dockerless mode, ClickHouse's Kafka engine can't connect to 'redpanda:9092'
-        // (no Docker DNS). DDL structure is verified above; skip the data flow check.
         testLogger.info(
-          "✅ Kafka engine table DDL verified (data flow skipped in dockerless mode — broker 'redpanda:9092' is unreachable without Docker DNS)",
+          "✅ Kafka engine table DDL verified (broker rewritten to 127.0.0.1:19092 for dockerless mode)",
         );
       });
 
