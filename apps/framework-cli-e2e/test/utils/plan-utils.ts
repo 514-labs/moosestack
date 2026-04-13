@@ -160,6 +160,54 @@ export function hasMvUpdated(plan: PlanOutput, mvName: string): boolean {
 }
 
 /**
+ * Check if a dictionary was added (Created)
+ */
+export function hasDictionaryAdded(
+  plan: PlanOutput,
+  dictName: string,
+): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const dictChange = change.OlapDictionary;
+    if (!dictChange?.Added) return false;
+    return dictChange.Added.name === dictName;
+  });
+}
+
+/**
+ * Check if a dictionary was removed (Dropped)
+ */
+export function hasDictionaryRemoved(
+  plan: PlanOutput,
+  dictName: string,
+): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const dictChange = change.OlapDictionary;
+    if (!dictChange?.Removed) return false;
+    return dictChange.Removed.name === dictName;
+  });
+}
+
+/**
+ * Check if a dictionary was updated (layout, lifetime, source, or attribute change)
+ */
+export function hasDictionaryUpdated(
+  plan: PlanOutput,
+  dictName: string,
+): boolean {
+  if (!plan.changes?.olap_changes) return false;
+  return plan.changes.olap_changes.some((change) => {
+    const dictChange = change.OlapDictionary;
+    if (!dictChange?.Updated) return false;
+    return (
+      dictChange.Updated.before?.name === dictName ||
+      dictChange.Updated.after?.name === dictName
+    );
+  });
+}
+
+/**
  * Get all table changes for a specific table
  * Compares by table ID (includes database) for unambiguous identification
  */
