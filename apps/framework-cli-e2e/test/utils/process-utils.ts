@@ -236,7 +236,8 @@ export const killRemainingProcesses = async (
   // Default infrastructure ports used when no override is provided.
   const defaultPorts = [18123, 19000, 9181, 9234, 19092, 7233];
   const portsToKill = options.ports ?? defaultPorts;
-  const portsToWait = options.ports ? options.ports : [18123, 9181, 9234];
+  const portsToWait =
+    options.ports ? options.ports : [18123, 9181, 9234, 19092];
 
   // Only kill by process name when doing a global cleanup (no port override).
   if (!options.ports) {

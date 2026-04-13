@@ -2465,16 +2465,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         this.timeout(TIMEOUTS.TEST_SETUP_MS * 3);
 
         // In the tests variant, file modification tests above triggered multiple
-        // hot-reloads. Wait for the streaming pipeline to stabilize, then verify
-        // end-to-end data flow with a probe before sending the full batch.
+        // hot-reloads. Python streaming workers don't recover reliably from
+        // hot-reloads (unlike TypeScript), so we restart the server.
+        // killRemainingProcesses now waits for port 19092 (devkafka) to be freed.
         if (config.isTestsVariant) {
           testLogger.info(
-            "Waiting for streaming pipeline to stabilize after file modification tests...",
+            "Restarting dev server for clean streaming pipeline (Python workers need restart)...",
           );
+          await stopDevProcess(devProcess);
+          await killRemainingProcesses();
+
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
           await waitForStreamingFunctions(180_000, {
             dockerless: true,
-            stabilizationDelayMs: 120_000,
+            stabilizationDelayMs: 60_000,
           });
+          await waitForInfrastructureReady();
+          testLogger.info("Dev server restarted with clean streaming pipeline");
 
           // Pipeline probe: verify end-to-end data flow before sending the full batch.
           testLogger.info(
