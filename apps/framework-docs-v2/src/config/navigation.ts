@@ -247,6 +247,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/olap/olap-dictionary",
+        title: "Dictionaries",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/olap/materialized-columns",
         title: "Materialized Columns",
         languages: ["typescript", "python"],
