@@ -217,10 +217,11 @@ export const waitForDBWrite = async (
  * Sends data to an ingest endpoint and verifies it reaches ClickHouse, with
  * automatic retry-send cycles to handle slow consumer group startup.
  *
- * In dockerless mode, consumer groups may take variable time to join after
- * infrastructure reports ready. Since auto.offset.reset=earliest, re-sent data
- * will be consumed alongside earlier data. waitForDBWrite uses count >= check,
- * so duplicate records from retries don't cause false failures.
+ * Both sendFn and verifyFn errors trigger retries (up to maxCycles). This
+ * handles transient ingest errors during startup as well as slow consumer
+ * group registration in dockerless mode. Since auto.offset.reset=earliest,
+ * re-sent data will be consumed alongside earlier data. waitForDBWrite uses
+ * count >= check, so duplicate records from retries don't cause false failures.
  *
  * @param sendFn - Async function that sends data to the ingest endpoint
  * @param verifyFn - Async function that verifies data appeared in ClickHouse
@@ -236,7 +237,26 @@ export const ingestAndVerify = async (
   const log = options?.logger ?? dbLogger;
 
   for (let cycle = 1; cycle <= maxCycles; cycle++) {
-    await sendFn();
+    try {
+      await sendFn();
+    } catch (sendError) {
+      // sendFn errors are retried — the ingest endpoint may not be fully
+      // ready yet (e.g. consumer groups still registering in dockerless mode).
+      if (cycle < maxCycles) {
+        log.info(
+          `Pipeline send cycle ${cycle}/${maxCycles} failed, retrying...`,
+          {
+            error:
+              sendError instanceof Error ?
+                sendError.message
+              : String(sendError),
+          },
+        );
+        continue;
+      } else {
+        throw sendError;
+      }
+    }
     try {
       await verifyFn();
       return; // Data verified in ClickHouse

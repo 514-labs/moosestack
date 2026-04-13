@@ -435,7 +435,7 @@ export const waitForStreamingFunctions = async (
  * accepting data (proves Kafka producer path works), and waits for consumer
  * groups to stabilize.
  */
-const DEFAULT_STABILIZATION_DELAY_MS = 30_000;
+const DEFAULT_STABILIZATION_DELAY_MS = 90_000;
 
 const waitForStreamingDockerlessMode = async (
   remainingMs: number,
@@ -444,11 +444,10 @@ const waitForStreamingDockerlessMode = async (
   overrideStabilizationMs?: number,
 ): Promise<void> => {
   const startTime = Date.now();
-  // Moderate stabilization delay after infrastructure reports healthy.
-  // Consumer groups use auto.offset.reset=earliest, so data produced before
-  // consumers join will still be consumed. Tests use generous waitForDBWrite
-  // timeouts (120s) on top of this delay, giving a total consumer readiness
-  // budget of ~150s.
+  // Generous stabilization delay after infrastructure reports healthy.
+  // Templates with many models (e.g. typescript-tests, python-tests) can take
+  // 40-60s for all consumer groups to register and stabilize. The default 90s
+  // budget accommodates this while still exiting early when groups are stable.
   // Schema-only tests can pass a shorter delay since they only verify DDL.
   const STABILIZATION_DELAY_MS =
     overrideStabilizationMs ?? DEFAULT_STABILIZATION_DELAY_MS;
