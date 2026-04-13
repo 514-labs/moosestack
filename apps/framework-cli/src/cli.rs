@@ -259,7 +259,7 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 #[command(
     author,
     version = constants::CLI_VERSION,
-    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends, by the team at Fiveonefour.",
+    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends.",
     long_about = None,
     arg_required_else_help(true),
     next_display_order = None,
@@ -282,11 +282,7 @@ pub struct Cli {
     debug: bool,
 
     /// Print backtraces for all errors (same as RUST_LIB_BACKTRACE=1)
-    #[arg(
-        long,
-        global = true,
-        help = "Print backtraces for all errors (same as RUST_LIB_BACKTRACE=1)"
-    )]
+    #[arg(long, global = true)]
     pub backtrace: bool,
 
     #[command(subcommand)]

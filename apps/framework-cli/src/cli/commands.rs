@@ -8,7 +8,7 @@ use clap::{Args, Subcommand};
 #[derive(Subcommand)]
 pub enum Commands {
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
-    /// Initialize your data-intensive app or service
+    /// Initialize a new project
     #[command(visible_alias = "i")]
     Init {
         /// Name of your app or service
@@ -21,11 +21,11 @@ pub enum Commands {
         #[arg(short, long)]
         location: Option<String>,
 
-        /// By default, the init command fails if the location directory exists, to prevent accidental reruns. This flag disables the check.
+        /// Allow init in an existing directory
         #[arg(long)]
         no_fail_already_exists: bool,
 
-        /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
+        /// Initialize from a remote database
         #[arg(
             long,
             value_name = "CONNECTION_STRING",
@@ -33,14 +33,14 @@ pub enum Commands {
         )]
         from_remote: Option<Option<String>>,
 
-        /// Generate a custom Dockerfile at project root for customization
+        /// Generate a custom Dockerfile at project root
         #[arg(long)]
         custom_dockerfile: bool,
     },
-    /// Builds your moose project
+    /// Build your moose project
     #[command(visible_alias = "b")]
     Build {
-        /// Build for docker
+        /// Build for Docker
         #[arg(short, long, default_value = "false")]
         docker: bool,
         /// Build for amd64 architecture
@@ -50,22 +50,21 @@ pub enum Commands {
         #[arg(long)]
         arm64: bool,
     },
-    /// Checks the project for non-runtime errors
+    /// Check the project for non-runtime errors
     #[command(visible_alias = "c")]
     Check {
+        /// Write the infrastructure map to disk
         #[arg(long, default_value = "false")]
         write_infra_map: bool,
     },
-    /// Displays the changes that will be applied to the infrastructure during the next deployment
-    /// to production, considering the current state of the project
+    /// Preview infrastructure changes for next deployment
     #[command(visible_alias = "pl")]
     Plan {
         /// URL of the remote Moose instance (default: http://localhost:4000)
         #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
-        /// API token for authentication with the remote Moose instance
-        /// This token will be sent as a Bearer token in the Authorization header
+        /// API token for the remote Moose instance
         #[arg(long)]
         token: Option<String>,
 
@@ -73,7 +72,7 @@ pub enum Commands {
         #[arg(long, conflicts_with = "url")]
         clickhouse_url: Option<String>,
 
-        /// Output plan as JSON for programmatic use
+        /// Output plan as JSON
         #[arg(long)]
         json: bool,
     },
@@ -86,15 +85,11 @@ pub enum Commands {
         #[arg(long)]
         clickhouse_url: Option<String>,
 
-        /// Redis connection URL for state storage (e.g., redis://host:port)
-        /// Required when state_config.storage = "redis"
+        /// Redis connection URL for state storage
         #[arg(long)]
         redis_url: Option<String>,
 
-        /// Validate migration files without executing them.
-        /// Checks that the delta sequence is consistent (fold succeeds)
-        /// and detects semantic conflicts between migration files.
-        /// Does not require ClickHouse or Redis.
+        /// Validate migration files without executing them
         #[arg(long)]
         validate: bool,
     },
@@ -119,10 +114,10 @@ pub enum Commands {
         #[arg(short = 's', long = "stream", group = "resource_type")]
         stream: bool,
     },
-    /// Starts a local development environment to build your data-intensive app or service
+    /// Start a local development environment
     #[command(visible_alias = "d")]
     Dev {
-        /// Skip starting docker containers for infrastructure
+        /// Skip starting Docker containers for infrastructure
         #[arg(long)]
         no_infra: bool,
 
@@ -142,15 +137,15 @@ pub enum Commands {
         #[arg(long)]
         log_payloads: bool,
 
-        /// Skip all confirmation prompts (renames and destructive operations)
+        /// Skip all confirmation prompts
         #[arg(long)]
         yes_all: bool,
 
-        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        /// Auto-approve destructive operations
         #[arg(long)]
         yes_destructive: bool,
 
-        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        /// Auto-approve column renames
         #[arg(long)]
         yes_rename: bool,
 
@@ -158,17 +153,17 @@ pub enum Commands {
         #[arg(long)]
         dockerless: bool,
     },
-    /// Start a remote environment for use in cloud deployments
+    /// Start a production environment
     #[command(visible_alias = "p")]
     Prod {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
         #[arg(long)]
         start_include_dependencies: bool,
     },
-    /// Generates helpers for your data models (i.e. sdk, api tokens)
+    /// Generate Dockerfiles, tokens, and migrations
     #[command(visible_alias = "g")]
     Generate(GenerateArgs),
-    /// Clears all temporary data and stops development infrastructure
+    /// Clear temporary data and stop development infrastructure
     #[command(visible_alias = "cl")]
     Clean {},
     /// View Moose logs
@@ -186,7 +181,7 @@ pub enum Commands {
     Ps {},
     /// View Moose primitives & infrastructure
     Ls {
-        /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption, workflows, web_apps)
+        /// Filter by infrastructure type
         #[arg(long)]
         _type: Option<String>,
 
@@ -199,33 +194,32 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Opens metrics console for viewing live metrics from your moose app
+    /// Open the live metrics console
     #[command(visible_alias = "m")]
     Metrics {},
-    /// Manage data processing workflows
+    /// Manage workflows
     #[command(visible_alias = "w")]
     Workflow(WorkflowArgs),
     /// Manage templates
     #[command(visible_alias = "t")]
     Template(TemplateCommands),
-    /// Initialize a Moose project and developer harness
+    /// Initialize a project with developer harness
     Harness(HarnessCommands),
     #[command(
         about = "[EXPERIMENTAL] Manage components",
         long_about = "Manage components\n\n[EXPERIMENTAL] Component APIs and available components may change in future releases."
     )]
     Component(ComponentCommands),
-    /// Manage database schema import
+    /// Import external database schemas
     Db(DbArgs),
-    /// Integrate matching tables from a remote Moose instance into the local project
+    /// Integrate tables from a remote Moose instance
     #[command(visible_alias = "r")]
     Refresh {
         /// URL of the remote Moose instance (default: http://localhost:4000)
         #[arg(long)]
         url: Option<String>,
 
-        /// API token for authentication with the remote Moose instance
-        /// This token will be sent as a Bearer token in the Authorization header
+        /// API token for the remote Moose instance
         #[arg(long)]
         token: Option<String>,
         // #[arg(default_value = "true", short, long)]
@@ -249,7 +243,7 @@ pub enum Commands {
         #[arg(long)]
         rows: Option<u64>,
     },
-    /// Run a stdio MCP proxy server for AI agent integration (e.g., Claude Code)
+    /// Run MCP proxy server for AI agents
     Mcp {
         /// Host of the dev server to proxy to (auto-detected from project config if omitted)
         #[arg(long)]
@@ -262,7 +256,7 @@ pub enum Commands {
     /// Manage Kafka-related operations
     #[command(visible_alias = "k")]
     Kafka(KafkaArgs),
-    /// Submit feedback, report issues, or join the community
+    /// Submit feedback or report issues
     #[command(visible_alias = "f")]
     Feedback {
         /// Feedback message (e.g. moose feedback "loving the DX!" or moose feedback --bug "crash on startup")
@@ -299,11 +293,11 @@ pub enum Commands {
         #[arg(short = 'c', long = "format-query", value_name = "LANGUAGE")]
         format_query: Option<String>,
 
-        /// Prettify SQL before formatting (only with --format-query)
+        /// Prettify SQL before formatting
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
-    /// Fetch and display LLM-optimized documentation for AI agents
+    /// Browse and search documentation
     #[command(visible_alias = "do")]
     Docs(DocsArgs),
     #[command(
@@ -376,8 +370,7 @@ pub enum GenerateCommand {
         #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
-        /// API token for authentication with the remote Moose instance
-        /// This token will be sent as a Bearer token in the Authorization header
+        /// API token for the remote Moose instance
         #[arg(long)]
         token: Option<String>,
 
@@ -385,28 +378,27 @@ pub enum GenerateCommand {
         #[arg(long, conflicts_with = "url")]
         clickhouse_url: Option<String>,
 
-        /// Redis connection URL for state storage (e.g., redis://host:port)
-        /// Required when state_config.storage = "redis"
+        /// Redis connection URL for state storage
         #[arg(long)]
         redis_url: Option<String>,
 
-        /// Save the migration files in the migrations/ directory
+        /// Save migration files to the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,
 
-        /// Skip all confirmation prompts (renames and destructive operations)
+        /// Skip all confirmation prompts
         #[arg(long)]
         yes_all: bool,
 
-        /// Skip the confirmation prompt for destructive operations (table, column, view, and materialized-view removals)
+        /// Auto-approve destructive operations
         #[arg(long)]
         yes_destructive: bool,
 
-        /// Skip the confirmation prompt for detected column renames (accept them as genuine renames)
+        /// Auto-approve column renames
         #[arg(long)]
         yes_rename: bool,
 
-        /// Disable automatic backfill SQL generation for versioned tables
+        /// Disable automatic backfill SQL generation
         #[arg(long)]
         no_auto_backfill_sql: bool,
     },
@@ -554,11 +546,11 @@ pub struct HarnessInitArgs {
     #[command(subcommand)]
     pub action: Option<HarnessInitAction>,
 
-    /// Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`
+    /// Project name (use instead of positional arg to avoid ambiguity)
     #[arg(long = "name", value_name = "NAME", conflicts_with = "name")]
     pub name_option: Option<String>,
 
-    /// Explicit template name. Use this with `--name` when positional parsing would be ambiguous
+    /// Template name (use instead of positional arg to avoid ambiguity)
     #[arg(
         long = "template",
         value_name = "TEMPLATE",
@@ -576,23 +568,23 @@ pub struct HarnessInitArgs {
     #[arg(short, long)]
     pub location: Option<String>,
 
-    /// Disable the existing-directory guard when reusing a location
+    /// Allow init in an existing directory
     #[arg(long)]
     pub no_fail_already_exists: bool,
 
-    /// Initialize from a remote ClickHouse database using an explicit connection string
+    /// Initialize from a remote ClickHouse database
     #[arg(long, value_name = "CONNECTION_STRING")]
     pub from_remote: Option<String>,
 
-    /// Generate a custom Dockerfile at project root for customization
+    /// Generate a custom Dockerfile at project root
     #[arg(long)]
     pub custom_dockerfile: bool,
 
-    /// Target specific coding agents instead of auto-detecting (repeatable)
+    /// Target specific coding agents instead of auto-detecting
     #[arg(long = "agent")]
     pub agents: Vec<String>,
 
-    /// Install and configure MooseStack LSP where supported (default behavior)
+    /// Install and configure MooseStack LSP
     #[arg(long, conflicts_with = "no_lsp")]
     pub lsp: bool,
 
@@ -649,20 +641,19 @@ pub enum SeedSubcommands {
         /// ClickHouse connection URL (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
-        /// Limit the number of rows to copy per table.
-        /// When omitted, falls back to per-table seedFilter.limit, then to 1000.
+        /// Maximum rows to copy per table
         #[arg(long, value_name = "LIMIT", conflicts_with = "all")]
         limit: Option<usize>,
-        /// Copy all rows (ignore limit). If set for a table, copies entire table.
+        /// Copy all rows, ignoring limit
         #[arg(long, default_value = "false", conflicts_with = "limit")]
         all: bool,
-        /// ORDER BY clause of the query. e.g. `--order-by 'timestamp DESC' --limit 10` for the latest 10 rows
+        /// ORDER BY clause for the seed query
         #[arg(long)]
         order_by: Option<String>,
-        /// Only seed a specific table (optional)
+        /// Only seed a specific table
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,
-        /// Report row counts after seeding. Counts shown for default database only (use --report=false to skip)
+        /// Show row counts after seeding
         #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
         report: bool,
     },
@@ -683,7 +674,7 @@ pub enum DbCommands {
         /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
         #[arg(long)]
         clickhouse_url: Option<String>,
-        /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
+        /// Output file for external table definitions
         #[arg(long)]
         file_path: Option<String>,
     },
@@ -774,11 +765,11 @@ pub enum KafkaCommands {
         #[arg(long, value_name = "PATH")]
         path: Option<String>,
 
-        /// Include pattern (glob). Defaults to '*'
+        /// Include pattern (glob)
         #[arg(long, default_value = "*")]
         include: String,
 
-        /// Exclude pattern (glob). Defaults to '{__consumer_offsets,_schemas}'
+        /// Exclude pattern (glob)
         #[arg(long, default_value = "{__consumer_offsets,_schemas}")]
         exclude: String,
 

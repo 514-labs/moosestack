@@ -36,11 +36,11 @@ To learn more about Moose, take a look at the following resources:
 
 You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
 
-## Deploy on Boreal
+## Deploy with 514 Hosting
 
-The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
+514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-[Sign up](https://www.boreal.cloud/sign-up).
+[Sign up for a free trial](https://fiveonefour.boreal.cloud/sign-up).
 
 ## License
 
