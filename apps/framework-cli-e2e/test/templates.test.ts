@@ -1551,14 +1551,40 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-        // ingestAndVerify may retry up to 3 cycles of 120s each, plus 180s streaming wait
-        this.timeout(TIMEOUTS.TEST_SETUP_MS + 180_000);
-        // Wait for infrastructure to stabilize after previous test's file modification
-        testLogger.info(
-          "Waiting for streaming functions to stabilize after DEFAULT removal...",
-        );
-        // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Server restart + ingestAndVerify retries need a generous timeout
+        this.timeout(TIMEOUTS.TEST_SETUP_MS * 2);
+
+        // In the tests variant, file modification tests above triggered multiple
+        // hot-reloads that leave devkafka consumer groups in an unstable state.
+        // Restart the server to get a clean streaming pipeline.
+        if (config.isTestsVariant) {
+          testLogger.info(
+            "Restarting dev server for clean streaming pipeline after file modification tests...",
+          );
+          await stopDevProcess(devProcess);
+          await killRemainingProcesses();
+
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions(120_000, { dockerless: true });
+          await waitForInfrastructureReady();
+          testLogger.info("Dev server restarted with clean streaming pipeline");
+        } else {
+          // Default template: no file modifications, just wait for stabilization
+          await waitForStreamingFunctions(180_000, { dockerless: true });
+        }
 
         const eventId = randomUUID();
 
@@ -2418,14 +2444,40 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        // ingestAndVerify may retry up to 3 cycles of 120s each, plus 180s streaming wait
-        this.timeout(TIMEOUTS.TEST_SETUP_MS + 180_000);
-        // Wait for infrastructure to stabilize after previous test's file modification
-        testLogger.info(
-          "Waiting for streaming functions to stabilize after DEFAULT removal...",
-        );
-        // Table modifications trigger cascading function restarts, so use longer timeout
-        await waitForStreamingFunctions(180_000, { dockerless: true });
+        // Server restart + ingestAndVerify retries need a generous timeout
+        this.timeout(TIMEOUTS.TEST_SETUP_MS * 2);
+
+        // In the tests variant, file modification tests above triggered multiple
+        // hot-reloads that leave devkafka consumer groups in an unstable state.
+        // Restart the server to get a clean streaming pipeline.
+        if (config.isTestsVariant) {
+          testLogger.info(
+            "Restarting dev server for clean streaming pipeline after file modification tests...",
+          );
+          await stopDevProcess(devProcess);
+          await killRemainingProcesses();
+
+          const devEnv = buildDevEnv(config.language, TEST_PROJECT_DIR);
+          devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
+            stdio: "pipe",
+            cwd: TEST_PROJECT_DIR,
+            env: devEnv,
+          });
+
+          await waitForServerStart(
+            devProcess!,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+          await waitForStreamingFunctions(120_000, { dockerless: true });
+          await waitForInfrastructureReady();
+          testLogger.info("Dev server restarted with clean streaming pipeline");
+        } else {
+          // Default template: no file modifications, just wait for stabilization
+          await waitForStreamingFunctions(180_000, { dockerless: true });
+        }
 
         const eventId = randomUUID();
 
