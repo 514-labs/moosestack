@@ -1,3 +1,6 @@
+use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::processing_coordinator::ProcessingCoordinator;
+use super::settings::Settings;
 /// # File Watcher Module
 ///
 /// This module provides functionality for watching file changes in the project directory
@@ -22,6 +25,7 @@
 use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 use display::with_timing_async;
+use framework::core::execute::execute_online_change;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -34,15 +38,13 @@ use std::{io::Error, path::PathBuf};
 use tokio::sync::RwLock;
 use tracing::info;
 
-use super::display::{self, with_spinner_completion_async, Message, MessageType};
-use super::processing_coordinator::ProcessingCoordinator;
-use super::settings::Settings;
-
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
+    DestructiveChange,
 };
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
 use crate::project::Project;
@@ -294,7 +296,6 @@ async fn watch(
                                     };
 
                                     // Version bump detection and prompting.
-                                    use crate::framework::core::version_bump;
                                     let (version_bumps, _remaining) =
                                         version_bump::extract_version_bumps(&plan_result.changes.olap_changes);
 
@@ -322,7 +323,6 @@ async fn watch(
                                             .map(|d| d.bump.old_table.name.clone())
                                             .collect();
                                     risk.destructive_changes.retain(|dc| {
-                                        use crate::framework::core::plan_risk::DestructiveChange;
                                         match dc {
                                             DestructiveChange::TableDrop { table_name_with_suffix, .. } => {
                                                 !vb_drop_names.contains(table_name_with_suffix)
@@ -345,7 +345,7 @@ async fn watch(
                                     let mut project_registries = project_registries.write().await;
 
                                     let execution_result = with_timing_async("Execution", async {
-                                        framework::core::execute::execute_online_change_with_version_bumps(
+                                        execute_online_change(
                                             &project,
                                             &plan_result,
                                             route_update_channel.clone(),

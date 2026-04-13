@@ -4,6 +4,7 @@ use clickhouse::ClickhouseChangesError;
 use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::lifecycle_filter::{self, LifecycleViolation};
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
 use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
@@ -179,10 +180,9 @@ pub async fn execute_changes(
 pub async fn execute_changes_with_version_bumps(
     project: &Project,
     changes: &[OlapChange],
-    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
 ) -> Result<(), OlapChangesError> {
     use crate::framework::core::infrastructure_map::TableChange;
-    use crate::framework::core::version_bump;
 
     let (_bumps, remaining_changes) = version_bump::extract_version_bumps(changes);
 

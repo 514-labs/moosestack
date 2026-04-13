@@ -17,6 +17,7 @@ use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse;
 #[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
@@ -656,13 +657,11 @@ pub fn infra_changes_to_operations(
 pub fn infra_changes_to_operations_with_version_bumps(
     changes: &InfraChanges,
     default_database: &str,
-    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
 ) -> Result<
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
-    use crate::framework::core::version_bump;
-
     let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
 
     let mut operations = order_olap_changes_to_ops(&remaining_changes, default_database)?;

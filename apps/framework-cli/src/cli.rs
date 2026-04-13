@@ -79,9 +79,10 @@ use crate::framework::core::migration_plan::{
     BackfillCheckResult, MigrationPlan, MigrationPlanWithBeforeAfter,
 };
 use crate::framework::core::plan_risk::{
-    migration_destructive_gate, print_migration_rejected_guidance, ConfirmationPolicy,
-    MigrationGateOutcome,
+    classify_risk_from_deltas, migration_destructive_gate, print_migration_rejected_guidance,
+    ConfirmationPolicy, DestructiveChange, MigrationGateOutcome,
 };
+use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -1965,7 +1966,6 @@ async fn confirm_and_save_migration(
     // Step 2: Version bump detection and prompting.
     // Extract version bumps before delta generation so they get correct ordering
     // (create new → backfill → drop old) instead of the default (drop old, create new).
-    use crate::framework::core::version_bump;
     let (version_bumps, remaining_changes) =
         version_bump::extract_version_bumps(&result.changes.olap_changes);
 
@@ -2006,7 +2006,6 @@ async fn confirm_and_save_migration(
     // Step 4: Classify risk from deltas, excluding drops already approved during rename.
     // Version bumps are already excluded from the remaining changes, and their DropTable
     // deltas (if any) have pre-filled policies from the version bump gate.
-    use crate::framework::core::plan_risk::classify_risk_from_deltas;
     let mut risk = classify_risk_from_deltas(&infra_deltas);
     risk.exclude_approved_drops(&approved_drops);
 
@@ -2017,7 +2016,7 @@ async fn confirm_and_save_migration(
         .map(|d| d.bump.old_table.name.clone())
         .collect();
     risk.destructive_changes.retain(|dc| {
-        if let crate::framework::core::plan_risk::DestructiveChange::TableDrop {
+        if let DestructiveChange::TableDrop {
             table_name_with_suffix,
             ..
         } = dc
@@ -2299,7 +2298,6 @@ async fn confirm_and_save_migration_legacy(
     };
 
     // Version bump detection and prompting (legacy path).
-    use crate::framework::core::version_bump;
     let (version_bumps, _remaining) =
         version_bump::extract_version_bumps(&result.changes.olap_changes);
 
@@ -2328,11 +2326,11 @@ async fn confirm_and_save_migration_legacy(
         .map(|d| d.bump.old_table.name.clone())
         .collect();
     filtered_risk.destructive_changes.retain(|dc| match dc {
-        crate::framework::core::plan_risk::DestructiveChange::TableDrop {
+        DestructiveChange::TableDrop {
             table_name_with_suffix,
             ..
         } => !vb_drop_names.contains(table_name_with_suffix),
-        crate::framework::core::plan_risk::DestructiveChange::TableRecreate {
+        DestructiveChange::TableRecreate {
             table_name_with_suffix,
             ..
         } => !vb_drop_names.contains(table_name_with_suffix),

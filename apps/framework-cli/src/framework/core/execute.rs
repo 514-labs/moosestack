@@ -18,6 +18,7 @@ use super::{
     infrastructure_map::{ApiChange, InfrastructureMap},
     plan::InfraPlan,
 };
+use crate::framework::core::version_bump::VersionBumpDecision;
 use crate::{
     infrastructure::{
         api,
@@ -66,7 +67,7 @@ pub struct ExecutionContext<'a> {
     pub api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     pub webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     pub metrics: Arc<Metrics>,
-    pub version_bump_decisions: Vec<crate::framework::core::version_bump::VersionBumpDecision>,
+    pub version_bump_decisions: Vec<VersionBumpDecision>,
 }
 
 /// Executes the initial infrastructure changes when the system starts up.
@@ -193,56 +194,7 @@ pub async fn execute_online_change(
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
     settings: &Settings,
-) -> Result<(), ExecutionError> {
-    execute_online_change_inner(
-        project,
-        plan,
-        api_changes_channel,
-        webapp_changes_channel,
-        process_registries,
-        metrics,
-        settings,
-        &[],
-    )
-    .await
-}
-
-/// Like [`execute_online_change`] but also executes version-bump operations
-/// (create new → backfill → drop old) after the normal change phases.
-#[allow(clippy::too_many_arguments)]
-pub async fn execute_online_change_with_version_bumps(
-    project: &Project,
-    plan: &InfraPlan,
-    api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
-    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
-    process_registries: &mut ProcessRegistries,
-    metrics: Arc<Metrics>,
-    settings: &Settings,
-    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
-) -> Result<(), ExecutionError> {
-    execute_online_change_inner(
-        project,
-        plan,
-        api_changes_channel,
-        webapp_changes_channel,
-        process_registries,
-        metrics,
-        settings,
-        version_bump_decisions,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn execute_online_change_inner(
-    project: &Project,
-    plan: &InfraPlan,
-    api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
-    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
-    process_registries: &mut ProcessRegistries,
-    metrics: Arc<Metrics>,
-    settings: &Settings,
-    version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+    version_bump_decisions: &[VersionBumpDecision],
 ) -> Result<(), ExecutionError> {
     if settings.should_bypass_infrastructure_execution() {
         tracing::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");

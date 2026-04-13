@@ -13,6 +13,7 @@ This directory contains the main Rust CLI application for Moose. Follow these st
 - **Always run `cargo clippy --all-targets -- -D warnings`** before commits; fix all warnings
 - No Clippy warnings may remain (treat warnings as errors)
 - Use `rustfmt --edition 2021` for consistent formatting
+- **Imports**: prefer top-of-file `use` statements over inline ones in function bodies. Add `use` imports for fully-qualified paths. Existing inline `use` statements don't need to be moved unless you're already editing that code. Local `use` for disambiguation (e.g. name collisions) is fine. This can be done in a final pass.
 - Write meaningful names: functions, variables, types
 - Keep functions focused and modular
 - Document all public APIs and breaking changes

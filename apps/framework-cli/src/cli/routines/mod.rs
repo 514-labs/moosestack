@@ -123,9 +123,10 @@ use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
     classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
-    ConfirmationPolicy,
+    ConfirmationPolicy, DestructiveChange,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
@@ -715,8 +716,6 @@ pub async fn start_development_mode(
             None => return Ok(()),
         };
 
-    // Version bump detection and prompting (initial startup).
-    use crate::framework::core::version_bump;
     let (version_bumps, _remaining) =
         version_bump::extract_version_bumps(&plan.changes.olap_changes);
 
@@ -742,19 +741,16 @@ pub async fn start_development_mode(
         .filter(|d| !d.keep_old)
         .map(|d| d.bump.old_table.name.clone())
         .collect();
-    risk.destructive_changes.retain(|dc| {
-        use crate::framework::core::plan_risk::DestructiveChange;
-        match dc {
-            DestructiveChange::TableDrop {
-                table_name_with_suffix,
-                ..
-            } => !vb_drop_names.contains(table_name_with_suffix),
-            DestructiveChange::TableRecreate {
-                table_name_with_suffix,
-                ..
-            } => !vb_drop_names.contains(table_name_with_suffix),
-            _ => true,
-        }
+    risk.destructive_changes.retain(|dc| match dc {
+        DestructiveChange::TableDrop {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        DestructiveChange::TableRecreate {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        _ => true,
     });
 
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
