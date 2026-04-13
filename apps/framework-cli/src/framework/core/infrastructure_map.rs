@@ -3429,7 +3429,10 @@ impl InfrastructureMap {
 
         // Mask credentials in dictionary external sources
         for dict in self.olap_dictionaries.values_mut() {
-            if let DictionarySource::External(ExternalDictionarySourceWrapper { ref mut external_source }) = dict.source {
+            if let DictionarySource::External(ExternalDictionarySourceWrapper {
+                ref mut external_source,
+            }) = dict.source
+            {
                 match external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
