@@ -1107,7 +1107,7 @@ impl OlapDictionary {
                 }
                 format!("SOURCE(CLICKHOUSE({}))", params.join(" "))
             }
-            DictionarySource::External(wrapper) => match wrapper.external_source {
+            DictionarySource::External(wrapper) => match &wrapper.external_source {
                 ExternalDictionarySource::Http(h) => {
                     let mut params = vec![
                         format!("URL '{}'", escape_clickhouse_string(&h.url)),
@@ -1367,7 +1367,7 @@ impl OlapDictionary {
                 },
             )),
             DictionarySource::External(wrapper) => {
-                let external_t = match wrapper.external_source {
+                let external_t = match &wrapper.external_source {
                     ExternalDictionarySource::Http(h) => {
                         dictionary_external_source::T::Http(ProtoDictionaryHttpSource {
                             url: h.url.clone(),
@@ -2448,13 +2448,14 @@ mod tests {
     #[test]
     fn test_serde_external_source_round_trip() {
         let mut dict = simple_dict("my_dict");
-        dict.source =
-            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://example.com/data.json".to_string(),
                 format: "JSONEachRow".to_string(),
                 method: None,
                 where_clause: None,
-            }));
+            }),
+        });
         let json = serde_json::to_string(&dict).unwrap();
         let restored: OlapDictionary = serde_json::from_str(&json).unwrap();
         assert_eq!(dict, restored);
@@ -2780,13 +2781,14 @@ mod tests {
 
     #[test]
     fn test_source_type_label_external() {
-        let source =
-            DictionarySource::External(ExternalDictionarySource::Http(DictionaryHttpSource {
+        let source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Http(DictionaryHttpSource {
                 url: "http://example.com".to_string(),
                 format: "JSONEachRow".to_string(),
                 method: None,
                 where_clause: None,
-            }));
+            }),
+        });
         assert_eq!(source.source_type_label(), "external");
     }
 
