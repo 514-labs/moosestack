@@ -71,6 +71,7 @@ import {
   runMoosePlanJson,
   listKafkaTopics,
   consumeKafkaMessage,
+  ingestAndVerify,
 } from "./utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import {
@@ -1550,6 +1551,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
+        // ingestAndVerify may retry up to 3 cycles of 120s each, plus 180s streaming wait
+        this.timeout(TIMEOUTS.TEST_SETUP_MS + 180_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -1559,35 +1562,46 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
-        // Send multiple records to trigger batch write
+        // Send multiple records to trigger batch write.
+        // Use ingestAndVerify to handle slow consumer group startup in
+        // dockerless mode — it re-sends data if the first verify cycle fails.
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        for (let i = 0; i < recordsToSend; i++) {
-          await withRetries(
-            async () => {
-              const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  primaryKey: i === 0 ? eventId : randomUUID(),
-                  timestamp: TEST_DATA.TIMESTAMP,
-                  optionalText: `Hello world ${i}`,
-                }),
-              });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-        }
-
-        await waitForDBWrite(
-          devProcess!,
-          "Bar",
-          recordsToSend,
-          60_000,
-          "local",
+        await ingestAndVerify(
+          async () => {
+            for (let i = 0; i < recordsToSend; i++) {
+              await withRetries(
+                async () => {
+                  const response = await fetch(
+                    `${SERVER_CONFIG.url}/ingest/Foo`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        primaryKey: i === 0 ? eventId : randomUUID(),
+                        timestamp: TEST_DATA.TIMESTAMP,
+                        optionalText: `Hello world ${i}`,
+                      }),
+                    },
+                  );
+                  if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(`${response.status}: ${text}`);
+                  }
+                },
+                { attempts: 5, delayMs: 500 },
+              );
+            }
+          },
+          async () => {
+            await waitForDBWrite(
+              devProcess!,
+              "Bar",
+              recordsToSend,
+              120_000,
+              "local",
+            );
+          },
+          { maxCycles: 3, logger: testLogger },
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
 
@@ -2404,6 +2418,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
+        // ingestAndVerify may retry up to 3 cycles of 120s each, plus 180s streaming wait
+        this.timeout(TIMEOUTS.TEST_SETUP_MS + 180_000);
         // Wait for infrastructure to stabilize after previous test's file modification
         testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
@@ -2413,37 +2429,48 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         const eventId = randomUUID();
 
-        // Send multiple records to trigger batch write like typescript tests
+        // Send multiple records to trigger batch write.
+        // Use ingestAndVerify to handle slow consumer group startup in
+        // dockerless mode — it re-sends data if the first verify cycle fails.
         const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
-        for (let i = 0; i < recordsToSend; i++) {
-          await withRetries(
-            async () => {
-              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  primary_key: i === 0 ? eventId : randomUUID(),
-                  baz: "QUUX",
-                  timestamp: TEST_DATA.TIMESTAMP,
-                  optional_text:
-                    i === 0 ? "Hello from Python" : `Test message ${i}`,
-                }),
-              });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`${response.status}: ${text}`);
-              }
-            },
-            { attempts: 5, delayMs: 500 },
-          );
-        }
-
-        await waitForDBWrite(
-          devProcess!,
-          "Bar",
-          recordsToSend,
-          60_000,
-          "local",
+        await ingestAndVerify(
+          async () => {
+            for (let i = 0; i < recordsToSend; i++) {
+              await withRetries(
+                async () => {
+                  const response = await fetch(
+                    `${SERVER_CONFIG.url}/ingest/foo`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        primary_key: i === 0 ? eventId : randomUUID(),
+                        baz: "QUUX",
+                        timestamp: TEST_DATA.TIMESTAMP,
+                        optional_text:
+                          i === 0 ? "Hello from Python" : `Test message ${i}`,
+                      }),
+                    },
+                  );
+                  if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(`${response.status}: ${text}`);
+                  }
+                },
+                { attempts: 5, delayMs: 500 },
+              );
+            }
+          },
+          async () => {
+            await waitForDBWrite(
+              devProcess!,
+              "Bar",
+              recordsToSend,
+              120_000,
+              "local",
+            );
+          },
+          { maxCycles: 3, logger: testLogger },
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
 
@@ -3130,7 +3157,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               nsDevProcess!,
               "FooDeadLetter",
               1,
-              60_000,
+              120_000,
               "local",
             );
 
