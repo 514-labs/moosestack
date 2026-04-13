@@ -825,7 +825,7 @@ def test_serializer_parses_olap_dictionary_with_source_table():
     assert d["primaryKey"] == ["product_id"]
     assert d["source"]["type"] == "TABLE"
     assert d["source"]["table"] == "products"
-    assert d["layout"]["type"] in ("HASHED", "Hashed", "hashed")
+    assert d["layout"]["type"] == "HASHED"
     assert d["lifetime"]["type"] == "RANGE"
     assert d["lifetime"]["min"] == 60
     assert d["lifetime"]["max"] == 300
@@ -879,7 +879,7 @@ def test_serializer_parses_olap_dictionary_with_source_query():
 
     d = dicts["dict_regions"]
     assert d["source"]["type"] == "QUERY"
-    assert "SELECT" in d["source"]["query"]
+    assert d["source"]["query"] == "SELECT region_id, region_name FROM regions"
 
 
 def test_serializer_syntax_error_in_user_file_fails_gracefully():
