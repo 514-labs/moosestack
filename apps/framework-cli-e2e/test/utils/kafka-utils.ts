@@ -226,14 +226,14 @@ export const waitForConsumerGroupsStable = async (
 
         if (relevantGroups.length === 0) {
           noGroupsCount++;
-          if (noGroupsCount >= 10) {
+          if (noGroupsCount >= 30) {
             log.debug(
-              "No consumer groups found after 10s, assuming streaming is not active",
+              "No consumer groups found after 30s, assuming streaming is not active",
             );
             return;
           }
           log.debug(
-            `No consumer groups yet (${noGroupsCount}/10 before giving up)`,
+            `No consumer groups yet (${noGroupsCount}/30 before giving up)`,
           );
         } else {
           noGroupsCount = 0;

@@ -1578,7 +1578,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             SERVER_CONFIG.url,
           );
           await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-          await waitForStreamingFunctions(120_000, { dockerless: true });
+          await waitForStreamingFunctions(180_000, {
+            dockerless: true,
+            stabilizationDelayMs: 60_000,
+          });
           await waitForInfrastructureReady();
           testLogger.info("Dev server restarted with clean streaming pipeline");
         } else {
@@ -2471,7 +2474,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             SERVER_CONFIG.url,
           );
           await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-          await waitForStreamingFunctions(120_000, { dockerless: true });
+          await waitForStreamingFunctions(180_000, {
+            dockerless: true,
+            stabilizationDelayMs: 60_000,
+          });
           await waitForInfrastructureReady();
           testLogger.info("Dev server restarted with clean streaming pipeline");
         } else {
