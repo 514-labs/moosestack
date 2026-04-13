@@ -129,7 +129,10 @@ fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<Strin
             // (password = real value). Usernames are stored in plain-text in the JSON
             // by mask_credentials_for_json_export, so they must not be normalized here —
             // a username change must surface as drift.
-            if let DictionarySource::External(ExternalDictionarySourceWrapper { ref mut external_source }) = dict.source {
+            if let DictionarySource::External(ExternalDictionarySourceWrapper {
+                ref mut external_source,
+            }) = dict.source
+            {
                 match external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         s.password = CREDENTIAL_PLACEHOLDER.to_string();
@@ -1978,10 +1981,11 @@ mod tests {
     fn make_external_ch_dict(name: &str, user: &str, password: &str) -> OlapDictionary {
         use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryClickHouseSource, DictionarySource, ExternalDictionarySource,
+            ExternalDictionarySourceWrapper,
         };
         let mut dict = create_test_dict(name);
-        dict.source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
-            DictionaryClickHouseSource {
+        dict.source = DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
                 host: "remotehost".to_string(),
                 port: 9000,
                 user: user.to_string(),
@@ -1991,8 +1995,8 @@ mod tests {
                 query: None,
                 where_clause: None,
                 invalidate_query: None,
-            },
-        ));
+            }),
+        });
         dict
     }
 
