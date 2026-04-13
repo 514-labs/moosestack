@@ -1921,56 +1921,27 @@ mod tests {
     /// `"my_dict_0_1"` and then `dict.version` is cleared so that `dict.id()` does
     /// not append the suffix a second time (it also derives the suffix from `version`).
     /// Before the fix, the HashMap key was `"local_my_dict_0_1_0_1"`.
-    ///
-    /// Uses struct construction (not JSON strings) so the compiler enforces correctness
-    /// when field names, serde tags, or rename_all attributes change.
     #[test]
     fn test_convert_dictionaries_version_suffix_not_doubled() {
-        use crate::framework::versions::Version;
-        use crate::infrastructure::olap::clickhouse::dictionary::{
-            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
-            DictionaryTableSource, OlapDictionary,
-        };
-        use std::collections::HashMap;
-
-        // Start with an empty PartialInfrastructureMap and insert directly into the
-        // private field (allowed from within the same file's mod tests).
-        let mut partial: PartialInfrastructureMap =
-            serde_json::from_str("{}").expect("empty PartialInfrastructureMap");
-
-        partial.olap_dictionaries.insert(
-            "local_my_dict_0_1".to_string(),
-            OlapDictionary {
-                name: "my_dict".to_string(),
-                database: None,
-                cluster_name: None,
-                source: DictionarySource::Table(DictionaryTableSource {
-                    table: "src".to_string(),
-                    database: None,
-                    where_clause: None,
-                    invalidate_query: None,
-                }),
-                primary_key: vec!["id".to_string()],
-                columns: vec![DictionaryColumn {
-                    name: "id".to_string(),
-                    type_string: "UInt64".to_string(),
-                    default_value: None,
-                    expression: None,
-                    is_injective: None,
-                    is_hierarchical: None,
-                    is_object_id: None,
-                    comment: None,
-                }],
-                layout: DictionaryLayout::Flat,
-                lifetime: DictionaryLifetime::Single { seconds: 3600 },
-                invalidate_query: None,
-                settings: HashMap::new(),
-                comment: None,
-                life_cycle: LifeCycle::default(),
-                version: Some(Version::from_string("0.1".to_string())),
-                metadata: None,
-            },
-        );
+        let partial: PartialInfrastructureMap = serde_json::from_value(serde_json::json!({
+            "olapDictionaries": {
+                "local_my_dict_0_1": {
+                    "name": "my_dict",
+                    "source": {
+                        "type": "TABLE",
+                        "table": "src"
+                    },
+                    "primaryKey": ["id"],
+                    "columns": [{ "name": "id", "typeString": "UInt64" }],
+                    "layout": { "type": "FLAT" },
+                    "lifetime": { "type": "SINGLE", "seconds": 3600 },
+                    "settings": {},
+                    "lifeCycle": "FULLY_MANAGED",
+                    "version": "0.1"
+                }
+            }
+        }))
+        .expect("PartialInfrastructureMap should deserialize");
 
         let result = partial.convert_dictionaries("local");
 
