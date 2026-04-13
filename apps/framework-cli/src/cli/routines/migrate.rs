@@ -745,16 +745,45 @@ pub async fn execute_migration_deltas(
     let is_dev = !project.is_production;
 
     for file in &unapplied {
-        // Validate parent state hash before applying
-        let current_hash = map.olap_hash();
-        if file.parent_state_hash != current_hash {
-            tracing::warn!(
-                "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'. \
-                 This migration may have been generated against a different base state.",
-                file.id,
-                &file.parent_state_hash[..12.min(file.parent_state_hash.len())],
-                &current_hash[..12.min(current_hash.len())],
+        // Validate parent state hash before applying — fail rather than apply
+        // against stale state, which could silently corrupt the database.
+        if let Err(e) = file.validate_parent_hash(&map.olap_hash()) {
+            println!(
+                "\n❌ Migration '{}' cannot be applied: database state has diverged from\n\
+                 what this migration was generated against.\n",
+                file.id
             );
+
+            // Best-effort forensics: diff the fold of applied migrations (what the
+            // log says should be in the DB) against the live map (what is in the DB).
+            // If reconstruction fails we swallow the error — the hash mismatch is
+            // still the authoritative failure; drift is just explanatory.
+            match history.reconstruct_olap_map_for_applied(default_database, &applied) {
+                Ok(expected_map) => {
+                    let drift =
+                        crate::framework::core::migration_file::compute_drift(&expected_map, &map);
+                    if !drift.is_empty() {
+                        println!("Detected drift between migration log and database:");
+                        println!();
+                        print!("{}", drift);
+                        println!();
+                    }
+                }
+                Err(reconstruct_err) => {
+                    tracing::debug!(
+                        "Could not reconstruct expected state for drift analysis: {}",
+                        reconstruct_err
+                    );
+                }
+            }
+
+            println!("This could happen if:");
+            println!("  • Another developer applied migrations to this database");
+            println!("  • Manual DDL was run against the database");
+            println!("  • This migration is stale\n");
+            println!("To resolve, regenerate the migration against the current database state:");
+            println!("  moose generate migration --clickhouse-url <url>\n");
+            return Err(e.into());
         }
 
         println!(
