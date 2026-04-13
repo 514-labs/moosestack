@@ -649,11 +649,14 @@ pub fn infra_changes_to_operations(
 
 /// Like [`infra_changes_to_operations`] but version-bump `Removed`/`Added` pairs
 /// are extracted from `olap_changes` and replaced with correctly-ordered
-/// operations (create new → backfill → drop old) derived from `version_bump_decisions`.
+/// operations derived from `version_bump_decisions`.
 ///
-/// The remaining (non-bump) changes go through the normal teardown/setup phases,
-/// then the version-bump operations are appended so the old table is still live
-/// when the backfill runs.
+/// Ordering:
+/// 1. Teardown ops from non-bump changes
+/// 2. Bump creates (new tables) — before setup so dependent MVs/views can reference them
+/// 3. Setup ops from non-bump changes
+/// 4. Bump backfills (old table must still exist)
+/// 5. Bump drops (old tables removed last)
 pub fn infra_changes_to_operations_with_version_bumps(
     changes: &InfraChanges,
     default_database: &str,
@@ -662,14 +665,30 @@ pub fn infra_changes_to_operations_with_version_bumps(
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
+    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
+
     let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
 
-    let mut operations = order_olap_changes_to_ops(&remaining_changes, default_database)?;
+    let (bump_creates, bump_backfills, bump_drops) =
+        version_bump::version_bump_decisions_to_phased_operations(version_bump_decisions);
 
-    operations.extend(version_bump::version_bump_decisions_to_operations(
-        version_bump_decisions,
-        default_database,
-    ));
+    let mut operations = Vec::new();
+
+    // Phase 1: Teardown (drops/removals from non-bump changes)
+    for op in teardown_ops {
+        operations.push(op.to_minimal());
+    }
+    // Phase 2: Bump creates (new tables exist before setup ops that may reference them)
+    operations.extend(bump_creates);
+    // Phase 3: Setup (creates/adds from non-bump changes, may reference bump tables)
+    for op in setup_ops {
+        operations.push(op.to_minimal());
+    }
+    // Phase 4: Backfills (old table still alive)
+    operations.extend(bump_backfills);
+    // Phase 5: Bump drops
+    operations.extend(bump_drops);
 
     Ok(operations)
 }

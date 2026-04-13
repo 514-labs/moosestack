@@ -66,10 +66,12 @@ pub fn write_pending_migration(
         let decisions: Vec<version_bump::VersionBumpDecision> = bumps
             .into_iter()
             .map(|bump| {
-                let backfill = matches!(
-                    version_bump::check_backfill_eligibility(&bump, default_database),
-                    version_bump::BackfillEligibility::Eligible { .. }
-                );
+                let eligibility = version_bump::check_backfill_eligibility(&bump, default_database);
+                let backfill_sql = match &eligibility {
+                    version_bump::BackfillEligibility::Eligible { sql } => Some(sql.clone()),
+                    version_bump::BackfillEligibility::NotEligible { .. } => None,
+                };
+                let backfill = backfill_sql.is_some();
                 let keep_old = target
                     .tables
                     .contains_key(&bump.old_table.id(default_database));
@@ -77,12 +79,12 @@ pub fn write_pending_migration(
                     bump,
                     backfill,
                     keep_old,
+                    backfill_sql,
                 }
             })
             .collect();
 
-        let bump_deltas =
-            version_bump::version_bump_decisions_to_deltas(&decisions, default_database);
+        let bump_deltas = version_bump::version_bump_decisions_to_deltas(&decisions);
         if !bump_deltas.is_empty() {
             let mut combined = bump_deltas;
             combined.append(&mut deltas);

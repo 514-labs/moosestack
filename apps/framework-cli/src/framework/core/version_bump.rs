@@ -35,6 +35,8 @@ pub struct VersionBumpDecision {
     pub backfill: bool,
     /// Whether to keep the old table (as EXTERNALLY_MANAGED). If false, the old table is dropped.
     pub keep_old: bool,
+    /// Cached backfill SQL (set when `backfill=true` and schemas are compatible).
+    pub backfill_sql: Option<String>,
 }
 
 /// Result of backfill eligibility check for a version bump.
@@ -56,47 +58,56 @@ pub enum BackfillEligibility {
 /// version-bump entries stripped out so downstream processing doesn't see them as
 /// independent drops/adds.
 pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<OlapChange>) {
-    let mut removed_by_primitive: HashMap<&str, Vec<&Table>> = HashMap::new();
-    let mut added_by_primitive: HashMap<&str, Vec<&Table>> = HashMap::new();
+    /// Key that uniquely identifies a table across databases: `(database, name)`.
+    fn table_key(t: &Table) -> (Option<String>, String) {
+        (t.database.clone(), t.name.clone())
+    }
+
+    /// Composite key for grouping by primitive + database, so tables from
+    /// different databases with the same primitive name are never paired.
+    type GroupKey<'a> = (&'a str, Option<&'a str>);
+    fn group_key(t: &Table) -> GroupKey<'_> {
+        (&t.source_primitive.name, t.database.as_deref())
+    }
+
+    let mut removed_by_group: HashMap<GroupKey<'_>, Vec<&Table>> = HashMap::new();
+    let mut added_by_group: HashMap<GroupKey<'_>, Vec<&Table>> = HashMap::new();
 
     for change in changes {
         match change {
             OlapChange::Table(TableChange::Removed(t)) if t.version.is_some() => {
-                removed_by_primitive
-                    .entry(&t.source_primitive.name)
-                    .or_default()
-                    .push(t);
+                removed_by_group.entry(group_key(t)).or_default().push(t);
             }
             OlapChange::Table(TableChange::Added(t)) if t.version.is_some() => {
-                added_by_primitive
-                    .entry(&t.source_primitive.name)
-                    .or_default()
-                    .push(t);
+                added_by_group.entry(group_key(t)).or_default().push(t);
             }
             _ => {}
         }
     }
 
     let mut bumps = Vec::new();
-    let mut consumed_removed: HashSet<String> = HashSet::new();
-    let mut consumed_added: HashSet<String> = HashSet::new();
+    let mut consumed_removed: HashSet<(Option<String>, String)> = HashSet::new();
+    let mut consumed_added: HashSet<(Option<String>, String)> = HashSet::new();
 
-    for (primitive_name, removed_tables) in &removed_by_primitive {
-        if let Some(added_tables) = added_by_primitive.get(primitive_name) {
+    for (key, removed_tables) in &removed_by_group {
+        if let Some(added_tables) = added_by_group.get(key) {
             for old in removed_tables {
                 let old_ver = old.version.as_ref().unwrap();
+                let old_key = table_key(old);
+                if consumed_removed.contains(&old_key) {
+                    continue;
+                }
                 for new in added_tables {
                     let new_ver = new.version.as_ref().unwrap();
-                    if new_ver > old_ver
-                        && !consumed_removed.contains(&old.name)
-                        && !consumed_added.contains(&new.name)
-                    {
+                    let new_key = table_key(new);
+                    if new_ver > old_ver && !consumed_added.contains(&new_key) {
                         bumps.push(VersionBump {
                             old_table: (*old).clone(),
                             new_table: (*new).clone(),
                         });
-                        consumed_removed.insert(old.name.clone());
-                        consumed_added.insert(new.name.clone());
+                        consumed_removed.insert(old_key);
+                        consumed_added.insert(new_key);
+                        break;
                     }
                 }
             }
@@ -106,8 +117,8 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
     let remaining: Vec<OlapChange> = changes
         .iter()
         .filter(|c| match c {
-            OlapChange::Table(TableChange::Removed(t)) => !consumed_removed.contains(&t.name),
-            OlapChange::Table(TableChange::Added(t)) => !consumed_added.contains(&t.name),
+            OlapChange::Table(TableChange::Removed(t)) => !consumed_removed.contains(&table_key(t)),
+            OlapChange::Table(TableChange::Added(t)) => !consumed_added.contains(&table_key(t)),
             _ => true,
         })
         .cloned()
@@ -329,6 +340,7 @@ pub async fn version_bump_gate(
             bump,
             backfill,
             keep_old,
+            backfill_sql,
         });
     }
 
@@ -431,9 +443,14 @@ pub fn write_retained_table_files(
     }
 
     for table in &tables_to_retain {
+        let db_prefix = table
+            .database
+            .as_ref()
+            .map(|db| format!("{db}_"))
+            .unwrap_or_default();
         let (file_name, root_name, content, import_line) = match language {
             SupportedLanguages::Typescript => {
-                let name = format!("retained_{}.ts", table.name);
+                let name = format!("retained_{}{}.ts", db_prefix, table.name);
                 let import = format!("import \"./{}\";", name.trim_end_matches(".ts"));
                 (
                     name,
@@ -443,7 +460,7 @@ pub fn write_retained_table_files(
                 )
             }
             SupportedLanguages::Python => {
-                let name = format!("retained_{}.py", table.name);
+                let name = format!("retained_{}{}.py", db_prefix, table.name);
                 let import = format!("from .{} import *", name.trim_end_matches(".py"));
                 (name, "main.py", generate_retained_python(table), import)
             }
@@ -486,10 +503,7 @@ use chrono::Utc;
 /// Convert version bump decisions to correctly-ordered `InfraDelta`s.
 ///
 /// Order: CreateTable(new) → BackfillTable(old→new) → DropTable(old)
-pub fn version_bump_decisions_to_deltas(
-    decisions: &[VersionBumpDecision],
-    default_database: &str,
-) -> Vec<InfraDelta> {
+pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Vec<InfraDelta> {
     let mut deltas = Vec::new();
 
     for decision in decisions {
@@ -498,13 +512,12 @@ pub fn version_bump_decisions_to_deltas(
         });
 
         if decision.backfill {
-            let eligibility = check_backfill_eligibility(&decision.bump, default_database);
-            if let BackfillEligibility::Eligible { sql } = eligibility {
+            if let Some(sql) = &decision.backfill_sql {
                 deltas.push(InfraDelta::BackfillTable {
                     source_table: decision.bump.old_table.name.clone(),
                     target_table: decision.bump.new_table.name.clone(),
                     columns: vec![],
-                    sql,
+                    sql: sql.clone(),
                 });
             }
         }
@@ -526,27 +539,33 @@ pub fn version_bump_decisions_to_deltas(
     deltas
 }
 
-/// Convert version bump decisions to correctly-ordered `SerializableOlapOperation`s.
+/// Split version bump decisions into three ordered phases of `SerializableOlapOperation`s:
+/// `(creates, backfills, drops)`.
 ///
-/// Order: CreateTable(new) → Backfill(RawSql) → DropTable(old)
-pub fn version_bump_decisions_to_operations(
+/// Callers interleave these with normal teardown/setup ops to ensure correct ordering:
+/// bump creates land before dependent setup ops, and bump drops land after backfills.
+pub fn version_bump_decisions_to_phased_operations(
     decisions: &[VersionBumpDecision],
-    default_database: &str,
-) -> Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation> {
+) -> (
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+) {
     use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 
-    let mut ops = Vec::new();
+    let mut creates = Vec::new();
+    let mut backfills = Vec::new();
+    let mut drops = Vec::new();
 
     for decision in decisions {
-        ops.push(SerializableOlapOperation::CreateTable {
+        creates.push(SerializableOlapOperation::CreateTable {
             table: decision.bump.new_table.clone(),
         });
 
         if decision.backfill {
-            let eligibility = check_backfill_eligibility(&decision.bump, default_database);
-            if let BackfillEligibility::Eligible { sql } = eligibility {
-                ops.push(SerializableOlapOperation::RawSql {
-                    sql: vec![sql],
+            if let Some(sql) = &decision.backfill_sql {
+                backfills.push(SerializableOlapOperation::RawSql {
+                    sql: vec![sql.clone()],
                     description: format!(
                         "Backfill `{}` from `{}`",
                         decision.bump.new_table.name, decision.bump.old_table.name
@@ -556,7 +575,7 @@ pub fn version_bump_decisions_to_operations(
         }
 
         if !decision.keep_old {
-            ops.push(SerializableOlapOperation::DropTable {
+            drops.push(SerializableOlapOperation::DropTable {
                 table: decision.bump.old_table.name.clone(),
                 database: decision.bump.old_table.database.clone(),
                 cluster_name: decision.bump.old_table.cluster_name.clone(),
@@ -564,7 +583,7 @@ pub fn version_bump_decisions_to_operations(
         }
     }
 
-    ops
+    (creates, backfills, drops)
 }
 
 #[cfg(test)]
@@ -734,9 +753,10 @@ mod tests {
             },
             backfill: true,
             keep_old: false,
+            backfill_sql: Some("INSERT INTO ...".to_string()),
         }];
 
-        let deltas = version_bump_decisions_to_deltas(&decisions, "default");
+        let deltas = version_bump_decisions_to_deltas(&decisions);
         assert_eq!(deltas.len(), 3);
         assert!(matches!(&deltas[0], InfraDelta::CreateTable { .. }));
         assert!(matches!(&deltas[1], InfraDelta::BackfillTable { .. }));
@@ -755,9 +775,10 @@ mod tests {
             },
             backfill: true,
             keep_old: true,
+            backfill_sql: Some("INSERT INTO ...".to_string()),
         }];
 
-        let deltas = version_bump_decisions_to_deltas(&decisions, "default");
+        let deltas = version_bump_decisions_to_deltas(&decisions);
         assert_eq!(deltas.len(), 2);
         assert!(matches!(&deltas[0], InfraDelta::CreateTable { .. }));
         assert!(matches!(&deltas[1], InfraDelta::BackfillTable { .. }));
@@ -775,11 +796,54 @@ mod tests {
             },
             backfill: false,
             keep_old: false,
+            backfill_sql: None,
         }];
 
-        let deltas = version_bump_decisions_to_deltas(&decisions, "default");
+        let deltas = version_bump_decisions_to_deltas(&decisions);
         assert_eq!(deltas.len(), 2);
         assert!(matches!(&deltas[0], InfraDelta::CreateTable { .. }));
         assert!(matches!(&deltas[1], InfraDelta::DropTable { .. }));
+    }
+
+    #[test]
+    fn multi_version_pairing_picks_highest_added() {
+        let old_v1 = make_table("Events_1_0", "1.0", "Events");
+        let old_v2 = make_table("Events_2_0", "2.0", "Events");
+        let new_v3 = make_table("Events_3_0", "3.0", "Events");
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(old_v1.clone())),
+            OlapChange::Table(TableChange::Removed(old_v2.clone())),
+            OlapChange::Table(TableChange::Added(new_v3.clone())),
+        ];
+
+        let (bumps, remaining) = extract_version_bumps(&changes);
+        // Only one bump possible: new_v3 can only be consumed once.
+        assert_eq!(bumps.len(), 1);
+        // The first old version (v1) pairs with the only new version (v3).
+        assert_eq!(bumps[0].old_table.name, "Events_1_0");
+        assert_eq!(bumps[0].new_table.name, "Events_3_0");
+        // v2 removal is left as a remaining change.
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[test]
+    fn cross_database_tables_not_paired() {
+        let mut old = make_table("Events_1_0", "1.0", "Events");
+        old.database = Some("db_a".to_string());
+        let mut new = make_table("Events_2_0", "2.0", "Events");
+        new.database = Some("db_b".to_string());
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(old)),
+            OlapChange::Table(TableChange::Added(new)),
+        ];
+
+        let (bumps, remaining) = extract_version_bumps(&changes);
+        assert!(
+            bumps.is_empty(),
+            "tables from different databases should not pair"
+        );
+        assert_eq!(remaining.len(), 2);
     }
 }

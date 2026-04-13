@@ -1993,10 +1993,7 @@ async fn confirm_and_save_migration(
 
     // Prepend version bump deltas (create → backfill → drop) before other deltas
     // so the new table exists before anything that might reference it.
-    let bump_deltas = version_bump::version_bump_decisions_to_deltas(
-        &version_bump_decisions,
-        &result.default_database,
-    );
+    let bump_deltas = version_bump::version_bump_decisions_to_deltas(&version_bump_decisions);
     if !bump_deltas.is_empty() {
         let mut combined = bump_deltas;
         combined.append(&mut infra_deltas);
@@ -2165,28 +2162,28 @@ async fn confirm_and_save_migration(
         // Generate EXTERNALLY_MANAGED files for retained old tables so Moose keeps tracking them.
         if version_bump_decisions.iter().any(|d| d.keep_old) {
             let source_dir = project.project_location.join(&project.source_dir);
-            if let Err(e) = version_bump::write_retained_table_files(
+            version_bump::write_retained_table_files(
                 &version_bump_decisions,
                 &source_dir,
                 &project.language,
-            ) {
-                display::show_message_wrapper(
-                    MessageType::Warning,
-                    Message {
-                        action: "Warning".to_string(),
-                        details: format!("Failed to write retained table files: {e}"),
-                    },
-                );
-            } else {
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message {
-                        action: "Generated".to_string(),
-                        details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
-                            .to_string(),
-                    },
-                );
-            }
+            )
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Migration".to_string(),
+                        "failed to write retained table files".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
+                        .to_string(),
+                },
+            );
         }
 
         if infra_deltas.is_empty() {
@@ -2484,28 +2481,28 @@ async fn confirm_and_save_migration_legacy(
         // Generate EXTERNALLY_MANAGED files for retained old tables so Moose keeps tracking them.
         if version_bump_decisions.iter().any(|d| d.keep_old) {
             let source_dir = project.project_location.join(&project.source_dir);
-            if let Err(e) = version_bump::write_retained_table_files(
+            version_bump::write_retained_table_files(
                 &version_bump_decisions,
                 &source_dir,
                 &project.language,
-            ) {
-                display::show_message_wrapper(
-                    MessageType::Warning,
-                    Message {
-                        action: "Warning".to_string(),
-                        details: format!("Failed to write retained table files: {e}"),
-                    },
-                );
-            } else {
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message {
-                        action: "Generated".to_string(),
-                        details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
-                            .to_string(),
-                    },
-                );
-            }
+            )
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Migration".to_string(),
+                        "failed to write retained table files".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
+                        .to_string(),
+                },
+            );
         }
 
         std::fs::create_dir_all("./migrations").map_err(|e| {
