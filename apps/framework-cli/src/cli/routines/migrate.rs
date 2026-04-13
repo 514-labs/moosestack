@@ -4,6 +4,7 @@ use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
+use crate::framework::core::migration_file::MigrationFile;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
@@ -677,6 +678,110 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
     println!("  4. Run migrate again");
 }
 
+/// Format a detailed partial-failure report when a migration file's DDL
+/// execution fails partway through its deltas.
+///
+/// Unlike the legacy plan.yaml path (single flat list of ops), delta files
+/// are structured: file → ordered deltas → atomic DDL ops. When a delta fails
+/// partway through a file, the database is in an intermediate state the
+/// migration log does not reflect. ClickHouse DDL has no transactional
+/// rollback, so naively re-running `moose migrate` will usually fail on the
+/// already-succeeded deltas ("table already exists", etc.) — the user has to
+/// recover deliberately.
+///
+/// Returns a multi-line string (the caller prints). Output lists:
+///   - which migration + delta position failed
+///   - the deltas in this file that succeeded (DDL executed)
+///   - the failed delta
+///   - the deltas that were not attempted
+///   - a warning against a naive re-run
+///   - recovery options
+fn format_partial_delta_failure(file: &MigrationFile, failed_delta_idx: usize) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+
+    let total = file.deltas.len();
+    let failed_position = failed_delta_idx + 1;
+
+    writeln!(
+        out,
+        "\n❌ Migration '{}' failed at delta {}/{}",
+        file.id, failed_position, total
+    )
+    .unwrap();
+
+    writeln!(out, "\nPartial state of this migration:").unwrap();
+
+    if failed_delta_idx > 0 {
+        writeln!(
+            out,
+            "\n  Succeeded (DDL executed, fold applied to in-memory map):"
+        )
+        .unwrap();
+        for (i, delta) in file.deltas[..failed_delta_idx].iter().enumerate() {
+            writeln!(out, "    ✓ [{}/{}] {}", i + 1, total, delta.summary()).unwrap();
+        }
+    } else {
+        writeln!(out, "\n  No deltas completed before the failure.").unwrap();
+    }
+
+    writeln!(out, "\n  Failed:").unwrap();
+    writeln!(
+        out,
+        "    ✗ [{}/{}] {}",
+        failed_position,
+        total,
+        file.deltas[failed_delta_idx].summary()
+    )
+    .unwrap();
+
+    let remaining = total - failed_delta_idx - 1;
+    if remaining > 0 {
+        writeln!(out, "\n  Not attempted:").unwrap();
+        for (offset, delta) in file.deltas[failed_delta_idx + 1..].iter().enumerate() {
+            writeln!(
+                out,
+                "    · [{}/{}] {}",
+                failed_delta_idx + offset + 2,
+                total,
+                delta.summary()
+            )
+            .unwrap();
+        }
+    }
+
+    writeln!(
+        out,
+        "\n⚠️  '{}' is NOT recorded as applied, but its first {} delta(s) have already\n\
+         been executed against the database. Re-running `moose migrate` as-is will try\n\
+         to re-apply them, which typically fails with errors like \"table already exists\"\n\
+         or \"column already exists\". ClickHouse DDL has no transactional rollback —\n\
+         partial failures require deliberate recovery.",
+        file.id, failed_delta_idx
+    )
+    .unwrap();
+
+    writeln!(out, "\n📋 Recovery options:").unwrap();
+    writeln!(
+        out,
+        "\n  1. Revert the succeeded deltas manually in ClickHouse (bringing the database\n\
+         back to the state before '{}'), fix the cause of the failure, then re-run\n\
+         `moose migrate`.",
+        file.id
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "\n  2. Fix the underlying issue, manually apply the remaining deltas in ClickHouse\n\
+         to complete the migration, then mark '{}' as applied in state storage so future\n\
+         runs skip it. (Advanced; use only if you can't cleanly revert.)",
+        file.id
+    )
+    .unwrap();
+
+    out
+}
+
 /// Execute migration from delta files (MigrationHistory).
 ///
 /// Loads MigrationHistory from the migrations directory, filters to unapplied
@@ -807,12 +912,7 @@ pub async fn execute_migration_deltas(
                 )
                 .await
                 {
-                    println!(
-                        "\n❌ Failed at delta {}/{} in migration '{}'",
-                        idx + 1,
-                        file.deltas.len(),
-                        file.id
-                    );
+                    print!("{}", format_partial_delta_failure(file, idx));
                     return Err(e.into());
                 }
             }
@@ -1721,5 +1821,102 @@ mod tests {
             err.contains("another_bad_cluster"),
             "Error should mention the invalid cluster: {err}"
         );
+    }
+
+    #[test]
+    fn test_format_partial_delta_failure_shows_applied_failed_and_remaining() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::framework::core::migration_file::MigrationFile;
+
+        let t1 = create_test_table("tbl_one");
+        let t2 = create_test_table("tbl_two");
+        let t3 = create_test_table("tbl_three");
+
+        let file = MigrationFile {
+            id: "20260406_150000_multi_delta".to_string(),
+            description: "multi-delta migration".to_string(),
+            parent_state_hash: "abc".to_string(),
+            deltas: vec![
+                InfraDelta::CreateTable { table: t1 },
+                InfraDelta::CreateTable { table: t2 },
+                InfraDelta::CreateTable { table: t3 },
+            ],
+            created_at: chrono::Utc::now(),
+        };
+
+        // Middle delta failed (index 1 = "delta 2 of 3")
+        let output = format_partial_delta_failure(&file, 1);
+
+        // Identifies the failing migration and position
+        assert!(
+            output.contains("20260406_150000_multi_delta"),
+            "output should include migration ID:\n{output}"
+        );
+        assert!(
+            output.contains("2/3"),
+            "output should show failed delta position (2/3):\n{output}"
+        );
+
+        // Summarizes what was executed before the failure (tbl_one, delta 1)
+        assert!(
+            output.contains("tbl_one"),
+            "output should include the succeeded delta's table:\n{output}"
+        );
+        // Summarizes the failed delta (tbl_two)
+        assert!(
+            output.contains("tbl_two"),
+            "output should include the failed delta's table:\n{output}"
+        );
+        // Summarizes the not-attempted delta (tbl_three)
+        assert!(
+            output.contains("tbl_three"),
+            "output should include the not-attempted delta's table:\n{output}"
+        );
+
+        // Warns about re-running (so users don't naively retry)
+        let lower = output.to_lowercase();
+        assert!(
+            lower.contains("re-run")
+                || lower.contains("rerun")
+                || lower.contains("retry")
+                || lower.contains("re-apply"),
+            "output should warn about the dangers of naive re-run:\n{output}"
+        );
+
+        // Provides recovery guidance
+        assert!(
+            lower.contains("recovery") || lower.contains("next steps"),
+            "output should include recovery guidance:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_format_partial_delta_failure_first_delta_no_succeeded_section() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::framework::core::migration_file::MigrationFile;
+
+        let file = MigrationFile {
+            id: "20260406_160000_first_fails".to_string(),
+            description: "first delta fails".to_string(),
+            parent_state_hash: "abc".to_string(),
+            deltas: vec![
+                InfraDelta::CreateTable {
+                    table: create_test_table("only_one"),
+                },
+                InfraDelta::CreateTable {
+                    table: create_test_table("only_two"),
+                },
+            ],
+            created_at: chrono::Utc::now(),
+        };
+
+        // First delta (index 0) failed — nothing succeeded
+        let output = format_partial_delta_failure(&file, 0);
+
+        assert!(output.contains("1/2"), "should show 1/2:\n{output}");
+        // The failed delta's table is present
+        assert!(output.contains("only_one"));
+        // The not-attempted delta's table is present
+        assert!(output.contains("only_two"));
     }
 }
