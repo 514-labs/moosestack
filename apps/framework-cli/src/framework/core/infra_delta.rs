@@ -8,6 +8,7 @@ use crate::framework::core::infrastructure::view::{Dmv1View, View};
 use crate::framework::core::infrastructure_map::{
     Change, ColumnChange, InfrastructureMap, OlapChange, TableChange,
 };
+use crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary;
 use crate::infrastructure::olap::ddl_ordering::{AtomicOlapOperation, DependencyInfo};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -184,6 +185,19 @@ pub enum InfraDelta {
     /// Run a SQL resource's teardown scripts
     RunTeardownSql { resource: SqlResource },
 
+    // ── Dictionaries ────────────────────────────────────────────────
+    /// Create a new dictionary
+    CreateDictionary { dict: OlapDictionary },
+
+    /// Drop an existing dictionary
+    DropDictionary { dict: OlapDictionary },
+
+    /// Replace a dictionary (CREATE OR REPLACE semantics — no DROP needed)
+    ReplaceDictionary {
+        before: OlapDictionary,
+        after: OlapDictionary,
+    },
+
     // ── Execution-only (no-op on map fold) ──────────────────────────
     /// Backfill data from one table to another after a recreate.
     /// This is a no-op on the infrastructure map — it only matters at execution time.
@@ -263,6 +277,12 @@ pub enum DeltaApplyErrorKind {
         table_id: String,
         constraint_name: String,
     },
+
+    #[error("dictionary '{dict_id}' not found in infrastructure map")]
+    DictionaryNotFound { dict_id: String },
+
+    #[error("dictionary '{dict_id}' already exists in infrastructure map")]
+    DuplicateDictionary { dict_id: String },
 }
 
 // ── apply() implementation ──────────────────────────────────────────
@@ -601,6 +621,31 @@ impl InfraDelta {
                 }
             }
 
+            // ── Dictionaries ────────────────────────────────────
+            InfraDelta::CreateDictionary { dict } => {
+                let id = dict.id(default_database);
+                if map.olap_dictionaries.contains_key(&id) {
+                    return Err(DeltaApplyErrorKind::DuplicateDictionary { dict_id: id });
+                }
+                map.olap_dictionaries.insert(id, dict.clone());
+            }
+
+            InfraDelta::DropDictionary { dict } => {
+                let id = dict.id(default_database);
+                if map.olap_dictionaries.remove(&id).is_none() {
+                    return Err(DeltaApplyErrorKind::DictionaryNotFound { dict_id: id });
+                }
+            }
+
+            InfraDelta::ReplaceDictionary { before, after } => {
+                let before_id = before.id(default_database);
+                if map.olap_dictionaries.remove(&before_id).is_none() {
+                    return Err(DeltaApplyErrorKind::DictionaryNotFound { dict_id: before_id });
+                }
+                let after_id = after.id(default_database);
+                map.olap_dictionaries.insert(after_id, after.clone());
+            }
+
             // ── SQL resources ───────────────────────────────────
             InfraDelta::RunSetupSql { resource } => {
                 let id = resource.id(default_database);
@@ -700,6 +745,15 @@ impl InfraDelta {
             }
             InfraDelta::DropRowPolicy { policy } => {
                 format!("Drop row policy '{}'", policy.name)
+            }
+            InfraDelta::CreateDictionary { dict } => {
+                format!("Create dictionary '{}'", dict.name)
+            }
+            InfraDelta::DropDictionary { dict } => {
+                format!("Drop dictionary '{}'", dict.name)
+            }
+            InfraDelta::ReplaceDictionary { after, .. } => {
+                format!("Replace dictionary '{}'", after.name)
             }
             InfraDelta::RunSetupSql { resource } => {
                 format!("Run setup SQL for '{}'", resource.name)
@@ -1105,6 +1159,27 @@ impl InfraDelta {
                 }]
             }
 
+            // ── Dictionaries ────────────────────────────────────
+            InfraDelta::CreateDictionary { dict } => {
+                vec![AtomicOlapOperation::CreateDictionary {
+                    dict: dict.clone(),
+                    dependency_info: empty_deps,
+                }]
+            }
+            InfraDelta::DropDictionary { dict } => {
+                vec![AtomicOlapOperation::DropDictionary {
+                    dict: dict.clone(),
+                    dependency_info: empty_deps,
+                }]
+            }
+            InfraDelta::ReplaceDictionary { before, after } => {
+                vec![AtomicOlapOperation::ReplaceDictionary {
+                    before: before.clone(),
+                    after: after.clone(),
+                    dependency_info: empty_deps,
+                }]
+            }
+
             // ── SQL resources ───────────────────────────────────
             InfraDelta::RunSetupSql { resource } => {
                 vec![AtomicOlapOperation::RunSetupSql {
@@ -1357,9 +1432,20 @@ pub fn olap_changes_to_deltas(changes: &[OlapChange], default_database: &str) ->
             }
 
             // ── OlapDictionary ───────────────────────────────────
-            // Dictionary changes are not represented in the delta migration
-            // format — they are handled by the plan-based migration path.
-            OlapChange::OlapDictionary(_) => {}
+            OlapChange::OlapDictionary(change) => match change {
+                Change::Added(dict) => deltas.push(InfraDelta::CreateDictionary {
+                    dict: *dict.clone(),
+                }),
+                Change::Removed(dict) => deltas.push(InfraDelta::DropDictionary {
+                    dict: *dict.clone(),
+                }),
+                Change::Updated { before, after } => {
+                    deltas.push(InfraDelta::ReplaceDictionary {
+                        before: *before.clone(),
+                        after: *after.clone(),
+                    });
+                }
+            },
         }
         i += 1;
     }
@@ -2242,6 +2328,255 @@ mod tests {
                 table_id: "test_db_events".to_string(),
                 before_name: "name".to_string(),
                 after_name: "full_name".to_string(),
+            },
+        ];
+
+        for delta in &deltas {
+            let yaml = serde_yaml::to_string(delta).unwrap();
+            let deserialized: InfraDelta = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(*delta, deserialized);
+        }
+    }
+
+    // ── Dictionary helpers ──────────────────────────────────────
+
+    fn make_test_dictionary(name: &str) -> OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "source_table".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "value".to_string(),
+                type_string: "String".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Static,
+            invalidate_query: None,
+            settings: Default::default(),
+            comment: None,
+            life_cycle: Default::default(),
+            version: None,
+            metadata: None,
+        }
+    }
+
+    // ── CreateDictionary ────────────────────────────────────────
+
+    #[test]
+    fn test_apply_create_dictionary() {
+        let mut map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        let delta = InfraDelta::CreateDictionary { dict: dict.clone() };
+        delta.apply(&mut map, TEST_DB).unwrap();
+        assert!(map.olap_dictionaries.contains_key(&dict.id(TEST_DB)));
+    }
+
+    #[test]
+    fn test_apply_create_dictionary_duplicate_errors() {
+        let mut map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        let delta = InfraDelta::CreateDictionary { dict: dict.clone() };
+        delta.apply(&mut map, TEST_DB).unwrap();
+        let result = delta.apply(&mut map, TEST_DB);
+        assert!(matches!(
+            result,
+            Err(DeltaApplyErrorKind::DuplicateDictionary { .. })
+        ));
+    }
+
+    // ── DropDictionary ──────────────────────────────────────────
+
+    #[test]
+    fn test_apply_drop_dictionary() {
+        let mut map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        map.olap_dictionaries.insert(dict.id(TEST_DB), dict.clone());
+
+        let delta = InfraDelta::DropDictionary { dict: dict.clone() };
+        delta.apply(&mut map, TEST_DB).unwrap();
+        assert!(!map.olap_dictionaries.contains_key(&dict.id(TEST_DB)));
+    }
+
+    #[test]
+    fn test_apply_drop_dictionary_not_found_errors() {
+        let mut map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        let delta = InfraDelta::DropDictionary { dict };
+        let result = delta.apply(&mut map, TEST_DB);
+        assert!(matches!(
+            result,
+            Err(DeltaApplyErrorKind::DictionaryNotFound { .. })
+        ));
+    }
+
+    // ── ReplaceDictionary ───────────────────────────────────────
+
+    #[test]
+    fn test_apply_replace_dictionary() {
+        let mut map = empty_map();
+        let before = make_test_dictionary("lookup");
+        let mut after = make_test_dictionary("lookup");
+        after.comment = Some("updated".to_string());
+
+        map.olap_dictionaries
+            .insert(before.id(TEST_DB), before.clone());
+
+        let delta = InfraDelta::ReplaceDictionary {
+            before: before.clone(),
+            after: after.clone(),
+        };
+        delta.apply(&mut map, TEST_DB).unwrap();
+
+        assert!(!map
+            .olap_dictionaries
+            .get(&before.id(TEST_DB))
+            .map(|d| d.comment.is_none())
+            .unwrap_or(false));
+        let result = map.olap_dictionaries.get(&after.id(TEST_DB)).unwrap();
+        assert_eq!(result.comment, Some("updated".to_string()));
+    }
+
+    #[test]
+    fn test_apply_replace_dictionary_not_found_errors() {
+        let mut map = empty_map();
+        let before = make_test_dictionary("lookup");
+        let after = make_test_dictionary("lookup");
+        let delta = InfraDelta::ReplaceDictionary { before, after };
+        let result = delta.apply(&mut map, TEST_DB);
+        assert!(matches!(
+            result,
+            Err(DeltaApplyErrorKind::DictionaryNotFound { .. })
+        ));
+    }
+
+    // ── olap_changes_to_deltas (dictionary) ─────────────────────
+
+    #[test]
+    fn test_olap_changes_to_deltas_dictionary_added() {
+        let dict = make_test_dictionary("lookup");
+        let changes = vec![OlapChange::OlapDictionary(Change::Added(Box::new(
+            dict.clone(),
+        )))];
+        let deltas = olap_changes_to_deltas(&changes, TEST_DB);
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::CreateDictionary { dict: d } if d.name == dict.name
+        ));
+    }
+
+    #[test]
+    fn test_olap_changes_to_deltas_dictionary_removed() {
+        let dict = make_test_dictionary("lookup");
+        let changes = vec![OlapChange::OlapDictionary(Change::Removed(Box::new(
+            dict.clone(),
+        )))];
+        let deltas = olap_changes_to_deltas(&changes, TEST_DB);
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::DropDictionary { dict: d } if d.name == dict.name
+        ));
+    }
+
+    #[test]
+    fn test_olap_changes_to_deltas_dictionary_updated() {
+        let before = make_test_dictionary("lookup");
+        let mut after = make_test_dictionary("lookup");
+        after.comment = Some("v2".to_string());
+        let changes = vec![OlapChange::OlapDictionary(Change::Updated {
+            before: Box::new(before.clone()),
+            after: Box::new(after.clone()),
+        })];
+        let deltas = olap_changes_to_deltas(&changes, TEST_DB);
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            InfraDelta::ReplaceDictionary { after: a, .. } if a.comment == Some("v2".to_string())
+        ));
+    }
+
+    // ── to_atomic_operations (dictionary) ───────────────────────
+
+    #[test]
+    fn test_to_atomic_operations_dictionary_create() {
+        let map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        let delta = InfraDelta::CreateDictionary { dict: dict.clone() };
+        let ops = delta.to_atomic_operations(&map, TEST_DB);
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(
+            &ops[0],
+            AtomicOlapOperation::CreateDictionary { dict: d, .. } if d.name == dict.name
+        ));
+    }
+
+    #[test]
+    fn test_to_atomic_operations_dictionary_drop() {
+        let map = empty_map();
+        let dict = make_test_dictionary("lookup");
+        let delta = InfraDelta::DropDictionary { dict: dict.clone() };
+        let ops = delta.to_atomic_operations(&map, TEST_DB);
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(
+            &ops[0],
+            AtomicOlapOperation::DropDictionary { dict: d, .. } if d.name == dict.name
+        ));
+    }
+
+    #[test]
+    fn test_to_atomic_operations_dictionary_replace() {
+        let map = empty_map();
+        let before = make_test_dictionary("lookup");
+        let mut after = make_test_dictionary("lookup");
+        after.comment = Some("v2".to_string());
+        let delta = InfraDelta::ReplaceDictionary {
+            before: before.clone(),
+            after: after.clone(),
+        };
+        let ops = delta.to_atomic_operations(&map, TEST_DB);
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(
+            &ops[0],
+            AtomicOlapOperation::ReplaceDictionary { after: a, .. } if a.comment == Some("v2".to_string())
+        ));
+    }
+
+    // ── Serde round-trip (dictionary) ───────────────────────────
+
+    #[test]
+    fn test_serde_roundtrip_dictionary_deltas() {
+        let before = make_test_dictionary("lookup");
+        let mut after = make_test_dictionary("lookup");
+        after.comment = Some("updated".to_string());
+
+        let deltas = vec![
+            InfraDelta::CreateDictionary {
+                dict: before.clone(),
+            },
+            InfraDelta::DropDictionary {
+                dict: before.clone(),
+            },
+            InfraDelta::ReplaceDictionary {
+                before: before.clone(),
+                after,
             },
         ];
 
