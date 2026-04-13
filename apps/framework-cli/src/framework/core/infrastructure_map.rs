@@ -11522,15 +11522,17 @@ mod diff_dictionaries_tests {
 
     #[test]
     fn test_diff_dict_update_blocked_by_lifecycle() {
-        // before: DeletionProtected — diff_dictionaries checks dict (before) lifecycle
+        // ExternallyManaged blocks all modifications including updates.
+        // DeletionProtected only blocks drops; it must NOT block updates for dictionaries
+        // because dictionary updates use CREATE OR REPLACE (not a DROP).
         let mut before_dict = simple_dict("dict_e");
-        before_dict.life_cycle = LifeCycle::DeletionProtected;
+        before_dict.life_cycle = LifeCycle::ExternallyManaged;
         let mut before = HashMap::new();
         before.insert("local_dict_e".to_string(), before_dict);
 
         let mut after_dict = simple_dict("dict_e");
         after_dict.lifetime = DictionaryLifetime::Single { seconds: 1 };
-        after_dict.life_cycle = LifeCycle::FullyManaged;
+        after_dict.life_cycle = LifeCycle::ExternallyManaged;
         let mut after = HashMap::new();
         after.insert("local_dict_e".to_string(), after_dict);
 
