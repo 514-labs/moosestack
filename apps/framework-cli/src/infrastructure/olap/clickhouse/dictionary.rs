@@ -2624,8 +2624,8 @@ mod tests {
             name: "ext_dict".to_string(),
             database: None,
             cluster_name: None,
-            source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
-                DictionaryClickHouseSource {
+            source: DictionarySource::External(ExternalDictionarySourceWrapper {
+                external_source: ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
                     host: "ch.example.com".to_string(),
                     port: 9000,
                     user: "ad'min".to_string(), // single quote in username
@@ -2635,8 +2635,8 @@ mod tests {
                     query: None,
                     where_clause: None,
                     invalidate_query: None,
-                },
-            )),
+                }),
+            }),
             primary_key: vec!["id".to_string()],
             columns: vec![DictionaryColumn {
                 name: "id".to_string(),
@@ -2679,8 +2679,8 @@ mod tests {
             name: "bs_dict".to_string(),
             database: None,
             cluster_name: None,
-            source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
-                DictionaryClickHouseSource {
+            source: DictionarySource::External(ExternalDictionarySourceWrapper {
+                external_source: ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
                     host: "ch.example.com".to_string(),
                     port: 9000,
                     user: "user".to_string(),
@@ -2690,8 +2690,8 @@ mod tests {
                     query: None,
                     where_clause: None,
                     invalidate_query: None,
-                },
-            )),
+                }),
+            }),
             primary_key: vec!["id".to_string()],
             columns: vec![DictionaryColumn {
                 name: "id".to_string(),
