@@ -96,6 +96,32 @@ Values passed to `send()` must be instances of the stream model type. Passing a 
   </LanguageTabContent>
 </LanguageTabs>
 
+## Behavior
+
+## Send nothing
+
+This is useful in helper code that batches optional records or filters a collection down to zero results. Top-level empty inputs are valid and send nothing:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/publish.ts" copy
+await userEvents.send(undefined);
+await userEvents.send(null);
+await userEvents.send([]);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/publish.py" copy
+user_events.send(None)
+user_events.send([])
+```
+
+<Callout type="warning">
+Values passed to `send()` must be instances of the stream model type. Passing a `dict` or other non-model value raises `TypeError`.
+</Callout>
+  </LanguageTabContent>
+</LanguageTabs>
+
 ## Send nothing
 
 This is useful in helper code that batches optional records or filters a collection down to zero results. Top-level empty inputs are valid and send nothing:
