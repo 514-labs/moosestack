@@ -1,19 +1,17 @@
 ---
-title: doc
+title: docs
 description: Browse and search documentation from the 514 CLI.
 order: 8
 ---
 
-# 514 doc
+# 514 docs
 
-Use `514 doc` to browse, search, and open documentation pages directly from the CLI.
-
-Plural alias also works: `514 docs`.
+Use `514 docs` to browse, search, and open documentation pages directly from the CLI.
 
 ## Usage
 
 ```bash
-514 doc [OPTIONS] <COMMAND>
+514 docs [OPTIONS] <COMMAND>
 ```
 
 ## Subcommands
@@ -23,7 +21,7 @@ Plural alias also works: `514 docs`.
 List documentation pages.
 
 ```bash
-514 doc list [OPTIONS]
+514 docs list [OPTIONS]
 ```
 
 ### Show
@@ -31,7 +29,7 @@ List documentation pages.
 Show a documentation page by slug.
 
 ```bash
-514 doc show [OPTIONS] <SLUG>
+514 docs show [OPTIONS] <SLUG>
 ```
 
 Arguments:
@@ -42,7 +40,7 @@ Arguments:
 Search documentation by title or description.
 
 ```bash
-514 doc search [OPTIONS] <QUERY>
+514 docs search [OPTIONS] <QUERY>
 ```
 
 Arguments:
@@ -53,7 +51,7 @@ Arguments:
 Interactively browse and select a documentation page.
 
 ```bash
-514 doc browse [OPTIONS]
+514 docs browse [OPTIONS]
 ```
 
 ## Common options
@@ -66,11 +64,10 @@ Additional command-specific options:
 ## Examples
 
 ```bash
-514 doc list
-514 doc show moosestack/olap
-514 doc search "deployment"
-514 doc browse
-514 docs search "workflow"
+514 docs list
+514 docs show moosestack/olap
+514 docs search "deployment"
+514 docs browse
 ```
 
 ## Related
