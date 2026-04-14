@@ -14,3 +14,6 @@ clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 crc32c = "0.6"
 tokio-util = { version = "0.7", features = ["rt"] }
+
+[dev-dependencies]
+kafka-protocol = { version = "0.16", features = ["client", "broker", "messages_enums"] }

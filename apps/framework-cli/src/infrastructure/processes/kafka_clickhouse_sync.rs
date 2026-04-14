@@ -478,9 +478,10 @@ async fn sync_kafka_to_kafka(
     metrics: Arc<Metrics>,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
+    let group_id = format!("{VERSION_SYNC_GROUP_ID}_{source_topic_name}");
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
-        VERSION_SYNC_GROUP_ID,
+        &group_id,
         &source_topic_name,
     ));
     let producer = create_producer(kafka_config.clone());
@@ -588,9 +589,14 @@ async fn sync_kafka_to_clickhouse(
         source_topic_name
     );
 
+    // Use a per-topic consumer group ID so each sync process is the sole member
+    // of its group. This avoids issues with consumer group coordination in
+    // lightweight Kafka implementations (e.g. devkafka) that don't implement a
+    // full JoinGroup synchronization barrier.
+    let group_id = format!("{TABLE_SYNC_GROUP_ID}_{source_topic_name}");
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
-        TABLE_SYNC_GROUP_ID,
+        &group_id,
         &source_topic_name,
     ));
 

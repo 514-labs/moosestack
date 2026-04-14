@@ -130,11 +130,15 @@ describe("Row-Level Security E2E Tests", function () {
 
     // Start moose dev
     testLogger.info("Starting moose dev");
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -166,6 +170,7 @@ describe("Row-Level Security E2E Tests", function () {
     testLogger.info("Waiting for streaming functions to stabilize");
     await waitForStreamingFunctions(TIMEOUTS.SERVER_STARTUP_MS, {
       logger: testLogger,
+      dockerless: true,
     });
 
     // Ingest all test data in parallel
@@ -301,6 +306,7 @@ describe("Row-Level Security E2E Tests", function () {
     testLogger.info("Cleaning up RLS test suite");
     await cleanupTestSuite(devProcess, projectDir, APP_NAME, {
       logger: testLogger,
+      includeDocker: false,
     });
   });
 
