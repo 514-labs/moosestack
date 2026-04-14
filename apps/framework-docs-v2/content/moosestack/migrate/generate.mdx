@@ -1,0 +1,42 @@
+---
+title: Generate migrations
+description: How Moose generates schema migrations from code changes
+order: 1
+category: migrate
+---
+
+import { Callout } from "@/components/mdx";
+
+# Generate migrations
+
+Moose represents schema changes as a series of **migration files** under `./migrations/`. Each committed migration file records an incremental diff from the previous migrated state. Once applied, a migration is tracked in state and is never re-run.
+
+## During development
+
+`moose dev` watches your code for schema changes and appends operations to `./migrations/pending.yaml` in realtime as you save. The pending file reflects the uncommitted changes in your working directory, so you can review it as you work to see exactly what will be included in the next migration.
+
+## Finalizing a migration
+
+When you're ready to commit a migration for deployment, run:
+
+```bash
+moose generate migration --save
+```
+
+This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/`. Review the file, commit it to version control, then deploy.
+
+## How migrations are tracked in production
+
+In production, Moose reads every migration file in `./migrations/`, compares against the applied-migrations list stored in state, and runs only the unapplied ones. Applied migrations are never re-run.
+
+<Callout type="warning" title="Production blocks unmigrated changes">
+If your code has pending OLAP changes but no committed migration file covers them, production startup is blocked. Every infrastructure change must flow through a committed migration file so production can apply them with a validated parent state hash.
+
+Run `moose generate migration --save` locally, review the generated file, and commit it before deploying.
+</Callout>
+
+## Related
+
+- [Migration Plan](/moosestack/migrate/plan-format) — the operation reference and migration-file format
+- [Apply migrations](/moosestack/migrate/apply) — how committed migrations are executed against your database
+- [Lifecycle management](/moosestack/migrate/lifecycle) — controlling which changes Moose is allowed to make

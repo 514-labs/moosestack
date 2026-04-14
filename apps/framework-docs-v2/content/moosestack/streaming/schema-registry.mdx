@@ -15,9 +15,15 @@ Only JSON Schema is supported today. Avro and Protobuf are planned.
 
 Use `schemaConfig` (TypeScript) or `schema_config` (Python) to publish a [Stream](/moosestack/streaming/create-stream) through Confluent Schema Registry.
 
+<<<<<<< HEAD
 ## Requirements
 
 Configure the Schema Registry URL in `moose.config.toml` under `redpanda_config`, or override it with environment variables.
+=======
+## Configure the Schema Registry URL
+
+Set the Schema Registry URL in `moose.config.toml` under `redpanda_config` or override it with environment variables.
+>>>>>>> 970149775 (remove export)
 
 ```toml filename="moose.config.toml" copy
 [redpanda_config]
