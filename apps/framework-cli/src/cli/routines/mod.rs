@@ -123,7 +123,7 @@ use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan_risk::{
     classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
-    ConfirmationPolicy, DestructiveChange,
+    ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::core::version_bump;
@@ -716,44 +716,18 @@ pub async fn start_development_mode(
             None => return Ok(()),
         };
 
-    let (mut version_bumps, remaining) =
-        version_bump::extract_version_bumps(&plan.changes.olap_changes);
-    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &reconciled_map);
-    version_bumps.extend(backfill_only);
-
-    let accept_all = confirmation_policy.accept_destructive;
-    let version_bump_decisions = if !version_bumps.is_empty() {
-        match version_bump::version_bump_gate(
-            version_bumps,
-            &project.clickhouse_config.db_name,
-            accept_all,
-        )
-        .await?
-        {
-            Some(decisions) => decisions,
-            None => return Ok(()),
-        }
-    } else {
-        vec![]
+    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &plan.changes.olap_changes,
+        &reconciled_map,
+        &project.clickhouse_config.db_name,
+        confirmation_policy.accept_destructive,
+        &mut risk,
+    )
+    .await?
+    {
+        Some(d) => d,
+        None => return Ok(()),
     };
-
-    // Exclude version-bump drops from the destructive gate.
-    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
-        .iter()
-        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
-        .map(|d| d.bump.old_table.name.clone())
-        .collect();
-    risk.destructive_changes.retain(|dc| match dc {
-        DestructiveChange::TableDrop {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        DestructiveChange::TableRecreate {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        _ => true,
-    });
 
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
         return Ok(());

@@ -10,7 +10,7 @@
 //! 3. Drop old table (optional — if kept, a file is generated marking it `EXTERNALLY_MANAGED`)
 
 use std::collections::{HashMap, HashSet};
-use std::io::{stdout, IsTerminal};
+use std::io::{stdout, IsTerminal, Write};
 
 use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user_async;
@@ -18,7 +18,7 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
 use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
-use crate::framework::core::plan_risk::PinnedSession;
+use crate::framework::core::plan_risk::{DestructiveChange, PinnedSession, PlanRisk};
 use crate::framework::languages::SupportedLanguages;
 
 /// How the version bump was detected.
@@ -603,7 +603,6 @@ fn ensure_import(root_path: &std::path::Path, import_line: &str) -> Result<(), s
         return Ok(());
     }
 
-    use std::io::Write;
     let mut file = std::fs::OpenOptions::new().append(true).open(root_path)?;
     writeln!(file)?;
     writeln!(file, "{import_line}")?;
@@ -705,6 +704,62 @@ pub fn bump_drop_changes(decisions: &[VersionBumpDecision]) -> Vec<OlapChange> {
         .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
         .map(|d| OlapChange::Table(TableChange::Removed(d.bump.old_table.clone())))
         .collect()
+}
+
+/// Shared helper: detect version bumps, prompt the user, and exclude confirmed
+/// bump drops from `risk.destructive_changes` so they aren't double-prompted.
+///
+/// Returns the decisions (empty if no bumps detected). On user rejection returns
+/// `Ok(None)` so the caller can abort.
+pub async fn detect_prompt_and_exclude(
+    olap_changes: &[OlapChange],
+    current_infra: &InfrastructureMap,
+    default_database: &str,
+    accept_all: bool,
+    risk: &mut PlanRisk,
+) -> Result<Option<Vec<VersionBumpDecision>>, RoutineFailure> {
+    let (mut version_bumps, remaining) = extract_version_bumps(olap_changes);
+    let backfill_only = find_backfill_only_bumps(&remaining, current_infra);
+    version_bumps.extend(backfill_only);
+
+    let decisions = if !version_bumps.is_empty() {
+        match version_bump_gate(version_bumps, default_database, accept_all).await? {
+            Some(d) => d,
+            None => return Ok(None),
+        }
+    } else {
+        vec![]
+    };
+
+    exclude_bump_drops_from_risk(&decisions, risk);
+    Ok(Some(decisions))
+}
+
+/// Remove `TableDrop` and `TableRecreate` entries from `risk.destructive_changes`
+/// for old tables whose drop was already confirmed via the version-bump gate.
+pub fn exclude_bump_drops_from_risk(decisions: &[VersionBumpDecision], risk: &mut PlanRisk) {
+    if decisions.is_empty() {
+        return;
+    }
+    let vb_drop_names: HashSet<String> = decisions
+        .iter()
+        .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
+        .map(|d| d.bump.old_table.name.clone())
+        .collect();
+    if vb_drop_names.is_empty() {
+        return;
+    }
+    risk.destructive_changes.retain(|dc| match dc {
+        DestructiveChange::TableDrop {
+            table_name_with_suffix,
+            ..
+        }
+        | DestructiveChange::TableRecreate {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        _ => true,
+    });
 }
 
 #[cfg(test)]

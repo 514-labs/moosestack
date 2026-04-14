@@ -78,7 +78,7 @@ use crate::cli::routines::ls::ls;
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
     classify_risk_from_deltas, migration_destructive_gate, print_migration_rejected_guidance,
-    ConfirmationPolicy, DestructiveChange, MigrationGateOutcome,
+    ConfirmationPolicy, MigrationGateOutcome,
 };
 use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
@@ -1958,8 +1958,6 @@ async fn confirm_and_save_migration(
         };
 
     // Step 2: Version bump detection and prompting.
-    // Extract version bumps before delta generation so they get correct ordering
-    // (create new → backfill → drop old) instead of the default (drop old, create new).
     let (mut version_bumps, remaining_changes) =
         version_bump::extract_version_bumps(&result.changes.olap_changes);
     let backfill_only =
@@ -2003,23 +2001,7 @@ async fn confirm_and_save_migration(
     let mut risk = classify_risk_from_deltas(&infra_deltas);
     risk.exclude_approved_drops(&approved_drops);
 
-    // Exclude version-bump drops from the destructive gate (user already confirmed them).
-    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
-        .iter()
-        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
-        .map(|d| d.bump.old_table.name.clone())
-        .collect();
-    risk.destructive_changes.retain(|dc| {
-        if let DestructiveChange::TableDrop {
-            table_name_with_suffix,
-            ..
-        } = dc
-        {
-            !vb_drop_names.contains(table_name_with_suffix)
-        } else {
-            true
-        }
-    });
+    version_bump::exclude_bump_drops_from_risk(&version_bump_decisions, &mut risk);
 
     // Step 5: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy).await? {
@@ -2178,47 +2160,25 @@ async fn confirm_and_save_migration_legacy(
         }
     };
 
-    // Version bump detection and prompting (legacy path).
-    let (mut version_bumps, remaining) =
-        version_bump::extract_version_bumps(&result.changes.olap_changes);
-    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &result.remote_state);
-    version_bumps.extend(backfill_only);
-
-    let version_bump_decisions = if !version_bumps.is_empty() {
-        match version_bump::version_bump_gate(version_bumps, &result.default_database, accept_all)
-            .await?
-        {
-            Some(decisions) => decisions,
-            None => {
-                return Ok(RoutineSuccess::success(Message::new(
-                    "Migration".to_string(),
-                    "generation cancelled during version bump confirmation".to_string(),
-                )));
-            }
-        }
-    } else {
-        vec![]
-    };
-
-    // Exclude version bump table drops from the destructive gate
-    // since the user already confirmed them via the version bump gate.
+    // Version bump detection, prompting, and risk exclusion (legacy path).
     let mut filtered_risk = risk;
-    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
-        .iter()
-        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
-        .map(|d| d.bump.old_table.name.clone())
-        .collect();
-    filtered_risk.destructive_changes.retain(|dc| match dc {
-        DestructiveChange::TableDrop {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        DestructiveChange::TableRecreate {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        _ => true,
-    });
+    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &result.changes.olap_changes,
+        &result.remote_state,
+        &result.default_database,
+        accept_all,
+        &mut filtered_risk,
+    )
+    .await?
+    {
+        Some(d) => d,
+        None => {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation cancelled during version bump confirmation".to_string(),
+            )));
+        }
+    };
 
     match migration_destructive_gate(&filtered_risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
