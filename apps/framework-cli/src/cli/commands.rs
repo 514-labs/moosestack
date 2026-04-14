@@ -120,7 +120,7 @@ pub enum Commands {
     /// Start a local development environment
     #[command(visible_alias = "d")]
     Dev {
-        /// Skip starting Docker containers for infrastructure
+        /// Skip starting local infrastructure
         #[arg(long)]
         no_infra: bool,
 
