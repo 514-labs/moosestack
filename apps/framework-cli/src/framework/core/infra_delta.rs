@@ -639,10 +639,14 @@ impl InfraDelta {
 
             InfraDelta::ReplaceDictionary { before, after } => {
                 let before_id = before.id(default_database);
-                if map.olap_dictionaries.remove(&before_id).is_none() {
+                if !map.olap_dictionaries.contains_key(&before_id) {
                     return Err(DeltaApplyErrorKind::DictionaryNotFound { dict_id: before_id });
                 }
                 let after_id = after.id(default_database);
+                if before_id != after_id && map.olap_dictionaries.contains_key(&after_id) {
+                    return Err(DeltaApplyErrorKind::DuplicateDictionary { dict_id: after_id });
+                }
+                map.olap_dictionaries.remove(&before_id);
                 map.olap_dictionaries.insert(after_id, after.clone());
             }
 
