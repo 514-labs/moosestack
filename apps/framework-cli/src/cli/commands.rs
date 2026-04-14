@@ -238,7 +238,7 @@ pub enum Commands {
         #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
         tables: Vec<String>,
 
-        /// Apply the operation to all tables in the current database
+        /// Apply to all non-view tables in the current database
         #[arg(long, conflicts_with = "tables", default_value = "false")]
         all: bool,
 
