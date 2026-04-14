@@ -94,6 +94,15 @@ export const stopDevProcess = async (
       await setTimeoutAsync(TIMEOUTS.BRIEF_CLEANUP_WAIT_MS);
     }
 
+    // Legacy CLIs can leave descendant processes briefly holding inherited
+    // stdio pipes open after the main process exits. Explicitly destroy our
+    // side of the streams so Node does not keep the test process alive
+    // waiting on pipe handles that no longer matter for teardown.
+    devProcess.stdout?.destroy();
+    devProcess.stderr?.destroy();
+    devProcess.stdin?.destroy();
+    devProcess.removeAllListeners();
+
     log.debug("Ensuring all moose processes are terminated");
     await killRemainingProcesses(options);
   }
