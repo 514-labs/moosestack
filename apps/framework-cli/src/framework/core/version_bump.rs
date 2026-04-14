@@ -17,7 +17,7 @@ use tracing::{debug, info};
 use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
-use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
+use crate::framework::core::infrastructure::table::{Column, Table};
 use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan_risk::{DestructiveChange, PinnedSession, PlanRisk};
@@ -499,61 +499,9 @@ pub async fn version_bump_gate(
     Ok(Some(decisions))
 }
 
-// ── Backfill column helpers (reused from migration_plan.rs) ──────────
-
-fn is_insertable(col: &Column) -> bool {
-    col.materialized.is_none() && col.alias.is_none()
-}
-
-fn columns_equivalent(a: &[&Column], b: &[&Column]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    type ColKey<'c> = (&'c str, &'c ColumnType, bool);
-    let set_a: HashSet<ColKey> = a
-        .iter()
-        .map(|c| (c.name.as_str(), &c.data_type, c.required))
-        .collect();
-    let set_b: HashSet<ColKey> = b
-        .iter()
-        .map(|c| (c.name.as_str(), &c.data_type, c.required))
-        .collect();
-    set_a == set_b
-}
-
-fn schema_diff_reason(source: &[&Column], target: &[&Column]) -> String {
-    let src_names: HashSet<&str> = source.iter().map(|c| c.name.as_str()).collect();
-    let tgt_names: HashSet<&str> = target.iter().map(|c| c.name.as_str()).collect();
-
-    let extra_in_target: Vec<&&str> = tgt_names.difference(&src_names).collect();
-    let extra_in_source: Vec<&&str> = src_names.difference(&tgt_names).collect();
-
-    let mut parts = Vec::new();
-    if !extra_in_target.is_empty() {
-        parts.push(format!(
-            "new table has columns not present in old: {}",
-            extra_in_target
-                .iter()
-                .map(|s| format!("`{s}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if !extra_in_source.is_empty() {
-        parts.push(format!(
-            "old table has columns not present in new: {}",
-            extra_in_source
-                .iter()
-                .map(|s| format!("`{s}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if parts.is_empty() {
-        parts.push("column type or nullability mismatch".to_string());
-    }
-    parts.join("; ")
-}
+use crate::framework::core::migration_plan::{
+    columns_equivalent, is_insertable, schema_diff_reason,
+};
 
 // ── Code generation for retained (EXTERNALLY_MANAGED) tables ─────────
 

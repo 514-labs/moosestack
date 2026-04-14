@@ -131,17 +131,15 @@ impl MigrationPlan {
             let src_db = src_db_ref.to_string();
             let dst_db = dst_db_ref.to_string();
 
-            let base_insertable: Vec<Column> = base_table
+            let base_insertable: Vec<&Column> = base_table
                 .columns
                 .iter()
                 .filter(|c| is_insertable(c))
-                .cloned()
                 .collect();
-            let new_insertable: Vec<Column> = new_table
+            let new_insertable: Vec<&Column> = new_table
                 .columns
                 .iter()
                 .filter(|c| is_insertable(c))
-                .cloned()
                 .collect();
 
             if !columns_equivalent(&base_insertable, &new_insertable) {
@@ -262,13 +260,13 @@ fn find_base_table<'a>(
 /// Returns `true` when a column is physically stored and can appear in
 /// an INSERT statement. MATERIALIZED and ALIAS columns are computed by
 /// ClickHouse and must be excluded from backfill SQL.
-fn is_insertable(col: &Column) -> bool {
+pub(crate) fn is_insertable(col: &Column) -> bool {
     col.materialized.is_none() && col.alias.is_none()
 }
 
 /// Two column sets are equivalent when they contain the same *insertable*
 /// columns (by name, data_type, and required) regardless of order.
-fn columns_equivalent(a: &[Column], b: &[Column]) -> bool {
+pub(crate) fn columns_equivalent(a: &[&Column], b: &[&Column]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -288,8 +286,7 @@ fn columns_equivalent(a: &[Column], b: &[Column]) -> bool {
 }
 
 /// Produces a human-readable description of why two column sets differ.
-fn schema_diff_reason(source: &[Column], target: &[Column]) -> String {
-    use std::collections::HashSet;
+pub(crate) fn schema_diff_reason(source: &[&Column], target: &[&Column]) -> String {
     let src_names: HashSet<&str> = source.iter().map(|c| c.name.as_str()).collect();
     let tgt_names: HashSet<&str> = target.iter().map(|c| c.name.as_str()).collect();
 
