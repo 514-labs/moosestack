@@ -34,34 +34,51 @@ This page covers in-process producers. To define the stream itself, start with [
   </tbody>
 </table>
 
-## Basic usage
+`Stream.send()` takes one argument. Pass a single record to publish one message, or pass an array or list to publish multiple messages. There are no per-call options on `send()`.
 
-`Stream.send()` accepts either a single record or an array of records:
+## Send one record
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/publish.ts" copy
-import { Stream } from "@514labs/moose-lib";
+import { userEvents } from "./stream";
 
-interface UserEvent {
-  id: string;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-const events = new Stream<UserEvent>("events");
-
-// Send a single record
-await events.send({
+await userEvents.send({
   id: "evt_1",
   userId: "user_123",
   timestamp: new Date(),
   eventType: "click",
 });
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/publish.py" copy
+from datetime import datetime, timezone
 
-// Send array of records
-await events.send([
+from app.stream import UserEvent, user_events
+
+user_events.send(
+    UserEvent(
+        id="evt_1",
+        user_id="user_123",
+        timestamp=datetime.now(timezone.utc),
+        event_type="click",
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Send many records
+
+Pass an array or list when you want to publish multiple records in one call. Moose publishes one stream record per element, not one array payload.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/publish.ts" copy
+import { userEvents } from "./stream";
+
+await userEvents.send([
   { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
   { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
 ]);
@@ -69,50 +86,57 @@ await events.send([
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="app/publish.py" copy
-from datetime import datetime
+from datetime import datetime, timezone
 
-from moose_lib import Stream
-from pydantic import BaseModel
+from app.stream import UserEvent, user_events
 
-class UserEvent(BaseModel):
-    id: str
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-events = Stream[UserEvent]("events")
-
-events.send(UserEvent(
-    id="evt_1",
-    user_id="user_123",
-    timestamp=datetime.now(),
-    event_type="click",
-))
-
-events.send([
-    UserEvent(id="evt_2", user_id="user_456", timestamp=datetime.now(), event_type="view"),
-    UserEvent(id="evt_3", user_id="user_789", timestamp=datetime.now(), event_type="signup"),
+user_events.send([
+    UserEvent(
+        id="evt_2",
+        user_id="user_456",
+        timestamp=datetime.now(timezone.utc),
+        event_type="view",
+    ),
+    UserEvent(
+        id="evt_3",
+        user_id="user_789",
+        timestamp=datetime.now(timezone.utc),
+        event_type="signup",
+    ),
 ])
+```
+<Callout type="warning">
+Values passed to `send()` must be instances of the stream model type. Passing a `dict` or other non-model value raises `TypeError`.
+</Callout>
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Send nothing
+
+Top-level empty inputs are valid and send nothing:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/publish.ts" copy
+await userEvents.send(undefined);
+await userEvents.send(null);
+await userEvents.send([]);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/publish.py" copy
+user_events.send(None)
+user_events.send([])
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
 ## Behavior
 
-- Passing an array publishes multiple stream records, not one array payload.
-- Passing `null`, `undefined`, or an empty array sends nothing.
-- `Stream.send()` publishes to the stream topic. If the stream also has a destination table, records become queryable only after Moose syncs them into ClickHouse.
+`Stream.send()` publishes to the stream topic. If the stream also has a destination table, records become queryable only after Moose syncs them into ClickHouse.
 
-<Callout type="info" title="Schema Registry JSON works automatically">
-If your stream uses `schemaConfig.kind = "JSON"`, Moose publishes records with the Confluent Schema Registry envelope automatically. See [Schema Registry](/moosestack/streaming/schema-registry).
-</Callout>
-
-## Requirements
-
-- If the stream uses `schemaConfig.kind = "JSON"`, configure `schema_registry_url` before calling `send()`.
-- Only JSON Schema is supported for Schema Registry streams today.
-- In Python, values passed to `send()` must be instances of the stream model type.
-- In Python, Schema Registry JSON support requires `confluent-kafka[json,schemaregistry]`.
+If the stream is configured for Schema Registry JSON, `send()` publishes using the Confluent wire format automatically. See [Schema Registry](/moosestack/streaming/schema-registry).
 
 ## Related capabilities
 
