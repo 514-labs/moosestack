@@ -33,8 +33,9 @@ export const stream = new Stream<Record>("stream", {
 from datetime import datetime
 
 from moose_lib import Stream, StreamConfig
-from app.table import table
 from pydantic import BaseModel
+
+from app.table import table
 
 class Record(BaseModel):
     id: str

@@ -11,7 +11,11 @@ import { Callout, LanguageTabs, LanguageTabContent, CTACards, CTACard, ExportReq
 
 Moose Workflows adds durable background processing around Moose OLAP. Use it for scheduled jobs, backfills, external calls, or multi-step tasks that should run reliably outside the request path.
 
-<ExportRequirement primitive="Workflow and Task" example="export { myworkflow, prepareReport, persistReport }" />
+<ExportRequirement
+  primitive="Workflow and Task"
+  example="export { myworkflow, prepareReport, persistReport }"
+  pythonExample="from app.report_workflow import myworkflow, prepare_report_task, persist_report_task"
+/>
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">

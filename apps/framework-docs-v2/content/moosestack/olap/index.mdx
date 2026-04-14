@@ -18,7 +18,7 @@ import { OlapTable, ClickHouseEngines, LifeCycle } from "@514labs/moose-lib";
 interface Record {
   id: string;
   name: string;
-  age: number;
+  timestamp: Date;
 }
 
 export const table = new OlapTable<Record>("table", {

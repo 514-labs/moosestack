@@ -9,15 +9,15 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Schema registry
 
-<Callout type="info" title="JSON Schema first">
-The first supported encoding is JSON Schema. Avro and Protobuf are planned.
+<Callout type="info" title="Current support">
+Only JSON Schema is supported today. Avro and Protobuf are planned.
 </Callout>
 
-Use `schemaConfig` in TypeScript or `schema_config` in Python when a `Stream` should publish using Confluent Schema Registry.
+Use `schemaConfig` in TypeScript or `schema_config` in Python when a [Stream](/moosestack/streaming/create-stream) should publish through Confluent Schema Registry.
 
-## Configure the Schema Registry URL
+## Requirements
 
-Set the Schema Registry URL in `moose.config.toml` under `redpanda_config` or override it with environment variables.
+Configure the Schema Registry URL in `moose.config.toml` under `redpanda_config`, or override it with environment variables.
 
 ```toml filename="moose.config.toml" copy
 [redpanda_config]
@@ -33,13 +33,15 @@ export MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL=http://localhost:8081
 export MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL=http://localhost:8081
 ```
 
+For Python, install `confluent-kafka[json,schemaregistry]` before publishing to a Schema Registry stream:
+
+```bash filename="Terminal" copy
+pip install "confluent-kafka[json,schemaregistry]"
+```
+
 ## Attach Schema Registry config to a stream
 
-You can attach a Schema Registry reference to any `Stream`.
-
-- Use the latest subject version with `{ subjectLatest: string }` in TypeScript or `SubjectLatest(name="...")` in Python.
-- Use a specific subject version with `{ subject: string, version: number }` in TypeScript or `SubjectVersion(subject="...", version=...)` in Python.
-- Use a fixed schema id with `{ id: number }` in TypeScript or `SchemaById(id=...)` in Python.
+Set `kind` to choose the payload format and `reference` to choose which registered schema Moose uses when it publishes.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -65,6 +67,7 @@ await events.send({ id: "e1", value: 42 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
+
 ```py filename="sr_stream.py" copy
 from moose_lib import KafkaSchemaConfig, Stream, StreamConfig, SubjectLatest
 from pydantic import BaseModel
@@ -88,12 +91,45 @@ events.send(Event(id="e1", value=42))
   </LanguageTabContent>
 </LanguageTabs>
 
+### Kind field
+
+The `kind` field tells Moose which Schema Registry payload format to use for the stream.
+
+- `JSON` publishes records using Schema Registry JSON.
+- `JSON` is the only supported value today.
+
+### Reference field
+
+The `reference` field tells Moose how to resolve the schema id before it encodes and publishes a record. Use it to look up the latest version for a subject, pin a specific subject version, or use a fixed schema id directly.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+TypeScript reference formats:
+
+<ul>
+  <li>Latest subject version: <code>{`{ subjectLatest: string }`}</code> looks up the newest schema version registered under that subject.</li>
+  <li>Specific subject version: <code>{`{ subject: string, version: number }`}</code> pins publishing to one subject version.</li>
+  <li>Fixed schema id: <code>{`{ id: number }`}</code> uses a known schema id directly.</li>
+</ul>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Python reference formats:
+
+<ul>
+  <li>Latest subject version: <code>SubjectLatest(name="...")</code> looks up the newest schema version registered under that subject.</li>
+  <li>Specific subject version: <code>SubjectVersion(subject="...", version=...)</code> pins publishing to one subject version.</li>
+  <li>Fixed schema id: <code>SchemaById(id=...)</code> uses a known schema id directly.</li>
+</ul>
+  </LanguageTabContent>
+</LanguageTabs>
+
 ## Runtime behavior
 
-- If `schemaConfig.kind = "JSON"` or `schema_config.kind = "JSON"` is set, `Stream.send()` publishes records using the Confluent wire format.
+- If `schemaConfig.kind = "JSON"` or `schema_config.kind = "JSON"` is set, [`Stream.send()`](/moosestack/streaming/from-your-code) publishes records using the Confluent wire format.
 - Moose resolves the schema id from the configured reference before sending unless you provide a fixed `id`.
 - Moose streaming runners automatically detect the Schema Registry JSON envelope and strip the header before parsing the payload.
 - When an [Ingest API](/moosestack/apis/ingest-api) routes to a stream configured this way, Moose also publishes using the Schema Registry envelope.
+- Publishing fails if `schema_registry_url` is not configured.
 
 ## Pull existing topics and schemas
 
@@ -107,14 +143,7 @@ moose kafka pull <bootstrap> \
   --exclude "{__consumer_offsets,_schemas}"
 ```
 
-This writes external topic declarations under the provided path based on language (default path is inferred).
-
-## Current limitations
-
-- Only JSON Schema is supported today.
-- Avro and Protobuf are not supported yet.
-- `schema_registry_url` must be configured before calling `send()` or publishing through an Ingest API to a Schema Registry stream.
-- In Python, Schema Registry JSON support requires `confluent-kafka[json,schemaregistry]`.
+This writes external topic declarations under the provided path. When Schema Registry subjects are available, Moose also emits typed models from the fetched JSON Schemas.
 
 ## Related capabilities
 
