@@ -750,16 +750,29 @@ fn format_partial_delta_failure(file: &MigrationFile, failed_delta_idx: usize) -
         }
     }
 
-    writeln!(
-        out,
-        "\n⚠️  '{}' is NOT recorded as applied, but its first {} delta(s) have already\n\
-         been executed against the database. Re-running `moose migrate` as-is will try\n\
-         to re-apply them, which typically fails with errors like \"table already exists\"\n\
-         or \"column already exists\". ClickHouse DDL has no transactional rollback —\n\
-         partial failures require deliberate recovery.",
-        file.id, failed_delta_idx
-    )
-    .unwrap();
+    if failed_delta_idx > 0 {
+        writeln!(
+            out,
+            "\n⚠️  '{}' is NOT recorded as applied, but its first {} delta(s) have already\n\
+             been executed against the database. Re-running `moose migrate` as-is will try\n\
+             to re-apply them, which typically fails with errors like \"table already exists\"\n\
+             or \"column already exists\". ClickHouse DDL has no transactional rollback —\n\
+             partial failures require deliberate recovery.",
+            file.id, failed_delta_idx
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "\n⚠️  '{}' is NOT recorded as applied. The failed delta may have been partially\n\
+             executed (some DDL operations within it may have committed to ClickHouse).\n\
+             Re-running `moose migrate` as-is will try to re-apply it, which may fail with\n\
+             errors like \"table already exists\" or \"column already exists\". ClickHouse DDL\n\
+             has no transactional rollback — partial failures require deliberate recovery.",
+            file.id
+        )
+        .unwrap();
+    }
 
     writeln!(out, "\n📋 Recovery options:").unwrap();
     writeln!(
@@ -811,7 +824,7 @@ pub async fn execute_migration_deltas(
     }
 
     // Filter to unapplied migrations only
-    let applied = state_storage.load_applied_migrations().await?;
+    let mut applied = state_storage.load_applied_migrations().await?;
     let unapplied: Vec<_> = history
         .files
         .iter()
@@ -925,6 +938,7 @@ pub async fn execute_migration_deltas(
 
         // Record this migration as applied
         state_storage.store_applied_migration(&file.id).await?;
+        applied.push(file.id.clone());
         println!("  ✓ Migration '{}' applied successfully", file.id);
     }
 
