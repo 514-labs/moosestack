@@ -32,7 +32,6 @@ import {
   getTestPorts,
   buildPortEnv,
   buildServerConfig,
-  buildMooseDevEnv,
   getCleanupOptionsForMode,
   isDockerlessMode,
   resolveE2eDevMode,
@@ -154,21 +153,18 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         "npm",
       );
 
-      // Start dev server WITHOUT the required environment variables
-      // Create a clean environment without the test credentials
-      const envWithoutCredentials = buildMooseDevEnv({
-        projectDir: TEST_PROJECT_DIR,
-        portEnv: PORT_ENV,
-      });
-      delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
-      delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
-
+      // Start dev server WITHOUT the required environment variables.
+      // Pass explicit unsets so inherited shell credentials do not leak in.
       devProcess = startMooseDev({
         cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
         projectDir: TEST_PROJECT_DIR,
         mode: E2E_DEV_MODE,
-        extraEnv: envWithoutCredentials,
+        portEnv: PORT_ENV,
+        extraEnv: {
+          TEST_AWS_ACCESS_KEY_ID: undefined,
+          TEST_AWS_SECRET_ACCESS_KEY: undefined,
+        },
       }).devProcess;
 
       // Capture both stdout and stderr to check for error messages
@@ -324,23 +320,19 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         APP_NAMES.PYTHON_TESTS,
       );
 
-      // Start dev server WITHOUT the required environment variables
-      // Create a clean environment without the test credentials
-      const envWithoutCredentials = buildMooseDevEnv({
-        language: "python",
-        projectDir: TEST_PROJECT_DIR,
-        portEnv: PORT_ENV,
-      });
-      delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
-      delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
-
+      // Start dev server WITHOUT the required environment variables.
+      // Pass explicit unsets so inherited shell credentials do not leak in.
       devProcess = startMooseDev({
         cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
         projectDir: TEST_PROJECT_DIR,
         language: "python",
         mode: E2E_DEV_MODE,
-        extraEnv: envWithoutCredentials,
+        portEnv: PORT_ENV,
+        extraEnv: {
+          TEST_AWS_ACCESS_KEY_ID: undefined,
+          TEST_AWS_SECRET_ACCESS_KEY: undefined,
+        },
       }).devProcess;
 
       // Capture both stdout and stderr to check for error messages

@@ -60,13 +60,15 @@ describe("Incremental TypeScript Compilation", function () {
 
     // Add a simple data model and function for testing hot reload
     const modelTs = `
-import { OlapTable, Key } from "@514labs/moose-lib";
+import { Key, OlapTable } from "@514labs/moose-lib";
 
-export interface TestModel extends OlapTable {
+export interface TestModel {
   id: Key<string>;
   value: number;
   timestamp: Date;
 }
+
+export const TestModelTable = new OlapTable<TestModel>("TestModel");
 `;
     fs.writeFileSync(path.join(projectDir, "app", "models.ts"), modelTs);
 

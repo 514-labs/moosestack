@@ -25,7 +25,6 @@ import {
   createTempTestDirectory,
   setupTypeScriptProject,
   setupPythonProject,
-  buildMooseDevEnv,
   buildPortEnv,
   buildServerConfig,
   getTestPorts,
@@ -130,14 +129,11 @@ export const unloadedTable = new OlapTable<UnloadedTestModel>("unloaded_test_tab
         cwd: testDir,
         projectDir: testDir,
         mode: E2E_DEV_MODE,
-        extraEnv: buildMooseDevEnv({
-          projectDir: testDir,
-          portEnv: buildPortEnv(PORTS),
-          extraEnv: {
-            ...DEFAULT_DEV_ENV,
-            MOOSE_FEATURES__STREAMING_ENGINE: "false",
-          },
-        }),
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
       }).devProcess;
 
       // Wait for both the warning message and the specific file name
@@ -216,15 +212,11 @@ unloaded_table = OlapTable[UnloadedTestModel](
         projectDir: testDir,
         language: "python",
         mode: E2E_DEV_MODE,
-        extraEnv: buildMooseDevEnv({
-          language: "python",
-          projectDir: testDir,
-          portEnv: buildPortEnv(PORTS),
-          extraEnv: {
-            ...DEFAULT_DEV_ENV,
-            MOOSE_FEATURES__STREAMING_ENGINE: "false",
-          },
-        }),
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
       }).devProcess;
 
       // Wait for both the warning message and the specific file name
@@ -306,14 +298,11 @@ export const myTable = new OlapTable<MyModel>("my_table", {
         cwd: testDir,
         projectDir: testDir,
         mode: E2E_DEV_MODE,
-        extraEnv: buildMooseDevEnv({
-          projectDir: testDir,
-          portEnv: buildPortEnv(PORTS),
-          extraEnv: {
-            ...DEFAULT_DEV_ENV,
-            MOOSE_FEATURES__STREAMING_ENGINE: "false",
-          },
-        }),
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
       }).devProcess;
 
       // Capture all output
@@ -391,14 +380,11 @@ declare module "some-module" {
         cwd: testDir,
         projectDir: testDir,
         mode: E2E_DEV_MODE,
-        extraEnv: buildMooseDevEnv({
-          projectDir: testDir,
-          portEnv: buildPortEnv(PORTS),
-          extraEnv: {
-            ...DEFAULT_DEV_ENV,
-            MOOSE_FEATURES__STREAMING_ENGINE: "false",
-          },
-        }),
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
       }).devProcess;
 
       // Capture all output

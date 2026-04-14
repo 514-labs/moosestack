@@ -100,6 +100,14 @@ export function buildMooseDevEnv(
     env.PATH = `${projectDir}/.venv/bin:${process.env.PATH}`;
   }
 
+  // Allow callers to explicitly remove inherited variables by setting them to
+  // `undefined` in extraEnv. Child processes should not see those keys at all.
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      delete env[key];
+    }
+  }
+
   return env;
 }
 
