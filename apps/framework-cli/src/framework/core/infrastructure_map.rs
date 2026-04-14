@@ -2028,16 +2028,17 @@ impl InfrastructureMap {
             if let Some(target_dict) = target_dicts.get(id) {
                 if !dicts_equal_ignore_metadata(dict, target_dict) {
                     tracing::debug!("Dictionary '{}' has differences", id);
-                    if respect_life_cycle && dict.life_cycle.is_any_modification_protected() {
+                    if respect_life_cycle && target_dict.life_cycle.is_any_modification_protected()
+                    {
                         tracing::warn!(
                             "Blocking update of {:?} dictionary '{}' (update requires CREATE OR REPLACE)",
-                            dict.life_cycle,
+                            target_dict.life_cycle,
                             id
                         );
                         filtered_changes.push(FilteredChange {
                             reason: format!(
                                 "Dictionary '{}' has {:?} lifecycle - UPDATE (CREATE OR REPLACE) blocked",
-                                dict.name, dict.life_cycle
+                                target_dict.name, target_dict.life_cycle
                             ),
                             change: OlapChange::OlapDictionary(Change::Updated {
                                 before: Box::new(dict.clone()),

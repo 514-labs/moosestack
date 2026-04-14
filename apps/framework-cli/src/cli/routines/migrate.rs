@@ -172,15 +172,20 @@ fn strip_dict_metadata(dicts: &HashMap<String, OlapDictionary>) -> HashMap<Strin
 /// Metadata (source file paths, descriptions) is stripped before comparison so that
 /// reorganising source files without changing the schema does not produce a false
 /// "please regenerate" bail-out.
+///
+/// `ignore_ops` is forwarded to `strip_metadata_and_ignored_fields` so that operations
+/// the project deliberately ignores (e.g. `ModifyPartitionBy`) are not treated as
+/// differences between the plan target and the current code.
 fn plan_target_matches_code(
     state_after_tables: &HashMap<String, Table>,
     code_tables: &HashMap<String, Table>,
     state_after_dicts: &HashMap<String, OlapDictionary>,
     code_dicts: &HashMap<String, OlapDictionary>,
+    ignore_ops: &[IgnorableOperation],
 ) -> bool {
-    // Tables: use ignore_operations=[] because we want an exact schema match here
-    let state_after_tables_stripped = strip_metadata_and_ignored_fields(state_after_tables, &[]);
-    let code_tables_stripped = strip_metadata_and_ignored_fields(code_tables, &[]);
+    let state_after_tables_stripped =
+        strip_metadata_and_ignored_fields(state_after_tables, ignore_ops);
+    let code_tables_stripped = strip_metadata_and_ignored_fields(code_tables, ignore_ops);
     let state_after_dicts_stripped = strip_dict_metadata(state_after_dicts);
     let code_dicts_stripped = strip_dict_metadata(code_dicts);
     state_after_tables_stripped == code_tables_stripped
@@ -1291,11 +1296,14 @@ pub async fn execute_migration_plan(
             // Check target matches code (tables and dictionaries).
             // Uses plan_target_matches_code() which strips metadata before comparing,
             // so reorganising source files without schema changes won't false-bail.
+            // Forwards ignore_operations so fields the project deliberately ignores
+            // (e.g. ModifyPartitionBy) do not cause a spurious "regenerate" bail-out.
             if !plan_target_matches_code(
                 &files.state_after.tables,
                 &target_infra_map.tables,
                 &files.state_after.olap_dictionaries,
                 &target_infra_map.olap_dictionaries,
+                &project.migration_config.ignore_operations,
             ) {
                 anyhow::bail!(
                     "The desired state of the plan is different from the current code.\n\
@@ -2266,11 +2274,13 @@ mod tests {
 
         let tables: HashMap<String, Table> = HashMap::new();
 
-        // expected = state_before snapshot: DB had Hashed layout, credentials masked
+        // expected = state_before snapshot: DB had Hashed layout, credentials masked.
+        // mask_credentials_for_json_export only masks passwords, NOT usernames —
+        // usernames are stored in plain-text in the persisted JSON.
         let mut expected_dicts = HashMap::new();
         expected_dicts.insert(
             "ext_dict".to_string(),
-            make_external_ch_dict("ext_dict", CREDENTIAL_PLACEHOLDER, CREDENTIAL_PLACEHOLDER),
+            make_external_ch_dict("ext_dict", "admin", CREDENTIAL_PLACEHOLDER),
         );
         // (expected layout stays Hashed from create_test_dict default)
 
@@ -2604,7 +2614,7 @@ mod tests {
 
         // Same schema, different metadata → must match (no false bail-out)
         assert!(
-            plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts, &[]),
             "Metadata-only difference should not be treated as a plan/code mismatch"
         );
     }
@@ -2629,7 +2639,7 @@ mod tests {
 
         // Schema changed → must be detected as a mismatch
         assert!(
-            !plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts),
+            !plan_target_matches_code(&tables, &tables, &state_after_dicts, &code_dicts, &[]),
             "Schema difference should be detected as a plan/code mismatch"
         );
     }
@@ -2641,7 +2651,7 @@ mod tests {
         dicts.insert("my_dict".to_string(), create_test_dict("my_dict"));
 
         assert!(
-            plan_target_matches_code(&tables, &tables, &dicts, &dicts.clone()),
+            plan_target_matches_code(&tables, &tables, &dicts, &dicts.clone(), &[]),
             "Identical state_after and code should match"
         );
     }
