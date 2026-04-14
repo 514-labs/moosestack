@@ -18,8 +18,10 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
     let max_wait_ms = request.max_wait_ms.max(0) as u64;
     let min_bytes = request.min_bytes.max(0);
 
-    // Subscribe to data-arrival notifications BEFORE the first fetch so we
-    // can't miss a produce that happens between fetch and wait.
+    // Subscribe before the first fetch so we don't miss data produced during
+    // the initial fetch. We compare future notifications against the first
+    // response's high watermarks so pre-fetch notifications don't break
+    // long-poll semantics.
     let mut receivers = collect_receivers(broker, &request).await;
 
     // First attempt to fetch
@@ -27,8 +29,10 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
 
     // Long polling: if we got less than min_bytes and max_wait_ms > 0, wait for data
     if total_bytes < min_bytes as i64 && max_wait_ms > 0 && !receivers.is_empty() {
+        let baselines = collect_high_watermarks(&response);
         let timeout = Duration::from_millis(max_wait_ms);
-        let _ = tokio::time::timeout(timeout, wait_any_changed(&mut receivers)).await;
+        let _ =
+            tokio::time::timeout(timeout, wait_any_changed_since(&mut receivers, &baselines)).await;
 
         // Re-fetch after wait
         let (response, _) = do_fetch(broker, &request).await;
@@ -39,37 +43,44 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
 }
 
 /// Wait until any of the watch receivers reports a change.
-async fn wait_any_changed(receivers: &mut [watch::Receiver<u64>]) {
-    if receivers.is_empty() {
+async fn wait_any_changed_since(receivers: &mut [watch::Receiver<u64>], baselines: &[u64]) {
+    if receivers.is_empty() || receivers.len() != baselines.len() {
         return;
     }
 
-    // Build a future for each receiver and race them.
-    // `changed()` returns immediately if the value was modified since the
-    // receiver was created (or since the last `changed()` call).
-    tokio::select! {
-        biased;
-        _ = async {
-            // For an arbitrary number of receivers we poll them all via
-            // spawned tasks and a shared oneshot signal.
-            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-            let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-            let mut handles = Vec::with_capacity(receivers.len());
-            for recv in receivers.iter().cloned() {
-                let tx = tx.clone();
-                handles.push(tokio::spawn(async move {
-                    let mut recv = recv;
-                    let _ = recv.changed().await;
-                    if let Some(tx) = tx.lock().await.take() {
-                        let _ = tx.send(());
-                    }
-                }));
+    if receivers
+        .iter()
+        .zip(baselines.iter())
+        .any(|(receiver, baseline)| *receiver.borrow() > *baseline)
+    {
+        return;
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+    let mut handles = Vec::with_capacity(receivers.len());
+
+    for (recv, baseline) in receivers.iter().cloned().zip(baselines.iter().copied()) {
+        let tx = tx.clone();
+        handles.push(tokio::spawn(async move {
+            let mut recv = recv;
+            loop {
+                if *recv.borrow() > baseline {
+                    break;
+                }
+                if recv.changed().await.is_err() {
+                    return;
+                }
             }
-            let _ = rx.await;
-            for h in handles {
-                h.abort();
+            if let Some(tx) = tx.lock().await.take() {
+                let _ = tx.send(());
             }
-        } => {}
+        }));
+    }
+
+    let _ = rx.await;
+    for handle in handles {
+        handle.abort();
     }
 }
 
@@ -155,4 +166,17 @@ async fn collect_receivers(broker: &Broker, request: &FetchRequest) -> Vec<watch
     }
 
     receivers
+}
+
+fn collect_high_watermarks(response: &FetchResponse) -> Vec<u64> {
+    response
+        .responses
+        .iter()
+        .flat_map(|topic| {
+            topic
+                .partitions
+                .iter()
+                .map(|partition| partition.high_watermark.max(0) as u64)
+        })
+        .collect()
 }

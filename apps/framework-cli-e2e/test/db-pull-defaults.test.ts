@@ -470,6 +470,7 @@ describe("typescript template tests - db-pull code generation", () => {
       cliPath: CLI_PATH,
       cwd: testProjectDir,
       projectDir: testProjectDir,
+      language: "typescript",
       mode: E2E_DEV_MODE,
       portEnv: PORT_ENV,
       extraEnv: {

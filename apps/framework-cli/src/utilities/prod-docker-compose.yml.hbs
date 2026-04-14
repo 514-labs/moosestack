@@ -293,6 +293,7 @@ services:
       - ${TEMPORAL_UI_PORT:-8080}:8080
 
 networks:
-  temporal-network: null
   clickhouse-network: null
+{{#if scripts_feature}}
+  temporal-network: null
 {{/if}}

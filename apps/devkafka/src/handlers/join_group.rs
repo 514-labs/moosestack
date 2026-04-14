@@ -90,9 +90,12 @@ pub async fn handle(
     // Elect leader if needed, or re-elect if the current leader is no longer a member
     // (e.g. it was reaped above but the leader_id wasn't cleared).
     if group.leader_id.is_none()
-        || !group
-            .members
-            .contains_key(group.leader_id.as_ref().unwrap())
+        || !group.members.contains_key(
+            group
+                .leader_id
+                .as_ref()
+                .map_or(&member_id, |leader_id| leader_id),
+        )
     {
         group.leader_id = Some(member_id.clone());
     }

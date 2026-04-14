@@ -412,7 +412,7 @@ jobs:
             pm-name: npm
             pm-version: bundled
           - group-name: core
-            suite-grep: "typescript template tests main|typescript template tests - migration|typescript template tests - \\.env"
+            suite-grep: "typescript template tests main|typescript template tests - migration|typescript template tests - \\.env|Unloaded Files Warning"
           - group-name: db-pull
             suite-grep: "typescript template tests - db-pull"
           - group-name: s3

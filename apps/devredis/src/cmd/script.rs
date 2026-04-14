@@ -12,11 +12,13 @@ pub enum Script {
 }
 
 impl Script {
+    /// Parse a `SCRIPT` command and its subcommand-specific arguments.
     pub fn parse(parse: &mut Parse) -> crate::Result<Script> {
         let subcommand = parse.next_string()?.to_uppercase();
         match subcommand.as_str() {
             "LOAD" => {
                 let code = parse.next_string()?;
+                parse.finish()?;
                 Ok(Script::Load(code))
             }
             "EXISTS" => {
@@ -27,9 +29,14 @@ impl Script {
                 Ok(Script::Exists(hashes))
             }
             "FLUSH" => {
-                // Consume optional ASYNC/SYNC argument.
-                while parse.remaining() > 0 {
-                    let _ = parse.next_string()?;
+                if parse.remaining() > 1 {
+                    return Err("ERR wrong number of arguments for 'SCRIPT FLUSH' command".into());
+                }
+                if parse.remaining() == 1 {
+                    let mode = parse.next_string()?.to_uppercase();
+                    if mode != "ASYNC" && mode != "SYNC" {
+                        return Err("ERR syntax error".into());
+                    }
                 }
                 Ok(Script::Flush)
             }
@@ -37,6 +44,7 @@ impl Script {
         }
     }
 
+    /// Execute a parsed `SCRIPT` command and write the RESP reply.
     pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
         let response = match self {
             Script::Load(code) => {
@@ -58,5 +66,49 @@ impl Script {
         };
         dst.write_frame(&response).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::frame::Frame;
+
+    fn parse_script(parts: &[&str]) -> crate::Result<Script> {
+        let mut parse = Parse::new(Frame::Array(
+            parts
+                .iter()
+                .map(|part| Frame::Bulk(Bytes::from((*part).to_string())))
+                .collect(),
+        ))
+        .unwrap();
+        let _ = parse.next_string().unwrap();
+        Script::parse(&mut parse)
+    }
+
+    #[test]
+    fn script_load_rejects_extra_args() {
+        let err = parse_script(&["SCRIPT", "LOAD", "return 1", "extra"]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "protocol error; expected end of frame, but there was more"
+        );
+    }
+
+    #[test]
+    fn script_flush_rejects_extra_args() {
+        let err = parse_script(&["SCRIPT", "FLUSH", "SYNC", "extra"]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "ERR wrong number of arguments for 'SCRIPT FLUSH' command"
+        );
+    }
+
+    #[test]
+    fn script_flush_rejects_invalid_mode() {
+        let err = parse_script(&["SCRIPT", "FLUSH", "LATER"]).unwrap_err();
+        assert_eq!(err.to_string(), "ERR syntax error");
     }
 }

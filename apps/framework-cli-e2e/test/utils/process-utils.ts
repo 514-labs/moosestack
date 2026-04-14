@@ -505,6 +505,7 @@ const waitForStreamingDockerlessMode = async (
 
   // Phase 2: Verify ingest endpoint is accepting data (proves Kafka producer path)
   log.debug("Phase 2: Verifying ingest endpoint accepts requests");
+  let ingestReady = false;
   while (Date.now() - startTime < budgetMs) {
     try {
       const response = await fetch(`${baseUrl}/ingest`, {
@@ -515,6 +516,7 @@ const waitForStreamingDockerlessMode = async (
       // Any response (even 400/404) means the server is processing requests
       if (response.status !== 502 && response.status !== 503) {
         log.debug(`✓ Ingest endpoint responding (status: ${response.status})`);
+        ingestReady = true;
         break;
       }
     } catch (error) {
@@ -523,6 +525,11 @@ const waitForStreamingDockerlessMode = async (
       });
     }
     await setTimeoutAsync(1000);
+  }
+  if (!ingestReady) {
+    throw new Error(
+      `Ingest endpoint did not become ready within the remaining timeout (dockerless mode)`,
+    );
   }
 
   // Phase 3: Poll devkafka for consumer groups reaching Stable state.

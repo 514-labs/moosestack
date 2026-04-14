@@ -179,6 +179,10 @@ Moose will create a complete project structure with:
 - **Development environment**: Local ClickHouse instance that mirrors your production schema
 - **Build tools**: Everything configured and ready to go
 </Callout>
+
+<Callout type="info" title="Replicated table imports">
+When `moose init --from-remote` imports replicated ClickHouse tables, Moose strips the remote keeper path and replica name from the generated model definitions. Those values are specific to the source cluster, so local development regenerates the replication parameters at table creation time instead of reusing remote UUID-based paths.
+</Callout>
 <ToggleBlock className="mb-4" openText="Troubleshooting" closeText="Hide troubleshooting">
 - Make sure you are using the `HTTPS` connection string, not the `HTTP` connection string.
 - Make sure the port is correct. For `HTTPS` the default is `8443`

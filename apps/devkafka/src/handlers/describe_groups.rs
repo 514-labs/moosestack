@@ -28,10 +28,15 @@ pub async fn handle(
                             member.member_id = m.member_id.clone();
                             member.client_id = m.client_id.clone();
                             member.client_host = m.client_host.clone();
-                            member.member_metadata = m
-                                .protocols
-                                .first()
-                                .map(|(_, d)| d.clone())
+                            member.member_metadata = group
+                                .protocol_name
+                                .as_ref()
+                                .and_then(|protocol_name| {
+                                    m.protocols
+                                        .iter()
+                                        .find(|(name, _)| name == protocol_name)
+                                        .map(|(_, metadata)| metadata.clone())
+                                })
                                 .unwrap_or_default();
                             member.member_assignment = m.assignment.clone();
                             member

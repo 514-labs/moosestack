@@ -41,7 +41,7 @@ pub async fn handle(
                     if let Some(ref records) = partition_data.records {
                         match partition.append(records) {
                             Ok(base_offset) => {
-                                tracing::info!(
+                                tracing::debug!(
                                     topic = %topic_name.0,
                                     partition = partition_data.index,
                                     base_offset,

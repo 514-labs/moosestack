@@ -29,6 +29,19 @@ export interface TestPorts {
   temporalPort: number;
 }
 
+export interface ClickHouseClientConfig {
+  url: string;
+  username: string;
+  password: string;
+  database: string;
+}
+
+export interface ServerEndpointsConfig {
+  url: string;
+  managementUrl: string;
+  startupMessage: string;
+}
+
 /**
  * Default ports (offset 0) — matches the moose dev defaults.
  */
@@ -85,7 +98,9 @@ export function buildPortEnv(ports: TestPorts): Record<string, string> {
 /**
  * Build a ClickHouse client config object for the given ports.
  */
-export function buildClickHouseConfig(ports: TestPorts) {
+export function buildClickHouseConfig(
+  ports: TestPorts,
+): ClickHouseClientConfig {
   return {
     url: `http://localhost:${ports.clickhouseHttpPort}`,
     username: "panda",
@@ -97,7 +112,7 @@ export function buildClickHouseConfig(ports: TestPorts) {
 /**
  * Build a server config object for the given ports.
  */
-export function buildServerConfig(ports: TestPorts) {
+export function buildServerConfig(ports: TestPorts): ServerEndpointsConfig {
   return {
     url: `http://localhost:${ports.httpPort}`,
     managementUrl: `http://localhost:${ports.managementPort}`,

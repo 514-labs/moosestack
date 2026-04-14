@@ -17,6 +17,11 @@ pub struct Evalsha {
 }
 
 impl Evalsha {
+    fn noscript_error_frame() -> Frame {
+        Frame::Error("NOSCRIPT No matching script. Please use EVAL.".to_string())
+    }
+
+    /// Parse an `EVALSHA` command from a RESP array.
     pub fn parse(parse: &mut Parse) -> crate::Result<Evalsha> {
         let sha1 = parse.next_string()?;
         let numkeys = parse.next_int()?;
@@ -37,14 +42,12 @@ impl Evalsha {
         Ok(Evalsha { sha1, keys, args })
     }
 
+    /// Execute a previously-loaded Lua script by SHA1 and write the RESP reply.
     pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
         let script = match db.script_get(&self.sha1) {
             Some(code) => code,
             None => {
-                dst.write_frame(&Frame::Error(
-                    "NOSCRIPT No matching script. Please use EVAL.".to_string(),
-                ))
-                .await?;
+                dst.write_frame(&Self::noscript_error_frame()).await?;
                 return Ok(());
             }
         };
@@ -61,5 +64,47 @@ impl Evalsha {
 
         dst.write_frame(&response).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::frame::Frame;
+
+    fn parse_evalsha(parts: &[&str]) -> crate::Result<Evalsha> {
+        let mut parse = Parse::new(Frame::Array(
+            parts
+                .iter()
+                .map(|part| Frame::Bulk(Bytes::from((*part).to_string())))
+                .collect(),
+        ))
+        .unwrap();
+        let _ = parse.next_string().unwrap();
+        Evalsha::parse(&mut parse)
+    }
+
+    #[test]
+    fn evalsha_rejects_negative_numkeys() {
+        let err = parse_evalsha(&["EVALSHA", "deadbeef", "-1"]).unwrap_err();
+        assert_eq!(err.to_string(), "ERR Number of keys can't be negative");
+    }
+
+    #[test]
+    fn evalsha_parses_keys_and_args() {
+        let parsed = parse_evalsha(&["EVALSHA", "deadbeef", "2", "k1", "k2", "arg1"]).unwrap();
+        assert_eq!(parsed.sha1, "deadbeef");
+        assert_eq!(parsed.keys, vec!["k1".to_string(), "k2".to_string()]);
+        assert_eq!(parsed.args, vec![Bytes::from("arg1")]);
+    }
+
+    #[test]
+    fn evalsha_noscript_error_frame_matches_redis_shape() {
+        assert!(matches!(
+            Evalsha::noscript_error_frame(),
+            Frame::Error(message) if message == "NOSCRIPT No matching script. Please use EVAL."
+        ));
     }
 }

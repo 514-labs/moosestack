@@ -319,6 +319,14 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn validate_redpanda(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        if !project.features.streaming_engine {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Skipped".to_string(),
+                "native Kafka broker (devkafka) disabled because streaming_engine is off"
+                    .to_string(),
+            )));
+        }
+
         let port = devkafka::broker_port(&project.redpanda_config);
 
         for _ in 0..30 {
@@ -349,6 +357,14 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn validate_temporal(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        if !(self.scripts_enabled || project.features.workflows) {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Skipped".to_string(),
+                "native Temporal dev server disabled because workflows and scripts are off"
+                    .to_string(),
+            )));
+        }
+
         let port = project.temporal_config.temporal_port;
 
         for _ in 0..30 {

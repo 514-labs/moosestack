@@ -67,6 +67,7 @@ fn build_remote_tables_query(
     remote_password: &str,
     remote_db: &str,
     other_dbs: &[&str],
+    use_ssl: bool,
 ) -> String {
     let mut databases = vec![remote_db];
     databases.extend(other_dbs);
@@ -77,9 +78,10 @@ fn build_remote_tables_query(
         .collect::<Vec<_>>()
         .join(", ");
 
+    let remote_fn = if use_ssl { "remoteSecure" } else { "remote" };
+
     format!(
-        "SELECT database, name FROM remoteSecure('{}', 'system', 'tables', '{}', '{}') WHERE database IN ({})",
-        remote_host_and_port, remote_user, remote_password, db_list
+        "SELECT database, name FROM {remote_fn}('{remote_host_and_port}', 'system', 'tables', '{remote_user}', '{remote_password}') WHERE database IN ({db_list})"
     )
 }
 
@@ -499,6 +501,7 @@ async fn get_remote_tables(
         &remote_config.password,
         &remote_config.db_name,
         other_dbs,
+        remote_config.use_ssl,
     );
 
     debug!("Querying remote tables: {}", sql);
@@ -1051,7 +1054,7 @@ mod tests {
 
     #[test]
     fn test_build_remote_tables_query() {
-        let query = build_remote_tables_query("host:9440", "user", "pass", "mydb", &[]);
+        let query = build_remote_tables_query("host:9440", "user", "pass", "mydb", &[], true);
         let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb')";
         assert_eq!(query, expected);
     }
@@ -1064,8 +1067,16 @@ mod tests {
             "pass",
             "mydb",
             &["otherdb1", "otherdb2"],
+            true,
         );
         let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb', 'otherdb1', 'otherdb2')";
+        assert_eq!(query, expected);
+    }
+
+    #[test]
+    fn test_build_remote_tables_query_no_ssl() {
+        let query = build_remote_tables_query("host:9000", "user", "pass", "mydb", &[], false);
+        let expected = "SELECT database, name FROM remote('host:9000', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb')";
         assert_eq!(query, expected);
     }
 

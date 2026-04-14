@@ -4,9 +4,9 @@
 //! the group is visible through ListGroups and its details are correct in
 //! DescribeGroups. Also tests edge cases: empty broker, non-existent groups.
 
-use std::sync::Arc;
+mod raw_protocol;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use kafka_protocol::messages::describe_groups_request::DescribeGroupsRequest;
 use kafka_protocol::messages::describe_groups_response::DescribeGroupsResponse;
 use kafka_protocol::messages::join_group_request::{JoinGroupRequest, JoinGroupRequestProtocol};
@@ -15,107 +15,11 @@ use kafka_protocol::messages::list_groups_request::ListGroupsRequest;
 use kafka_protocol::messages::list_groups_response::ListGroupsResponse;
 use kafka_protocol::messages::sync_group_request::{SyncGroupRequest, SyncGroupRequestAssignment};
 use kafka_protocol::messages::sync_group_response::SyncGroupResponse;
-use kafka_protocol::messages::{ApiKey, RequestHeader, ResponseHeader};
-use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use kafka_protocol::messages::{ApiKey, ApiVersionsRequest, ApiVersionsResponse};
+use kafka_protocol::protocol::{Decodable, StrBytes};
 use tokio::net::TcpStream;
-use tokio_util::sync::CancellationToken;
 
-use devkafka::broker::Broker;
-use devkafka::server;
-
-// ---------------------------------------------------------------------------
-// Helpers (same pattern as offset_fetch tests)
-// ---------------------------------------------------------------------------
-
-async fn send_request<E: Encodable>(
-    stream: &mut TcpStream,
-    api_key: ApiKey,
-    api_version: i16,
-    correlation_id: i32,
-    body: &E,
-) {
-    let header_version = api_key.request_header_version(api_version);
-
-    let mut header = RequestHeader::default();
-    header.request_api_key = api_key as i16;
-    header.request_api_version = api_version;
-    header.correlation_id = correlation_id;
-    header.client_id = Some(StrBytes::from_static_str("test-client"));
-
-    let mut payload = BytesMut::new();
-    header.encode(&mut payload, header_version).unwrap();
-    body.encode(&mut payload, api_version).unwrap();
-
-    let mut frame = BytesMut::with_capacity(4 + payload.len());
-    frame.put_u32(payload.len() as u32);
-    frame.extend_from_slice(&payload);
-
-    stream.write_all(&frame).await.unwrap();
-    stream.flush().await.unwrap();
-}
-
-async fn read_response(
-    stream: &mut TcpStream,
-    api_key: ApiKey,
-    api_version: i16,
-) -> (ResponseHeader, Bytes) {
-    let response_header_version = api_key.response_header_version(api_version);
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await.unwrap();
-    let frame_len = u32::from_be_bytes(len_buf) as usize;
-
-    let mut buf = vec![0u8; frame_len];
-    stream.read_exact(&mut buf).await.unwrap();
-
-    let mut frame = Bytes::from(buf);
-    let header = ResponseHeader::decode(&mut frame, response_header_version).unwrap();
-    (header, frame)
-}
-
-// ---------------------------------------------------------------------------
-// Test harness
-// ---------------------------------------------------------------------------
-
-struct TestBroker {
-    port: u16,
-    cancel: CancellationToken,
-}
-
-impl TestBroker {
-    async fn start() -> Self {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let cancel = CancellationToken::new();
-
-        let broker = Arc::new(Broker::new("127.0.0.1".to_string(), port, 1));
-        broker.spawn_reaper(cancel.clone());
-
-        let server_cancel = cancel.clone();
-        tokio::spawn(async move {
-            server::run_with_listener(broker, listener, server_cancel)
-                .await
-                .unwrap();
-        });
-
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        Self { port, cancel }
-    }
-
-    async fn connect(&self) -> TcpStream {
-        TcpStream::connect(format!("127.0.0.1:{}", self.port))
-            .await
-            .unwrap()
-    }
-}
-
-impl Drop for TestBroker {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-    }
-}
+use raw_protocol::{read_response, send_request, TestBroker};
 
 // ---------------------------------------------------------------------------
 // Helper: create a consumer group via JoinGroup + SyncGroup
@@ -462,8 +366,6 @@ async fn describe_groups_v0_round_trip() {
 /// ApiVersions should advertise ListGroups (key 16) and DescribeGroups (key 15).
 #[tokio::test]
 async fn api_versions_advertises_group_apis() {
-    use kafka_protocol::messages::{ApiVersionsRequest, ApiVersionsResponse};
-
     let tb = TestBroker::start().await;
     let mut stream = tb.connect().await;
 

@@ -66,7 +66,6 @@ import {
   isDockerlessMode,
   performGlobalCleanup,
   stopDevProcess,
-  killRemainingProcesses,
   logger,
   resolveE2eDevMode,
   startMooseDev,
@@ -3019,7 +3018,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Stop the main dev server and its native infra to free ports
           testLogger.info("Stopping main dev server for namespace DLQ test...");
           await stopDevProcess(devProcess);
-          await killRemainingProcesses();
 
           testLogger.info(
             "Initializing fresh project with namespace for DLQ test...",

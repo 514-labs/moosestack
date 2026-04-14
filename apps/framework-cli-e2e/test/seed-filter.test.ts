@@ -16,20 +16,27 @@
  * `remote()` (non-TLS) to copy data between databases.
  */
 
-import { exec, spawn, ChildProcess } from "child_process";
+import { exec, ChildProcess } from "child_process";
 import { expect } from "chai";
 import { createClient } from "@clickhouse/client";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 
-import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
+import { TIMEOUTS } from "./constants";
 import {
   waitForServerStart,
   createTempTestDirectory,
   cleanupTestSuite,
   setupTypeScriptProject,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildClickHouseConfig,
+  buildServerConfig,
+  resolveE2eDevMode,
+  startMooseDev,
+  getCleanupOptionsForMode,
 } from "./utils";
 
 const execAsync = promisify(exec);
@@ -43,15 +50,19 @@ const MOOSE_TS_LIB_PATH = path.resolve(
 /** The "remote" ClickHouse URL the seed command connects to — same instance, different database. */
 const SEED_SOURCE_DB = "seed_source";
 const SEED_SOURCE_TABLE = "items";
-const SEED_SOURCE_URL = `clickhouse://panda:pandapass@127.0.0.1:9000/${SEED_SOURCE_DB}`;
+const testLogger = logger.scope("seed-filter-test");
+const PORTS = getTestPorts(70);
+const PORT_ENV = buildPortEnv(PORTS);
+const CLICKHOUSE_CONFIG = buildClickHouseConfig(PORTS);
+const SERVER_CONFIG = buildServerConfig(PORTS);
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const SEED_SOURCE_URL = `clickhouse://panda:pandapass@127.0.0.1:${PORTS.clickhouseNativePort}/${SEED_SOURCE_DB}`;
 
 const SEED_WHERE = "value > 20";
 const SEED_LIMIT = 10;
 /** Total source rows that match the WHERE clause (value 21-49 = 29 per cycle * 2 cycles). */
 const MATCHING_ROWS = 58;
 const TOTAL_SOURCE_ROWS = 100;
-
-const testLogger = logger.scope("seed-filter-test");
 
 /**
  * OlapTable definition written into the project after init.
@@ -81,8 +92,13 @@ async function seedWithRetry(
   cwd: string,
   retries = 10,
   delayMs = 3000,
+  resetDestinationTable?: string,
 ): Promise<{ stdout: string; stderr: string }> {
   for (let attempt = 1; attempt <= retries; attempt++) {
+    if (attempt > 1 && resetDestinationTable) {
+      await truncateTable(resetDestinationTable);
+    }
+
     try {
       const result = await execAsync(cmd, { cwd });
 
@@ -273,20 +289,18 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     // 3. Start moose dev --dockerless
     testLogger.info("Starting moose dev --dockerless...");
-    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: testProjectDir,
-      env: {
-        ...process.env,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-        MOOSE_ACCEPT_DESTRUCTIVE: "1",
+      projectDir: testProjectDir,
+      language: "typescript",
+      mode: E2E_DEV_MODE,
+      portEnv: PORT_ENV,
+      extraEnv: {
         MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        MOOSE_FEATURES__WORKFLOWS: "false",
-        MOOSE_TELEMETRY__ENABLED: "false",
         RUST_LOG: "info",
       },
-    });
+    }).devProcess;
     devProcess.on("error", (err) => {
       testLogger.error("moose dev spawn error:", err);
     });
@@ -372,7 +386,7 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     await cleanupTestSuite(devProcess, testProjectDir, "test-seed-filter", {
       logPrefix: "Seed Filter Test",
-      includeDocker: false,
+      ...getCleanupOptionsForMode(E2E_DEV_MODE),
     });
   });
 
@@ -385,6 +399,9 @@ describe("moose seed clickhouse with seedFilter", function () {
     await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE}`,
       testProjectDir,
+      10,
+      3000,
+      SEED_SOURCE_TABLE,
     );
 
     const count = await localRowCount(SEED_SOURCE_TABLE);
@@ -408,6 +425,9 @@ describe("moose seed clickhouse with seedFilter", function () {
     await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE} --limit 5`,
       testProjectDir,
+      10,
+      3000,
+      SEED_SOURCE_TABLE,
     );
 
     const count = await localRowCount(SEED_SOURCE_TABLE);
@@ -429,6 +449,9 @@ describe("moose seed clickhouse with seedFilter", function () {
     await seedWithRetry(
       `"${CLI_PATH}" seed clickhouse --clickhouse-url "${SEED_SOURCE_URL}" --table ${SEED_SOURCE_TABLE} --all`,
       testProjectDir,
+      10,
+      3000,
+      SEED_SOURCE_TABLE,
     );
 
     const count = await localRowCount(SEED_SOURCE_TABLE);

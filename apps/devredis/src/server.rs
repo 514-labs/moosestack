@@ -106,6 +106,18 @@ fn peek_command_name(frame: &Frame) -> Option<String> {
     None
 }
 
+fn to_redis_error_frame(err: impl std::fmt::Display) -> Frame {
+    let message = err.to_string();
+    if message.starts_with("ERR ")
+        || message.starts_with("WRONGTYPE ")
+        || message.starts_with("NOSCRIPT ")
+    {
+        Frame::Error(message)
+    } else {
+        Frame::Error(format!("ERR {}", message))
+    }
+}
+
 impl Handler {
     /// Process a single connection.
     async fn run(&mut self) -> crate::Result<()> {
@@ -154,11 +166,12 @@ impl Handler {
                     match tx_queue.take() {
                         Some(queue) => {
                             let mut results = Vec::with_capacity(queue.len());
+                            let mut should_close = false;
                             for queued_frame in queue {
                                 match Command::from_frame(queued_frame) {
                                     Ok(cmd) => {
                                         self.connection.start_capture();
-                                        let _ = cmd
+                                        should_close |= cmd
                                             .apply(
                                                 &self.db,
                                                 &mut self.connection,
@@ -166,16 +179,21 @@ impl Handler {
                                             )
                                             .await?;
                                         let captured = self.connection.stop_capture();
-                                        results.push(
-                                            captured.into_iter().next().unwrap_or(Frame::NullBulk),
-                                        );
+                                        results.push(match captured.len() {
+                                            0 => Frame::NullBulk,
+                                            1 => captured.into_iter().next().unwrap(),
+                                            _ => Frame::Array(captured),
+                                        });
                                     }
                                     Err(e) => {
-                                        results.push(Frame::Error(format!("ERR {}", e)));
+                                        results.push(to_redis_error_frame(e));
                                     }
                                 }
                             }
                             self.connection.write_frame(&Frame::Array(results)).await?;
+                            if should_close {
+                                return Ok(());
+                            }
                         }
                         None => {
                             self.connection
@@ -190,10 +208,19 @@ impl Handler {
 
             // Inside a transaction: queue the frame and reply +QUEUED.
             if let Some(ref mut queue) = tx_queue {
-                queue.push(frame);
-                self.connection
-                    .write_frame(&Frame::Simple("QUEUED".into()))
-                    .await?;
+                match Command::from_frame(frame.clone()) {
+                    Ok(_) => {
+                        queue.push(frame);
+                        self.connection
+                            .write_frame(&Frame::Simple("QUEUED".into()))
+                            .await?;
+                    }
+                    Err(err) => {
+                        self.connection
+                            .write_frame(&to_redis_error_frame(err))
+                            .await?;
+                    }
+                }
                 continue;
             }
 
@@ -201,7 +228,7 @@ impl Handler {
             let cmd = match Command::from_frame(frame) {
                 Ok(cmd) => cmd,
                 Err(err) => {
-                    let response = Frame::Error(format!("ERR {}", err));
+                    let response = to_redis_error_frame(err);
                     self.connection.write_frame(&response).await?;
                     continue;
                 }
