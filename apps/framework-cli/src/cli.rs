@@ -699,6 +699,7 @@ pub async fn top_command_handler(
 
             let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
             let confirmation_policy = ConfirmationPolicy {
+                accept_all,
                 accept_destructive: accept_all
                     || *yes_destructive
                     || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
@@ -1938,6 +1939,7 @@ async fn confirm_and_save_migration(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
@@ -2158,6 +2160,7 @@ async fn confirm_and_save_migration_legacy(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,

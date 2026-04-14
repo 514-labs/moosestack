@@ -328,6 +328,9 @@ pub fn classify_risk_from_deltas(
 /// Controls whether the confirmation gates auto-approve.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfirmationPolicy {
+    /// Auto-accept *all* prompts (destructive, renames, and version bump decisions).
+    /// Set by `--yes-all` / `MOOSE_ACCEPT_ALL=1`.
+    pub accept_all: bool,
     /// Auto-accept destructive operations (table/column drops, recreates, view removals).
     /// Set by `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE=1`, or implied by `--yes-all`.
     pub accept_destructive: bool,

@@ -469,7 +469,7 @@ async fn watch(
                                                         &plan_result.changes.olap_changes,
                                                         &current_infra,
                                                         &project.clickhouse_config.db_name,
-                                                        confirmation_policy.accept_destructive,
+                                                        confirmation_policy.accept_all,
                                                         &mut risk,
                                                     ).await? {
                                                         Some(d) => d,

@@ -720,7 +720,7 @@ pub async fn start_development_mode(
         &plan.changes.olap_changes,
         &reconciled_map,
         &project.clickhouse_config.db_name,
-        confirmation_policy.accept_destructive,
+        confirmation_policy.accept_all,
         &mut risk,
     )
     .await?
