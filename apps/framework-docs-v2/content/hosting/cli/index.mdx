@@ -23,22 +23,25 @@ Argument convention:
 - `auth`: Manage authentication.
 - `org`: Manage organizations.
 - `project`: Manage projects (`list`, `link`, `setup`).
-- `deployment`: Manage deployments (`list`).
-- `doc`: Browse and search documentation (`list`, `show`, `search`, `browse`).
+- `deployment`: Manage deployments (`list`, `redeploy`, `wait`).
+- `docs`: Browse and search documentation (`list`, `show`, `search`, `browse`).
 - `cli`: Manage installed CLIs (`update`).
 - `env`: Manage environment variables (`list`, `get`, `set`, `delete`).
-- `agent`: Agent-focused read-only command surface.
-- `api-endpoint`: Manage API endpoint resources for a deployment.
-- `stream`: Manage stream resources for a deployment.
-- `function`: Manage function resources for a deployment.
-- `stream-to-table-sync`: Manage stream-to-table sync resources for a deployment.
-- `stream-to-stream-sync`: Manage stream-to-stream sync resources for a deployment.
-- `table`: Manage table resources for a deployment.
-- `view`: Manage view resources for a deployment.
-- `web-app`: Manage web-app resources for a deployment.
-- `workflow`: Manage workflow resources for a deployment.
-- `sql-resource`: Manage SQL resources for a deployment.
-- `materialized-view`: Manage materialized view resources for a deployment.
+- `metrics`: Query metrics and analytics.
+- `logs`: Query application logs.
+- `agent`: Configure coding agent integrations and inspect resources.
+- `clickhouse`: Run queries against ClickHouse.
+- `api-endpoint`: Manage API endpoint resources.
+- `stream`: Manage stream resources.
+- `function`: Manage function resources.
+- `stream-to-table-sync`: Manage stream-to-table sync resources.
+- `stream-to-stream-sync`: Manage stream-to-stream sync resources.
+- `table`: Manage table resources.
+- `view`: Manage view resources.
+- `web-app`: Manage web-app resources.
+- `workflow`: Manage workflow resources.
+- `sql-resource`: Manage SQL resources.
+- `materialized-view`: Manage materialized view resources.
 - `help`: Print help for the given command.
 
 ## Aliases
@@ -88,7 +91,7 @@ Resources following this pattern:
 514 agent deployment list --project my-org/my-project
 514 env list --project my-org/my-project
 514 env set API_KEY=sk-123 --project my-org/my-project
-514 doc search "deployment"
+514 docs search "deployment"
 514 cli update moose
 ```
 

@@ -56,11 +56,11 @@ This template includes comprehensive tests for all supported ClickHouse engines 
 
 The engine test file demonstrates proper configuration for each engine type using the new engine configuration classes to ensure compatibility and correct table creation.
 
-## Deploy on Boreal
+## Deploy with 514 Hosting
 
-The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
+514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-[Sign up](https://www.boreal.cloud/sign-up).
+https://fiveonefour.boreal.cloud
 
 ## License
 

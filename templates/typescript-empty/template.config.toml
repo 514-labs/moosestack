@@ -1,11 +1,11 @@
 language = "typescript" # Must be typescript or python
 description = "Blank TypeScript MooseStack project."
 post_install_print = """
-Deploy on Boreal
+Deploy with 514 Hosting
 
-Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
+514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-https://boreal.cloud
+https://fiveonefour.boreal.cloud
 
 ---------------------------------------------------------
 

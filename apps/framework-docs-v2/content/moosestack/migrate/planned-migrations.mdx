@@ -142,7 +142,7 @@ If you are using planned migrations for a breaking OLAP table change, see [Schem
 Drift occurs when the target database's schema changes between the time you generate a plan and the time you apply it.
 
 **How it works:**
-1. `moose generate` writes the current DB state to `remote_state.json`.
+1. `moose generate migration` writes the current DB state to `remote_state.json`.
 2. `moose migrate` (serverless) or `moose prod` (server runtime) compares `remote_state.json` with the *current* DB state.
 3. If they differ (hash mismatch), the migration **aborts**.
 
