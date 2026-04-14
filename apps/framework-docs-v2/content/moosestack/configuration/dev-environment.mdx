@@ -109,6 +109,14 @@ This logs payloads at three key points with searchable prefixes:
 
 All logs appear in Moose logs and can be viewed using `moose logs --tail`.
 
+## Debugging SQL Queries
+
+When a ClickHouse SQL query fails, Moose logs the error status and message at `error` level. To also see the full SQL statement that failed:
+
+:::include /shared/debugging-failed-sql.mdx
+
+See the [Troubleshooting guide](/moosestack/help/troubleshooting#issue-debugging-failed-clickhouse-queries) for more details.
+
 ## Docker Infrastructure Extensions
 
 Extend the default Moose development infrastructure by creating a specific override file in your project root.

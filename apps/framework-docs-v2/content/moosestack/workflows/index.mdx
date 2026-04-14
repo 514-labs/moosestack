@@ -1,158 +1,146 @@
 ---
 title: Moose Workflows
-description: Build ETL pipelines, scheduled jobs, and long-running tasks with orchestration
+description: Add scheduled jobs and durable background processing around Moose OLAP
 order: 0
 category: workflows
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
 
 # Moose Workflows
 
-## Overview
+Moose Workflows adds durable background processing around Moose OLAP. Use it for scheduled jobs, backfills, external calls, or multi-step tasks that should run reliably outside the request path.
 
-The Workflows module provides standalone task orchestration and automation. You can use this capability independently to build ETL pipelines, run scheduled jobs, trigger background tasks, and manage long-running tasks without requiring other MooseStack components like databases or streams.
-
-### Basic Usage
-
-<ExportRequirement primitive="Workflow and Task" example="export { myworkflow, task1, task2 }" />
+<ExportRequirement
+  primitive="Workflow and Task"
+  example="export { myworkflow, prepareReport, persistReport }"
+  pythonExample="from app.report_workflow import myworkflow, prepare_report_task, persist_report_task"
+/>
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```typescript filename="DataFlow.ts" copy
+```typescript filename="app/report-workflow.ts" copy
 import { Task, Workflow } from "@514labs/moose-lib";
 
-export interface Foo {
-  name: string;
+interface ReportRequest {
+  reportDate: string;
 }
 
-export interface Bar {
-  name: string;
-  greeting: string;
-  counter: number;
+interface ReportResult {
+  reportDate: string;
+  status: "ready";
 }
 
-export const task1 = new Task<Foo, Bar>("task1", {
+export const persistReport = new Task<ReportResult, void>("persist_report", {
   run: async (ctx) => {
-    const greeting = `hello, ${ctx.input.name}!`;
-    return {
-      name: ctx.input.name,
-      greeting,
-      counter: 1
-    };
+    console.log(`Persisted report for ${ctx.input.reportDate}`);
   },
 });
 
-export const task2 = new Task<Bar, void>("task2", {
-  run: async (ctx) => {
-    console.log(`${ctx.input.greeting} (count: ${ctx.input.counter})`);
-  },
+export const prepareReport = new Task<ReportRequest, ReportResult>("prepare_report", {
+  run: async (ctx) => ({
+    reportDate: ctx.input.reportDate,
+    status: "ready",
+  }),
+  onComplete: [persistReport],
 });
 
-export const myworkflow = new Workflow("myworkflow", {
-  startingTask: task1
+export const myworkflow = new Workflow("daily_report", {
+  startingTask: prepareReport,
 });
-
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```python filename="DataFlow.py" copy
+```python filename="app/report_workflow.py" copy
 from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 from pydantic import BaseModel
 
-class Foo(BaseModel):
-    name: str
+class ReportRequest(BaseModel):
+    report_date: str
 
-class Bar(BaseModel):
-    name: str
-    greeting: str
-    counter: int
+class ReportResult(BaseModel):
+    report_date: str
+    status: str
 
-def run_task1(ctx: TaskContext[Foo]) -> Bar:
-    greeting = f"hello, {ctx.input.name}!"
-    return Bar(
-        name=ctx.input.name,
-        greeting=greeting,
-        counter=1
-    )
+def persist_report(ctx: TaskContext[ReportResult]) -> None:
+    print(f"Persisted report for {ctx.input.report_date}")
 
-def run_task2(ctx: TaskContext[Bar]) -> None:
-    print(f"{ctx.input.greeting} (count: {ctx.input.counter})")
-
-task2 = Task[Bar, None](
-    name="task2",
-    config=TaskConfig(run=run_task2)
+persist_report_task = Task[ReportResult, None](
+    name="persist_report",
+    config=TaskConfig(run=persist_report),
 )
 
-task1 = Task[Foo, Bar](
-    name="task1",
-    config=TaskConfig(run=run_task1, on_complete=[task2])
+def prepare_report(ctx: TaskContext[ReportRequest]) -> ReportResult:
+    return ReportResult(
+        report_date=ctx.input.report_date,
+        status="ready",
+    )
+
+prepare_report_task = Task[ReportRequest, ReportResult](
+    name="prepare_report",
+    config=TaskConfig(run=prepare_report, on_complete=[persist_report_task]),
 )
 
 myworkflow = Workflow(
-    name="myworkflow",
-    config=WorkflowConfig(starting_task=task1)
+    name="daily_report",
+    config=WorkflowConfig(starting_task=prepare_report_task),
 )
-
-# No export needed - Python modules are automatically discovered
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-### Enabling Workflows
+Workflows usually complement other Moose modules rather than replace them. A common pattern is to schedule or trigger work that reads from Moose OLAP, writes new records, or coordinates external systems around your data model.
 
-To enable workflows, you need to add the `workflows` feature to your `moose.config.toml` file:
+<Callout type="info" title="Enable workflows before defining them">
+Turn on `features.workflows` in `moose.config.toml` before you create `Workflow` and `Task` resources.
+</Callout>
 
 ```toml filename="moose.config.toml" copy
 [features]
 workflows = true
 ```
 
-## Core Capabilities
+## What can you do with Moose Workflows?
 
-<CTACards>
-<CTACard
-  title="Define Workflows"
-  description="Create workflow definitions with task sequences and data flow"
-  ctaLink="/moosestack/workflows/define-workflow"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Definition" }}
-/>
-<CTACard
-  title="Schedule Workflows"
-  description="Set up recurring and scheduled workflow execution"
-  ctaLink="/moosestack/workflows/schedule-workflow"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Scheduling" }}
-/>
-<CTACard
-  title="Trigger Workflows"
-  description="Start workflows from events, APIs, or external triggers"
-  ctaLink="/moosestack/workflows/trigger-workflow"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Triggers" }}
-/>
-</CTACards>
+### Define durable background work
 
-## Integration with Other Capabilities
+- **[Define workflows](/moosestack/workflows/define-workflow)** with typed tasks and explicit sequencing
 
-While the Workflows capability works independently, it is designed to be used in conjunction with other MooseStack capabilities:
+### Start work on a schedule or from events
+
+- **[Schedule workflows](/moosestack/workflows/schedule-workflow)** for recurring jobs such as daily refreshes or hourly syncs
+- **[Trigger workflows](/moosestack/workflows/trigger-workflow)** from APIs, operators, or other systems
+
+### Control long-running execution
+
+- **[Set retries and timeouts](/moosestack/workflows/retries-and-timeouts)** for failure handling and runtime limits
+- **[Cancel running workflows](/moosestack/workflows/cancel-workflow)** when work should stop early
+
+## Get Started
 
 <CTACards columns={1}>
-<CTACard
-  title="OLAP"
-  description="For batch data ingest, use workflows to run batch data extraction, transformations, and then load directly into your OLAP tables with the `OlapTable.insert()` method."
-  ctaLink="/moosestack/olap/insert-data"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
-/>
-<CTACard
-  title="APIs"
-  description="Trigger workflows from API endpoints or call APIs from workflow tasks."
-  ctaLink="/moosestack/apis/trigger-api"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
-/>
+  <CTACard
+    title="Run work on a schedule"
+    description="Start here if the workflow should run automatically on a recurring cadence."
+    ctaLink="/moosestack/workflows/schedule-workflow"
+    ctaLabel="Schedule a workflow →"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Trigger work from an API or event"
+    description="Start here if another system or request path should kick off the workflow."
+    ctaLink="/moosestack/workflows/trigger-workflow"
+    ctaLabel="Trigger a workflow →"
+    orientation="horizontal"
+  />
 </CTACards>
+
+## Related resources
+
+- [Define workflows](/moosestack/workflows/define-workflow)
+- [Schedule workflows](/moosestack/workflows/schedule-workflow)
+- [Trigger workflow](/moosestack/workflows/trigger-workflow)
+- [Retries and timeouts](/moosestack/workflows/retries-and-timeouts)
+- [Cancel workflow](/moosestack/workflows/cancel-workflow)
+- [Insert data](/moosestack/olap/insert-data) when workflow output should land in Moose OLAP
+- [Trigger API](/moosestack/apis/trigger-api) when workflows should start from HTTP

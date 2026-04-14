@@ -12,42 +12,29 @@ order: 1
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-## Core Commands
+## Global Flags
+
+These flags apply to all commands:
+
+- `--backtrace`: Print backtraces for all errors (same as RUST_LIB_BACKTRACE=1)
+- `-d, --debug`: Turn debugging information on
+
+## Setup
 
 ### Init
-Initializes a new Moose project.
+Initialize a new project.
 ```bash
 moose init <name> [template] [--location <location>] [--from-remote [<connection-string>]] [--custom-dockerfile] [--no-fail-already-exists]
 ```
 - `<name>`: Name of your app or service
-- `[template]`: Optional template to use for the project. Run `moose template list` to see the catalog.
-- `--location`: Optional location for your app or service
-- `--from-remote`: Optionally bootstrap the project from a remote ClickHouse database
-- `--custom-dockerfile`: Generate a custom Dockerfile at the project root for later customization
-- `--no-fail-already-exists`: Skip the directory existence check
-
-If you omit `template`, the CLI prompts you to pick one interactively.
-
-#### List Templates
-Lists available templates for project initialization.
-```bash
-moose template list
-```
-
-For editor integrations and other automation, you can request machine-readable output:
-
-```bash
-moose template list --json
-```
-
-The JSON payload is versioned for backwards-compatible tooling. It includes:
-
-- `schema_version`: version of the JSON response schema
-- `template_version`: version of the template manifest being listed
-- `templates`: visible templates available for initialization
+- `[template]`: Template to use. Run `moose template list` to see the catalog. Omit to pick interactively.
+- `--location, -l`: Location for your app or service
+- `--from-remote`: Initialize from a remote database
+- `--custom-dockerfile`: Generate a custom Dockerfile at project root
+- `--no-fail-already-exists`: Allow init in an existing directory
 
 ### Harness Init
-Initializes a Moose project and sets up the developer harness in one flow.
+Initialize a project and set up the developer harness in one flow.
 
 ```bash
 moose harness init
@@ -55,37 +42,42 @@ moose harness init <name> <template> [--location <location>] [--agent <agent>] [
 ```
 
 - Zero-arg `moose harness init` starts the interactive wizard.
-  Template selection is presented as a validated numbered list, so typos are caught before initialization continues.
-- `moose harness init` scaffolds a project and configures the harness in one flow. For existing projects, use `514 agent init` to install shared skills without rerunning project initialization.
-- MooseStack MCP is configured through the `moose mcp` stdio proxy where the target coding agent supports local stdio servers, avoiding a hard-coded `localhost:4000/mcp` dependency in those agent configs.
-- Arg-driven mode is non-interactive: if you pass flags or positionals, omitted optional values fall back to defaults instead of prompting. MooseStack LSP installation defaults to on.
-- `--agent`: Repeat to target specific coding agents. Omit to auto-detect supported agents.
-- `--name <name>`: Explicitly set the project name when it would otherwise collide with a harness subcommand such as `schema`.
-- `--template <template>`: Explicitly set the template. Combine with `--name` for collision-safe invocations like `moose harness init --name schema --template typescript`.
-- `--from-remote <connection-string>`: Bootstrap the project from a remote ClickHouse cluster.
-- `--lsp`: Install and configure the MooseStack LSP where supported. This is the default behavior.
-- `--no-lsp`: Skip MooseStack LSP installation and configuration explicitly.
-- `--branch <name>`: Install harness skills from a specific `agent-skills` Git branch instead of `main`.
-- `--no-fail-already-exists`: Reuse an existing target directory instead of treating it as an error.
-- `--custom-dockerfile`: Generate a customizable Dockerfile at the scaffolded project root.
-- `--input <path>`: Read structured JSON input from a file. Use `--input -` to read JSON from stdin.
+- Arg-driven mode is non-interactive: if you pass flags or positionals, omitted values fall back to defaults.
+- `--agent`: Target specific coding agents instead of auto-detecting (repeatable)
+- `--name <name>`: Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`.
+- `--template <template>`: Explicit template name. Use this with `--name` when positional parsing would be ambiguous.
+- `--from-remote <connection-string>`: Initialize from a remote ClickHouse database
+- `--lsp`: Install and configure MooseStack LSP (default)
+- `--no-lsp`: Skip MooseStack LSP installation/configuration
+- `--branch <name>`: Git branch of the agent-skills repo to install from (default: main)
+- `--no-fail-already-exists`: Allow init in an existing directory
+- `--custom-dockerfile`: Generate a custom Dockerfile at project root
+- `--input <path>`: Read structured JSON input from a file, or use `-` for stdin
 
-For automation and editor integrations, you can inspect the versioned input contract:
+For automation, inspect the versioned input contract:
 
 ```bash
 moose harness init schema --json
 ```
 
-Additional examples:
+Examples:
 
 ```bash
-moose harness init my-app typescript --branch nico/eng-2598 --agent codex
-moose harness init my-app typescript --no-lsp --agent none
-moose harness init my-app typescript --no-fail-already-exists --custom-dockerfile
+moose harness init my-app typescript --agent codex
+moose harness init --name schema --template typescript --agent none
+moose harness init my-app python-empty --location ./sandbox
+moose harness init --input request.json
+cat request.json | moose harness init --input -
 ```
 
-### Component
-Lists available components you can add to your project.
+### Template List
+List available templates for project initialization.
+```bash
+moose template list [--json]
+```
+
+### Component List
+List available components you can add to your project.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -94,7 +86,7 @@ moose component list
 ```
 
 ### Add
-Adds a pre-built component to an existing project. Downloads the component files from a registry. Some components also install dependencies; others copy a self-contained package and print the manual follow-up steps.
+Add a pre-built component to an existing project.
 
 > **Note:** This command is experimental. Component APIs and available components may change in future releases.
 
@@ -104,345 +96,282 @@ moose add <component> [--dir <path>] [--overwrite] [--yes]
 
 **Components:**
 
-```bash
-# Add an MCP server to a Moose project
-moose add mcp-server [--dir <moose-project-dir>]
-
-# Add a chat UI to a Next.js app
-moose add chat [--dir <nextjs-app-dir>]
-
-# Add a standalone benchmark package to a new directory
-mkdir query-benchmarks
-moose add benchmark --dir ./query-benchmarks
-```
+- `mcp-server`: MCP server with ClickHouse query tools at /tools
+- `chat`: AI chat panel for Next.js (requires an MCP server)
+- `benchmark`: Query benchmark package for a TypeScript Moose project
 
 **Flags:**
 - `--dir, -d`: Target directory (defaults to current directory)
 - `--overwrite`: Replace files that already exist
-- `--yes, -y`: Skip confirmation prompt (useful for scripting or LLM-driven workflows)
+- `--yes, -y`: Skip confirmation prompts
 
-**Example:**
+**Examples:**
 ```bash
-# From a monorepo root with moose/ and web/ packages
-moose add mcp-server --dir moose
-moose add chat --dir web
-mkdir query-benchmarks && moose add benchmark --dir query-benchmarks
+moose add mcp-server --dir packages/moosestack-service
+moose add chat --dir packages/web-app
+moose add benchmark --dir moose
 ```
 
-After installing, follow the printed "Next steps" to wire up environment variables and start the services.
-
-The `benchmark` component scaffolds a standalone benchmark package into the directory specified by `--dir`. Dependencies are installed automatically. After scaffolding, edit `benchmark.config.ts` to import your compiled query model from your Moose project, define the base query and scenarios, run `moose build` in your Moose project, then run the benchmark scripts (`npm test`, `npm run bench`).
-
-### Build
-Builds your Moose project.
-```bash
-moose build [--docker] [--amd64] [--arm64]
-```
-- `--docker`: Generate a Dockerfile and build Docker image(s)
-- `--amd64`: Build for AMD64 architecture
-- `--arm64`: Build for ARM64 architecture
+## Develop
 
 ### Dev
-Starts a local development environment with hot reload and automatic infrastructure management.
+Start a local development environment with hot reload and automatic infrastructure management.
 
 **Prerequisites:** Install project dependencies before running `moose dev`:
 - **TypeScript**: `npm install` or `pnpm install`
 - **Python**: `pip install -r requirements.txt`
 
 ```bash
-moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes-all] [--yes-destructive] [--yes-rename]
+moose dev [--mcp] [--no-infra] [--dockerless] [--timestamps] [--timing] [--log-payloads] [--yes-all] [--yes-destructive] [--yes-rename]
 ```
-- `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp) for details.
-- `--no-infra`: Skip starting docker containers for infrastructure
-- `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
-- `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
-- `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
-- `--yes-all`: Skip all confirmation prompts (renames, destructive operations, and version bump decisions). Equivalent to passing both `--yes-destructive` and `--yes-rename`, and auto-accepting version bumps. Can also be set via `MOOSE_ACCEPT_ALL=1`.
-- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals, and old table drops from version bumps). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
-- `--yes-rename`: Skip the interactive confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
+- `--mcp`: Enable or disable the MCP server (default: true). Provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp).
+- `--no-infra`: Skip starting local infrastructure
+- `--dockerless`: Use native binaries for ClickHouse and Temporal instead of Docker
+- `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines
+- `--timing`: Show elapsed time for operations (e.g., "completed in 234ms")
+- `--log-payloads`: Log payloads at ingest API and streaming functions for debugging
+- `--yes-all`: Skip all confirmation prompts (renames, destructive operations, and version bump decisions). Can also be set via `MOOSE_ACCEPT_ALL=1`.
+- `--yes-destructive`: Auto-approve destructive operations (including old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-rename`: Auto-approve column renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 
 When a [version bump](/moosestack/olap/schema-versioning) is detected (a `version` field change on an `OlapTable`), `moose dev` prompts for backfill and old-table retention decisions before applying the change.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
-**Running in Background:**
-For AI assistants or when you need to run other commands in the same terminal:
-
+**Running in background:**
 ```bash
 nohup moose dev &
 ```
 
-**Example with timing flags:**
+### Build
+Build your Moose project.
 ```bash
-# Basic dev mode
-moose dev
-
-# With timestamps for debugging
-moose dev --timestamps
-
-# With performance timing
-moose dev --timing
-
-# Both together for detailed monitoring
-moose dev --timestamps --timing
+moose build [--docker] [--amd64] [--arm64]
 ```
-
-**Sample output with `--timing`:**
-```
-Planning finished in 145ms
-Validation finished in 23ms
-Execution finished in 1s 200ms
-Persist State finished in 45ms
-OpenAPI Gen finished in 89ms
-```
-
-**Sample output with `--timestamps`:**
-```
-14:23:45.123 Planning started
-14:23:45.268 Planning completed
-14:23:45.291 Validation started
-14:23:45.314 Validation completed
-14:23:45.337 Execution started
-14:23:46.537 Execution completed
-```
-
-The development server includes:
-- Hot reload for code changes
-- Automatic Docker container management (ClickHouse, Redpanda, Temporal, Redis)
-- Built-in MCP server for AI assistant integration
-- Health monitoring and metrics endpoints
-
-### Prod
-Starts Moose in production mode for cloud deployments.
-```bash
-moose prod
-```
+- `--docker, -d`: Build for Docker
+- `--amd64`: Build for amd64 architecture
+- `--arm64`: Build for arm64 architecture
 
 ### Check
-Checks the project for non-runtime errors.
+Check the project for non-runtime errors.
 ```bash
 moose check [--write-infra-map]
 ```
+- `--write-infra-map`: Write the infrastructure map to disk
 
 ### Clean
-Clears temporary data and stops development infrastructure.
+Clear temporary data and stop development infrastructure.
 ```bash
 moose clean
 ```
 
-### Seed (ClickHouse)
-Seed your local ClickHouse from a remote ClickHouse instance.
+### Prod
+Start a production environment.
 ```bash
-moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>] [--limit <n> | --all] [--order-by <clause>] [--report=true|false]
+moose prod [--start-include-dependencies]
 ```
-- `--connection-string`: Remote ClickHouse connection string. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
-- `--table`: Seed only the specified table (default: all Moose tables).
-- `--limit`: Copy up to N rows (mutually exclusive with `--all`). When omitted, defaults to 1000. Large limits are automatically batched.
-- `--all`: Copy entire table(s) in batches, ignoring all limits (mutually exclusive with `--limit`).
-- `--order-by`: ORDER BY clause for the query (e.g., `--order-by 'timestamp DESC'`).
-- `--report`: Report row counts after seeding (default: `true`). Counts shown for default database only; use `--report=false` to skip.
+- `--start-include-dependencies`: Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
 
-**Connection String Format:**
-The connection string must use ClickHouse native protocol:
+### MCP
+Run an MCP proxy server for AI agents. Provides a stdio interface that proxies to the Moose dev server's MCP endpoint.
 ```bash
-# ClickHouse native protocol (secure connection)
-clickhouse://username:password@host:9440/database
+moose mcp [--host <host>] [--port <port>]
 ```
+- `--host`: Host of the dev server to proxy to (auto-detected from project config if omitted)
+- `--port`: Port of the dev server to proxy to (auto-detected from project config if omitted)
 
-**Important:** 
-- The data transfer uses ClickHouse's native TCP protocol via `remoteSecure()` function. The remote ClickHouse server must have the native TCP port accessible (typically port 9440 for secure connections).
-- **Smart table matching**: The command automatically validates tables between local and remote databases. Tables that don't exist on the remote are gracefully skipped with warnings.
-- Use `--table <name>` to seed a specific table that exists in both local and remote databases.
+## Data
 
-**User Experience:**
-- Progress indicator shows seeding status with spinner
-- Tables that don't exist on remote are automatically skipped with clear warnings
-- Final summary shows successful and skipped tables
-- Clean, streamlined output focused on results
-
-Notes:
-- Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.
-- Use env var fallback:
+### Query
+Execute SQL queries against ClickHouse.
 ```bash
-export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
+moose query [<query>] [-f <file>] [-l <limit>] [-c <language>] [-p]
 ```
+- `<query>`: SQL query string (optional if using `--file` or stdin)
+- `-f, --file <PATH>`: Read query from file
+- `-l, --limit <NUM>`: Maximum rows to return (default: 10000)
+- `-c, --format-query <LANGUAGE>`: Format query as code literal (`python`|`typescript`). Skips execution.
+- `-p, --prettify`: Prettify SQL before formatting (requires `--format-query`)
 
-### Truncate
-Truncate tables or delete the last N rows from local ClickHouse tables.
+**Examples:**
 ```bash
-moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
-```
-- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
-- `--all`: Apply to all non-view tables in the current database (mutually exclusive with listing tables).
-- `--rows <n>`: Delete the last N rows per table; omit to remove all rows (TRUNCATE).
-
-Notes:
-- For `--rows`, the command uses the table ORDER BY when available; otherwise it falls back to a timestamp heuristic.
-
-## Monitoring Commands
-
-### Logs
-View Moose logs.
-```bash
-moose logs [--tail] [--filter <search_string>]
-```
-- `--tail`: Follow logs in real-time
-- `--filter`: Filter logs by specific string
-
-### Ps
-View Moose processes.
-```bash
-moose ps
+moose query "SELECT count(*) FROM users"
+moose query -f queries/analysis.sql
+cat query.sql | moose query
+moose query -c python -p "SELECT id, name FROM users WHERE active = 1 ORDER BY name"
 ```
 
-### Ls
-View Moose primitives & infrastructure.
-```bash
-moose ls [--limit <n>] [--version <version>] [--streaming] [--type <type>] [--name <name>] [--json]
-```
-- `--limit`: Limit output (default: 10)
-- `--version`: View specific version
-- `--streaming`: View streaming topics
-- `--type`: Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption)
-- `--name`: Filter by name
-- `--json`: Output in JSON format
-
-### Metrics
-View live metrics from your Moose application.
-```bash
-moose metrics
-```
+**Requirements:** Requires `moose dev` to be running. Returns results as newline-delimited JSON.
 
 ### Peek
 View data from a table or stream.
 ```bash
-moose peek <name> [--limit <n>] [--file <path>] [-t|--table] [-s|--stream]
+moose peek <name> [-l <limit>] [-f <path>] [-t|--table] [-s|--stream]
 ```
 - `<name>`: Name of the table or stream to peek
-- `--limit`: Number of rows to view (default: 5)
-- `--file`: Output to a file
-- `-t, --table`: View data from a table (default if neither flag specified)
+- `-l, --limit`: Number of rows to view (default: 5)
+- `-f, --file`: Output to a file
+- `-t, --table`: View data from a table
 - `-s, --stream`: View data from a stream/topic
 
-### Query
-Execute arbitrary SQL queries against your ClickHouse database during development.
+### Seed
+Seed your local ClickHouse from a remote ClickHouse instance.
 ```bash
-# Direct query
-moose query "SELECT count(*) FROM users"
-
-# From file
-moose query -f queries/analysis.sql
-
-# From stdin
-cat query.sql | moose query
-
-# With limit
-moose query "SELECT * FROM events" --limit 100
+moose seed clickhouse [--clickhouse-url <URL>] [--table <name>] [--limit <n> | --all] [--order-by <clause>] [--report]
 ```
-- `<query>`: SQL query string to execute (optional if using --file or stdin)
-- `-f, --file <PATH>`: Read query from file
-- `-l, --limit <NUM>`: Maximum rows to return (default: 10000)
+- `--clickhouse-url`: Remote ClickHouse connection URL. Alias: `--connection-string`. Falls back to `MOOSE_SEED_CLICKHOUSE_URL` env var.
+- `--table`: Only seed a specific table
+- `--limit`: Maximum rows to copy per table (mutually exclusive with `--all`)
+- `--all`: Copy all rows, ignoring limit (mutually exclusive with `--limit`)
+- `--order-by`: ORDER BY clause for the seed query
+- `--report`: Show row counts after seeding (default: true)
 
-**Requirements:**
-- Requires `moose dev` to be running
-- Executes queries against your development ClickHouse instance
+### Truncate
+Truncate tables or delete the last N rows.
+```bash
+moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
+```
+- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
+- `--all`: Apply to all non-view tables in the current database
+- `--rows <n>`: Number of most recent rows to delete per table. Omit to delete all rows (TRUNCATE).
 
-**Output:**
-- Returns results as newline-delimited JSON
-- One JSON object per row
-- Row count summary at end
+### Refresh
+Integrate tables from a remote Moose instance.
+```bash
+moose refresh [--url <url>] [--token <token>]
+```
+- `--url`: Remote Moose instance URL (default: http://localhost:4000)
+- `--token`: API token for the remote Moose instance
 
-#### Formatting Queries for Code
+### DB Pull
+Import external database schemas. Refreshes `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
+```bash
+moose db pull [--clickhouse-url <URL>] [--file-path <path>]
+```
+- `--clickhouse-url`: ClickHouse connection URL (e.g., `clickhouse://user:pass@host:port/database`)
+- `--file-path`: Output file for external table definitions (defaults to `app/externalModels.ts` or `app/external_models.py`)
 
-Use the `-c/--format-query` flag to format SQL queries as code literals instead of executing them:
+See the full guide: [DB Pull](/moosestack/olap/db-pull)
+
+### Kafka Pull
+Discover topics from a Kafka/Redpanda cluster and optionally fetch JSON Schemas from Schema Registry to generate typed external models.
 
 ```bash
-# Format as Python (raw string)
-moose query -c python "SELECT * FROM users WHERE email REGEXP '[a-z]+'"
-# Output:
-# r"""
-# SELECT * FROM users WHERE email REGEXP '[a-z]+'
-# """
+moose kafka pull <bootstrap> [--path <PATH>] [--include <glob>] [--exclude <glob>] [--schema-registry <URL>]
+```
+- `<bootstrap>`: Kafka bootstrap servers (e.g., `localhost:19092`)
+- `--path`: Output directory for generated files
+- `--include`: Include pattern (glob, default: `*`)
+- `--exclude`: Exclude pattern (glob, default: `{__consumer_offsets,_schemas}`)
+- `--schema-registry`: Schema Registry base URL (e.g., `http://localhost:8081`)
 
-# Format as TypeScript (template literal)
-moose query -c typescript "SELECT * FROM events"
-# Output:
-# `
-# SELECT * FROM events
-# `
+## Workflows
 
-# Works with file input
-moose query -c python -f my_query.sql
+### Run
+```bash
+moose workflow run <name> [--input <json>]
+```
+- `<name>`: Name of the workflow to run
+- `--input, -i`: JSON input parameters for the workflow
 
-# Prettify SQL before formatting (adds line breaks and indentation)
-moose query -c python -p "SELECT id, name FROM users WHERE active = 1 ORDER BY name"
-# Output:
-# r"""
-# SELECT id, name
-# FROM users
-#     WHERE active = 1
-#     ORDER BY name
-# """
+### Resume
+```bash
+moose workflow resume <name> --from <task>
+```
+- `<name>`: Name of the workflow to resume
+- `--from`: Task to resume from
 
-# Use heredoc for multi-line SQL queries (no need to escape quotes)
-moose query -c python -p <<EOF
-SELECT
-    b.id,
-    b.name,
-    b.email,
-    COUNT(o.id) as order_count,
-    SUM(o.total) as total_spent
-FROM local.Bar b
-LEFT JOIN local.Orders o ON b.id = o.user_id
-WHERE b.status = 'active'
-    AND o.created_at > '2024-01-01'
-GROUP BY b.id, b.name, b.email
-HAVING COUNT(o.id) > 5
-ORDER BY total_spent DESC
-LIMIT 50
-EOF
-
-# Supported languages: python (py), typescript (ts)
-# Prettify flag: -p, --prettify (only works with --format-query)
+### List
+```bash
+moose workflow list [--json]
 ```
 
-**Use case:** Iterate on SQL queries in the CLI, then format and paste into your application code without manual escaping. Use `--prettify` to clean up messy one-line queries.
+### History
+```bash
+moose workflow history [--status <status>] [--limit <n>] [--json]
+```
+- `--status, -s`: Filter by status (running, completed, failed)
+- `--limit, -l`: Number of workflows shown (default: 10)
 
-## Generation Commands
+### Status
+```bash
+moose workflow status <name> [--id <run-id>] [--verbose] [--json]
+```
+- `<name>`: Name of the workflow
+- `--id`: Run ID (defaults to most recent)
+- `--verbose`: Verbose output
+
+### Cancel
+```bash
+moose workflow cancel <name>
+```
+
+### Pause / Unpause
+```bash
+moose workflow pause <name>
+moose workflow unpause <name>
+```
+
+## Deploy
+
+### Plan
+Preview infrastructure changes for next deployment.
+
+**For Moose Server deployments:**
+```bash
+moose plan [--url <url>] [--token <token>] [--json]
+```
+- `--url`: Remote Moose instance URL (default: http://localhost:4000)
+- `--token`: API token for the remote Moose instance
+- `--json`: Output plan as JSON
+
+**For serverless deployments:**
+```bash
+moose plan --clickhouse-url <url>
+```
+- `--clickhouse-url`: ClickHouse connection URL
+
+### Migrate
+Execute a migration plan against a remote ClickHouse database.
+```bash
+moose migrate [--clickhouse-url <url>] [--redis-url <url>] [--validate]
+```
+- `--clickhouse-url`: ClickHouse connection URL
+- `--redis-url`: Redis connection URL for state storage
+- `--validate`: Validate migration files without executing them. Checks delta sequence consistency and detects semantic conflicts. Does not require ClickHouse or Redis.
 
 ### Generate Dockerfile
-Generate a Dockerfile for your project without building Docker images.
+Generate a Dockerfile without building Docker images.
 ```bash
 moose generate dockerfile
 ```
-Requires `custom_dockerfile = true` in `moose.config.toml`. The generated Dockerfile is placed at `dockerfile_path` (default: `./Dockerfile`) and can be customized for your deployment needs.
+Requires `custom_dockerfile = true` in `moose.config.toml`.
 
 ### Generate Hash Token
-Generate authentication tokens for API access.
+Generate an API key hash and bearer token pair for authentication.
 ```bash
-moose generate hash-token
+moose generate hash-token [--json]
 ```
-Generates both a plain-text Bearer token and its corresponding hashed version for authentication.
 
-### Generate Migration Plan (OLAP)
+### Generate Migration
 Create an ordered ClickHouse DDL plan by comparing a remote instance with your local code.
 ```bash
-moose generate migration --url https://<remote-env> --token <api-token> --save
+moose generate migration [--url <url> --token <token> | --clickhouse-url <url>] [--redis-url <url>] [--save] [--yes-all] [--yes-destructive] [--yes-rename] [--no-auto-backfill-sql]
 ```
 
 **Connection options** (one required):
-- `--url <URL>` + `--token <TOKEN>`: Connect to a running Moose server
-- `--clickhouse-url <URL>`: Connect directly to ClickHouse (for serverless deployments). Also requires `--redis-url` when `state_config.storage = "redis"`.
+- `--url` + `--token`: Connect to a running Moose server
+- `--clickhouse-url`: Connect directly to ClickHouse (for serverless). Also requires `--redis-url` when `state_config.storage = "redis"`.
 
-All connection flags accept environment-variable fallbacks: `MOOSE_CLICKHOUSE_CONFIG__URL` for `--clickhouse-url` and `MOOSE_REDIS_CONFIG__URL` for `--redis-url`.
+All connection flags accept env var fallbacks: `MOOSE_CLICKHOUSE_CONFIG__URL` for `--clickhouse-url` and `MOOSE_REDIS_CONFIG__URL` for `--redis-url`.
 
 **Output options:**
-- `--save`: Write `./migrations/plan.yaml`, `remote_state.json`, and `local_infra_map.json`. Omit to output plan YAML to stdout.
+- `--save`: Save migration files to the `migrations/` directory. Omit to output plan YAML to stdout.
 
 **Confirmation flags:**
 - `--yes-all`: Skip all confirmation prompts (renames, destructive operations, and version bump decisions). Can also be set via `MOOSE_ACCEPT_ALL=1`.
-- `--yes-destructive`: Skip the confirmation prompt for destructive operations (table/column drops, view removals, table recreates, and old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
-- `--yes-rename`: Skip the confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
+- `--yes-destructive`: Auto-approve destructive operations (including old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-rename`: Auto-approve column renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 - `--no-auto-backfill-sql`: Disable automatic backfill SQL generation for versioned tables.
 
 When a [version bump](/moosestack/olap/schema-versioning) is detected, the CLI prompts for backfill and old-table retention. When `--save` is used and you choose to keep the old table, Moose generates a retained table file with `LifeCycle.EXTERNALLY_MANAGED` in your source directory.
@@ -453,156 +382,62 @@ Requires OLAP to be enabled in `moose.config.toml`:
 olap = true
 ```
 
-### DB Pull (External Tables)
-Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
+## Observe
+
+### Ls
+View Moose primitives and infrastructure.
 ```bash
-moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
+moose ls [--type <type>] [--name <name>] [--json]
 ```
-- `--clickhouse-url`: ClickHouse URL (e.g., `clickhouse://user:pass@host:port/database` or `https://user:pass@host:port/database`). Native `clickhouse://` is auto-converted to HTTP(S). Include `?database=` or the CLI will query the current database.
-- `--file-path`: Optional override for the generated external models file (defaults to `app/externalModels.ts` or `app/external_models.py`).
+- `--type`: Filter by infrastructure type
+- `--name`: Filter by name (supports partial matching)
+- `--json`: Output in JSON format
 
-Notes:
-- Only tables marked `EXTERNALLY_MANAGED` in your code are refreshed.
-- The command writes a single external models file and overwrites the file on each run.
-- See the full guide: [DB Pull](/moosestack/olap/db-pull)
-
-### Kafka
-
-#### Pull external topics and schemas
-Discover topics from a Kafka/Redpanda cluster and optionally fetch JSON Schemas from Schema Registry to emit typed external models.
-
+### Ps
+View Moose processes.
 ```bash
-moose kafka pull <bootstrap> [--path <PATH>] [--include <glob>] [--exclude <glob>] [--schema-registry <URL>]
-```
-- `<bootstrap>`: Kafka bootstrap servers, e.g. `localhost:19092`
-- `--path`: Output directory for generated files. Defaults to `app/external-topics` (TS) or `app/external_topics` (Python).
-- `--include`: Include pattern (glob). Default: `*`
-- `--exclude`: Exclude pattern (glob). Default: `{__consumer_offsets,_schemas}`
-- `--schema-registry`: Base URL for Schema Registry, e.g. `http://localhost:8081`
-
-Notes:
-- JSON Schema is supported initially; Avro/Protobuf planned.
-- Generated files will be overwritten on subsequent runs.
-
-## Workflow Management
-
-### Workflow
-```bash
-moose workflow <command> [options]
+moose ps
 ```
 
-Available workflow commands:
-- `init <name> [--tasks <task-list>] [--task <task>...]`: Initialize a new workflow
-- `run <name> [--input <json>]`: Run a workflow
-- `resume <name> --from <task>`: Resume a workflow from a specific task
-- `list [--json]`: List registered workflows
-- `history [--status <status>] [--limit <n>] [--json]`: Show workflow history
-- `terminate <name>`: Terminate a workflow
-- `pause <name>`: Pause a workflow
-- `unpause <name>`: Unpause a workflow
-- `status <name> [--id <run-id>] [--verbose] [--json]`: Get workflow status
-
-## Help & Support Commands
-
-### Feedback
-Send feedback, report bugs, or join the Moose community.
+### Logs
+View Moose logs.
 ```bash
-moose feedback [message] [--email <email>] [--bug] [--community]
+moose logs [--tail] [--filter <search_string>]
+```
+- `-t, --tail`: Follow logs in real-time
+- `-f, --filter`: Filter logs by a specific string
+
+### Metrics
+Open the live metrics console.
+```bash
+moose metrics
 ```
 
-**Send feedback:**
-```bash
-# Send feedback (will prompt for optional email)
-moose feedback "loving the DX!"
-
-# Include email for follow-up
-moose feedback "great tool!" --email you@example.com
-```
-
-**Report a bug:**
-```bash
-# Open GitHub Issues with system info pre-filled
-moose feedback --bug "crash on startup"
-
-# Bug report without description
-moose feedback --bug
-```
-
-**Join the community:**
-```bash
-# Open Moose Slack community in your browser
-moose feedback --community
-```
-
-**Options:**
-- `[message]`: Your feedback message (required for feedback and bug reports)
-- `--email <email>`: Optional email address for follow-up on feedback
-- `--bug`: Open GitHub Issues for bug reporting with environment details
-- `--community`: Open Moose Slack community invite
-
-**Notes:**
-- Feedback requires telemetry to be enabled
-- Email is optional and only used if you want the team to follow up
-- Bug reports include CLI version, OS, architecture, and log file paths
-- If email is not provided via flag, you'll be prompted interactively (optional)
-
-## Planning and Deployment
-
-### Plan
-Display infrastructure changes for the next production deployment.
-
-**For Moose Server deployments:**
-```bash
-moose plan [--url <url>] [--token <token>]
-```
-- `--url`: Remote Moose instance URL (default: http://localhost:4000)
-- `--token`: API token for authentication
-
-**For Serverless deployments:**
-```bash
-moose plan --clickhouse-url <url>
-```
-- `--clickhouse-url`: ClickHouse connection URL (e.g., `clickhouse://user:pass@host:port/database`)
-
-### Refresh
-Integrate matching tables from a remote instance into the local project.
-```bash
-moose refresh [--url <url>] [--token <token>]
-```
-- `--url`: Remote Moose instance URL (default: http://localhost:4000)
-- `--token`: API token for authentication
-
-## Documentation & Feedback
+## Help
 
 ### Docs
-Fetch and display LLM-optimized documentation in the terminal.
+Browse and search documentation in the terminal.
 ```bash
 moose docs [<slug>] [-l <LANG>] [--raw] [--expand] [--web]
 ```
 - `<slug>`: Documentation page slug (e.g., `moosestack/olap`). Omit to show the table of contents. Slugs are case-insensitive.
-- `-l, --lang <LANG>`: Language for documentation: `typescript` (ts) or `python` (py). Auto-detected from your project language or saved preference.
+- `-l, --lang <LANG>`: Language: `typescript` (ts) or `python` (py). Auto-detected from your project.
 - `--raw`: Output raw content without formatting (for piping to other tools)
-- `--expand`: Show full expanded tree with all leaf pages and guide section headings
-- `--web`: Open documentation page in your web browser instead of printing
+- `--expand`: Show full expanded tree with all leaf pages
+- `--web`: Open documentation page in your web browser
 
-#### Subcommands
+**Subcommands:**
 
-- `moose docs browse [--web]`: Interactively browse and select a documentation page with a hierarchical drill-down picker
-- `moose docs search <query> [--expand]`: Search documentation by title or description. Use `--expand` to also search within page headings (H1/H2/H3) — slower, as it fetches all pages.
+- `moose docs browse [--web]`: Interactively browse and select a documentation page
+- `moose docs search <query> [--expand]`: Search documentation by title or description. Use `--expand` to also search within page headings.
 
-#### Guide Section Navigation
-
-Guide pages are large and support section navigation with `#anchor` syntax:
+**Guide section navigation:**
 ```bash
 moose docs guides/chat-in-your-app#overview
 moose docs guides/chat-in-your-app#setup
 ```
-If the section is not found, available sections are listed. When using `browse` on a guide page, a secondary section picker is shown.
 
-#### Use with AI Clients
-
-The `--raw` flag outputs unformatted markdown, making it easy to pipe documentation to AI clients for processing:
-
+**Use with AI clients:**
 ```bash
 moose docs --raw guides/chat-in-your-app#setup | claude "do this step, ask me any questions you need to execute"
 ```
@@ -610,12 +445,11 @@ moose docs --raw guides/chat-in-your-app#setup | claude "do this step, ask me an
 This pattern works with any AI client that accepts stdin, allowing you to get AI assistance on specific documentation sections.
 
 ### Feedback
-Submit feedback, report bugs, or join the community.
+Submit feedback or report issues.
 ```bash
-moose feedback [MESSAGE] [--bug] [--community]
+moose feedback [message] [--email <email>] [--bug] [--community]
 ```
-- `[MESSAGE]`: Feedback message (e.g., `moose feedback "loving the DX!"`)
+- `[message]`: Feedback message (e.g., `moose feedback "loving the DX!"`)
+- `--email`: Your email address for follow-up
 - `--bug`: Report a bug (opens GitHub Issues with system info and log paths)
 - `--community`: Join the Moose community on Slack
-
-This reference reflects the current state of the Moose CLI based on the source code in the framework-cli directory. The commands are organized by their primary functions and include all available options and flags.
