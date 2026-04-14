@@ -1,136 +1,116 @@
 ---
-title: Moose Streaming
-description: Build real-time data pipelines with Redpanda/Kafka streams, transformations, and event processing
+title: Moose Streams
+description: Add continuous ingest and event processing around Moose OLAP with Kafka or Redpanda-backed streams
 order: 0
-category: streaming
+category: streams
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { CTACards, CTACard, Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Moose Streaming
-
-## Overview
-
-The Streaming module provides standalone real-time data processing with Kafka/Redpanda topics. You can use this capability independently to build event-driven architectures, data transformations, and real-time pipelines without requiring other MooseStack components.
-
-## Basic Usage
-
-<ExportRequirement primitive="Stream" example="export { exampleStream }" />
+# Moose Streams
+Moose Streams adds continuous ingest and event processing around Moose OLAP. Use it when data arrives continuously, needs to be transformed before storage, or should land in ClickHouse tables through managed stream pipelines backed by Kafka or Redpanda.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="Stream.ts" copy
-import { OlapTable, Stream } from "@514labs/moose-lib";
+```ts filename="app/stream.ts" copy
+import { Stream } from "@514labs/moose-lib";
+import { table } from "./table";
 
-interface ExampleEvent {
+interface Record {
   id: string;
-  userId: string;
+  name: string;
   timestamp: Date;
-  eventType: string;
 }
 
-// Create a standalone stream for events
-export const exampleStream = new Stream<ExampleEvent>("streaming-topic-name", {
-  // Optional: specify destination table
-  destination: new OlapTable<ExampleEvent>("table-name")
-});
-
-// Add consumers for real-time processing
-exampleStream.addConsumer((event) => {
-  console.log("Processing event:", event);
-  // Custom processing logic here
+export const stream = new Stream<Record>("stream", {
+  destination: table,
+  version: "0.0",
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="Stream.py" copy
-from moose_lib import Stream
-from pydantic import BaseModel
+```py filename="app/stream.py" copy
 from datetime import datetime
 
-class ExampleEvent(BaseModel):
+from moose_lib import Stream, StreamConfig
+from app.table import table
+from pydantic import BaseModel
+
+class Record(BaseModel):
     id: str
-    user_id: str
+    name: str
     timestamp: datetime
-    event_type: str
 
-# Create a standalone stream for user events
-example_stream = Stream[ExampleEvent]("streaming-topic-name")
-
-# Add consumers for real-time processing
-def process_event(event: ExampleEvent):
-    print(f"Processing event: {event}")
-    # Custom processing logic here
-
-example_stream.add_consumer(process_event)
-
-# No export needed - Python modules are automatically discovered
+stream = Stream[Record]("stream", config=StreamConfig(
+    destination=table,
+    version="0.0",
+))
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-### Enabling Streaming
+<ExportRequirement
+  primitive="stream resources"
+  example="export { stream }"
+  pythonExample="from app.stream import stream"
+/>
 
-To enable streaming, you need to ensure that the `streaming_engine` feature flag is set to `true` in your `moose.config.toml` file:
+Most Moose projects start by defining an OLAP table, then attach a stream when they need continuous ingest or real-time processing before data becomes queryable in ClickHouse.
 
-```toml
+<Callout type="info" title="Enable Moose Streams before defining streams">
+Turn on `features.streaming_engine` in `moose.config.toml` before you create stream resources or attach them to OLAP tables.
+</Callout>
+
+```toml filename="moose.config.toml"
 [features]
 streaming_engine = true
 ```
 
-## Core Capabilities
-
-<CTACards>
-<CTACard
-  title="Create Streams"
-  description="Define and create Kafka/Redpanda topics with type-safe schemas"
-  ctaLink="/moosestack/streaming/create-stream"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Streams" }}
-/>
-<CTACard
-  title="Publish Data"
-  description="Write data to streams from applications, APIs, or external sources"
-  ctaLink="/moosestack/streaming/from-your-code"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Publishing" }}
-/>
-<CTACard
-  title="Consumer Functions"
-  description="Read and process data from streams with consumers and processors"
-  ctaLink="/moosestack/streaming/consumer-functions"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Consuming" }}
-/>
-<CTACard
-  title="Streaming Transformations"
-  description="Process and transform data in-flight between streams"
-  ctaLink="/moosestack/streaming/transform-functions"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Transformation" }}
-/>
+<CTACards columns={1}>
+  <CTACard
+    title="You already have an OLAP table"
+    description="Start here if you already modeled the ClickHouse table and want stream data to land in it."
+    ctaLink="/moosestack/streaming/sync-to-table"
+    ctaLabel="Sync to table →"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="You need to define storage first"
+    description="Start with Moose OLAP if you need to model the ClickHouse table before adding stream ingest."
+    ctaLink="/moosestack/olap/model-table"
+    ctaLabel="Model an OLAP table →"
+    orientation="horizontal"
+  />
 </CTACards>
 
-## Integration with Other Capabilities
+## What can you do with Moose Streams?
 
-The Streaming capability can be used independently, or in conjunction with other MooseStack modules:
+### Define streams
 
-<CTACards>
-<CTACard
-  title="OLAP"
-  description="Sync data from streams to tables to persist data and enable fast analytical queries on top of it"
-  ctaLink="/moosestack/streaming/sync-to-table"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
-/>
-<CTACard
-  title="APIs"
-  description="Create APIs to route data into streams from your other applications or webhooks"
-  ctaLink="/moosestack/streaming/from-your-code"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
-/>
-</CTACards>
+- **[Define a stream](/moosestack/streaming/create-stream)** with a typed payload backed by a Kafka or Redpanda topic
+
+### Send records
+
+- **[Publish from Moose code with `Stream.send()`](/moosestack/streaming/from-your-code)** for in-process producers
+- **[Publish from external systems with the Ingest API](/moosestack/apis/ingest-api)** for HTTP-based ingestion
+- **[Use Schema registry](/moosestack/streaming/schema-registry)** when stream payloads should use Confluent Schema Registry
+
+### Process records
+
+- **[Run consumer functions](/moosestack/streaming/consumer-functions)** when records should trigger side effects
+- **[Run transform functions](/moosestack/streaming/transform-functions)** when records should be filtered, enriched, or rewritten into another stream
+- **[Use stream patterns](/moosestack/streaming/stream-patterns)** for fan-in, fan-out, and chained processing flows
+
+### Land records in ClickHouse
+
+- **[Sync to table](/moosestack/streaming/sync-to-table)** when stream records should land in Moose OLAP tables
+
+### Recover failures
+
+- **[Use dead letter queues](/moosestack/streaming/dead-letter-queues)** when failed records should be retained for recovery
+
+## Related resources
+
+- [Stream](/moosestack/streaming/create-stream)
+- [Stream patterns](/moosestack/streaming/stream-patterns)
+- [Configuration](/moosestack/configuration)
