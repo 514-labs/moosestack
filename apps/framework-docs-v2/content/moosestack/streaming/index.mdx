@@ -5,7 +5,7 @@ order: 0
 category: streams
 ---
 
-import { CTACards, CTACard, Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { CTACards, CTACard, Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Moose Streams
 Moose Streams adds continuous ingest and event processing around Moose OLAP. Use it when data arrives continuously, needs to be transformed before storage, or should land in ClickHouse tables through managed stream pipelines backed by Kafka or Redpanda.
@@ -48,12 +48,6 @@ stream = Stream[Record]("stream", config=StreamConfig(
 ```
   </LanguageTabContent>
 </LanguageTabs>
-
-<ExportRequirement
-  primitive="stream resources"
-  example="export { stream }"
-  pythonExample="from app.stream import stream"
-/>
 
 Most Moose projects start by defining an OLAP table, then attach a stream when they need continuous ingest or real-time processing before data becomes queryable in ClickHouse.
 

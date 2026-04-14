@@ -5,17 +5,11 @@ order: 8
 category: streaming
 ---
 
-import { Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Dead letter queues
 
 Use `DeadLetterQueue<T>` to capture records of type `T` that fail during stream processing. A dead letter queue is itself a stream of wrapper records: Moose keeps the original payload and adds error details about why that record failed.
-
-<ExportRequirement
-  primitive="dead letter queue"
-  example="export { userEventDLQ }"
-  pythonExample="from app.dead_letter_queue import user_event_dlq"
-/>
 
 ## When records are written here
 

@@ -5,17 +5,11 @@ order: 9
 category: streaming
 ---
 
-import { ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Stream patterns
 
 Use this page for multi-stream composition examples that go beyond the basic `Stream`, `Stream.send()`, consumer, and transform references.
-
-<ExportRequirement
-  primitive="streams"
-  example="export { orders, analyticsOrders, highValueOrders }"
-  pythonExample="from app.fan_out import orders, analytics_orders, high_value_orders"
-/>
 
 ## Fan-out
 
