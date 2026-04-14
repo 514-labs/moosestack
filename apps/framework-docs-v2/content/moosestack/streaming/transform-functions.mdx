@@ -5,17 +5,11 @@ order: 5
 category: streaming
 ---
 
-import { ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Transform functions
 
 Use `Stream.addTransform()` or `stream.add_transform()` to map records from one `Stream` into another `Stream`. Transform functions are useful when records should be filtered, enriched, reshaped, or split before they continue through your pipeline.
-
-<ExportRequirement
-  primitive="source and destination streams"
-  example="export { rawEvents, processedEvents }"
-  pythonExample="from app.transform import raw_events, processed_events"
-/>
 
 ## Basic usage
 

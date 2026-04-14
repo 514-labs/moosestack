@@ -5,7 +5,7 @@ order: 7
 category: streaming
 ---
 
-import { Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Schema registry
 
@@ -14,12 +14,6 @@ The first supported encoding is JSON Schema. Avro and Protobuf are planned.
 </Callout>
 
 Use `schemaConfig` in TypeScript or `schema_config` in Python when a `Stream` should publish using Confluent Schema Registry.
-
-<ExportRequirement
-  primitive="Schema Registry stream"
-  example="export { events }"
-  pythonExample="from app.sr_stream import events"
-/>
 
 ## Configure the Schema Registry URL
 

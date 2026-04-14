@@ -5,19 +5,13 @@ order: 2
 category: streaming
 ---
 
-import { Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Sync to table
 
 Use the `destination` option on a `Stream` when records from that stream should be batched and written into an OLAP table automatically.
 
 This page covers the sync behavior after you set `destination`. To define the `Stream` itself, start with [Stream](/moosestack/streaming/create-stream).
-
-<ExportRequirement
-  primitive="stream"
-  example="export { stream }"
-  pythonExample="from app.stream import stream"
-/>
 
 ## Basic usage
 
