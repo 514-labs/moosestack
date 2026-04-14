@@ -2070,15 +2070,20 @@ async fn execute_drop_row_policy(
 }
 
 /// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
+///
+/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
+/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
+/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
 async fn execute_create_dictionary(
     _db_name: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_create_if_not_exists_sql();
-    // Do not log the full SQL — source clauses may contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.)
+    // Log the operation without the SQL body to avoid leaking credentials.
     tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
-    run_query(&sql, client)
+    build_query(&client.client, &sql)
+        .execute()
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -2088,15 +2093,20 @@ async fn execute_create_dictionary(
 }
 
 /// Execute a CREATE OR REPLACE DICTIONARY operation.
+///
+/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
+/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
+/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
 async fn execute_replace_dictionary(
     _db_name: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let sql = dict.to_replace_sql();
-    // Do not log the full SQL — source clauses may contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.)
+    // Log the operation without the SQL body to avoid leaking credentials.
     tracing::debug!("Replacing dictionary: {} (SQL redacted)", dict.name);
-    run_query(&sql, client)
+    build_query(&client.client, &sql)
+        .execute()
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
             error: e,

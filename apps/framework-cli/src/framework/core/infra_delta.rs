@@ -2444,11 +2444,10 @@ mod tests {
         };
         delta.apply(&mut map, TEST_DB).unwrap();
 
-        assert!(!map
+        assert!(map
             .olap_dictionaries
             .get(&before.id(TEST_DB))
-            .map(|d| d.comment.is_none())
-            .unwrap_or(false));
+            .is_some_and(|d| d.comment.is_some()));
         let result = map.olap_dictionaries.get(&after.id(TEST_DB)).unwrap();
         assert_eq!(result.comment, Some("updated".to_string()));
     }

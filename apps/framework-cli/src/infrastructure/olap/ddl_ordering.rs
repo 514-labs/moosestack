@@ -1756,18 +1756,54 @@ fn handle_dictionary_remove(dict: &OlapDictionary, default_database: &str) -> Op
     OperationPlan::teardown(vec![teardown_op])
 }
 
-/// Handles updating a dictionary operation
+/// Handles updating a dictionary operation.
+///
+/// When the before/after dependency sets differ (i.e. the source table changed),
+/// ClickHouse cannot safely do an in-place `CREATE OR REPLACE` because the old
+/// dependency must be released first.  In that case we emit a `DropDictionary`
+/// in the teardown plan followed by a `CreateDictionary` in the setup plan.
+///
+/// When the dependency set is unchanged (only non-structural fields differ), we
+/// use the zero-downtime `ReplaceDictionary` (`CREATE OR REPLACE DICTIONARY`) path.
 fn handle_dictionary_update(
     before: &OlapDictionary,
     after: &OlapDictionary,
     default_database: &str,
 ) -> OperationPlan {
-    let pulls_from = after.pulls_data_from(default_database);
-    let pushes_to = after.pushes_data_to(default_database);
+    let before_pulls = before.pulls_data_from(default_database);
+    let before_pushes = before.pushes_data_to(default_database);
+    let after_pulls = after.pulls_data_from(default_database);
+    let after_pushes = after.pushes_data_to(default_database);
+
+    // Compare as HashSets so that order differences don't trigger a spurious Drop+Create.
+    let before_pulls_set: std::collections::HashSet<_> =
+        before_pulls.iter().map(|s| s.id()).collect();
+    let after_pulls_set: std::collections::HashSet<_> =
+        after_pulls.iter().map(|s| s.id()).collect();
+    let before_pushes_set: std::collections::HashSet<_> =
+        before_pushes.iter().map(|s| s.id()).collect();
+    let after_pushes_set: std::collections::HashSet<_> =
+        after_pushes.iter().map(|s| s.id()).collect();
+
+    if before_pulls_set != after_pulls_set || before_pushes_set != after_pushes_set {
+        // Dependency set changed → Drop the old dict then Create the new one.
+        let mut plan = OperationPlan::new();
+        plan.teardown_ops.push(AtomicOlapOperation::DropDictionary {
+            dict: before.clone(),
+            dependency_info: create_dependency_info(before_pulls, before_pushes),
+        });
+        plan.setup_ops.push(AtomicOlapOperation::CreateDictionary {
+            dict: after.clone(),
+            dependency_info: create_dependency_info(after_pulls, after_pushes),
+        });
+        return plan;
+    }
+
+    // Dependency set unchanged → zero-downtime CREATE OR REPLACE.
     let setup_op = AtomicOlapOperation::ReplaceDictionary {
         before: before.clone(),
         after: after.clone(),
-        dependency_info: create_dependency_info(pulls_from, pushes_to),
+        dependency_info: create_dependency_info(after_pulls, after_pushes),
     };
     OperationPlan::setup(vec![setup_op])
 }
@@ -5645,6 +5681,159 @@ mod tests {
             "Dictionary must be dropped before its source table, but got dict_pos={} table_pos={}",
             dict_pos.unwrap(),
             table_pos.unwrap()
+        );
+    }
+
+    /// When a dictionary update changes its source table dependency (e.g. from table A to
+    /// table B), ClickHouse cannot do an in-place `CREATE OR REPLACE` safely because the
+    /// old dependency must be released before the new one is acquired.  In this case
+    /// `handle_dictionary_update` must emit a `DropDictionary(before)` in the teardown
+    /// plan AND a `CreateDictionary(after)` in the setup plan — NOT a `ReplaceDictionary`.
+    #[test]
+    fn test_handle_dictionary_update_emits_drop_create_when_source_changes() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+
+        let make_dict = |name: &str, table_name: &str| OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: table_name.to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        };
+
+        let before = make_dict("my_dict", "table_a");
+        let after = make_dict("my_dict", "table_b"); // source table changed
+
+        let plan = handle_dictionary_update(&before, &after, DEFAULT_DATABASE_NAME);
+
+        // When deps differ: must have a DropDictionary in teardown AND CreateDictionary in setup
+        assert_eq!(
+            plan.teardown_ops.len(),
+            1,
+            "Expected 1 teardown op (DropDictionary), got {:?}",
+            plan.teardown_ops
+        );
+        assert_eq!(
+            plan.setup_ops.len(),
+            1,
+            "Expected 1 setup op (CreateDictionary), got {:?}",
+            plan.setup_ops
+        );
+        assert!(
+            matches!(
+                &plan.teardown_ops[0],
+                AtomicOlapOperation::DropDictionary { dict, .. } if dict.name == "my_dict"
+            ),
+            "Teardown op must be DropDictionary, got {:?}",
+            plan.teardown_ops[0]
+        );
+        assert!(
+            matches!(
+                &plan.setup_ops[0],
+                AtomicOlapOperation::CreateDictionary { dict, .. } if dict.name == "my_dict"
+            ),
+            "Setup op must be CreateDictionary, got {:?}",
+            plan.setup_ops[0]
+        );
+    }
+
+    /// When a dictionary update does NOT change its dependency set (same source table),
+    /// `handle_dictionary_update` should emit a single `ReplaceDictionary` in the setup
+    /// plan (zero-downtime CREATE OR REPLACE path).
+    #[test]
+    fn test_handle_dictionary_update_emits_replace_when_source_unchanged() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+
+        let make_dict = |comment: Option<&str>| OlapDictionary {
+            name: "my_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "same_table".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: comment.map(|s| s.to_string()),
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        };
+
+        let before = make_dict(None);
+        let after = make_dict(Some("new comment")); // only comment changed, source unchanged
+
+        let plan = handle_dictionary_update(&before, &after, DEFAULT_DATABASE_NAME);
+
+        // When deps are the same: must have a ReplaceDictionary in setup, nothing in teardown
+        assert!(
+            plan.teardown_ops.is_empty(),
+            "Expected no teardown ops, got {:?}",
+            plan.teardown_ops
+        );
+        assert_eq!(
+            plan.setup_ops.len(),
+            1,
+            "Expected 1 setup op (ReplaceDictionary), got {:?}",
+            plan.setup_ops
+        );
+        assert!(
+            matches!(
+                &plan.setup_ops[0],
+                AtomicOlapOperation::ReplaceDictionary { .. }
+            ),
+            "Setup op must be ReplaceDictionary, got {:?}",
+            plan.setup_ops[0]
         );
     }
 }
