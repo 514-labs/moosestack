@@ -180,6 +180,17 @@ pub async fn execute_changes(
     } else {
         let (_bumps, mut remaining) = version_bump::extract_version_bumps(changes);
         remaining.extend(version_bump::bump_drop_changes(version_bump_decisions));
+
+        // Strip NewAlongside Added tables — they're created in Phase 1 now
+        // so the backfill target table exists before Phase 2 runs.
+        let alongside = version_bump::alongside_new_table_names(version_bump_decisions);
+        if !alongside.is_empty() {
+            remaining.retain(|c| match c {
+                OlapChange::Table(TableChange::Added(t)) => !alongside.contains(&t.name),
+                _ => true,
+            });
+        }
+
         (std::borrow::Cow::Owned(remaining), true)
     };
 
@@ -196,16 +207,14 @@ pub async fn execute_changes(
         return Ok(());
     }
 
-    // Phase 1: Bump creates (InPlace only — NewAlongside tables are created in Phase 4)
+    // Phase 1: Bump creates (all kinds — table must exist before backfill)
     for decision in version_bump_decisions {
-        if decision.bump.kind == version_bump::VersionBumpKind::InPlace {
-            info!(table = %decision.bump.new_table.name, "Phase 1: Creating new versioned table");
-            let create = [OlapChange::Table(TableChange::Added(
-                decision.bump.new_table.clone(),
-            ))];
-            let (_, create_plan) = ddl_ordering::order_olap_changes(&create, db_name)?;
-            clickhouse::execute_changes(project, &[], &create_plan).await?;
-        }
+        info!(table = %decision.bump.new_table.name, "Phase 1: Creating new versioned table");
+        let create = [OlapChange::Table(TableChange::Added(
+            decision.bump.new_table.clone(),
+        ))];
+        let (_, create_plan) = ddl_ordering::order_olap_changes(&create, db_name)?;
+        clickhouse::execute_changes(project, &[], &create_plan).await?;
     }
 
     // Phase 2: Backfills (old table still alive, new table populated)

@@ -89,6 +89,13 @@ pub fn write_pending_migration(
 
         let bump_deltas = version_bump::version_bump_decisions_to_deltas(&decisions);
         if !bump_deltas.is_empty() {
+            // Strip duplicate CreateTable for NewAlongside tables (already in bump_deltas).
+            let alongside = version_bump::alongside_new_table_names(&decisions);
+            if !alongside.is_empty() {
+                deltas.retain(|d| {
+                    !matches!(d, crate::framework::core::infra_delta::InfraDelta::CreateTable { table } if alongside.contains(&table.name))
+                });
+            }
             let mut combined = bump_deltas;
             combined.append(&mut deltas);
             deltas = combined;

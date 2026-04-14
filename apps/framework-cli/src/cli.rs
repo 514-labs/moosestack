@@ -1996,6 +1996,13 @@ async fn confirm_and_save_migration(
     // so the new table exists before anything that might reference it.
     let bump_deltas = version_bump::version_bump_decisions_to_deltas(&version_bump_decisions);
     if !bump_deltas.is_empty() {
+        // Strip duplicate CreateTable for NewAlongside tables (already in bump_deltas).
+        let alongside = version_bump::alongside_new_table_names(&version_bump_decisions);
+        if !alongside.is_empty() {
+            infra_deltas.retain(|d| {
+                !matches!(d, crate::framework::core::infra_delta::InfraDelta::CreateTable { table } if alongside.contains(&table.name))
+            });
+        }
         let mut combined = bump_deltas;
         combined.append(&mut infra_deltas);
         infra_deltas = combined;

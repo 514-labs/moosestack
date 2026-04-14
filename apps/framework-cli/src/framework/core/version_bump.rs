@@ -395,7 +395,8 @@ pub async fn version_bump_gate(
                     )
                     .await?
                 };
-                !matches!(input.as_str(), "n" | "no")
+                let input_lower = input.trim().to_lowercase();
+                !matches!(input_lower.as_str(), "n" | "no")
             } else {
                 false
             };
@@ -420,7 +421,8 @@ pub async fn version_bump_gate(
                         )
                         .await?
                     };
-                    if matches!(input.as_str(), "y" | "yes") {
+                    let input_lower = input.trim().to_lowercase();
+                    if matches!(input_lower.as_str(), "y" | "yes") {
                         OldTableDisposition::Retain
                     } else {
                         OldTableDisposition::Drop
@@ -652,15 +654,18 @@ use chrono::Utc;
 /// Convert version bump decisions to correctly-ordered `InfraDelta`s.
 ///
 /// Order: CreateTable(new) → BackfillTable(old→new) → DropTable(old)
+///
+/// CreateTable is emitted for all bump kinds (InPlace and NewAlongside) so that
+/// the new table is guaranteed to exist before the backfill runs. Callers that
+/// also generate deltas from the full diff should strip duplicate CreateTable
+/// entries for NewAlongside tables using [`alongside_new_table_names`].
 pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Vec<InfraDelta> {
     let mut deltas = Vec::new();
 
     for decision in decisions {
-        if decision.bump.kind == VersionBumpKind::InPlace {
-            deltas.push(InfraDelta::CreateTable {
-                table: decision.bump.new_table.clone(),
-            });
-        }
+        deltas.push(InfraDelta::CreateTable {
+            table: decision.bump.new_table.clone(),
+        });
 
         if let Some(sql) = &decision.backfill_sql {
             deltas.push(InfraDelta::BackfillTable {
@@ -695,6 +700,10 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
 /// bump creates land before dependent setup ops, and bump drops land after backfills.
 /// Returns (creates, backfills) operations for version bump decisions.
 ///
+/// Creates are emitted for all bump kinds so the new table exists before backfill.
+/// Callers that also derive operations from the full diff should strip duplicate
+/// creates for NewAlongside tables using [`alongside_new_table_names`].
+///
 /// Bump drops are not returned here — callers should re-inject the old table's
 /// `Removed` change into the regular change list so it participates in
 /// dependency-ordered teardown alongside non-bump drops.
@@ -710,11 +719,9 @@ pub fn version_bump_decisions_to_phased_operations(
     let mut backfills = Vec::new();
 
     for decision in decisions {
-        if decision.bump.kind == VersionBumpKind::InPlace {
-            creates.push(SerializableOlapOperation::CreateTable {
-                table: decision.bump.new_table.clone(),
-            });
-        }
+        creates.push(SerializableOlapOperation::CreateTable {
+            table: decision.bump.new_table.clone(),
+        });
 
         if let Some(sql) = &decision.backfill_sql {
             backfills.push(SerializableOlapOperation::RawSql {
@@ -738,6 +745,19 @@ pub fn bump_drop_changes(decisions: &[VersionBumpDecision]) -> Vec<OlapChange> {
         .iter()
         .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
         .map(|d| OlapChange::Table(TableChange::Removed(d.bump.old_table.clone())))
+        .collect()
+}
+
+/// Returns table names of NewAlongside bump decisions.
+///
+/// When bump functions emit CreateTable for all bump kinds, the NewAlongside
+/// table's `Added` change (or `CreateTable` delta) is duplicated in the regular
+/// change list. Callers use this set to strip the duplicate.
+pub fn alongside_new_table_names(decisions: &[VersionBumpDecision]) -> HashSet<String> {
+    decisions
+        .iter()
+        .filter(|d| d.bump.kind == VersionBumpKind::NewAlongside)
+        .map(|d| d.bump.new_table.name.clone())
         .collect()
 }
 
