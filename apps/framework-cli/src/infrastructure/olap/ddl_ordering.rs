@@ -1763,12 +1763,18 @@ fn handle_dictionary_remove(dict: &OlapDictionary, default_database: &str) -> Op
 /// dependency must be released first.  In that case we emit a `DropDictionary`
 /// in the teardown plan followed by a `CreateDictionary` in the setup plan.
 ///
-/// When the dependency set is unchanged (only non-structural fields differ), we
-/// use the zero-downtime `ReplaceDictionary` (`CREATE OR REPLACE DICTIONARY`) path.
+/// The same Drop+Create path is taken when a source table is being rebuilt in the
+/// same migration (Removed + Added with the same ID). Even though the dependency
+/// set looks identical, the table is torn down during teardown and ClickHouse will
+/// refuse to `DropTable` while the dictionary still references it.
+///
+/// When the dependency set is unchanged and no source is being torn down, we use
+/// the zero-downtime `ReplaceDictionary` (`CREATE OR REPLACE DICTIONARY`) path.
 fn handle_dictionary_update(
     before: &OlapDictionary,
     after: &OlapDictionary,
     default_database: &str,
+    teardown_table_ids: &std::collections::HashSet<String>,
 ) -> OperationPlan {
     let before_pulls = before.pulls_data_from(default_database);
     let before_pushes = before.pushes_data_to(default_database);
@@ -1785,8 +1791,22 @@ fn handle_dictionary_update(
     let after_pushes_set: std::collections::HashSet<_> =
         after_pushes.iter().map(|s| s.id()).collect();
 
-    if before_pulls_set != after_pulls_set || before_pushes_set != after_pushes_set {
-        // Dependency set changed → Drop the old dict then Create the new one.
+    // Also force Drop+Create when a source table is being rebuilt in this migration
+    // (same ID in Removed + Added). The dictionary must be dropped before the old
+    // table is torn down or ClickHouse will refuse the DropTable.
+    let any_source_being_torn_down = before_pulls.iter().chain(before_pushes.iter()).any(|sig| {
+        if let InfrastructureSignature::Table { id } = sig {
+            teardown_table_ids.contains(id)
+        } else {
+            false
+        }
+    });
+
+    if before_pulls_set != after_pulls_set
+        || before_pushes_set != after_pushes_set
+        || any_source_being_torn_down
+    {
+        // Dependency set changed or source is being rebuilt → Drop old dict then Create new.
         let mut plan = OperationPlan::new();
         plan.teardown_ops.push(AtomicOlapOperation::DropDictionary {
             dict: before.clone(),
@@ -1799,7 +1819,7 @@ fn handle_dictionary_update(
         return plan;
     }
 
-    // Dependency set unchanged → zero-downtime CREATE OR REPLACE.
+    // Dependency set unchanged and no source rebuild → zero-downtime CREATE OR REPLACE.
     let setup_op = AtomicOlapOperation::ReplaceDictionary {
         before: before.clone(),
         after: after.clone(),
@@ -1849,8 +1869,12 @@ pub fn order_olap_changes(
     changes: &[OlapChange],
     default_database: &str,
 ) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
-    // First, collect all tables from the changes to provide context for SQL resource processing
+    // First, collect all tables from the changes to provide context for SQL resource processing.
+    // Also record which table IDs are being torn down so dictionary updates can detect
+    // source-table rebuilds (same ID appears in both Removed and Added).
     let mut tables = HashMap::new();
+    let mut teardown_table_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     for change in changes {
         if let OlapChange::Table(table_change) = change {
             match table_change {
@@ -1863,6 +1887,7 @@ pub fn order_olap_changes(
                 TableChange::Removed(table) => {
                     // Keep removed tables for context during teardown
                     tables.insert(table.name.clone(), table.clone());
+                    teardown_table_ids.insert(table.id(default_database));
                 }
                 TableChange::SettingsChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
@@ -2040,7 +2065,7 @@ pub fn order_olap_changes(
                 handle_dictionary_remove(dict, default_database)
             }
             OlapChange::OlapDictionary(Change::Updated { before, after }) => {
-                handle_dictionary_update(before, after, default_database)
+                handle_dictionary_update(before, after, default_database, &teardown_table_ids)
             }
         };
 
@@ -5733,7 +5758,12 @@ mod tests {
         let before = make_dict("my_dict", "table_a");
         let after = make_dict("my_dict", "table_b"); // source table changed
 
-        let plan = handle_dictionary_update(&before, &after, DEFAULT_DATABASE_NAME);
+        let plan = handle_dictionary_update(
+            &before,
+            &after,
+            DEFAULT_DATABASE_NAME,
+            &std::collections::HashSet::new(),
+        );
 
         // When deps differ: must have a DropDictionary in teardown AND CreateDictionary in setup
         assert_eq!(
@@ -5813,7 +5843,12 @@ mod tests {
         let before = make_dict(None);
         let after = make_dict(Some("new comment")); // only comment changed, source unchanged
 
-        let plan = handle_dictionary_update(&before, &after, DEFAULT_DATABASE_NAME);
+        let plan = handle_dictionary_update(
+            &before,
+            &after,
+            DEFAULT_DATABASE_NAME,
+            &std::collections::HashSet::new(),
+        );
 
         // When deps are the same: must have a ReplaceDictionary in setup, nothing in teardown
         assert!(
@@ -5833,6 +5868,98 @@ mod tests {
                 AtomicOlapOperation::ReplaceDictionary { .. }
             ),
             "Setup op must be ReplaceDictionary, got {:?}",
+            plan.setup_ops[0]
+        );
+    }
+
+    /// When a source table is being rebuilt (same ID appears in both Removed and Added),
+    /// `handle_dictionary_update` must emit Drop+Create even though the dependency set IDs
+    /// are unchanged. Without this, `DropTable` on the source would fail because ClickHouse
+    /// still sees the live dictionary reference.
+    #[test]
+    fn test_handle_dictionary_update_emits_drop_create_when_source_table_rebuilt() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource,
+        };
+
+        let make_dict = |comment: Option<&str>| OlapDictionary {
+            name: "my_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "source_table".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: comment.map(|s| s.to_string()),
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        };
+
+        let before = make_dict(None);
+        let after = make_dict(Some("new comment")); // only comment changed, same source table
+
+        // Simulate the source table being rebuilt: its ID appears in teardown_table_ids
+        let source_table_id = before
+            .pulls_data_from(DEFAULT_DATABASE_NAME)
+            .into_iter()
+            .next()
+            .map(|sig| sig.id().to_string())
+            .expect("dict should have a pull dependency");
+        let mut teardown_table_ids = std::collections::HashSet::new();
+        teardown_table_ids.insert(source_table_id);
+
+        let plan =
+            handle_dictionary_update(&before, &after, DEFAULT_DATABASE_NAME, &teardown_table_ids);
+
+        // Must be Drop+Create, NOT ReplaceDictionary, because the source is being torn down
+        assert_eq!(
+            plan.teardown_ops.len(),
+            1,
+            "Expected 1 teardown op (DropDictionary), got {:?}",
+            plan.teardown_ops
+        );
+        assert_eq!(
+            plan.setup_ops.len(),
+            1,
+            "Expected 1 setup op (CreateDictionary), got {:?}",
+            plan.setup_ops
+        );
+        assert!(
+            matches!(
+                &plan.teardown_ops[0],
+                AtomicOlapOperation::DropDictionary { dict, .. } if dict.name == "my_dict"
+            ),
+            "Teardown op must be DropDictionary, got {:?}",
+            plan.teardown_ops[0]
+        );
+        assert!(
+            matches!(
+                &plan.setup_ops[0],
+                AtomicOlapOperation::CreateDictionary { dict, .. } if dict.name == "my_dict"
+            ),
+            "Setup op must be CreateDictionary, got {:?}",
             plan.setup_ops[0]
         );
     }
