@@ -717,7 +717,7 @@ message DictionaryClickHouseSource {
   uint32 port = 2;
   // Username for authentication
   string user = 3;
-  // Password for authentication (stored as-is; mask before display)
+  // Password for authentication (masked via strip_dict_metadata() before proto/Redis serialization; not stored in plaintext)
   string password = 4;
   // Database name on the remote server
   string db = 5;
@@ -739,7 +739,7 @@ message DictionaryMysqlSource {
   uint32 port = 2;
   // Username for authentication
   string user = 3;
-  // Password for authentication (stored as-is; mask before display)
+  // Password for authentication (masked via strip_dict_metadata() before proto/Redis serialization; not stored in plaintext)
   string password = 4;
   // Database name
   string db = 5;
@@ -761,7 +761,7 @@ message DictionaryPostgresqlSource {
   uint32 port = 2;
   // Username for authentication
   string user = 3;
-  // Password for authentication (stored as-is; mask before display)
+  // Password for authentication (masked via strip_dict_metadata() before proto/Redis serialization; not stored in plaintext)
   string password = 4;
   // Database name
   string db = 5;
@@ -797,7 +797,7 @@ message DictionaryMongoDbSource {
   uint32 port = 2;
   // Username for authentication
   string user = 3;
-  // Password for authentication (stored as-is; mask before display)
+  // Password for authentication (masked via strip_dict_metadata() before proto/Redis serialization; not stored in plaintext)
   string password = 4;
   // Database name
   string db = 5;
@@ -823,7 +823,7 @@ message DictionaryS3Source {
   string format = 2;
   // AWS access key ID; omit to use instance profile / environment credentials
   optional string access_key_id = 3;
-  // AWS secret access key (stored as-is; mask before display)
+  // AWS secret access key (masked via strip_dict_metadata() before proto/Redis serialization; not stored in plaintext)
   optional string secret_access_key = 4;
 }
 
