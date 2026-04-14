@@ -2015,7 +2015,7 @@ impl InfrastructureMap {
     pub fn diff_dictionaries(
         self_dicts: &HashMap<String, OlapDictionary>,
         target_dicts: &HashMap<String, OlapDictionary>,
-        _default_database: &str,
+        default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
         filtered_changes: &mut Vec<FilteredChange>,
         respect_life_cycle: bool,
@@ -2024,8 +2024,19 @@ impl InfrastructureMap {
         let mut dict_removals = 0;
         let mut dict_updates = 0;
 
-        for (id, dict) in self_dicts {
-            if let Some(target_dict) = target_dicts.get(id) {
+        // Re-key both maps by canonical ID so that default-database rewrites
+        // on either side do not produce spurious Removed+Added pairs.
+        let canonical_self: HashMap<String, OlapDictionary> = self_dicts
+            .values()
+            .map(|d| (d.id(default_database), d.clone()))
+            .collect();
+        let canonical_target: HashMap<String, OlapDictionary> = target_dicts
+            .values()
+            .map(|d| (d.id(default_database), d.clone()))
+            .collect();
+
+        for (id, dict) in &canonical_self {
+            if let Some(target_dict) = canonical_target.get(id) {
                 if !dicts_equal_ignore_metadata(dict, target_dict) {
                     tracing::debug!("Dictionary '{}' has differences", id);
                     if respect_life_cycle && target_dict.life_cycle.is_any_modification_protected()
@@ -2077,8 +2088,8 @@ impl InfrastructureMap {
             }
         }
 
-        for (id, dict) in target_dicts {
-            if !self_dicts.contains_key(id) {
+        for (id, dict) in &canonical_target {
+            if !canonical_self.contains_key(id) {
                 tracing::debug!("Dictionary '{}' added", id);
                 if respect_life_cycle && dict.life_cycle.is_any_modification_protected() {
                     tracing::warn!(
