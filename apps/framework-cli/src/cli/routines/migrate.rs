@@ -40,6 +40,31 @@ enum DriftStatus {
     },
 }
 
+/// Enforce migration lineage for delta-based execution.
+///
+/// A delta migration must be applied only when its `parent_state_hash` matches
+/// the current folded infrastructure hash. Proceeding on mismatch means the
+/// migration was generated from a different base state and may execute
+/// destructive DDL against the wrong schema.
+fn ensure_parent_state_hash_matches(
+    migration_id: &str,
+    expected_parent_hash: &str,
+    current_hash: &str,
+) -> Result<()> {
+    if expected_parent_hash == current_hash {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'.\n\
+         Refusing to apply stale migration because it may execute destructive operations against a different schema state.\n\
+         Regenerate migration files from the current database state (or resolve branch conflicts) and retry.",
+        migration_id,
+        &expected_parent_hash[..12.min(expected_parent_hash.len())],
+        &current_hash[..12.min(current_hash.len())],
+    );
+}
+
 /// Load and parse migration files from disk
 fn load_migration_files(db_name: &str) -> Result<MigrationFiles> {
     // Check if all required migration files exist
@@ -747,15 +772,7 @@ pub async fn execute_migration_deltas(
     for file in &unapplied {
         // Validate parent state hash before applying
         let current_hash = map.olap_hash();
-        if file.parent_state_hash != current_hash {
-            tracing::warn!(
-                "Migration '{}' parent_state_hash mismatch: expected '{}..', got '{}..'. \
-                 This migration may have been generated against a different base state.",
-                file.id,
-                &file.parent_state_hash[..12.min(file.parent_state_hash.len())],
-                &current_hash[..12.min(current_hash.len())],
-            );
-        }
+        ensure_parent_state_hash_matches(&file.id, &file.parent_state_hash, &current_hash)?;
 
         println!(
             "\n▶ Applying migration '{}' ({} delta(s))...",
@@ -1692,5 +1709,22 @@ mod tests {
             err.contains("another_bad_cluster"),
             "Error should mention the invalid cluster: {err}"
         );
+    }
+
+    #[test]
+    fn test_ensure_parent_state_hash_matches_when_equal() {
+        let result =
+            ensure_parent_state_hash_matches("20260410_100000_migration", "abc123", "abc123");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ensure_parent_state_hash_matches_when_mismatch() {
+        let result =
+            ensure_parent_state_hash_matches("20260410_100000_migration", "abc123", "def456");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("parent_state_hash mismatch"));
+        assert!(err.contains("Refusing to apply stale migration"));
     }
 }
