@@ -62,7 +62,7 @@ import { DeadLetterQueue, Stream } from "@514labs/moose-lib";
 
 interface RawRecord {
   id: string;
-  name: str;
+  name: string;
   timestamp: Date;
 }
 
@@ -74,8 +74,8 @@ const rawRecords = new Stream<RawRecord>("raw_records");
 const processedRecords = new Stream<ProcessedRecord>("processed_records");
 const recordDLQ = new DeadLetterQueue<RawRecord>("record_dlq");
 
-rawEvents.addTransform(
-  processedEvents,
+rawRecords.addTransform(
+  processedRecords,
   (record) => {
     if (!record.id) {
       throw new Error("Invalid id");
@@ -84,6 +84,7 @@ rawEvents.addTransform(
     return {
       id: record.id,
       name: record.name,
+      timestamp: record.timestamp,
       processed: new Date(),
     };
   },

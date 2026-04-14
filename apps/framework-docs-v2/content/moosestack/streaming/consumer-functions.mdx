@@ -63,6 +63,25 @@ You can attach more than one consumer to the same stream when different side eff
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/consumer.ts" copy
+import { Stream } from "@514labs/moose-lib";
+
+interface Record {
+  id: string;
+  name: string;
+  timestamp: Date;
+  type: "foo" | "bar";
+}
+
+const stream = new Stream<Record>("stream");
+
+async function foo(record: Record) {
+  console.log(`foo: ${record.id}`);
+}
+
+async function bar(record: Record) {
+  console.log(`bar: ${record.id}`);
+}
+
 stream.addConsumer(async (record) => {
   if (record.type === "foo") {
     await foo(record);
@@ -78,6 +97,26 @@ stream.addConsumer(async (record) => {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="app/consumer.py" copy
+from datetime import datetime
+from typing import Literal
+
+from moose_lib import Stream
+from pydantic import BaseModel
+
+class Record(BaseModel):
+    id: str
+    name: str
+    timestamp: datetime
+    type: Literal["foo", "bar"]
+
+stream = Stream[Record]("stream")
+
+def foo(record: Record):
+    print(f"foo: {record.id}")
+
+def bar(record: Record):
+    print(f"bar: {record.id}")
+
 def foo_consumer(record: Record):
     if record.type == "foo":
         foo(record)
