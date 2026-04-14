@@ -89,7 +89,10 @@ pub enum Commands {
         #[arg(long)]
         redis_url: Option<String>,
 
-        /// Validate migration files without executing them
+        /// Validate migration files without executing them.
+        /// Checks that the delta sequence is consistent (fold succeeds)
+        /// and detects semantic conflicts between migration files.
+        /// Does not require ClickHouse or Redis.
         #[arg(long)]
         validate: bool,
     },
@@ -546,11 +549,11 @@ pub struct HarnessInitArgs {
     #[command(subcommand)]
     pub action: Option<HarnessInitAction>,
 
-    /// Project name (use instead of positional arg to avoid ambiguity)
+    /// Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`
     #[arg(long = "name", value_name = "NAME", conflicts_with = "name")]
     pub name_option: Option<String>,
 
-    /// Template name (use instead of positional arg to avoid ambiguity)
+    /// Explicit template name. Use this with `--name` when positional parsing would be ambiguous
     #[arg(
         long = "template",
         value_name = "TEMPLATE",

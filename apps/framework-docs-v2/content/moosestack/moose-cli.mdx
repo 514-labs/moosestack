@@ -44,8 +44,8 @@ moose harness init <name> <template> [--location <location>] [--agent <agent>] [
 - Zero-arg `moose harness init` starts the interactive wizard.
 - Arg-driven mode is non-interactive: if you pass flags or positionals, omitted values fall back to defaults.
 - `--agent`: Target specific coding agents instead of auto-detecting (repeatable)
-- `--name <name>`: Project name (use instead of positional arg to avoid ambiguity)
-- `--template <template>`: Template name (use instead of positional arg to avoid ambiguity)
+- `--name <name>`: Explicit project name. Use this when the name would otherwise conflict with a subcommand like `schema`.
+- `--template <template>`: Explicit template name. Use this with `--name` when positional parsing would be ambiguous.
 - `--from-remote <connection-string>`: Initialize from a remote ClickHouse database
 - `--lsp`: Install and configure MooseStack LSP (default)
 - `--no-lsp`: Skip MooseStack LSP installation/configuration
@@ -334,7 +334,7 @@ moose migrate [--clickhouse-url <url>] [--redis-url <url>] [--validate]
 ```
 - `--clickhouse-url`: ClickHouse connection URL
 - `--redis-url`: Redis connection URL for state storage
-- `--validate`: Validate migration files without executing them
+- `--validate`: Validate migration files without executing them. Checks delta sequence consistency and detects semantic conflicts. Does not require ClickHouse or Redis.
 
 ### Generate Dockerfile
 Generate a Dockerfile without building Docker images.
