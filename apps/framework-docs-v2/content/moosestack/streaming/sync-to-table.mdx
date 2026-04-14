@@ -57,12 +57,9 @@ stream = Stream[Record]("stream", StreamConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## What happens after you set `destination`
+## Runtime behavior
 
-- Moose starts a background sync worker that reads from the stream topic and inserts records into the destination table in ClickHouse.
-- Records are not queryable as soon as they enter the stream. They become queryable only after a batch insert succeeds.
-
-## Current runtime behavior
+When a stream has a `destination` option set to an `OlapTable`, Moose starts a background sync worker that reads records from the stream topic, buffers them into batches, and writes those batches to the destination table in ClickHouse.
 
 <table>
   <thead>
@@ -96,3 +93,10 @@ stream = Stream[Record]("stream", StreamConfig(
 - `destination` must point at an `OlapTable` instance.
 - The destination table schema must match the stream schema.
 - If you need to define the table first, start with [Model Table](/moosestack/olap/model-table).
+
+## Related capabilities
+
+- [Stream](/moosestack/streaming/create-stream) for defining the source stream
+- [Define OLAP table](/moosestack/olap/model-table) for defining the destination OLAP table
+- [Transform functions](/moosestack/streaming/transform-functions) for reshaping records before they land in ClickHouse
+- [Ingest API](/moosestack/apis/ingest-api) for HTTP producers that write into streams which then sync to tables
