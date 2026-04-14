@@ -618,25 +618,11 @@ pub struct InfraPlan {
     pub changes: InfraChanges,
 }
 
-/// Converts infrastructure changes to ordered executable operations.
+/// Converts infrastructure changes to ordered executable operations (no version bumps).
 ///
-/// Used by both display and execution to guarantee consistency. Converts high-level
-/// infrastructure changes into a sequence of atomic OLAP operations.
-///
-/// The operations are ordered in three phases:
+/// Operations are ordered in two phases:
 /// 1. Teardown operations (drops, removals) executed first
 /// 2. Setup operations (creates, adds) executed second
-/// 3. Version-bump operations (create new → backfill → drop old) executed last
-///
-/// Version bumps are extracted before the normal ordering pass so that the old
-/// table is still available for backfill.
-///
-/// # Arguments
-/// * `changes` - The infrastructure changes to convert
-/// * `default_database` - The default database name for table operations
-///
-/// # Returns
-/// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
@@ -652,11 +638,10 @@ pub fn infra_changes_to_operations(
 /// operations derived from `version_bump_decisions`.
 ///
 /// Ordering:
-/// 1. Teardown ops from non-bump changes
-/// 2. Bump creates (new tables) — before setup so dependent MVs/views can reference them
-/// 3. Setup ops from non-bump changes
-/// 4. Bump backfills (old table must still exist)
-/// 5. Bump drops (old tables removed last)
+/// 1. Bump creates (new versioned tables)
+/// 2. Bump backfills (old table still alive, new table populated)
+/// 3. Teardown (all drops — non-bump + old bump tables that chose `Drop`)
+/// 4. Setup (all creates — MVs/views see fully-populated bump tables)
 pub fn infra_changes_to_operations_with_version_bumps(
     changes: &InfraChanges,
     default_database: &str,
@@ -667,28 +652,29 @@ pub fn infra_changes_to_operations_with_version_bumps(
 > {
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (_bumps, mut remaining_changes) =
+        version_bump::extract_version_bumps(&changes.olap_changes);
+    remaining_changes.extend(version_bump::bump_drop_changes(version_bump_decisions));
+
     let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
 
-    let (bump_creates, bump_backfills, bump_drops) =
+    let (bump_creates, bump_backfills) =
         version_bump::version_bump_decisions_to_phased_operations(version_bump_decisions);
 
     let mut operations = Vec::new();
 
-    // Phase 1: Teardown (drops/removals from non-bump changes)
+    // Phase 1: Bump creates
+    operations.extend(bump_creates);
+    // Phase 2: Bump backfills (old table still alive, new table populated)
+    operations.extend(bump_backfills);
+    // Phase 3: Teardown (all drops including old bump tables)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
-    // Phase 2: Bump creates (new tables exist before setup ops that may reference them)
-    operations.extend(bump_creates);
-    // Phase 3: Setup (creates/adds from non-bump changes, may reference bump tables)
+    // Phase 4: Setup (all creates — MVs/views see fully-populated bump tables)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
-    // Phase 4: Backfills (old table still alive)
-    operations.extend(bump_backfills);
-    // Phase 5: Bump drops
-    operations.extend(bump_drops);
 
     Ok(operations)
 }

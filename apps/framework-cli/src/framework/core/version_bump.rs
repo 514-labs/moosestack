@@ -659,10 +659,14 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
 ///
 /// Callers interleave these with normal teardown/setup ops to ensure correct ordering:
 /// bump creates land before dependent setup ops, and bump drops land after backfills.
+/// Returns (creates, backfills) operations for version bump decisions.
+///
+/// Bump drops are not returned here — callers should re-inject the old table's
+/// `Removed` change into the regular change list so it participates in
+/// dependency-ordered teardown alongside non-bump drops.
 pub fn version_bump_decisions_to_phased_operations(
     decisions: &[VersionBumpDecision],
 ) -> (
-    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
 ) {
@@ -670,7 +674,6 @@ pub fn version_bump_decisions_to_phased_operations(
 
     let mut creates = Vec::new();
     let mut backfills = Vec::new();
-    let mut drops = Vec::new();
 
     for decision in decisions {
         if decision.bump.kind == VersionBumpKind::InPlace {
@@ -688,17 +691,20 @@ pub fn version_bump_decisions_to_phased_operations(
                 ),
             });
         }
-
-        if decision.old_table_disposition == OldTableDisposition::Drop {
-            drops.push(SerializableOlapOperation::DropTable {
-                table: decision.bump.old_table.name.clone(),
-                database: decision.bump.old_table.database.clone(),
-                cluster_name: decision.bump.old_table.cluster_name.clone(),
-            });
-        }
     }
 
-    (creates, backfills, drops)
+    (creates, backfills)
+}
+
+/// Collect the `OlapChange::Removed` entries for bump decisions that chose `Drop`.
+/// These should be appended to the regular change list so they participate in
+/// dependency-ordered teardown.
+pub fn bump_drop_changes(decisions: &[VersionBumpDecision]) -> Vec<OlapChange> {
+    decisions
+        .iter()
+        .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
+        .map(|d| OlapChange::Table(TableChange::Removed(d.bump.old_table.clone())))
+        .collect()
 }
 
 #[cfg(test)]
