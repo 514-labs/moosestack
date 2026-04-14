@@ -19,7 +19,7 @@ Moose Workflows adds durable background processing around Moose OLAP. Use it for
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="app/report-workflow.ts" copy
+```typescript filename="app/report-workflow.ts" copy
 import { Task, Workflow } from "@514labs/moose-lib";
 
 interface ReportRequest {
@@ -51,7 +51,7 @@ export const myworkflow = new Workflow("daily_report", {
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="app/report_workflow.py" copy
+```python filename="app/report_workflow.py" copy
 from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 from pydantic import BaseModel
 
