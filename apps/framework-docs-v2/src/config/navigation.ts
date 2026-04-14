@@ -338,7 +338,7 @@ const moosestackNavigationConfig: NavigationConfig = [
       {
         type: "page",
         slug: "moosestack/streaming/from-your-code",
-        title: "Send data to stream",
+        title: "Stream.send()",
         languages: ["typescript", "python"],
       },
       {

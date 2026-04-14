@@ -1,22 +1,38 @@
 ---
 title: Stream.send()
-description: Reference for publishing records to a stream with `Stream.send()`
+description: Reference for publishing records from code that can import a `Stream` directly with `Stream.send()`
 order: 6
 category: streaming
 ---
 
 import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Send records to a Stream
+# Stream.send()
 
-Use `Stream.send()` to publish records into a `Stream` from code running inside your Moose project.
+Use `Stream.send()` to publish one or more records to an existing `Stream` when the producer can import your Moose SDK models and `Stream` definition directly. If the producer should only send JSON over HTTP, use an [Ingest API](/moosestack/apis/ingest-api) instead.
 
-## When to use `Stream.send()`
+This page covers in-process producers. To define the stream itself, start with [Stream](/moosestack/streaming/create-stream).
 
-Use `Stream.send()` when code running inside your Moose project needs to publish directly to a stream topic.
+## When to use
 
-- Use `Stream.send()` for in-process producers such as app code, jobs, or other Moose runtime code.
-- Use an [Ingest API](/moosestack/apis/ingest-api) when an external system should publish over HTTP instead of importing the Moose SDK.
+<table>
+  <thead>
+    <tr>
+      <th>Use</th>
+      <th>Typical scenarios</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>Stream.send()</code></td>
+      <td>An existing app in your monorepo or <a href="/moosestack/workflows">Moose workflows</a>, where you can import the stream definition and other Moose objects directly.</td>
+    </tr>
+    <tr>
+      <td><a href="/moosestack/apis/ingest-api">Ingest API</a></td>
+      <td>Services that push events into your system when you do not control that codebase or cannot use Moose objects or clients there directly.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Basic usage
 
@@ -81,6 +97,8 @@ events.send([
   </LanguageTabContent>
 </LanguageTabs>
 
+## Behavior
+
 - Passing an array publishes multiple stream records, not one array payload.
 - Passing `null`, `undefined`, or an empty array sends nothing.
 - `Stream.send()` publishes to the stream topic. If the stream also has a destination table, records become queryable only after Moose syncs them into ClickHouse.
@@ -89,16 +107,12 @@ events.send([
 If your stream uses `schemaConfig.kind = "JSON"`, Moose publishes records with the Confluent Schema Registry envelope automatically. See [Schema Registry](/moosestack/streaming/schema-registry).
 </Callout>
 
-## Requirements and errors
+## Requirements
 
 - If the stream uses `schemaConfig.kind = "JSON"`, configure `schema_registry_url` before calling `send()`.
 - Only JSON Schema is supported for Schema Registry streams today.
 - In Python, values passed to `send()` must be instances of the stream model type.
 - In Python, Schema Registry JSON support requires `confluent-kafka[json,schemaregistry]`.
-
-## Publish from external systems
-
-Use an [Ingest API](/moosestack/apis/ingest-api) instead of `Stream.send()` when the producer runs outside your Moose project and should `POST` JSON into a stream over HTTP.
 
 ## Related capabilities
 

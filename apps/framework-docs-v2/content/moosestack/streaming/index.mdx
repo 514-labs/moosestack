@@ -85,8 +85,10 @@ streaming_engine = true
 
 ### Send records
 
-- **[Publish from Moose code with `Stream.send()`](/moosestack/streaming/from-your-code)** for in-process producers
-- **[Publish from external systems with the Ingest API](/moosestack/apis/ingest-api)** for HTTP-based ingestion
+The deciding question is where the producer runs.
+
+- **[Publish from Moose code with `Stream.send()`](/moosestack/streaming/from-your-code)** when the producer runs inside your Moose project and can import the `Stream` object directly
+- **[Publish from external systems with the Ingest API](/moosestack/apis/ingest-api)** when the producer runs outside your Moose project and should send JSON over HTTP
 - **[Use Schema registry](/moosestack/streaming/schema-registry)** when stream payloads should use Confluent Schema Registry
 
 ### Process records

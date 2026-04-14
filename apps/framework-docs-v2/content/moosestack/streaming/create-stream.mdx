@@ -15,11 +15,6 @@ Use `Stream<T>` to define a typed Kafka or Redpanda-backed stream in your Moose 
 Turn on `features.streaming_engine` in `moose.config.toml` before creating `Stream` resources.
 </Callout>
 
-```toml filename="moose.config.toml"
-[features]
-streaming_engine = true
-```
-
 <ExportRequirement
   primitive="stream"
   example="export { stream }"
