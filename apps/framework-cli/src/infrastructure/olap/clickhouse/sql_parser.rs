@@ -5,8 +5,8 @@
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
-    CreateTableOptions, Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr,
-    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
+    CreateTableOptions, Expr, Ident, ObjectName, ObjectNamePart, Query, Select, SelectItem,
+    SetExpr, SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::keywords::Keyword;
@@ -515,6 +515,71 @@ pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
 pub(crate) static RE_ENGINE_KEYWORD: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\sENGINE\s*=").unwrap());
 
+/// Split `body` on top-level commas, respecting nested parentheses / brackets
+/// and single-quoted, double-quoted, and backtick-quoted strings.
+// TODO: parse from `sqlparser::tokenizer::Tokenizer` tokens instead of raw string
+fn split_top_level_csv_items(body: &str) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+    let mut escape = false;
+    for ch in body.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        let in_any_quote = in_single_quote || in_double_quote || in_backtick;
+        match ch {
+            '\\' if in_any_quote => {
+                current.push(ch);
+                escape = true;
+            }
+            '\'' if !in_double_quote && !in_backtick => {
+                in_single_quote = !in_single_quote;
+                current.push(ch);
+            }
+            '"' if !in_single_quote && !in_backtick => {
+                in_double_quote = !in_double_quote;
+                current.push(ch);
+            }
+            '`' if !in_single_quote && !in_double_quote => {
+                in_backtick = !in_backtick;
+                current.push(ch);
+            }
+            '(' if !in_any_quote => {
+                paren_depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_any_quote => {
+                paren_depth -= 1;
+                current.push(ch);
+            }
+            '[' if !in_any_quote => {
+                bracket_depth += 1;
+                current.push(ch);
+            }
+            ']' if !in_any_quote => {
+                bracket_depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_any_quote && paren_depth == 0 && bracket_depth == 0 => {
+                items.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        items.push(current.trim().to_string());
+    }
+    items
+}
+
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
 // so we're stuck with this
@@ -529,46 +594,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
     let body = &sql[start..end];
-
-    // Split top-level comma-separated items, respecting nested parentheses
-    let mut items: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    for ch in body.chars() {
-        if escape {
-            current.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => {
-                current.push(ch);
-                escape = true;
-            }
-            '\'' => {
-                in_string = !in_string;
-                current.push(ch);
-            }
-            '(' if !in_string => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_string => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if !in_string && depth == 0 => {
-                items.push(current.trim().to_string());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.trim().is_empty() {
-        items.push(current.trim().to_string());
-    }
+    let items = split_top_level_csv_items(body);
 
     for item in items
         .into_iter()
@@ -697,46 +723,7 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
     let body = &sql[start..end];
-
-    // Split top-level comma-separated items, respecting nested parentheses
-    let mut items: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    for ch in body.chars() {
-        if escape {
-            current.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => {
-                current.push(ch);
-                escape = true;
-            }
-            '\'' => {
-                in_string = !in_string;
-                current.push(ch);
-            }
-            '(' if !in_string => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_string => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if !in_string && depth == 0 => {
-                items.push(current.trim().to_string());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.trim().is_empty() {
-        items.push(current.trim().to_string());
-    }
+    let items = split_top_level_csv_items(body);
 
     for item in items
         .into_iter()
@@ -804,6 +791,231 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
     result
 }
 
+/// Parsed constraint from a CREATE TABLE statement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedConstraint {
+    pub name: String,
+    pub constraint_type: String,
+    pub expression: String,
+}
+
+/// Extract constraints from a CREATE TABLE statement.
+///
+/// Strip one balanced layer of outer parentheses from a string, if present.
+/// Returns the inner content trimmed. If the outermost `(` and `)` are not
+/// balanced (e.g. `(a > 0) AND (b < 10)`), the original string is returned.
+fn strip_outer_parens(s: &str) -> &str {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
+        return trimmed;
+    }
+    // Verify the opening paren matches the closing one (not two separate groups)
+    let mut depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let chars: Vec<char> = inner.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        let next_ch = if i + 1 < chars.len() {
+            chars[i + 1]
+        } else {
+            '\0'
+        };
+
+        // Handle backslash escapes inside quotes
+        if ch == '\\' && (in_single_quote || in_double_quote || in_backtick) {
+            i += 2;
+            continue;
+        }
+
+        // Handle escaping by doubling quotes
+        if ch == '\'' && in_single_quote && next_ch == '\'' {
+            i += 2;
+            continue;
+        }
+
+        if ch == '\'' && !in_double_quote && !in_backtick {
+            in_single_quote = !in_single_quote;
+        } else if ch == '"' && !in_single_quote && !in_backtick {
+            in_double_quote = !in_double_quote;
+        } else if ch == '`' && !in_single_quote && !in_double_quote {
+            in_backtick = !in_backtick;
+        }
+
+        // Only consider parens outside of quotes
+        if !in_single_quote && !in_double_quote && !in_backtick {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // The first ')' closes the opening paren before end — not a single wrapper
+                        return trimmed;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        i += 1;
+    }
+
+    if depth == 0 {
+        inner.trim()
+    } else {
+        trimmed
+    }
+}
+
+/// Parses the column definition body between `(` and `ENGINE` to find
+/// `CONSTRAINT <name> <type> <expression>` items. Uses the same top-level comma
+/// splitting logic as [`extract_indexes_from_create_table`] to handle
+/// nested parentheses correctly.
+pub fn extract_constraints_from_create_table(sql: &str) -> Vec<ParsedConstraint> {
+    let mut result: Vec<ParsedConstraint> = Vec::new();
+    let upper = sql.to_uppercase();
+
+    // Find opening '(' after CREATE TABLE ...
+    let open_paren_pos = upper.find('(');
+    let engine_pos = find_regex_outside_quotes(sql, &RE_ENGINE_KEYWORD).map(|m| m.start());
+    if open_paren_pos.is_none() || engine_pos.is_none() {
+        return result;
+    }
+    let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
+    let mut body = sql[start..end].trim();
+    if body.ends_with(')') {
+        body = &body[..body.len() - 1];
+    }
+
+    let items = split_top_level_csv_items(body);
+
+    for item in items
+        .into_iter()
+        .filter(|s| s.to_uppercase().starts_with("CONSTRAINT "))
+    {
+        let trimmed = item.trim();
+        // Strip leading "CONSTRAINT "
+        let after_keyword = match trimmed
+            .get(..11)
+            .filter(|prefix| prefix.to_uppercase() == "CONSTRAINT ")
+        {
+            Some(_) => trimmed[11..].trim_start(),
+            None => continue,
+        };
+
+        // Name is the next token, handle backtick or double quoting
+        let (name, after_name) = if after_keyword.starts_with('`') || after_keyword.starts_with('"')
+        {
+            let quote_char = after_keyword.chars().next().unwrap();
+            // Find the matching closing quote properly respecting UTF-8 char boundaries
+            let mut end_idx = None;
+            let mut chars = after_keyword.char_indices().skip(1);
+            while let Some((idx, ch)) = chars.next() {
+                if ch == quote_char {
+                    // Check if it's an escaped quote (e.g. `` or "")
+                    let next_is_quote = chars
+                        .clone()
+                        .next()
+                        .is_some_and(|(_, next_ch)| next_ch == quote_char);
+                    if next_is_quote {
+                        chars.next(); // skip the second quote
+                        continue;
+                    }
+                    end_idx = Some(idx);
+                    break;
+                }
+            }
+
+            if let Some(idx) = end_idx {
+                let escaped_quote = format!("{}{}", quote_char, quote_char);
+                let unescaped_quote = quote_char.to_string();
+                let name = after_keyword[1..idx].replace(&escaped_quote, &unescaped_quote); // extract and unescape
+                let after_name = after_keyword[idx + 1..].trim_start();
+                (name, after_name)
+            } else {
+                // Fallback if no closing quote
+                let name_end = after_keyword
+                    .find(|c: char| c.is_whitespace())
+                    .unwrap_or(after_keyword.len());
+                let name = after_keyword[1..name_end].to_string();
+                let after_name = after_keyword[name_end..].trim_start();
+                (name, after_name)
+            }
+        } else {
+            let name_end = after_keyword
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(after_keyword.len());
+            let name = after_keyword[..name_end].to_string();
+            let after_name = after_keyword[name_end..].trim_start();
+            (name, after_name)
+        };
+
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        let type_end = after_name
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after_name.len());
+        let constraint_type = after_name[..type_end].trim().to_string();
+        if constraint_type.is_empty() {
+            continue;
+        }
+
+        let raw_expression = after_name[type_end..].trim();
+        if raw_expression.is_empty() {
+            continue;
+        }
+
+        // Strip one layer of outer parentheses if present.
+        // The DDL generator wraps expressions in (...) for SQL safety, and ClickHouse
+        // persists that wrapping. Stripping here ensures the parsed expression matches
+        // the user's original model and avoids perpetual plan diffs.
+        let expression = strip_outer_parens(raw_expression).to_string();
+
+        result.push(ParsedConstraint {
+            name,
+            constraint_type,
+            expression,
+        });
+    }
+
+    result
+}
+
+/// Returns true if `value` is a safe bare identifier in ClickHouse (only ASCII
+/// letters, digits, and underscores, not starting with a digit). Identifiers that
+/// fail this check must remain backtick-quoted; stripping their quote style produces
+/// invalid SQL (e.g. `table-one` becomes `table` MINUS `one`).
+fn is_safe_bare_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        None => false,
+        Some(first) => {
+            (first.is_ascii_alphabetic() || first == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+    }
+}
+
+/// Unquotes an identifier in place, but only when it is safe to do so.
+/// Preserves backtick quoting for identifiers that contain special characters.
+///
+/// Note: sqlparser already strips surrounding backticks when parsing, so
+/// `ident.value` for `` `table-one` `` is `"table-one"`, not `` "`table-one`" ``.
+/// We only need to clear `quote_style` — no value mutation required.
+fn unquote_if_safe(ident: &mut Ident) {
+    if is_safe_bare_identifier(&ident.value) {
+        ident.quote_style = None;
+    }
+}
+
 /// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
 /// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
 /// but the SQL parser doesn't support this syntax, so we remove it
@@ -811,7 +1023,7 @@ pub fn extract_projections_from_create_table(sql: &str) -> Vec<ParsedProjection>
 /// Handles nested parentheses (e.g., DateTime('UTC')) by counting paren depth
 /// Normalizes a SQL statement for comparison
 /// - Strips database prefixes that match the default database
-/// - Removes unnecessary backticks
+/// - Removes unnecessary backticks (when safe -- identifiers needing quotes are preserved)
 /// - Normalizes whitespace
 /// - Uppercases SQL keywords
 struct Normalizer<'a> {
@@ -834,11 +1046,10 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     }
                 }
             }
-            // Unquote table names
+            // Unquote table names only when safe (preserves backticks for hyphenated names etc.)
             for part in &mut name.0 {
                 if let ObjectNamePart::Identifier(ident) = part {
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
         }
@@ -848,8 +1059,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
     fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
         match expr {
             Expr::Identifier(ident) => {
-                ident.quote_style = None;
-                ident.value = ident.value.replace('`', "");
+                unquote_if_safe(ident);
             }
             Expr::Function(func) => {
                 // Uppercase function names (e.g. count -> COUNT)
@@ -869,8 +1079,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     ) {
                         ident.value = upper;
                     }
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
             _ => {}
@@ -891,8 +1100,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
 
             for part in &mut create_view.name.0 {
                 if let ObjectNamePart::Identifier(ident) = part {
-                    ident.quote_style = None;
-                    ident.value = ident.value.replace('`', "");
+                    unquote_if_safe(ident);
                 }
             }
             if let Some(to_name) = &mut create_view.to {
@@ -907,8 +1115,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
 
                 for part in &mut to_name.0 {
                     if let ObjectNamePart::Identifier(ident) = part {
-                        ident.quote_style = None;
-                        ident.value = ident.value.replace('`', "");
+                        unquote_if_safe(ident);
                     }
                 }
             }
@@ -921,8 +1128,7 @@ impl<'a> VisitorMut for Normalizer<'a> {
         if let SetExpr::Select(select) = &mut *query.body {
             for item in &mut select.projection {
                 if let SelectItem::ExprWithAlias { alias, .. } = item {
-                    alias.quote_style = None;
-                    alias.value = alias.value.replace('`', "");
+                    unquote_if_safe(alias);
                 }
             }
         }
@@ -2932,6 +3138,287 @@ ORDER BY id"#;
             projections[0].body,
             "SELECT   _part_offset\n        WHERE   status = 'hello  world'\n        ORDER BY   id",
             "Raw body should be trimmed but internal whitespace preserved"
+        );
+    }
+
+    #[test]
+    fn test_extract_constraints_from_create_table() {
+        // Test 1: No constraints -> assert empty Vec
+        let sql_no_constraints = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        assert!(extract_constraints_from_create_table(sql_no_constraints).is_empty());
+
+        // Test 2: Single CHECK constraint
+        let sql_single_check = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_1 CHECK value > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_check);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 3: Single ASSUME constraint
+        let sql_single_assume = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_single_assume);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_2");
+        assert_eq!(constraints[0].constraint_type, "ASSUME");
+        assert_eq!(constraints[0].expression, "value < 100");
+
+        // Test 4: Multiple constraints
+        let sql_multiple = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    CONSTRAINT constr_1 CHECK value > 0,
+    CONSTRAINT constr_2 ASSUME (value < 100)
+)
+ENGINE = MergeTree
+ORDER BY (id)"#;
+        let constraints = extract_constraints_from_create_table(sql_multiple);
+        assert_eq!(constraints.len(), 2);
+
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        assert_eq!(constraints[1].name, "constr_2");
+        assert_eq!(constraints[1].constraint_type, "ASSUME");
+        assert_eq!(constraints[1].expression, "value < 100");
+
+        // Test 5: Constraints appearing alongside indexes/projections
+        let sql_mixed = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    `value` Int32,
+    INDEX idx_1 value TYPE minmax GRANULARITY 1,
+    CONSTRAINT constr_1 CHECK value > 0,
+    PROJECTION proj_1 (SELECT * ORDER BY value)
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_mixed);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_1");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "value > 0");
+
+        // Test 6: Constraint expressions with nested parentheses
+        let sql_nested_parens = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_nested CHECK (value > 0 AND (value < 100 OR value = 200))
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_nested_parens);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_nested");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "value > 0 AND (value < 100 OR value = 200)"
+        );
+
+        // Test 7: Constraint expressions containing quoted strings and escaped quotes
+        let sql_quoted = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT constr_quoted CHECK (status = 'active' AND reason != 'isn\'t it')
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_quoted);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "constr_quoted");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(
+            constraints[0].expression,
+            "status = 'active' AND reason != 'isn\\'t it'"
+        );
+
+        // Test 8: Constraint names with backticks and spaces
+        let sql_backticks_spaces = r#"CREATE TABLE `db`.`test_table`
+(
+    `id` String,
+    CONSTRAINT `not null` CHECK length(id) > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_backticks_spaces);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "length(id) > 0");
+
+        // Test 9: Constraint names with multibyte UTF-8 characters
+        let sql_utf8 = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `foo🔥bar` CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_utf8);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "foo🔥bar");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 10: Constraint names with double quotes
+        let sql_double_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT "not null" CHECK id > 0
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_double_quotes);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].name, "not null");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+
+        // Test 11: Constraint names with commas inside quotes
+        let sql_comma_quotes = r#"CREATE TABLE db.test_table
+(
+    id String,
+    CONSTRAINT `comma,name` CHECK id > 0,
+    CONSTRAINT "comma,name2" CHECK id > 1
+)
+ENGINE = MergeTree"#;
+        let constraints = extract_constraints_from_create_table(sql_comma_quotes);
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0].name, "comma,name");
+        assert_eq!(constraints[0].constraint_type, "CHECK");
+        assert_eq!(constraints[0].expression, "id > 0");
+        assert_eq!(constraints[1].name, "comma,name2");
+        assert_eq!(constraints[1].constraint_type, "CHECK");
+        assert_eq!(constraints[1].expression, "id > 1");
+    }
+
+    #[test]
+    fn test_strip_outer_parens() {
+        // Simple wrapper
+        assert_eq!(strip_outer_parens("(id > 0)"), "id > 0");
+        // No wrapper
+        assert_eq!(strip_outer_parens("id > 0"), "id > 0");
+        // Two separate groups — NOT a single wrapper
+        assert_eq!(
+            strip_outer_parens("(a > 0) AND (b < 10)"),
+            "(a > 0) AND (b < 10)"
+        );
+        // Nested: outer wraps inner groups
+        assert_eq!(
+            strip_outer_parens("(a > 0 AND (b < 10))"),
+            "a > 0 AND (b < 10)"
+        );
+        // Double-wrapped (user wrote parens + DDL added parens)
+        assert_eq!(strip_outer_parens("((id > 0))"), "(id > 0)");
+        // Empty parens
+        assert_eq!(strip_outer_parens("()"), "");
+        // Whitespace
+        assert_eq!(strip_outer_parens("  ( id > 0 )  "), "id > 0");
+    }
+
+    // Regression tests for backtick handling in INNER JOIN SQL with special-character
+    // identifiers. Previously, the Normalizer set quote_style=None unconditionally on all
+    // table names in FROM/JOIN clauses, stripping backticks even from identifiers like
+    // `table-one` that REQUIRE quoting (unquoted, ClickHouse parses it as `table` MINUS `one`).
+    //
+    // Fix: unquote_if_safe() only strips quote_style when the identifier is a valid bare
+    // identifier (alphanumeric + underscores only). Hyphenated names retain their backticks.
+    #[test]
+    fn test_normalize_sql_inner_join_preserves_backticks_on_hyphenated_table_names() {
+        // Reproduces user-reported case: INNER JOIN with hyphenated table/column names.
+        let sql = "SELECT t1.`user-id`, t2.`order-total` \
+                   FROM `table-one` t1 \
+                   INNER JOIN `table-two` t2 ON t1.`user-id` = t2.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // Table names with hyphens must keep backticks — they are required for valid SQL.
+        assert!(
+            normalized.contains("`table-one`"),
+            "Backticks on hyphenated table name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`table-two`"),
+            "Backticks on hyphenated table name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs must be preserved; got: {normalized}"
+        );
+    }
+
+    #[test]
+    fn test_normalize_sql_mv_inner_join_special_char_table_names() {
+        // Full user-reported case: Python MV with INNER JOIN and hyphenated table/column names.
+        // Uses a complete CREATE MATERIALIZED VIEW statement to exercise pre_visit_statement()
+        // and the TO-clause normalization path, which a bare SELECT would not reach.
+        let sql = "CREATE MATERIALIZED VIEW `mv-name` \
+                   TO `target-table` AS \
+                   SELECT a.`event-type`, b.`session-id` \
+                   FROM `raw-events` a \
+                   INNER JOIN `session-data` b ON a.`session-id` = b.`session-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        // MV name and TO target with hyphens must keep backticks (pre_visit_statement path).
+        assert!(
+            normalized.contains("`mv-name`"),
+            "Backtick on MV name must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`target-table`"),
+            "Backtick on TO table name must be preserved; got: {normalized}"
+        );
+
+        // FROM/JOIN table names and column refs must also keep backticks.
+        assert!(
+            normalized.contains("`raw-events`"),
+            "Backtick on `raw-events` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`session-data`"),
+            "Backtick on `session-data` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`session-id`"),
+            "Backtick on `session-id` must be preserved; got: {normalized}"
+        );
+    }
+
+    // Regular views go through the same normalize_sql path and were equally affected.
+    #[test]
+    fn test_normalize_sql_view_inner_join_preserves_backticks_on_hyphenated_table_names() {
+        let sql = "CREATE VIEW `my-view` AS \
+                   SELECT a.`user-id`, b.`order-count` \
+                   FROM `user-table` a \
+                   INNER JOIN `order-table` b ON a.`user-id` = b.`user-id`";
+
+        let normalized = normalize_sql_for_comparison(sql, "");
+
+        assert!(
+            normalized.contains("`user-table`"),
+            "Backticks on `user-table` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`order-table`"),
+            "Backticks on `order-table` must be preserved; got: {normalized}"
+        );
+        assert!(
+            normalized.contains("`user-id`"),
+            "Backticks on hyphenated column refs must be preserved; got: {normalized}"
         );
     }
 }

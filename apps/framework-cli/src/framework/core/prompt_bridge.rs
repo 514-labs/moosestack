@@ -26,6 +26,12 @@ pub enum PromptKind {
         total: usize,
         description: String,
     },
+    /// Version-bump gate: backfill or keep/drop per bump.
+    VersionBump {
+        current: usize,
+        total: usize,
+        description: String,
+    },
 }
 
 impl fmt::Display for PromptKind {
@@ -47,6 +53,13 @@ impl fmt::Display for PromptKind {
                 description,
             } => {
                 write!(f, "Rename ({}/{}): {}", current, total, description)
+            }
+            PromptKind::VersionBump {
+                current,
+                total,
+                description,
+            } => {
+                write!(f, "VersionBump ({}/{}): {}", current, total, description)
             }
         }
     }

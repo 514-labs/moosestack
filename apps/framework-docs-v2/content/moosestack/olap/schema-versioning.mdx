@@ -1,175 +1,248 @@
 ---
-title: Schema Versioning with Materialized Views
-description: Use table versions and materialized views to migrate breaking schema changes safely
+title: Schema Versioning
+description: Use the `version` field on an `OlapTable` to model breaking ClickHouse schema changes with interactive backfill and old-table retention
 order: 8
 category: olap
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard } from "@/components/mdx";
+import {
+  Callout,
+  LanguageTabs,
+  LanguageTabContent,
+  ToggleBlock,
+} from "@/components/mdx";
 
-# Table Versioning & Blue/Green Migrations
+# Schema Versioning
 
-## Overview
+Moose lets you declare schema versioning directly in your table definition. When you bump the `version` field on an `OlapTable`, Moose creates a new physical ClickHouse table and interactively walks you through data migration decisions:
 
-Changing a table's storage layout (engine or sorting key) in ClickHouse requires a full table rewrite. Doing it in-place can block or slow concurrent reads and writes due to heavy merges and metadata changes, creating real risk for production workloads. Blue/Green avoids this by creating a new versioned table and migrating data live via a materialized view, so traffic continues uninterrupted.
+- **Backfill** — copy existing data from the old table into the new one
+- **Retain or drop** — keep the old table (marked `EXTERNALLY_MANAGED`) or drop it after migration
 
-**When to use it**: 
-- Change the **table engine** (e.g., MergeTree → ReplacingMergeTree)
+This works in both `moose dev` (local development) and `moose generate migration` (planned migrations for production).
+
+## When to use schema versioning
+
+- Change the **table engine** (e.g., `MergeTree` → `ReplacingMergeTree`)
 - Update **ORDER BY fields** (sorting keys) to better match query patterns
-- Reshape **primary keys** or perform type changes that require a rewrite
+- Reshape **primary keys** or perform type changes that require a full rewrite
+- Keep the old physical table in place until you finish cutover and later cleanup
 
-**How Moose does it**:
-1. Define a new table with the same logical name and a bumped `version`, setting the new <LanguageTabs><LanguageTabContent value="typescript">`orderByFields`</LanguageTabContent><LanguageTabContent value="python">`order_by_fields`</LanguageTabContent></LanguageTabs> and/or `engine` ([Table modeling](/moosestack/olap/model-table)).
-2. Create a [Materialized view](/moosestack/olap/model-materialized-view) that selects from the old table and writes to the new one; Moose backfills once and keeps the view live for new inserts.
-3. Later on, cut over readers/writers to the new export and clean up old resources ([Applying migrations](/moosestack/olap/apply-migrations)).
+## Configuration
 
-<Callout type="info" title="Version configuration">
-Setting `config.version` on an `OlapTable` changes only the underlying table name (suffixes dots with underscores). Your code still refers to the logical table you exported.
-</Callout>
-
-## High-level workflow
-
-<BulletPointsCard
-  title="Versioned migration flow"
-  bullets={[
-    "Create the new schema for the new table",
-    "Create the new table with the same logical name, but set config.version to e.g. \"0.1\"",
-    "Create a materialized view that SELECTs from the old table and writes into the new table (its targetTable)",
-    "Let the view backfill and keep migrating new inserts automatically",
-    "Cut over your readers/writers to the new versioned table, then drop the old one when ready"
-  ]}
-  bulletStyle="check"
-  divider={false}
-/>
-
-## Example: change sorting key (ORDER BY)
-
-Assume the original `events` table orders by `id` only. We want to update the
-sorting key to optimize reads by ordering on `id, createdAt`.
-
-### Original table (version 0.0)
+Set `version` on the `OlapTable` config:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="app/tables/events.ts" copy
-import { Key, OlapTable } from "@514labs/moose-lib";
-
-interface EventV0 {
-  id: string;
-  name: string;
-  createdAt: Date;
-}
-
-export const events = new OlapTable<EventV0>("events", { version: "0.0", orderByFields: ["id"] });
+```ts filename="app/tables/aircraft_tracking_data.ts" copy
+export const aircraftTrackingData = new OlapTable<AircraftTrackingData>(
+  "aircraft_tracking_data",
+  { version: "0.1" }
+);
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```python filename="app/tables/events.py" copy
-from typing import Annotated
-from pydantic import BaseModel
-from moose_lib import OlapTable, Key, OlapConfig
-
-class EventV0(BaseModel):
-    id: str
-    name: str
-    created_at: str  # datetime in your format
-
-events = OlapTable[EventV0]("events", config=OlapConfig(version="0.0", order_by_fields=["id"]))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### New table (bump to version 0.1)
-
-Create a new table with the same logical name, but set `version: "0.1"` and update the ordering to `id, createdAt`. Moose will create `events_0_1` in ClickHouse.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="app/tables/events_v01.ts" copy
-import { Key, OlapTable } from "@514labs/moose-lib";
-
-interface EventV1 {
-  id: Key<string>;
-  name: string;
-  createdAt: Date;
-}
-
-export const eventsV1 = new OlapTable<EventV1>("events", { version: "0.1", orderByFields: ["id", "createdAt"] });
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="app/tables/events_v01.py" copy
-class EventV1(BaseModel):
-    id: Key[str]
-    name: str
-    created_at: str
-
-events_v1 = OlapTable[EventV1]("events", config=OlapConfig(version="0.1", order_by_fields=["id", "created_at"]))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Create the materialized view to migrate data
-
-Create a materialized view that:
-- SELECTs from the old table (`events_v0`)
-- copies fields 1:1 to the new table
-- writes into the versioned target table (`events_v1`)
-
-<Callout type="warning">
-Pass the versioned `OlapTable` instance as `targetTable`. If you only pass a `tableName`, Moose will create an unversioned target.
-</Callout>
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="app/views/migrate_events_to_v01.ts" copy
-import { MaterializedView, sql } from "@514labs/moose-lib";
-import { events } from "../tables/events";        // old table
-import { eventsV1, EventV1 } from "../tables/events_v01";  // new versioned table
-
-export const migrateEventsToV01 = new MaterializedView<EventV1>({
-  materializedViewName: "mv_events_to_0_1",
-  selectTables: [events],
-  selectStatement: sql.statement`
-    SELECT * FROM ${events}
-  `,
-  targetTable: eventsV1,
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="app/views/migrate_events_to_v01.py" copy
-from moose_lib import MaterializedView, MaterializedViewOptions
-from app.tables.events import events
-from app.tables.events_v01 import events_v1, EventV1
-
-migrate_events_to_v01 = MaterializedView[EventV1](
-    MaterializedViewOptions(
-        materialized_view_name="mv_events_to_0_1",
-        select_statement=(
-            f"SELECT * FROM {events.name}"
-        ),
-        select_tables=[events],
-    ),
-    target_table=events_v1,
+```python filename="app/tables/aircraft_tracking_data.py" copy
+aircraft_tracking_data = OlapTable[AircraftTrackingData](
+    "aircraft_tracking_data",
+    config=OlapConfig(version="0.1"),
 )
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-What happens when you export this view:
-- Moose creates the versioned table if needed
-- Moose creates the MATERIALIZED VIEW and immediately runs a one-time backfill (`INSERT INTO ... SELECT ...`)
-- ClickHouse keeps the view active: any new inserts into `events` automatically flow into `events_0_1`
+<Callout type="info" title="Version configuration">
+Setting `config.version` on an `OlapTable` changes only the underlying ClickHouse table name (dots become underscores, e.g. `aircraft_tracking_data_0_1`). Your code still refers to the logical table you exported.
+</Callout>
 
-## Cutover and cleanup
+## Version bump workflow
 
-- Update readers to query the new table export (`eventsV1`).
-- Update writers/streams to produce to the new table if applicable.
-- After verifying parity and retention windows, drop the old table and the migration view.
+When you bump the `version` field, Moose detects the old versioned table as removed and the new one as added, and recognizes this as a **version bump** rather than an independent drop + create. It then prompts you for two decisions:
 
-## Notes and tips
+### 1. Backfill data
 
-- Use semantic versions like `0.1`, `1.0`, `1.1`. Moose will render `events_1_1` as the physical name.
-- Keep the migration view simple and deterministic. If you need complex transforms, prefer explicit SQL in the `selectStatement`.
-- Very large backfills can take time. Consider deploying during low-traffic windows.
+If the old and new tables have compatible schemas (same insertable columns, types, and nullability), Moose offers to generate an `INSERT INTO ... SELECT` query to copy data:
+
+```text copy=false
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
+```
+
+Accept to include the backfill in the migration. Decline if you want to handle data migration separately or the data isn't needed.
+
+<Callout type="info" title="Backfill eligibility" compact>
+If the schemas differ (columns added, removed, or types changed), Moose skips the backfill prompt and tells you why. You can still add custom `RawSql` to the migration plan manually.
+</Callout>
+
+### 2. Keep or drop the old table
+
+After the backfill decision, Moose asks whether to keep the old table:
+
+```text copy=false
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+```
+
+| Choice | What happens |
+| :--- | :--- |
+| **Keep** (`y`) | The old table stays in ClickHouse. When saving (`--save`), Moose generates a file in your source directory defining the old table with `LifeCycle.EXTERNALLY_MANAGED` and adds an import to your root module (`index.ts` / `main.py`). This ensures Moose continues to track the table without managing its schema. |
+| **Drop** (`N`, default) | The old table is dropped after the backfill completes. The drop is included as a reviewed operation in the migration plan. |
+
+<Callout type="warning" title="Retained table files">
+When you choose to keep an old table and run with `--save`, Moose writes a file like `retained_aircraft_tracking_data_0_0.ts` (or `.py`) to your source directory and appends an import to `index.ts` (or `main.py`). Commit these files — they tell Moose the table still exists but is externally managed.
+</Callout>
+
+## Version changes
+
+Bumping the `version` field on the `OlapTable` config creates a new physical table while keeping the logical table name stable in code.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```diff filename="app/tables/aircraft_tracking_data.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface AircraftTrackingData {
+  icao24: string;
+  callsign: string;
+  longitude: number;
+  latitude: number;
+}
+
+export const aircraftTrackingData = new OlapTable<AircraftTrackingData>(
+  "aircraft_tracking_data",
+- { version: "0.0", orderByFields: ["icao24"] }
++ { version: "0.1", orderByFields: ["icao24", "callsign"] }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```diff filename="app/tables/aircraft_tracking_data.py" copy
+from pydantic import BaseModel
+from moose_lib import OlapTable, OlapConfig
+
+class AircraftTrackingData(BaseModel):
+    icao24: str
+    callsign: str
+    longitude: float
+    latitude: float
+
+aircraft_tracking_data = OlapTable[AircraftTrackingData](
+    "aircraft_tracking_data",
+-    config=OlapConfig(version="0.0", order_by_fields=["icao24"]),
++    config=OlapConfig(version="0.1", order_by_fields=["icao24", "callsign"]),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Using version bumps in `moose dev`
+
+During local development, `moose dev` detects version bumps on startup and on every file-save cycle. You get the same interactive prompts:
+
+<ToggleBlock
+  openText="Show example moose dev version bump prompt"
+  closeText="Hide example moose dev version bump prompt"
+>
+```text title="Terminal output" copy=false
+Version bump  Detected 1 version bump(s). The old table(s) can be kept or dropped.
+Version bump  `aircraft_tracking_data_0_0` (v0.0) → `aircraft_tracking_data_0_1` (v0.1)
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
+> y
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+> n
+✓ Backfill      `aircraft_tracking_data_0_0` → `aircraft_tracking_data_0_1`
+⚠ Drop          `aircraft_tracking_data_0_0` will be dropped after migration
+```
+</ToggleBlock>
+
+Moose executes the operations in the correct order: create the new table, run the backfill, then drop the old table (if not retained). Other schema changes (new views, materialized views, etc.) are applied alongside the version bump in the same cycle.
+
+## Using version bumps in planned migrations
+
+Run `moose generate migration --save` to produce a reviewed migration plan that includes the version bump operations:
+
+<ToggleBlock
+  openText="Show example moose generate migration prompt"
+  closeText="Hide example moose generate migration prompt"
+>
+```text title="Terminal output" copy=false
+$ moose generate migration --save
+Remote Plan   Comparing local project code with deployed infrastructure
+Version bump  Detected 1 version bump(s). The old table(s) can be kept or dropped.
+Version bump  `aircraft_tracking_data_0_0` (v0.0) → `aircraft_tracking_data_0_1` (v0.1)
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
+> y
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+> n
+✓ Backfill      `aircraft_tracking_data_0_0` → `aircraft_tracking_data_0_1`
+⚠ Drop          `aircraft_tracking_data_0_0` will be dropped after migration
+Migration      generated
+```
+</ToggleBlock>
+
+The resulting `plan.yaml` includes correctly-ordered operations:
+
+```yaml filename="migrations/plan.yaml" copy=false
+created_at: 2026-04-09T12:00:00Z
+operations:
+  - CreateTable:
+      table:
+        name: aircraft_tracking_data_0_1
+        columns:
+          # generated column definitions omitted for brevity
+        order_by:
+          - icao24
+          - callsign
+        engine: MergeTree
+        version: "0.1"
+  - RawSql:
+      description: >-
+        Backfill `aircraft_tracking_data_0_1`
+        from `aircraft_tracking_data_0_0`
+      sql:
+        - |
+          INSERT INTO `my_db`.`aircraft_tracking_data_0_1`
+            (`icao24`, `callsign`, `longitude`, `latitude`)
+          SELECT `icao24`, `callsign`, `longitude`, `latitude`
+          FROM `my_db`.`aircraft_tracking_data_0_0`
+  - DropTable:
+      table: aircraft_tracking_data_0_0
+```
+
+If you chose to **keep** the old table instead, the `DropTable` operation would be absent and Moose would generate a retained table file in your source directory.
+
+## CI/CD and non-interactive usage
+
+In CI/CD pipelines or non-interactive environments, use confirmation flags to control version bump behavior:
+
+| Flag | Effect |
+| :--- | :--- |
+| `--yes-all` | Auto-accept backfill (if eligible) and drop old tables. Equivalent to `MOOSE_ACCEPT_ALL=1`. |
+| `--yes-destructive` | Auto-accept destructive changes including old table drops. Equivalent to `MOOSE_ACCEPT_DESTRUCTIVE=1`. |
+| `--no-auto-backfill-sql` | Skip automatic backfill SQL generation for versioned tables. |
+
+Without these flags, a non-interactive terminal causes the CLI to exit with an error asking you to re-run with `--yes-all`.
+
+## Operation ordering
+
+Moose ensures version bump operations execute in the correct order, regardless of other schema changes happening in the same migration:
+
+1. **Create** the new versioned table
+2. **Run backfill** `INSERT INTO ... SELECT` (if accepted)
+3. **Drop** the old table (if not retained)
+
+Other non-version-bump changes (new tables, views, column alterations) are interleaved correctly — the new versioned table is available before dependent views or materialized views are created.
+
+## Notes
+
+- A version bump creates a new physical table. Moose does not rewrite the old table in place.
+- If the old and new tables are not schema-compatible for a straight `INSERT INTO ... SELECT`, Moose will not offer auto-generated backfill. You can edit `plan.yaml` and provide custom SQL.
+- If you decline the backfill prompt, the plan still creates the new versioned table. You can backfill later outside the migration.
+- Very large backfills can take time. Review the generated SQL and apply it during a low-traffic window if needed.
+- When keeping the old table, the generated `EXTERNALLY_MANAGED` file ensures Moose still tracks the table for queries, views, and type-safe access, but won't try to drop or alter it.
+
+## Related
+
+- [Modeling Tables](/moosestack/olap/model-table)
+- [Externally Managed Lifecycle](/moosestack/migrate/lifecycle-externally-managed)
+- [Planned Migrations](/moosestack/migrate/planned-migrations)
+- [Automatic Migrations](/moosestack/migrate/automatic)
+- [Applying Migrations](/moosestack/olap/apply-migrations)

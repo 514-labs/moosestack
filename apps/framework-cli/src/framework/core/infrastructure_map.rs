@@ -39,7 +39,9 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::select_row_policy::SelectRowPolicy;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table, TableReference};
+use super::infrastructure::table::{
+    table_constraints_equal_ignore_order, Column, OrderBy, Table, TableReference,
+};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -57,12 +59,14 @@ use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::framework::versions::Version;
-use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
-use crate::infrastructure::redis::redis_client::RedisClient;
+use crate::infrastructure::olap::clickhouse::{
+    codec_expressions_are_equivalent, normalize_table_for_diff,
+};
+use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
 use crate::utilities::constants::{PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
@@ -2012,38 +2016,24 @@ impl InfrastructureMap {
             target_tables.len()
         );
 
-        // Normalize tables for comparison if ignore_ops is provided
-        let (normalized_self, normalized_target) = if !ignore_ops.is_empty() {
+        // Always normalize: strips Moose-internal tracking fields (metadata,
+        // seed_filter, source_primitive, life_cycle) plus any schema fields
+        // covered by ignore_ops.  This keeps the comparison in sync with
+        // detect_drift (same normalize_table_for_diff call).
+        if !ignore_ops.is_empty() {
             tracing::info!(
                 "Normalizing tables before comparison. Ignore list: {:?}",
                 ignore_ops
             );
-            let normalized_self: HashMap<String, Table> = self_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            let normalized_target: HashMap<String, Table> = target_tables
-                .iter()
-                .map(|(name, table)| {
-                    (
-                        name.clone(),
-                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
-                            table, ignore_ops,
-                        ),
-                    )
-                })
-                .collect();
-            (normalized_self, normalized_target)
-        } else {
-            (self_tables.clone(), target_tables.clone())
-        };
+        }
+        let normalized_self: HashMap<String, Table> = self_tables
+            .iter()
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
+            .collect();
+        let normalized_target: HashMap<String, Table> = target_tables
+            .iter()
+            .map(|(name, table)| (name.clone(), normalize_table_for_diff(table, ignore_ops)))
+            .collect();
 
         let mut table_updates = 0;
         let mut table_removals = 0;
@@ -2058,7 +2048,7 @@ impl InfrastructureMap {
             if let Some(normalized_target) =
                 normalized_target.get(&normalized_table.id(default_database))
             {
-                if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
+                if normalized_table != normalized_target {
                     // Get original tables for use in changes using the HashMap key
                     // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
@@ -2163,6 +2153,12 @@ impl InfrastructureMap {
                         // Detect projection changes
                         let projections_changed = table.projections != target_table.projections;
 
+                        // Detect constraint changes (order-insensitive; names are unique per table)
+                        let constraints_changed = !table_constraints_equal_ignore_order(
+                            &table.constraints,
+                            &target_table.constraints,
+                        );
+
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
                         if !ttl_expressions_are_equivalent(
@@ -2198,6 +2194,7 @@ impl InfrastructureMap {
                             || engine_changed
                             || indexes_changed
                             || projections_changed
+                            || constraints_changed
                             || table_settings_changed
                         {
                             // Use the strategy to determine the appropriate changes
@@ -2401,11 +2398,21 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&table.constraints, &target_table.constraints);
+        let projections_changed = table.projections != target_table.projections;
+        let engine_changed = table.engine != target_table.engine;
+        let table_settings_changed = table.table_settings != target_table.table_settings;
+
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || constraints_changed
+            || projections_changed
+            || engine_changed
+            || table_settings_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2496,12 +2503,22 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&table.constraints, &target_table.constraints);
+        let projections_changed = table.projections != target_table.projections;
+        let engine_changed = table.engine != target_table.engine;
+        let table_settings_changed = table.table_settings != target_table.table_settings;
+
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || constraints_changed
+            || projections_changed
+            || engine_changed
+            || table_settings_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2722,6 +2739,18 @@ impl InfrastructureMap {
     /// Loads an infrastructure map using the last deployment's Redis key prefix.
     pub async fn load_from_last_redis_prefix(redis_client: &RedisClient) -> Result<Option<Self>> {
         let last_prefix = &redis_client.config.last_key_prefix;
+        let current_prefix = &redis_client.config.key_prefix;
+        let default_prefix = RedisConfig::default_key_prefix();
+
+        if *last_prefix == default_prefix && *current_prefix != default_prefix {
+            tracing::warn!(
+                "LAST_KEY_PREFIX is the default '{}' but KEY_PREFIX is '{}' — \
+                 this likely means MOOSE_REDIS_CONFIG__LAST_KEY_PREFIX was not set \
+                 (first deployment or missing configuration)",
+                default_prefix,
+                current_prefix,
+            );
+        }
 
         tracing::info!(
             "Loading InfrastructureMap from last Redis prefix: {}",
@@ -3609,6 +3638,49 @@ impl InfrastructureMap {
             }
         }
     }
+
+    /// Compute a deterministic SHA-256 hash of the OLAP portion of this infrastructure map.
+    ///
+    /// The hash covers: tables, views, materialized_views, dmv1_views,
+    /// select_row_policies, and sql_resources. Non-OLAP fields (topics, APIs,
+    /// processes) are excluded since they are computed from code, not from deltas.
+    ///
+    /// Used as `parent_state_hash` in migration files for conflict detection
+    /// across branches.
+    pub fn olap_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+
+        #[derive(serde::Serialize)]
+        struct OlapSnapshot<'a> {
+            tables: &'a HashMap<String, Table>,
+            views: &'a HashMap<String, super::infrastructure::view::View>,
+            materialized_views:
+                &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+            dmv1_views: &'a HashMap<String, Dmv1View>,
+            select_row_policies: &'a HashMap<String, SelectRowPolicy>,
+            sql_resources: &'a HashMap<String, SqlResource>,
+        }
+
+        let snapshot = OlapSnapshot {
+            tables: &self.tables,
+            views: &self.views,
+            materialized_views: &self.materialized_views,
+            dmv1_views: &self.dmv1_views,
+            select_row_policies: &self.select_row_policies,
+            sql_resources: &self.sql_resources,
+        };
+
+        // Serialize to JSON, sort keys for determinism, then hash
+        let json_value =
+            serde_json::to_value(&snapshot).expect("OLAP snapshot serialization should never fail");
+        let sorted_value = crate::utilities::json::sort_json_keys(json_value);
+        let json_bytes =
+            serde_json::to_vec(&sorted_value).expect("sorted JSON serialization should never fail");
+
+        let mut hasher = Sha256::new();
+        hasher.update(&json_bytes);
+        format!("{:x}", hasher.finalize())
+    }
 }
 
 /// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
@@ -3717,26 +3789,6 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
     let mut b = b.clone();
     a.metadata = None;
     b.metadata = None;
-    a == b
-}
-
-/// Check if two tables are equal, ignoring metadata
-///
-/// Metadata changes (like source file location) should not trigger redeployments.
-///
-/// # Arguments
-/// * `a` - The first table to compare
-/// * `b` - The second table to compare
-///
-/// # Returns
-/// `true` if the tables are equal ignoring metadata, `false` otherwise
-fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.metadata = None;
-    b.metadata = None;
-    a.seed_filter = Default::default();
-    b.seed_filter = Default::default();
     a == b
 }
 
@@ -4187,6 +4239,7 @@ mod rename_detection_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4526,7 +4579,7 @@ impl serde::Serialize for InfrastructureMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::framework::core::infrastructure::table::IntType;
+    use crate::framework::core::infrastructure::table::{ConstraintType, IntType};
     use crate::framework::core::infrastructure_map::DefaultTableDiffStrategy;
     use crate::framework::core::infrastructure_map::{
         Change, InfrastructureMap, OlapChange, OrderBy, StreamingChange, TableChange,
@@ -4606,6 +4659,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4675,6 +4729,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4692,6 +4747,40 @@ mod tests {
             matches!(&diff[1], ColumnChange::Added{column, position_after: Some(pos) } if column.name == "age" && pos == "name")
         );
         assert!(matches!(&diff[2], ColumnChange::Removed(col) if col.name == "to_be_removed"));
+    }
+
+    #[test]
+    fn constraints_only_update_emitted() {
+        let before_table = super::diff_tests::create_test_table("test_table", "1.0");
+        let mut after_table = before_table.clone();
+
+        after_table.constraints = vec![
+            crate::framework::core::infrastructure::table::TableConstraint {
+                name: "test_constraint".to_string(),
+                expression: "id > 0".to_string(),
+                constraint_type: ConstraintType::Check,
+            },
+        ];
+
+        let result = super::InfrastructureMap::simple_table_diff(&before_table, &after_table);
+        assert!(
+            result.is_some(),
+            "A table update event should be produced when only constraints change."
+        );
+
+        match &result.unwrap() {
+            TableChange::Updated {
+                name,
+                before,
+                after,
+                ..
+            } => {
+                assert_eq!(name, "test_table");
+                assert_eq!(before.constraints.len(), 0);
+                assert_eq!(after.constraints.len(), 1);
+            }
+            _ => panic!("Expected TableChange::Updated for constraints change"),
+        }
     }
 
     #[test]
@@ -5197,6 +5286,7 @@ mod diff_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -8222,6 +8312,7 @@ mod diff_orchestration_worker_tests {
             table_settings_hash: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "s3queue_test".to_string(),
@@ -8258,6 +8349,7 @@ mod diff_orchestration_worker_tests {
             table_settings_hash: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "kafka_test".to_string(),
@@ -8353,6 +8445,7 @@ mod diff_orchestration_worker_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
             seed_filter: Default::default(),
@@ -8408,6 +8501,7 @@ mod diff_orchestration_worker_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             primary_key_expression: None,
             seed_filter: Default::default(),
@@ -9311,6 +9405,7 @@ mod mirrorable_external_tables_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -9356,6 +9451,7 @@ mod mirrorable_external_tables_tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

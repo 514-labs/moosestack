@@ -29,4 +29,5 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Placeholder
-        run: echo "TODO: Implement template image building"
+        run: |
+          echo "TODO: Implement template image building"

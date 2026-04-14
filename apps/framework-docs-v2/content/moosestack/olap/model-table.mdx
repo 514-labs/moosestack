@@ -1445,8 +1445,8 @@ table = OlapTable[Record]("my_table", OlapConfig(
 - Need custom replication paths for advanced configurations
 - Both parameters must be provided together
 
-<Callout type="warning">
-**Cannot mix approaches:** Specifying both `cluster` and explicit `keeper_path`/`replica_name` will cause an error. Choose one approach.
+<Callout type="info">
+**Combining `cluster` with explicit paths:** You can specify `cluster` alongside `keeperPath`/`replicaName` (or `keeper_path`/`replica_name` in Python). When both are present, `cluster` controls `ON CLUSTER` DDL generation while the explicit paths remain authoritative for ZooKeeper path and replica naming. This is useful for tables with existing ZooKeeper paths that need `ON CLUSTER` for distributed `ALTER` operations.
 
 **Cluster is a deployment directive:** Changing `cluster` won't recreate your table—it only affects future DDL operations.
 </Callout>

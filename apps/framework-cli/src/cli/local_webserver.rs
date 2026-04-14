@@ -3087,28 +3087,37 @@ async fn shutdown(
 
     // Step 4: Shutdown Docker containers (if needed)
     if !project.is_production {
-        let should_shutdown_containers = settings.should_shutdown_containers();
-
-        if should_shutdown_containers && project.should_load_infra() {
-            let docker = DockerClient::new(settings);
-            info!("Starting container shutdown process");
-
-            with_timing("Stop Containers", || {
-                with_spinner_completion(
-                    "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
-                    "Docker containers stopped",
-                    || {
-                        let _ = docker.stop_containers(project);
-                    },
-                    !SHOW_TIMING.load(Ordering::Relaxed),
-                )
-            });
-
-            info!("Container shutdown complete");
-        } else if !project.should_load_infra() {
-            info!("Skipping container shutdown: load_infra is set to false for this instance");
+        if project.dev.dockerless {
+            info!("Skipping Docker shutdown: using native infrastructure (--dockerless mode)");
         } else {
-            info!("Skipping container shutdown due to settings configuration");
+            let should_shutdown_containers = settings.should_shutdown_containers();
+
+            if should_shutdown_containers && project.should_load_infra() {
+                let docker = DockerClient::new(settings);
+                info!("Starting container shutdown process");
+
+                with_timing("Stop Containers", || {
+                    with_spinner_completion(
+                        "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
+                        "Docker containers stopped",
+                        || {
+                            let _ = docker.stop_containers(project);
+                        },
+                        !SHOW_TIMING.load(Ordering::Relaxed),
+                    )
+                });
+
+                info!("Container shutdown complete");
+            } else if !project.should_load_infra() {
+                info!("Skipping container shutdown: load_infra is set to false for this instance");
+            } else {
+                info!("Skipping container shutdown due to settings configuration");
+            }
+        }
+
+        // Step 5: Shut down native infrastructure (embedded servers + child processes).
+        if project.dev.dockerless {
+            crate::utilities::native_infra::stop_native_infra(project);
         }
     }
 
@@ -3523,29 +3532,94 @@ pub struct InfraMapResponse {
     pub infra_map: InfrastructureMap,
 }
 
+/// Parses optional query parameters into a [`ReconciliationFilter`] to be merged with the
+/// persisted map's filter during reconciliation.
+///
+/// Supported params (all comma-separated):
+///   `source_db`         – the caller's default database, used to re-prefix table IDs
+///   `extra_table_ids`   – table IDs to add to the filter
+///   `extra_sql_ids`     – SQL resource IDs
+///   `extra_mv_ids`      – materialized view IDs
+///   `extra_view_ids`    – view IDs
+///   `extra_policy_ids`  – select row policy IDs
+///
+/// Returns `None` when no extra IDs are present.
+fn parse_extra_reconciliation_filter(
+    query: Option<&str>,
+    server_default_db: &str,
+) -> Option<crate::framework::core::plan::ReconciliationFilter> {
+    use std::collections::HashSet;
+
+    let query = query?;
+
+    let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap_or_default();
+
+    fn csv_set(params: &HashMap<String, String>, key: &str) -> HashSet<String> {
+        params
+            .get(key)
+            .map(|v| {
+                v.split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    let table_ids = csv_set(&params, "extra_table_ids");
+    let sql_resource_ids = csv_set(&params, "extra_sql_ids");
+    let materialized_view_ids = csv_set(&params, "extra_mv_ids");
+    let view_ids = csv_set(&params, "extra_view_ids");
+    let select_row_policy_ids = csv_set(&params, "extra_policy_ids");
+
+    if table_ids.is_empty()
+        && sql_resource_ids.is_empty()
+        && materialized_view_ids.is_empty()
+        && view_ids.is_empty()
+        && select_row_policy_ids.is_empty()
+    {
+        return None;
+    }
+
+    let mut filter = crate::framework::core::plan::ReconciliationFilter {
+        table_ids,
+        sql_resource_ids,
+        materialized_view_ids,
+        view_ids,
+        select_row_policy_ids,
+    };
+
+    if let Some(source_db) = params.get("source_db") {
+        filter.reprefix_table_ids(source_db, server_default_db);
+    }
+
+    Some(filter)
+}
+
 /// Helper function for admin endpoints to get reconciled inframap for managed tables only.
 ///
 /// This function:
 /// 1. Loads the current inframap from Redis (tables under Moose management)
-/// 2. Reconciles ONLY the managed tables with database reality to get their true current state
-/// 3. Updates managed table structures to reflect any schema changes in the database
-/// 4. Removes managed tables that no longer exist in the database
+/// 2. Builds a reconciliation filter from the persisted map, optionally merging `extra_filter`
+/// 3. Reconciles with database reality to get the true current state
+/// 4. Updates managed table structures to reflect any schema changes in the database
+/// 5. Removes managed tables that no longer exist in the database
 ///
-/// IMPORTANT: This function INTENTIONALLY EXCLUDES unmapped tables (tables that exist in the
-/// database but are not managed by Moose). Only tables present in the Redis inframap are
-/// considered for reconciliation. This is by design - admin endpoints only work with
-/// infrastructure that is explicitly managed by Moose.
+/// `extra_filter`, when provided, is merged (union) into the filter built from the persisted
+/// map. This allows callers to include resource IDs from a client-side inframap so that tables
+/// already in the database but not yet in Redis are adopted during reconciliation — the same
+/// approach that the migrate routine uses with the target inframap.
 ///
-/// This ensures admin endpoints work with the actual current state of managed infrastructure only.
+/// Callers are responsible for re-prefixing table IDs in `extra_filter` to the server's
+/// `default_database` before passing them in (see [`ReconciliationFilter::reprefix_table_ids`]).
 async fn get_admin_reconciled_inframap(
     redis_client: &Arc<RedisClient>,
     project: &Project,
+    extra_filter: Option<&crate::framework::core::plan::ReconciliationFilter>,
 ) -> Result<InfrastructureMap, crate::framework::core::plan::PlanningError> {
     use crate::framework::core::state_storage::StateStorageBuilder;
     use crate::infrastructure::olap::clickhouse;
 
-    // Build state storage from project configuration.
-    // This provides access to the persisted infrastructure map (stored in Redis or ClickHouse).
     let state_storage = StateStorageBuilder::from_config(project)
         .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(redis_client))
@@ -3557,8 +3631,7 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Load current map from state storage (these are the tables under Moose management).
-    // We load once here and reconcile directly to avoid a double-load and potential race condition.
+    // Load once here and reconcile directly to avoid a double-load and potential race condition.
     let current_map = match state_storage.load_infrastructure_map().await {
         Ok(Some(infra_map)) => infra_map,
         Ok(None) => InfrastructureMap::empty_from_project(project),
@@ -3569,17 +3642,15 @@ async fn get_admin_reconciled_inframap(
         }
     };
 
-    // For admin endpoints, reconcile all currently managed tables and SQL resources only.
-    // Use the current map's resource IDs as the filter—this ensures that
-    // reconcile_with_reality only operates on resources already managed by Moose,
-    // not external tables that happen to exist in the same database.
-    let filter = crate::framework::core::plan::ReconciliationFilter::from_infra_map(&current_map);
+    let mut filter =
+        crate::framework::core::plan::ReconciliationFilter::from_infra_map(&current_map);
+    if let Some(extra) = extra_filter {
+        filter.merge(extra);
+    }
 
-    // Reconcile the loaded map with actual database state (single load, no race condition).
-    // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
-    // may support reconciliation of other infrastructure types (e.g., Kafka topics).
+    // reconcile_with_reality may in the future support reconciliation of other
+    // infrastructure types (e.g., Kafka topics).
     let reconciled_map = if project.features.olap {
-        // Create the ClickHouse client for database introspection.
         let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
         crate::framework::core::plan::reconcile_with_reality(
             project,
@@ -3666,9 +3737,7 @@ async fn admin_plan_route(
         }
     };
 
-    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
-    // This ensures we're diffing against the true current state of managed infrastructure only
-    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
+    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project, None).await {
         Ok(infra_map) => infra_map,
         Err(e) => {
             error!("Failed to get reconciled infrastructure map: {}", e);
@@ -3753,20 +3822,25 @@ async fn admin_inframap_route(
         return e.to_response();
     }
 
-    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
-    // This ensures we return the true current state of managed infrastructure only
-    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
-        Ok(infra_map) => infra_map,
-        Err(e) => {
-            error!("Failed to get reconciled infrastructure map: {}", e);
-            return Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Full::new(Bytes::from(format!(
-                    "Failed to get current infrastructure state: {e}"
-                ))))
-                .unwrap());
-        }
-    };
+    // Parse optional query params that supply extra resource IDs for the reconciliation
+    // filter. This allows callers (e.g. `moose migration generate`) to include IDs from
+    // their local inframap so tables already in ClickHouse but not yet in Redis are adopted.
+    let extra_filter =
+        parse_extra_reconciliation_filter(req.uri().query(), &project.clickhouse_config.db_name);
+
+    let current_infra_map =
+        match get_admin_reconciled_inframap(redis_client, project, extra_filter.as_ref()).await {
+            Ok(infra_map) => infra_map,
+            Err(e) => {
+                error!("Failed to get reconciled infrastructure map: {}", e);
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Full::new(Bytes::from(format!(
+                        "Failed to get current infrastructure state: {e}"
+                    ))))
+                    .unwrap());
+            }
+        };
 
     // Check Accept header to determine response format
     let accept_header = req
@@ -3858,6 +3932,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

@@ -23,7 +23,7 @@ pub struct MigrationPlan {
 pub const MIGRATION_SCHEMA: &str = include_str!("../../utilities/migration_plan_schema.json");
 
 impl MigrationPlan {
-    /// Creates a new migration plan from an infrastructure plan
+    /// Creates a new migration plan from an infrastructure plan.
     pub fn from_infra_plan(
         infra_plan_changes: &InfraChanges,
         default_database: &str,
@@ -32,6 +32,28 @@ impl MigrationPlan {
             infra_plan_changes,
             default_database,
         )?;
+
+        Ok(MigrationPlan {
+            created_at: Utc::now(),
+            operations,
+        })
+    }
+
+    /// Creates a migration plan with explicit version-bump handling.
+    ///
+    /// Version-bump `Removed`/`Added` pairs are extracted and replaced with
+    /// correctly-ordered operations (create → backfill → drop).
+    pub fn from_infra_plan_with_version_bumps(
+        infra_plan_changes: &InfraChanges,
+        default_database: &str,
+        version_bump_decisions: &[crate::framework::core::version_bump::VersionBumpDecision],
+    ) -> Result<Self, PlanOrderingError> {
+        let operations =
+            crate::framework::core::plan::infra_changes_to_operations_with_version_bumps(
+                infra_plan_changes,
+                default_database,
+                version_bump_decisions,
+            )?;
 
         Ok(MigrationPlan {
             created_at: Utc::now(),
@@ -386,6 +408,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

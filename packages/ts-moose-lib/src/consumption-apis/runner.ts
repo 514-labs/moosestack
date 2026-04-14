@@ -65,6 +65,17 @@ const createPath = (apisDir: string, path: string) => {
   return `${apisDir}${path}.js`;
 };
 
+const send404 = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  startMs: number,
+  message: string = "Not Found",
+) => {
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not Found", message }));
+  httpLogger(req, res, startMs);
+};
+
 const httpLogger = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -290,11 +301,12 @@ const apiHandler = async (
           const availableApis = Array.from(apis.keys()).map((key) =>
             key.replace(":", "/"),
           );
-          const errorMessage =
+          const message =
             version ?
               `API ${lookupName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
             : `API ${lookupName} not found. Available APIs: ${availableApis.join(", ")}`;
-          throw new Error(errorMessage);
+          send404(req, res, start, message);
+          return;
         }
 
         // Cache both the module and API name for future requests
@@ -523,9 +535,7 @@ const createMainRouter = async (
       return;
     }
 
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not Found" }));
-    httpLogger(req, res, start);
+    send404(req, res, start);
   };
 };
 

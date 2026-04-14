@@ -94,6 +94,10 @@ During plan generation, Moose will prompt you interactively when it detects:
 
 3. **Backfill for versioned tables** — When creating a new versioned table (e.g., `Events_0_1` with `version: "0.1"`) whose schema matches the existing base table, Moose can append an `INSERT INTO ... SELECT` backfill operation to the plan. In an interactive terminal, Moose prompts you for each candidate (defaulting to **Yes**). In non-interactive runs (CI/CD), Moose automatically appends the backfill SQL without prompting. Pass `--no-auto-backfill-sql` to disable backfill detection entirely in either mode.
 
+<Callout type="info" title="Versioned table example" compact>
+For the full version bump and generated backfill workflow for breaking OLAP changes, see [Schema Versioning](/moosestack/olap/schema-versioning).
+</Callout>
+
 ### CI/CD and non-interactive usage
 
 Rename and destructive prompts require a TTY. In non-interactive environments (CI/CD pipelines), Moose will error unless you explicitly opt in with override flags or environment variables:

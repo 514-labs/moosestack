@@ -1049,6 +1049,20 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             writeln!(output, "    ],").unwrap();
         }
+        if !table.constraints.is_empty() {
+            writeln!(output, "    constraints: [").unwrap();
+            for constraint in &table.constraints {
+                writeln!(
+                    output,
+                    "        {{ name: {:?}, expression: {:?}, type: {:?} }},",
+                    constraint.name,
+                    constraint.expression,
+                    constraint.constraint_type.to_string()
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -1182,6 +1196,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1274,6 +1289,7 @@ export const UserTable = new OlapTable<User>("User", {
             ),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1289,6 +1305,91 @@ export const UserTable = new OlapTable<User>("User", {
         assert!(result.contains("format: \"JSONEachRow\""));
         assert!(result.contains("compression: \"gzip\""));
         assert!(result.contains("settings: { mode: \"unordered\" }"));
+    }
+
+    #[test]
+    fn test_table_with_constraints() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let tables = vec![Table {
+            name: "ConstraintTest".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+                Column {
+                    name: "value".to_string(),
+                    data_type: ColumnType::Int(
+                        crate::framework::core::infrastructure::table::IntType::Int32,
+                    ),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                    alias: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            sample_by: None,
+            partition_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "ConstraintTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![
+                TableConstraint {
+                    name: "value_positive".to_string(),
+                    expression: "value > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "value_assumed".to_string(),
+                    expression: "value < 100".to_string(),
+                    constraint_type: ConstraintType::Assume,
+                },
+            ],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        assert!(result.contains("constraints: ["));
+        assert!(result.contains("name: \"value_positive\""));
+        assert!(result.contains("expression: \"value > 0\""));
+        assert!(result.contains("type: \"CHECK\""));
+        assert!(result.contains("name: \"value_assumed\""));
+        assert!(result.contains("expression: \"value < 100\""));
+        assert!(result.contains("type: \"ASSUME\""));
     }
 
     #[test]
@@ -1332,6 +1433,7 @@ export const UserTable = new OlapTable<User>("User", {
             ),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1415,6 +1517,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1467,6 +1570,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1557,6 +1661,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1627,6 +1732,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1708,6 +1814,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1799,6 +1906,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1877,6 +1985,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1931,6 +2040,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -2006,6 +2116,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2073,6 +2184,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2147,6 +2259,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                 name: "proj_by_user".to_string(),
                 body: "SELECT * ORDER BY user_id".to_string(),
             }],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2236,6 +2349,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

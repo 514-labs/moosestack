@@ -4,6 +4,7 @@ use clickhouse::ClickhouseChangesError;
 use crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::lifecycle_filter::{self, LifecycleViolation};
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
 use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
@@ -171,6 +172,84 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Execute OLAP changes with version-bump awareness.
+///
+/// Ordering matches the plan phase:
+/// 1. Teardown (non-bump drops)
+/// 2. Bump creates (new tables — before setup so dependents can reference them)
+/// 3. Setup (non-bump creates, including MVs/views that may reference bump tables)
+/// 4. Bump backfills (old table still alive)
+/// 5. Bump drops (old tables removed last)
+pub async fn execute_changes_with_version_bumps(
+    project: &Project,
+    changes: &[OlapChange],
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
+) -> Result<(), OlapChangesError> {
+    use crate::framework::core::infrastructure_map::TableChange;
+
+    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(changes);
+
+    let db_name = &project.clickhouse_config.db_name;
+
+    // Lifecycle guard on non-bump changes
+    let violations = lifecycle_filter::validate_lifecycle_compliance(&remaining_changes, db_name);
+    if !violations.is_empty() {
+        return Err(OlapChangesError::LifecycleViolation(violations));
+    }
+
+    let (teardown_plan, setup_plan) =
+        ddl_ordering::order_olap_changes(&remaining_changes, db_name)?;
+
+    // Phase 1: Teardown (non-bump drops)
+    if !teardown_plan.is_empty() {
+        clickhouse::execute_changes(project, &teardown_plan, &[]).await?;
+    }
+
+    // Phase 2: Bump creates (InPlace only — NewAlongside tables are created in Phase 3)
+    for decision in version_bump_decisions {
+        if decision.bump.kind == version_bump::VersionBumpKind::InPlace {
+            let create = vec![OlapChange::Table(TableChange::Added(
+                decision.bump.new_table.clone(),
+            ))];
+            execute_changes(project, &create).await?;
+        }
+    }
+
+    // Phase 3: Setup (non-bump creates, may reference bump tables)
+    if !setup_plan.is_empty() {
+        clickhouse::execute_changes(project, &[], &setup_plan).await?;
+    }
+
+    // Phase 4: Backfills
+    for decision in version_bump_decisions {
+        if let Some(sql) = &decision.backfill_sql {
+            let client = clickhouse::create_client(project.clickhouse_config.clone());
+            clickhouse::run_query(sql, &client).await.map_err(|e| {
+                OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!(
+                        "backfill {} → {}",
+                        decision.bump.old_table.name, decision.bump.new_table.name
+                    )),
+                })
+            })?;
+        }
+    }
+
+    // Phase 5: Bump drops
+    for decision in version_bump_decisions {
+        if decision.old_table_disposition == version_bump::OldTableDisposition::Drop {
+            let drop = vec![OlapChange::Table(TableChange::Removed(
+                decision.bump.old_table.clone(),
+            ))];
+            execute_changes(project, &drop).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute OLAP changes via the InfraDelta path.
 /// Ensures the RLS access-control infrastructure (role, user, grants, policy targeting)
 /// matches the current config. Separated from `execute_changes` because RLS bootstrap
 /// must run on every startup regardless of whether OLAP schema changed.

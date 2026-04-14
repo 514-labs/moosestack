@@ -58,7 +58,9 @@ use super::{
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
-use crate::framework::core::infrastructure::table::{OrderBy, SeedFilter, TableProjection};
+use crate::framework::core::infrastructure::table::{
+    OrderBy, SeedFilter, TableConstraint, TableProjection,
+};
 use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 use crate::{
     framework::{
@@ -339,6 +341,8 @@ struct PartialTable {
     pub indexes: Vec<TableIndex>,
     #[serde(default)]
     pub projections: Vec<TableProjection>,
+    #[serde(default)]
+    pub constraints: Vec<TableConstraint>,
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
@@ -848,6 +852,7 @@ impl PartialInfrastructureMap {
                     table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
                     projections: partial_table.projections.clone(),
+                    constraints: partial_table.constraints.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),

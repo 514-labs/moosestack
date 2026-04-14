@@ -404,6 +404,33 @@ export const verifyTableProjections = async (
 };
 
 /**
+ * Verifies that the given table has constraints with the specified names present in its DDL
+ */
+export const verifyTableConstraints = async (
+  tableName: string,
+  expectedConstraintNames: string[],
+  database?: string,
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const ddl = await getTableDDL(tableName, database);
+      const missing = expectedConstraintNames.filter(
+        (name) => !ddl.includes(`CONSTRAINT ${name}`),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing constraints on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
+        );
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
+};
+
+/**
  * Lists all tables in the specified database (or current database if not specified)
  */
 export const getAllTables = async (database?: string): Promise<string[]> => {

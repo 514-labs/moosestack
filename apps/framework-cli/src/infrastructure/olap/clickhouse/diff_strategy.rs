@@ -6,12 +6,14 @@
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
-    Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
+    table_constraints_equal_ignore_order, Column, ColumnType, DataEnum, EnumValue, JsonOptions,
+    Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
     ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+use crate::infrastructure::olap::clickhouse::READONLY_SETTING_DEFAULTS;
 use std::collections::HashMap;
 use std::mem::discriminant;
 
@@ -650,17 +652,6 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
         let mut changes = Vec::new();
 
-        // List of readonly settings that cannot be modified after table creation
-        // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
-        const READONLY_SETTINGS: &[(&str, &str)] = &[
-            ("index_granularity", "8192"),
-            ("index_granularity_bytes", "10485760"),
-            ("enable_mixed_granularity_parts", "1"),
-            ("add_minmax_index_for_numeric_columns", "0"),
-            ("add_minmax_index_for_string_columns", "0"),
-            ("table_disk", "0"),
-        ];
-
         // Compare table_settings using hashes when available (for tables with sensitive settings).
         // This allows detecting actual changes without comparing masked credential values.
         // When comparing directly, treat missing readonly settings as having their default values
@@ -684,7 +675,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 let after_val = after_settings.get(key);
 
                 before_val != after_val
-                    && READONLY_SETTINGS
+                    && READONLY_SETTING_DEFAULTS
                         .iter()
                         .find(|(setting, _)| *setting == key.as_str())
                         // it is not readonly, or they *actually* differ
@@ -705,7 +696,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             let before_settings = before.table_settings.as_ref().unwrap_or(&empty_settings);
             let after_settings = after.table_settings.as_ref().unwrap_or(&empty_settings);
 
-            for (readonly_setting, default) in READONLY_SETTINGS {
+            for (readonly_setting, default) in READONLY_SETTING_DEFAULTS {
                 let before_value = before_settings
                     .get(*readonly_setting)
                     .map_or(*default, |v| v);
@@ -795,10 +786,13 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
+        let constraints_changed =
+            !table_constraints_equal_ignore_order(&before.constraints, &after.constraints);
         if !column_changes.is_empty()
             || before.indexes != after.indexes
             || before.projections != after.projections
             || sample_by_changed
+            || constraints_changed
         {
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
@@ -879,6 +873,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1874,6 +1869,7 @@ mod tests {
             table_settings: Some(table_settings),
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

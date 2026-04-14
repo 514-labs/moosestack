@@ -41,6 +41,11 @@ pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
 pub const SAMPLE_STREAMING_FUNCTION_DEST: &str = "Bar";
 
+/// User-facing rules for macro-style ClickHouse cluster names (`{cluster}`, `prefix_{cluster}_suffix`, …).
+///
+/// Must stay aligned with [`crate::infrastructure::olap::clickhouse::errors::is_valid_clickhouse_cluster_name`].
+pub const CLICKHOUSE_MACRO_CLUSTER_NAME_RULES: &str = "Macro cluster names must use balanced, non-nested `{macro}` segments with a non-empty body; only ASCII letters, digits, underscores, and hyphens may appear inside the braces and in literal parts between segments. The full name must not start with a digit or hyphen. For example `{cluster}` or `prefix_{cluster}_suffix`.";
+
 pub const CLICKHOUSE_CONTAINER_NAME: &str = "clickhousedb";
 pub const REDPANDA_CONTAINER_NAME: &str = "redpanda";
 pub const TEMPORAL_CONTAINER_NAME: &str = "temporal";
@@ -100,6 +105,12 @@ pub static SHOW_TIMING: AtomicBool = AtomicBool::new(false);
 /// to run `ensure_typescript_compiled` ourselves.
 /// This is set once at the start of `start_development_mode`.
 pub static IS_DEV_MODE: AtomicBool = AtomicBool::new(false);
+
+/// ClickHouse binary release version for native (--dockerless) mode.
+pub const CLICKHOUSE_BINARY_VERSION: &str = "25.8.18.1-lts";
+
+/// Temporal CLI version for native (--dockerless) mode.
+pub const TEMPORAL_CLI_VERSION: &str = "1.3.0";
 
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the

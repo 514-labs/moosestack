@@ -647,12 +647,6 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Docker Compose Deployment",
         languages: ["typescript", "python"],
       },
-      {
-        type: "page",
-        slug: "moosestack/deploying/monitoring",
-        title: "Monitoring (moved)",
-        languages: ["typescript", "python"],
-      },
     ],
   },
 
@@ -1792,6 +1786,29 @@ const guidesNavigationConfig: NavigationConfig = [
     icon: IconDatabase,
     languages: ["typescript", "python"],
     status: "draft",
+  },
+  {
+    type: "page",
+    slug: "guides/optimize-clickhouse-performance",
+    title: "Optimize a Slow ClickHouse Query with Your AI Agent",
+    description:
+      "Profile a slow query, benchmark candidate schema changes on preview, and review the winning PR before merge.",
+    icon: IconBrain,
+    languages: ["typescript"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/optimize-clickhouse-performance/overview",
+        title: "Overview",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "guides/optimize-clickhouse-performance/tutorial",
+        title: "Tutorial",
+        languages: ["typescript"],
+      },
+    ],
   },
 
   // ===========================================

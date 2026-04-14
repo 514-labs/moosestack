@@ -170,12 +170,24 @@ pub struct ApprovedColumnDrop {
 /// A `TableChange::Removed` followed by a `TableChange::Added` with the same
 /// name is treated as a recreate rather than two independent operations.
 /// `ColumnChange::Renamed` is non-destructive and is intentionally skipped.
+///
+/// Tables that are part of a version bump (same `source_primitive.name` with
+/// version change) are excluded — they are handled by the version-bump gate
+/// instead of the destructive gate.
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
+    // Extract version bumps so their Removed/Added entries don't show as destructive.
+    let (_bumps, remaining_changes) =
+        crate::framework::core::version_bump::extract_version_bumps(&changes.olap_changes);
+
+    classify_plan_risk_from_changes(&remaining_changes)
+}
+
+/// Core risk classification logic operating on a slice of `OlapChange`s.
+fn classify_plan_risk_from_changes(olap_changes: &[OlapChange]) -> PlanRisk {
     let mut destructive_changes = Vec::new();
 
     // Collect (database, name) pairs for tables that are both removed and added (recreates).
-    let removed_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let removed_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Removed(t)) => {
@@ -185,8 +197,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         })
         .collect();
 
-    let added_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let added_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Added(t)) => {
@@ -201,7 +212,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         .copied()
         .collect();
 
-    for change in &changes.olap_changes {
+    for change in olap_changes {
         match change {
             OlapChange::Table(TableChange::Removed(table)) => {
                 let key = (table.database.as_deref(), table.name.as_str());
@@ -245,6 +256,69 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                 destructive_changes.push(DestructiveChange::ViewDrop {
                     database: v.database.clone(),
                     view_name: v.name.clone(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    PlanRisk {
+        destructive_changes,
+    }
+}
+
+/// Classify risk from a list of `InfraDelta`s.
+///
+/// This is the delta-native equivalent of [`classify_plan_risk`]. It scans
+/// deltas for destructive operations (table drops, recreates, column drops,
+/// view/MV drops) and returns the same `PlanRisk` structure.
+///
+/// Used when the migration is generated from compacted dev log deltas
+/// rather than from raw `InfraChanges`.
+pub fn classify_risk_from_deltas(
+    deltas: &[crate::framework::core::infra_delta::InfraDelta],
+) -> PlanRisk {
+    use crate::framework::core::infra_delta::InfraDelta;
+
+    let mut destructive_changes = Vec::new();
+
+    for delta in deltas {
+        match delta {
+            InfraDelta::DropTable { table, .. } => {
+                destructive_changes.push(DestructiveChange::TableDrop {
+                    database: table.database.clone(),
+                    table_name_with_suffix: table.name.clone(),
+                    version: table.version.clone(),
+                });
+            }
+            InfraDelta::RecreateTable { before, .. } => {
+                destructive_changes.push(DestructiveChange::TableRecreate {
+                    database: before.database.clone(),
+                    table_name_with_suffix: before.name.clone(),
+                    reason: "schema change requires drop + recreate".to_string(),
+                    version: before.version.clone(),
+                });
+            }
+            InfraDelta::DropTableColumn {
+                table_id,
+                column_name,
+            } => {
+                destructive_changes.push(DestructiveChange::ColumnDrop {
+                    database: None,
+                    table_name_with_suffix: table_id.clone(),
+                    column_name: column_name.clone(),
+                });
+            }
+            InfraDelta::DropMaterializedView { mv } => {
+                destructive_changes.push(DestructiveChange::MaterializedViewDrop {
+                    database: mv.database.clone(),
+                    view_name: mv.name.clone(),
+                });
+            }
+            InfraDelta::DropView { view } => {
+                destructive_changes.push(DestructiveChange::ViewDrop {
+                    database: view.database.clone(),
+                    view_name: view.name.clone(),
                 });
             }
             _ => {}
@@ -469,7 +543,7 @@ const PROMPT_REDRAW_INTERVAL: Duration = Duration::from_millis(500);
 ///
 /// Create via [`PinnedSession::start`], then call [`prompt`](PinnedSession::prompt)
 /// one or more times. The scroll region is restored when the session is dropped.
-struct PinnedSession {
+pub(crate) struct PinnedSession {
     current_rows: u16,
     current_text: String,
     lines: tokio::io::Lines<tokio::io::BufReader<tokio::io::Stdin>>,
@@ -477,7 +551,7 @@ struct PinnedSession {
 
 impl PinnedSession {
     /// Sets up the scroll region and returns a ready session.
-    fn start() -> std::io::Result<Self> {
+    pub(crate) fn start() -> std::io::Result<Self> {
         let (_cols, current_rows) = terminal::size()?;
 
         {
@@ -503,7 +577,7 @@ impl PinnedSession {
     /// The text should be a single line (long lines will be truncated by the
     /// terminal). Returns the trimmed, lowercased user input, or an empty
     /// string on EOF.
-    async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
+    pub(crate) async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
         self.current_text = text.to_string();
         self.draw_full()?;
         self.park_cursor()?;
@@ -871,7 +945,7 @@ pub fn print_migration_rejected_guidance(
     println!("\nNext Steps");
     println!("  1. {version_hint}");
     println!("  2. Export the new table from root `{root_file}`");
-    println!("  3. Run `moose generate migration` again");
+    println!("  3. Run `moose dev` to apply the changes");
 }
 
 // ---------------------------------------------------------------------------
@@ -1186,6 +1260,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

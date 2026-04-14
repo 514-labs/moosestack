@@ -3,7 +3,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{error, info, warn};
@@ -390,19 +391,27 @@ impl DockerClient {
         }
 
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
+        let mut all_macros: HashSet<String> = HashSet::new();
+        let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
 
         for cluster in clusters {
-            // Validate cluster name is a safe identifier to prevent XML injection
-            if !is_valid_clickhouse_identifier(&cluster.name) {
+            let macro_names: Vec<String> = re
+                .captures_iter(&cluster.name)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+
+            let resolved_name = re.replace_all(&cluster.name, "$1").to_string();
+
+            if !is_valid_clickhouse_identifier(&resolved_name) {
                 warn!(
-                    "Skipping cluster '{}': cluster names must be alphanumeric with underscores/hyphens only and cannot start with a digit or a hyphen",
-                    cluster.name
+                    "Skipping cluster '{}': resolved name '{}' must be alphanumeric with underscores/hyphens only and cannot start with a digit or a hyphen",
+                    cluster.name, resolved_name
                 );
                 continue;
             }
 
-            // Create a multi-node cluster for dev mode to test replication
-            // Both nodes are in the same shard (replicas of each other)
+            all_macros.extend(macro_names);
+
             xml.push_str(&format!(
                 "    <{name}>\n\
                        <shard>\n\
@@ -420,13 +429,21 @@ impl DockerClient {
                          </replica>\n\
                        </shard>\n\
                      </{name}>\n",
-                name = cluster.name,
+                name = resolved_name,
                 user = project.clickhouse_config.user,
                 password = project.clickhouse_config.password
             ));
         }
 
-        xml.push_str("  </remote_servers>\n</clickhouse>\n");
+        xml.push_str("  </remote_servers>\n");
+        if !all_macros.is_empty() {
+            xml.push_str("  <macros>\n");
+            for m in &all_macros {
+                xml.push_str(&format!("    <{m}>{m}</{m}>\n"));
+            }
+            xml.push_str("  </macros>\n");
+        }
+        xml.push_str("</clickhouse>\n");
         Some(xml)
     }
 
@@ -690,6 +707,7 @@ system.forceSearchAttributesCacheRefreshOnRead:
     /// * `architecture` - The Docker platform architecture (e.g., "linux/amd64")
     /// * `binarylabel` - The target triple (e.g., "x86_64-unknown-linux-gnu")
     /// * `channel` - The release channel ("stable" or "dev")
+    /// * `dockerfile_path` - Optional path to a Dockerfile (passed as `-f <path>`); if `None`, Docker uses the default `Dockerfile` in the build context
     pub fn buildx(
         &self,
         directory: &PathBuf,
@@ -697,10 +715,10 @@ system.forceSearchAttributesCacheRefreshOnRead:
         architecture: &str,
         binarylabel: &str,
         channel: &str,
+        dockerfile_path: Option<&Path>,
     ) -> std::io::Result<()> {
-        let mut child = self
-            .create_command()
-            .current_dir(directory)
+        let mut cmd = self.create_command();
+        cmd.current_dir(directory)
             .arg("buildx")
             .arg("build")
             .arg("--build-arg")
@@ -712,10 +730,16 @@ system.forceSearchAttributesCacheRefreshOnRead:
             .arg("--load")
             .arg("--no-cache")
             .arg("-t")
-            .arg(format!("moose-df-deployment-{binarylabel}:latest"))
+            .arg(format!("moose-df-deployment-{binarylabel}:latest"));
+
+        if let Some(path) = dockerfile_path {
+            cmd.arg("-f").arg(path);
+        }
+
+        let mut child = cmd
             .arg(".")
-            .stdout(Stdio::inherit())  // ✅ Stream stdout directly to console
-            .stderr(Stdio::inherit())  // ✅ Stream stderr directly to console
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()?;
 
         let status = child.wait()?;
@@ -1030,5 +1054,29 @@ mod tests {
         assert!(xml.contains("<clickhouse>"));
         assert!(xml.contains("<remote_servers>"));
         assert!(!xml.contains("<shard>"));
+    }
+
+    #[test]
+    fn test_generate_xml_with_braced_cluster_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "{cluster}".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Should contain the resolved name as tag
+        assert!(xml.contains("<cluster>"));
+        // Should contain macros section
+        assert!(xml.contains("<macros>"));
+        assert!(xml.contains("  <cluster>cluster</cluster>"));
+        assert!(xml.contains("</macros>"));
     }
 }

@@ -1,3 +1,6 @@
+use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::processing_coordinator::ProcessingCoordinator;
+use super::settings::Settings;
 /// # TypeScript Compilation Watcher Module
 ///
 /// This module provides functionality for watching TypeScript compilation via `tspc --watch`
@@ -27,6 +30,7 @@
 use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 use display::with_timing_async;
+use framework::core::execute::execute_online_change;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -34,16 +38,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use super::display::{self, with_spinner_completion_async, Message, MessageType};
-use super::processing_coordinator::ProcessingCoordinator;
-use super::settings::Settings;
-
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
+    DestructiveChange,
 };
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
@@ -297,6 +299,7 @@ async fn watch(
     confirmation_policy: ConfirmationPolicy,
     prompt_bridge: Option<PromptBridge>,
     remote_for_mirrors: Option<ClickHouseRemote>,
+    dev_baseline: Arc<InfrastructureMap>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -397,7 +400,7 @@ async fn watch(
                         .await?;
 
                         spinner_handle.pause();
-                        let risk = match confirm_renames_and_classify(
+                        let mut risk = match confirm_renames_and_classify(
                             &mut plan_result.changes,
                             &confirmation_policy,
                             prompt_bridge.as_ref(),
@@ -407,6 +410,50 @@ async fn watch(
                             Some(risk) => risk,
                             None => return Ok(false),
                         };
+
+                        // Version bump detection and prompting (initial pass).
+                        let current_infra = infrastructure_map.read().await;
+                        let (mut version_bumps, remaining) =
+                            version_bump::extract_version_bumps(&plan_result.changes.olap_changes);
+                        let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &current_infra);
+                        version_bumps.extend(backfill_only);
+                        drop(current_infra);
+
+                        let accept_all = confirmation_policy.accept_destructive;
+                        let version_bump_decisions = if !version_bumps.is_empty() {
+                            match version_bump::version_bump_gate(
+                                version_bumps,
+                                &project.clickhouse_config.db_name,
+                                accept_all,
+                                prompt_bridge.as_ref(),
+                            )
+                            .await?
+                            {
+                                Some(decisions) => decisions,
+                                None => return Ok(false),
+                            }
+                        } else {
+                            vec![]
+                        };
+
+                        let vb_drop_names: std::collections::HashSet<String> =
+                            version_bump_decisions
+                                .iter()
+                                .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
+                                .map(|d| d.bump.old_table.name.clone())
+                                .collect();
+                        risk.destructive_changes.retain(|dc| {
+                            match dc {
+                                DestructiveChange::TableDrop { table_name_with_suffix, .. } => {
+                                    !vb_drop_names.contains(table_name_with_suffix)
+                                }
+                                DestructiveChange::TableRecreate { table_name_with_suffix, .. } => {
+                                    !vb_drop_names.contains(table_name_with_suffix)
+                                }
+                                _ => true,
+                            }
+                        });
+
                         if !destructive_confirmation_gate(
                             &risk,
                             &confirmation_policy,
@@ -431,6 +478,7 @@ async fn watch(
                                 &mut project_registries,
                                 metrics.clone(),
                                 &settings,
+                                &version_bump_decisions,
                             )
                             .await
                         })
@@ -456,6 +504,17 @@ async fn watch(
                                     remote_for_mirrors.as_ref(),
                                 )
                                 .await;
+
+                                // Generate pending migration (best-effort, delta mode only)
+                                if project.features.migrate_with_deltas {
+                                    if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+                                        &dev_baseline,
+                                        &plan_result.target_infra_map,
+                                        &project,
+                                    ) {
+                                        tracing::warn!("Failed to write pending migration: {}", e);
+                                    }
+                                }
 
                                 let mut infra_ptr = infrastructure_map.write().await;
                                 *infra_ptr = plan_result.target_infra_map;
@@ -569,7 +628,7 @@ async fn watch(
                                             .await;
 
                                             match plan_result {
-                                                Ok((_, mut plan_result)) => {
+                                                Ok((current_infra, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
                                                             &project,
@@ -579,10 +638,53 @@ async fn watch(
                                                     .await?;
 
                                                     spinner_handle.pause();
-                                                    let risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy, prompt_bridge.as_ref()).await? {
+                                                    let mut risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy, prompt_bridge.as_ref()).await? {
                                                         Some(risk) => risk,
                                                         None => return Ok(false),
                                                     };
+
+                                                    // Version bump detection and prompting.
+                                                    let (mut version_bumps, remaining) =
+                                                        version_bump::extract_version_bumps(&plan_result.changes.olap_changes);
+                                                    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &current_infra);
+                                                    version_bumps.extend(backfill_only);
+
+                                                    let accept_all = confirmation_policy.accept_destructive;
+                                                    let version_bump_decisions = if !version_bumps.is_empty() {
+                                                        match version_bump::version_bump_gate(
+                                                            version_bumps,
+                                                            &project.clickhouse_config.db_name,
+                                                            accept_all,
+                                                            prompt_bridge.as_ref(),
+                                                        )
+                                                        .await?
+                                                        {
+                                                            Some(decisions) => decisions,
+                                                            None => return Ok(false),
+                                                        }
+                                                    } else {
+                                                        vec![]
+                                                    };
+
+                                                    // Exclude version-bump drops from the destructive gate.
+                                                    let vb_drop_names: std::collections::HashSet<String> =
+                                                        version_bump_decisions
+                                                            .iter()
+                                                            .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
+                                                            .map(|d| d.bump.old_table.name.clone())
+                                                            .collect();
+                                                    risk.destructive_changes.retain(|dc| {
+                                                        match dc {
+                                                            DestructiveChange::TableDrop { table_name_with_suffix, .. } => {
+                                                                !vb_drop_names.contains(table_name_with_suffix)
+                                                            }
+                                                            DestructiveChange::TableRecreate { table_name_with_suffix, .. } => {
+                                                                !vb_drop_names.contains(table_name_with_suffix)
+                                                            }
+                                                            _ => true,
+                                                        }
+                                                    });
+
                                                     if !destructive_confirmation_gate(&risk, &confirmation_policy, prompt_bridge.as_ref()).await? {
                                                         return Ok(false);
                                                     }
@@ -597,7 +699,7 @@ async fn watch(
 
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
-                                                            framework::core::execute::execute_online_change(
+                                                            execute_online_change(
                                                                 &project,
                                                                 &plan_result,
                                                                 route_update_channel.clone(),
@@ -605,6 +707,7 @@ async fn watch(
                                                                 &mut project_registries,
                                                                 metrics.clone(),
                                                                 &settings,
+                                                                &version_bump_decisions,
                                                             )
                                                             .await
                                                         })
@@ -612,19 +715,32 @@ async fn watch(
 
                                                     match execution_result {
                                                         Ok(_) => {
+                                                            let stored_map = plan_result.target_infra_map;
+
                                                             with_timing_async("Persist State", async {
                                                                 state_storage
                                                                     .store_infrastructure_map(
-                                                                        &plan_result.target_infra_map,
+                                                                        &stored_map,
                                                                     )
                                                                     .await
                                                             })
                                                             .await?;
 
+                                                            // Generate pending migration (best-effort, delta mode only)
+                                                            if project.features.migrate_with_deltas {
+                                                                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+                                                                    &dev_baseline,
+                                                                    &stored_map,
+                                                                    &project,
+                                                                ) {
+                                                                    tracing::warn!("Failed to write pending migration: {}", e);
+                                                                }
+                                                            }
+
                                                             with_timing_async("OpenAPI Gen", async {
                                                                 openapi(
                                                                     &project,
-                                                                    &plan_result.target_infra_map,
+                                                                    &stored_map,
                                                                 )
                                                                 .await
                                                             })
@@ -632,7 +748,7 @@ async fn watch(
 
                                                             let mut infra_ptr =
                                                                 infrastructure_map.write().await;
-                                                            *infra_ptr = plan_result.target_infra_map;
+                                                            *infra_ptr = stored_map;
                                                             Ok(true)
                                                         }
                                                         Err(e) => {
@@ -763,6 +879,7 @@ impl TsCompilationWatcher {
         confirmation_policy: ConfirmationPolicy,
         prompt_bridge: Option<PromptBridge>,
         remote_for_mirrors: Option<ClickHouseRemote>,
+        dev_baseline: Arc<InfrastructureMap>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -781,6 +898,7 @@ impl TsCompilationWatcher {
                 confirmation_policy,
                 prompt_bridge,
                 remote_for_mirrors,
+                dev_baseline,
             )
             .await
         };

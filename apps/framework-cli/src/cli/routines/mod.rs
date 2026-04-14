@@ -189,8 +189,7 @@ pub mod scripts;
 pub mod seed_data;
 pub mod templates;
 pub mod truncate_table;
-mod util;
-pub mod validate;
+pub(crate) mod util;
 
 const LEADERSHIP_LOCK_RENEWAL_INTERVAL: u64 = 5; // 5 seconds
 
@@ -733,6 +732,10 @@ pub async fn start_development_mode(
     let registries = ProcessRegistries::new(&project, settings, syncing);
     let process_registry = Arc::new(RwLock::new(registries));
 
+    // Capture the current (reconciled) infra as the dev session baseline for
+    // pending migration generation and backfill-only version bump detection.
+    let dev_baseline = Arc::new(current_infra.clone());
+
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(current_infra)));
 
@@ -772,6 +775,7 @@ pub async fn start_development_mode(
                 confirmation_policy,
                 prompt_bridge.clone(),
                 remote_for_mirrors.clone(),
+                dev_baseline.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -790,6 +794,7 @@ pub async fn start_development_mode(
                 confirmation_policy,
                 prompt_bridge.clone(),
                 remote_for_mirrors,
+                dev_baseline.clone(),
             )?;
         }
     }
@@ -967,9 +972,14 @@ pub async fn start_production_mode(
 
     let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
 
-    if !project.migration_config.prod_auto_allow_destructive {
+    if !execute_migration_yaml {
+        info!("Migration file not found.")
+    }
+
+    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+        info!("prod_auto_allow_destructive is false, analysing risk.");
         let risk = classify_plan_risk(&plan.changes);
-        if risk.is_destructive() && !execute_migration_yaml {
+        if risk.is_destructive() {
             let summary = risk
                 .destructive_changes
                 .iter()
@@ -981,12 +991,16 @@ pub async fn start_production_mode(
                  destructive operation(s) but no plan.yaml was found.\n\
                  {}\n\n\
                  To proceed, either:\n  \
-                 1. Run `moose generate migration` to create a reviewed plan.yaml, or\n  \
+                 1. Create a new version of the table by setting the `version` field in your \
+                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
+                 heuristic uses these to migrate data automatically\n  \
                  2. Set `prod_auto_allow_destructive = true` under [migration_config] \
                  in moose.config.toml to allow unplanned destructive changes.",
                 risk.destructive_changes.len(),
                 summary,
             ));
+        } else {
+            info!("PlanRisk: {:?}, proceeding.", risk)
         }
     }
 
@@ -1017,6 +1031,7 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
+        version_bump_decisions: vec![],
     })
     .await?;
 
@@ -1079,11 +1094,45 @@ pub enum InfraRetrievalError {
     ServerError(String),
 }
 
+/// Appends a [`ReconciliationFilter`] and source default-database as query params
+/// onto `url`, using the param names expected by `GET /admin/inframap`.
+fn append_extra_filter_query_params(
+    url: &mut reqwest::Url,
+    filter: &ReconciliationFilter,
+    source_db: &str,
+) {
+    fn csv(ids: &std::collections::HashSet<String>) -> String {
+        let mut sorted: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+        sorted.sort();
+        sorted.join(",")
+    }
+
+    let mut pairs = url.query_pairs_mut();
+    pairs.append_pair("source_db", source_db);
+    if !filter.table_ids.is_empty() {
+        pairs.append_pair("extra_table_ids", &csv(&filter.table_ids));
+    }
+    if !filter.sql_resource_ids.is_empty() {
+        pairs.append_pair("extra_sql_ids", &csv(&filter.sql_resource_ids));
+    }
+    if !filter.materialized_view_ids.is_empty() {
+        pairs.append_pair("extra_mv_ids", &csv(&filter.materialized_view_ids));
+    }
+    if !filter.view_ids.is_empty() {
+        pairs.append_pair("extra_view_ids", &csv(&filter.view_ids));
+    }
+    if !filter.select_row_policy_ids.is_empty() {
+        pairs.append_pair("extra_policy_ids", &csv(&filter.select_row_policy_ids));
+    }
+}
+
 /// Retrieves the current infrastructure map from a remote Moose instance using the new admin/inframap endpoint
 ///
 /// # Arguments
 /// * `base_url` - Optional base URL of the remote instance (default: http://localhost:4000)
 /// * `token` - API token for admin authentication
+/// * `local_infra_map` - Optional local inframap whose resource IDs are sent as extra filter
+///   query params so the server adopts matching DB objects during reconciliation
 ///
 /// # Returns
 /// * `Ok(InfrastructureMap)` - Successfully retrieved inframap
@@ -1091,10 +1140,20 @@ pub enum InfraRetrievalError {
 pub(crate) async fn get_remote_inframap_protobuf(
     base_url: Option<&str>,
     token: &Option<String>,
+    local_infra_map: Option<&InfrastructureMap>,
 ) -> Result<InfrastructureMap, InfraRetrievalError> {
-    let target_url = prepend_base_url(base_url, "admin/inframap");
+    let base = prepend_base_url(base_url, "admin/inframap");
+    let mut target_url = reqwest::Url::parse(&base)
+        .map_err(|e| InfraRetrievalError::NetworkError(format!("Invalid base URL: {e}")))?;
 
-    // Get authentication token
+    // Append extra reconciliation filter query params when the caller supplies a
+    // local inframap, so the server adopts DB tables matching the local code even
+    // when Redis hasn't been updated yet (e.g. after applying a migration).
+    if let Some(local_map) = local_infra_map {
+        let filter = ReconciliationFilter::from_infra_map(local_map);
+        append_extra_filter_query_params(&mut target_url, &filter, &local_map.default_database);
+    }
+
     let auth_token = token
         .clone()
         .or_else(|| std::env::var("MOOSE_ADMIN_TOKEN").ok())
@@ -1104,10 +1163,9 @@ pub(crate) async fn get_remote_inframap_protobuf(
             )
         })?;
 
-    // Create HTTP client and request
     let client = reqwest::Client::new();
     let response = client
-        .get(&target_url)
+        .get(target_url)
         .header("Content-Type", "application/json")
         .header("Accept", "application/protobuf")
         .header("Authorization", format!("Bearer {auth_token}"))
@@ -1324,7 +1382,8 @@ pub async fn remote_plan(
         }
 
         // Try new endpoint first, fallback to legacy if not available
-        match get_remote_inframap_protobuf(base_url.as_deref(), token).await {
+        match get_remote_inframap_protobuf(base_url.as_deref(), token, Some(&local_infra_map)).await
+        {
             Ok(infra_map) => {
                 if !json {
                     display::show_message_wrapper(
@@ -1480,7 +1539,7 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            get_remote_inframap_protobuf(Some(url), token)
+            get_remote_inframap_protobuf(Some(url), token, Some(&local_infra_map))
                 .await
                 .with_context(|| "Failed to retrieve infrastructure map".to_string())?
         }

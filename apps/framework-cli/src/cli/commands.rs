@@ -90,6 +90,13 @@ pub enum Commands {
         /// Required when state_config.storage = "redis"
         #[arg(long)]
         redis_url: Option<String>,
+
+        /// Validate migration files without executing them.
+        /// Checks that the delta sequence is consistent (fold succeeds)
+        /// and detects semantic conflicts between migration files.
+        /// Does not require ClickHouse or Redis.
+        #[arg(long)]
+        validate: bool,
     },
 
     /// View some data from a table or stream
@@ -151,6 +158,10 @@ pub enum Commands {
         /// `respond_to_prompt` tool instead of stdin. Implies --mcp.
         #[arg(long)]
         agent: bool,
+
+        /// Use native binaries for ClickHouse and Temporal instead of Docker
+        #[arg(long)]
+        dockerless: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]

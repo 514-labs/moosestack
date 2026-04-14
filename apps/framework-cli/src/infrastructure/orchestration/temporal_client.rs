@@ -11,7 +11,7 @@ use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
 };
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Uri};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::infrastructure::orchestration::temporal::{InvalidTemporalSchemeError, TemporalConfig};
 use crate::project::Project;
@@ -83,18 +83,18 @@ impl TemporalClientManager {
     }
 
     async fn get_client(&self) -> Result<TemporalClient> {
-        info!("Getting client for Temporal URL: {}", self.temporal_url);
+        debug!("Getting client for Temporal URL: {}", self.temporal_url);
 
         if !self.ca_cert.is_empty() && !self.client_cert.is_empty() && !self.client_key.is_empty() {
-            info!("Choosing client with mTLS");
+            debug!("Choosing client with mTLS");
             let client = self.get_temporal_client_mtls().await?;
             Ok(TemporalClient::Standard(client))
         } else if !self.ca_cert.is_empty() && !self.api_key.is_empty() {
-            info!("Choosing client with API key");
+            debug!("Choosing client with API key");
             let client = self.get_temporal_client_api_key().await?;
             Ok(TemporalClient::WithInterceptor(client))
         } else {
-            info!("Choosing client with no authentication");
+            debug!("Choosing client with no authentication");
             let client = self.get_temporal_client().await?;
             Ok(TemporalClient::Standard(client))
         }
@@ -156,7 +156,7 @@ Is the Moose development server running? Start it with `moose dev`."#
 
         let regional_endpoint = self.config.get_temporal_api_key_endpoint();
         let domain_name = self.config.get_temporal_api_key_domain();
-        info!(
+        debug!(
             "Temporal API key mode: namespace='{}', endpoint='{}'",
             namespace, regional_endpoint
         );
@@ -218,7 +218,7 @@ pub async fn probe_temporal_namespace(
     manager: &TemporalClientManager,
     namespace: String,
 ) -> Result<()> {
-    info!("Probing Temporal namespace: '{}'", namespace);
+    debug!("Probing Temporal namespace: '{}'", namespace);
     manager
         .execute(move |mut c| async move {
             c.describe_namespace(DescribeNamespaceRequest {

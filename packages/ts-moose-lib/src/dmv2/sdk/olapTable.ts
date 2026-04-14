@@ -31,6 +31,35 @@ export interface TableProjection {
 }
 
 /**
+ * Defines a constraint on a ClickHouse table.
+ * Constraints can enforce data integrity rules or provide hints to the query optimizer.
+ *
+ * @example
+ * ```typescript
+ * constraints: [
+ *   {
+ *     name: "age_positive",
+ *     expression: "age > 0",
+ *     type: "CHECK"
+ *   },
+ *   {
+ *     name: "valid_status",
+ *     expression: "status IN ('active', 'inactive')",
+ *     type: "ASSUME"
+ *   }
+ * ]
+ * ```
+ */
+export interface TableConstraint {
+  /** The unique identifier or name of the constraint */
+  name: string;
+  /** The SQL or logical expression that defines the constraint condition */
+  expression: string;
+  /** The type of the constraint */
+  type: "CHECK" | "ASSUME";
+}
+
+/**
  * Represents a failed record during insertion with error details
  */
 export interface FailedRecord<T> {
@@ -269,6 +298,13 @@ export type BaseOlapConfig<T> = (
     /** ClickHouse SQL WHERE expression to filter seeded rows. */
     where?: string;
   };
+  /**
+   * Optional table-level ClickHouse constraints.
+   *
+   * - **CHECK** — validated on INSERT.
+   * - **ASSUME** — optimizer hint only (no enforcement).
+   */
+  constraints?: TableConstraint[];
 };
 
 /**
@@ -290,7 +326,11 @@ export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
 };
 
 /**
- * Configuration for AggregatingMergeTree engine
+ * Configuration for AggregatingMergeTree engine.
+ *
+ * See {@link ClickHouseEngines.AggregatingMergeTree} for guidance on annotating
+ * aggregate columns in `T` with `Aggregated` / `SimpleAggregated`.
+ *
  * @template T The data type of the records stored in the table.
  */
 export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
@@ -773,19 +813,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
-    // Validate cluster and explicit replication params are not both specified
-    const hasCluster = typeof (resolvedConfig as any).cluster === "string";
-    const hasKeeperPath =
-      typeof (resolvedConfig as any).keeperPath === "string";
-    const hasReplicaName =
-      typeof (resolvedConfig as any).replicaName === "string";
-
-    if (hasCluster && (hasKeeperPath || hasReplicaName)) {
-      throw new Error(
-        `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
-          `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
-      );
-    }
+    // When cluster is specified alongside keeperPath/replicaName, cluster is used
+    // only for ON CLUSTER DDL generation while keeperPath/replicaName remain explicit.
+    // This supports tables with existing ZooKeeper paths that need ON CLUSTER for ALTER.
 
     super(name, resolvedConfig, schema, columns, validators);
     this.insertValidators = insertValidators;

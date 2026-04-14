@@ -179,6 +179,12 @@ pub struct DockerConfig {
     /// Path to custom Dockerfile (relative to project root)
     #[serde(default = "default_dockerfile_path")]
     pub dockerfile_path: String,
+
+    /// Docker build context path, relative to project root.
+    /// Only used when custom_dockerfile is true.
+    /// Example: "../../.." to use monorepo root as context.
+    #[serde(default)]
+    pub context_path: Option<String>,
 }
 
 impl Default for DockerConfig {
@@ -186,6 +192,7 @@ impl Default for DockerConfig {
         Self {
             custom_dockerfile: false,
             dockerfile_path: default_dockerfile_path(),
+            context_path: None,
         }
     }
 }
@@ -226,6 +233,17 @@ pub struct ProjectFeatures {
     /// Whether Analytics APIs server is enabled
     #[serde(default = "_true")]
     pub apis: bool,
+
+    /// Whether to use the delta-based migration system.
+    ///
+    /// When enabled:
+    /// - Dev mode auto-generates `./migrations/pending.yaml` on every change
+    /// - `moose generate migration` produces delta YAML files
+    /// - `moose migrate` applies delta files
+    ///
+    /// When disabled (default): the legacy plan.yaml migration system is used.
+    #[serde(default)]
+    pub migrate_with_deltas: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -235,6 +253,7 @@ impl Default for ProjectFeatures {
             workflows: false,
             olap: true,
             apis: true,
+            migrate_with_deltas: false,
         }
     }
 }
@@ -339,6 +358,11 @@ pub struct DevConfig {
     /// No credentials stored - they go in OS keychain or env vars
     #[serde(default)]
     pub remote_clickhouse: Option<RemoteClickHouseConfig>,
+
+    /// Whether to use native binaries for ClickHouse and Temporal instead of Docker.
+    /// Runtime-only flag set by `--dockerless`, not persisted to config.
+    #[serde(skip)]
+    pub dockerless: bool,
 }
 
 /// Represents a user's Moose project
@@ -709,7 +733,8 @@ pub mod tests {
     #[test]
     fn test_new_python_project() {
         let project = Project::new(
-            Path::new("tests/python/project"),
+            // CI sets cwd to a temp dir, so relative paths don't resolve to the package root.
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/python/project"),
             "test_project".to_string(),
             SupportedLanguages::Python,
         );
@@ -765,5 +790,48 @@ pub mod tests {
             !config.prod_auto_allow_destructive,
             "Deserializing an empty [migration_config] must not auto-allow destructive changes"
         );
+    }
+
+    #[test]
+    fn docker_config_default_has_no_context_path() {
+        let config = DockerConfig::default();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_without_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert!(config.context_path.is_none());
+    }
+
+    #[test]
+    fn docker_config_deserializes_with_context_path() {
+        let config: DockerConfig = toml::from_str(
+            r#"
+            custom_dockerfile = true
+            dockerfile_path = "./Dockerfile"
+            context_path = "../../.."
+            "#,
+        )
+        .unwrap();
+        assert!(config.custom_dockerfile);
+        assert_eq!(config.context_path.as_deref(), Some("../../.."));
+    }
+
+    #[test]
+    fn docker_config_deserializes_empty() {
+        let config: DockerConfig = toml::from_str("").unwrap();
+        assert!(!config.custom_dockerfile);
+        assert_eq!(config.dockerfile_path, "./Dockerfile");
+        assert!(config.context_path.is_none());
     }
 }

@@ -1,5 +1,5 @@
 language = "typescript" # Must be typescript or python
-description = "TypeScript agent starter with MCP tools, Moose-owned dashboard APIs, JWT RLS, Bedrock support, and Langfuse tracing."
+description = "TypeScript starter for building production analytics agents — the agent plus the harness: ClickHouse OLAP, JWT-backed RLS, semantic layer, MCP tools, and Langfuse tracing."
 frameworks = ["Next.js", "MCP", "Agents"]
 features = ["Moose OLAP", "Moose APIs", "Frontend", "MCP", "Auth", "Agents"]
 post_install_print = """
@@ -44,7 +44,7 @@ default_sloan_telemetry = "standard"
 [boreal]
 enabled = true
 display_name = "TypeScript Agent Starter"
-short_description = "Build TypeScript agents with local debug auth, organization-aware data access, MCP tools, Moose-owned dashboard APIs, and Langfuse tracing."
+short_description = "Production analytics agent starter: MooseStack harness, Next.js chat UI, and shared agent runtime."
 featured = true
 
 # Env vars user must provide

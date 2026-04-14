@@ -271,6 +271,111 @@ impl TableProjection {
     }
 }
 
+/// The type of constraint applied to a table.
+/// This enum ensures that only valid constraint types can be constructed and serialized.
+#[derive(Debug, Clone, Serialize, Eq, PartialEq, Hash)]
+pub enum ConstraintType {
+    /// A CHECK constraint that enforces a condition on inserted rows.
+    /// Serialized and displayed as `"CHECK"`.
+    #[serde(rename = "CHECK")]
+    Check,
+    /// An ASSUME constraint that provides a hint to the query optimizer
+    /// without enforcing the condition on inserts.
+    /// Serialized and displayed as `"ASSUME"`.
+    #[serde(rename = "ASSUME")]
+    Assume,
+    /// An unparsed or unknown constraint type, preserved for round-tripping.
+    #[serde(untagged)]
+    Unparsed(String),
+}
+
+impl<'de> Deserialize<'de> for ConstraintType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Self::from(s.as_str()))
+    }
+}
+
+impl std::fmt::Display for ConstraintType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstraintType::Check => write!(f, "CHECK"),
+            ConstraintType::Assume => write!(f, "ASSUME"),
+            ConstraintType::Unparsed(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl From<&str> for ConstraintType {
+    fn from(value: &str) -> Self {
+        match value.to_uppercase().as_str() {
+            "CHECK" => ConstraintType::Check,
+            "ASSUME" => ConstraintType::Assume,
+            _ => ConstraintType::Unparsed(value.to_string()),
+        }
+    }
+}
+
+/// A representation of a table-level constraint in a database.
+///
+/// This struct is used to define constraints such as `CHECK` or `ASSUME` on a
+/// table. These constraints enforce data integrity rules or provide hints to
+/// the query optimizer.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableConstraint {
+    /// The unique identifier or name of the constraint.
+    pub name: String,
+    /// The SQL or logical expression that defines the constraint condition.
+    pub expression: String,
+    /// The type of the constraint (e.g., "CHECK", "ASSUME").
+    #[serde(rename = "type", alias = "constraint_type")]
+    pub constraint_type: ConstraintType,
+}
+
+/// Compares two constraint lists for equality, ignoring slice order.
+///
+/// Constraint names are unique per table in ClickHouse, so each constraint is identified by
+/// `name`; we sort by name and compare element-wise with [`PartialEq`]. Used for drift
+/// detection so reordering constraints in JSON does not count as a change.
+pub(crate) fn table_constraints_equal_ignore_order(
+    a: &[TableConstraint],
+    b: &[TableConstraint],
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut sorted_a: Vec<&TableConstraint> = a.iter().collect();
+    let mut sorted_b: Vec<&TableConstraint> = b.iter().collect();
+    sorted_a.sort_by_key(|c| c.name.as_str());
+    sorted_b.sort_by_key(|c| c.name.as_str());
+    sorted_a == sorted_b
+}
+
+impl TableConstraint {
+    /// Serializes the `TableConstraint` into its Protobuf message representation.
+    /// The `constraint_type` is converted to its string representation (e.g., `"CHECK"`).
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableConstraint {
+        crate::proto::infrastructure_map::TableConstraint {
+            name: self.name.clone(),
+            expression: self.expression.clone(),
+            constraint_type: self.constraint_type.to_string(),
+            special_fields: Default::default(),
+        }
+    }
+
+    /// Deserializes a `TableConstraint` from its Protobuf message representation.
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableConstraint) -> Self {
+        TableConstraint {
+            name: proto.name,
+            expression: proto.expression,
+            constraint_type: proto.constraint_type.as_str().into(),
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -382,6 +487,12 @@ pub struct Table {
     /// Projections for alternative data ordering within parts.
     #[serde(default)]
     pub projections: Vec<TableProjection>,
+    /// Table constraints (e.g. CONSTRAINT a1 ASSUME length(col) <= 32).
+    ///
+    /// Constraints ensure data validity or provide query optimization hints. They are
+    /// applied during table creation via the `CONSTRAINT` keyword.
+    #[serde(default)]
+    pub constraints: Vec<TableConstraint>,
     /// Optional database name for multi-database support
     /// When not specified, uses the global ClickHouse config database
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -768,6 +879,7 @@ impl Table {
                     special_fields: Default::default(),
                 })
             }),
+            constraints: self.constraints.iter().map(|c| c.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -887,6 +999,11 @@ impl Table {
                 .projections
                 .into_iter()
                 .map(TableProjection::from_proto)
+                .collect(),
+            constraints: proto
+                .constraints
+                .into_iter()
+                .map(TableConstraint::from_proto)
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
@@ -1987,6 +2104,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2094,6 +2212,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2121,6 +2240,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2243,6 +2363,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2317,6 +2438,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2389,6 +2511,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2409,6 +2532,78 @@ mod tests {
             canonicalized.order_by.is_empty(),
             "order_by should remain empty for S3Queue engine"
         );
+    }
+
+    #[test]
+    fn test_constraint_type_serde_case_insensitivity() {
+        // Test that lowercase "check" deserializes to ConstraintType::Check
+        let json = r#"{"type": "check", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+
+        // Test that uppercase "CHECK" deserializes to ConstraintType::Check
+        let json = r#"{"type": "CHECK", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+
+        // Test that lowercase "assume" deserializes to ConstraintType::Assume
+        let json = r#"{"type": "assume", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Assume);
+
+        // Test unknown deserializes to Unparsed
+        let json = r#"{"type": "unknown", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            constraint.constraint_type,
+            ConstraintType::Unparsed("unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn test_constraint_type_serde_alias() {
+        // Test that the legacy "constraint_type" key works
+        let json = r#"{"constraint_type": "CHECK", "name": "c", "expression": "true"}"#;
+        let constraint: TableConstraint = serde_json::from_str(json).unwrap();
+        assert_eq!(constraint.constraint_type, ConstraintType::Check);
+    }
+
+    #[test]
+    fn test_constraint_type_serialization() {
+        let constraint = TableConstraint {
+            name: "test_check".to_string(),
+            expression: "id > 0".to_string(),
+            constraint_type: ConstraintType::Check,
+        };
+        let json = serde_json::to_string(&constraint).unwrap();
+        assert!(
+            json.contains(r#""type":"CHECK""#),
+            "Serialized JSON should use uppercase CHECK: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn table_constraints_equal_ignore_order() {
+        let c1 = TableConstraint {
+            name: "a".to_string(),
+            expression: "x".to_string(),
+            constraint_type: ConstraintType::Check,
+        };
+        let c2 = TableConstraint {
+            name: "b".to_string(),
+            expression: "y".to_string(),
+            constraint_type: ConstraintType::Assume,
+        };
+        let forward = vec![c1.clone(), c2.clone()];
+        let reverse = vec![c2, c1];
+        assert!(super::table_constraints_equal_ignore_order(
+            &forward, &reverse
+        ));
+        assert!(!super::table_constraints_equal_ignore_order(
+            &forward,
+            &[forward[0].clone()]
+        ));
     }
 
     #[test]
@@ -2468,6 +2663,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2531,6 +2727,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2559,6 +2756,71 @@ mod tests {
         assert_eq!(
             table.engine, roundtrip_table.engine,
             "Engine should be identical after roundtrip"
+        );
+    }
+
+    #[test]
+    fn test_table_proto_roundtrip_with_constraints() {
+        let table = Table {
+            name: "test_table_with_constraints".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+                alias: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![
+                TableConstraint {
+                    name: "id_positive".to_string(),
+                    expression: "id > 0".to_string(),
+                    constraint_type: ConstraintType::Check,
+                },
+                TableConstraint {
+                    name: "future_constraint".to_string(),
+                    expression: "future_expr".to_string(),
+                    constraint_type: ConstraintType::Unparsed("FUTURE_TYPE".to_string()),
+                },
+            ],
+            database: Some("test_db".to_string()),
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        // Serialize to proto
+        let proto = table.to_proto();
+
+        // Deserialize from proto
+        let roundtrip_table = Table::from_proto(proto);
+
+        assert_eq!(
+            table.constraints, roundtrip_table.constraints,
+            "Constraints should be identical after roundtrip"
         );
     }
 
@@ -2602,6 +2864,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2766,6 +3029,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2819,6 +3083,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

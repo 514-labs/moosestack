@@ -123,6 +123,18 @@ pub enum AtomicOlapOperation {
         projection_name: String,
         dependency_info: DependencyInfo,
     },
+    /// Add a constraint to a table
+    AddTableConstraint {
+        table: Table,
+        constraint: crate::framework::core::infrastructure::table::TableConstraint,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a constraint from a table
+    DropTableConstraint {
+        table: Table,
+        constraint_name: String,
+        dependency_info: DependencyInfo,
+    },
     /// Set or change SAMPLE BY expression for a table
     ModifySampleBy {
         table: Table,
@@ -353,6 +365,24 @@ impl AtomicOlapOperation {
                 database: table.database.clone(),
                 cluster_name: table.cluster_name.clone(),
             },
+            AtomicOlapOperation::AddTableConstraint {
+                table, constraint, ..
+            } => SerializableOlapOperation::AddTableConstraint {
+                table: table.name.clone(),
+                constraint: constraint.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::DropTableConstraint {
+                table,
+                constraint_name,
+                ..
+            } => SerializableOlapOperation::DropTableConstraint {
+                table: table.name.clone(),
+                constraint_name: constraint_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
             } => SerializableOlapOperation::ModifySampleBy {
@@ -534,6 +564,16 @@ impl AtomicOlapOperation {
                     id: table.id(default_database),
                 }
             }
+            AtomicOlapOperation::AddTableConstraint { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropTableConstraint { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
@@ -620,6 +660,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropTableProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddTableConstraint {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableConstraint {
                 dependency_info, ..
             }
             | AtomicOlapOperation::RenameTableColumn {
@@ -1046,6 +1092,59 @@ fn process_projection_changes(
     plan
 }
 
+/// Process constraint changes between two table definitions
+fn process_constraint_changes(before: &Table, after: &Table) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    if !before.engine.is_merge_tree_family() || !after.engine.is_merge_tree_family() {
+        return plan;
+    }
+
+    let before_constraints = &before.constraints;
+    let after_constraints = &after.constraints;
+
+    for after_constraint in after_constraints {
+        if let Some(before_constraint) = before_constraints
+            .iter()
+            .find(|b| b.name == after_constraint.name)
+        {
+            if before_constraint != after_constraint {
+                plan.teardown_ops
+                    .push(AtomicOlapOperation::DropTableConstraint {
+                        table: before.clone(),
+                        constraint_name: before_constraint.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+                plan.setup_ops
+                    .push(AtomicOlapOperation::AddTableConstraint {
+                        table: after.clone(),
+                        constraint: after_constraint.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+            }
+        } else {
+            plan.setup_ops
+                .push(AtomicOlapOperation::AddTableConstraint {
+                    table: after.clone(),
+                    constraint: after_constraint.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+    for constraint in before_constraints {
+        if !after_constraints.iter().any(|a| a.name == constraint.name) {
+            plan.teardown_ops
+                .push(AtomicOlapOperation::DropTableConstraint {
+                    table: before.clone(),
+                    constraint_name: constraint.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+        }
+    }
+
+    plan
+}
+
 /// Handle a table update by composing column, index, and projection changes.
 ///
 /// Column changes are processed first because modifying or removing a column
@@ -1057,19 +1156,34 @@ fn handle_table_update(
     after: &Table,
     column_changes: &[ColumnChange],
 ) -> OperationPlan {
-    let (mut plan, handled) = process_column_changes(before, after, column_changes);
-    plan.combine(process_index_changes(
+    let (column_plan, handled) = process_column_changes(before, after, column_changes);
+    let constraint_changes = process_constraint_changes(before, after);
+    let index_changes = process_index_changes(
         before,
         after,
         &handled.dropped_indexes,
         &handled.readded_indexes,
-    ));
-    plan.combine(process_projection_changes(
+    );
+    let projection_changes = process_projection_changes(
         before,
         after,
         &handled.dropped_projections,
         &handled.readded_projections,
-    ));
+    );
+
+    let mut plan = OperationPlan::new();
+
+    // Teardowns: Constraints -> Columns (which includes dependent index drops) -> remaining Indexes -> Projections
+    plan.teardown_ops.extend(constraint_changes.teardown_ops);
+    plan.teardown_ops.extend(column_plan.teardown_ops);
+    plan.teardown_ops.extend(index_changes.teardown_ops);
+    plan.teardown_ops.extend(projection_changes.teardown_ops);
+
+    // Setups: Columns (which includes dependent index adds) -> Constraints -> remaining Indexes -> Projections
+    plan.setup_ops.extend(column_plan.setup_ops);
+    plan.setup_ops.extend(constraint_changes.setup_ops);
+    plan.setup_ops.extend(index_changes.setup_ops);
+    plan.setup_ops.extend(projection_changes.setup_ops);
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
         if let Some(expr) = &after.sample_by {
@@ -1977,6 +2091,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2059,6 +2174,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2086,6 +2202,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2185,6 +2302,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2212,6 +2330,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2331,6 +2450,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2495,6 +2615,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2521,6 +2642,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2547,6 +2669,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2642,6 +2765,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2668,6 +2792,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2694,6 +2819,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2720,6 +2846,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2746,6 +2873,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2904,6 +3032,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2931,6 +3060,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3061,6 +3191,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3088,6 +3219,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3223,6 +3355,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3249,6 +3382,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3464,6 +3598,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3581,6 +3716,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3711,6 +3847,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3766,6 +3903,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3879,6 +4017,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3927,6 +4066,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3940,6 +4080,7 @@ mod tests {
 
         let after = Table {
             projections: vec![],
+            constraints: vec![],
             ..before.clone()
         };
 
@@ -3979,6 +4120,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4010,6 +4152,194 @@ mod tests {
             AtomicOlapOperation::AddTableProjection { projection, .. }
             if projection.name == "proj_by_user" && projection.body.contains("timestamp")
         ));
+    }
+
+    #[test]
+    fn test_process_constraint_add() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![];
+
+        let mut after = before.clone();
+        after.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 0);
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_id"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_remove() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.constraints = vec![];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert_eq!(plan.setup_ops.len(), 0);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_id"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_modify() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let mut after = before.clone();
+        after.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id >= 0".to_string(),
+        }];
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert_eq!(plan.setup_ops.len(), 1);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropTableConstraint { constraint_name, .. }
+            if constraint_name == "check_id"
+        ));
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddTableConstraint { constraint, .. }
+            if constraint.name == "check_id" && constraint.expression == "id >= 0"
+        ));
+    }
+
+    #[test]
+    fn test_process_constraint_noop() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.constraints = vec![TableConstraint {
+            name: "check_id".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "id > 0".to_string(),
+        }];
+
+        let after = before.clone();
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        assert_eq!(plan.teardown_ops.len(), 0);
+        assert_eq!(plan.setup_ops.len(), 0);
+    }
+
+    #[test]
+    fn test_column_constraint_ordering_add() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let before = create_test_table("test_table", vec![], vec![], vec![]);
+        let mut after = before.clone();
+
+        after.columns.push(Column {
+            name: "new_col".to_string(),
+            data_type: ColumnType::Int(
+                crate::framework::core::infrastructure::table::IntType::Int32,
+            ),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        });
+
+        after.constraints.push(TableConstraint {
+            name: "check_new_col".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "new_col > 0".to_string(),
+        });
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        let col_idx = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableColumn { column, .. } if column.name == "new_col")
+        });
+
+        let _constraint_idx = plan.setup_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::AddTableConstraint { constraint, .. } if constraint.name == "check_new_col")
+        }).expect("Should have AddTableConstraint");
+
+        assert!(col_idx.is_none(), "handle_table_update delegates column changes to TableDiffStrategy, so AddTableColumn shouldn't be here");
+    }
+
+    #[test]
+    fn test_column_constraint_ordering_remove() {
+        use crate::framework::core::infrastructure::table::{ConstraintType, TableConstraint};
+
+        let mut before = create_test_table("test_table", vec![], vec![], vec![]);
+        before.columns.push(Column {
+            name: "old_col".to_string(),
+            data_type: ColumnType::Int(
+                crate::framework::core::infrastructure::table::IntType::Int32,
+            ),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        });
+        before.constraints.push(TableConstraint {
+            name: "check_old_col".to_string(),
+            constraint_type: ConstraintType::Check,
+            expression: "old_col > 0".to_string(),
+        });
+
+        let after = create_test_table("test_table", vec![], vec![], vec![]);
+
+        let plan = handle_table_update(&before, &after, &[]);
+
+        let _constraint_idx = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableConstraint { constraint_name, .. } if constraint_name == "check_old_col")
+        }).expect("Should have DropTableConstraint");
+
+        let col_idx = plan.teardown_ops.iter().position(|op| {
+            matches!(op, AtomicOlapOperation::DropTableColumn { column_name, .. } if column_name == "old_col")
+        });
+
+        assert!(col_idx.is_none(), "handle_table_update delegates column changes to TableDiffStrategy, so DropTableColumn shouldn't be here");
     }
 
     #[test]
@@ -4084,6 +4414,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4180,6 +4511,7 @@ mod tests {
             table_settings: None,
             indexes,
             projections,
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

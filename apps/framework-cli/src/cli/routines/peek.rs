@@ -343,6 +343,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,

@@ -17,6 +17,7 @@ use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse;
 #[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
@@ -62,6 +63,42 @@ impl ReconciliationFilter {
             view_ids: infra_map.views.keys().cloned().collect(),
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
         }
+    }
+
+    /// Merge all IDs from `other` into `self` (set union).
+    pub fn merge(&mut self, other: &ReconciliationFilter) {
+        self.table_ids.extend(other.table_ids.iter().cloned());
+        self.sql_resource_ids
+            .extend(other.sql_resource_ids.iter().cloned());
+        self.materialized_view_ids
+            .extend(other.materialized_view_ids.iter().cloned());
+        self.view_ids.extend(other.view_ids.iter().cloned());
+        self.select_row_policy_ids
+            .extend(other.select_row_policy_ids.iter().cloned());
+    }
+
+    /// Re-prefix table IDs from `source_db` to `target_db`.
+    ///
+    /// Table IDs are formatted as `{database}_{name}_{version}` (see [`Table::id`]).
+    /// When the caller (e.g. a local CLI) has a different `default_database` than the
+    /// server, the table IDs it produces carry the wrong prefix. This method strips
+    /// `{source_db}_` and prepends `{target_db}_` so the IDs match what the server's
+    /// reconciliation expects. IDs that don't start with the exact `{source_db}_`
+    /// segment are left unchanged.
+    pub fn reprefix_table_ids(&mut self, source_db: &str, target_db: &str) {
+        if source_db == target_db || source_db.is_empty() {
+            return;
+        }
+        let prefix = format!("{source_db}_");
+
+        self.table_ids = self
+            .table_ids
+            .iter()
+            .map(|id| match id.strip_prefix(&prefix) {
+                Some(rest) => format!("{target_db}_{rest}"),
+                None => id.clone(),
+            })
+            .collect();
     }
 }
 
@@ -586,9 +623,13 @@ pub struct InfraPlan {
 /// Used by both display and execution to guarantee consistency. Converts high-level
 /// infrastructure changes into a sequence of atomic OLAP operations.
 ///
-/// The operations are ordered in two phases:
+/// The operations are ordered in three phases:
 /// 1. Teardown operations (drops, removals) executed first
 /// 2. Setup operations (creates, adds) executed second
+/// 3. Version-bump operations (create new → backfill → drop old) executed last
+///
+/// Version bumps are extracted before the normal ordering pass so that the old
+/// table is still available for backfill.
 ///
 /// # Arguments
 /// * `changes` - The infrastructure changes to convert
@@ -596,16 +637,6 @@ pub struct InfraPlan {
 ///
 /// # Returns
 /// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
-///
-/// # Example
-/// ```ignore
-/// let operations = infra_changes_to_operations(&plan.changes, "my_database")?;
-/// // Display path
-/// show_operations(&operations);
-/// // Execution path
-/// execute_operations(&operations);
-/// // Both use the same operations!
-/// ```
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
@@ -613,23 +644,74 @@ pub fn infra_changes_to_operations(
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
+    order_olap_changes_to_ops(&changes.olap_changes, default_database)
+}
+
+/// Like [`infra_changes_to_operations`] but version-bump `Removed`/`Added` pairs
+/// are extracted from `olap_changes` and replaced with correctly-ordered
+/// operations derived from `version_bump_decisions`.
+///
+/// Ordering:
+/// 1. Teardown ops from non-bump changes
+/// 2. Bump creates (new tables) — before setup so dependent MVs/views can reference them
+/// 3. Setup ops from non-bump changes
+/// 4. Bump backfills (old table must still exist)
+/// 5. Bump drops (old tables removed last)
+pub fn infra_changes_to_operations_with_version_bumps(
+    changes: &InfraChanges,
+    default_database: &str,
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    // Convert OLAP changes to atomic operations with dependency ordering
-    let (teardown_ops, setup_ops) = order_olap_changes(&changes.olap_changes, default_database)?;
+    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
+
+    let (bump_creates, bump_backfills, bump_drops) =
+        version_bump::version_bump_decisions_to_phased_operations(version_bump_decisions);
 
     let mut operations = Vec::new();
 
-    // Add teardown operations first (drops, removals)
+    // Phase 1: Teardown (drops/removals from non-bump changes)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
-
-    // Add setup operations second (creates, adds)
+    // Phase 2: Bump creates (new tables exist before setup ops that may reference them)
+    operations.extend(bump_creates);
+    // Phase 3: Setup (creates/adds from non-bump changes, may reference bump tables)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
+    // Phase 4: Backfills (old table still alive)
+    operations.extend(bump_backfills);
+    // Phase 5: Bump drops
+    operations.extend(bump_drops);
 
+    Ok(operations)
+}
+
+/// Shared helper: order `OlapChange`s into teardown → setup `SerializableOlapOperation`s.
+fn order_olap_changes_to_ops(
+    olap_changes: &[crate::framework::core::infrastructure_map::OlapChange],
+    default_database: &str,
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
+    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
+
+    let (teardown_ops, setup_ops) = order_olap_changes(olap_changes, default_database)?;
+
+    let mut operations = Vec::new();
+    for op in teardown_ops {
+        operations.push(op.to_minimal());
+    }
+    for op in setup_ops {
+        operations.push(op.to_minimal());
+    }
     Ok(operations)
 }
 
@@ -918,6 +1000,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             projections: vec![],
+            constraints: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1787,5 +1870,102 @@ mod tests {
 
         // They should be identical - this is the critical guarantee
         assert_eq!(direct_ops, migration_plan.operations);
+    }
+
+    #[test]
+    fn reprefix_table_ids_swaps_database_prefix() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "local_users_0_0".to_string(),
+                "local_orders_1_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("local", "myapp_prod");
+        assert_eq!(
+            filter.table_ids,
+            HashSet::from([
+                "myapp_prod_users_0_0".to_string(),
+                "myapp_prod_orders_1_0".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn reprefix_table_ids_noop_when_source_equals_target() {
+        let original = HashSet::from(["db_users_0_0".to_string()]);
+        let mut filter = ReconciliationFilter {
+            table_ids: original.clone(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("db", "db");
+        assert_eq!(filter.table_ids, original);
+    }
+
+    #[test]
+    fn reprefix_table_ids_noop_when_source_is_empty() {
+        let original = HashSet::from(["local_users_0_0".to_string()]);
+        let mut filter = ReconciliationFilter {
+            table_ids: original.clone(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("", "prod");
+        assert_eq!(filter.table_ids, original);
+    }
+
+    #[test]
+    fn reprefix_table_ids_requires_underscore_separator() {
+        // "prod" without the trailing underscore must not match "production_users_0_0".
+        // Note: "prod_eu_users_0_0" IS matched because `{source_db}_` = "prod_" is a
+        // valid prefix of that string — this is an inherent limitation of the
+        // `{db}_{name}_{version}` ID format (the same limitation exists in
+        // reconcile_with_reality). In practice, filter IDs and source_db come from the
+        // same inframap, so cross-database collisions do not arise.
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "prod_users_0_0".to_string(),
+                "production_users_0_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("prod", "staging");
+        assert!(
+            filter.table_ids.contains("staging_users_0_0"),
+            "prod_users_0_0 should be reprefixed"
+        );
+        assert!(
+            filter.table_ids.contains("production_users_0_0"),
+            "production_users_0_0 must NOT be reprefixed (different db name, not just prefix)"
+        );
+        assert_eq!(filter.table_ids.len(), 2);
+    }
+
+    #[test]
+    fn reprefix_table_ids_leaves_unmatched_ids_unchanged() {
+        let mut filter = ReconciliationFilter {
+            table_ids: HashSet::from([
+                "local_users_0_0".to_string(),
+                "other_db_orders_0_0".to_string(),
+            ]),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+        };
+        filter.reprefix_table_ids("local", "prod");
+        assert!(filter.table_ids.contains("prod_users_0_0"));
+        assert!(filter.table_ids.contains("other_db_orders_0_0"));
     }
 }
