@@ -225,15 +225,7 @@ native_port = 9000
 
 When a ClickHouse SQL query fails, Moose logs the HTTP status and error message at the `error` log level by default. To also see the **full SQL statement** that failed — useful for reproducing the error or inspecting generated queries — enable debug-level logging:
 
-```bash
-MOOSE_LOGGER__LEVEL=Debug moose dev
-```
-
-Then filter the logs for the failing statement:
-
-```bash
-moose logs --filter "Failed SQL"
-```
+{{ include "shared/debugging-failed-sql.mdx" }}
 
 To see logs directly in the terminal instead of the log file, also set:
 
