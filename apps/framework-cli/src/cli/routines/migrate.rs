@@ -750,16 +750,26 @@ fn format_partial_delta_failure(file: &MigrationFile, failed_delta_idx: usize) -
         }
     }
 
-    writeln!(
-        out,
-        "\n⚠️  '{}' is NOT recorded as applied, but its first {} delta(s) have already\n\
-         been executed against the database. Re-running `moose migrate` as-is will try\n\
-         to re-apply them, which typically fails with errors like \"table already exists\"\n\
-         or \"column already exists\". ClickHouse DDL has no transactional rollback —\n\
-         partial failures require deliberate recovery.",
-        file.id, failed_delta_idx
-    )
-    .unwrap();
+    if failed_delta_idx > 0 {
+        writeln!(
+            out,
+            "\n⚠️  '{}' is NOT recorded as applied, but its first {} delta(s) have already\n\
+             been executed against the database. Re-running `moose migrate` as-is will try\n\
+             to re-apply them, which typically fails with errors like \"table already exists\"\n\
+             or \"column already exists\". ClickHouse DDL has no transactional rollback —\n\
+             partial failures require deliberate recovery.",
+            file.id, failed_delta_idx
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "\n⚠️  '{}' is NOT recorded as applied. The very first delta failed, so no\n\
+             DDL was executed. Fix the underlying issue and re-run `moose migrate`.",
+            file.id
+        )
+        .unwrap();
+    }
 
     writeln!(out, "\n📋 Recovery options:").unwrap();
     writeln!(
@@ -811,7 +821,9 @@ pub async fn execute_migration_deltas(
     }
 
     // Filter to unapplied migrations only
-    let applied = state_storage.load_applied_migrations().await?;
+    // `applied` is kept in sync as we record each successful file, so drift
+    // forensics on a later hash-mismatch include all prior successes from this run.
+    let mut applied = state_storage.load_applied_migrations().await?;
     let unapplied: Vec<_> = history
         .files
         .iter()
@@ -923,8 +935,10 @@ pub async fn execute_migration_deltas(
                 .map_err(|e| anyhow::anyhow!("Failed to apply delta to map: {}", e))?;
         }
 
-        // Record this migration as applied
+        // Record this migration as applied (both in remote storage and local list
+        // so drift forensics for a later hash-mismatch include this file's changes).
         state_storage.store_applied_migration(&file.id).await?;
+        applied.push(file.id.clone());
         println!("  ✓ Migration '{}' applied successfully", file.id);
     }
 
@@ -1918,5 +1932,17 @@ mod tests {
         assert!(output.contains("only_one"));
         // The not-attempted delta's table is present
         assert!(output.contains("only_two"));
+
+        // When first delta fails, message should say safe to re-run (no DDL executed)
+        let lower = output.to_lowercase();
+        assert!(
+            lower.contains("no") && lower.contains("first delta failed"),
+            "first-delta failure should say no DDL was executed:\n{output}"
+        );
+        // Should NOT mention "0 delta(s)"
+        assert!(
+            !output.contains("0 delta(s)"),
+            "should not say '0 delta(s)' when first delta fails:\n{output}"
+        );
     }
 }
