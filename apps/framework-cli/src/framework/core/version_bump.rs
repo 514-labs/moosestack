@@ -651,24 +651,28 @@ fn ensure_import(root_path: &std::path::Path, import_line: &str) -> Result<(), s
 use crate::framework::core::infra_delta::{DestructivePolicy, InfraDelta};
 use chrono::Utc;
 
-/// Convert version bump decisions to correctly-ordered `InfraDelta`s.
+/// Convert version bump decisions to correctly-phased `InfraDelta`s.
 ///
-/// Order: CreateTable(new) → BackfillTable(old→new) → DropTable(old)
+/// Phase order: all CreateTable → all BackfillTable → all DropTable.
+/// This mirrors [`version_bump_decisions_to_phased_operations`] and avoids
+/// interleaving drops before later backfills when multiple decisions exist.
 ///
 /// CreateTable is emitted for all bump kinds (InPlace and NewAlongside) so that
 /// the new table is guaranteed to exist before the backfill runs. Callers that
 /// also generate deltas from the full diff should strip duplicate CreateTable
 /// entries for NewAlongside tables using [`alongside_new_table_names`].
 pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Vec<InfraDelta> {
-    let mut deltas = Vec::new();
+    let mut creates = Vec::new();
+    let mut backfills = Vec::new();
+    let mut drops = Vec::new();
 
     for decision in decisions {
-        deltas.push(InfraDelta::CreateTable {
+        creates.push(InfraDelta::CreateTable {
             table: decision.bump.new_table.clone(),
         });
 
         if let Some(sql) = &decision.backfill_sql {
-            deltas.push(InfraDelta::BackfillTable {
+            backfills.push(InfraDelta::BackfillTable {
                 source_table: decision.bump.old_table.name.clone(),
                 target_table: decision.bump.new_table.name.clone(),
                 columns: vec![],
@@ -677,7 +681,7 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
         }
 
         if decision.old_table_disposition == OldTableDisposition::Drop {
-            deltas.push(InfraDelta::DropTable {
+            drops.push(InfraDelta::DropTable {
                 table: decision.bump.old_table.clone(),
                 policy: DestructivePolicy {
                     description: format!(
@@ -690,7 +694,9 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
         }
     }
 
-    deltas
+    creates.extend(backfills);
+    creates.extend(drops);
+    creates
 }
 
 /// Split version bump decisions into three ordered phases of `SerializableOlapOperation`s:
@@ -1031,6 +1037,44 @@ mod tests {
         assert_eq!(deltas.len(), 2);
         assert!(matches!(&deltas[0], InfraDelta::CreateTable { .. }));
         assert!(matches!(&deltas[1], InfraDelta::DropTable { .. }));
+    }
+
+    #[test]
+    fn decisions_to_deltas_phases_creates_before_backfills_before_drops() {
+        let decisions = vec![
+            VersionBumpDecision {
+                bump: in_place(
+                    make_table("A_1_0", "1.0", "A"),
+                    make_table("A_2_0", "2.0", "A"),
+                ),
+                backfill_sql: Some("INSERT A".to_string()),
+                old_table_disposition: OldTableDisposition::Drop,
+            },
+            VersionBumpDecision {
+                bump: in_place(
+                    make_table("B_1_0", "1.0", "B"),
+                    make_table("B_2_0", "2.0", "B"),
+                ),
+                backfill_sql: Some("INSERT B".to_string()),
+                old_table_disposition: OldTableDisposition::Drop,
+            },
+        ];
+
+        let deltas = version_bump_decisions_to_deltas(&decisions);
+        assert_eq!(deltas.len(), 6);
+        // Phase 1: all creates
+        assert!(matches!(&deltas[0], InfraDelta::CreateTable { table } if table.name == "A_2_0"));
+        assert!(matches!(&deltas[1], InfraDelta::CreateTable { table } if table.name == "B_2_0"));
+        // Phase 2: all backfills
+        assert!(
+            matches!(&deltas[2], InfraDelta::BackfillTable { target_table, .. } if target_table == "A_2_0")
+        );
+        assert!(
+            matches!(&deltas[3], InfraDelta::BackfillTable { target_table, .. } if target_table == "B_2_0")
+        );
+        // Phase 3: all drops
+        assert!(matches!(&deltas[4], InfraDelta::DropTable { table, .. } if table.name == "A_1_0"));
+        assert!(matches!(&deltas[5], InfraDelta::DropTable { table, .. } if table.name == "B_1_0"));
     }
 
     #[test]
