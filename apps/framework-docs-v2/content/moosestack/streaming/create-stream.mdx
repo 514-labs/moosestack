@@ -23,8 +23,6 @@ Turn on `features.streaming_engine` in `moose.config.toml` before creating `Stre
 
 ## Basic usage
 
-For the full constructor and config surface, see the [`Stream` API reference](/moosestack/reference#stream).
-
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/stream.ts" copy
@@ -273,4 +271,3 @@ stream = Stream[Record]("high_throughput", config=StreamConfig(
 - [Schema registry](/moosestack/streaming/schema-registry) when stream payloads should use Confluent Schema Registry
 - [Dead letter queues](/moosestack/streaming/dead-letter-queues) when failed records should be captured for recovery
 - [LifeCycle management guide](/moosestack/migrate/lifecycle) for resource management details
-- [API reference](/moosestack/reference#stream) for the full `Stream` API surface
