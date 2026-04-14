@@ -294,15 +294,17 @@ impl InfraProvider for NativeInfraProvider {
 
                 // Wait for the embedded Keeper to finish bootstrapping before
                 // moose creates ReplicatedMergeTree tables.
-                clickhouse::wait_for_keeper(project).map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new(
-                            "Failed".to_string(),
-                            "embedded Keeper not ready".to_string(),
-                        ),
-                        anyhow::anyhow!("{}", e),
-                    )
-                })?;
+                self.rt_handle
+                    .block_on(clickhouse::wait_for_keeper(project))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failed".to_string(),
+                                "embedded Keeper not ready".to_string(),
+                            ),
+                            anyhow::anyhow!("{}", e),
+                        )
+                    })?;
 
                 return Ok(RoutineSuccess::success(Message::new(
                     "Validated".to_string(),

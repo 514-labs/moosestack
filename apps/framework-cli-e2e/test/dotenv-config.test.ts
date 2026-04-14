@@ -27,7 +27,6 @@ import {
   setupPythonProject,
   logger,
   getTestPorts,
-  buildMooseDevEnv,
   resolveE2eDevMode,
   startMooseDev,
 } from "./utils";
@@ -50,6 +49,22 @@ const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const PORTS = getTestPorts(20);
 
+const fetchHealth = async (port: number) => {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const response = await fetch(`http://localhost:${port}/health`);
+      return response;
+    } catch (error) {
+      if (attempt === 29) {
+        throw error;
+      }
+      await setTimeoutAsync(1000);
+    }
+  }
+
+  throw new Error(`Timed out waiting for health endpoint on port ${port}`);
+};
+
 describe("typescript template tests - .env file configuration", function () {
   let devProcess: ChildProcess | null = null;
   let TEST_PROJECT_DIR: string;
@@ -59,7 +74,7 @@ describe("typescript template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await killRemainingProcesses();
+    await killRemainingProcesses({ ports: PORTS });
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
@@ -100,24 +115,11 @@ describe("typescript template tests - .env file configuration", function () {
       cwd: TEST_PROJECT_DIR,
       projectDir: TEST_PROJECT_DIR,
       mode: E2E_DEV_MODE,
-      extraEnv: buildMooseDevEnv({
-        projectDir: TEST_PROJECT_DIR,
-        extraEnv: {
-          // Infrastructure ports from port isolation (offset 20).
-          // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
-          // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
-          // files set the HTTP port (9990/9991/9992) and this test verifies
-          // .env precedence. System env vars would override .env values.
-          MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
-          MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
-          MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
-          MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
-          MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
-          MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
-          MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
-          MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        },
-      }),
+      ports: PORTS,
+      preserveHttpPortsFromEnv: true,
+      extraEnv: {
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+      },
     }).devProcess;
 
     // Wait for server to start
@@ -139,12 +141,12 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Stop dev process
     if (devProcess) {
-      await stopDevProcess(devProcess);
+      await stopDevProcess(devProcess, { ports: PORTS });
       devProcess = null;
     }
 
     // Cleanup
-    await killRemainingProcesses();
+    await killRemainingProcesses({ ports: PORTS });
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });
@@ -153,7 +155,7 @@ describe("typescript template tests - .env file configuration", function () {
     // Verify server is running on port 9992 (from .env.local)
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9992/health");
+    const response = await fetchHealth(9992);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -169,7 +171,7 @@ describe("typescript template tests - .env file configuration", function () {
     // The .env files are loaded, we can verify the server responds correctly
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9992/health");
+    const response = await fetchHealth(9992);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -189,7 +191,7 @@ describe("python template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await killRemainingProcesses();
+    await killRemainingProcesses({ ports: PORTS });
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
@@ -233,25 +235,11 @@ describe("python template tests - .env file configuration", function () {
       projectDir: TEST_PROJECT_DIR,
       language: "python",
       mode: E2E_DEV_MODE,
-      extraEnv: buildMooseDevEnv({
-        language: "python",
-        projectDir: TEST_PROJECT_DIR,
-        extraEnv: {
-          // Infrastructure ports from port isolation (offset 20).
-          // NOTE: We intentionally omit MOOSE_HTTP_SERVER_CONFIG__PORT and
-          // MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT here because the .env
-          // files set the HTTP port (9980/9981/9982) and this test verifies
-          // .env precedence. System env vars would override .env values.
-          MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${PORTS.clickhouseHttpPort}`,
-          MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${PORTS.clickhouseNativePort}`,
-          MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${PORTS.keeperPort}`,
-          MOOSE_CLICKHOUSE_CONFIG__KEEPER_RAFT_PORT: `${PORTS.keeperRaftPort}`,
-          MOOSE_REDPANDA_CONFIG__BROKER: `127.0.0.1:${PORTS.kafkaPort}`,
-          MOOSE_REDIS_CONFIG__PORT: `${PORTS.redisPort}`,
-          MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT: `${PORTS.temporalPort}`,
-          MOOSE_FEATURES__STREAMING_ENGINE: "false",
-        },
-      }),
+      ports: PORTS,
+      preserveHttpPortsFromEnv: true,
+      extraEnv: {
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+      },
     }).devProcess;
 
     // Wait for server to start
@@ -273,12 +261,12 @@ describe("python template tests - .env file configuration", function () {
 
     // Stop dev process
     if (devProcess) {
-      await stopDevProcess(devProcess);
+      await stopDevProcess(devProcess, { ports: PORTS });
       devProcess = null;
     }
 
     // Cleanup
-    await killRemainingProcesses();
+    await killRemainingProcesses({ ports: PORTS });
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });
@@ -287,7 +275,7 @@ describe("python template tests - .env file configuration", function () {
     // Verify server is running on port 9982 (from .env.local)
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9982/health");
+    const response = await fetchHealth(9982);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -303,7 +291,7 @@ describe("python template tests - .env file configuration", function () {
     // The .env files are loaded, we can verify the server responds correctly
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9982/health");
+    const response = await fetchHealth(9982);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();

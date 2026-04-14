@@ -462,9 +462,11 @@ export const getTableSchema = async (
 export const getTableDDL = async (
   tableName: string,
   database?: string,
+  options: DatabaseOptions = {},
 ): Promise<string> => {
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
+  const chConfig = resolveChConfig(options);
   const client = createClient(chConfig);
   try {
     const result = await client.query({

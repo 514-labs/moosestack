@@ -1,5 +1,6 @@
 import { ChildProcess, SpawnOptions, spawn } from "child_process";
 import { logger, ScopedLogger } from "./logger";
+import { buildPortEnv, TestPorts } from "./port-config";
 
 const devModeLogger = logger.scope("utils:dev-mode");
 
@@ -16,7 +17,9 @@ export interface BuildMooseDevEnvOptions {
   language?: string;
   projectDir: string;
   portEnv?: NodeJS.ProcessEnv;
+  ports?: TestPorts;
   extraEnv?: NodeJS.ProcessEnv;
+  preserveHttpPortsFromEnv?: boolean;
 }
 
 export interface StartMooseDevOptions extends BuildMooseDevEnvOptions {
@@ -62,11 +65,29 @@ export function buildMooseDevArgs(mode: E2eDevMode): string[] {
 export function buildMooseDevEnv(
   options: BuildMooseDevEnvOptions,
 ): NodeJS.ProcessEnv {
-  const { language, projectDir, portEnv = {}, extraEnv = {} } = options;
+  const {
+    language,
+    projectDir,
+    portEnv,
+    ports,
+    extraEnv = {},
+    preserveHttpPortsFromEnv = false,
+  } = options;
+  const resolvedPortEnv = portEnv ?? (ports ? buildPortEnv(ports) : {});
+  const effectivePortEnv =
+    preserveHttpPortsFromEnv ?
+      Object.fromEntries(
+        Object.entries(resolvedPortEnv).filter(
+          ([key]) =>
+            key !== "MOOSE_HTTP_SERVER_CONFIG__PORT" &&
+            key !== "MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT",
+        ),
+      )
+    : resolvedPortEnv;
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    ...portEnv,
+    ...effectivePortEnv,
     MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
     MOOSE_FEATURES__WORKFLOWS: "false",
     MOOSE_TELEMETRY__ENABLED: "false",

@@ -185,7 +185,7 @@ const buildDevEnv = (
       TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
       TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
       MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
-      MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+      MOOSE_REDPANDA_CONFIG__BROKER: "localhost:19092",
     },
   });
 };
@@ -990,10 +990,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        // Template hardcodes 'redpanda:9092' as the broker. Verify it's present in DDL.
-        if (!kafkaSourceDDL.includes("redpanda:9092")) {
+        if (!kafkaSourceDDL.includes("localhost:19092")) {
           throw new Error(
-            `Kafka table should have broker 'redpanda:9092'. DDL: ${kafkaSourceDDL}`,
+            `Kafka table should have broker 'localhost:19092'. DDL: ${kafkaSourceDDL}`,
           );
         }
 
@@ -1014,10 +1013,42 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        // In dockerless mode, ClickHouse's Kafka engine can't connect to 'redpanda:9092'
-        // (no Docker DNS). DDL structure is verified above; skip the data flow check.
+        const testId = randomUUID();
+        const kafkaPayload =
+          config.language === "typescript" ?
+            {
+              eventId: testId,
+              userId: "template-user",
+              eventType: "purchase",
+              amount: 42,
+              timestamp: Date.now(),
+            }
+          : {
+              event_id: testId,
+              user_id: "template-user",
+              event_type: "purchase",
+              amount: 42,
+              timestamp: Date.now(),
+            };
+
+        const ingestResponse = await fetch(
+          `${SERVER_CONFIG.url}/ingest/kafka-test`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(kafkaPayload),
+          },
+        );
+        if (!ingestResponse.ok) {
+          throw new Error(
+            `Failed to ingest Kafka test event: ${ingestResponse.status} ${ingestResponse.statusText}`,
+          );
+        }
+
+        await waitForDBWrite(devProcess!, destTableName, 1, 120_000);
+
         testLogger.info(
-          "✅ Kafka engine table DDL verified (data flow skipped in dockerless mode — broker 'redpanda:9092' is unreachable without Docker DNS)",
+          "✅ Kafka engine table DDL and localhost data flow verified",
         );
       });
 

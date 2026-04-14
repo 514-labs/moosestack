@@ -7,6 +7,7 @@ import {
   cleanupLeftoverTestDirectories,
 } from "./file-utils";
 import { logger, ScopedLogger } from "./logger";
+import { TestPorts } from "./port-config";
 
 const cleanupLogger = logger.scope("utils:cleanup");
 
@@ -26,6 +27,8 @@ export interface CleanupOptions {
   logPrefix?: string;
   /** Optional logger (uses test context logger if provided) */
   logger?: ScopedLogger;
+  /** Optional test-scoped ports to restrict process cleanup. */
+  ports?: TestPorts | number[];
 }
 
 /**
@@ -50,6 +53,7 @@ export async function cleanupTestSuite(
     dockerProjectDir = testProjectDir,
     logPrefix = "Test suite",
     logger: log = cleanupLogger,
+    ports,
   } = options;
   const shouldIncludeDocker = includeDocker ?? mode !== "dockerless";
 
@@ -60,7 +64,7 @@ export async function cleanupTestSuite(
 
     // Step 1: Stop the dev process
     log.debug("Stopping dev process");
-    await stopDevProcess(devProcess, { logger: log });
+    await stopDevProcess(devProcess, { logger: log, ports });
 
     // Step 2: Clean up Docker resources (if enabled)
     if (shouldIncludeDocker) {
@@ -86,6 +90,12 @@ export async function cleanupTestSuite(
       }
     } catch (killError) {
       log.error("Error killing process", killError);
+    }
+
+    try {
+      await killRemainingProcesses({ logger: log, ports });
+    } catch (cleanupError) {
+      log.error("Error cleaning up scoped ports", cleanupError);
     }
 
     // Always try to remove the test directory

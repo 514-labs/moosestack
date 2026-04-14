@@ -40,11 +40,11 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 
     let ch = &project.clickhouse_config;
 
-    // Write users.xml — defines the admin user, profiles, and quotas in a
-    // separate file loaded via ClickHouse's `users_config` setting.
-    // By placing this in the same directory as config.xml with the default name
-    // "users.xml", ClickHouse auto-discovers it and also auto-creates a
-    // `local_directory` user directory for SQL-created roles / row policies.
+    // Write users.xml separately instead of inlining users/profiles into
+    // config.xml. ClickHouse treats the default sibling file name specially:
+    // `users_config = "users.xml"` is auto-discovered, and that layout also
+    // enables the default `local_directory` user storage needed for SQL-created
+    // users, roles, and row policies during dockerless development.
     let users_xml = format!(
         r#"<?xml version="1.0"?>
 <clickhouse>
@@ -257,11 +257,11 @@ pub fn ensure_database(project: &Project) -> Result<(), NativeInfraError> {
 /// has finished bootstrapping its Raft state.  Creating ReplicatedMergeTree
 /// tables during this window puts them in readonly mode.  We probe
 /// `system.zookeeper` to confirm the Keeper connection is live.
-pub fn wait_for_keeper(project: &Project) -> Result<(), NativeInfraError> {
+pub async fn wait_for_keeper(project: &Project) -> Result<(), NativeInfraError> {
     let ch = &project.clickhouse_config;
     let url = format!("http://127.0.0.1:{}/", ch.host_port);
     let query = "SELECT 1 FROM system.zookeeper WHERE path = '/' LIMIT 1";
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
 
     for attempt in 1..=30 {
         match client
@@ -269,20 +269,21 @@ pub fn wait_for_keeper(project: &Project) -> Result<(), NativeInfraError> {
             .query(&[("user", &ch.user), ("password", &ch.password)])
             .body(query.to_string())
             .send()
+            .await
         {
             Ok(resp) if resp.status().is_success() => {
                 info!("Embedded Keeper ready (attempt {attempt})");
                 return Ok(());
             }
             Ok(resp) => {
-                let body = resp.text().unwrap_or_default();
+                let body = resp.text().await.unwrap_or_default();
                 tracing::debug!("Keeper not ready (attempt {attempt}): {body}");
             }
             Err(e) => {
                 tracing::debug!("Keeper check failed (attempt {attempt}): {e}");
             }
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
     Err(NativeInfraError::HealthCheck {

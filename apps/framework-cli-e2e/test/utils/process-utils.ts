@@ -1,8 +1,8 @@
 import { TIMEOUTS, SERVER_CONFIG } from "../constants";
-import { withRetries } from "./retry-utils";
 import { waitForConsumerGroupsStable } from "./kafka-utils";
 import { logger, ScopedLogger } from "./logger";
 import { ChildProcess } from "child_process";
+import { TestPorts } from "./port-config";
 
 const processLogger = logger.scope("utils:process");
 
@@ -16,6 +16,8 @@ export interface ProcessOptions {
    *  Use a shorter delay (e.g. 5_000) for schema-only tests that don't need
    *  streaming functions ready — they only verify DDL changes. */
   stabilizationDelayMs?: number;
+  /** Restrict process cleanup to the suite's allocated ports. */
+  ports?: TestPorts | number[];
 }
 
 declare const require: any;
@@ -233,69 +235,24 @@ export const waitForInfrastructureChanges = async (
  * Kills any remaining moose-cli processes and native infrastructure
  * (ClickHouse, Temporal) that may have been orphaned between test suites.
  *
- * Uses both process-name matching AND port-based killing to ensure
- * stale processes don't hold ports across sequential test suites.
+ * Uses port-based killing to ensure stale processes don't hold ports across
+ * sequential test suites without killing unrelated local Moose processes.
  */
 export const killRemainingProcesses = async (
-  options: ProcessOptions & {
-    /** When provided, only kill processes on these ports (for port-isolated tests).
-     *  When omitted, kills all moose processes and default ports. */
-    ports?: number[];
-  } = {},
+  options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
   // Default infrastructure ports used when no override is provided.
-  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 7233];
-  const portsToKill = options.ports ?? defaultPorts;
-  const portsToWait = options.ports ? options.ports : [18123, 9181, 9234];
-
-  // Only kill by process name when doing a global cleanup (no port override).
-  if (!options.ports) {
-    try {
-      // Use [c]haracter-class trick in pkill -f patterns to prevent the shell
-      // process (sh -c "pkill -9 -f ...") from matching its own command line.
-      await execAsync("pkill -9 -f '[m]oose-cli' || true", {
-        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-        killSignal: "SIGKILL",
-        windowsHide: true,
-      });
-      log.debug("Killed any remaining moose-cli processes");
-    } catch (error) {
-      log.warn("Error killing moose-cli processes");
-    }
-
-    try {
-      await execAsync(
-        "pkill -9 -f '[m]oose-runner|[s]treaming_function_runner|[p]ython_worker_wrapper|[c]onsumption.*localhost' || true",
-        {
-          timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-          killSignal: "SIGKILL",
-          windowsHide: true,
-        },
-      );
-      log.debug("Killed any remaining Python processes");
-    } catch (error) {
-      log.warn("Error killing Python processes");
-    }
-
-    try {
-      await execAsync(
-        [
-          "pkill -9 -f '[c]lickhouse server' || true",
-          "pkill -9 -f '[t]emporal server' || true",
-        ].join("; "),
-        {
-          timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-          killSignal: "SIGKILL",
-          windowsHide: true,
-        },
-      );
-      log.debug("Killed native infrastructure by name");
-    } catch (error) {
-      log.warn("Error killing native infrastructure by name");
-    }
-  }
+  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 16379, 7233];
+  const rawPorts =
+    Array.isArray(options.ports) ? options.ports
+    : options.ports ? Object.values(options.ports)
+    : defaultPorts;
+  const portsToKill = [...new Set(rawPorts)];
+  const portsToWait = portsToKill.filter((port) =>
+    [18123, 19000, 9181, 9234, 19092, 16379, 7233].includes(port),
+  );
 
   // Kill processes holding the specified ports.
   try {
@@ -446,6 +403,58 @@ export const waitForStreamingFunctions = async (
  */
 const DEFAULT_STABILIZATION_DELAY_MS = 30_000;
 
+const waitForReadyStatus = async (
+  budgetMs: number,
+  baseUrl: string,
+  log: ScopedLogger,
+  mode: "core" | "all",
+): Promise<void> => {
+  const startTime = Date.now();
+  const requiredServices =
+    mode === "all" ?
+      ["ClickHouse", "Redis", "Redpanda"]
+    : ["ClickHouse", "Redis"];
+  const description =
+    mode === "all" ?
+      "all infrastructure services"
+    : "core infrastructure services";
+
+  while (Date.now() - startTime < budgetMs) {
+    try {
+      const response = await fetch(`${baseUrl}/ready`);
+      const body = await response.text();
+      if (response.status === 200) {
+        log.debug(`✓ ${description} healthy via /ready endpoint`);
+        return;
+      }
+
+      try {
+        const status = JSON.parse(body);
+        const healthy: string[] = status.healthy ?? [];
+        if (requiredServices.every((service) => healthy.includes(service))) {
+          log.debug(
+            `✓ ${description} healthy (${healthy.join(", ")}), proceeding despite overall ${response.status}`,
+          );
+          return;
+        }
+      } catch {
+        // JSON parse failure — fall through to retry.
+      }
+
+      log.debug(`Infrastructure not ready (${response.status}): ${body}`);
+    } catch (error) {
+      log.debug("Error checking /ready endpoint, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await setTimeoutAsync(1000);
+  }
+
+  throw new Error(
+    `${description} did not become ready within ${Math.floor(budgetMs / 1000)}s`,
+  );
+};
+
 const waitForStreamingDockerlessMode = async (
   remainingMs: number,
   baseUrl: string,
@@ -467,45 +476,16 @@ const waitForStreamingDockerlessMode = async (
     throw new Error("No timeout budget left for dockerless readiness check");
   }
 
-  // Phase 1: Poll /ready endpoint until at least ClickHouse is healthy.
+  // Phase 1: Poll /ready endpoint until the core local services are healthy.
   // In dockerless mode the rdkafka metadata health check (used by /ready for
   // Redpanda) is flaky with devkafka — the 2-second timeout is too tight for
   // a fresh BaseConsumer to connect + fetch metadata reliably. Rather than
-  // blocking on full 200 OK, we accept the response once ClickHouse is in the
-  // "healthy" list and let Phase 3 verify Kafka via kafkajs.
+  // blocking on full 200 OK, we accept the response once ClickHouse and Redis
+  // are healthy and let Phase 3 verify Kafka via kafkajs.
   log.debug(
-    "Phase 1: Waiting for infrastructure health via /ready endpoint (ClickHouse required)",
+    "Phase 1: Waiting for infrastructure health via /ready endpoint (ClickHouse and Redis required)",
   );
-  while (Date.now() - startTime < budgetMs) {
-    try {
-      const response = await fetch(`${baseUrl}/ready`);
-      if (response.status === 200) {
-        log.debug("✓ All infrastructure services healthy via /ready endpoint");
-        break;
-      }
-      // Parse the body to check if ClickHouse is already healthy even when
-      // the overall status is 503 (e.g. Redpanda flapping).
-      const body = await response.text();
-      try {
-        const status = JSON.parse(body);
-        const healthy: string[] = status.healthy ?? [];
-        if (healthy.includes("ClickHouse") && healthy.includes("Redis")) {
-          log.debug(
-            `✓ Core services healthy (${healthy.join(", ")}), proceeding despite overall 503`,
-          );
-          break;
-        }
-      } catch {
-        // JSON parse failure — fall through to retry
-      }
-      log.debug(`Infrastructure not ready (${response.status}): ${body}`);
-    } catch (error) {
-      log.debug("Error checking /ready endpoint, retrying", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    await setTimeoutAsync(1000);
-  }
+  await waitForReadyStatus(budgetMs, baseUrl, log, "core");
 
   if (Date.now() - startTime >= budgetMs) {
     throw new Error(
@@ -584,26 +564,7 @@ export const waitForInfrastructureReady = async (
     baseUrl,
   });
 
-  await withRetries(
-    async () => {
-      const response = await fetch(`${baseUrl}/ready`);
-      // /ready returns 200 OK when all services are healthy, 503 otherwise
-      if (response.status !== 200) {
-        const body = await response.text();
-        throw new Error(
-          `Infrastructure not ready (${response.status}): ${body}`,
-        );
-      }
-      log.debug("✓ All infrastructure components are ready");
-    },
-    {
-      attempts: Math.floor(timeoutMs / 1000),
-      delayMs: 1000,
-      backoffFactor: 1,
-      logger: log,
-      operationName: "Infrastructure readiness check",
-    },
-  );
+  await waitForReadyStatus(timeoutMs, baseUrl, log, "all");
 };
 
 /**

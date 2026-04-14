@@ -11,7 +11,7 @@
  * 3. The sign and version parameters are correctly passed to ClickHouse
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as path from "path";
 
@@ -20,7 +20,7 @@ import {
   TIMEOUTS,
   TEMPLATE_NAMES,
   APP_NAMES,
-  SERVER_CONFIG,
+  TEST_ADMIN_API_KEY_HASH,
 } from "./constants";
 
 import {
@@ -34,6 +34,13 @@ import {
   setupPythonProject,
   getTableDDL,
   logger,
+  buildClickHouseConfig,
+  buildServerConfig,
+  getCleanupOptionsForMode,
+  getTestPorts,
+  resolveE2eDevMode,
+  startMooseDev,
+  isDockerlessMode,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -52,6 +59,18 @@ const TEST_PACKAGE_MANAGER = (process.env.TEST_PACKAGE_MANAGER || "npm") as
   | "pip";
 
 const testLogger = logger.scope("collapsing-merge-tree-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const TS_PORTS = getTestPorts(70);
+const PY_PORTS = getTestPorts(80);
+const TS_CLICKHOUSE = buildClickHouseConfig(TS_PORTS);
+const PY_CLICKHOUSE = buildClickHouseConfig(PY_PORTS);
+const TS_SERVER = buildServerConfig(TS_PORTS);
+const PY_SERVER = buildServerConfig(PY_PORTS);
+const buildSuiteEnv = () => ({
+  TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+  TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+  MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+});
 
 describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", function () {
   describe("TypeScript Template - CollapsingMergeTree Engines", function () {
@@ -79,32 +98,33 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: {
-          ...process.env,
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-          MOOSE_FEATURES__WORKFLOWS: "false",
-          MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
-        },
-      });
+        projectDir: testDir,
+        mode: E2E_DEV_MODE,
+        ports: TS_PORTS,
+        extraEnv: buildSuiteEnv(),
+      }).devProcess;
 
       testLogger.info("Waiting for server to start...");
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        SERVER_CONFIG.startupMessage,
-        SERVER_CONFIG.url,
+        TS_SERVER.startupMessage,
+        TS_SERVER.url,
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
+        baseUrl: TS_SERVER.url,
+      });
 
       testLogger.info("Waiting for infrastructure to be ready...");
-      await waitForInfrastructureReady();
+      await waitForInfrastructureReady(TIMEOUTS.SERVER_STARTUP_MS, {
+        baseUrl: TS_SERVER.url,
+      });
 
       testLogger.info("✅ TypeScript test setup completed successfully\n");
     });
@@ -113,14 +133,17 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, testDir, appName, {
         logPrefix: "TypeScript CollapsingMergeTree test",
-        includeDocker: false,
+        ...getCleanupOptionsForMode(E2E_DEV_MODE),
+        ports: TS_PORTS,
       });
     });
 
     it("should create CollapsingMergeTree table with correct engine configuration", async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
+      const ddl = await getTableDDL("CollapsingMergeTreeTest", "local", {
+        clickhouseConfig: TS_CLICKHOUSE,
+      });
       testLogger.info("CollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has CollapsingMergeTree engine
@@ -135,6 +158,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "VersionedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: TS_CLICKHOUSE,
+        },
       );
       testLogger.info("VersionedCollapsingMergeTreeTest DDL:", ddl);
 
@@ -153,6 +179,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "ReplicatedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: TS_CLICKHOUSE,
+        },
       );
       testLogger.info("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
 
@@ -174,6 +203,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "ReplicatedVersionedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: TS_CLICKHOUSE,
+        },
       );
       testLogger.info("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
 
@@ -213,34 +245,34 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       );
 
       testLogger.info("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(testDir, ".venv"),
-          PATH: `${path.join(testDir, ".venv", "bin")}:${process.env.PATH}`,
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-          MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
-          MOOSE_FEATURES__WORKFLOWS: "false",
-          MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_ACCEPT_DESTRUCTIVE: "1",
-        },
-      });
+        projectDir: testDir,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        ports: PY_PORTS,
+        extraEnv: buildSuiteEnv(),
+      }).devProcess;
 
       testLogger.info("Waiting for server to start...");
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        SERVER_CONFIG.startupMessage,
-        SERVER_CONFIG.url,
+        PY_SERVER.startupMessage,
+        PY_SERVER.url,
       );
 
       testLogger.info("Waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, { dockerless: true });
+      await waitForStreamingFunctions(120000, {
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
+        baseUrl: PY_SERVER.url,
+      });
 
       testLogger.info("Waiting for infrastructure to be ready...");
-      await waitForInfrastructureReady();
+      await waitForInfrastructureReady(TIMEOUTS.SERVER_STARTUP_MS, {
+        baseUrl: PY_SERVER.url,
+      });
 
       testLogger.info("✅ Python test setup completed successfully\n");
     });
@@ -249,14 +281,17 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, testDir, appName, {
         logPrefix: "Python CollapsingMergeTree test",
-        includeDocker: false,
+        ...getCleanupOptionsForMode(E2E_DEV_MODE),
+        ports: PY_PORTS,
       });
     });
 
     it("should create CollapsingMergeTree table with correct engine configuration", async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
+      const ddl = await getTableDDL("CollapsingMergeTreeTest", "local", {
+        clickhouseConfig: PY_CLICKHOUSE,
+      });
       testLogger.info("CollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has CollapsingMergeTree engine
@@ -271,6 +306,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "VersionedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: PY_CLICKHOUSE,
+        },
       );
       testLogger.info("VersionedCollapsingMergeTreeTest DDL:", ddl);
 
@@ -289,6 +327,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "ReplicatedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: PY_CLICKHOUSE,
+        },
       );
       testLogger.info("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
 
@@ -310,6 +351,9 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       const ddl = await getTableDDL(
         "ReplicatedVersionedCollapsingMergeTreeTest",
         "local",
+        {
+          clickhouseConfig: PY_CLICKHOUSE,
+        },
       );
       testLogger.info("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
 
