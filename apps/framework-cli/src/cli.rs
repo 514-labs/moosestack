@@ -1919,7 +1919,7 @@ async fn confirm_and_save_migration(
     yes_all: bool,
     yes_destructive: bool,
     yes_rename: bool,
-    _no_auto_backfill_sql: bool,
+    no_auto_backfill_sql: bool,
     save: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     // If delta migrations are not enabled, use the legacy plan.yaml path
@@ -1930,7 +1930,7 @@ async fn confirm_and_save_migration(
             yes_all,
             yes_destructive,
             yes_rename,
-            _no_auto_backfill_sql,
+            no_auto_backfill_sql,
             save,
         )
         .await;
@@ -1964,7 +1964,7 @@ async fn confirm_and_save_migration(
         version_bump::find_backfill_only_bumps(&remaining_changes, &result.remote_state);
     version_bumps.extend(backfill_only);
 
-    let version_bump_decisions = if !version_bumps.is_empty() {
+    let mut version_bump_decisions = if !version_bumps.is_empty() {
         match version_bump::version_bump_gate(version_bumps, &result.default_database, accept_all)
             .await?
         {
@@ -1979,6 +1979,12 @@ async fn confirm_and_save_migration(
     } else {
         vec![]
     };
+
+    if no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
 
     // Step 3: Generate deltas from the remaining (non-version-bump) changes.
     let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
@@ -2133,7 +2139,7 @@ async fn confirm_and_save_migration_legacy(
     yes_all: bool,
     yes_destructive: bool,
     yes_rename: bool,
-    _no_auto_backfill_sql: bool,
+    no_auto_backfill_sql: bool,
     save: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
@@ -2162,7 +2168,7 @@ async fn confirm_and_save_migration_legacy(
 
     // Version bump detection, prompting, and risk exclusion (legacy path).
     let mut filtered_risk = risk;
-    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+    let mut version_bump_decisions = match version_bump::detect_prompt_and_exclude(
         &result.changes.olap_changes,
         &result.remote_state,
         &result.default_database,
@@ -2179,6 +2185,12 @@ async fn confirm_and_save_migration_legacy(
             )));
         }
     };
+
+    if no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
 
     match migration_destructive_gate(&filtered_risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {

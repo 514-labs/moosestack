@@ -169,15 +169,12 @@ pub struct ApprovedColumnDrop {
 /// name is treated as a recreate rather than two independent operations.
 /// `ColumnChange::Renamed` is non-destructive and is intentionally skipped.
 ///
-/// Tables that are part of a version bump (same `source_primitive.name` with
-/// version change) are excluded — they are handled by the version-bump gate
-/// instead of the destructive gate.
+/// Callers that run a version-bump gate should use
+/// [`version_bump::exclude_bump_drops_from_risk`] afterward to remove
+/// already-confirmed drops. Callers that don't (e.g. `moose prod`) will
+/// correctly see version-bump drops as destructive.
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
-    // Extract version bumps so their Removed/Added entries don't show as destructive.
-    let (_bumps, remaining_changes) =
-        crate::framework::core::version_bump::extract_version_bumps(&changes.olap_changes);
-
-    classify_plan_risk_from_changes(&remaining_changes)
+    classify_plan_risk_from_changes(&changes.olap_changes)
 }
 
 /// Core risk classification logic operating on a slice of `OlapChange`s.
