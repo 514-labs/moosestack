@@ -272,13 +272,10 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     }
 
     // Clear the remote database name so generated code uses the local default database.
-    // Also strip keeper paths from replicated engines: the remote server's internal
-    // keeper paths (literal UUIDs, etc.) are meaningless for the local environment.
     let (externally_managed, managed): (Vec<_>, Vec<_>) = tables
         .into_iter()
         .map(|mut t| {
             t.database = None;
-            t.engine = t.engine.strip_keeper_paths();
             t
         })
         .partition(should_be_externally_managed);
@@ -573,7 +570,6 @@ async fn db_pull_with_client(
         })
         .map(|mut t| {
             t.database = None;
-            t.engine = t.engine.strip_keeper_paths();
             t
         })
         .collect();

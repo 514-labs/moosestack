@@ -1083,6 +1083,7 @@ jobs:
       [
         detect-changes,
         check,
+        test-cli,
         test-ts-moose-lib,
         test-py-moose-lib,
         test-e2e-module-compilation,
@@ -1117,6 +1118,7 @@ jobs:
 
           # Check if any required jobs failed
           if [[ "${{ needs.check.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-py-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-module-compilation.result }}" == "failure" ]] || \
@@ -1136,6 +1138,7 @@ jobs:
           fi
 
           if [[ "${{ needs.check.result }}" == "success" ]] && \
+             [[ "${{ needs.test-cli.result }}" == "success" ]] && \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-module-compilation.result }}" == "success" ]] && \
