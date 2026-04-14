@@ -205,12 +205,14 @@ pub async fn execute_changes_with_version_bumps(
         clickhouse::execute_changes(project, &teardown_plan, &[]).await?;
     }
 
-    // Phase 2: Bump creates
+    // Phase 2: Bump creates (InPlace only — NewAlongside tables are created in Phase 3)
     for decision in version_bump_decisions {
-        let create = vec![OlapChange::Table(TableChange::Added(
-            decision.bump.new_table.clone(),
-        ))];
-        execute_changes(project, &create).await?;
+        if decision.bump.kind == version_bump::VersionBumpKind::InPlace {
+            let create = vec![OlapChange::Table(TableChange::Added(
+                decision.bump.new_table.clone(),
+            ))];
+            execute_changes(project, &create).await?;
+        }
     }
 
     // Phase 3: Setup (non-bump creates, may reference bump tables)
@@ -220,25 +222,23 @@ pub async fn execute_changes_with_version_bumps(
 
     // Phase 4: Backfills
     for decision in version_bump_decisions {
-        if decision.backfill {
-            if let Some(sql) = &decision.backfill_sql {
-                let client = clickhouse::create_client(project.clickhouse_config.clone());
-                clickhouse::run_query(sql, &client).await.map_err(|e| {
-                    OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
-                        error: e,
-                        resource: Some(format!(
-                            "backfill {} → {}",
-                            decision.bump.old_table.name, decision.bump.new_table.name
-                        )),
-                    })
-                })?;
-            }
+        if let Some(sql) = &decision.backfill_sql {
+            let client = clickhouse::create_client(project.clickhouse_config.clone());
+            clickhouse::run_query(sql, &client).await.map_err(|e| {
+                OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!(
+                        "backfill {} → {}",
+                        decision.bump.old_table.name, decision.bump.new_table.name
+                    )),
+                })
+            })?;
         }
     }
 
     // Phase 5: Bump drops
     for decision in version_bump_decisions {
-        if !decision.keep_old {
+        if decision.old_table_disposition == version_bump::OldTableDisposition::Drop {
             let drop = vec![OlapChange::Table(TableChange::Removed(
                 decision.bump.old_table.clone(),
             ))];

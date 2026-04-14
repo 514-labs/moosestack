@@ -128,14 +128,21 @@ These flags control the interactive confirmation prompts during plan generation:
 
 | Option | Environment Variable | Description |
 | :--- | :--- | :--- |
-| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames and destructive operations). |
+| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames, destructive operations, and version bump decisions). |
 | `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE=1` | Skip the confirmation prompt for destructive operations. |
 | `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
 | `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
 
-<Callout type="info" title="Versioned table backfills" compact>
-If you are using planned migrations for a breaking OLAP table change, see [Schema Versioning](/moosestack/olap/schema-versioning) for the end-to-end version bump and generated backfill workflow.
-</Callout>
+### Version bump prompts
+
+When the diff contains a `version` change on an `OlapTable`, Moose recognizes it as a version bump and prompts for:
+
+1. **Backfill** — whether to copy data from the old versioned table to the new one (only offered when schemas are compatible)
+2. **Keep or drop** — whether to retain the old table (as `EXTERNALLY_MANAGED`) or drop it
+
+When you choose to keep the old table and run with `--save`, Moose generates a file in your source directory defining the retained table with `LifeCycle.EXTERNALLY_MANAGED` and adds an import to your root module. Commit this file alongside the migration plan.
+
+See [Schema Versioning](/moosestack/olap/schema-versioning) for the full version bump workflow, example prompts, and `plan.yaml` output.
 
 ## Drift Detection
 

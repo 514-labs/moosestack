@@ -157,9 +157,11 @@ moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads] [--yes
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
-- `--yes-all`: Skip all confirmation prompts (renames and destructive operations). Equivalent to passing both `--yes-destructive` and `--yes-rename`. Can also be set via `MOOSE_ACCEPT_ALL=1`.
-- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-all`: Skip all confirmation prompts (renames, destructive operations, and version bump decisions). Equivalent to passing both `--yes-destructive` and `--yes-rename`, and auto-accepting version bumps. Can also be set via `MOOSE_ACCEPT_ALL=1`.
+- `--yes-destructive`: Skip the interactive confirmation prompt for destructive operations (table, column, view, and materialized-view removals, and old table drops from version bumps). Useful for CI/CD or when you intentionally want to accept all destructive schema changes. Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
 - `--yes-rename`: Skip the interactive confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
+
+When a [version bump](/moosestack/olap/schema-versioning) is detected (a `version` field change on an `OlapTable`), `moose dev` prompts for backfill and old-table retention decisions before applying the change.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
@@ -438,10 +440,12 @@ All connection flags accept environment-variable fallbacks: `MOOSE_CLICKHOUSE_CO
 - `--save`: Write `./migrations/plan.yaml`, `remote_state.json`, and `local_infra_map.json`. Omit to output plan YAML to stdout.
 
 **Confirmation flags:**
-- `--yes-all`: Skip all confirmation prompts (renames and destructive operations). Can also be set via `MOOSE_ACCEPT_ALL=1`.
-- `--yes-destructive`: Skip the confirmation prompt for destructive operations (table/column drops, view removals, table recreates). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
+- `--yes-all`: Skip all confirmation prompts (renames, destructive operations, and version bump decisions). Can also be set via `MOOSE_ACCEPT_ALL=1`.
+- `--yes-destructive`: Skip the confirmation prompt for destructive operations (table/column drops, view removals, table recreates, and old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
 - `--yes-rename`: Skip the confirmation prompt for detected column renames, accepting them as genuine renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 - `--no-auto-backfill-sql`: Disable automatic backfill SQL generation for versioned tables.
+
+When a [version bump](/moosestack/olap/schema-versioning) is detected, the CLI prompts for backfill and old-table retention. When `--save` is used and you choose to keep the old table, Moose generates a retained table file with `LifeCycle.EXTERNALLY_MANAGED` in your source directory.
 
 Requires OLAP to be enabled in `moose.config.toml`:
 ```toml filename="moose.config.toml" copy

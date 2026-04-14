@@ -1,6 +1,6 @@
 ---
 title: Schema Versioning
-description: Use the `version` field on an `OlapTable` to model breaking ClickHouse schema changes and review generated backfill SQL
+description: Use the `version` field on an `OlapTable` to model breaking ClickHouse schema changes with interactive backfill and old-table retention
 order: 8
 category: olap
 ---
@@ -14,15 +14,18 @@ import {
 
 # Schema Versioning
 
-Moose lets you declare schema versioning directly in your table definition:
-- Set `version` to create a new physical ClickHouse table while keeping the logical table name stable in code
-- Generate reviewed backfill SQL in `migrations/plan.yaml` when the old and new versions are equivalent enough for a straight copy
+Moose lets you declare schema versioning directly in your table definition. When you bump the `version` field on an `OlapTable`, Moose creates a new physical ClickHouse table and interactively walks you through data migration decisions:
+
+- **Backfill** — copy existing data from the old table into the new one
+- **Retain or drop** — keep the old table (marked `EXTERNALLY_MANAGED`) or drop it after migration
+
+This works in both `moose dev` (local development) and `moose generate migration` (planned migrations for production).
 
 ## When to use schema versioning
 
 - Change the **table engine** (e.g., `MergeTree` → `ReplacingMergeTree`)
 - Update **ORDER BY fields** (sorting keys) to better match query patterns
-- Reshape **primary keys** or perform type changes that require a rewrite
+- Reshape **primary keys** or perform type changes that require a full rewrite
 - Keep the old physical table in place until you finish cutover and later cleanup
 
 ## Configuration
@@ -48,8 +51,46 @@ aircraft_tracking_data = OlapTable[AircraftTrackingData](
   </LanguageTabContent>
 </LanguageTabs>
 
+<Callout type="info" title="Version configuration">
+Setting `config.version` on an `OlapTable` changes only the underlying ClickHouse table name (dots become underscores, e.g. `aircraft_tracking_data_0_1`). Your code still refers to the logical table you exported.
+</Callout>
 
-### Version changes
+## Version bump workflow
+
+When you bump the `version` field, Moose detects the old versioned table as removed and the new one as added, and recognizes this as a **version bump** rather than an independent drop + create. It then prompts you for two decisions:
+
+### 1. Backfill data
+
+If the old and new tables have compatible schemas (same insertable columns, types, and nullability), Moose offers to generate an `INSERT INTO ... SELECT` query to copy data:
+
+```text copy=false
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
+```
+
+Accept to include the backfill in the migration. Decline if you want to handle data migration separately or the data isn't needed.
+
+<Callout type="info" title="Backfill eligibility" compact>
+If the schemas differ (columns added, removed, or types changed), Moose skips the backfill prompt and tells you why. You can still add custom `RawSql` to the migration plan manually.
+</Callout>
+
+### 2. Keep or drop the old table
+
+After the backfill decision, Moose asks whether to keep the old table:
+
+```text copy=false
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+```
+
+| Choice | What happens |
+| :--- | :--- |
+| **Keep** (`y`) | The old table stays in ClickHouse. When saving (`--save`), Moose generates a file in your source directory defining the old table with `LifeCycle.EXTERNALLY_MANAGED` and adds an import to your root module (`index.ts` / `main.py`). This ensures Moose continues to track the table without managing its schema. |
+| **Drop** (`N`, default) | The old table is dropped after the backfill completes. The drop is included as a reviewed operation in the migration plan. |
+
+<Callout type="warning" title="Retained table files">
+When you choose to keep an old table and run with `--save`, Moose writes a file like `retained_aircraft_tracking_data_0_0.ts` (or `.py`) to your source directory and appends an import to `index.ts` (or `main.py`). Commit these files — they tell Moose the table still exists but is externally managed.
+</Callout>
+
+## Version changes
 
 Bumping the `version` field on the `OlapTable` config creates a new physical table while keeping the logical table name stable in code.
 
@@ -92,43 +133,52 @@ aircraft_tracking_data = OlapTable[AircraftTrackingData](
   </LanguageTabContent>
 </LanguageTabs>
 
+## Using version bumps in `moose dev`
 
-<Callout type="info" title="Version configuration">
-Setting `config.version` on an `OlapTable` changes only the underlying table name (suffixes dots with underscores). Your code still refers to the logical table you exported.
-</Callout>
-
-## Migration plan
-
-When you bump `version`, Moose plans a new physical table instead of rewriting the existing one. Run `moose generate migration --save` to write those reviewed operations to `migrations/plan.yaml`.
-
-For this `version: "0.0"` to `version: "0.1"` change, the plan can include:
-- `CreateTable` for the new `version: "0.1"` physical table, such as `aircraft_tracking_data_0_1`, with the updated sort key.
-- Optional `RawSql` `INSERT INTO ... SELECT ...` to copy rows from the `version: "0.0"` physical table into the `version: "0.1"` physical table when Moose detects a straight-copy backfill.
-
-For command options and connection modes, see [Planned Migrations](/moosestack/migrate/planned-migrations) and the [`moose generate migration` CLI reference](/moosestack/moose-cli).
-
-<Callout type="info" title="Backfill detection" compact>
-Moose detects a backfill opportunity when the old and new tables have the same schema. It will prompt you to accept the backfill if you run `moose generate migration --save` in an interactive terminal.
+During local development, `moose dev` detects version bumps on startup and on every file-save cycle. You get the same interactive prompts:
 
 <ToggleBlock
-  openText="Show example CLI backfill prompt"
-  closeText="Hide example CLI backfill prompt"
+  openText="Show example moose dev version bump prompt"
+  closeText="Hide example moose dev version bump prompt"
 >
 ```text title="Terminal output" copy=false
-$ moose generate migration --save
-Remote Plan  Comparing local project code with deployed infrastructure
-Remote Plan  Calculated plan differences locally
-Backfill     Checking versioned table backfill opportunities...
-Equivalent   `aircraft_tracking_data_0_1` <- `aircraft_tracking_data_0_0`
-Append RawSql backfill operation to plan.yaml? [Y/n] (default: Y)
+Version bump  Detected 1 version bump(s). The old table(s) can be kept or dropped.
+Version bump  `aircraft_tracking_data_0_0` (v0.0) → `aircraft_tracking_data_0_1` (v0.1)
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
 > y
-Appended     RawSql backfill: `aircraft_tracking_data_0_1` <- `aircraft_tracking_data_0_0`
-Migration    generated
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+> n
+✓ Backfill      `aircraft_tracking_data_0_0` → `aircraft_tracking_data_0_1`
+⚠ Drop          `aircraft_tracking_data_0_0` will be dropped after migration
 ```
 </ToggleBlock>
 
-You can decline the prompt if you want to run the backfill separately or add different SQL later.
-</Callout>
+Moose executes the operations in the correct order: create the new table, run the backfill, then drop the old table (if not retained). Other schema changes (new views, materialized views, etc.) are applied alongside the version bump in the same cycle.
+
+## Using version bumps in planned migrations
+
+Run `moose generate migration --save` to produce a reviewed migration plan that includes the version bump operations:
+
+<ToggleBlock
+  openText="Show example moose generate migration prompt"
+  closeText="Hide example moose generate migration prompt"
+>
+```text title="Terminal output" copy=false
+$ moose generate migration --save
+Remote Plan   Comparing local project code with deployed infrastructure
+Version bump  Detected 1 version bump(s). The old table(s) can be kept or dropped.
+Version bump  `aircraft_tracking_data_0_0` (v0.0) → `aircraft_tracking_data_0_1` (v0.1)
+Backfill data from `aircraft_tracking_data_0_0` into `aircraft_tracking_data_0_1`? [Y/n]
+> y
+Keep old table `aircraft_tracking_data_0_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+> n
+✓ Backfill      `aircraft_tracking_data_0_0` → `aircraft_tracking_data_0_1`
+⚠ Drop          `aircraft_tracking_data_0_0` will be dropped after migration
+Migration      generated
+```
+</ToggleBlock>
+
+The resulting `plan.yaml` includes correctly-ordered operations:
 
 ```yaml filename="migrations/plan.yaml" copy=false
 created_at: 2026-04-09T12:00:00Z
@@ -144,28 +194,55 @@ operations:
         engine: MergeTree
         version: "0.1"
   - RawSql:
-      description: Backfill `514-demos-planes`.`aircraft_tracking_data_0_1` from `514-demos-planes`.`aircraft_tracking_data_0_0`
+      description: >-
+        Backfill `aircraft_tracking_data_0_1`
+        from `aircraft_tracking_data_0_0`
       sql:
         - |
-          INSERT INTO `514-demos-planes`.`aircraft_tracking_data_0_1` (`icao24`, `callsign`, `longitude`, `latitude`)
+          INSERT INTO `my_db`.`aircraft_tracking_data_0_1`
+            (`icao24`, `callsign`, `longitude`, `latitude`)
           SELECT `icao24`, `callsign`, `longitude`, `latitude`
-          FROM `514-demos-planes`.`aircraft_tracking_data_0_0`
+          FROM `my_db`.`aircraft_tracking_data_0_0`
+  - DropTable:
+      table: aircraft_tracking_data_0_0
 ```
 
+If you chose to **keep** the old table instead, the `DropTable` operation would be absent and Moose would generate a retained table file in your source directory.
 
+## CI/CD and non-interactive usage
+
+In CI/CD pipelines or non-interactive environments, use confirmation flags to control version bump behavior:
+
+| Flag | Effect |
+| :--- | :--- |
+| `--yes-all` | Auto-accept backfill (if eligible) and drop old tables. Equivalent to `MOOSE_ACCEPT_ALL=1`. |
+| `--yes-destructive` | Auto-accept destructive changes including old table drops. Equivalent to `MOOSE_ACCEPT_DESTRUCTIVE=1`. |
+| `--no-auto-backfill-sql` | Skip automatic backfill SQL generation for versioned tables. |
+
+Without these flags, a non-interactive terminal causes the CLI to exit with an error asking you to re-run with `--yes-all`.
+
+## Operation ordering
+
+Moose ensures version bump operations execute in the correct order, regardless of other schema changes happening in the same migration:
+
+1. **Create** the new versioned table
+2. **Run backfill** `INSERT INTO ... SELECT` (if accepted)
+3. **Drop** the old table (if not retained)
+
+Other non-version-bump changes (new tables, views, column alterations) are interleaved correctly — the new versioned table is available before dependent views or materialized views are created.
 
 ## Notes
 
-- A version bump creates a new physical table. Moose does not rewrite the old table in place or create a long-lived materialized view between versions.
-- If the same branch also adds other tables, views, or materialized views, they appear in the same plan alongside the versioned-table backfill. Review the whole file, not just the `RawSql` block.
-- If the old and new tables are not equivalent enough for a straight `INSERT INTO ... SELECT ...`, Moose will not offer the generated backfill you want. Edit `plan.yaml` and provide the exact SQL you want to run.
-- If you decline the generated backfill prompt, the plan can still create the new versioned table. You can backfill it later outside the migration, or add your own `RawSql` operation when you are ready.
+- A version bump creates a new physical table. Moose does not rewrite the old table in place.
+- If the old and new tables are not schema-compatible for a straight `INSERT INTO ... SELECT`, Moose will not offer auto-generated backfill. You can edit `plan.yaml` and provide custom SQL.
+- If you decline the backfill prompt, the plan still creates the new versioned table. You can backfill later outside the migration.
 - Very large backfills can take time. Review the generated SQL and apply it during a low-traffic window if needed.
-- After applying the reviewed plan, update readers and writers to the new table version before you remove the old one.
-- Cleanup is a separate reviewed migration, not an automatic side effect of the version bump.
+- When keeping the old table, the generated `EXTERNALLY_MANAGED` file ensures Moose still tracks the table for queries, views, and type-safe access, but won't try to drop or alter it.
 
 ## Related
 
 - [Modeling Tables](/moosestack/olap/model-table)
+- [Externally Managed Lifecycle](/moosestack/migrate/lifecycle-externally-managed)
 - [Planned Migrations](/moosestack/migrate/planned-migrations)
+- [Automatic Migrations](/moosestack/migrate/automatic)
 - [Applying Migrations](/moosestack/olap/apply-migrations)

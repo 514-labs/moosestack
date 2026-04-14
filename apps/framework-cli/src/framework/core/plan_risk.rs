@@ -474,7 +474,7 @@ const PROMPT_REDRAW_INTERVAL: Duration = Duration::from_millis(500);
 ///
 /// Create via [`PinnedSession::start`], then call [`prompt`](PinnedSession::prompt)
 /// one or more times. The scroll region is restored when the session is dropped.
-struct PinnedSession {
+pub(crate) struct PinnedSession {
     current_rows: u16,
     current_text: String,
     lines: tokio::io::Lines<tokio::io::BufReader<tokio::io::Stdin>>,
@@ -482,7 +482,7 @@ struct PinnedSession {
 
 impl PinnedSession {
     /// Sets up the scroll region and returns a ready session.
-    fn start() -> std::io::Result<Self> {
+    pub(crate) fn start() -> std::io::Result<Self> {
         let (_cols, current_rows) = terminal::size()?;
 
         {
@@ -508,7 +508,7 @@ impl PinnedSession {
     /// The text should be a single line (long lines will be truncated by the
     /// terminal). Returns the trimmed, lowercased user input, or an empty
     /// string on EOF.
-    async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
+    pub(crate) async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
         self.current_text = text.to_string();
         self.draw_full()?;
         self.park_cursor()?;

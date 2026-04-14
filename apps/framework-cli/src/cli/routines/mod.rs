@@ -716,8 +716,10 @@ pub async fn start_development_mode(
             None => return Ok(()),
         };
 
-    let (version_bumps, _remaining) =
+    let (mut version_bumps, remaining) =
         version_bump::extract_version_bumps(&plan.changes.olap_changes);
+    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &reconciled_map);
+    version_bumps.extend(backfill_only);
 
     let accept_all = confirmation_policy.accept_destructive;
     let version_bump_decisions = if !version_bumps.is_empty() {
@@ -738,7 +740,7 @@ pub async fn start_development_mode(
     // Exclude version-bump drops from the destructive gate.
     let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
         .iter()
-        .filter(|d| !d.keep_old)
+        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
         .map(|d| d.bump.old_table.name.clone())
         .collect();
     risk.destructive_changes.retain(|dc| match dc {

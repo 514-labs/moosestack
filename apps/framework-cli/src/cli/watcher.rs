@@ -283,7 +283,7 @@ async fn watch(
                             .await;
 
                             match plan_result {
-                                Ok((_, mut plan_result)) => {
+                                Ok((current_infra, mut plan_result)) => {
                                     with_timing_async("Validation", async {
                                         framework::core::plan_validator::validate(&project, &plan_result)
                                     })
@@ -296,8 +296,10 @@ async fn watch(
                                     };
 
                                     // Version bump detection and prompting.
-                                    let (version_bumps, _remaining) =
+                                    let (mut version_bumps, remaining) =
                                         version_bump::extract_version_bumps(&plan_result.changes.olap_changes);
+                                    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &current_infra);
+                                    version_bumps.extend(backfill_only);
 
                                     let accept_all = confirmation_policy.accept_destructive;
                                     let version_bump_decisions = if !version_bumps.is_empty() {
@@ -319,7 +321,7 @@ async fn watch(
                                     let vb_drop_names: std::collections::HashSet<String> =
                                         version_bump_decisions
                                             .iter()
-                                            .filter(|d| !d.keep_old)
+                                            .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
                                             .map(|d| d.bump.old_table.name.clone())
                                             .collect();
                                     risk.destructive_changes.retain(|dc| {

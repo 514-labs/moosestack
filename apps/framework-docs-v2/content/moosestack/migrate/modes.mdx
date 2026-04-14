@@ -53,6 +53,7 @@ Designed for the "outer loop" of deployment, **Planned Migrations** prioritize s
 | **Production Deployment** | `Planned` | You need to ensure that schema changes are safe and do not accidentally delete user data. |
 | **CI/CD Pipeline** | `Planned` | You need to apply migrations in a deterministic way as part of your deployment process. |
 | **Renaming Columns** | `Planned` | You need to explicitly tell the database to rename a column instead of dropping and re-adding it. |
+| **Version Bumps** | Both | Both modes detect version bumps and prompt for backfill and old-table retention. See [Schema Versioning](/moosestack/olap/schema-versioning). |
 | **Team Review** | `Planned` | You want to review schema changes in a Pull Request before they are applied. |
 
 ## See Also

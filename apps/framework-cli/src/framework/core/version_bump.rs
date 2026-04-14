@@ -16,27 +16,48 @@ use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
-use crate::framework::core::infrastructure_map::{OlapChange, TableChange};
+use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
+use crate::framework::core::plan_risk::PinnedSession;
 use crate::framework::languages::SupportedLanguages;
+
+/// How the version bump was detected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VersionBumpKind {
+    /// Old table removed + new table added in the same diff (in-place version change).
+    InPlace,
+    /// New versioned table added while an older version already exists in the
+    /// current infrastructure. The old table is not part of the diff.
+    NewAlongside,
+}
 
 /// A detected version bump: same logical primitive, old version removed, new version added.
 #[derive(Debug, Clone)]
 pub struct VersionBump {
     pub old_table: Table,
     pub new_table: Table,
+    pub kind: VersionBumpKind,
+}
+
+/// What happens to the old table after migration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OldTableDisposition {
+    /// Drop the old table after migration.
+    Drop,
+    /// Keep the old table and generate an `EXTERNALLY_MANAGED` definition file.
+    Retain,
+    /// Old table is not in the diff — leave it completely untouched.
+    Untouched,
 }
 
 /// The user's decision for a single version bump.
 #[derive(Debug, Clone)]
 pub struct VersionBumpDecision {
     pub bump: VersionBump,
-    /// Whether to INSERT…SELECT data from old table into new table.
-    pub backfill: bool,
-    /// Whether to keep the old table (as EXTERNALLY_MANAGED). If false, the old table is dropped.
-    pub keep_old: bool,
-    /// Cached backfill SQL (set when `backfill=true` and schemas are compatible).
+    /// If `Some`, INSERT…SELECT data from old table into new table.
     pub backfill_sql: Option<String>,
+    /// What to do with the old table.
+    pub old_table_disposition: OldTableDisposition,
 }
 
 /// Result of backfill eligibility check for a version bump.
@@ -75,7 +96,7 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
 
     for change in changes {
         match change {
-            OlapChange::Table(TableChange::Removed(t)) if t.version.is_some() => {
+            OlapChange::Table(TableChange::Removed(t)) => {
                 removed_by_group.entry(group_key(t)).or_default().push(t);
             }
             OlapChange::Table(TableChange::Added(t)) if t.version.is_some() => {
@@ -92,7 +113,6 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
     for (key, removed_tables) in &removed_by_group {
         if let Some(added_tables) = added_by_group.get(key) {
             for old in removed_tables {
-                let old_ver = old.version.as_ref().unwrap();
                 let old_key = table_key(old);
                 if consumed_removed.contains(&old_key) {
                     continue;
@@ -100,10 +120,15 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
                 for new in added_tables {
                     let new_ver = new.version.as_ref().unwrap();
                     let new_key = table_key(new);
-                    if new_ver > old_ver && !consumed_added.contains(&new_key) {
+                    let is_bump = match old.version.as_ref() {
+                        Some(old_ver) => new_ver > old_ver,
+                        None => true,
+                    };
+                    if is_bump && !consumed_added.contains(&new_key) {
                         bumps.push(VersionBump {
                             old_table: (*old).clone(),
                             new_table: (*new).clone(),
+                            kind: VersionBumpKind::InPlace,
                         });
                         consumed_removed.insert(old_key);
                         consumed_added.insert(new_key);
@@ -125,6 +150,55 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
         .collect();
 
     (bumps, remaining)
+}
+
+/// Find versioned tables being added whose older version already exists
+/// in the current infrastructure (not being removed). These are "backfill-only"
+/// bumps — the old table stays, but we can offer to copy its data.
+///
+/// Returns additional `VersionBump`s that were NOT caught by `extract_version_bumps`
+/// because the old table is not in the diff (it's not being removed).
+pub fn find_backfill_only_bumps(
+    remaining_changes: &[OlapChange],
+    current_infra: &InfrastructureMap,
+) -> Vec<VersionBump> {
+    let mut bumps = Vec::new();
+
+    for change in remaining_changes {
+        let new_table = match change {
+            OlapChange::Table(TableChange::Added(t)) if t.version.is_some() => t,
+            _ => continue,
+        };
+
+        let new_ver = new_table.version.as_ref().unwrap();
+        let primitive = &new_table.source_primitive.name;
+        let new_db = new_table.database.as_deref();
+
+        let best_old = current_infra
+            .tables
+            .values()
+            .filter(|t| t.source_primitive.name == *primitive && t.database.as_deref() == new_db)
+            .filter(|t| match &t.version {
+                Some(v) => v < new_ver,
+                None => true,
+            })
+            .max_by(|a, b| match (&a.version, &b.version) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(va), Some(vb)) => va.cmp(vb),
+            });
+
+        if let Some(old_table) = best_old {
+            bumps.push(VersionBump {
+                old_table: old_table.clone(),
+                new_table: new_table.clone(),
+                kind: VersionBumpKind::NewAlongside,
+            });
+        }
+    }
+
+    bumps
 }
 
 /// Check if backfill is possible between old and new tables.
@@ -202,9 +276,18 @@ pub async fn version_bump_gate(
         ),
     );
 
-    let mut decisions = Vec::with_capacity(bumps.len());
+    let use_pinned = stdout().is_terminal();
+    let mut session = if use_pinned && !auto_accept {
+        PinnedSession::start().ok()
+    } else {
+        None
+    };
 
-    for bump in bumps {
+    let mut decisions = Vec::with_capacity(bumps.len());
+    let total = bumps.len();
+
+    for (idx, bump) in bumps.into_iter().enumerate() {
+        let prompt_idx = idx + 1;
         let eligibility = check_backfill_eligibility(&bump, default_database);
         let can_backfill = matches!(eligibility, BackfillEligibility::Eligible { .. });
 
@@ -242,18 +325,21 @@ pub async fn version_bump_gate(
             }
         }
 
-        let (backfill, keep_old) = if auto_accept {
-            let bf = can_backfill;
-            if bf {
+        let (do_backfill, disposition) = if auto_accept {
+            let disposition = match bump.kind {
+                VersionBumpKind::NewAlongside => OldTableDisposition::Untouched,
+                VersionBumpKind::InPlace => OldTableDisposition::Drop,
+            };
+            if can_backfill {
                 display::show_message_wrapper(
                     MessageType::Info,
                     Message::new(
                         "Auto".to_string(),
-                        "backfill=yes, keep_old=no (auto-accepted)".to_string(),
+                        format!("backfill=yes, old_table={disposition:?} (auto-accepted)"),
                     ),
                 );
             }
-            (bf, false)
+            (can_backfill, disposition)
         } else if !is_interactive {
             return Err(RoutineFailure::error(Message::new(
                 "Version bump".to_string(),
@@ -265,37 +351,60 @@ pub async fn version_bump_gate(
             )));
         } else {
             let bf = if can_backfill {
-                let answer = prompt_user_async(
-                    &format!(
-                        "Backfill data from `{}` into `{}`? [Y/n]",
+                let input = if let Some(ref mut s) = session {
+                    let text = format!(
+                        " Bump ({prompt_idx}/{total}): backfill `{}` → `{}`?  \x1b[1my\x1b[0m=yes  \x1b[1mn\x1b[0m=no",
                         bump.old_table.name, bump.new_table.name
-                    ),
-                    Some("Y"),
-                    None,
-                )
-                .await?;
-                !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
+                    );
+                    s.prompt(&text).await.unwrap_or_default()
+                } else {
+                    prompt_user_async(
+                        &format!(
+                            "Backfill data from `{}` into `{}`? [Y/n]",
+                            bump.old_table.name, bump.new_table.name
+                        ),
+                        Some("Y"),
+                        None,
+                    )
+                    .await?
+                };
+                !matches!(input.as_str(), "n" | "no")
             } else {
                 false
             };
 
-            let keep = {
-                let answer = prompt_user_async(
-                    &format!(
-                        "Keep old table `{}`? (will be marked EXTERNALLY_MANAGED) [y/N]",
-                        bump.old_table.name
-                    ),
-                    Some("N"),
-                    None,
-                )
-                .await?;
-                matches!(answer.trim().to_lowercase().as_str(), "y" | "yes")
+            let disposition = match bump.kind {
+                VersionBumpKind::NewAlongside => OldTableDisposition::Untouched,
+                VersionBumpKind::InPlace => {
+                    let input = if let Some(ref mut s) = session {
+                        let text = format!(
+                            " Bump ({prompt_idx}/{total}): keep old `{}`?  \x1b[1my\x1b[0m=keep (EXTERNALLY_MANAGED)  \x1b[1mn\x1b[0m=drop",
+                            bump.old_table.name
+                        );
+                        s.prompt(&text).await.unwrap_or_default()
+                    } else {
+                        prompt_user_async(
+                            &format!(
+                                "Keep old table `{}`? (will be marked EXTERNALLY_MANAGED) [y/N]",
+                                bump.old_table.name
+                            ),
+                            Some("N"),
+                            None,
+                        )
+                        .await?
+                    };
+                    if matches!(input.as_str(), "y" | "yes") {
+                        OldTableDisposition::Retain
+                    } else {
+                        OldTableDisposition::Drop
+                    }
+                }
             };
 
-            (bf, keep)
+            (bf, disposition)
         };
 
-        let backfill_sql = if backfill {
+        let backfill_sql = if do_backfill {
             if let BackfillEligibility::Eligible { sql } = &eligibility {
                 Some(sql.clone())
             } else {
@@ -305,7 +414,7 @@ pub async fn version_bump_gate(
             None
         };
 
-        if backfill && backfill_sql.is_some() {
+        if backfill_sql.is_some() {
             display::show_message_wrapper(
                 MessageType::Success,
                 Message::new(
@@ -315,34 +424,40 @@ pub async fn version_bump_gate(
             );
         }
 
-        if keep_old {
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message::new(
-                    "Retained".to_string(),
-                    format!(
-                        "`{}` will be kept as EXTERNALLY_MANAGED",
-                        bump.old_table.name
+        match &disposition {
+            OldTableDisposition::Retain => {
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message::new(
+                        "Retained".to_string(),
+                        format!(
+                            "`{}` will be kept as EXTERNALLY_MANAGED",
+                            bump.old_table.name
+                        ),
                     ),
-                ),
-            );
-        } else {
-            display::show_message_wrapper(
-                MessageType::Warning,
-                Message::new(
-                    "Drop".to_string(),
-                    format!("`{}` will be dropped after migration", bump.old_table.name),
-                ),
-            );
+                );
+            }
+            OldTableDisposition::Drop => {
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message::new(
+                        "Drop".to_string(),
+                        format!("`{}` will be dropped after migration", bump.old_table.name),
+                    ),
+                );
+            }
+            OldTableDisposition::Untouched => {}
         }
 
         decisions.push(VersionBumpDecision {
             bump,
-            backfill,
-            keep_old,
             backfill_sql,
+            old_table_disposition: disposition,
         });
     }
+
+    // Session drops here, restoring scroll region.
+    drop(session);
 
     Ok(Some(decisions))
 }
@@ -434,7 +549,7 @@ pub fn write_retained_table_files(
 ) -> Result<(), std::io::Error> {
     let tables_to_retain: Vec<&Table> = decisions
         .iter()
-        .filter(|d| d.keep_old)
+        .filter(|d| d.old_table_disposition == OldTableDisposition::Retain)
         .map(|d| &d.bump.old_table)
         .collect();
 
@@ -507,22 +622,22 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
     let mut deltas = Vec::new();
 
     for decision in decisions {
-        deltas.push(InfraDelta::CreateTable {
-            table: decision.bump.new_table.clone(),
-        });
-
-        if decision.backfill {
-            if let Some(sql) = &decision.backfill_sql {
-                deltas.push(InfraDelta::BackfillTable {
-                    source_table: decision.bump.old_table.name.clone(),
-                    target_table: decision.bump.new_table.name.clone(),
-                    columns: vec![],
-                    sql: sql.clone(),
-                });
-            }
+        if decision.bump.kind == VersionBumpKind::InPlace {
+            deltas.push(InfraDelta::CreateTable {
+                table: decision.bump.new_table.clone(),
+            });
         }
 
-        if !decision.keep_old {
+        if let Some(sql) = &decision.backfill_sql {
+            deltas.push(InfraDelta::BackfillTable {
+                source_table: decision.bump.old_table.name.clone(),
+                target_table: decision.bump.new_table.name.clone(),
+                columns: vec![],
+                sql: sql.clone(),
+            });
+        }
+
+        if decision.old_table_disposition == OldTableDisposition::Drop {
             deltas.push(InfraDelta::DropTable {
                 table: decision.bump.old_table.clone(),
                 policy: DestructivePolicy {
@@ -558,23 +673,23 @@ pub fn version_bump_decisions_to_phased_operations(
     let mut drops = Vec::new();
 
     for decision in decisions {
-        creates.push(SerializableOlapOperation::CreateTable {
-            table: decision.bump.new_table.clone(),
-        });
-
-        if decision.backfill {
-            if let Some(sql) = &decision.backfill_sql {
-                backfills.push(SerializableOlapOperation::RawSql {
-                    sql: vec![sql.clone()],
-                    description: format!(
-                        "Backfill `{}` from `{}`",
-                        decision.bump.new_table.name, decision.bump.old_table.name
-                    ),
-                });
-            }
+        if decision.bump.kind == VersionBumpKind::InPlace {
+            creates.push(SerializableOlapOperation::CreateTable {
+                table: decision.bump.new_table.clone(),
+            });
         }
 
-        if !decision.keep_old {
+        if let Some(sql) = &decision.backfill_sql {
+            backfills.push(SerializableOlapOperation::RawSql {
+                sql: vec![sql.clone()],
+                description: format!(
+                    "Backfill `{}` from `{}`",
+                    decision.bump.new_table.name, decision.bump.old_table.name
+                ),
+            });
+        }
+
+        if decision.old_table_disposition == OldTableDisposition::Drop {
             drops.push(SerializableOlapOperation::DropTable {
                 table: decision.bump.old_table.name.clone(),
                 database: decision.bump.old_table.database.clone(),
@@ -654,12 +769,15 @@ mod tests {
     }
 
     #[test]
-    fn no_bump_when_unversioned() {
+    fn no_bump_when_both_unversioned() {
         let old = Table {
             version: None,
             ..make_table("Events", "1.0", "Events")
         };
-        let new = make_table("Events_2_0", "2.0", "Events");
+        let new = Table {
+            version: None,
+            ..make_table("EventsNew", "1.0", "Events")
+        };
 
         let changes = vec![
             OlapChange::Table(TableChange::Removed(old)),
@@ -703,21 +821,26 @@ mod tests {
         assert_eq!(remaining.len(), 1);
     }
 
-    #[test]
-    fn backfill_eligible_when_same_columns() {
-        let old = make_table("Events_1_0", "1.0", "Events");
-        let new = make_table("Events_2_0", "2.0", "Events");
-        let bump = VersionBump {
+    fn in_place(old: Table, new: Table) -> VersionBump {
+        VersionBump {
             old_table: old,
             new_table: new,
-        };
+            kind: VersionBumpKind::InPlace,
+        }
+    }
+
+    #[test]
+    fn backfill_eligible_when_same_columns() {
+        let bump = in_place(
+            make_table("Events_1_0", "1.0", "Events"),
+            make_table("Events_2_0", "2.0", "Events"),
+        );
         let result = check_backfill_eligibility(&bump, "default");
         assert!(matches!(result, BackfillEligibility::Eligible { .. }));
     }
 
     #[test]
     fn backfill_not_eligible_when_columns_differ() {
-        let old = make_table("Events_1_0", "1.0", "Events");
         let mut new = make_table("Events_2_0", "2.0", "Events");
         new.columns.push(Column {
             name: "extra".to_string(),
@@ -733,27 +856,20 @@ mod tests {
             materialized: None,
             alias: None,
         });
-        let bump = VersionBump {
-            old_table: old,
-            new_table: new,
-        };
+        let bump = in_place(make_table("Events_1_0", "1.0", "Events"), new);
         let result = check_backfill_eligibility(&bump, "default");
         assert!(matches!(result, BackfillEligibility::NotEligible { .. }));
     }
 
     #[test]
     fn decisions_to_deltas_with_backfill_and_drop() {
-        let old = make_table("Events_1_0", "1.0", "Events");
-        let new = make_table("Events_2_0", "2.0", "Events");
-
         let decisions = vec![VersionBumpDecision {
-            bump: VersionBump {
-                old_table: old,
-                new_table: new,
-            },
-            backfill: true,
-            keep_old: false,
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
             backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Drop,
         }];
 
         let deltas = version_bump_decisions_to_deltas(&decisions);
@@ -764,18 +880,14 @@ mod tests {
     }
 
     #[test]
-    fn decisions_to_deltas_with_keep_old() {
-        let old = make_table("Events_1_0", "1.0", "Events");
-        let new = make_table("Events_2_0", "2.0", "Events");
-
+    fn decisions_to_deltas_with_retain() {
         let decisions = vec![VersionBumpDecision {
-            bump: VersionBump {
-                old_table: old,
-                new_table: new,
-            },
-            backfill: true,
-            keep_old: true,
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
             backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Retain,
         }];
 
         let deltas = version_bump_decisions_to_deltas(&decisions);
@@ -785,18 +897,14 @@ mod tests {
     }
 
     #[test]
-    fn decisions_to_deltas_no_backfill_no_keep() {
-        let old = make_table("Events_1_0", "1.0", "Events");
-        let new = make_table("Events_2_0", "2.0", "Events");
-
+    fn decisions_to_deltas_no_backfill_drop() {
         let decisions = vec![VersionBumpDecision {
-            bump: VersionBump {
-                old_table: old,
-                new_table: new,
-            },
-            backfill: false,
-            keep_old: false,
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
             backfill_sql: None,
+            old_table_disposition: OldTableDisposition::Drop,
         }];
 
         let deltas = version_bump_decisions_to_deltas(&decisions);
@@ -825,6 +933,24 @@ mod tests {
         assert_eq!(bumps[0].new_table.name, "Events_3_0");
         // v2 removal is left as a remaining change.
         assert_eq!(remaining.len(), 1);
+    }
+
+    #[test]
+    fn unversioned_to_versioned_is_bump() {
+        let mut old = make_table("Events", "1.0", "Events");
+        old.version = None;
+        let new = make_table("Events_0_0", "0.0", "Events");
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(old)),
+            OlapChange::Table(TableChange::Added(new)),
+        ];
+
+        let (bumps, remaining) = extract_version_bumps(&changes);
+        assert_eq!(bumps.len(), 1);
+        assert_eq!(bumps[0].old_table.name, "Events");
+        assert_eq!(bumps[0].new_table.name, "Events_0_0");
+        assert!(remaining.is_empty());
     }
 
     #[test]

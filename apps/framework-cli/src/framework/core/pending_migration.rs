@@ -61,7 +61,7 @@ pub fn write_pending_migration(
 
     // Infer decisions from what the diff tells us:
     // - backfill if schemas are compatible
-    // - keep_old if the old table is still in the target state
+    // - retain old table if it's still in the target state, otherwise drop
     if !bumps.is_empty() {
         let decisions: Vec<version_bump::VersionBumpDecision> = bumps
             .into_iter()
@@ -71,15 +71,18 @@ pub fn write_pending_migration(
                     version_bump::BackfillEligibility::Eligible { sql } => Some(sql.clone()),
                     version_bump::BackfillEligibility::NotEligible { .. } => None,
                 };
-                let backfill = backfill_sql.is_some();
-                let keep_old = target
+                let old_table_disposition = if target
                     .tables
-                    .contains_key(&bump.old_table.id(default_database));
+                    .contains_key(&bump.old_table.id(default_database))
+                {
+                    version_bump::OldTableDisposition::Retain
+                } else {
+                    version_bump::OldTableDisposition::Drop
+                };
                 version_bump::VersionBumpDecision {
                     bump,
-                    backfill,
-                    keep_old,
                     backfill_sql,
+                    old_table_disposition,
                 }
             })
             .collect();
