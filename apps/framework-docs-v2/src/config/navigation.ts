@@ -343,12 +343,6 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/apis/ingest-api",
-        title: "Ingest API",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/streaming/schema-registry",
         title: "Schema registry",
         languages: ["typescript", "python"],
