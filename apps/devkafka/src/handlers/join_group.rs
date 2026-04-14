@@ -26,19 +26,7 @@ pub async fn handle(
     // joining member wouldn't be elected leader and would receive an empty
     // partition assignment from SyncGroup, stalling consumption.
     let now = std::time::Instant::now();
-    let expired: Vec<StrBytes> = group
-        .members
-        .iter()
-        .filter(|(_, m)| {
-            let timeout_ms = m.session_timeout_ms.max(0) as u128;
-            now.duration_since(m.last_heartbeat).as_millis() > timeout_ms
-        })
-        .map(|(id, _)| id.clone())
-        .collect();
-    for id in expired {
-        tracing::info!(group = %request.group_id.0, member = %id, "Reaping expired member during JoinGroup");
-        group.remove_member(&id);
-    }
+    group.reap_expired_members(now, "join_group");
 
     // Generate or reuse member_id
     let member_id = if request.member_id.is_empty() {

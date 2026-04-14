@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use bytes::{BufMut, Bytes, BytesMut};
@@ -10,7 +12,8 @@ use tokio_util::sync::CancellationToken;
 use devkafka::broker::Broker;
 use devkafka::server;
 
-pub async fn send_request<E: Encodable>(
+/// Encode and send a Kafka request frame over an open test socket.
+pub(crate) async fn send_request<E: Encodable>(
     stream: &mut TcpStream,
     api_key: ApiKey,
     api_version: i16,
@@ -37,7 +40,8 @@ pub async fn send_request<E: Encodable>(
     stream.flush().await.unwrap();
 }
 
-pub async fn read_response(
+/// Read a Kafka response frame and decode its response header.
+pub(crate) async fn read_response(
     stream: &mut TcpStream,
     api_key: ApiKey,
     api_version: i16,
@@ -56,13 +60,15 @@ pub async fn read_response(
     (header, frame)
 }
 
-pub struct TestBroker {
+/// Lightweight devkafka test broker bound to an ephemeral localhost port.
+pub(crate) struct TestBroker {
     port: u16,
     cancel: CancellationToken,
 }
 
 impl TestBroker {
-    pub async fn start() -> Self {
+    /// Start a broker and background reaper task for an integration test.
+    pub(crate) async fn start() -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let cancel = CancellationToken::new();
@@ -82,7 +88,8 @@ impl TestBroker {
         Self { port, cancel }
     }
 
-    pub async fn connect(&self) -> TcpStream {
+    /// Open a new client connection to the in-process test broker.
+    pub(crate) async fn connect(&self) -> TcpStream {
         TcpStream::connect(format!("127.0.0.1:{}", self.port))
             .await
             .unwrap()

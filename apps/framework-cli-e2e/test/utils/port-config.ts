@@ -43,7 +43,10 @@ export interface ServerEndpointsConfig {
 }
 
 /**
- * Default ports (offset 0) — matches the moose dev defaults.
+ * Default ports (offset 0).
+ *
+ * Redis intentionally uses a non-standard base port so dockerless E2E runs do
+ * not collide with a developer's local Redis daemon on 6379.
  */
 const BASE_PORTS: TestPorts = {
   httpPort: 4000,
@@ -53,7 +56,7 @@ const BASE_PORTS: TestPorts = {
   keeperPort: 9181,
   keeperRaftPort: 9234,
   kafkaPort: 19092,
-  redisPort: 6379,
+  redisPort: 16379,
   temporalPort: 7233,
 };
 

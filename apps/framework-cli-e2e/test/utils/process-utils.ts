@@ -39,6 +39,18 @@ const execAsync = (
 const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const isDarwin = process.platform === "darwin";
+
+const buildKillPortCommand = (port: number): string =>
+  isDarwin ?
+    `pids=$(lsof -ti tcp:${port} 2>/dev/null) && [ -n "$pids" ] && kill -9 $pids || true`
+  : `fuser -k ${port}/tcp 2>/dev/null || true`;
+
+const buildPortFreeCheckCommand = (port: number): string =>
+  isDarwin ?
+    `if lsof -ti tcp:${port} >/dev/null 2>&1; then echo busy; else echo free; fi`
+  : `fuser ${port}/tcp 2>/dev/null || echo free`;
+
 /**
  * Stops a moose process with graceful shutdown and forced termination fallback
  */
@@ -287,14 +299,13 @@ export const killRemainingProcesses = async (
 
   // Kill processes holding the specified ports.
   try {
-    const fuserCmds = portsToKill.map(
-      (p) => `fuser -k ${p}/tcp 2>/dev/null || true`,
-    );
-    await execAsync(fuserCmds.join("; "), {
-      timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-      killSignal: "SIGKILL",
-      windowsHide: true,
-    });
+    for (const port of portsToKill) {
+      await execAsync(buildKillPortCommand(port), {
+        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+      });
+    }
     log.debug("Killed processes on ports", { ports: portsToKill });
   } catch (error) {
     log.warn("Error killing processes by port");
@@ -304,10 +315,9 @@ export const killRemainingProcesses = async (
   for (const port of portsToWait) {
     try {
       for (let i = 0; i < 10; i++) {
-        const { stdout } = await execAsync(
-          `fuser ${port}/tcp 2>/dev/null || echo free`,
-          { timeout: 5000 },
-        );
+        const { stdout } = await execAsync(buildPortFreeCheckCommand(port), {
+          timeout: 5000,
+        });
         if (stdout.trim() === "free") {
           log.debug(`Port ${port} is free`);
           break;
@@ -538,6 +548,11 @@ const waitForStreamingDockerlessMode = async (
   // (e.g., streaming is disabled), falls back to a short delay.
   const elapsedMs = Date.now() - startTime;
   const remainingBudgetMs = Math.max(0, budgetMs - elapsedMs);
+  if (remainingBudgetMs === 0) {
+    throw new Error(
+      "Timed out before consumer groups could stabilize (dockerless mode)",
+    );
+  }
   const pollTimeoutMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
   log.debug(
     `Phase 3: Polling consumer groups for Stable state (timeout: ${Math.floor(pollTimeoutMs / 1000)}s)`,

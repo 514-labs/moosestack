@@ -10,6 +10,13 @@ use tokio::sync::watch;
 use crate::broker::Broker;
 use crate::error;
 
+#[derive(Clone)]
+struct RequestedPartition {
+    topic_index: usize,
+    partition_index: usize,
+    receiver: watch::Receiver<u64>,
+}
+
 /// Handle Fetch requests with long-polling support.
 ///
 /// If the initial fetch returns fewer than `min_bytes`, waits up to `max_wait_ms`
@@ -22,17 +29,20 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
     // the initial fetch. We compare future notifications against the first
     // response's high watermarks so pre-fetch notifications don't break
     // long-poll semantics.
-    let mut receivers = collect_receivers(broker, &request).await;
+    let mut requested_partitions = collect_receivers(broker, &request).await;
 
     // First attempt to fetch
     let (response, total_bytes) = do_fetch(broker, &request).await;
 
     // Long polling: if we got less than min_bytes and max_wait_ms > 0, wait for data
-    if total_bytes < min_bytes as i64 && max_wait_ms > 0 && !receivers.is_empty() {
-        let baselines = collect_high_watermarks(&response);
+    if total_bytes < min_bytes as i64 && max_wait_ms > 0 && !requested_partitions.is_empty() {
+        let baselines = collect_high_watermarks(&response, &requested_partitions);
         let timeout = Duration::from_millis(max_wait_ms);
-        let _ =
-            tokio::time::timeout(timeout, wait_any_changed_since(&mut receivers, &baselines)).await;
+        let _ = tokio::time::timeout(
+            timeout,
+            wait_any_changed_since(&mut requested_partitions, &baselines),
+        )
+        .await;
 
         // Re-fetch after wait
         let (response, _) = do_fetch(broker, &request).await;
@@ -43,27 +53,34 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
 }
 
 /// Wait until any of the watch receivers reports a change.
-async fn wait_any_changed_since(receivers: &mut [watch::Receiver<u64>], baselines: &[u64]) {
-    if receivers.is_empty() || receivers.len() != baselines.len() {
+async fn wait_any_changed_since(
+    requested_partitions: &mut [RequestedPartition],
+    baselines: &[u64],
+) {
+    if requested_partitions.is_empty() || requested_partitions.len() != baselines.len() {
         return;
     }
 
-    if receivers
+    if requested_partitions
         .iter()
         .zip(baselines.iter())
-        .any(|(receiver, baseline)| *receiver.borrow() > *baseline)
+        .any(|(requested_partition, baseline)| *requested_partition.receiver.borrow() > *baseline)
     {
         return;
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
-    let mut handles = Vec::with_capacity(receivers.len());
+    let mut handles = Vec::with_capacity(requested_partitions.len());
 
-    for (recv, baseline) in receivers.iter().cloned().zip(baselines.iter().copied()) {
+    for (requested_partition, baseline) in requested_partitions
+        .iter()
+        .cloned()
+        .zip(baselines.iter().copied())
+    {
         let tx = tx.clone();
         handles.push(tokio::spawn(async move {
-            let mut recv = recv;
+            let mut recv = requested_partition.receiver;
             loop {
                 if *recv.borrow() > baseline {
                     break;
@@ -151,31 +168,38 @@ async fn do_fetch(broker: &Broker, request: &FetchRequest) -> (FetchResponse, i6
     (response, total_bytes)
 }
 
-async fn collect_receivers(broker: &Broker, request: &FetchRequest) -> Vec<watch::Receiver<u64>> {
+async fn collect_receivers(broker: &Broker, request: &FetchRequest) -> Vec<RequestedPartition> {
     let topics = broker.topics.read().await;
-    let mut receivers = Vec::new();
+    let mut requested_partitions = Vec::new();
 
-    for topic_req in &request.topics {
+    for (topic_index, topic_req) in request.topics.iter().enumerate() {
         if let Some(topic) = topics.get(&topic_req.topic) {
-            for partition_req in &topic_req.partitions {
+            for (partition_index, partition_req) in topic_req.partitions.iter().enumerate() {
                 if let Some(partition) = topic.partitions.get(partition_req.partition as usize) {
-                    receivers.push(partition.data_version());
+                    requested_partitions.push(RequestedPartition {
+                        topic_index,
+                        partition_index,
+                        receiver: partition.data_version(),
+                    });
                 }
             }
         }
     }
 
-    receivers
+    requested_partitions
 }
 
-fn collect_high_watermarks(response: &FetchResponse) -> Vec<u64> {
-    response
-        .responses
+fn collect_high_watermarks(
+    response: &FetchResponse,
+    requested_partitions: &[RequestedPartition],
+) -> Vec<u64> {
+    requested_partitions
         .iter()
-        .flat_map(|topic| {
-            topic
-                .partitions
-                .iter()
+        .filter_map(|requested_partition| {
+            response
+                .responses
+                .get(requested_partition.topic_index)
+                .and_then(|topic| topic.partitions.get(requested_partition.partition_index))
                 .map(|partition| partition.high_watermark.max(0) as u64)
         })
         .collect()

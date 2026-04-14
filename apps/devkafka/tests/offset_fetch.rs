@@ -74,8 +74,8 @@ async fn api_versions_advertises_offset_fetch() {
         .expect("OffsetFetch should be in api_keys");
 
     assert!(
-        offset_fetch_api.max_version >= 7,
-        "OffsetFetch max_version should be >= 7, got {}",
+        offset_fetch_api.max_version >= 8,
+        "OffsetFetch max_version should be >= 8, got {}",
         offset_fetch_api.max_version
     );
 }

@@ -181,7 +181,7 @@ Moose will create a complete project structure with:
 </Callout>
 
 <Callout type="info" title="Replicated table imports">
-When `moose init --from-remote` imports replicated ClickHouse tables, Moose strips the remote keeper path and replica name from the generated model definitions. Those values are specific to the source cluster, so local development regenerates the replication parameters at table creation time instead of reusing remote UUID-based paths.
+When `moose init --from-remote` imports replicated ClickHouse tables, Moose strips the remote keeper path and replica name from the generated model definitions. Those values are specific to the source cluster, so local development regenerates the replication parameters at table creation time instead of reusing remote UUID-based paths. This only affects the local dev setup that Moose creates for you; if you deploy replicated tables or hand-author production configs, you still need to provide the correct keeper path and replica name for the target cluster.
 </Callout>
 <ToggleBlock className="mb-4" openText="Troubleshooting" closeText="Hide troubleshooting">
 - Make sure you are using the `HTTPS` connection string, not the `HTTP` connection string.

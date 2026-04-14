@@ -154,9 +154,6 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
         </client>
     </openSSL>
 

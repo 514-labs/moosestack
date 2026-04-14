@@ -23,6 +23,16 @@ pub struct Set {
 }
 
 impl Set {
+    fn key_exists(&self, db: &Db) -> bool {
+        let mut state = db.lock_state();
+        if state.is_expired(&self.key) {
+            state.remove(&self.key);
+            return false;
+        }
+
+        state.entries.contains_key(&self.key)
+    }
+
     fn lookup_existing_string_value(&self, db: &Db) -> Result<Option<Bytes>, &'static str> {
         let mut state = db.lock_state();
         if state.is_expired(&self.key) {
@@ -119,7 +129,7 @@ impl Set {
         // Fetch old value when GET is requested, or to check NX/XX conditions.
         // Do the existence check directly against the stored entry so WRONGTYPE
         // is preserved instead of being collapsed into "missing".
-        let old_value = if self.get || self.nx || self.xx {
+        let old_value = if self.get {
             match self.lookup_existing_string_value(db) {
                 Ok(value) => value,
                 Err(message) => {
@@ -131,7 +141,13 @@ impl Set {
             None
         };
 
-        let key_exists = old_value.is_some();
+        let key_exists = if self.get {
+            old_value.is_some()
+        } else if self.nx || self.xx {
+            self.key_exists(db)
+        } else {
+            false
+        };
 
         // NX: only set when key does NOT exist.
         // XX: only set when key DOES exist.
@@ -209,5 +225,23 @@ mod tests {
             set.lookup_existing_string_value(&db).unwrap_err(),
             "WRONGTYPE Operation against a key holding the wrong kind of value"
         );
+    }
+
+    #[tokio::test]
+    async fn nx_treats_wrongtype_key_as_existing() {
+        let db = Db::new();
+        db.rpush("list".to_string(), vec![Bytes::from("value")])
+            .unwrap();
+
+        let set = Set {
+            key: "list".to_string(),
+            value: Bytes::from("new-value"),
+            expire: None,
+            get: false,
+            nx: true,
+            xx: false,
+        };
+
+        assert!(set.key_exists(&db));
     }
 }
