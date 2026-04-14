@@ -45,7 +45,7 @@ The engine test file demonstrates proper configuration for each engine type to e
 
 514 Hosting is a branch-native control plane for cloud OLAP workloads.
 
-[Sign up for a free trial](https://fiveonefour.boreal.cloud/sign-up).
+https://fiveonefour.boreal.cloud
 
 # Contributing
 
