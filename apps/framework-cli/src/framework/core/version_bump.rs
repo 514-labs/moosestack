@@ -12,6 +12,8 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{stdout, IsTerminal, Write};
 
+use tracing::{debug, info};
+
 use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
@@ -139,6 +141,20 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
         }
     }
 
+    debug!(
+        bumps = bumps.len(),
+        remaining = changes.len() - bumps.len() * 2,
+        "Extracted version bump pairs from OLAP changes"
+    );
+    for bump in &bumps {
+        debug!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            primitive = %bump.old_table.source_primitive.name,
+            "Detected version bump pair"
+        );
+    }
+
     let remaining: Vec<OlapChange> = changes
         .iter()
         .filter(|c| match c {
@@ -220,9 +236,14 @@ pub fn check_backfill_eligibility(
         .collect();
 
     if !columns_equivalent(&old_insertable, &new_insertable) {
-        return BackfillEligibility::NotEligible {
-            reason: schema_diff_reason(&old_insertable, &new_insertable),
-        };
+        let reason = schema_diff_reason(&old_insertable, &new_insertable);
+        info!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            reason = %reason,
+            "Backfill not eligible: schema mismatch"
+        );
+        return BackfillEligibility::NotEligible { reason };
     }
 
     let src_db = bump
@@ -245,6 +266,12 @@ pub fn check_backfill_eligibility(
     let sql = format!(
         "INSERT INTO `{dst_db}`.`{}` ({cols_csv}) SELECT {cols_csv} FROM `{src_db}`.`{}`",
         bump.new_table.name, bump.old_table.name
+    );
+
+    info!(
+        old = %bump.old_table.name,
+        new = %bump.new_table.name,
+        "Backfill eligible: insertable columns match"
     );
 
     BackfillEligibility::Eligible { sql }
@@ -448,6 +475,14 @@ pub async fn version_bump_gate(
             }
             OldTableDisposition::Untouched => {}
         }
+
+        info!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            backfill = backfill_sql.is_some(),
+            disposition = ?disposition,
+            "Version bump decision recorded"
+        );
 
         decisions.push(VersionBumpDecision {
             bump,
@@ -760,6 +795,10 @@ pub fn exclude_bump_drops_from_risk(decisions: &[VersionBumpDecision], risk: &mu
         } => !vb_drop_names.contains(table_name_with_suffix),
         _ => true,
     });
+    debug!(
+        excluded_tables = ?vb_drop_names,
+        "Excluded version-bump drops from destructive risk assessment"
+    );
 }
 
 #[cfg(test)]
@@ -1032,5 +1071,147 @@ mod tests {
             "tables from different databases should not pair"
         );
         assert_eq!(remaining.len(), 2);
+    }
+
+    #[test]
+    fn phased_operations_backfill_and_drop() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some(
+                "INSERT INTO `default`.`Events_2_0` (`id`) SELECT `id` FROM `default`.`Events_1_0`"
+                    .to_string(),
+            ),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert!(
+            matches!(&creates[0], crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Events_2_0")
+        );
+        assert_eq!(backfills.len(), 1);
+        assert!(matches!(
+            &backfills[0],
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::RawSql { .. }
+        ));
+
+        // bump_drop_changes should produce the Removed change for dependency-ordered teardown
+        let drops = bump_drop_changes(&decisions);
+        assert_eq!(drops.len(), 1);
+        assert!(
+            matches!(&drops[0], OlapChange::Table(TableChange::Removed(t)) if t.name == "Events_1_0")
+        );
+    }
+
+    #[test]
+    fn phased_operations_retain_keeps_old() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Retain,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert_eq!(backfills.len(), 1);
+
+        // No drop changes when retaining
+        let drops = bump_drop_changes(&decisions);
+        assert!(drops.is_empty());
+    }
+
+    #[test]
+    fn phased_operations_no_backfill_drop() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: None,
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert!(backfills.is_empty());
+
+        let drops = bump_drop_changes(&decisions);
+        assert_eq!(drops.len(), 1);
+    }
+
+    #[test]
+    fn exclude_bump_drops_from_risk_filters_confirmed_drops() {
+        use crate::framework::core::plan_risk::{DestructiveChange, PlanRisk};
+
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let mut risk = PlanRisk {
+            destructive_changes: vec![
+                DestructiveChange::TableDrop {
+                    database: None,
+                    table_name_with_suffix: "Events_1_0".to_string(),
+                    version: Some(crate::framework::versions::Version::from_string(
+                        "1.0".to_string(),
+                    )),
+                },
+                DestructiveChange::TableDrop {
+                    database: None,
+                    table_name_with_suffix: "Users_1_0".to_string(),
+                    version: Some(crate::framework::versions::Version::from_string(
+                        "1.0".to_string(),
+                    )),
+                },
+            ],
+        };
+
+        exclude_bump_drops_from_risk(&decisions, &mut risk);
+
+        // Events_1_0 drop was confirmed via version bump — should be excluded
+        assert_eq!(risk.destructive_changes.len(), 1);
+        assert!(matches!(
+            &risk.destructive_changes[0],
+            DestructiveChange::TableDrop { table_name_with_suffix, .. } if table_name_with_suffix == "Users_1_0"
+        ));
+    }
+
+    #[test]
+    fn exclude_bump_drops_also_filters_recreates() {
+        use crate::framework::core::plan_risk::{DestructiveChange, PlanRisk};
+
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: None,
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let mut risk = PlanRisk {
+            destructive_changes: vec![DestructiveChange::TableRecreate {
+                database: None,
+                table_name_with_suffix: "Events_1_0".to_string(),
+                reason: "schema change".to_string(),
+                version: Some(crate::framework::versions::Version::from_string(
+                    "1.0".to_string(),
+                )),
+            }],
+        };
+
+        exclude_bump_drops_from_risk(&decisions, &mut risk);
+        assert!(risk.destructive_changes.is_empty());
     }
 }

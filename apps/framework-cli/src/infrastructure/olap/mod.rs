@@ -10,6 +10,7 @@ use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
     project::Project,
 };
+use tracing::{error, info};
 
 pub mod clickhouse;
 pub mod clickhouse_http_client;
@@ -166,6 +167,14 @@ pub async fn execute_changes(
 
     let db_name = &project.clickhouse_config.db_name;
 
+    if !version_bump_decisions.is_empty() {
+        info!(
+            bump_count = version_bump_decisions.len(),
+            total_changes = changes.len(),
+            "Executing OLAP changes with version bumps"
+        );
+    }
+
     let (remaining_changes, has_bumps) = if version_bump_decisions.is_empty() {
         (std::borrow::Cow::Borrowed(changes), false)
     } else {
@@ -190,6 +199,7 @@ pub async fn execute_changes(
     // Phase 1: Bump creates (InPlace only — NewAlongside tables are created in Phase 4)
     for decision in version_bump_decisions {
         if decision.bump.kind == version_bump::VersionBumpKind::InPlace {
+            info!(table = %decision.bump.new_table.name, "Phase 1: Creating new versioned table");
             let create = [OlapChange::Table(TableChange::Added(
                 decision.bump.new_table.clone(),
             ))];
@@ -201,8 +211,18 @@ pub async fn execute_changes(
     // Phase 2: Backfills (old table still alive, new table populated)
     for decision in version_bump_decisions {
         if let Some(sql) = &decision.backfill_sql {
+            info!(
+                old = %decision.bump.old_table.name,
+                new = %decision.bump.new_table.name,
+                "Phase 2: Running backfill query"
+            );
             let client = clickhouse::create_client(project.clickhouse_config.clone());
             clickhouse::run_query(sql, &client).await.map_err(|e| {
+                error!(
+                    old = %decision.bump.old_table.name,
+                    new = %decision.bump.new_table.name,
+                    "Phase 2: Backfill query failed"
+                );
                 OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
                     error: e,
                     resource: Some(format!(

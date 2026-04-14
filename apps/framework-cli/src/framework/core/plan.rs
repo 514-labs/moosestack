@@ -1954,4 +1954,121 @@ mod tests {
         assert!(filter.table_ids.contains("prod_users_0_0"));
         assert!(filter.table_ids.contains("other_db_orders_0_0"));
     }
+
+    #[test]
+    fn test_infra_changes_to_operations_with_version_bumps_ordering() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+        use crate::framework::core::version_bump::{
+            OldTableDisposition, VersionBump, VersionBumpDecision, VersionBumpKind,
+        };
+        use crate::framework::versions::Version;
+
+        // Create a version bump pair: Events_1_0 removed + Events_2_0 added
+        let mut old_events = create_test_table("Events_1_0");
+        old_events.version = Some(Version::from_string("1.0".to_string()));
+        old_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        let mut new_events = create_test_table("Events_2_0");
+        new_events.version = Some(Version::from_string("2.0".to_string()));
+        new_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        // Unrelated table add
+        let users_table = create_test_table("Users_1_0");
+
+        let changes = InfraChanges {
+            olap_changes: vec![
+                OlapChange::Table(TableChange::Removed(old_events.clone())),
+                OlapChange::Table(TableChange::Added(new_events.clone())),
+                OlapChange::Table(TableChange::Added(users_table.clone())),
+            ],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            workflow_changes: vec![],
+            filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
+        };
+
+        let decisions = vec![VersionBumpDecision {
+            bump: VersionBump {
+                old_table: old_events.clone(),
+                new_table: new_events.clone(),
+                kind: VersionBumpKind::InPlace,
+            },
+            backfill_sql: Some(
+                "INSERT INTO `local`.`Events_2_0` (`id`) SELECT `id` FROM `local`.`Events_1_0`"
+                    .to_string(),
+            ),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let ops = infra_changes_to_operations_with_version_bumps(
+            &changes,
+            DEFAULT_DATABASE_NAME,
+            &decisions,
+        )
+        .unwrap();
+
+        // Verify ordering invariant:
+        // 1. Bump creates (Events_2_0)
+        // 2. Bump backfills (RawSql)
+        // 3. Teardown (DropTable Events_1_0)
+        // 4. Setup (CreateTable Users_1_0)
+        assert!(!ops.is_empty());
+
+        // Find positions of key operations
+        let create_events_2_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Events_2_0"
+        ));
+        let backfill_pos = ops.iter().position(|op| {
+            matches!(
+                op,
+                crate::infrastructure::olap::clickhouse::SerializableOlapOperation::RawSql { .. }
+            )
+        });
+        let drop_events_1_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::DropTable { table, .. } if table == "Events_1_0"
+        ));
+        let create_users_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Users_1_0"
+        ));
+
+        // All operations should be present
+        assert!(
+            create_events_2_pos.is_some(),
+            "Events_2_0 create should exist"
+        );
+        assert!(backfill_pos.is_some(), "Backfill should exist");
+        assert!(drop_events_1_pos.is_some(), "Events_1_0 drop should exist");
+        assert!(create_users_pos.is_some(), "Users_1_0 create should exist");
+
+        let ce2 = create_events_2_pos.unwrap();
+        let bf = backfill_pos.unwrap();
+        let de1 = drop_events_1_pos.unwrap();
+        let cu = create_users_pos.unwrap();
+
+        // Bump create before backfill
+        assert!(
+            ce2 < bf,
+            "Events_2_0 create ({ce2}) must come before backfill ({bf})"
+        );
+        // Backfill before teardown (old table still alive during backfill)
+        assert!(
+            bf < de1,
+            "Backfill ({bf}) must come before Events_1_0 drop ({de1})"
+        );
+        // Teardown before setup
+        assert!(
+            de1 < cu,
+            "Events_1_0 drop ({de1}) must come before Users_1_0 create ({cu})"
+        );
+    }
 }
