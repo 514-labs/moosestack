@@ -11,14 +11,6 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 Use `DeadLetterQueue<T>` to capture records of type `T` that fail during stream processing. A dead letter queue is itself a stream of wrapper records: Moose keeps the original payload and adds error details about why that record failed.
 
-## When records are written here
-
-Records are written to a dead letter queue when a configured stream component fails while handling them.
-
-- A transform throws while processing a record.
-- A consumer throws while processing a record.
-- An [Ingest API](/moosestack/apis/ingest-api) is configured with a dead letter queue and cannot process a record cleanly.
-
 ## Create a dead letter queue
 
 <LanguageTabs>
@@ -32,7 +24,7 @@ interface UserEvent {
   timestamp: Date;
 }
 
-const userEventDLQ = new DeadLetterQueue<UserEvent>("user_event_dlq");
+export const userEventDLQ = new DeadLetterQueue<UserEvent>("user_event_dlq");
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
@@ -53,7 +45,34 @@ record_dlq = DeadLetterQueue[Record]("record_dlq")
   </LanguageTabContent>
 </LanguageTabs>
 
-## Attach to a transform
+## Where you can attach a dead letter queue
+
+Attach a dead letter queue to one of these components when failed records from that stage should be retained for inspection or recovery.
+
+<table>
+  <thead>
+    <tr>
+      <th>Attach to</th>
+      <th>Records are written here when</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Transform</td>
+      <td>A transform throws while processing a record.</td>
+    </tr>
+    <tr>
+      <td>Consumer</td>
+      <td>A consumer throws while processing a record.</td>
+    </tr>
+    <tr>
+      <td><a href="/moosestack/apis/ingest-api">Ingest API</a></td>
+      <td>An Ingest API is configured with a dead letter queue and cannot validate or process a record cleanly.</td>
+    </tr>
+  </tbody>
+</table>
+
+### Attach to a transform
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -70,9 +89,9 @@ interface ProcessedRecord extends RawRecord {
   processed: Date;
 }
 
-const rawRecords = new Stream<RawRecord>("raw_records");
-const processedRecords = new Stream<ProcessedRecord>("processed_records");
-const recordDLQ = new DeadLetterQueue<RawRecord>("record_dlq");
+export const rawRecords = new Stream<RawRecord>("raw_records");
+export const processedRecords = new Stream<ProcessedRecord>("processed_records");
+export const recordDLQ = new DeadLetterQueue<RawRecord>("record_dlq");
 
 rawRecords.addTransform(
   processedRecords,
@@ -133,7 +152,8 @@ raw_records.add_transform(
   </LanguageTabContent>
 </LanguageTabs>
 
-## Attach to a consumer
+
+### Attach to a consumer
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -145,8 +165,8 @@ interface RawEvent {
   action: string;
 }
 
-const rawEvents = new Stream<RawEvent>("raw_events");
-const eventDLQ = new DeadLetterQueue<RawEvent>("event_dlq");
+export const rawEvents = new Stream<RawEvent>("raw_events");
+export const eventDLQ = new DeadLetterQueue<RawEvent>("event_dlq");
 
 rawEvents.addConsumer(
   (event) => {
@@ -188,17 +208,56 @@ raw_events.add_consumer(
   </LanguageTabContent>
 </LanguageTabs>
 
-## Dead letter record shape
+### Attach to an Ingest API
 
-Each dead letter queue entry stores the original failed payload plus these augmented fields:
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/ingest-api-with-dlq.ts" copy
+import { DeadLetterQueue, IngestApi, Stream } from "@514labs/moose-lib";
 
-- the original record
-- the error message
-- the error type
-- when the failure happened
-- the failure source, such as `transform` or `api`
+interface UserEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
 
-When Moose writes a failed record into a dead letter queue, it wraps the original payload with this shape.
+const userEvents = new Stream<UserEvent>("user_events");
+const userEventDLQ = new DeadLetterQueue<UserEvent>("user_events_dlq");
+
+export const userEventsApi = new IngestApi<UserEvent>("user-events", {
+  destination: userEvents,
+  deadLetterQueue: userEventDLQ,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/ingest_api_with_dlq.py" copy
+from datetime import datetime
+
+from moose_lib import DeadLetterQueue, IngestApi, IngestConfigWithDestination, Stream
+from pydantic import BaseModel
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+user_events = Stream[UserEvent]("user_events")
+user_event_dlq = DeadLetterQueue[UserEvent]("user_events_dlq")
+
+user_events_api = IngestApi[UserEvent]("user-events", IngestConfigWithDestination(
+    destination=user_events,
+    dead_letter_queue=user_event_dlq,
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Dead letter payload format
+
+When Moose writes a failed record into a dead letter queue, it wraps the original payload with a dead letter model that includes failure metadata alongside the original record. TypeScript exposes a base `DeadLetterModel` plus a typed `DeadLetter<T>` helper, while Python exposes `DeadLetterModel[T]` directly.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -215,32 +274,107 @@ interface DeadLetter<T> extends DeadLetterModel {
   asTyped: () => T;
 }
 ```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>originalRecord</code></td>
+      <td>The original failed payload before Moose wrapped it as a dead letter.</td>
+    </tr>
+    <tr>
+      <td><code>errorMessage</code></td>
+      <td>The error message Moose recorded for the failure.</td>
+    </tr>
+    <tr>
+      <td><code>errorType</code></td>
+      <td>The category of failure, such as a validation or transform error.</td>
+    </tr>
+    <tr>
+      <td><code>failedAt</code></td>
+      <td>When Moose wrote the record to the dead letter queue.</td>
+    </tr>
+    <tr>
+      <td><code>source</code></td>
+      <td>Where the failure happened, such as <code>api</code>, <code>transform</code>, or <code>table</code>.</td>
+    </tr>
+    <tr>
+      <td><code>asTyped()</code></td>
+      <td>Returns the original payload as the expected application type <code>T</code>. This helper is available on <code>DeadLetter&lt;T&gt;</code>.</td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="app/dead_letter_types.py" copy
-from datetime import datetime
+import datetime
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel
+from pydantic import AliasGenerator, BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 T = TypeVar("T")
 
 class DeadLetterModel(BaseModel, Generic[T]):
+    model_config = ConfigDict(
+        alias_generator=AliasGenerator(
+            serialization_alias=to_camel,
+        )
+    )
+
     original_record: Any
     error_message: str
     error_type: str
-    failed_at: datetime
+    failed_at: datetime.datetime
     source: Literal["api", "transform", "table"]
 
     def as_typed(self) -> T:
         ...
 ```
+
+<table>
+  <thead>
+    <tr>
+      <th>Member</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>original_record</code></td>
+      <td>The original failed payload before Moose wrapped it as a dead letter.</td>
+    </tr>
+    <tr>
+      <td><code>error_message</code></td>
+      <td>The error message Moose recorded for the failure.</td>
+    </tr>
+    <tr>
+      <td><code>error_type</code></td>
+      <td>The category of failure, such as a validation or transform error.</td>
+    </tr>
+    <tr>
+      <td><code>failed_at</code></td>
+      <td>When Moose wrote the record to the dead letter queue.</td>
+    </tr>
+    <tr>
+      <td><code>source</code></td>
+      <td>Where the failure happened, such as <code>api</code>, <code>transform</code>, or <code>table</code>.</td>
+    </tr>
+    <tr>
+      <td><code>as_typed()</code></td>
+      <td>Returns the original payload as the expected application type <code>T</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+Python code uses snake_case member names. When Moose serializes this model, it uses camelCase aliases.
   </LanguageTabContent>
 </LanguageTabs>
-
-The original failed payload stays under `originalRecord` in TypeScript or `original_record` in Python. Moose adds the error fields and timestamp when it writes the dead letter.
-
-Use `asTyped()` in TypeScript or `as_typed()` in Python to recover the original typed record from the dead letter payload.
 
 ## Inspect or recover dead letters
 
@@ -256,7 +390,7 @@ interface UserEvent {
   action: string;
 }
 
-const eventDLQ = new DeadLetterQueue<UserEvent>("event_dlq");
+export const eventDLQ = new DeadLetterQueue<UserEvent>("event_dlq");
 
 eventDLQ.addConsumer((deadLetter) => {
   console.error(deadLetter.errorMessage);
