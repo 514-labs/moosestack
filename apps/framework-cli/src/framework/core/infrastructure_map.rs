@@ -3387,10 +3387,6 @@ impl InfrastructureMap {
 
     /// Masks sensitive credentials before exporting to JSON migration files.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
-        use crate::infrastructure::olap::clickhouse::dictionary::{
-            DictionarySource, ExternalDictionarySource,
-        };
-
         for table in self.tables.values_mut() {
             match &mut table.engine {
                 ClickhouseEngine::S3Queue {
@@ -3430,37 +3426,7 @@ impl InfrastructureMap {
 
         // Mask credentials in dictionary external sources
         for dict in self.olap_dictionaries.values_mut() {
-            if let DictionarySource::External(ref mut ext) = dict.source {
-                match ext {
-                    ExternalDictionarySource::ClickHouse(s) => {
-                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
-                    }
-                    ExternalDictionarySource::Mysql(s) => {
-                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
-                    }
-                    ExternalDictionarySource::Postgresql(s) => {
-                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
-                    }
-                    ExternalDictionarySource::Redis(s) => {
-                        if s.password.is_some() {
-                            s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
-                        }
-                    }
-                    ExternalDictionarySource::Mongodb(s) => {
-                        s.password = CREDENTIAL_PLACEHOLDER.to_string();
-                    }
-                    ExternalDictionarySource::S3(s) => {
-                        if s.access_key_id.is_some() {
-                            s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
-                        }
-                        if s.secret_access_key.is_some() {
-                            s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
-                        }
-                    }
-                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
-                    }
-                }
-            }
+            mask_dict_credentials(dict);
         }
 
         self
@@ -4004,11 +3970,54 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
 ///
 /// # Returns
 /// `true` if the dictionaries are equal ignoring metadata, `false` otherwise
+/// Masks credential-bearing fields in a dictionary external source in-place.
+///
+/// Replaces passwords, keys, and tokens with [`CREDENTIAL_PLACEHOLDER`] so that
+/// round-tripped dictionaries (whose credentials are masked before proto/Redis
+/// persistence) compare equal to their plaintext counterparts.
+fn mask_dict_credentials(dict: &mut OlapDictionary) {
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionarySource, ExternalDictionarySource,
+    };
+    if let DictionarySource::External(ref mut ext) = dict.source {
+        match ext {
+            ExternalDictionarySource::ClickHouse(s) => {
+                s.password = CREDENTIAL_PLACEHOLDER.to_string();
+            }
+            ExternalDictionarySource::Mysql(s) => {
+                s.password = CREDENTIAL_PLACEHOLDER.to_string();
+            }
+            ExternalDictionarySource::Postgresql(s) => {
+                s.password = CREDENTIAL_PLACEHOLDER.to_string();
+            }
+            ExternalDictionarySource::Redis(s) => {
+                if s.password.is_some() {
+                    s.password = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                }
+            }
+            ExternalDictionarySource::Mongodb(s) => {
+                s.password = CREDENTIAL_PLACEHOLDER.to_string();
+            }
+            ExternalDictionarySource::S3(s) => {
+                if s.access_key_id.is_some() {
+                    s.access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                }
+                if s.secret_access_key.is_some() {
+                    s.secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                }
+            }
+            ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {}
+        }
+    }
+}
+
 fn dicts_equal_ignore_metadata(a: &OlapDictionary, b: &OlapDictionary) -> bool {
     let mut a = a.clone();
     let mut b = b.clone();
     a.metadata = None;
     b.metadata = None;
+    mask_dict_credentials(&mut a);
+    mask_dict_credentials(&mut b);
     a == b
 }
 
