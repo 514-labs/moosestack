@@ -1,0 +1,280 @@
+---
+title: Stream patterns
+description: Reference examples for fan-out, fan-in, and chained stream processing with Moose Streams
+order: 9
+category: streaming
+---
+
+import { ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Stream patterns
+
+Use this page for multi-stream composition examples that go beyond the basic `Stream`, `Stream.send()`, consumer, and transform references.
+
+<ExportRequirement
+  primitive="streams"
+  example="export { orders, analyticsOrders, highValueOrders }"
+  pythonExample="from app.fan_out import orders, analytics_orders, high_value_orders"
+/>
+
+## Fan-out
+
+Send one source stream into multiple downstream streams when different processors or storage paths should receive different shapes of the same event flow.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/fan-out.ts" copy
+import { Stream } from "@514labs/moose-lib";
+
+interface OrderEvent {
+  orderId: string;
+  userId: string;
+  amount: number;
+}
+
+interface AnalyticsOrderEvent extends OrderEvent {}
+
+interface HighValueOrderEvent extends OrderEvent {
+  priority: "high";
+}
+
+const orders = new Stream<OrderEvent>("orders");
+const analyticsOrders = new Stream<AnalyticsOrderEvent>("analytics_orders");
+const highValueOrders = new Stream<HighValueOrderEvent>("high_value_orders");
+
+orders.addTransform(analyticsOrders, (order) => order);
+
+orders.addTransform(highValueOrders, (order) => {
+  if (order.amount < 1000) {
+    return undefined;
+  }
+
+  return {
+    ...order,
+    priority: "high",
+  };
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/fan_out.py" copy
+from typing import Literal
+
+from moose_lib import Stream
+from pydantic import BaseModel
+
+class OrderEvent(BaseModel):
+    order_id: str
+    user_id: str
+    amount: float
+
+class AnalyticsOrderEvent(OrderEvent):
+    pass
+
+class HighValueOrderEvent(OrderEvent):
+    priority: Literal["high"]
+
+orders = Stream[OrderEvent]("orders")
+analytics_orders = Stream[AnalyticsOrderEvent]("analytics_orders")
+high_value_orders = Stream[HighValueOrderEvent]("high_value_orders")
+
+orders.add_transform(
+    destination=analytics_orders,
+    transformation=lambda order: AnalyticsOrderEvent(**order.model_dump()),
+)
+
+def high_value_transform(order: OrderEvent) -> HighValueOrderEvent | None:
+    if order.amount < 1000:
+        return None
+
+    return HighValueOrderEvent(
+        order_id=order.order_id,
+        user_id=order.user_id,
+        amount=order.amount,
+        priority="high",
+    )
+
+orders.add_transform(
+    destination=high_value_orders,
+    transformation=high_value_transform,
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Fan-in
+
+Send multiple source streams into one destination stream when different producers should land in a shared downstream shape.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/fan-in.ts" copy
+import { Stream } from "@514labs/moose-lib";
+
+interface WebEvent {
+  userId: string;
+  path: string;
+}
+
+interface MobileEvent {
+  userId: string;
+  screen: string;
+}
+
+interface UnifiedEvent {
+  userId: string;
+  source: "web" | "mobile";
+  name: string;
+}
+
+const webEvents = new Stream<WebEvent>("web_events");
+const mobileEvents = new Stream<MobileEvent>("mobile_events");
+const unifiedEvents = new Stream<UnifiedEvent>("unified_events");
+
+webEvents.addTransform(unifiedEvents, (event) => ({
+  userId: event.userId,
+  source: "web",
+  name: event.path,
+}));
+
+mobileEvents.addTransform(unifiedEvents, (event) => ({
+  userId: event.userId,
+  source: "mobile",
+  name: event.screen,
+}));
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/fan_in.py" copy
+from typing import Literal
+
+from moose_lib import Stream
+from pydantic import BaseModel
+
+class WebEvent(BaseModel):
+    user_id: str
+    path: str
+
+class MobileEvent(BaseModel):
+    user_id: str
+    screen: str
+
+class UnifiedEvent(BaseModel):
+    user_id: str
+    source: Literal["web", "mobile"]
+    name: str
+
+web_events = Stream[WebEvent]("web_events")
+mobile_events = Stream[MobileEvent]("mobile_events")
+unified_events = Stream[UnifiedEvent]("unified_events")
+
+web_events.add_transform(
+    destination=unified_events,
+    transformation=lambda event: UnifiedEvent(
+        user_id=event.user_id,
+        source="web",
+        name=event.path,
+    ),
+)
+
+mobile_events.add_transform(
+    destination=unified_events,
+    transformation=lambda event: UnifiedEvent(
+        user_id=event.user_id,
+        source="mobile",
+        name=event.screen,
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Chained stages
+
+Use multiple intermediate streams when records should move through distinct processing steps.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/chained-stages.ts" copy
+import { Stream } from "@514labs/moose-lib";
+
+interface RawEvent {
+  userId: string;
+  email: string;
+}
+
+interface ValidatedEvent extends RawEvent {}
+
+interface EnrichedEvent extends ValidatedEvent {
+  emailDomain: string;
+}
+
+const rawEvents = new Stream<RawEvent>("raw_events");
+const validatedEvents = new Stream<ValidatedEvent>("validated_events");
+const enrichedEvents = new Stream<EnrichedEvent>("enriched_events");
+
+rawEvents.addTransform(validatedEvents, (event) => {
+  if (!event.userId || !event.email.includes("@")) {
+    return undefined;
+  }
+
+  return event;
+});
+
+validatedEvents.addTransform(enrichedEvents, (event) => ({
+  ...event,
+  emailDomain: event.email.split("@")[1],
+}));
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="app/chained_stages.py" copy
+from moose_lib import Stream
+from pydantic import BaseModel
+
+class RawEvent(BaseModel):
+    user_id: str
+    email: str
+
+class ValidatedEvent(RawEvent):
+    pass
+
+class EnrichedEvent(ValidatedEvent):
+    email_domain: str
+
+raw_events = Stream[RawEvent]("raw_events")
+validated_events = Stream[ValidatedEvent]("validated_events")
+enriched_events = Stream[EnrichedEvent]("enriched_events")
+
+def validate_event(event: RawEvent) -> ValidatedEvent | None:
+    if not event.user_id or "@" not in event.email:
+        return None
+
+    return ValidatedEvent(**event.model_dump())
+
+def enrich_event(event: ValidatedEvent) -> EnrichedEvent:
+    return EnrichedEvent(
+        user_id=event.user_id,
+        email=event.email,
+        email_domain=event.email.split("@")[1],
+    )
+
+raw_events.add_transform(
+    destination=validated_events,
+    transformation=validate_event,
+)
+
+validated_events.add_transform(
+    destination=enriched_events,
+    transformation=enrich_event,
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Related capabilities
+
+- [Stream](/moosestack/streaming/create-stream) for defining the streams used in each pattern
+- [Transform functions](/moosestack/streaming/transform-functions) for the single-transform API reference
+- [Consumer functions](/moosestack/streaming/consumer-functions) when a stage should trigger side effects instead of writing to another stream
+- [Dead letter queues](/moosestack/streaming/dead-letter-queues) when failed records in multi-stage flows should be captured
