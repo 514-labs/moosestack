@@ -114,7 +114,12 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
 
     for (key, removed_tables) in &removed_by_group {
         if let Some(added_tables) = added_by_group.get(key) {
-            for old in removed_tables {
+            // Sort removed tables by version descending so the highest old version
+            // pairs with the new table first, backfilling the most recent data.
+            let mut sorted_removed: Vec<&&Table> = removed_tables.iter().collect();
+            sorted_removed.sort_by(|a, b| b.version.cmp(&a.version));
+
+            for old in sorted_removed {
                 let old_key = table_key(old);
                 if consumed_removed.contains(&old_key) {
                     continue;
@@ -1040,11 +1045,15 @@ mod tests {
         let (bumps, remaining) = extract_version_bumps(&changes);
         // Only one bump possible: new_v3 can only be consumed once.
         assert_eq!(bumps.len(), 1);
-        // The first old version (v1) pairs with the only new version (v3).
-        assert_eq!(bumps[0].old_table.name, "Events_1_0");
+        // Highest removed version (v2) pairs with the new version (v3),
+        // ensuring backfill copies the most recent data.
+        assert_eq!(bumps[0].old_table.name, "Events_2_0");
         assert_eq!(bumps[0].new_table.name, "Events_3_0");
-        // v2 removal is left as a remaining change.
+        // v1 removal is left as a remaining change (orphaned drop).
         assert_eq!(remaining.len(), 1);
+        assert!(
+            matches!(&remaining[0], OlapChange::Table(TableChange::Removed(t)) if t.name == "Events_1_0")
+        );
     }
 
     #[test]
