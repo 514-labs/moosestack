@@ -654,6 +654,51 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
     deltas
 }
 
+/// Split version bump decisions into three ordered phases of `InfraDelta`s:
+/// `(creates, backfills, drops)`.
+///
+/// Callers interleave these with normal infra deltas to ensure correct ordering:
+/// bump creates land before dependent setup deltas, and bump drops land after backfills.
+pub fn version_bump_decisions_to_phased_deltas(
+    decisions: &[VersionBumpDecision],
+) -> (Vec<InfraDelta>, Vec<InfraDelta>, Vec<InfraDelta>) {
+    let mut creates = Vec::new();
+    let mut backfills = Vec::new();
+    let mut drops = Vec::new();
+
+    for decision in decisions {
+        if decision.bump.kind == VersionBumpKind::InPlace {
+            creates.push(InfraDelta::CreateTable {
+                table: decision.bump.new_table.clone(),
+            });
+        }
+
+        if let Some(sql) = &decision.backfill_sql {
+            backfills.push(InfraDelta::BackfillTable {
+                source_table: decision.bump.old_table.name.clone(),
+                target_table: decision.bump.new_table.name.clone(),
+                columns: vec![],
+                sql: sql.clone(),
+            });
+        }
+
+        if decision.old_table_disposition == OldTableDisposition::Drop {
+            drops.push(InfraDelta::DropTable {
+                table: decision.bump.old_table.clone(),
+                policy: DestructivePolicy {
+                    description: format!(
+                        "User confirmed: drop old version `{}` after version bump to `{}`",
+                        decision.bump.old_table.name, decision.bump.new_table.name
+                    ),
+                    approved_at: Utc::now(),
+                },
+            });
+        }
+    }
+
+    (creates, backfills, drops)
+}
+
 /// Split version bump decisions into three ordered phases of `SerializableOlapOperation`s:
 /// `(creates, backfills, drops)`.
 ///

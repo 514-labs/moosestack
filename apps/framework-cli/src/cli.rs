@@ -1992,12 +1992,18 @@ async fn confirm_and_save_migration(
         &result.default_database,
     );
 
-    // Prepend version bump deltas (create → backfill → drop) before other deltas
-    // so the new table exists before anything that might reference it.
-    let bump_deltas = version_bump::version_bump_decisions_to_deltas(&version_bump_decisions);
-    if !bump_deltas.is_empty() {
-        let mut combined = bump_deltas;
+    // Phase version bump deltas to ensure correct ordering:
+    // 1. Bump creates (for InPlace bumps) land first
+    // 2. Regular infra deltas (includes new table creates for NewAlongside bumps)
+    // 3. Bump backfills (requires both old and new tables to exist)
+    // 4. Bump drops (after backfills complete)
+    let (bump_creates, bump_backfills, bump_drops) =
+        version_bump::version_bump_decisions_to_phased_deltas(&version_bump_decisions);
+    if !bump_creates.is_empty() || !bump_backfills.is_empty() || !bump_drops.is_empty() {
+        let mut combined = bump_creates;
         combined.append(&mut infra_deltas);
+        combined.extend(bump_backfills);
+        combined.extend(bump_drops);
         infra_deltas = combined;
     }
 
