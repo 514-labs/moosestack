@@ -1,6 +1,6 @@
 ---
 title: Moose OLAP
-description: Understand what Moose OLAP manages, when to use it, and where to start with ClickHouse
+description: Create and manage ClickHouse tables with Moose OLAP, understand when to use it, and where to start with ClickHouse
 order: 1
 ---
 
@@ -51,30 +51,24 @@ table = OlapTable[Record]("table", config=OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-Moose OLAP is the foundation for the rest of MooseStack: you can start with ClickHouse schema management, then layer on [Streaming](/moosestack/streaming), [APIs](/moosestack/apis), or [Workflows](/moosestack/workflows) as your system grows.
+## Define your schema
 
-## What can you do with Moose OLAP?
+- [Define tables](/moosestack/olap/model-table) in TypeScript or Python
+- [Shape and precompute data](/moosestack/olap/model-view) with views and [materialized views](/moosestack/olap/model-materialized-view)
 
-Moose OLAP gives you a few core capabilities around your ClickHouse schema.
+## Evolve or adopt an existing schema
 
-### Define your schema
+- Carry local schema changes forward to staging and production environments with [schema migrations](/moosestack/olap/apply-migrations) during development and [planned migrations](/moosestack/olap/planned-migrations) for remote environments
+- [Work with existing ClickHouse tables](/moosestack/olap/external-tables) and [pull those schemas into your project](/moosestack/olap/db-pull) when Moose is not the only system managing them
 
-- **[Define tables](/moosestack/olap/model-table)** in TypeScript or Python
-- **[Shape and precompute data](/moosestack/olap/model-view)** with views and **[materialized views](/moosestack/olap/model-materialized-view)**
+## Read and write data
 
-### Evolve or adopt an existing schema
+- [Query data](/moosestack/olap/read-data) from your application code or APIs through typed table and view objects
+- [Insert data](/moosestack/olap/insert-data) for ingestion flows, backfills, or batch writes
 
-- **Carry local schema changes forward to staging and production** with **[schema migrations](/moosestack/olap/apply-migrations)** during development and **[planned migrations](/moosestack/olap/planned-migrations)** for remote environments
-- **[Work with existing ClickHouse tables](/moosestack/olap/external-tables)** and **[pull those schemas into your project](/moosestack/olap/db-pull)** when Moose is not the only system managing them
+## Get started
 
-### Read and write data
-
-- **[Query data](/moosestack/olap/read-data)** from your application code or APIs through typed table and view objects
-- **[Insert data](/moosestack/olap/insert-data)** for ingestion flows, backfills, or batch writes
-
-## Get Started
-
-Pick the path that matches how your ClickHouse schema is managed today.
+Choose the path that matches whether you're connecting to an existing ClickHouse deployment or starting a new Moose project.
 
 <CTACards columns={1}>
   <CTACard

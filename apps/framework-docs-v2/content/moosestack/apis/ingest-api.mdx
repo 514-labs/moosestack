@@ -9,34 +9,20 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Ingest API
 
-Use `IngestApi` to accept one or more records over HTTP and write accepted records to a destination `Stream` when the producer should not import your Moose SDK or `Stream` definition directly. If the producer can import the stream directly, use [`Stream.send()`](/moosestack/streaming/from-your-code) instead.
+Use `IngestApi` to send records over HTTP to a destination `Stream`, for example from another service, webhook, or client app. Use [`Stream.send()`](/moosestack/streaming/from-your-code) when the producer can import your Moose SDK and `Stream` definition directly.
 
-This page covers HTTP producers. To define the destination stream itself, start with [Stream](/moosestack/streaming/create-stream).
+This page covers HTTP-based ingestion. To define the destination `Stream`, see [Stream](/moosestack/streaming/create-stream).
 
-## When to use
+## When to use Ingest APIs
 
-<table>
-  <thead>
-    <tr>
-      <th>Use</th>
-      <th>Typical scenarios</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><a href="/moosestack/streaming/from-your-code"><code>Stream.send()</code></a></td>
-      <td>An existing app in your monorepo or Moose workflows, where you can import the stream definition and other Moose objects directly.</td>
-    </tr>
-    <tr>
-      <td><code>IngestApi</code></td>
-      <td>Services that push events into your system when you do not control that codebase or cannot use Moose objects or clients there directly.</td>
-    </tr>
-  </tbody>
-</table>
+| Use | Typical scenarios |
+| --- | --- |
+| [`Stream.send()`](/moosestack/streaming/from-your-code) | An existing app in your monorepo or Moose workflows, where you can import the stream definition and other Moose objects directly. |
+| `IngestApi` | Services that push events into your system when you do not control that codebase or cannot use Moose objects or clients there directly. |
 
 ## Basic usage
 
-Use `IngestApi` with a destination `Stream`. Add a dead letter queue when invalid records should be retained for inspection or replay.
+Use `IngestApi` with a destination `Stream`. Optionally, add a dead letter queue when invalid records should be retained for inspection or replay.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -85,32 +71,12 @@ user_events_api = IngestApi[UserEvent]("user-events", IngestConfigWithDestinatio
 
 ## Request behavior
 
-<table>
-  <thead>
-    <tr>
-      <th>Behavior</th>
-      <th>Current behavior</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Accepted request</td>
-      <td>Moose validates the request body and writes accepted records to the destination stream.</td>
-    </tr>
-    <tr>
-      <td>Invalid request</td>
-      <td>Moose returns a <code>400</code> response when the payload does not match the model shape.</td>
-    </tr>
-    <tr>
-      <td>Dead letter queue</td>
-      <td>If <code>deadLetterQueue</code> or <code>dead_letter_queue</code> is configured, Moose retains failed records for inspection or replay.</td>
-    </tr>
-    <tr>
-      <td>ClickHouse writes</td>
-      <td><code>IngestApi</code> writes to a stream, not directly to a table. If that stream has a destination table, records become queryable after stream-to-table sync succeeds.</td>
-    </tr>
-  </tbody>
-</table>
+| Behavior | What happens |
+| --- | --- |
+| Accepted request | Moose validates the request body and writes accepted records to the destination stream. |
+| Invalid request | Moose returns a `400` response when the payload does not match the model shape. |
+| Dead letter queue | If `deadLetterQueue` or `dead_letter_queue` is configured, Moose retains failed records for inspection or replay. |
+| ClickHouse writes | `IngestApi` writes to a stream, not directly to a table. If that stream has a destination table, records become queryable after stream-to-table sync succeeds. |
 
 <Callout type="info" title="Optional fields with ClickHouse defaults">
 If your `IngestApi` model marks a field as optional but annotates a ClickHouse default, Moose treats:
@@ -166,7 +132,7 @@ const ingestApi = new IngestApi<UserEventInput>("user-events", {
 - Known fields (`timestamp`, `eventName`, etc.) are validated against their declared types
 - Additional fields matching the index signature are accepted by the API (no validation error returned)
 - All fields, including extra fields, are passed through to downstream stream functions
-- Extra fields can be extracted in your streaming function and stored in a JSON column
+- Extra fields can be extracted in your streaming function and stored in a JSON column on an [OlapTable](/moosestack/olap/model-table)
 
 <Callout type="info" title="Extracting Extra Fields">
 In your streaming function, use destructuring to separate known fields from extra fields:
@@ -214,86 +180,29 @@ ingest_api = IngestApi[UserEventInput]("user-events", IngestConfigWithDestinatio
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>What it does</th>
-      <th>Required</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>destination</code></td>
-      <td>Stream that accepted records are written to.</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td><code>deadLetterQueue</code></td>
-      <td>Dead letter queue for failed records.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>version</code></td>
-      <td>Version label Moose uses when managing the API resource.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>path</code></td>
-      <td>Custom HTTP path for the endpoint.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>metadata.description</code></td>
-      <td>Optional description metadata.</td>
-      <td>No</td>
-    </tr>
-  </tbody>
-</table>
+| Option | What it does | Required |
+| --- | --- | --- |
+| `destination` | Stream that accepted records are written to. | Yes |
+| `deadLetterQueue` | Dead letter queue for failed records. | No |
+| `version` | Version label Moose uses when managing the API resource. | No |
+| `path` | Custom HTTP path for the endpoint. | No |
+| `metadata.description` | Optional description metadata. | No |
   </LanguageTabContent>
   <LanguageTabContent value="python">
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>What it does</th>
-      <th>Required</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>destination</code></td>
-      <td>Stream that accepted records are written to.</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td><code>dead_letter_queue</code></td>
-      <td>Dead letter queue for failed records.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>version</code></td>
-      <td>Version label Moose uses when managing the API resource.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>path</code></td>
-      <td>Custom HTTP path for the endpoint.</td>
-      <td>No</td>
-    </tr>
-    <tr>
-      <td><code>metadata["description"]</code></td>
-      <td>Optional description metadata.</td>
-      <td>No</td>
-    </tr>
-  </tbody>
-</table>
+| Option | What it does | Required |
+| --- | --- | --- |
+| `destination` | Stream that accepted records are written to. | Yes |
+| `dead_letter_queue` | Dead letter queue for failed records. | No |
+| `version` | Version label Moose uses when managing the API resource. | No |
+| `path` | Custom HTTP path for the endpoint. | No |
+| `metadata["description"]` | Optional description metadata. | No |
   </LanguageTabContent>
 </LanguageTabs>
 
 ## Related capabilities
 
 - [Stream](/moosestack/streaming/create-stream) for defining the destination stream
+- [OlapTable](/moosestack/olap/model-table) for defining the ClickHouse table a destination stream eventually syncs into
 - [`Stream.send()`](/moosestack/streaming/from-your-code) when the producer can import the stream directly
 - [Schema registry](/moosestack/streaming/schema-registry) when the destination stream publishes Schema Registry payloads
 - [Dead letter queues](/moosestack/streaming/dead-letter-queues) when failed records should be retained for recovery

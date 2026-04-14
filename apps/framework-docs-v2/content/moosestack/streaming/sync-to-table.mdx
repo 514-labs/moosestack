@@ -1,6 +1,6 @@
 ---
 title: Sync to table
-description: Reference for syncing stream records into OLAP tables with the stream `destination` option
+description: Sync stream records into OLAP tables with the stream `destination` option
 order: 2
 category: streaming
 ---
@@ -59,13 +59,15 @@ stream = Stream[Record]("stream", StreamConfig(
 
 ## Runtime behavior
 
+This section explains what Moose does after you set `destination`, not additional options you need to configure on the stream.
+
 When a stream has a `destination` option set to an `OlapTable`, Moose starts a background sync worker that reads records from the stream topic, buffers them into batches, and writes those batches to the destination table in ClickHouse.
 
 <table>
   <thead>
     <tr>
-      <th>Behavior</th>
-      <th>Current behavior</th>
+      <th>Aspect</th>
+      <th>What happens</th>
     </tr>
   </thead>
   <tbody>

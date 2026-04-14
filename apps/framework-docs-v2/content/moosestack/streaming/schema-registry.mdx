@@ -1,6 +1,6 @@
 ---
 title: Schema registry
-description: Reference for using Confluent Schema Registry with Moose streams
+description: Publish a `Stream` through Confluent Schema Registry with `schemaConfig` or `schema_config`
 order: 7
 category: streaming
 ---
@@ -13,7 +13,7 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 Only JSON Schema is supported today. Avro and Protobuf are planned.
 </Callout>
 
-Use `schemaConfig` in TypeScript or `schema_config` in Python when a [Stream](/moosestack/streaming/create-stream) should publish through Confluent Schema Registry.
+Use `schemaConfig` (TypeScript) or `schema_config` (Python) to publish a [Stream](/moosestack/streaming/create-stream) through Confluent Schema Registry.
 
 ## Requirements
 
@@ -91,14 +91,9 @@ events.send(Event(id="e1", value=42))
   </LanguageTabContent>
 </LanguageTabs>
 
-### Kind field
+### Schema Registry config fields
 
-The `kind` field tells Moose which Schema Registry payload format to use for the stream.
-
-- `JSON` publishes records using Schema Registry JSON.
-- `JSON` is the only supported value today.
-
-### Reference field
+The `kind` field tells Moose which Schema Registry payload format to use for the stream. `JSON` publishes records using Schema Registry JSON, and it is the only supported value today.
 
 The `reference` field tells Moose how to resolve the schema id before it encodes and publishes a record. Use it to look up the latest version for a subject, pin a specific subject version, or use a fixed schema id directly.
 

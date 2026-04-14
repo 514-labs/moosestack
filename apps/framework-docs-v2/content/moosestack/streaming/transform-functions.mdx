@@ -1,6 +1,6 @@
 ---
 title: Transform functions
-description: Reference for attaching transform functions to a stream with `addTransform`
+description: Attach transform functions to a stream with `addTransform`
 order: 5
 category: streaming
 ---
@@ -84,8 +84,8 @@ raw_events.add_transform(
 - Return one record to emit one downstream record.
 - Return `undefined` in TypeScript or `None` in Python to skip a record.
 - Return an array in TypeScript or a list in Python to emit multiple downstream records from one input record.
-- Use a [Dead letter queue](/moosestack/streaming/dead-letter-queues) when failed transforms should be captured instead of dropped.
-- For fan-in, fan-out, and chained stream flows, see [Stream patterns](/moosestack/streaming/stream-patterns).
+
+Use a [Dead letter queue](/moosestack/streaming/dead-letter-queues) when failed transforms should be captured instead of dropped.
 
 ## Related capabilities
 

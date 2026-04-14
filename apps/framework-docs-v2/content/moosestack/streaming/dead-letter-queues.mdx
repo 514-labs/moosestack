@@ -1,6 +1,6 @@
 ---
 title: Dead letter queues
-description: Reference for capturing failed stream records with `DeadLetterQueue`
+description: Capture failed stream records with `DeadLetterQueue`
 order: 8
 category: streaming
 ---
@@ -9,7 +9,7 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Dead letter queues
 
-Use `DeadLetterQueue<T>` to capture records of type `T` that fail during stream processing. A dead letter queue is itself a stream of wrapper records: Moose keeps the original payload and adds error details about why that record failed.
+Use `DeadLetterQueue<T>` to capture records that fail during stream processing. A dead letter queue is itself a stream of wrapper records: Moose keeps the original payload and adds error details about why that record failed.
 
 ## Create a dead letter queue
 
@@ -59,20 +59,20 @@ Attach a dead letter queue to one of these components when failed records from t
   <tbody>
     <tr>
       <td>Transform</td>
-      <td>A transform throws while processing a record.</td>
+      <td>A transform throws an error while processing a record.</td>
     </tr>
     <tr>
       <td>Consumer</td>
-      <td>A consumer throws while processing a record.</td>
+      <td>A consumer throws an error while processing a record.</td>
     </tr>
     <tr>
       <td><a href="/moosestack/apis/ingest-api">Ingest API</a></td>
-      <td>An Ingest API is configured with a dead letter queue and cannot validate or process a record cleanly.</td>
+      <td>An Ingest API cannot validate or process a record cleanly.</td>
     </tr>
   </tbody>
 </table>
 
-### Attach to a transform
+### Attach a Dead Letter Queue to a transform
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -153,7 +153,7 @@ raw_records.add_transform(
 </LanguageTabs>
 
 
-### Attach to a consumer
+### Attach a Dead Letter Queue to a consumer
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -208,7 +208,7 @@ raw_events.add_consumer(
   </LanguageTabContent>
 </LanguageTabs>
 
-### Attach to an Ingest API
+### Attach a Dead Letter Queue to an Ingest API
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -278,7 +278,7 @@ interface DeadLetter<T> extends DeadLetterModel {
 <table>
   <thead>
     <tr>
-      <th>Member</th>
+      <th>Property / method</th>
       <th>Meaning</th>
     </tr>
   </thead>
@@ -340,7 +340,7 @@ class DeadLetterModel(BaseModel, Generic[T]):
 <table>
   <thead>
     <tr>
-      <th>Member</th>
+      <th>Property / method</th>
       <th>Meaning</th>
     </tr>
   </thead>

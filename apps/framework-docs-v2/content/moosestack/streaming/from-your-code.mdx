@@ -1,6 +1,6 @@
 ---
 title: Stream.send()
-description: Reference for publishing records from code that can import a `Stream` directly with `Stream.send()`
+description: Publish records from code that can import a `Stream` directly with `Stream.send()`
 order: 6
 category: streaming
 ---
@@ -15,31 +15,18 @@ This page covers in-process producers. To define the stream itself, start with [
 
 ## When to use
 
-<table>
-  <thead>
-    <tr>
-      <th>Use</th>
-      <th>Typical scenarios</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>Stream.send()</code></td>
-      <td>An existing app in your monorepo or <a href="/moosestack/workflows">Moose workflows</a>, where you can import the stream definition and other Moose objects directly.</td>
-    </tr>
-    <tr>
-      <td><a href="/moosestack/apis/ingest-api">Ingest API</a></td>
-      <td>Services that push events into your system when you do not control that codebase or cannot use Moose objects or clients there directly.</td>
-    </tr>
-  </tbody>
-</table>
+Use `Stream.send()` when the producer can import the stream definition directly, such as an existing app in your monorepo or a [Moose workflow](/moosestack/workflows).
 
-`Stream.send()` takes one argument. Pass a single record to publish one message, or pass an array or list to publish multiple messages. There are no per-call options on `send()`.
+Use an [Ingest API](/moosestack/apis/ingest-api) when the producer should only send JSON over HTTP or cannot import Moose objects directly.
 
-## Send one record
+## Send records
+
+`Stream.send()` takes one argument. Pass a single record to publish one message, or pass an array or list to publish multiple messages. Moose publishes one stream record per element, not one array payload. There are no per-call options on `send()`.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
+Send one record:
+
 ```ts filename="app/publish.ts" copy
 import { userEvents } from "./stream";
 
@@ -50,8 +37,21 @@ await userEvents.send({
   eventType: "click",
 });
 ```
+
+Send many records:
+
+```ts filename="app/publish.ts" copy
+import { userEvents } from "./stream";
+
+await userEvents.send([
+  { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
+  { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
+]);
+```
   </LanguageTabContent>
   <LanguageTabContent value="python">
+Send one record:
+
 ```py filename="app/publish.py" copy
 from datetime import datetime, timezone
 
@@ -66,25 +66,9 @@ user_events.send(
     )
 )
 ```
-  </LanguageTabContent>
-</LanguageTabs>
 
-## Send many records
+Send many records:
 
-Pass an array or list when you want to publish multiple records in one call. Moose publishes one stream record per element, not one array payload.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="app/publish.ts" copy
-import { userEvents } from "./stream";
-
-await userEvents.send([
-  { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
-  { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
-]);
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
 ```py filename="app/publish.py" copy
 from datetime import datetime, timezone
 
@@ -105,16 +89,16 @@ user_events.send([
     ),
 ])
 ```
+
 <Callout type="warning">
 Values passed to `send()` must be instances of the stream model type. Passing a `dict` or other non-model value raises `TypeError`.
 </Callout>
-
   </LanguageTabContent>
 </LanguageTabs>
 
 ## Send nothing
 
-Top-level empty inputs are valid and send nothing:
+This is useful in helper code that batches optional records or filters a collection down to zero results. Top-level empty inputs are valid and send nothing:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">

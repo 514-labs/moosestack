@@ -1,6 +1,6 @@
 ---
 title: Stream
-description: Reference for defining a Stream resource and configuring destinations and core stream settings
+description: Define a Stream resource, connect it to destinations, and configure core stream settings
 order: 1
 category: streaming
 ---
@@ -22,6 +22,8 @@ Turn on `features.streaming_engine` in `moose.config.toml` before creating `Stre
 />
 
 ## Basic usage
+
+For the full constructor and config surface, see the [`Stream` API reference](/moosestack/reference#stream).
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -266,8 +268,9 @@ stream = Stream[Record]("high_throughput", config=StreamConfig(
 - [`Stream.send()`](/moosestack/streaming/from-your-code) when you need to send records into a stream
 - [Consumer functions](/moosestack/streaming/consumer-functions) when you want code to run as records arrive
 - [Transform functions](/moosestack/streaming/transform-functions) when you want to reshape or route records between streams
+- [Stream patterns](/moosestack/streaming/stream-patterns) for fan-in, fan-out, and multi-stage stream composition
 - [Sync to table](/moosestack/streaming/sync-to-table) when stream data should land in ClickHouse
 - [Schema registry](/moosestack/streaming/schema-registry) when stream payloads should use Confluent Schema Registry
 - [Dead letter queues](/moosestack/streaming/dead-letter-queues) when failed records should be captured for recovery
 - [LifeCycle management guide](/moosestack/migrate/lifecycle) for resource management details
-- [API reference](/moosestack/reference/ts-moose-lib#stream) for the full `Stream` API surface
+- [API reference](/moosestack/reference#stream) for the full `Stream` API surface

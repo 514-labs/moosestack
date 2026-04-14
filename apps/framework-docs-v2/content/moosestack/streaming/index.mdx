@@ -53,13 +53,15 @@ stream = Stream[Record]("stream", config=StreamConfig(
 Most Moose projects start by defining an OLAP table, then attach a stream when they need continuous ingest or real-time processing before data becomes queryable in ClickHouse.
 
 <Callout type="info" title="Enable Moose Streams before defining streams">
-Turn on `features.streaming_engine` in `moose.config.toml` before you create stream resources or attach them to OLAP tables.
+Most Moose projects already have streaming enabled. If you disabled it, turn `features.streaming_engine` back on in the project-root `moose.config.toml` before you create stream resources or attach them to OLAP tables.
 </Callout>
 
 ```toml filename="moose.config.toml"
 [features]
 streaming_engine = true
 ```
+
+Choose the starting point that matches whether your ClickHouse table is already modeled.
 
 <CTACards columns={1}>
   <CTACard
@@ -86,7 +88,7 @@ streaming_engine = true
 
 ### Send records
 
-The deciding question is where the producer runs.
+The pattern for sending data to a `Stream` depends on where the producer runs.
 
 - **[Publish from Moose code with `Stream.send()`](/moosestack/streaming/from-your-code)** when the producer runs inside your Moose project and can import the `Stream` object directly
 - **[Publish from external systems with the Ingest API](/moosestack/apis/ingest-api)** when the producer runs outside your Moose project and should send JSON over HTTP
