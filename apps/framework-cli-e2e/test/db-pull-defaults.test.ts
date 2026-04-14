@@ -126,6 +126,7 @@ describe("python template tests - db-pull code generation", () => {
     await cleanupTestSuite(devProcess, testProjectDir, "py-db-pull-defaults", {
       logPrefix: "Python db-pull Defaults Test",
       ...getCleanupOptionsForMode(E2E_DEV_MODE),
+      ports: PORTS,
     });
   });
 
@@ -503,6 +504,7 @@ describe("typescript template tests - db-pull code generation", () => {
     await cleanupTestSuite(devProcess, testProjectDir, "ts-db-pull-defaults", {
       logPrefix: "TypeScript db-pull Defaults Test",
       ...getCleanupOptionsForMode(E2E_DEV_MODE),
+      ports: PORTS,
     });
   });
 

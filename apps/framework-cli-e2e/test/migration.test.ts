@@ -157,6 +157,7 @@ describe("typescript template tests - migration", () => {
     await cleanupTestSuite(outerMooseProcess, outerMooseDir, "ts-migrate", {
       logPrefix: "Migration Tests",
       ...getCleanupOptionsForMode(E2E_DEV_MODE),
+      ports: PORTS,
     });
   });
 
