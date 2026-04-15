@@ -106,6 +106,17 @@ def test_duplicate_view_name_raises():
         View("dup_view", ViewConfig(select_statement="SELECT 2", base_tables=[]))
 
 
+def test_deprecated_positional_constructor_forwards_database():
+    """database kwarg must be forwarded when using the deprecated positional API."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        view = View("legacy_view", "SELECT 1", [], database="legacy_db")
+    assert view.database == "legacy_db"
+    assert view.name == "legacy_view"
+
+
 # ---------------------------------------------------------------------------
 # Serialization via to_infra_map
 # ---------------------------------------------------------------------------
