@@ -1,625 +1,640 @@
 ---
-title: Querying Data
-description: Query OLAP tables using SQL with type safety
+title: Read data
+description: Reference for querying OLAP tables and materialized views with Moose query clients and SQL helpers
 order: 7
 category: olap
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, CTACard, CTACards, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { LanguageTabs, LanguageTabContent, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
 
-# Querying Data
+# Read data
 
-Moose provides type-safe SQL querying for your `OlapTable` and `MaterializedView` instances. Use cases include:
+Use this page when you need to run a query against an [`OlapTable`](/moosestack/olap/model-table) or [`MaterializedView`](/moosestack/olap/model-materialized-view) from application code. It covers query client setup, query methods, TypeScript SQL helpers, and the Python query builder.
 
-- Building APIs to expose your data to client/frontend applications
-- Building transformation pipelines inside your database with materialized views
-
-## Querying with MooseClient
-
-Use `MooseClient` to query data from existing tables and materialized views.
-
-### Basic Querying
+## Query client
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="BasicQuerying.ts" copy
-import { MooseClient, sql } from "@514labs/moose-lib";
-import { UserTable } from "./tables/UserTable";
+### Get a query client
 
-const client = new MooseClient();
+Use `getMooseUtils()` to get both `client` and `sql`. Use the same helper inside Moose runtime handlers and standalone TypeScript code. For framework-specific setup, see [Express](/moosestack/app-api-frameworks/express).
 
-// Query existing table
-const query = sql.statement`
-  SELECT id, name, email
-  FROM ${UserTable}
-  WHERE status = 'active'
-  LIMIT 10
-`;
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
 
-const result = await client.query.execute(query);
-const data = await result.json();
+const { client, sql } = await getMooseUtils();
 ```
+
+`getMooseUtils()` reads ClickHouse connection details from these environment variables in both runtime and standalone use. If you're using the Moose client outside the Moose runtime, make sure these values are set in that environment:
+
+```bash title=".env" copy
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=18123
+MOOSE_CLICKHOUSE_CONFIG__USER=panda
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=pandapass
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
+```
+
+`getMooseUtils()` is async. Always await it before accessing `client` or `sql`.
+
+### Execute queries
+
+Use `client.query.execute()` with a `sql.statement` query when you are reading from Moose OLAP in TypeScript.
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+import { table } from "./table";
+
+const { client, sql } = await getMooseUtils();
+
+const result = await client.query.execute(sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  LIMIT ${10}
+`);
+
+const rows = await result.json();
+```
+
+This method returns a ClickHouse JSONEachRow result set. Read rows with `await result.json()`. In TypeScript, read queries go through `client.query.execute(...)`; change how you construct the SQL with `sql.statement`, `sql.fragment`, and `sql.join`, not by switching to a different read method.
   </LanguageTabContent>
   <LanguageTabContent value="python">
-    <Tabs defaultValue="execute">
-      <TabsList>
-        <TabsTrigger value="execute">execute</TabsTrigger>
-        <TabsTrigger value="execute-raw">execute_raw</TabsTrigger>
-      </TabsList>
-      <TabsContent value="execute">
-You can use a formatted string with `execute`:
+### Get a query client
 
-```py filename="BasicQuerying.py" copy
-from moose_lib import MooseClient
-from app.UserTable import UserTable
-client = MooseClient()
+Use `QueryClient(config_registry.get_clickhouse_config())` for standalone access to ClickHouse from Python code. For framework-specific setup, see [FastAPI](/moosestack/app-api-frameworks/fastapi).
 
-status = "active"
-limit = 10
-query = """
-  SELECT id, name, email
-  FROM {table}
-  WHERE status = {status}
-  LIMIT {limit}
-"""
-rows = client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
 ```
 
-This allows you to safely interpolate the table and column names while still using your Moose OlapTables and columns.
-      </TabsContent>
-      <TabsContent value="execute-raw">
-If you'd rather just use the raw ClickHouse python driver with server-side parameter binding, you can use `execute_raw`:
+### Write type-safe, interpolated queries
 
-```py filename="BasicQuerying.py" copy
-from moose_lib import MooseClient
+Use `query_client.execute(...)` when you want Moose-managed interpolation for table objects, column objects, and scalar parameters, or when you want to pass a typed `Query` builder object instead of raw SQL text.
 
-client = MooseClient()
+Use a SQL string when you want to write the query directly:
 
-# Query existing table using execute_raw with explicit ClickHouse types
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+from app.table import table
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
 query = """
-  SELECT id, name, email
-  FROM users
-  WHERE status = {status:String}
+  SELECT
+    {id_column},
+    {name_column}
+  FROM {table}
+  WHERE {name_column} = {name}
+  LIMIT {limit}
+"""
+
+rows = query_client.execute(query, {
+    "id_column": table.cols.id,
+    "name_column": table.cols.name,
+    "table": table,
+    "name": "signup",
+    "limit": 10,
+})
+```
+
+`execute()` is Python's interpolation surface. It treats Moose [`OlapTable`](/moosestack/olap/model-table) and column objects as identifiers instead of scalar values. If the table has a `database` config in its [table definition](/moosestack/olap/model-table), Moose automatically qualifies it in generated SQL.
+
+Use the materialized-view target table when you want interpolation to follow the stored table shape, including target-table columns exposed through Moose models:
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+from app.materialized_view import daily_stats
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = """
+  SELECT
+    {day_column},
+    sumMerge(total_views) AS total_views
+  FROM {table}
+  WHERE {day_column} >= {since}
+  GROUP BY {day_column}
+"""
+
+rows = query_client.execute(query, {
+    "day_column": daily_stats.target_table.cols.day,
+    "table": daily_stats.target_table,
+    "since": "2026-01-01",
+})
+```
+
+In Python, write the merge function explicitly in SQL when the target table stores aggregate states.
+
+Pass `row_type` when you want rows mapped into a Pydantic model:
+
+```py filename="app/query.py" copy
+from pydantic import BaseModel
+from moose_lib import QueryClient, config_registry
+
+from app.table import table
+
+class EventRow(BaseModel):
+    id: str
+    name: str
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+rows = query_client.execute(
+    """
+      SELECT id, name
+      FROM {table}
+      LIMIT {limit}
+    """,
+    {
+        "table": table,
+        "limit": 10,
+    },
+    row_type=EventRow,
+)
+```
+
+Use a `Query` object when you want a structured builder instead of writing SQL directly:
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+from moose_lib.query_builder import Query, col
+
+from app.table import table
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+    .limit(10)
+)
+
+rows = query_client.execute(query)
+```
+
+**Reference**
+
+| Input form | Call shape | Returns |
+| --- | --- | --- |
+| SQL string | `query_client.execute(sql_string, variables, row_type=None)` | A list of row dicts by default, or a list of `row_type` instances when provided |
+| Query builder | `query_client.execute(query_builder, row_type=None)` | A list of row dicts by default, or a list of `row_type` instances when provided |
+
+### Write raw SQL queries
+
+Use `query_client.execute_raw(clickhouse_query, parameters, row_type=None)` when you want full control over the SQL text and parameter types instead of Moose-managed interpolation.
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = """
+  SELECT id, name
+  FROM {table: Identifier}
+  WHERE name = {name:String}
   LIMIT {limit:UInt32}
 """
 
-rows = client.query.execute_raw(query, {
-    "status": "active",
-    "limit": 10
+rows = query_client.execute_raw(query, {
+    "table": "events",
+    "name": "signup",
+    "limit": 10,
 })
 ```
-      </TabsContent>
-    </Tabs>
+
+**Reference**
+
+| Call shape | Use it for | Returns |
+| --- | --- | --- |
+| `query_client.execute_raw(clickhouse_query, parameters, row_type=None)` | Raw ClickHouse SQL with explicit parameter typing | A list of row dicts by default, or a list of `row_type` instances when provided |
+
+Use typed placeholders such as <code>{"{limit:UInt32}"}</code> and <code>{"{table: Identifier}"}</code> when ClickHouse needs explicit parameter types.
   </LanguageTabContent>
 </LanguageTabs>
 
-### Querying Materialized Views
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="QueryMaterializedView.ts" copy
-import { MooseClient, sql } from "@514labs/moose-lib";
+## SQL helpers
 
-const client = new MooseClient();
+Use the `sql` tag helpers when you want structured TypeScript query construction without switching to a separate query-builder API.
 
-// Query existing materialized view
+The snippets below assume `sql` and `table` are already imported.
+
+### sql.statement
+
+Use `sql.statement` for complete SQL statements such as `SELECT` queries.
+
+```ts filename="app/query.ts" copy
 const query = sql.statement`
-  SELECT user_id, total_orders, average_order_value
-  FROM user_stats_view
-  WHERE total_orders > 10
-  ORDER BY average_order_value DESC
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  WHERE ${table.columns.name} = ${"signup"}
+  ORDER BY ${table.columns.id}
+`;
+```
+
+### sql.fragment
+
+Use `sql.fragment` for reusable partial SQL such as predicates, expressions, and clause fragments.
+
+```ts filename="app/query.ts" copy
+const nameFilter = sql.fragment`${table.columns.name} ILIKE ${"%moose%"}`;
+
+const query = sql.statement`
+  SELECT * FROM ${table}
+  WHERE ${nameFilter}
+`;
+```
+
+### sql.join
+
+Use `sql.join` to combine multiple SQL fragments with a separator.
+
+```ts filename="app/query.ts" copy
+const conditions = [
+  sql.fragment`${table.columns.name} ILIKE ${"%moose%"}`,
+  sql.fragment`${table.columns.id} != ${"system"}`,
+];
+
+const query = sql.statement`
+  SELECT * FROM ${table}
+  WHERE ${sql.join(conditions, " AND ")}
+`;
+```
+
+### sql.raw
+
+Use `sql.raw` only when you need trusted static SQL text that should not be parameterized or escaped.
+
+```ts filename="app/query.ts" copy
+const direction = sql.raw("DESC");
+
+const query = sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  ORDER BY ${table.columns.id} ${direction}
+`;
+```
+
+The bare `sql` template tag still exists for backward compatibility, but `sql.statement` and `sql.fragment` are the preferred forms.
+
+### Interpolate tables and columns
+
+Use Moose table and column objects when you want identifier-safe SQL that follows the current table definition. For how those table objects are modeled, see [Model table](/moosestack/olap/model-table).
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+import { table } from "./table";
+
+const { client, sql } = await getMooseUtils();
+
+const query = sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  WHERE ${table.columns.id} = ${"user_123"}
 `;
 
 const result = await client.query.execute(query);
 ```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-    <Tabs defaultValue="execute">
-      <TabsList>
-        <TabsTrigger value="execute">execute</TabsTrigger>
-        <TabsTrigger value="execute-raw">execute_raw</TabsTrigger>
-      </TabsList>
-      <TabsContent value="execute">
-You can use a formatted string with `execute`:
 
-```py filename="QueryMaterializedView.py" copy
-from moose_lib import MooseClient
+If the table has a `database` config in its [table definition](/moosestack/olap/model-table), Moose automatically qualifies it as `` `database`.`table_name` `` in generated SQL.
 
-client = MooseClient()
+For materialized views, use the target table when you want interpolation to follow the stored table shape instead of treating the materialized-view definition as a generic string reference.
 
-min_orders = 10
-query = """
-  SELECT user_id, total_orders, average_order_value
-  FROM user_stats_view
-  WHERE total_orders > {min_orders}
-  ORDER BY average_order_value DESC
-"""
-rows = client.query.execute(query, {"min_orders": min_orders})
-```
-      </TabsContent>
-      <TabsContent value="execute-raw">
-Use `execute_raw` with parameter binding:
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
 
-```py filename="QueryMaterializedView.py" copy
-from moose_lib import MooseClient
+import { dailyStats } from "./materialized-view";
 
-client = MooseClient()
-
-min_orders = 10
-
-# Query existing materialized view
-query = """
-  SELECT user_id, total_orders, average_order_value
-  FROM user_stats_view
-  WHERE total_orders > {min_orders:UInt32}
-  ORDER BY average_order_value DESC
-"""
-
-rows = client.query.execute_raw(query, {"min_orders": min_orders})
-```
-      </TabsContent>
-    </Tabs>
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Select With Column and Table References
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="TypedReferences.ts" copy
-import { sql } from "@514labs/moose-lib";
-import { UserTable, OrderTable } from "./tables";
-
-// Reference table columns with type safety
-const cols = UserTable.columns;
-const query = sql.statement`
-  SELECT
-    ${cols.id},
-    ${cols.name},
-    ${cols.email}
-  FROM ${UserTable}
-  WHERE ${cols.status} = 'active'
-`;
-
-// Multiple table references
-const joinQuery = sql.statement`
-  SELECT
-    ${UserTable.columns.id},
-    ${UserTable.columns.name},
-    ${OrderTable.columns.order_value}
-  FROM ${UserTable}
-  JOIN ${OrderTable} ON ${UserTable.columns.id} = ${OrderTable.columns.user_id}
-`;
-```
-
-When you query a materialized view, you reference the `MaterializedView.targetTable` to get the columns of the target table.
-
-```ts filename="TypedReferences.ts" copy
-import { sql } from "@514labs/moose-lib";
-import { ExampleMaterializedView } from "./materialized-views";
-
+const { client, sql } = await getMooseUtils();
 
 const query = sql.statement`
   SELECT
-    ${ExampleMaterializedView.targetTable.columns.id},
-    ${ExampleMaterializedView.targetTable.columns.name},
-    ${ExampleMaterializedView.targetTable.columns.email}
-  FROM ${ExampleMaterializedView.targetTable}
-`;
-```
-
-In ClickHouse, when you query a Materialized View that has columns of type `AggregateFunction` in the result set, ordinarily you would need to run:
-
-```sql
-SELECT sumMerge(amount) FROM {ExampleMaterializedView}
-```
-
-When querying this with Moose, you can just reference the column name in the `sql` template literal. The interpolation will be replaced with the correct ClickHouse function:
-
-```ts filename="TypedReferences.ts" copy
-import { sql } from "@514labs/moose-lib";
-import { ExampleMaterializedView } from "./materialized-views";
-
-const query = sql.statement`
-  SELECT ${ExampleMaterializedView.targetTable.columns.amount}
-  FROM ${ExampleMaterializedView.targetTable}
+    ${dailyStats.targetTable.columns.day},
+    ${dailyStats.targetTable.columns.totalViews}
+  FROM ${dailyStats.targetTable}
+  WHERE ${dailyStats.targetTable.columns.day} >= ${"2026-01-01"}
 `;
 
-// This will be replaced with:
-// SELECT sumMerge(amount) FROM {ExampleMaterializedView}
+const result = await client.query.execute(query);
 ```
+
+When a TypeScript materialized-view target table stores `AggregateFunction` columns, Moose expands the correct merge function when you interpolate the column through `sql.statement`.
   </LanguageTabContent>
   <LanguageTabContent value="python">
-    <Tabs defaultValue="execute">
-      <TabsList>
-        <TabsTrigger value="execute">execute</TabsTrigger>
-        <TabsTrigger value="execute-raw">execute_raw</TabsTrigger>
-      </TabsList>
-      <TabsContent value="execute">
-```py filename="TypedReferences.py" copy
-from moose_lib import MooseClient
-from app.UserTable import UserTable
-client = MooseClient()
+## Query builder
 
-status = "active"
-query = """
-  SELECT 
-    {column}
-  FROM {table}
-  WHERE status = {status}
-"""
-rows = client.query.execute(query, {"column": UserTable.cols.id, "table": UserTable, "status": status})
-```
-      </TabsContent>
-      <TabsContent value="execute-raw">
-```python filename="TypedReferences.py" copy
-from moose_lib import MooseClient
+Use `Query()` when you want a structured alternative to formatter-style SQL strings and still execute the finished query with `query_client.execute(query)`.
 
-client = MooseClient()
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+from moose_lib.query_builder import Query, col
 
-# Use parameter binding with explicit identifiers
-query = """
-  SELECT 
-    id,
-    name,
-    email
-  FROM {table: Identifier}
-  WHERE status = {status:String}
-"""
+from app.table import table
 
-rows = client.query.execute_raw(query, {"table": UserTable.name, "status": "active"})
-```
-      </TabsContent>
-    </Tabs>
-  </LanguageTabContent>
-</LanguageTabs>
+query_client = QueryClient(config_registry.get_clickhouse_config())
 
-## Filtering with WHERE Clauses
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+    .order_by((table.cols.id, "desc"))
+    .limit(10)
+)
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="WhereClauses.ts" copy
-import { sql } from "@514labs/moose-lib";
-
-// Multiple WHERE conditions
-const filterQuery = sql.statement`
-  SELECT ${UserTable.columns.id}, ${UserTable.columns.name}
-  FROM ${UserTable}
-  WHERE ${UserTable.columns.status} = 'active'
-    AND ${UserTable.columns.created_at} > '2024-01-01'
-    AND ${UserTable.columns.email} ILIKE ${'%' + searchTerm + '%'}
-`;
-
-// Using IN clauses
-const inQuery = sql.statement`
-  SELECT * FROM ${UserTable}
-  WHERE ${UserTable.columns.id} IN (${sql.join(
-    userIds.map((id) => sql.fragment`${id}`),
-  )})
-`;
-
-// Using BETWEEN
-const rangeQuery = sql.statement`
-  SELECT * FROM ${UserTable}
-  WHERE ${UserTable.columns.age} BETWEEN ${minAge} AND ${maxAge}
-`;
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-    <Tabs defaultValue="execute">
-      <TabsList>
-        <TabsTrigger value="execute">execute</TabsTrigger>
-        <TabsTrigger value="execute-raw">execute_raw</TabsTrigger>
-      </TabsList>
-      <TabsContent value="execute">
-```py filename="WhereClauses.py" copy
-from moose_lib import MooseClient
-
-client = MooseClient()
-
-status = "active"
-start_date = "2024-01-01"
-search_pattern = "%example%"
-min_age = 18
-max_age = 65
-user_ids = [1, 2, 3, 4, 5]
-
-# Multiple WHERE conditions
-filter_query = """
-  SELECT id, name
-  FROM {table}
-  WHERE status = {status}
-    AND created_at > {start_date}
-    AND email ILIKE {search_pattern}
-"""
-
-# Using BETWEEN
-range_query = """
-  SELECT * FROM {table}
-  WHERE age BETWEEN {min_age} AND {max_age}
-"""
-
-# Using IN
-in_query = """
-  SELECT * FROM {table}
-  WHERE id IN {user_ids}
-"""
-
-# Execute examples
-filter_rows = client.query.execute(filter_query, {"table": UserTable, "status": status, "start_date": start_date, "search_pattern": search_pattern})
-range_rows = client.query.execute(range_query, {"table": UserTable, "min_age": min_age, "max_age": max_age})
-in_rows = client.query.execute(in_query, {"table": UserTable, "user_ids": user_ids})
-```
-      </TabsContent>
-      <TabsContent value="execute-raw">
-```py filename="WhereClauses.py" copy
-from moose_lib import MooseClient
-
-client = MooseClient()
-
-# Multiple WHERE conditions
-filter_query = """
-  SELECT id, name
-  FROM users
-  WHERE status = {status:String}
-    AND created_at > {startDate:DateTime}
-    AND email ILIKE {searchPattern:String}
-"""
-
-# Using BETWEEN
-range_query = """
-  SELECT * FROM users
-  WHERE age BETWEEN {minAge:UInt32} AND {maxAge:UInt32}
-"""
-
-# Using IN with typed arrays
-in_query = """
-  SELECT * FROM users
-  WHERE id IN {userIds:Array(UInt32)}
-"""
-
-# Execute examples
-filter_rows = client.query.execute_raw(filter_query, {
-    "status": "active",
-    "startDate": "2024-01-01",
-    "searchPattern": "%example%"
-})
-
-range_rows = client.query.execute_raw(range_query, {
-    "minAge": 18,
-    "maxAge": 65
-})
-
-in_rows = client.query.execute_raw(in_query, {
-    "userIds": [1, 2, 3, 4, 5]
-})
-```
-      </TabsContent>
-    </Tabs>
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Dynamic Query Building
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-Use `sql.statement` for complete SQL statements and `sql.fragment` for reusable SQL fragments (expressions, conditions, partial clauses). This distinction enables better tooling support — the [Moose Language Server](/moosestack/language-server) uses it to validate complete statements while skipping fragments that aren't valid standalone SQL.
-
-```ts filename="SqlTemplateLiterals.ts" copy
-import { sql } from "@514labs/moose-lib";
-
-// Use sql.statement for complete SQL queries
-const status = 'active';
-const limit = 10;
-
-const query = sql.statement`
-  SELECT id, name, email
-  FROM ${UserTable}
-  WHERE ${UserTable.columns.status} = ${status}
-  LIMIT ${limit}
-`;
-
-// Use sql.fragment for partial SQL (conditions, expressions, clauses)
-interface FilterParams {
-  minAge?: number;
-  status?: "active" | "inactive";
-  searchText?: string;
-}
-
-const buildConditionalQuery = (filters: FilterParams) => {
-  let conditions = [];
-
-  if (filters.minAge !== undefined) {
-    conditions.push(sql.fragment`age >= ${filters.minAge}`);
-  }
-
-  if (filters.status) {
-    conditions.push(sql.fragment`status = ${filters.status}`);
-  }
-
-  if (filters.searchText) {
-    conditions.push(sql.fragment`(name ILIKE ${'%' + filters.searchText + '%'} OR email ILIKE ${'%' + filters.searchText + '%'})`);
-  }
-
-  let query = sql.statement`SELECT * FROM ${UserTable}`;
-
-  if (conditions.length > 0) {
-    query = query.append(sql.fragment` WHERE ${sql.join(conditions, "AND")}`);
-  }
-
-  return query.append(sql.fragment` ORDER BY created_at DESC`);
-};
+rows = query_client.execute(query)
 ```
 
-<Callout type="info" title="Migrating from bare sql tag">
-The bare `sql` template tag still works but is deprecated. Replace `sql\`...\`` with `sql.statement\`...\`` for complete queries or `sql.fragment\`...\`` for partial SQL. Both produce the same `Sql` object — the only difference is metadata that enables better editor tooling.
-</Callout>
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-Moose provides two distinct approaches for executing queries in Python. Choose the right one for your use case:
+The snippets below assume `Query`, `col`, `and_`, `or_`, and `table` are already imported.
 
-- Option 1: Use formatted strings with `execute` 
-- Option 2: Use `execute_raw` with parameter binding (lowest level of abstraction)
+### from_()
 
-<Tabs defaultValue="execute">
-  <TabsList>
-    <TabsTrigger value="execute">execute</TabsTrigger>
-    <TabsTrigger value="execute-raw">execute_raw</TabsTrigger>
-  </TabsList>
-  <TabsContent value="execute">
-```py filename="execute.py" copy
-from moose_lib import MooseClient
-from pydantic import BaseModel, Field, validator
-from typing import Optional
+Use `from_()` to set the source table for the query.
 
-client = MooseClient()
-
-# Example: Static query with validated parameters
-def get_active_users(status: str, limit: int):
-    # Static table/column names, validated parameters
-    query = """
-        SELECT id, name, email
-        FROM {table}
-        WHERE status = {status}
-        LIMIT {limit}
-    """
-    return client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
-
-# Usage with validated input
-active_users = get_active_users("active", 10)
-
-class UserQueryParams(BaseModel):
-    status: str = Field(..., pattern=r"^(active|inactive|pending)$")
-    limit: int = Field(default=10, ge=1, le=1000)
-
-def build_validated_query(params: UserQueryParams):
-    # All parameters are validated by Pydantic
-    query = """
-        SELECT id, name, email
-        FROM {table}
-        WHERE status = {status}
-        LIMIT {limit}
-    """
-    
-    return client.query.execute(query, {"table": UserTable, "status": params.status, "limit": params.limit})
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+)
 ```
-  </TabsContent>
-  <TabsContent value="execute-raw">
-```py filename="ParameterBinding.py" copy
-from moose_lib import MooseClient
 
-client = MooseClient()
+### select()
 
-# Example: Dynamic table and column selection with server-side parameter binding
-def query_user_data(table_name: str, status_filter: str, limit: int):
-    # Dynamic identifiers in query structure, bound parameters for values
-    query = """
-      SELECT id, name, email
-      FROM {table_name:Identifier} 
-      WHERE status = {status:String} 
-        AND created_at > {startDate:DateTime}
-      LIMIT {limit:UInt32}
-    """
-    
-    return client.query.execute_raw(query, {
-        "table_name": table_name,  # Bound parameter
-        "status": status_filter,  # Bound parameter
-        "startDate": "2024-01-01T00:00:00",  # Bound parameter
-        "limit": limit  # Bound parameter
-    })
+Use `select()` to choose the Moose columns you want returned.
 
-# Usage with different tables
-users_data = query_user_data("users", "active", 10)
-admins_data = query_user_data("admin_users", "pending", 5)
-
-# Conditional WHERE clauses
-def build_conditional_query(client: MooseClient, params: FilterParams):
-    conditions: list[str] = []
-    parameters: dict = {}
-
-    if params.min_age is not None:
-        conditions.append("age >= {minAge:UInt32}")
-        parameters["minAge"] = params.min_age
-
-    if params.status:
-        conditions.append("status = {status:String}")
-        parameters["status"] = params.status
-
-    if params.search_text:
-        conditions.append("(name ILIKE {searchPattern:String} OR email ILIKE {searchPattern:String})")
-        parameters["searchPattern"] = f"%{params.search_text}%"
-
-    query = "SELECT * FROM users"
-
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    query += " ORDER BY created_at DESC"
-
-    return client.query.execute_raw(query, parameters)
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+)
 ```
-  </TabsContent>
+
+### where()
+
+Use `where()` to apply a filter predicate or SQL expression.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+)
+```
+
+Use `col(...)` helpers inside `where()` for common predicates:
+
+Equality predicates:
+
+<Tabs defaultValue="eq">
+<TabsList>
+  <TabsTrigger value="eq">`eq()`</TabsTrigger>
+  <TabsTrigger value="ne">`ne()`</TabsTrigger>
+</TabsList>
+<TabsContent value="eq">
+
+Use `eq()` when a column must match one value exactly.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+)
+```
+
+</TabsContent>
+<TabsContent value="ne">
+
+Use `ne()` when a column must exclude one value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).ne("signup"))
+)
+```
+
+</TabsContent>
 </Tabs>
+
+Compound predicates:
+
+<Tabs defaultValue="and">
+<TabsList>
+  <TabsTrigger value="and">`and_()`</TabsTrigger>
+  <TabsTrigger value="or">`or_()`</TabsTrigger>
+</TabsList>
+<TabsContent value="and">
+
+Use `and_()` when every grouped predicate must be true.
+
+```py filename="app/query.py" copy
+from moose_lib.query_builder import Query, and_, col
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(
+        and_(
+            col(table.cols.name).eq("signup"),
+            col(table.cols.id).ne("system"),
+        )
+    )
+)
+```
+
+</TabsContent>
+<TabsContent value="or">
+
+Use `or_()` when any one of the grouped predicates can match.
+
+```py filename="app/query.py" copy
+from moose_lib.query_builder import Query, col, or_
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(
+        or_(
+            col(table.cols.name).eq("signup"),
+            col(table.cols.name).eq("purchase"),
+        )
+    )
+)
+```
+
+</TabsContent>
+</Tabs>
+
+Range predicates:
+
+<Tabs defaultValue="lt">
+<TabsList>
+  <TabsTrigger value="lt">`lt()`</TabsTrigger>
+  <TabsTrigger value="le">`le()`</TabsTrigger>
+  <TabsTrigger value="gt">`gt()`</TabsTrigger>
+  <TabsTrigger value="ge">`ge()`</TabsTrigger>
+</TabsList>
+<TabsContent value="lt">
+
+Use `lt()` when the column value must be less than the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).lt("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="le">
+
+Use `le()` when the column value can be less than or equal to the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).le("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="gt">
+
+Use `gt()` when the column value must be greater than the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).gt("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="ge">
+
+Use `ge()` when the column value can be greater than or equal to the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).ge("evt_100"))
+)
+```
+
+</TabsContent>
+</Tabs>
+
+Other predicates:
+
+<Tabs defaultValue="in">
+<TabsList>
+  <TabsTrigger value="in">`in_()`</TabsTrigger>
+  <TabsTrigger value="null">`is_null()`</TabsTrigger>
+</TabsList>
+<TabsContent value="in">
+
+Use `in_()` when a column can match any value in a list.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).in_(["signup", "purchase"]))
+)
+```
+
+</TabsContent>
+<TabsContent value="null">
+
+Use `is_null()` when you need rows where the column has no value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).is_null())
+)
+```
+
+</TabsContent>
+</Tabs>
+
+### order_by()
+
+Use `order_by()` to sort by columns or `(column, "asc" | "desc")` tuples.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .order_by((table.cols.id, "desc"))
+)
+```
+
+### limit()
+
+Use `limit()` to cap the number of returned rows.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .limit(10)
+)
+```
+
+For debugging or inspection, `query.to_sql()` returns the generated ClickHouse SQL and `query.to_sql_and_params()` returns the SQL plus bound parameters.
   </LanguageTabContent>
 </LanguageTabs>
 
-## Building APIs
+| Behavior | Current behavior |
+| --- | --- |
+| `SELECT *` | Moose includes ClickHouse [materialized columns](/moosestack/olap/materialized-columns) and [alias columns](/moosestack/olap/alias-columns) when a query uses `*`. |
+| Database-qualified tables | Tables with a `database` config in [Model table](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
 
-To build REST APIs that expose your data, see the [Bring Your Own API Framework documentation](/moosestack/app-api-frameworks) for comprehensive examples and patterns using Express, Koa, Fastify, or FastAPI.
+## Related capabilities
 
-## Computed Columns in Query Results
-
-By default, ClickHouse excludes [ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns from `SELECT *` results. When you query through `MooseClient.query.execute`, Moose sets `asterisk_include_alias_columns` and `asterisk_include_materialized_columns` per-query so that `SELECT *` returns all columns including computed ones.
-
-<Callout type="warning" title="Complex queries with SELECT *">
-Because these settings apply per-query on `execute`, any `SELECT *` within your query will include computed columns. If you have complex SQL where the extra columns could affect column ordering or subquery results, name your columns explicitly in the `SELECT` clause instead of relying on `*`.
-</Callout>
-
-## Common Pitfalls
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-<Callout type="warning" title="Common TypeScript Issues">
-- **Column name typos**: Use `UserTable.columns.columnName` for autocomplete
-- **Type mismatches**: Ensure your schema types match ClickHouse types
-- **Missing imports**: Import your table definitions before using them
-- **Template literal syntax**: Use backticks `sql` not regular strings
-- **Forgetting await**: Always await `client.query.execute()`
-</Callout>
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-<Callout type="warning" title="Common Python Issues">
-- **Column name typos**: Use `UserTable.cols.columnName` for autocomplete
-- **Type mismatches**: Ensure your schema types match ClickHouse types
-- **Missing imports**: Import your table definitions before using them
-- **Parameter binding**: Use proper type annotations in `execute_raw` queries
-- **String formatting**: Use f-strings or format() with `execute` queries
-</Callout>
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Performance Optimization
-
-If your query is slower than expected, there are a few things you can check:
-
-- If using filters, try to filter on a column that is defined in the `orderByFields` of the table
-- For common queries, consider [creating a materialized view](/moosestack/olap/model-materialized-view) to pre-compute the result set
-
-## Further Reading
-
-<CTACards>
-<CTACard
-  title="Moose APIs"
-  description="Build REST APIs for your data with built-in Moose API module"
-  ctaLink="/moosestack/apis/egress"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-/>
-<CTACard
-  title="Creating Materialized Views"
-  description="Define data transformations"
-  ctaLink="/moosestack/olap/model-materialized-view"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-/>
-</CTACards>
+- [Model table](/moosestack/olap/model-table) for defining the table objects you query
+- [Materialized view](/moosestack/olap/model-materialized-view) for write-time projections backed by target tables
+- [Semantic layer](/moosestack/apis/semantic-layer) for packaging OLAP queries behind reusable API models
+- [Insert data](/moosestack/olap/insert-data) for writing data into OLAP tables
