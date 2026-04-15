@@ -6,9 +6,94 @@ import { logger, ScopedLogger } from "./logger";
 
 const dbLogger = logger.scope("utils:database");
 
+/** Default ClickHouse config used when no override is provided. */
+// eslint-disable-next-line prefer-const
+let chConfig: typeof CLICKHOUSE_CONFIG = CLICKHOUSE_CONFIG;
+
+/** Resolve ClickHouse config: use override from options, or fall back to default. */
+const resolveChConfig = (options?: DatabaseOptions) =>
+  options?.clickhouseConfig ?? chConfig;
+
 export interface DatabaseOptions {
   logger?: ScopedLogger;
+  /** Override the ClickHouse connection config (default: CLICKHOUSE_CONFIG from constants) */
+  clickhouseConfig?: {
+    url: string;
+    username: string;
+    password: string;
+    database: string;
+  };
 }
+
+/**
+ * Waits until all ClickHouse ReplicatedMergeTree replicas are writable.
+ *
+ * After ClickHouse starts with embedded Keeper, newly-created replicated tables
+ * can be in readonly mode while the replica finishes initializing.  This check
+ * polls `system.replicas` until `is_readonly = 0` for every replica.
+ */
+export const waitForClickhouseReplicasReady = async (
+  timeoutMs: number = 30_000,
+  options: DatabaseOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
+  const attempts = Math.ceil(timeoutMs / 1000);
+  let lastRestartPoll = 0;
+  let pollCount = 0;
+
+  await withRetries(
+    async () => {
+      pollCount++;
+      const client = createClient(chConfig);
+      try {
+        const result = await client.query({
+          query:
+            "SELECT database, table, is_readonly FROM system.replicas WHERE is_readonly = 1",
+          format: "JSONEachRow",
+        });
+        const readonlyReplicas: any[] = await result.json();
+        if (readonlyReplicas.length > 0) {
+          // Issue SYSTEM RESTART REPLICA starting at poll 3 and every 5 polls
+          // thereafter to nudge replicas out of readonly mode.
+          if (pollCount >= 3 && pollCount - lastRestartPoll >= 5) {
+            lastRestartPoll = pollCount;
+            for (const r of readonlyReplicas) {
+              try {
+                log.debug(
+                  `Issuing SYSTEM RESTART REPLICA for ${r.database}.${r.table} (poll ${pollCount})`,
+                );
+                await client.command({
+                  query: `SYSTEM RESTART REPLICA \`${r.database}\`.\`${r.table}\``,
+                });
+              } catch (restartErr) {
+                log.debug(
+                  `SYSTEM RESTART REPLICA failed for ${r.database}.${r.table}: ${restartErr}`,
+                );
+              }
+            }
+          }
+          const names = readonlyReplicas
+            .map((r) => `${r.database}.${r.table}`)
+            .join(", ");
+          throw new Error(
+            `${readonlyReplicas.length} replica(s) still readonly: ${names}`,
+          );
+        }
+        log.debug("All ClickHouse replicas are writable");
+      } finally {
+        await client.close();
+      }
+    },
+    {
+      attempts,
+      delayMs: 1000,
+      backoffFactor: 1,
+      logger: log,
+      operationName: "ClickHouse replicas readiness",
+    },
+  );
+};
 
 /**
  * Cleans up ClickHouse data by truncating test tables
@@ -17,11 +102,12 @@ export const cleanupClickhouseData = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.info("Cleaning up ClickHouse data");
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: "SHOW TABLES",
@@ -77,6 +163,7 @@ export const waitForDBWrite = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
@@ -84,7 +171,7 @@ export const waitForDBWrite = async (
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName}${whereCondition}`,
@@ -127,6 +214,46 @@ export const waitForDBWrite = async (
 };
 
 /**
+ * Sends data to an ingest endpoint and verifies it reaches ClickHouse, with
+ * automatic retry-send cycles to handle slow consumer group startup.
+ *
+ * In dockerless mode, consumer groups may take variable time to join after
+ * infrastructure reports ready. Since auto.offset.reset=earliest, re-sent data
+ * will be consumed alongside earlier data. waitForDBWrite uses count >= check,
+ * so duplicate records from retries don't cause false failures.
+ *
+ * @param sendFn - Async function that sends data to the ingest endpoint
+ * @param verifyFn - Async function that verifies data appeared in ClickHouse
+ *                   (typically wraps waitForDBWrite with a per-cycle timeout)
+ * @param options - maxCycles (default 3), logger
+ */
+export const ingestAndVerify = async (
+  sendFn: () => Promise<void>,
+  verifyFn: () => Promise<void>,
+  options?: { maxCycles?: number; logger?: ScopedLogger },
+): Promise<void> => {
+  const maxCycles = options?.maxCycles ?? 3;
+  const log = options?.logger ?? dbLogger;
+
+  for (let cycle = 1; cycle <= maxCycles; cycle++) {
+    await sendFn();
+    try {
+      await verifyFn();
+      return; // Data verified in ClickHouse
+    } catch (error) {
+      if (cycle < maxCycles) {
+        log.info(
+          `Pipeline verify cycle ${cycle}/${maxCycles} failed, re-sending data...`,
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      } else {
+        throw error; // Final cycle failed — propagate
+      }
+    }
+  }
+};
+
+/**
  * Waits for materialized view to update with expected data
  */
 export const waitForMaterializedViewUpdate = async (
@@ -137,6 +264,7 @@ export const waitForMaterializedViewUpdate = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.debug(`Waiting for materialized view ${tableName} to update`, {
     expectedRows,
   });
@@ -145,7 +273,7 @@ export const waitForMaterializedViewUpdate = async (
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName}`,
@@ -187,12 +315,13 @@ export const verifyClickhouseData = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT * FROM ${fullTableName} WHERE ${primaryKeyField} = '${eventId}'`,
@@ -240,7 +369,7 @@ export const verifyRecordCount = async (
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const result = await client.query({
           query: `SELECT COUNT(*) as count FROM ${fullTableName} WHERE ${whereClause}`,
@@ -314,7 +443,7 @@ export const getTableSchema = async (
 ): Promise<ClickHouseColumn[]> => {
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const client = createClient(chConfig);
   try {
     const result = await client.query({
       query: `DESCRIBE TABLE ${fullTableName}`,
@@ -333,10 +462,12 @@ export const getTableSchema = async (
 export const getTableDDL = async (
   tableName: string,
   database?: string,
+  options: DatabaseOptions = {},
 ): Promise<string> => {
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const chConfig = resolveChConfig(options);
+  const client = createClient(chConfig);
   try {
     const result = await client.query({
       query: `SHOW CREATE TABLE ${fullTableName}`,
@@ -434,7 +565,7 @@ export const verifyTableConstraints = async (
  * Lists all tables in the specified database (or current database if not specified)
  */
 export const getAllTables = async (database?: string): Promise<string[]> => {
-  const client = createClient(CLICKHOUSE_CONFIG);
+  const client = createClient(chConfig);
   try {
     const query = database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";
     const result = await client.query({
@@ -760,13 +891,14 @@ export const verifyVersionedTables = async (
   options: DatabaseOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? dbLogger;
+  const chConfig = resolveChConfig(options);
   log.debug(`Verifying versioned tables for ${baseTableName}`, {
     expectedVersions,
   });
 
   await withRetries(
     async () => {
-      const client = createClient(CLICKHOUSE_CONFIG);
+      const client = createClient(chConfig);
       try {
         const query =
           database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";

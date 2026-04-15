@@ -374,6 +374,7 @@ impl MigrationHistory {
             materialized_views: HashMap::new(),
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
             moose_version: None,
         };
 
@@ -925,6 +926,7 @@ mod tests {
             materialized_views: HashMap::new(),
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
             moose_version: None,
         };
         map.tables.insert(table.id(TEST_DB), table);
@@ -1063,6 +1065,7 @@ mod tests {
             materialized_views: HashMap::new(),
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
             moose_version: None,
         }
     }

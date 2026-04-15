@@ -960,6 +960,10 @@ mod tests {
         > {
             Ok(vec![])
         }
+
+        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+            Ok(vec![])
+        }
     }
 
     // Helper function to create a test table

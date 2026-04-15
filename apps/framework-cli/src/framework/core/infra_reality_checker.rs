@@ -965,6 +965,10 @@ mod tests {
         ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
             Ok(self.row_policies.clone())
         }
+
+        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+            Ok(vec![])
+        }
     }
 
     // Helper function to create a test project
@@ -1087,6 +1091,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         // Create reality checker
@@ -1163,6 +1168,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1245,6 +1251,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1317,6 +1324,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1391,6 +1399,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1481,6 +1490,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1688,6 +1698,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map
@@ -1757,6 +1768,7 @@ mod tests {
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
             moose_version: None,
+            olap_dictionaries: Default::default(),
         };
 
         infra_map

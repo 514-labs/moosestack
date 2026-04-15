@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{BufMut, BytesMut};
@@ -6,10 +5,17 @@ use kafka_protocol::messages::fetch_response::{
     FetchResponse, FetchableTopicResponse, PartitionData,
 };
 use kafka_protocol::messages::FetchRequest;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 
 use crate::broker::Broker;
 use crate::error;
+
+#[derive(Clone)]
+struct RequestedPartition {
+    topic_index: usize,
+    partition_index: usize,
+    receiver: watch::Receiver<u64>,
+}
 
 /// Handle Fetch requests with long-polling support.
 ///
@@ -19,51 +25,79 @@ pub async fn handle(broker: &Broker, request: FetchRequest, _api_version: i16) -
     let max_wait_ms = request.max_wait_ms.max(0) as u64;
     let min_bytes = request.min_bytes.max(0);
 
+    // Subscribe before the first fetch so we don't miss data produced during
+    // the initial fetch. We compare future notifications against the first
+    // response's high watermarks so pre-fetch notifications don't break
+    // long-poll semantics.
+    let mut requested_partitions = collect_receivers(broker, &request).await;
+
     // First attempt to fetch
     let (response, total_bytes) = do_fetch(broker, &request).await;
 
     // Long polling: if we got less than min_bytes and max_wait_ms > 0, wait for data
-    if total_bytes < min_bytes as i64 && max_wait_ms > 0 {
-        let notifies = collect_notifies(broker, &request).await;
+    if total_bytes < min_bytes as i64 && max_wait_ms > 0 && !requested_partitions.is_empty() {
+        let baselines = collect_high_watermarks(&response, &requested_partitions);
+        let timeout = Duration::from_millis(max_wait_ms);
+        let _ = tokio::time::timeout(
+            timeout,
+            wait_any_changed_since(&mut requested_partitions, &baselines),
+        )
+        .await;
 
-        if !notifies.is_empty() {
-            let timeout = Duration::from_millis(max_wait_ms);
-            let _ = tokio::time::timeout(timeout, wait_any_notify(&notifies)).await;
-
-            // Re-fetch after wait
-            let (response, _) = do_fetch(broker, &request).await;
-            return response;
-        }
+        // Re-fetch after wait
+        let (response, _) = do_fetch(broker, &request).await;
+        return response;
     }
 
     response
 }
 
-async fn wait_any_notify(notifies: &[Arc<Notify>]) {
-    // Use tokio::select! to wait on up to a few notifies.
-    // For simplicity in dev usage, wait on all of them via a spawned approach.
-    if notifies.is_empty() {
+/// Wait until any of the watch receivers reports a change.
+async fn wait_any_changed_since(
+    requested_partitions: &mut [RequestedPartition],
+    baselines: &[u64],
+) {
+    if requested_partitions.is_empty() || requested_partitions.len() != baselines.len() {
         return;
     }
 
-    // Create a shared notify that fires when any partition gets data
-    let combined = Arc::new(Notify::new());
-    let mut handles = Vec::new();
+    if requested_partitions
+        .iter()
+        .zip(baselines.iter())
+        .any(|(requested_partition, baseline)| *requested_partition.receiver.borrow() > *baseline)
+    {
+        return;
+    }
 
-    for notify in notifies {
-        let n = notify.clone();
-        let c = combined.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+    let mut handles = Vec::with_capacity(requested_partitions.len());
+
+    for (requested_partition, baseline) in requested_partitions
+        .iter()
+        .cloned()
+        .zip(baselines.iter().copied())
+    {
+        let tx = tx.clone();
         handles.push(tokio::spawn(async move {
-            n.notified().await;
-            c.notify_one();
+            let mut recv = requested_partition.receiver;
+            loop {
+                if *recv.borrow() > baseline {
+                    break;
+                }
+                if recv.changed().await.is_err() {
+                    return;
+                }
+            }
+            if let Some(tx) = tx.lock().await.take() {
+                let _ = tx.send(());
+            }
         }));
     }
 
-    combined.notified().await;
-
-    // Abort remaining tasks
-    for h in handles {
-        h.abort();
+    let _ = rx.await;
+    for handle in handles {
+        handle.abort();
     }
 }
 
@@ -97,7 +131,24 @@ async fn do_fetch(broker: &Broker, request: &FetchRequest) -> (FetchResponse, i6
                         total_bytes += batch.raw_batch.len() as i64;
                     }
                     if !records.is_empty() {
+                        tracing::debug!(
+                            topic = %topic_req.topic.0,
+                            partition = partition_req.partition,
+                            fetch_offset = partition_req.fetch_offset,
+                            batches = batches.len(),
+                            bytes = records.len(),
+                            high_watermark = partition.latest_offset(),
+                            "Fetch returned data"
+                        );
                         part_resp.records = Some(records.freeze());
+                    } else if partition_req.fetch_offset > partition.latest_offset() {
+                        tracing::warn!(
+                            topic = %topic_req.topic.0,
+                            partition = partition_req.partition,
+                            fetch_offset = partition_req.fetch_offset,
+                            latest_offset = partition.latest_offset(),
+                            "Fetch offset beyond end of partition (stale offset?)"
+                        );
                     }
                 } else {
                     part_resp.error_code = error::UNKNOWN_TOPIC_OR_PARTITION;
@@ -117,19 +168,39 @@ async fn do_fetch(broker: &Broker, request: &FetchRequest) -> (FetchResponse, i6
     (response, total_bytes)
 }
 
-async fn collect_notifies(broker: &Broker, request: &FetchRequest) -> Vec<Arc<Notify>> {
+async fn collect_receivers(broker: &Broker, request: &FetchRequest) -> Vec<RequestedPartition> {
     let topics = broker.topics.read().await;
-    let mut notifies = Vec::new();
+    let mut requested_partitions = Vec::new();
 
-    for topic_req in &request.topics {
+    for (topic_index, topic_req) in request.topics.iter().enumerate() {
         if let Some(topic) = topics.get(&topic_req.topic) {
-            for partition_req in &topic_req.partitions {
+            for (partition_index, partition_req) in topic_req.partitions.iter().enumerate() {
                 if let Some(partition) = topic.partitions.get(partition_req.partition as usize) {
-                    notifies.push(partition.notify.clone());
+                    requested_partitions.push(RequestedPartition {
+                        topic_index,
+                        partition_index,
+                        receiver: partition.data_version(),
+                    });
                 }
             }
         }
     }
 
-    notifies
+    requested_partitions
+}
+
+fn collect_high_watermarks(
+    response: &FetchResponse,
+    requested_partitions: &[RequestedPartition],
+) -> Vec<u64> {
+    requested_partitions
+        .iter()
+        .filter_map(|requested_partition| {
+            response
+                .responses
+                .get(requested_partition.topic_index)
+                .and_then(|topic| topic.partitions.get(requested_partition.partition_index))
+                .map(|partition| partition.high_watermark.max(0) as u64)
+        })
+        .collect()
 }

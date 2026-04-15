@@ -41,6 +41,13 @@ pub async fn handle(
                     if let Some(ref records) = partition_data.records {
                         match partition.append(records) {
                             Ok(base_offset) => {
+                                tracing::debug!(
+                                    topic = %topic_name.0,
+                                    partition = partition_data.index,
+                                    base_offset,
+                                    bytes = records.len(),
+                                    "Produced records"
+                                );
                                 part_resp.base_offset = base_offset;
                                 part_resp.error_code = 0;
                                 part_resp.log_append_time_ms = -1;

@@ -18,6 +18,18 @@ pub enum GroupState {
     Stable,
 }
 
+impl GroupState {
+    /// Return the Kafka protocol string representation of this state.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GroupState::Empty => "Empty",
+            GroupState::PreparingRebalance => "PreparingRebalance",
+            GroupState::CompletingRebalance => "CompletingRebalance",
+            GroupState::Stable => "Stable",
+        }
+    }
+}
+
 /// A single member of a consumer group.
 #[allow(dead_code)]
 pub struct GroupMember {
@@ -95,6 +107,29 @@ impl ConsumerGroup {
             self.state = GroupState::PreparingRebalance;
         }
     }
+
+    /// Remove members whose last heartbeat exceeds their session timeout.
+    pub fn reap_expired_members(&mut self, now: Instant, reason: &str) {
+        let expired: Vec<StrBytes> = self
+            .members
+            .iter()
+            .filter(|(_, member)| {
+                let timeout_ms = member.session_timeout_ms.max(0) as u128;
+                now.duration_since(member.last_heartbeat).as_millis() > timeout_ms
+            })
+            .map(|(member_id, _)| member_id.clone())
+            .collect();
+
+        for member_id in expired {
+            tracing::info!(
+                group = %self.group_id.0,
+                member = %member_id,
+                reason,
+                "Reaping expired member"
+            );
+            self.remove_member(&member_id);
+        }
+    }
 }
 
 /// Key for committed offset storage: (group, topic, partition).
@@ -140,23 +175,7 @@ impl GroupCoordinator {
         let group_ids: Vec<GroupId> = self.groups.keys().cloned().collect();
         for group_id in group_ids {
             let group = self.groups.get_mut(&group_id).unwrap();
-            let expired: Vec<StrBytes> = group
-                .members
-                .iter()
-                .filter(|(_, m)| {
-                    let timeout_ms = m.session_timeout_ms.max(0) as u128;
-                    now.duration_since(m.last_heartbeat).as_millis() > timeout_ms
-                })
-                .map(|(id, _)| id.clone())
-                .collect();
-            for member_id in expired {
-                tracing::info!(
-                    group = %group_id.0,
-                    member = %member_id,
-                    "Reaping expired member"
-                );
-                group.remove_member(&member_id);
-            }
+            group.reap_expired_members(now, "background_reaper");
             if group.members.is_empty() && group.state == GroupState::Empty {
                 self.groups.remove(&group_id);
             }
