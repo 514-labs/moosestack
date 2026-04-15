@@ -1,7 +1,8 @@
 import { TIMEOUTS, SERVER_CONFIG } from "../constants";
-import { withRetries } from "./retry-utils";
+import { waitForConsumerGroupsStable } from "./kafka-utils";
 import { logger, ScopedLogger } from "./logger";
 import { ChildProcess } from "child_process";
+import { TestPorts } from "./port-config";
 
 const processLogger = logger.scope("utils:process");
 
@@ -9,6 +10,14 @@ export interface ProcessOptions {
   logger?: ScopedLogger;
   /** Override the base URL for server requests (default: SERVER_CONFIG.url) */
   baseUrl?: string;
+  /** Skip Docker detection and use dockerless readiness checks directly */
+  dockerless?: boolean;
+  /** Override the Phase 3 stabilization delay in dockerless mode (default: 30_000ms).
+   *  Use a shorter delay (e.g. 5_000) for schema-only tests that don't need
+   *  streaming functions ready — they only verify DDL changes. */
+  stabilizationDelayMs?: number;
+  /** Restrict process cleanup to the suite's allocated ports. */
+  ports?: TestPorts | number[];
 }
 
 declare const require: any;
@@ -31,6 +40,18 @@ const execAsync = (
 
 const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isDarwin = process.platform === "darwin";
+
+const buildKillPortCommand = (port: number): string =>
+  isDarwin ?
+    `pids=$(lsof -ti tcp:${port} 2>/dev/null) && [ -n "$pids" ] && kill -9 $pids || true`
+  : `fuser -k ${port}/tcp 2>/dev/null || true`;
+
+const buildPortFreeCheckCommand = (port: number): string =>
+  isDarwin ?
+    `if lsof -ti tcp:${port} >/dev/null 2>&1; then echo busy; else echo free; fi`
+  : `fuser ${port}/tcp 2>/dev/null || echo free`;
 
 /**
  * Stops a moose process with graceful shutdown and forced termination fallback
@@ -72,6 +93,15 @@ export const stopDevProcess = async (
     if (!devProcess.killed) {
       await setTimeoutAsync(TIMEOUTS.BRIEF_CLEANUP_WAIT_MS);
     }
+
+    // Legacy CLIs can leave descendant processes briefly holding inherited
+    // stdio pipes open after the main process exits. Explicitly destroy our
+    // side of the streams so Node does not keep the test process alive
+    // waiting on pipe handles that no longer matter for teardown.
+    devProcess.stdout?.destroy();
+    devProcess.stderr?.destroy();
+    devProcess.stdin?.destroy();
+    devProcess.removeAllListeners();
 
     log.debug("Ensuring all moose processes are terminated");
     await killRemainingProcesses(options);
@@ -211,67 +241,94 @@ export const waitForInfrastructureChanges = async (
 };
 
 /**
- * Kills any remaining moose-cli processes
+ * Kills any remaining moose-cli processes and native infrastructure
+ * (ClickHouse, Temporal) that may have been orphaned between test suites.
+ *
+ * Uses port-based killing to ensure stale processes don't hold ports across
+ * sequential test suites without killing unrelated local Moose processes.
  */
 export const killRemainingProcesses = async (
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
-  try {
-    await execAsync("pkill -9 -f moose-cli || true", {
-      timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
-      killSignal: "SIGKILL",
-      windowsHide: true,
-    });
-    log.debug("Killed any remaining moose-cli processes");
+  // Default infrastructure ports used when no override is provided.
+  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 16379, 7233];
+  const rawPorts =
+    Array.isArray(options.ports) ? options.ports
+    : options.ports ? Object.values(options.ports)
+    : defaultPorts;
+  const portsToKill = [...new Set(rawPorts)];
+  const portsToWait = portsToKill.filter((port) =>
+    [18123, 19000, 9181, 9234, 19092, 16379, 7233].includes(port),
+  );
 
-    await execAsync(
-      "pkill -9 -f 'moose-runner|streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
-      {
+  // Kill processes holding the specified ports.
+  try {
+    for (const port of portsToKill) {
+      await execAsync(buildKillPortCommand(port), {
         timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
         killSignal: "SIGKILL",
         windowsHide: true,
-      },
-    );
-    log.debug("Killed any remaining Python processes");
+      });
+    }
+    log.debug("Killed processes on ports", { ports: portsToKill });
   } catch (error) {
-    log.warn("Error killing remaining processes", error);
+    log.warn("Error killing processes by port");
+  }
+
+  // Wait for key ports to be released before returning.
+  for (const port of portsToWait) {
+    try {
+      for (let i = 0; i < 10; i++) {
+        const { stdout } = await execAsync(buildPortFreeCheckCommand(port), {
+          timeout: 5000,
+        });
+        if (stdout.trim() === "free") {
+          log.debug(`Port ${port} is free`);
+          break;
+        }
+        log.debug(`Port ${port} still in use, waiting... (attempt ${i + 1})`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    } catch (error) {
+      log.warn(`Error checking port ${port} availability`);
+    }
   }
 };
 
 /**
- * Wait for streaming functions and ClickHouse sync to start by checking Redpanda consumer groups.
+ * Wait for streaming functions and ClickHouse sync to start.
  *
- * This approach directly verifies that consumers have:
- * 1. Connected to Kafka/Redpanda
- * 2. Joined their consumer groups
- * 3. Reached a "Stable" state (ready to process messages)
- *
- * We wait for two types of consumer groups:
- * - "flow-*" groups: Streaming function consumers (transform data between topics)
- * - "clickhouse_sync" group: Syncs data from Kafka topics to ClickHouse tables
- *
- * Both must be stable before data can flow end-to-end from ingestion to ClickHouse.
- * We poll `rpk group list` until all required groups are in Stable state.
+ * When `options.dockerless` is true, uses the /ready endpoint + ingest probe
+ * directly (no Docker overhead). Otherwise checks Redpanda consumer groups
+ * via `rpk group list` inside the Docker container.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
-  log.debug(
-    "Waiting for streaming functions to start (checking Redpanda consumer groups)",
-    {
+  const baseUrl = options.baseUrl ?? SERVER_CONFIG.url;
+  log.debug("Waiting for streaming functions to start", {
+    timeoutMs,
+    dockerless: !!options.dockerless,
+  });
+
+  if (options.dockerless) {
+    await waitForStreamingDockerlessMode(
       timeoutMs,
-    },
-  );
+      baseUrl,
+      log,
+      options.stabilizationDelayMs,
+    );
+    return;
+  }
 
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
     try {
-      // Find the Redpanda container (there's only one per test run)
       const { stdout: containerName } = await execAsync(
         `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
       );
@@ -282,26 +339,19 @@ export const waitForStreamingFunctions = async (
         continue;
       }
 
-      // Check consumer groups using rpk
       const { stdout: groupList } = await execAsync(
         `docker exec ${containerName.trim()} rpk group list`,
       );
 
       log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
-      // Parse for Stable groups
-      // Expected format: "BROKER  GROUP  STATE"
-      // Example: "0  flow-Foo-  Stable"
-      const lines = groupList.split("\n").slice(1); // Skip header
+      const lines = groupList.split("\n").slice(1);
 
-      // Check flow-* groups (streaming functions)
       const flowGroups = lines.filter((line) => line.includes("flow-"));
       const stableFlowGroups = flowGroups.filter((line) =>
         line.includes("Stable"),
       );
 
-      // Check clickhouse_sync groups (Kafka to ClickHouse sync)
-      // These are critical for data to actually appear in ClickHouse tables
       const clickhouseSyncGroups = lines.filter((line) =>
         line.includes("clickhouse_sync"),
       );
@@ -309,8 +359,6 @@ export const waitForStreamingFunctions = async (
         line.includes("Stable"),
       );
 
-      // Wait for each group type independently: if groups of that type
-      // exist, all must be stable. At least one group type must be present.
       const hasAnyGroups =
         flowGroups.length > 0 || clickhouseSyncGroups.length > 0;
       const allFlowGroupsStable =
@@ -333,7 +381,6 @@ export const waitForStreamingFunctions = async (
           },
         );
 
-        // Grace period for consumer groups to fully stabilize
         log.debug("Waiting for consumer groups to stabilize");
         await setTimeoutAsync(3000);
         log.debug("✓ Streaming functions and ClickHouse sync ready");
@@ -345,8 +392,6 @@ export const waitForStreamingFunctions = async (
       );
       await setTimeoutAsync(1000);
     } catch (error) {
-      // Container might not be ready yet, or rpk command failed
-      // Continue polling until timeout
       log.debug("Error checking consumer groups, retrying", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -357,6 +402,160 @@ export const waitForStreamingFunctions = async (
   throw new Error(
     `Streaming functions and ClickHouse sync did not reach Stable state within ${timeoutMs / 1000}s`,
   );
+};
+
+/**
+ * Dockerless mode readiness check: uses the /ready endpoint to verify all
+ * infrastructure services are healthy, then verifies the ingest endpoint is
+ * accepting data (proves Kafka producer path works), and waits for consumer
+ * groups to stabilize.
+ */
+const DEFAULT_STABILIZATION_DELAY_MS = 30_000;
+
+const waitForReadyStatus = async (
+  budgetMs: number,
+  baseUrl: string,
+  log: ScopedLogger,
+  mode: "core" | "all",
+): Promise<void> => {
+  const startTime = Date.now();
+  const requiredServices =
+    mode === "all" ?
+      ["ClickHouse", "Redis", "Redpanda"]
+    : ["ClickHouse", "Redis"];
+  const description =
+    mode === "all" ?
+      "all infrastructure services"
+    : "core infrastructure services";
+
+  while (Date.now() - startTime < budgetMs) {
+    try {
+      const response = await fetch(`${baseUrl}/ready`);
+      const body = await response.text();
+      if (response.status === 200) {
+        log.debug(`✓ ${description} healthy via /ready endpoint`);
+        return;
+      }
+
+      try {
+        const status = JSON.parse(body);
+        const healthy: string[] = status.healthy ?? [];
+        if (requiredServices.every((service) => healthy.includes(service))) {
+          log.debug(
+            `✓ ${description} healthy (${healthy.join(", ")}), proceeding despite overall ${response.status}`,
+          );
+          return;
+        }
+      } catch {
+        // JSON parse failure — fall through to retry.
+      }
+
+      log.debug(`Infrastructure not ready (${response.status}): ${body}`);
+    } catch (error) {
+      log.debug("Error checking /ready endpoint, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await setTimeoutAsync(1000);
+  }
+
+  throw new Error(
+    `${description} did not become ready within ${Math.floor(budgetMs / 1000)}s`,
+  );
+};
+
+const waitForStreamingDockerlessMode = async (
+  remainingMs: number,
+  baseUrl: string,
+  log: ScopedLogger,
+  overrideStabilizationMs?: number,
+): Promise<void> => {
+  const startTime = Date.now();
+  // Moderate stabilization delay after infrastructure reports healthy.
+  // Consumer groups use auto.offset.reset=earliest, so data produced before
+  // consumers join will still be consumed. Tests use generous waitForDBWrite
+  // timeouts (120s) on top of this delay, giving a total consumer readiness
+  // budget of ~150s.
+  // Schema-only tests can pass a shorter delay since they only verify DDL.
+  const STABILIZATION_DELAY_MS =
+    overrideStabilizationMs ?? DEFAULT_STABILIZATION_DELAY_MS;
+  const budgetMs = Math.max(0, remainingMs);
+
+  if (budgetMs === 0) {
+    throw new Error("No timeout budget left for dockerless readiness check");
+  }
+
+  // Phase 1: Poll /ready endpoint until the core local services are healthy.
+  // In dockerless mode the rdkafka metadata health check (used by /ready for
+  // Redpanda) is flaky with devkafka — the 2-second timeout is too tight for
+  // a fresh BaseConsumer to connect + fetch metadata reliably. Rather than
+  // blocking on full 200 OK, we accept the response once ClickHouse and Redis
+  // are healthy and let Phase 3 verify Kafka via kafkajs.
+  log.debug(
+    "Phase 1: Waiting for infrastructure health via /ready endpoint (ClickHouse and Redis required)",
+  );
+  await waitForReadyStatus(budgetMs, baseUrl, log, "core");
+
+  if (Date.now() - startTime >= budgetMs) {
+    throw new Error(
+      `Infrastructure did not become ready within the remaining timeout (dockerless mode)`,
+    );
+  }
+
+  // Phase 2: Verify ingest endpoint is accepting data (proves Kafka producer path)
+  log.debug("Phase 2: Verifying ingest endpoint accepts requests");
+  let ingestReady = false;
+  while (Date.now() - startTime < budgetMs) {
+    try {
+      const response = await fetch(`${baseUrl}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      // Any response (even 400/404) means the server is processing requests
+      if (response.status !== 502 && response.status !== 503) {
+        log.debug(`✓ Ingest endpoint responding (status: ${response.status})`);
+        ingestReady = true;
+        break;
+      }
+    } catch (error) {
+      log.debug("Ingest endpoint not ready, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await setTimeoutAsync(1000);
+  }
+  if (!ingestReady) {
+    throw new Error(
+      `Ingest endpoint did not become ready within the remaining timeout (dockerless mode)`,
+    );
+  }
+
+  // Phase 3: Poll devkafka for consumer groups reaching Stable state.
+  // devkafka now supports ListGroups/DescribeGroups, so we actively verify
+  // consumer group state instead of using a blind delay. If polling fails
+  // (e.g., streaming is disabled), falls back to a short delay.
+  const elapsedMs = Date.now() - startTime;
+  const remainingBudgetMs = Math.max(0, budgetMs - elapsedMs);
+  if (remainingBudgetMs === 0) {
+    throw new Error(
+      "Timed out before consumer groups could stabilize (dockerless mode)",
+    );
+  }
+  const pollTimeoutMs = Math.min(STABILIZATION_DELAY_MS, remainingBudgetMs);
+  log.debug(
+    `Phase 3: Polling consumer groups for Stable state (timeout: ${Math.floor(pollTimeoutMs / 1000)}s)`,
+  );
+  try {
+    await waitForConsumerGroupsStable(pollTimeoutMs, { logger: log });
+  } catch (error) {
+    const fallbackMs = Math.min(5000, remainingBudgetMs);
+    log.debug(
+      `Consumer group polling ended: ${error instanceof Error ? error.message : String(error)}, using ${fallbackMs}ms fallback`,
+    );
+    await setTimeoutAsync(fallbackMs);
+  }
+  log.debug("✓ Streaming functions ready (dockerless mode)");
 };
 
 /**
@@ -374,26 +573,7 @@ export const waitForInfrastructureReady = async (
     baseUrl,
   });
 
-  await withRetries(
-    async () => {
-      const response = await fetch(`${baseUrl}/ready`);
-      // /ready returns 200 OK when all services are healthy, 503 otherwise
-      if (response.status !== 200) {
-        const body = await response.text();
-        throw new Error(
-          `Infrastructure not ready (${response.status}): ${body}`,
-        );
-      }
-      log.debug("✓ All infrastructure components are ready");
-    },
-    {
-      attempts: Math.floor(timeoutMs / 1000),
-      delayMs: 1000,
-      backoffFactor: 1,
-      logger: log,
-      operationName: "Infrastructure readiness check",
-    },
-  );
+  await waitForReadyStatus(timeoutMs, baseUrl, log, "all");
 };
 
 /**

@@ -23,10 +23,14 @@ pub fn handle(
         (12, 0, 4), // Heartbeat
         (13, 0, 5), // LeaveGroup
         (14, 0, 5), // SyncGroup
+        (15, 0, 5), // DescribeGroups
+        (16, 0, 4), // ListGroups
+        (17, 0, 1), // SaslHandshake
         (18, 0, 3), // ApiVersions
         (19, 0, 7), // CreateTopics
         (20, 0, 6), // DeleteTopics
         (22, 0, 4), // InitProducerId
+        (36, 0, 2), // SaslAuthenticate
     ];
 
     for (key, min_ver, max_ver) in apis {

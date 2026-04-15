@@ -271,7 +271,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         );
     }
 
-    // Clear the remote database name so generated code uses the local default database
+    // Clear the remote database name so generated code uses the local default database.
     let (externally_managed, managed): (Vec<_>, Vec<_>) = tables
         .into_iter()
         .map(|mut t| {

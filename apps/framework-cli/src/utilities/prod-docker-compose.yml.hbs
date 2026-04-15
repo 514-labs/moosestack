@@ -155,9 +155,6 @@ services:
 {{/if}}
       - clickhouse-0-logs:/var/log/clickhouse-server/
       - clickhouse-0-users:/etc/clickhouse-server/users.d
-{{#if clickhouse_clusters_file}}
-      - "{{clickhouse_clusters_file}}:/etc/clickhouse-server/config.d/clusters.xml:ro"
-{{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
@@ -209,6 +206,11 @@ services:
           <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
         </clickhouse>
         EOF
+{{#if clickhouse_clusters_xml}}
+        cat > /etc/clickhouse-server/config.d/moose-clusters.xml << 'EOF'
+{{{clickhouse_clusters_xml}}}
+        EOF
+{{/if}}
         exec /entrypoint.sh
 {{/if}}
 
@@ -291,6 +293,7 @@ services:
       - ${TEMPORAL_UI_PORT:-8080}:8080
 
 networks:
-  temporal-network: null
   clickhouse-network: null
+{{#if scripts_feature}}
+  temporal-network: null
 {{/if}}

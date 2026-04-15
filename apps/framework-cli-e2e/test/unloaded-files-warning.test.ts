@@ -8,7 +8,7 @@
  * source files that exist but weren't loaded (not imported/required).
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -25,7 +25,12 @@ import {
   createTempTestDirectory,
   setupTypeScriptProject,
   setupPythonProject,
+  buildPortEnv,
+  buildServerConfig,
+  getTestPorts,
   logger,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 import {
   stopDevProcess,
@@ -36,6 +41,7 @@ import {
 } from "./utils/process-utils";
 
 const testLogger = logger.scope("unloaded-files-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_LIB_PATH = path.resolve(
@@ -50,6 +56,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 // Add these constants for timeouts
 const INFRASTRUCTURE_TIMEOUT_MS = 90_000; // 90 seconds
 const SUITE_TIMEOUT_MS = 300_000; // 5 minutes
+const PORTS = getTestPorts(60);
+const TEST_SERVER_CONFIG = buildServerConfig(PORTS);
 
 // Default environment variables for dev processes
 const DEFAULT_DEV_ENV = {
@@ -95,7 +103,7 @@ describe("Unloaded Files Warning", () => {
       testLogger.debug("Set up TypeScript project");
 
       // Create an unloaded file (not imported anywhere)
-      const unloadedFilePath = path.join(testDir, "src", "unloaded_table.ts");
+      const unloadedFilePath = path.join(testDir, "app", "unloaded_table.ts");
       const unloadedFileContent = `
 import { OlapTable } from "@514labs/moose-lib";
 
@@ -106,8 +114,7 @@ interface UnloadedTestModel {
 }
 
 // This table won't be registered because the file isn't imported
-export const unloadedTable = OlapTable<UnloadedTestModel>({
-  name: "unloaded_test_table",
+export const unloadedTable = new OlapTable<UnloadedTestModel>("unloaded_test_table", {
   orderByFields: ["id"],
 });
 `;
@@ -117,10 +124,17 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
-      });
+        projectDir: testDir,
+        mode: E2E_DEV_MODE,
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
 
       // Wait for both the warning message and the specific file name
       // Using a single call avoids race conditions where both strings
@@ -192,10 +206,18 @@ unloaded_table = OlapTable[UnloadedTestModel](
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
-      });
+        projectDir: testDir,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
 
       // Wait for both the warning message and the specific file name
       // Using a single call avoids race conditions where both strings
@@ -240,7 +262,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
       testLogger.debug("Set up TypeScript project");
 
       // Create a file and properly import it
-      const tableFilePath = path.join(testDir, "src", "models", "MyTable.ts");
+      const tableFilePath = path.join(testDir, "app", "models", "MyTable.ts");
       fs.mkdirSync(path.dirname(tableFilePath), { recursive: true });
 
       const tableFileContent = `
@@ -251,16 +273,15 @@ interface MyModel {
   name: string;
 }
 
-export const myTable = OlapTable<MyModel>({
-  name: "my_table",
+export const myTable = new OlapTable<MyModel>("my_table", {
   orderByFields: ["id"],
 });
 `;
 
       fs.writeFileSync(tableFilePath, tableFileContent);
 
-      // Import it in index.ts
-      const indexPath = path.join(testDir, "src", "index.ts");
+      // Import it in app/index.ts
+      const indexPath = path.join(testDir, "app", "index.ts");
       const indexContent = fs.readFileSync(indexPath, "utf-8");
       fs.writeFileSync(
         indexPath,
@@ -272,10 +293,17 @@ export const myTable = OlapTable<MyModel>({
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
-      });
+        projectDir: testDir,
+        mode: E2E_DEV_MODE,
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
 
       // Capture all output
       const output = captureProcessOutput(devProcess);
@@ -284,8 +312,8 @@ export const myTable = OlapTable<MyModel>({
       await waitForServerStart(
         devProcess,
         INFRASTRUCTURE_TIMEOUT_MS,
-        "started successfully",
-        "http://localhost:4000",
+        TEST_SERVER_CONFIG.startupMessage,
+        TEST_SERVER_CONFIG.url,
         { logger: testLogger },
       );
 
@@ -326,9 +354,9 @@ export const myTable = OlapTable<MyModel>({
 
       // Create declaration files (.d.ts, .d.mts, .d.cts)
       const declarationFiles = [
-        path.join(testDir, "src", "types.d.ts"),
-        path.join(testDir, "src", "global.d.mts"),
-        path.join(testDir, "src", "module.d.cts"),
+        path.join(testDir, "app", "types.d.ts"),
+        path.join(testDir, "app", "global.d.mts"),
+        path.join(testDir, "app", "module.d.cts"),
       ];
 
       const declarationContent = `
@@ -347,10 +375,17 @@ declare module "some-module" {
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
 
-      devProcess = spawn(CLI_PATH, ["dev"], {
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: testDir,
-        env: DEFAULT_DEV_ENV,
-      });
+        projectDir: testDir,
+        mode: E2E_DEV_MODE,
+        portEnv: buildPortEnv(PORTS),
+        extraEnv: {
+          ...DEFAULT_DEV_ENV,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
 
       // Capture all output
       const output = captureProcessOutput(devProcess);
@@ -359,8 +394,8 @@ declare module "some-module" {
       await waitForServerStart(
         devProcess,
         INFRASTRUCTURE_TIMEOUT_MS,
-        "started successfully",
-        "http://localhost:4000",
+        TEST_SERVER_CONFIG.startupMessage,
+        TEST_SERVER_CONFIG.url,
         { logger: testLogger },
       );
 

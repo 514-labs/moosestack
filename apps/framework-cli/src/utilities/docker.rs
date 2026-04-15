@@ -529,11 +529,23 @@ impl DockerClient {
         // Generate and write ClickHouse clusters config if clusters are defined
         if let Some(clusters_xml) = Self::generate_clickhouse_clusters_xml(project) {
             let clusters_file = project.internal_dir()?.join("clickhouse_clusters.xml");
-            std::fs::write(&clusters_file, clusters_xml)?;
+            std::fs::write(&clusters_file, &clusters_xml)?;
             info!(
                 "Generated ClickHouse clusters configuration at: {:?}",
                 clusters_file
             );
+
+            if let Some(obj) = data.as_object_mut() {
+                let indented_clusters_xml = clusters_xml
+                    .lines()
+                    .map(|line| format!("        {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                obj.insert(
+                    "clickhouse_clusters_xml".to_string(),
+                    json!(indented_clusters_xml),
+                );
+            }
 
             // Pass the file path to the template
             if let Some(path_str) = clusters_file.to_str() {

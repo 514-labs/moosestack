@@ -1,4 +1,5 @@
 import { promisify } from "util";
+import { Kafka, logLevel } from "kafkajs";
 import { withRetries } from "./retry-utils";
 import { logger, ScopedLogger } from "./logger";
 
@@ -6,12 +7,16 @@ const kafkaLogger = logger.scope("utils:kafka");
 
 export interface KafkaOptions {
   logger?: ScopedLogger;
+  /** Override the Kafka broker port (default: 19092) */
+  port?: number;
 }
 
 const execAsync = promisify(require("child_process").exec);
 
-const KAFKA_HOST = "localhost";
-const KAFKA_PORT = 19092;
+// Use 127.0.0.1 (IPv4) explicitly because devkafka binds to 127.0.0.1
+// and "localhost" may resolve to ::1 (IPv6) first on some CI runners.
+const KAFKA_HOST = "127.0.0.1";
+const DEFAULT_KAFKA_PORT = 19092;
 
 /**
  * Check if Kafka broker is ready to accept connections
@@ -21,25 +26,26 @@ export const isKafkaReady = async (
   options: KafkaOptions = {},
 ): Promise<boolean> => {
   const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
 
   try {
     // Try to establish a TCP connection to Kafka using bash's /dev/tcp
     // The connection check is wrapped with an outer timeout enforced by execAsync
-    const command = `bash -c "echo > /dev/tcp/${KAFKA_HOST}/${KAFKA_PORT}" 2>/dev/null && echo "success" || echo "failed"`;
+    const command = `bash -c "echo > /dev/tcp/${KAFKA_HOST}/${port}" 2>/dev/null && echo "success" || echo "failed"`;
 
     const { stdout } = await execAsync(command, { timeout: 3000 });
     const ready = stdout.trim() === "success";
     if (ready) {
       log.debug("Kafka broker is ready", {
         host: KAFKA_HOST,
-        port: KAFKA_PORT,
+        port,
       });
     }
     return ready;
   } catch (error) {
     log.debug("Kafka connection check failed", {
       host: KAFKA_HOST,
-      port: KAFKA_PORT,
+      port,
     });
     return false;
   }
@@ -56,9 +62,10 @@ export const waitForKafkaReady = async (
   options: KafkaOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
   log.debug("Waiting for Kafka broker to be ready", {
     host: KAFKA_HOST,
-    port: KAFKA_PORT,
+    port,
     timeout,
   });
 
@@ -67,7 +74,7 @@ export const waitForKafkaReady = async (
 
   await withRetries(
     async () => {
-      const ready = await isKafkaReady({ logger: log });
+      const ready = await isKafkaReady({ logger: log, port });
       if (!ready) {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
         throw new Error(
@@ -83,4 +90,187 @@ export const waitForKafkaReady = async (
       operationName: "Kafka readiness check",
     },
   );
+};
+
+/**
+ * Wait for consumer groups to reach Stable state by polling devkafka's
+ * ListGroups/DescribeGroups APIs via kafkajs.
+ *
+ * If no relevant consumer groups appear within 10 consecutive checks,
+ * assumes streaming is not active and returns early.
+ */
+/**
+ * List all Kafka topics using the admin API.
+ * Used to verify topic creation in dockerless mode (replaces `docker exec rpk topic list`).
+ */
+export const listKafkaTopics = async (
+  options: KafkaOptions = {},
+): Promise<string[]> => {
+  const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
+
+  const kafka = new Kafka({
+    clientId: "e2e-topic-lister",
+    brokers: [brokerAddress],
+    logLevel: logLevel.NOTHING,
+    retry: { retries: 3 },
+  });
+
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    const topics = await admin.listTopics();
+    log.debug(`Listed ${topics.length} topics`, { topics });
+    return topics;
+  } finally {
+    try {
+      await admin.disconnect();
+    } catch {
+      // Best effort disconnect
+    }
+  }
+};
+
+/**
+ * Consume a single message from a Kafka topic.
+ * Used to verify DLQ messages in dockerless mode (replaces `docker exec rpk topic consume`).
+ * Returns the message value as a string, or null if no message was consumed within the timeout.
+ */
+export const consumeKafkaMessage = async (
+  topic: string,
+  timeoutMs: number = 30_000,
+  options: KafkaOptions = {},
+): Promise<string | null> => {
+  const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
+
+  const kafka = new Kafka({
+    clientId: "e2e-dlq-consumer",
+    brokers: [brokerAddress],
+    logLevel: logLevel.NOTHING,
+    retry: { retries: 3 },
+  });
+
+  const consumer = kafka.consumer({
+    groupId: `e2e-dlq-reader-${Date.now()}`,
+  });
+
+  let messageValue: string | null = null;
+
+  try {
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: true });
+
+    const consumePromise = new Promise<void>((resolve) => {
+      consumer.run({
+        eachMessage: async ({ message }) => {
+          if (message.value) {
+            messageValue = message.value.toString();
+            log.debug(`Consumed message from ${topic}`, {
+              value: messageValue.substring(0, 200),
+            });
+            resolve();
+          }
+        },
+      });
+    });
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
+
+    await Promise.race([consumePromise, timeoutPromise]);
+    return messageValue;
+  } finally {
+    try {
+      await consumer.disconnect();
+    } catch {
+      // Best effort disconnect
+    }
+  }
+};
+
+export const waitForConsumerGroupsStable = async (
+  timeoutMs: number = 60_000,
+  options: KafkaOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? kafkaLogger;
+  const port = options.port ?? DEFAULT_KAFKA_PORT;
+  const brokerAddress = `${KAFKA_HOST}:${port}`;
+
+  const kafka = new Kafka({
+    clientId: "e2e-group-checker",
+    brokers: [brokerAddress],
+    logLevel: logLevel.NOTHING,
+    retry: { retries: 2 },
+  });
+
+  const admin = kafka.admin();
+  const startTime = Date.now();
+  let noGroupsCount = 0;
+
+  try {
+    await admin.connect();
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const { groups: listedGroups } = await admin.listGroups();
+
+        const relevantGroups = listedGroups.filter(
+          (g) =>
+            g.groupId.includes("flow-") ||
+            g.groupId.includes("clickhouse_sync"),
+        );
+
+        if (relevantGroups.length === 0) {
+          noGroupsCount++;
+          if (noGroupsCount >= 10) {
+            log.debug(
+              "No consumer groups found after 10s, assuming streaming is not active",
+            );
+            return;
+          }
+          log.debug(
+            `No consumer groups yet (${noGroupsCount}/10 before giving up)`,
+          );
+        } else {
+          noGroupsCount = 0;
+          const groupIds = relevantGroups.map((g) => g.groupId);
+          const described = await admin.describeGroups(groupIds);
+
+          const allStable = described.groups.every((g) => g.state === "Stable");
+
+          if (allStable) {
+            log.debug(
+              `All ${groupIds.length} consumer groups are Stable: ${groupIds.join(", ")}`,
+            );
+            // Brief settle after stabilization
+            await new Promise((r) => setTimeout(r, 2000));
+            return;
+          }
+
+          const states = described.groups.map((g) => `${g.groupId}=${g.state}`);
+          log.debug(`Waiting for groups: ${states.join(", ")}`);
+        }
+      } catch (error) {
+        log.debug("Error checking consumer groups, retrying", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    throw new Error(
+      `Consumer groups did not stabilize within ${Math.floor(timeoutMs / 1000)}s`,
+    );
+  } finally {
+    try {
+      await admin.disconnect();
+    } catch {
+      // Best effort disconnect
+    }
+  }
 };

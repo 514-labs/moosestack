@@ -1,82 +1,85 @@
 ---
-title: Ingestion APIs
-description: Ingestion APIs for Moose
+title: Ingest API
+description: Create HTTP endpoints that validate JSON and route records into destination streams
 order: 2
 category: apis
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, ZoomImg, CompareBulletPointsCard, CTACard, CTACards, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Ingestion APIs
+# Ingest API
 
-## Overview
+Use `IngestApi` to send records over HTTP to a destination `Stream`, for example from another service, webhook, or client app. Use [`Stream.send()`](/moosestack/streaming/from-your-code) when the producer can import your Moose SDK and `Stream` definition directly.
 
-Moose Ingestion APIs are the entry point for getting data into your Moose application. They provide a fast, reliable, and type-safe way to move data from your sources into streams and tables for analytics and processing.
+This page covers HTTP-based ingestion. To define the destination `Stream`, see [Stream](/moosestack/streaming/create-stream).
 
-## When to Use Ingestion APIs
+## When to use Ingest APIs
 
-Ingestion APIs are most useful when you want to implement a push-based pattern for getting data from your data sources into your streams and tables. Common use cases include:
-- Instrumenting external client applications
-- Receiving webhooks from third-party services
-- Integrating with ETL or data pipeline tools that push data
+| Use | Typical scenarios |
+| --- | --- |
+| [`Stream.send()`](/moosestack/streaming/from-your-code) | An existing app in your monorepo or Moose workflows, where you can import the stream definition and other Moose objects directly. |
+| `IngestApi` | Services that push events into your system when you do not control that codebase or cannot use Moose objects or clients there directly. |
 
-## Why Use Moose's APIs Over Your Own?
+## Basic usage
 
-Moose's ingestion APIs are purpose-built for high-throughput data pipelines, offering key advantages over other more general-purpose frameworks:
-- **Built-in schema validation:** Ensures only valid data enters your pipeline.
-- **Direct connection to streams/tables:** Instantly link HTTP endpoints to Moose data infrastructure to route incoming data to your streams and tables without any glue code.
-- **Dead Letter Queue (DLQ) support:** Invalid records are automatically captured for review and recovery.
-- **OpenAPI auto-generation:** Instantly generate client SDKs and docs for all endpoints, including example data.
-- **Rust-powered performance:** Far higher throughput and lower latency than typical Node.js or Python APIs.
-
-## Validation
-
-Moose validates all incoming data against your interface (TypeScript) or Pydantic model (Python). If a record fails validation, Moose can automatically route it to a Dead Letter Queue (DLQ) for later inspection and recovery.
+Use `IngestApi` with a destination `Stream`. Optionally, add a dead letter queue when invalid records should be retained for inspection or replay.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```typescript filename="ValidationExample.ts" copy
-interface ExampleModel {
+```ts filename="app/ingest-api.ts" copy
+import { DeadLetterQueue, IngestApi, Stream } from "@514labs/moose-lib";
+
+interface UserEvent {
   id: string;
   userId: string;
   timestamp: Date;
-  properties?: {
-    device?: string;
-    version?: number;
-  }
+  eventType: string;
 }
 
-export const api = new IngestApi<ExampleModel>("your-api-route", {
-  destination: new Stream<ExampleModel>("your-stream-name"),
-  deadLetterQueue: new DeadLetterQueue<ExampleModel>("your-dlq-name")
+const userEvents = new Stream<UserEvent>("user_events");
+const userEventDLQ = new DeadLetterQueue<UserEvent>("user_events_dlq");
+
+export const userEventsApi = new IngestApi<UserEvent>("user-events", {
+  destination: userEvents,
+  deadLetterQueue: userEventDLQ,
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```python filename="ValidationExample.py" copy
-from moose_lib import IngestPipeline, IngestPipelineConfig, IngestConfig
+```py filename="app/ingest_api.py" copy
+from datetime import datetime
+
+from moose_lib import DeadLetterQueue, IngestApi, IngestConfigWithDestination, Stream
 from pydantic import BaseModel
 
-class Properties(BaseModel):
-    device: Optional[str]
-    version: Optional[int]
-
-class ExampleModel(BaseModel):
+class UserEvent(BaseModel):
     id: str
-    userId: str
+    user_id: str
     timestamp: datetime
-    properties: Properties
+    event_type: str
 
-api = IngestApi[ExampleModel]("your-api-route", IngestConfig(
-    destination=Stream[ExampleModel]("your-stream-name"),
-    dead_letter_queue=DeadLetterQueue[ExampleModel]("your-dlq-name")
+user_events = Stream[UserEvent]("user_events")
+user_event_dlq = DeadLetterQueue[UserEvent]("user_events_dlq")
+
+user_events_api = IngestApi[UserEvent]("user-events", IngestConfigWithDestination(
+    destination=user_events,
+    dead_letter_queue=user_event_dlq,
 ))
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-<Callout type="info" title="Optional fields with ClickHouse defaults in IngestPipeline">
-If your IngestPipeline's schema marks a field as optional but annotates a ClickHouse default, Moose treats:
+## Request behavior
+
+| Behavior | What happens |
+| --- | --- |
+| Accepted request | Moose validates the request body and writes accepted records to the destination stream. |
+| Invalid request | Moose returns a `400` response when the payload does not match the model shape. |
+| Dead letter queue | If `deadLetterQueue` or `dead_letter_queue` is configured, Moose retains failed records for inspection or replay. |
+| ClickHouse writes | `IngestApi` writes to a stream, not directly to a table. If that stream has a destination table, records become queryable after stream-to-table sync succeeds. |
+
+<Callout type="info" title="Optional fields with ClickHouse defaults">
+If your `IngestApi` model marks a field as optional but annotates a ClickHouse default, Moose treats:
 
 - API request and Stream message: field is optional (you may omit it)
 - ClickHouse table storage: field is required with a DEFAULT clause
@@ -94,19 +97,18 @@ Example:
 </LanguageTabs>
 </Callout>
 
-## Accepting Arbitrary Fields
+## Accept extra fields
 
-In some scenarios, you may need to accept payloads with arbitrary additional fields beyond your defined schema. This is useful when:
-- You don't control the payload structure from an upstream service
-- You want to gracefully accept extra fields without validation errors
+Use this pattern when you do not fully control the upstream payload shape and want to accept undeclared fields without returning validation errors.
+
+- You don't control the payload shape from an upstream service
+- You want to pass through extra fields and handle them in downstream stream processing
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-### Using Index Signatures (TypeScript)
+TypeScript index signatures let you accept additional properties. When used with `IngestApi` or `Stream`, Moose accepts extra fields without returning validation errors:
 
-TypeScript's index signatures allow you to define types that accept additional properties. When used with `IngestApi` or `Stream`, the API will accept payloads with extra fields without returning validation errors:
-
-```typescript filename="FlexiblePayload.ts" copy
+```ts filename="app/flexible-payload.ts" copy
 import { IngestApi, Stream, Key, DateTime } from "@514labs/moose-lib";
 
 // Input type with known fields + index signature for flexibility
@@ -127,11 +129,10 @@ const ingestApi = new IngestApi<UserEventInput>("user-events", {
 });
 ```
 
-**How it works:**
 - Known fields (`timestamp`, `eventName`, etc.) are validated against their declared types
 - Additional fields matching the index signature are accepted by the API (no validation error returned)
-- **All fields (known and extra) are passed through to streaming functions** for processing
-- Extra fields can be extracted in your streaming function and stored in a JSON column
+- All fields, including extra fields, are passed through to downstream stream functions
+- Extra fields can be extracted in your streaming function and stored in a JSON column on an [OlapTable](/moosestack/olap/model-table)
 
 <Callout type="info" title="Extracting Extra Fields">
 In your streaming function, use destructuring to separate known fields from extra fields:
@@ -144,14 +145,13 @@ userEventInputStream.addTransform(outputStream, (input) => {
 </Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
-### Using Extra Fields (Python)
-
 In Python, configure your Pydantic model to accept extra fields using `model_config`:
 
-```python filename="FlexiblePayload.py" copy
-from pydantic import BaseModel, ConfigDict
-from moose_lib import IngestApi, Stream, Key
+```py filename="app/flexible_payload.py" copy
 from datetime import datetime
+
+from moose_lib import IngestApi, IngestConfigWithDestination, Key, Stream
+from pydantic import BaseModel, ConfigDict
 
 # Input model accepts extra fields
 class UserEventInput(BaseModel):
@@ -164,289 +164,46 @@ class UserEventInput(BaseModel):
 
 input_stream = Stream[UserEventInput]("UserEventInput")
 
-# IngestApi accepts payloads with extra fields
 ingest_api = IngestApi[UserEventInput]("user-events", IngestConfigWithDestination(
     destination=input_stream
 ))
 ```
 
-**How it works:**
-
 - `model_config = ConfigDict(extra='allow')` tells Pydantic to accept undeclared fields
 - The API accepts payloads with extra fields without validation errors
-- Known fields are validated and passed through to streaming functions
+- Known fields are still validated and passed through to downstream stream functions
 
 </LanguageTabContent>
 </LanguageTabs>
 
-<Tabs>
-  <TabsList>
-    <TabsTrigger value="valid">Valid Event</TabsTrigger>
-    <TabsTrigger value="missing">Invalid: Missing Field</TabsTrigger>
-    <TabsTrigger value="date">Invalid: Bad Date</TabsTrigger>
-  </TabsList>
-  <TabsContent value="valid">
-Send a valid event - routed to the destination stream
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="ValidEvent.ts" copy
-fetch("http://localhost:4000/ingest/your-api-route", {
-  method: "POST",
-  body: JSON.stringify({
-    id: "event1",
-    userId: "user1",
-    timestamp: "2023-05-10T15:30:00Z"
-  })
-})
-// ✅ Accepted and routed to the destination stream
-// API returns 200 and { success: true }
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="ValidEvent.py" copy
-requests.post("http://localhost:4000/ingest/your-api-route", json={
-    "id": "event1",
-    "userId": "user1",
-    "timestamp": "2023-05-10T15:30:00Z"
-  })
-# ✅ Accepted and routed to the destination stream
-# API returns 200 and { success: true }
-```
-  </LanguageTabContent>
-</LanguageTabs>
-  </TabsContent>
-  <TabsContent value="missing">
-Send an invalid event (missing required field) - routed to the DLQ
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="InvalidEventMissingField.ts" copy
-fetch("http://localhost:4000/ingest/your-api-route", {
-  method: "POST",
-  body: JSON.stringify({
-    id: "event1"
-  })
-})
-// ❌ Routed to DLQ, because it's missing a required field
-// API returns 400 response
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="InvalidEventMissingField.py" copy
-requests.post("http://localhost:4000/ingest/your-api-route", json={
-    "id": "event1",
-  })
-# ❌ Routed to DLQ, because it's missing a required field
-# API returns 400 response
-```
-  </LanguageTabContent>
-</LanguageTabs>
-  </TabsContent>
-  <TabsContent value="date">
-Send an invalid event (bad date format) - routed to the DLQ
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="InvalidEventBadDate.ts" copy
-fetch("http://localhost:4000/ingest/your-api-route", {
-  method: "POST",
-  body: JSON.stringify({
-    id: "event1",
-    userId: "user1",
-    timestamp: "not-a-date"
-  })
-})
-// ❌ Routed to DLQ, because the timestamp is not a valid date
-// API returns 400 response
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="InvalidEventBadDate.py" copy
-requests.post("http://localhost:4000/ingest/your-api-route", json={
-    "id": "event1",
-    "userId": "user1",
-    "timestamp": "not-a-date"
-  })
-# ❌ Routed to DLQ, because the timestamp is not a valid date
-# API returns 400 response
-```
-  </LanguageTabContent>
-</LanguageTabs>
-  </TabsContent>
-</Tabs>
-
-## Creating Ingestion APIs
-
-You can create ingestion APIs in two ways:
-- **High-level:** Using the `IngestPipeline` class (recommended for most use cases)
-- **Low-level:** Manually configuring the `IngestApi` component for more granular control
-
-### High-level: IngestPipeline (Recommended)
-
-The `IngestPipeline` class provides a convenient way to set up ingestion endpoints, streams, and tables with a single declaration:
+## Configuration options
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```typescript filename="AnalyticsPipeline.ts" copy
-import { IngestPipeline } from "@514labs/moose-lib";
-
-interface ExampleModel {
-  id: string;
-  name: string;
-  value: number;
-  timestamp: Date;
-}
-
-const examplePipeline = new IngestPipeline<ExampleModel>("example-name", {
-  ingestApi: true, // Creates a REST API endpoint
-  stream: true, // Connects to a stream
-  table: true
-});
-```
+| Option | What it does | Required |
+| --- | --- | --- |
+| `destination` | Stream that accepted records are written to. | Yes |
+| `deadLetterQueue` | Dead letter queue for failed records. | No |
+| `version` | Version label Moose uses when managing the API resource. | No |
+| `path` | Custom HTTP path for the endpoint. | No |
+| `metadata.description` | Optional description metadata. | No |
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```python filename="IngestPipeline.py" copy
-from moose_lib import Key, IngestPipeline, IngestPipelineConfig
-from pydantic import BaseModel
-
-class ExampleSchema(BaseModel):
-    id: Key[str]
-    name: str
-    value: int
-    timestamp: datetime
-
-example_pipeline = IngestPipeline[ExampleSchema](
-    name="example-name",
-    config=IngestPipelineConfig(
-        ingest_api=True,
-        stream=True,
-        table=True
-    )
-)
-```
+| Option | What it does | Required |
+| --- | --- | --- |
+| `destination` | Stream that accepted records are written to. | Yes |
+| `dead_letter_queue` | Dead letter queue for failed records. | No |
+| `version` | Version label Moose uses when managing the API resource. | No |
+| `path` | Custom HTTP path for the endpoint. | No |
+| `metadata["description"]` | Optional description metadata. | No |
   </LanguageTabContent>
 </LanguageTabs>
 
-### Low-level: Standalone IngestApi
+## Related capabilities
 
-For more granular control, you can manually configure the `IngestApi` component:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="AnalyticsPipelineManual.ts" copy
-interface ExampleRecord {
-  id: string;
-  name: string;
-  value: number;
-  timestamp: Date;
-}
-
-// Create the ClickHouse table
-const exampleTable = new OlapTable<ExampleRecord>("example-table-name");
-
-// Create the stream with specific settings
-const exampleStream = new Stream<ExampleRecord>("example-stream-name", {
-  destination: exampleTable    // Connect stream to table
-});
-
-// Create the ingestion API
-const exampleApi = new IngestApi<ExampleRecord>("example-api-route", {
-  destination: exampleStream,  // Connect API to stream
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="AnalyticsPipelineManual.py" copy
-# Python example would go here
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="warning">
-The types of the destination `Stream` and `Table` must match the type of the `IngestApi`.
-</Callout>
-
-<CompareBulletPointsCard
-  leftColumn={{
-    title: "Ingestion Pipeline",
-    bullets: [
-      "You want to create a new ingestion endpoint, stream, and table",
-      "You want to simplify configuration and reduce boilerplate",
-    ],
-    bulletStyle: "none",
-  }}
-  rightColumn={{
-    title: "IngestApi",
-    bullets: [
-      "You have an existing Stream object that you want to connect to",
-      "You want to manually configure the ingestion API",
-    ],
-    bulletStyle: "none",
-  }}
-/>
-
-## Configuration Reference
-
-Configuration options for both high-level and low-level ingestion APIs are provided below.
-
-<Tabs>
-  <TabsList>
-    <TabsTrigger value="pipeline">IngestPipeline</TabsTrigger>
-    <TabsTrigger value="api">IngestApi</TabsTrigger>
-  </TabsList>
-  <TabsContent value="pipeline">
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="IngestPipelineConfig.ts" copy
-interface IngestPipelineConfig<T> {
-  table?: boolean | OlapConfig<T>;
-  stream?: boolean | Omit<StreamConfig<T>, "destination">;
-  ingestApi?: boolean | Omit<IngestConfig<T>, "destination">;
-  deadLetterQueue?: boolean | Omit<StreamConfig<T>, "destination">;
-  version?: string;
-  metadata?: {
-    description?: string;
-  };
-  lifeCycle?: LifeCycle;
-}
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="IngestPipelineConfig.py" copy
-class IngestPipelineConfig(BaseModel):
-    table: bool | OlapConfig = True
-    stream: bool | StreamConfig = True
-    ingest_api: bool | IngestConfig = True
-    dead_letter_queue: bool | StreamConfig = True
-    version: Optional[str] = None
-    metadata: Optional[dict] = None
-    life_cycle: Optional[LifeCycle] = None
-```
-  </LanguageTabContent>
-</LanguageTabs>
-  </TabsContent>
-  <TabsContent value="api">
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript filename="IngestConfig.ts" copy
-interface IngestConfig<T> {
-  destination: Stream<T>;
-  deadLetterQueue?: DeadLetterQueue<T>;
-  version?: string;
-  metadata?: {
-    description?: string;
-  };
-}
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python filename="IngestConfig.py" copy
-@dataclass
-class IngestConfigWithDestination[T: BaseModel]:
-    destination: Stream[T]
-    dead_letter_queue: Optional[DeadLetterQueue[T]] = None
-    version: Optional[str] = None
-    metadata: Optional[dict] = None
-```
-  </LanguageTabContent>
-</LanguageTabs>
-  </TabsContent>
-</Tabs>
+- [Stream](/moosestack/streaming/create-stream) for defining the destination stream
+- [OlapTable](/moosestack/olap/model-table) for defining the ClickHouse table a destination stream eventually syncs into
+- [`Stream.send()`](/moosestack/streaming/from-your-code) when the producer can import the stream directly
+- [Schema registry](/moosestack/streaming/schema-registry) when the destination stream publishes Schema Registry payloads
+- [Dead letter queues](/moosestack/streaming/dead-letter-queues) when failed records should be retained for recovery
+- [Sync to table](/moosestack/streaming/sync-to-table) when accepted records should land in ClickHouse through the destination stream

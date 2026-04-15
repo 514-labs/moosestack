@@ -36,26 +36,18 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     })?;
 
     let config_path = data_dir.join("config.xml");
+    let users_path = data_dir.join("users.xml");
 
     let ch = &project.clickhouse_config;
-    let config_xml = format!(
+
+    // Write users.xml separately instead of inlining users/profiles into
+    // config.xml. ClickHouse treats the default sibling file name specially:
+    // `users_config = "users.xml"` is auto-discovered, and that layout also
+    // enables the default `local_directory` user storage needed for SQL-created
+    // users, roles, and row policies during dockerless development.
+    let users_xml = format!(
         r#"<?xml version="1.0"?>
 <clickhouse>
-    <logger>
-        <level>warning</level>
-        <log>{log_dir}/clickhouse-server.log</log>
-        <errorlog>{log_dir}/clickhouse-server.err.log</errorlog>
-    </logger>
-
-    <http_port>{http_port}</http_port>
-    <tcp_port>{native_port}</tcp_port>
-    <listen_host>127.0.0.1</listen_host>
-
-    <path>{data_path}/</path>
-    <tmp_path>{data_path}/tmp/</tmp_path>
-    <user_files_path>{data_path}/user_files/</user_files_path>
-    <format_schema_path>{data_path}/format_schemas/</format_schema_path>
-
     <users>
         <{user}>
             <password>{password}</password>
@@ -76,10 +68,54 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <quotas>
         <default/>
     </quotas>
+</clickhouse>
+"#,
+        user = ch.user,
+        password = ch.password,
+    );
+
+    std::fs::write(&users_path, users_xml).map_err(|e| NativeInfraError::WriteConfig {
+        path: users_path.clone(),
+        source: e,
+    })?;
+
+    let config_xml = format!(
+        r#"<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>{log_dir}/clickhouse-server.log</log>
+        <errorlog>{log_dir}/clickhouse-server.err.log</errorlog>
+    </logger>
+
+    <http_port>{http_port}</http_port>
+    <tcp_port>{native_port}</tcp_port>
+    <listen_host>127.0.0.1</listen_host>
+
+    <path>{data_path}/</path>
+    <tmp_path>{data_path}/tmp/</tmp_path>
+    <user_files_path>{data_path}/user_files/</user_files_path>
+    <format_schema_path>{data_path}/format_schemas/</format_schema_path>
+
+    <!-- Point to users.xml for user definitions, profiles, and quotas. -->
+    <users_config>{users_path}</users_config>
+
+    <!-- Allow custom per-query settings with the SQL_ prefix.
+         RLS row policies use getSetting('SQL_moose_rls_...') for dynamic
+         tenant scoping via ClickHouse query-level settings. -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+
+    <!-- Writable access storage for SQL-created roles and row policies
+         (required for RLS support). -->
+    <user_directories>
+        <local_directory>
+            <path>{data_path}/access/</path>
+        </local_directory>
+    </user_directories>
 
     <!-- Embedded Keeper (replaces separate clickhouse-keeper container) -->
     <keeper_server>
-        <tcp_port>9181</tcp_port>
+        <tcp_port>{keeper_port}</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>{data_path}/coordination/log</log_storage_path>
         <snapshot_storage_path>{data_path}/coordination/snapshots</snapshot_storage_path>
@@ -92,7 +128,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
             <server>
                 <id>1</id>
                 <hostname>127.0.0.1</hostname>
-                <port>9234</port>
+                <port>{keeper_raft_port}</port>
             </server>
         </raft_configuration>
     </keeper_server>
@@ -100,7 +136,7 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
     <zookeeper>
         <node>
             <host>127.0.0.1</host>
-            <port>9181</port>
+            <port>{keeper_port}</port>
         </node>
     </zookeeper>
 
@@ -108,6 +144,18 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+
+    <!-- OpenSSL client config for outgoing TLS (e.g. remoteSecure()).
+         The Docker ClickHouse image includes this by default; we must set
+         it explicitly so the native binary loads system CA certificates. -->
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </client>
+    </openSSL>
 
     <!-- Macros for replicated engine table paths -->
     <macros>
@@ -119,11 +167,12 @@ pub fn write_config(project: &Project) -> Result<PathBuf, NativeInfraError> {
 "#,
         http_port = ch.host_port,
         native_port = ch.native_port,
-        user = ch.user,
-        password = ch.password,
+        keeper_port = ch.keeper_port,
+        keeper_raft_port = ch.keeper_raft_port,
         db_name = ch.db_name,
         data_path = data_dir.join("data").display(),
         log_dir = data_dir.join("logs").display(),
+        users_path = users_path.display(),
     );
 
     std::fs::write(&config_path, config_xml).map_err(|e| NativeInfraError::WriteConfig {
@@ -200,6 +249,47 @@ pub fn ensure_database(project: &Project) -> Result<(), NativeInfraError> {
             reason: format!("CREATE DATABASE failed: {body}"),
         })
     }
+}
+
+/// Wait for the embedded Keeper to be operational.
+///
+/// The ClickHouse HTTP endpoint may become available before the embedded Keeper
+/// has finished bootstrapping its Raft state.  Creating ReplicatedMergeTree
+/// tables during this window puts them in readonly mode.  We probe
+/// `system.zookeeper` to confirm the Keeper connection is live.
+pub async fn wait_for_keeper(project: &Project) -> Result<(), NativeInfraError> {
+    let ch = &project.clickhouse_config;
+    let url = format!("http://127.0.0.1:{}/", ch.host_port);
+    let query = "SELECT 1 FROM system.zookeeper WHERE path = '/' LIMIT 1";
+    let client = reqwest::Client::new();
+
+    for attempt in 1..=30 {
+        match client
+            .post(&url)
+            .query(&[("user", &ch.user), ("password", &ch.password)])
+            .body(query.to_string())
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!("Embedded Keeper ready (attempt {attempt})");
+                return Ok(());
+            }
+            Ok(resp) => {
+                let body = resp.text().await.unwrap_or_default();
+                tracing::debug!("Keeper not ready (attempt {attempt}): {body}");
+            }
+            Err(e) => {
+                tracing::debug!("Keeper check failed (attempt {attempt}): {e}");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    Err(NativeInfraError::HealthCheck {
+        service: "ClickHouse Keeper".to_string(),
+        reason: "embedded Keeper did not become ready within 30s".to_string(),
+    })
 }
 
 /// Returns the native data directory for ClickHouse within a project.

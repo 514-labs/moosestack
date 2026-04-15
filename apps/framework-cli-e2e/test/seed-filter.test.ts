@@ -96,7 +96,7 @@ describe("moose seed clickhouse with seedFilter", function () {
     testProjectDir = createTempTestDirectory("seed-filter-test");
     testLogger.info("Test project dir:", testProjectDir);
 
-    // 1. Init project from play.clickhouse.com (git_clickhouse database — only 3 tables)
+    // 1. Init project from play.clickhouse.com (git_clickhouse database - only 3 tables)
     testLogger.info("Initializing project from play.clickhouse.com...");
     const initResult = await execAsync(
       `"${CLI_PATH}" init test-seed-filter typescript-empty --from-remote "${REMOTE_HTTPS_URL}" --location "${testProjectDir}"`,
@@ -242,7 +242,7 @@ describe("moose seed clickhouse with seedFilter", function () {
 
     const count = await localRowCount("commits");
     testLogger.info(`Seeded ${count} rows (expected > ${SEED_LIMIT})`);
-    // WHERE author='Alexey Milovidov' AND files_added > 10 → ~41 rows
+    // WHERE author='Alexey Milovidov' AND files_added > 10 -> ~41 rows
     expect(count).to.be.within(SEED_LIMIT + 1, 200);
   });
 });

@@ -22,7 +22,7 @@
 
 use std::fmt;
 
-use super::config::ClickHouseConfig;
+use super::config::{default_keeper_port, default_keeper_raft_port, ClickHouseConfig};
 use super::{create_readonly_client, ConfiguredDBClient};
 use urlencoding::encode;
 
@@ -169,6 +169,8 @@ impl ClickHouseRemote {
             host: self.host.clone(),
             host_port: self.port as i32,
             native_port: if self.use_ssl { 9440 } else { 9000 },
+            keeper_port: default_keeper_port(),
+            keeper_raft_port: default_keeper_raft_port(),
             db_name: self.database.clone(),
             user: self.user.clone(),
             password: self.password.clone(),
