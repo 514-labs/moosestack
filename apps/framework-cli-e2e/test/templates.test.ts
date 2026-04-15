@@ -61,6 +61,7 @@ import {
   verifyWebAppQuery,
   verifyWebAppPostEndpoint,
   buildMooseDevEnv,
+  getTestPorts,
   cleanupTestSuite,
   getCleanupOptionsForMode,
   isDockerlessMode,
@@ -87,6 +88,7 @@ import { createClient } from "@clickhouse/client";
 
 const testLogger = logger.scope("templates-test");
 const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const DEFAULT_TEST_PORTS = getTestPorts(0);
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -274,6 +276,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
         logPrefix: config.displayName,
+        ports: DEFAULT_TEST_PORTS,
         ...getCleanupOptionsForMode(E2E_DEV_MODE),
       });
     });
@@ -3048,7 +3051,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           // Stop the main dev server and its native infra to free ports
           testLogger.info("Stopping main dev server for namespace DLQ test...");
-          await stopDevProcess(devProcess);
+          await stopDevProcess(devProcess, { ports: DEFAULT_TEST_PORTS });
 
           testLogger.info(
             "Initializing fresh project with namespace for DLQ test...",
@@ -3113,6 +3116,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
           await cleanupTestSuite(nsDevProcess, nsProjectDir, NS_APP_NAME, {
             logPrefix: `${config.displayName} (namespace)`,
+            ports: DEFAULT_TEST_PORTS,
             ...getCleanupOptionsForMode(E2E_DEV_MODE),
           });
           // Namespace DLQ tests are the tail of this suite. The parent after()
