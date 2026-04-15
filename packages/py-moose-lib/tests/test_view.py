@@ -137,8 +137,8 @@ def test_view_serialization_with_database():
     )
     infra = to_infra_map()
     views = infra.get("views", {})
-    # Database-qualified views use a composite key: "database_name"
-    registry_key = "prod_db_ser_with_db"
+    # Database-qualified views use a composite key: "database::name"
+    registry_key = "prod_db::ser_with_db"
     assert registry_key in views
     assert views[registry_key]["database"] == "prod_db"
 
@@ -159,13 +159,13 @@ def test_map_sql_resource_ref_view_without_database():
 
 
 def test_map_sql_resource_ref_view_with_database():
-    """Dependency ID uses underscore separator to match the views map key for CLI correlation."""
+    """Dependency ID uses '::' separator, matching the views map key for CLI correlation."""
     view = View(
         "dep_view_with_db",
         ViewConfig(select_statement="SELECT 1", base_tables=[], database="analytics"),
     )
     sig = _map_sql_resource_ref(view)
-    assert sig.id == "analytics_dep_view_with_db"
+    assert sig.id == "analytics::dep_view_with_db"
     assert sig.kind == "View"
 
 
@@ -237,16 +237,16 @@ def test_duplicate_view_same_database_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_registry_key_and_infra_id_both_use_underscore():
-    """Registry key and dependency ID both use '_' separator so the CLI can correlate them."""
+def test_registry_key_and_infra_id_both_use_double_colon():
+    """Registry key and dependency ID both use '::' separator so the CLI can correlate them."""
     view = View(
         "my_view",
         ViewConfig(select_statement="SELECT 1", base_tables=[], database="my_db"),
     )
-    # Internal: stored under "my_db_my_view"
+    # Internal: stored under "my_db::my_view"
     infra = to_infra_map()
-    assert "my_db_my_view" in infra.get("views", {})
+    assert "my_db::my_view" in infra.get("views", {})
 
     # Dependency ID matches the map key so consumers can look it up
     sig = _map_sql_resource_ref(view)
-    assert sig.id == "my_db_my_view"
+    assert sig.id == "my_db::my_view"
