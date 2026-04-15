@@ -5,7 +5,8 @@ from pydantic import BaseModel
 
 from moose_lib.dmv2.view import View, ViewConfig, _format_table_reference
 from moose_lib.dmv2.olap_table import OlapTable, OlapConfig
-from moose_lib.internal import to_infra_map
+from moose_lib.dmv2.registry import get_view
+from moose_lib.internal import to_infra_map, _map_sql_resource_ref
 
 
 class SampleModel(BaseModel):
@@ -125,7 +126,116 @@ def test_view_serialization_with_database():
     )
     infra = to_infra_map()
     views = infra.get("views", {})
-    # Database-qualified views use a composite key: "database::name"
-    registry_key = "prod_db::ser_with_db"
+    # Database-qualified views use a composite key: "database_name"
+    registry_key = "prod_db_ser_with_db"
     assert registry_key in views
     assert views[registry_key]["database"] == "prod_db"
+
+
+# ---------------------------------------------------------------------------
+# _map_sql_resource_ref: dependency ID format for View
+# ---------------------------------------------------------------------------
+
+
+def test_map_sql_resource_ref_view_without_database():
+    view = View(
+        "dep_view_no_db",
+        ViewConfig(select_statement="SELECT 1", base_tables=[]),
+    )
+    sig = _map_sql_resource_ref(view)
+    assert sig.id == "dep_view_no_db"
+    assert sig.kind == "View"
+
+
+def test_map_sql_resource_ref_view_with_database():
+    """Dependency ID uses dot-separated format (database.name) matching ClickHouse qualified names."""
+    view = View(
+        "dep_view_with_db",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="analytics"),
+    )
+    sig = _map_sql_resource_ref(view)
+    assert sig.id == "analytics.dep_view_with_db"
+    assert sig.kind == "View"
+
+
+# ---------------------------------------------------------------------------
+# get_view: registry lookup
+# ---------------------------------------------------------------------------
+
+
+def test_get_view_without_database():
+    view = View("lookup_view", ViewConfig(select_statement="SELECT 1", base_tables=[]))
+    assert get_view("lookup_view") is view
+
+
+def test_get_view_with_database():
+    view = View(
+        "lookup_view_db",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="mydb"),
+    )
+    assert get_view("lookup_view_db", database="mydb") is view
+
+
+def test_get_view_returns_none_when_not_found():
+    assert get_view("nonexistent") is None
+    assert get_view("nonexistent", database="mydb") is None
+
+
+def test_get_view_without_database_does_not_match_database_qualified_view():
+    """A lookup without database should not return a database-qualified view."""
+    View(
+        "scoped_view",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="mydb"),
+    )
+    assert get_view("scoped_view") is None
+
+
+# ---------------------------------------------------------------------------
+# Registry: same name in different databases
+# ---------------------------------------------------------------------------
+
+
+def test_same_view_name_different_databases_allowed():
+    """Two views with the same name in different databases must not conflict."""
+    v1 = View(
+        "shared_name",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="db1"),
+    )
+    v2 = View(
+        "shared_name",
+        ViewConfig(select_statement="SELECT 2", base_tables=[], database="db2"),
+    )
+    assert get_view("shared_name", database="db1") is v1
+    assert get_view("shared_name", database="db2") is v2
+
+
+def test_duplicate_view_same_database_raises():
+    View(
+        "dup_db_view",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="mydb"),
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        View(
+            "dup_db_view",
+            ViewConfig(select_statement="SELECT 2", base_tables=[], database="mydb"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Registry key vs infrastructure ID
+# ---------------------------------------------------------------------------
+
+
+def test_registry_key_uses_underscore_infra_id_uses_dot():
+    """Internal registry key uses '_' separator; external infra ID uses '.' (ClickHouse convention)."""
+    view = View(
+        "my_view",
+        ViewConfig(select_statement="SELECT 1", base_tables=[], database="my_db"),
+    )
+    # Internal: stored under "my_db_my_view"
+    infra = to_infra_map()
+    assert "my_db_my_view" in infra.get("views", {})
+
+    # External: reported as "my_db.my_view"
+    sig = _map_sql_resource_ref(view)
+    assert sig.id == "my_db.my_view"
