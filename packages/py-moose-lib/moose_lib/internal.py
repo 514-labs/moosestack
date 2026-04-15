@@ -619,7 +619,7 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
         elif r.kind == "View":
             view_id = (
-                f"{r.database}.{r.name}" if getattr(r, "database", None) else r.name
+                f"{r.database}_{r.name}" if getattr(r, "database", None) else r.name
             )
             return InfrastructureSignatureJson(id=view_id, kind="View")
         elif r.kind == "MaterializedView":
