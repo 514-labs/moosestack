@@ -5,9 +5,12 @@ import { buildPortEnv, TestPorts } from "./port-config";
 const devModeLogger = logger.scope("utils:dev-mode");
 
 export type E2eDevMode = "dockerless" | "docker";
+export type E2eTemplateLanguage = "ts" | "py";
 
 const DEFAULT_E2E_DEV_MODE: E2eDevMode = "dockerless";
 const E2E_DEV_MODE_ENV_VAR = "MOOSE_E2E_DEV_MODE";
+const E2E_TEMPLATE_LANGUAGE_ENV_VAR = "E2E_TEMPLATE_LANGUAGE";
+const VALID_E2E_TEMPLATE_LANGUAGES = ["ts", "py"] as const;
 
 export interface ResolveDevModeOptions {
   logger?: ScopedLogger;
@@ -56,6 +59,28 @@ export function resolveE2eDevMode(
 
 export function isDockerlessMode(mode: E2eDevMode): boolean {
   return mode === "dockerless";
+}
+
+export function resolveSelectedTemplateLanguage():
+  | E2eTemplateLanguage
+  | undefined {
+  const selectedLanguage = process.env[E2E_TEMPLATE_LANGUAGE_ENV_VAR];
+
+  if (selectedLanguage === undefined || selectedLanguage === "") {
+    return undefined;
+  }
+
+  if (
+    VALID_E2E_TEMPLATE_LANGUAGES.includes(
+      selectedLanguage as E2eTemplateLanguage,
+    )
+  ) {
+    return selectedLanguage as E2eTemplateLanguage;
+  }
+
+  throw new Error(
+    `Unsupported ${E2E_TEMPLATE_LANGUAGE_ENV_VAR}: ${selectedLanguage}`,
+  );
 }
 
 export function buildMooseDevArgs(mode: E2eDevMode): string[] {

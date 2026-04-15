@@ -188,8 +188,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-ts-moose-lib:
     needs: detect-changes
@@ -297,8 +296,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log || true
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-typescript-default:
     needs:
@@ -376,14 +374,13 @@ jobs:
           cache-workspace-crates: true
 
       - name: Run TypeScript E2E Tests (Default Template)
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test:ts-default
         env:
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-typescript-tests:
     needs:
@@ -407,12 +404,6 @@ jobs:
           - package-manager: npm
             pm-name: npm
             pm-version: bundled
-          - group-name: core
-            suite-grep: "typescript template tests main|typescript template tests - migration|typescript template tests - \\.env|Unloaded Files Warning"
-          - group-name: db-pull
-            suite-grep: "typescript template tests - db-pull"
-          - group-name: s3
-            suite-grep: "typescript template tests - S3Queue|typescript template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -451,14 +442,13 @@ jobs:
           cache-workspace-crates: true
 
       - name: "Run TypeScript E2E Tests (${{ matrix.group-name }})"
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test:ts-tests:${{ matrix.group-name }}
         env:
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-python-default:
     needs:
@@ -521,14 +511,13 @@ jobs:
         run: pip install --upgrade pip setuptools wheel
 
       - name: Run Python E2E Tests (Default Template)
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template default"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test:py-default
         env:
           TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-python-tests:
     needs:
@@ -547,13 +536,6 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
         group-name: [core, db-pull, s3]
-        include:
-          - group-name: core
-            suite-grep: "python template tests main|python template tests - \\.env"
-          - group-name: db-pull
-            suite-grep: "python template tests - db-pull"
-          - group-name: s3
-            suite-grep: "python template tests - S3Queue|python template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -600,14 +582,13 @@ jobs:
         run: pip install --upgrade pip setuptools wheel
 
       - name: "Run Python E2E Tests (${{ matrix.group-name }})"
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test:py-tests:${{ matrix.group-name }}
         env:
           TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-backward-compatibility-typescript:
     needs:
@@ -665,8 +646,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-backward-compatibility-python:
     needs:
@@ -732,8 +712,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-cluster-typescript:
     needs:
@@ -787,8 +766,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-cluster-python:
     needs:
@@ -850,8 +828,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-row-level-security:
     needs:
@@ -903,8 +880,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-otlp-export:
     needs:
@@ -956,8 +932,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   test-e2e-init-from-remote-and-seed:
     needs:
@@ -1016,8 +991,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+        uses: ./.github/actions/dump-cli-logs
 
   lints:
     needs: detect-changes
