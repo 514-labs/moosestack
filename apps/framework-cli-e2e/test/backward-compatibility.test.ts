@@ -62,6 +62,8 @@ let LATEST_CLI_PATH: string;
 let CLI_INSTALL_DIR: string;
 
 const testLogger = logger.scope("backward-compatibility-test");
+const NPM_PROPAGATION_MAX_ATTEMPTS = 5;
+const NPM_PROPAGATION_RETRY_DELAY_MS = 15_000;
 const LEGACY_TEMPORAL_DYNAMIC_CONFIG = `limit.maxIDLength:
   - value: 255
     constraints: {}
@@ -78,6 +80,10 @@ async function checkLatestPublishedCLI(): Promise<void> {
   testLogger.info("Installing latest published moose-cli from npm...");
 
   try {
+    if (CLI_INSTALL_DIR) {
+      fs.rmSync(CLI_INSTALL_DIR, { recursive: true, force: true });
+    }
+
     // Create a temp directory for CLI install
     const os = require("os");
     CLI_INSTALL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "moose-cli-"));
@@ -115,6 +121,71 @@ async function checkLatestPublishedCLI(): Promise<void> {
       "Cannot install latest published CLI for backward compatibility test",
     );
   }
+}
+
+async function getCliVersion(cliPath: string): Promise<string> {
+  const { stdout } = await execAsync(`"${cliPath}" --version`);
+  return stdout.trim();
+}
+
+async function getInstalledTypeScriptLibVersion(
+  projectDir: string,
+): Promise<string> {
+  const runnerPath = path.join(
+    projectDir,
+    "node_modules",
+    ".bin",
+    "moose-runner",
+  );
+  const { stdout } = await execAsync(`"${runnerPath}" print-version`, {
+    cwd: projectDir,
+    env: {
+      ...process.env,
+      PATH: `${path.join(projectDir, "node_modules", ".bin")}:${process.env.PATH}`,
+      NODE_NO_WARNINGS: "1",
+    },
+  });
+
+  return stdout.trim();
+}
+
+function isNpmPropagationVersionMismatch(error: unknown): boolean {
+  const details = [
+    error instanceof Error ? error.message : "",
+    typeof error === "string" ? error : "",
+    typeof error === "object" && error && "stdout" in error ?
+      String((error as { stdout?: unknown }).stdout ?? "")
+    : "",
+    typeof error === "object" && error && "stderr" in error ?
+      String((error as { stderr?: unknown }).stderr ?? "")
+    : "",
+  ].join("\n");
+
+  return (
+    details.includes("Version mismatch: installed @514labs/moose-lib") ||
+    details.includes(
+      "installed @514labs/moose-lib does not support version checking",
+    )
+  );
+}
+
+async function verifyTypeScriptVersionsMatch(
+  projectDir: string,
+): Promise<void> {
+  const [cliVersion, libVersion] = await Promise.all([
+    getCliVersion(LATEST_CLI_PATH),
+    getInstalledTypeScriptLibVersion(projectDir),
+  ]);
+
+  if (cliVersion !== libVersion) {
+    throw new Error(
+      `Version mismatch: installed @514labs/moose-lib is ${libVersion}, but the Moose CLI is ${cliVersion}.`,
+    );
+  }
+
+  testLogger.info(
+    `Verified matching published versions: moose-cli=${cliVersion}, @514labs/moose-lib=${libVersion}`,
+  );
 }
 
 /**
@@ -219,47 +290,73 @@ async function setupTypeScriptProjectWithLatestNpm(
   templateName: string,
   appName: string,
 ): Promise<void> {
-  testLogger.info(
-    `Initializing TypeScript project with latest npm moose-cli...`,
-  );
-
-  try {
-    // Use npm-installed CLI instead of npx for consistent registry behavior
-    const result = await execAsync(
-      `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
+  for (let attempt = 1; attempt <= NPM_PROPAGATION_MAX_ATTEMPTS; attempt += 1) {
+    testLogger.info(
+      `Initializing TypeScript project with latest npm moose-cli (attempt ${attempt}/${NPM_PROPAGATION_MAX_ATTEMPTS})...`,
     );
-    testLogger.info("CLI init stdout:", result.stdout);
-    if (result.stderr) {
-      testLogger.info("CLI init stderr:", result.stderr);
-    }
-  } catch (error: any) {
-    testLogger.error("CLI init failed:", error.message);
-    if (error.stdout) testLogger.error("stdout:", error.stdout);
-    if (error.stderr) testLogger.error("stderr:", error.stderr);
-    throw error;
-  }
 
-  // Install dependencies with latest moose-lib using pnpm
-  testLogger.info(
-    "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
-  );
-
-  enforceLatestTypeScriptDependencies(projectDir);
-
-  await new Promise<void>((resolve, reject) => {
-    const installCmd = spawn("pnpm", ["install"], {
-      stdio: "inherit",
-      cwd: projectDir,
-    });
-    installCmd.on("close", (code) => {
-      testLogger.info(`pnpm install exited with code ${code}`);
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`pnpm install failed with code ${code}`));
+    try {
+      if (attempt > 1) {
+        await checkLatestPublishedCLI();
       }
-    });
-  });
+
+      fs.rmSync(projectDir, { recursive: true, force: true });
+
+      // Use npm-installed CLI instead of npx for consistent registry behavior
+      const result = await execAsync(
+        `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
+      );
+      testLogger.info("CLI init stdout:", result.stdout);
+      if (result.stderr) {
+        testLogger.info("CLI init stderr:", result.stderr);
+      }
+
+      testLogger.info(
+        "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
+      );
+
+      enforceLatestTypeScriptDependencies(projectDir);
+
+      await new Promise<void>((resolve, reject) => {
+        const installCmd = spawn("pnpm", ["install"], {
+          stdio: "inherit",
+          cwd: projectDir,
+        });
+        installCmd.once("error", reject);
+        installCmd.on("close", (code) => {
+          testLogger.info(`pnpm install exited with code ${code}`);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`pnpm install failed with code ${code}`));
+          }
+        });
+      });
+
+      await verifyTypeScriptVersionsMatch(projectDir);
+      return;
+    } catch (error: any) {
+      testLogger.error(
+        "TypeScript backward-compat setup failed:",
+        error.message,
+      );
+      if (error.stdout) testLogger.error("stdout:", error.stdout);
+      if (error.stderr) testLogger.error("stderr:", error.stderr);
+
+      if (
+        attempt < NPM_PROPAGATION_MAX_ATTEMPTS &&
+        isNpmPropagationVersionMismatch(error)
+      ) {
+        testLogger.warn(
+          `Detected npm propagation version mismatch. Retrying in ${NPM_PROPAGATION_RETRY_DELAY_MS / 1000}s...`,
+        );
+        await setTimeoutAsync(NPM_PROPAGATION_RETRY_DELAY_MS);
+        continue;
+      }
+
+      throw error;
+    }
+  }
 }
 
 /**
