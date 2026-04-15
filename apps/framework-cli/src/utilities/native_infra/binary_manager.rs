@@ -34,15 +34,8 @@ impl BinaryManager {
         url: &str,
         archive_binary_path: Option<&str>,
     ) -> Result<PathBuf, NativeInfraError> {
-        let (platform, arch) = detect_platform()?;
-        let cache_dir = self
-            .cache_root
-            .join(name)
-            .join(version)
-            .join(format!("{platform}-{arch}"));
-
-        let binary_name = archive_binary_path.unwrap_or(name);
-        let binary_path = cache_dir.join(binary_name);
+        let cache_dir = self.cache_dir(name, version)?;
+        let binary_path = self.binary_path(name, version, archive_binary_path)?;
 
         if binary_path.exists() {
             info!("Using cached {} binary at {}", name, binary_path.display());
@@ -86,6 +79,25 @@ impl BinaryManager {
         );
 
         Ok(binary_path)
+    }
+
+    fn cache_dir(&self, name: &str, version: &str) -> Result<PathBuf, NativeInfraError> {
+        let (platform, arch) = detect_platform()?;
+        Ok(self
+            .cache_root
+            .join(name)
+            .join(version)
+            .join(format!("{platform}-{arch}")))
+    }
+
+    fn binary_path(
+        &self,
+        name: &str,
+        version: &str,
+        archive_binary_path: Option<&str>,
+    ) -> Result<PathBuf, NativeInfraError> {
+        let binary_name = archive_binary_path.unwrap_or(name);
+        Ok(self.cache_dir(name, version)?.join(binary_name))
     }
 }
 
@@ -206,6 +218,7 @@ fn set_executable(path: &Path) -> Result<(), NativeInfraError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utilities::constants::CLI_VERSION;
 
     #[test]
     fn test_detect_platform_succeeds() {
@@ -222,14 +235,36 @@ mod tests {
         let manager = BinaryManager::new().unwrap();
         let (platform, arch) = detect_platform().unwrap();
         let expected_suffix = format!("binaries/clickhouse/25.0.0/{platform}-{arch}");
-        let cache_dir = manager
-            .cache_root
-            .join("clickhouse")
-            .join("25.0.0")
-            .join(format!("{platform}-{arch}"));
+        let cache_dir = manager.cache_dir("clickhouse", "25.0.0").unwrap();
         assert!(
             cache_dir.to_string_lossy().ends_with(&expected_suffix),
             "Cache dir should follow binaries/name/version/platform-arch pattern"
+        );
+    }
+
+    #[test]
+    fn test_binary_manager_uses_home_level_cache_root() {
+        let manager = BinaryManager::new().unwrap();
+        assert!(
+            manager
+                .cache_root
+                .to_string_lossy()
+                .ends_with(".moose/binaries"),
+            "Cache root should be the shared ~/.moose/binaries directory"
+        );
+    }
+
+    #[test]
+    fn test_binary_manager_does_not_namespace_cache_by_cli_version() {
+        let manager = BinaryManager::new().unwrap();
+        let binary_path = manager
+            .binary_path("clickhouse", "25.0.0", None)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            !binary_path.contains(&format!("/{CLI_VERSION}/")),
+            "Binary cache path should be keyed by dependency binary version, not CLI version"
         );
     }
 }
