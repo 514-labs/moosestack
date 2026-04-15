@@ -124,7 +124,8 @@ class View:
                 self.metadata["source"] = {"file": source_file}
 
         # Database-aware registry key to allow same view name in different databases.
-        registry_key = f"{self.database}_{self.name}" if self.database else self.name
+        # Uses '::' separator (collision-free: underscores are valid in ClickHouse names).
+        registry_key = f"{self.database}::{self.name}" if self.database else self.name
         if registry_key in _views:
             qualified = f"{self.database}.{self.name}" if self.database else self.name
             raise ValueError(f"View with name {qualified} already exists")
