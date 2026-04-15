@@ -1,535 +1,416 @@
 ---
-title: Inserting Data
-description: Insert data into OLAP tables using various methods
+title: Insert data
+description: Reference for writing directly to OLAP tables with `insert()` and choosing the right ingestion path
 order: 6
 category: olap
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, CTACard, CTACards, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Inserting Data
+# Insert data
 
-Inserting data into your database is a common task. MooseStack provides a few different ways to insert data into your database.
+Use `OlapTable.insert()` for direct writes into ClickHouse tables from app code, scripts, workflows, or backfills. This page focuses on direct OLAP inserts. If you need event-at-a-time ingestion or external producers, use the routing table below and follow the owning page for that path.
 
-<Callout type="info" title="Optional fields with ClickHouse defaults">
-If a table column is modeled as optional in your app type but has a ClickHouse default, Moose treats incoming records as optional at the API/stream boundary, but the ClickHouse table stores the column as required with a DEFAULT clause. If you omit the field in the payload, ClickHouse fills it with the default at insert time.
+## Choose an insert path
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-`field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-`Annotated[int, clickhouse_default("18")]`
-  </LanguageTabContent>
-</LanguageTabs>
+<table>
+  <thead>
+    <tr>
+      <th>Path</th>
+      <th>Use it when</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>table.insert()</code></td>
+      <td>You already have records in application code and want to write batches directly into ClickHouse.</td>
+    </tr>
+    <tr>
+      <td><a href="/moosestack/streaming/create-stream"><code>Stream</code> with a destination table</a></td>
+      <td>You want record-at-a-time ingestion inside Moose and automatic batching from the stream into ClickHouse.</td>
+    </tr>
+    <tr>
+      <td><a href="/moosestack/apis/ingest-api"><code>IngestApi</code></a></td>
+      <td>An external system should send records over HTTP instead of importing Moose objects directly.</td>
+    </tr>
+    <tr>
+      <td><a href="/moosestack/workflows"><code>Workflow</code></a></td>
+      <td>You need orchestration, retries, or scheduled batch jobs that eventually call <code>insert()</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<Callout type="info" title="ClickHouse prefers batches">
+Single-record inserts work, but ClickHouse performs best with batches. If your producer naturally emits one event at a time, prefer a [Stream](/moosestack/streaming/create-stream) or [Ingest API](/moosestack/apis/ingest-api) instead of calling `insert()` for each record.
 </Callout>
 
 <Callout type="info" title="Computed columns are excluded from inserts">
-[ALIAS](/moosestack/olap/alias-columns) and [MATERIALIZED](/moosestack/olap/materialized-columns) columns are automatically excluded from all insert paths — you should never supply values for them. ClickHouse computes MATERIALIZED values at insert time and ALIAS values at query time.
+[Alias columns](/moosestack/olap/alias-columns) and [materialized columns](/moosestack/olap/materialized-columns) are omitted automatically from direct inserts. In TypeScript, `insert()` accepts `Insertable<T>[]`, which excludes computed columns and makes defaulted columns optional. In Python, fields annotated with `ClickHouseAlias` or `ClickHouseMaterialized` can be omitted from inserted records.
+</Callout>
+
+## Basic usage
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-`OlapTable.insert()` accepts `Insertable<T>[]`, which automatically omits ALIAS/MATERIALIZED fields and makes DEFAULT fields optional. You don't need to apply `Insertable<T>` yourself — the method signature handles it.
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-Fields annotated with `ClickHouseAlias` or `ClickHouseMaterialized` are automatically optional at Pydantic construction time — you can omit them when creating model instances or passing dicts to `insert()`.
-  </LanguageTabContent>
-</LanguageTabs>
-</Callout>
+```ts filename="app/insert.ts" copy
+import { table } from "./table";
 
-## From a Stream (Streaming Ingest)
-
-When you need to stream data into your ClickHouse tables, you can set the `Stream.destination` as a reference to the `OlapTable` you want to insert into. This will automatically provision a synchronization process that batches and inserts data into the table.  
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="StreamInsert.ts" copy
-import { Stream } from "@514labs/moose-lib";
-
-interface Event {
-    id: Key<string>;
-    userId: string;
-    timestamp: Date;
-    eventType: string;
-}
-
-const eventsTable = new OlapTable<Event>("Events");
-
-const stream = new Stream<Event>("Events", {
-    destination: eventsTable // automatically syncs the stream to the table in ClickHouse-optimized batches
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="StreamInsert.py" copy
-from moose_lib import Stream, StreamConfig, Key
-from pydantic import BaseModel
-from datetime import datetime
-
-class Event(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-events_table = OlapTable[Event]("user_events")
-
-events_pipeline = Stream[Event]("user_events", StreamConfig(
-    destination=events_table # Automatically syncs the stream to the table in ClickHouse-optimized batches
-))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="info" title="ClickHouse Requires Batched Inserts">
-[ClickHouse inserts need to be batched for optimal performance](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance). Moose automatically batches your data into ClickHouse-optimized batches of up to 100,000 records, with automatic flushing every second. It also handles at-least-once delivery and retries on connection errors to ensure your data is never lost.
-</Callout>
-
-## From a Workflow (Batch Insert)
-
-If you have data source better suited for batch patterns, use a workflow and the direct `insert()` method to land data into your tables:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="WorkflowInsert.ts" copy
-import { OlapTable, Key } from "@514labs/moose-lib";
-
-interface Event {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-const eventsTable = new OlapTable<Event>("user_events");
-
-const etlTask = new Task<null, void>({
-    name: "ETL",
-    run: async () => {
-        const result = await eventsTable.insert([
-            { id: "evt_1", userId: "user_123", timestamp: new Date(), eventType: "click" },
-            { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" }
-            // ... more records of type Event
-        ]);
-    }
-})
-
-export const etlWorkflow = new Workflow({
-    name: "ETL",
-    startingTask: [etlTask]
-})
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="WorkflowInsert.py" copy
-from moose_lib import OlapTable, Key, InsertOptions
-from pydantic import BaseModel
-from datetime import datetime
-
-class UserEvent(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-events_table = OlapTable[UserEvent]("user_events")
-
-# Direct insertion for ETL workflows
-result = events_table.insert([
-    {"id": "evt_1", "user_id": "user_123", "timestamp": datetime.now(), "event_type": "click"},
-    {"id": "evt_2", "user_id": "user_456", "timestamp": datetime.now(), "event_type": "view"}
-])
-
-print(f"Successfully inserted: {result.successful} records")
-print(f"Failed: {result.failed} records")
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-## From a Client App 
-
-### Via REST API
-
-In your Moose code, you can leverage the built in [MooseAPI module](/moosestack/apis) to place a `POST` REST API endpoint in front of your streams and tables to allow you to insert data from external applications.  
-
-<Tabs defaultValue="ingest-api">
-  <TabsList>
-    <TabsTrigger value="ingest-api">IngestApi</TabsTrigger>
-    <TabsTrigger value="ingest-pipeline">IngestPipeline</TabsTrigger>
-  </TabsList>
-  <TabsContent value="ingest-api">
-    <LanguageTabs>
-      <LanguageTabContent value="typescript">
-```ts filename="IngestApi.ts" copy
-import { IngestApi } from "@514labs/moose-lib";
-
-const ingestApi = new IngestApi("user_events", {
-    destination: events_stream
-});
-```
-      </LanguageTabContent>
-      <LanguageTabContent value="python">
-```py filename="IngestApi.py" copy
-from moose_lib import IngestApi, IngestConfig
-
-ingest_api = IngestApi[Event]("user_events", IngestConfig(
-    destination=events_stream
-))
-```
-      </LanguageTabContent>
-    </LanguageTabs>
-  </TabsContent>
-  <TabsContent value="ingest-pipeline">
-    Alternatively, use `IngestPipeline` instead of standalone `IngestApi`, `Stream` `OlapTable` components:
-
-    <LanguageTabs>
-      <LanguageTabContent value="typescript">
-```ts filename="IngestPipeline.ts" copy
-import { IngestPipeline } from "@514labs/moose-lib";
-
-const eventsPipeline = new IngestPipeline<Event>("user_events", {
-   ingestApi: true,
-   stream: true,
-   table: {
-    orderByFields: ["id", "timestamp"],
-    engine: ClickHouseEngines.ReplacingMergeTree,
-   }
-})
-```
-      </LanguageTabContent>
-      <LanguageTabContent value="python">
-```py filename="IngestPipeline.py" copy
-from moose_lib import IngestPipeline, IngestPipelineConfig
-
-ingest_pipeline = IngestPipeline[Event]("user_events", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=True,
-))
-```
-      </LanguageTabContent>
-    </LanguageTabs>
-  </TabsContent>
-</Tabs>
-
-<Callout type="info" title="OpenAPI Client Integration" href="/moosestack/apis/openapi-sdk" ctaLabel="Learn More">
-With these APIs you can leverage the built-in OpenAPI client integration to generate API clients in your own language to connect to your pipelines from external applications.
-</Callout>
-
-### Coming Soon: MooseClient
-
-We're working on a new client library that you can use to interact with your Moose pipelines from external applications.
-
-<Callout type="info" title="Want to get involved?" href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg" ctaLabel="Join Slack">
-Join the community slack to stay updated and let us know if you're interested in helping us build it. 
-</Callout>
-
-## Direct Data Insertion
-
-The `OlapTable` provides an `insert()` method that allows you to directly insert data into ClickHouse tables with validation and error handling.
-
-### Inserting Arrays of Records
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="DirectInsert.ts" copy
-import { OlapTable, Key } from "@514labs/moose-lib";
-
-interface UserEvent {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-const eventsTable = new OlapTable<UserEvent>("user_events");
-
-// Insert single record or array of records
-const result = await eventsTable.insert([
-  { id: "evt_1", userId: "user_123", timestamp: new Date(), eventType: "click" },
-  { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" }
+const result = await table.insert([
+  {
+    id: "evt_1",
+    name: "signup",
+    timestamp: new Date(),
+  },
+  {
+    id: "evt_2",
+    name: "purchase",
+    timestamp: new Date(),
+  },
 ]);
 
-console.log(`Successfully inserted: ${result.successful} records`);
-console.log(`Failed: ${result.failed} records`);
+console.log(result.successful);
+console.log(result.failed);
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="DirectInsert.py" copy
-from moose_lib import OlapTable, Key, InsertOptions
-from pydantic import BaseModel
+```py filename="app/insert.py" copy
 from datetime import datetime
 
-class UserEvent(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
+from app.table import table
 
-events_table = OlapTable[UserEvent]("user_events")
-
-# Insert single record or array of records
-result = events_table.insert([
-    {"id": "evt_1", "user_id": "user_123", "timestamp": datetime.now(), "event_type": "click"},
-    {"id": "evt_2", "user_id": "user_456", "timestamp": datetime.now(), "event_type": "view"}
+result = table.insert([
+    {
+        "id": "evt_1",
+        "name": "signup",
+        "timestamp": datetime.now(),
+    },
+    {
+        "id": "evt_2",
+        "name": "purchase",
+        "timestamp": datetime.now(),
+    },
 ])
 
-print(f"Successfully inserted: {result.successful} records")
-print(f"Failed: {result.failed} records")
+print(result.successful)
+print(result.failed)
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-<Callout type="info" title="Best Practice: Use Batching">
-ClickHouse strongly recommends batching inserts. You should avoid inserting single records in to tables, and consider using Moose Streams and Ingest Pipelines if your data source sends events as individual records.
-</Callout>
-
-### Handling Large Batch Inserts
+## Insert options
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-For large datasets, use Node.js streams for memory-efficient processing:
-```ts filename="StreamInsert.ts" copy
-import { Readable } from 'node:stream';
-
-const dataStream = new Readable({
-  objectMode: true,
-  read() {
-    // Stream implementation
-  }
-});
-
-const result = await eventsTable.insert(dataStream, {
-  strategy: 'fail-fast'  // Note: 'isolate' not supported with streams
-});
-```
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>What it does</th>
+      <th>Default</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>strategy</code></td>
+      <td>Error handling mode: <code>"fail-fast"</code>, <code>"discard"</code>, or <code>"isolate"</code>.</td>
+      <td><code>"fail-fast"</code></td>
+    </tr>
+    <tr>
+      <td><code>allowErrors</code></td>
+      <td>Maximum number of bad records to tolerate before failing a discard-mode insert.</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>allowErrorsRatio</code></td>
+      <td>Maximum bad-record ratio to tolerate before failing a discard-mode insert.</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>validate</code></td>
+      <td>Validate records against the table schema before inserting.</td>
+      <td><code>true</code></td>
+    </tr>
+    <tr>
+      <td><code>skipValidationOnRetry</code></td>
+      <td>Skip per-record validation during isolate-mode retries.</td>
+      <td><code>false</code></td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
   <LanguageTabContent value="python">
-For large datasets, use Python generators for memory-efficient processing:
-
-```py filename="StreamInsert.py" copy
-def user_event_generator():
-    """Generate user events for memory-efficient processing."""
-    for i in range(10000):
-        yield {
-            "id": f"evt_{i}",
-            "user_id": f"user_{i % 100}",
-            "timestamp": datetime.now(),
-            "event_type": "click" if i % 2 == 0 else "view"
-        }
-
-# Insert from generator (validation not available for streams)
-result = events_table.insert(user_event_generator(), InsertOptions(strategy="fail-fast"))
-```
+<table>
+  <thead>
+    <tr>
+      <th>Option</th>
+      <th>What it does</th>
+      <th>Default</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>strategy</code></td>
+      <td>Error handling mode: <code>"fail-fast"</code>, <code>"discard"</code>, or <code>"isolate"</code>.</td>
+      <td><code>"fail-fast"</code></td>
+    </tr>
+    <tr>
+      <td><code>allow_errors</code></td>
+      <td>Maximum number of bad records to tolerate before failing a discard-mode insert.</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>allow_errors_ratio</code></td>
+      <td>Maximum bad-record ratio to tolerate before failing a discard-mode insert.</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>validate</code></td>
+      <td>Validate records against the table schema before inserting.</td>
+      <td><code>true</code></td>
+    </tr>
+    <tr>
+      <td><code>skip_validation_on_retry</code></td>
+      <td>Skip per-record validation during isolate-mode retries.</td>
+      <td><code>false</code></td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
 </LanguageTabs>
 
-### Validation Methods
+## Handle partial failures
 
-Before inserting data, you can validate it using the following methods:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="ValidationMethods.ts" copy
-// Type guard with compile-time type narrowing
-if (eventsTable.isValidRecord(unknownData)) {
-  // TypeScript now knows unknownData is UserEvent
-  console.log(unknownData.userId); // Type-safe access
-}
-
-// Detailed validation with error reporting
-const validationResult = eventsTable.validateRecord(unknownData);
-if (validationResult.success) {
-  console.log("Valid data:", validationResult.data);
-} else {
-  console.log("Validation errors:", validationResult.errors);
-}
-
-// Assert validation (throws on failure)
-try {
-  const validData = eventsTable.assertValidRecord(unknownData);
-  // Use validData with full type safety
-} catch (error) {
-  console.log("Validation failed:", error.message);
-}
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="ValidationMethods.py" copy
-from moose_lib import OlapTable, Key
-from pydantic import BaseModel
-
-class UserEvent(BaseModel):
-    id: Key[str]
-    user_id: str
-    event_type: str
-
-events_table = OlapTable[UserEvent]("user_events")
-
-# Validate a single record
-validated_data, error = events_table.validate_record(unknown_data)
-if validated_data is not None:
-    print("Valid data:", validated_data)
-else:
-    print("Validation error:", error)
-
-# Validate multiple records with detailed error reporting
-validation_result = events_table.validate_records(data_array)
-print(f"Valid records: {len(validation_result.valid)}")
-print(f"Invalid records: {len(validation_result.invalid)}")
-for error in validation_result.invalid:
-    print(f"Record {error.index} failed: {error.error}")
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Error Handling Strategies
-
-Choose from three error handling strategies based on your reliability requirements:
-
-#### Fail-Fast Strategy (Default)
+Use discard mode when you want good records to continue through while bad records are dropped within configured thresholds.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="FailFast.ts" copy
-// Stops immediately on any error
-const result = await eventsTable.insert(data, {
-  strategy: 'fail-fast'
+```ts filename="app/insert.ts" copy
+import { table } from "./table";
+
+const result = await table.insert(data, {
+  strategy: "discard",
+  allowErrors: 10,
+  allowErrorsRatio: 0.05,
 });
+
+console.log(result.failedRecords);
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="FailFast.py" copy
+```py filename="app/insert.py" copy
 from moose_lib import InsertOptions
 
-# Stops immediately on any error
-result = events_table.insert(data, InsertOptions(strategy="fail-fast"))
+from app.table import table
+
+result = table.insert(
+    data,
+    options=InsertOptions(
+        strategy="discard",
+        allow_errors=10,
+        allow_errors_ratio=0.05,
+    ),
+)
+
+print(result.failed_records)
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Discard Strategy
+Use isolate mode when you want Moose to retry smaller batches and then individual records to identify exactly which records failed.
+
+## Stream or generator input
+
+For large direct inserts, you can stream records instead of materializing a full array in memory.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="Discard.ts" copy
-// Discards invalid records, continues with valid ones
-const result = await eventsTable.insert(data, {
-  strategy: 'discard',
-  allowErrors: 10,           // Allow up to 10 failed records
-  allowErrorsRatio: 0.05     // Allow up to 5% failure rate
+```ts filename="app/insert.ts" copy
+import { Readable } from "node:stream";
+
+import { table } from "./table";
+
+const dataStream = Readable.from([
+  { id: "evt_1", name: "signup", timestamp: new Date() },
+  { id: "evt_2", name: "purchase", timestamp: new Date() },
+]);
+
+const result = await table.insert(dataStream, {
+  strategy: "fail-fast",
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="Discard.py" copy
+```py filename="app/insert.py" copy
+from datetime import datetime
+
 from moose_lib import InsertOptions
 
-# Discards invalid records, continues with valid ones
-result = events_table.insert(data, InsertOptions(
-    strategy="discard",
-    allow_errors=10,           # Allow up to 10 failed records
-    allow_errors_ratio=0.05    # Allow up to 5% failure rate
-))
+from app.table import table
+
+def event_stream():
+    yield {"id": "evt_1", "name": "signup", "timestamp": datetime.now()}
+    yield {"id": "evt_2", "name": "purchase", "timestamp": datetime.now()}
+
+result = table.insert(
+    event_stream(),
+    options=InsertOptions(strategy="fail-fast"),
+)
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Isolate Strategy
+Validation is not available for stream or generator input, and isolate mode is not supported there.
+
+## Validation helpers
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="Isolate.ts" copy
-// Retries individual records to isolate failures
-const result = await eventsTable.insert(data, {
-  strategy: 'isolate',
-  allowErrorsRatio: 0.1
-});
-
-// Access detailed failure information
-if (result.failedRecords) {
-  result.failedRecords.forEach(failed => {
-    console.log(`Record ${failed.index} failed: ${failed.error}`);
-  });
-}
-```
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Use it for</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>table.isValidRecord(record)</code></td>
+      <td>Type guard that narrows the record to the table type in TypeScript.</td>
+    </tr>
+    <tr>
+      <td><code>table.validateRecord(record)</code></td>
+      <td>Validate one record and return <code>success</code>, typed data, and errors.</td>
+    </tr>
+    <tr>
+      <td><code>table.assertValidRecord(record)</code></td>
+      <td>Throw immediately when a record does not match the table schema.</td>
+    </tr>
+    <tr>
+      <td><code>await table.validateRecords(records)</code></td>
+      <td>Validate many records and return separate valid and invalid lists.</td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="Isolate.py" copy
-from moose_lib import InsertOptions
-
-# Retries individual records to isolate failures
-result = events_table.insert(data, InsertOptions(
-    strategy="isolate",
-    allow_errors_ratio=0.1
-))
-
-# Access detailed failure information
-if result.failed_records:
-    for failed in result.failed_records:
-        print(f"Record {failed.index} failed: {failed.error}")
-```
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Use it for</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>table.validate_record(record)</code></td>
+      <td>Validate one record and return <code>(validated_data, error)</code>.</td>
+    </tr>
+    <tr>
+      <td><code>table.validate_records(records)</code></td>
+      <td>Validate many records and return <code>valid</code>, <code>invalid</code>, and <code>total</code>.</td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
 </LanguageTabs>
 
-### Performance Optimization
-
-The insert API includes several performance optimizations:
-
-- **Memoized connections**: ClickHouse clients are reused across insert calls
-- **Batch processing**: Optimized batch sizes for large datasets
-- **Async inserts**: Automatic async insert mode for datasets > 1000 records
-- **Connection management**: Use `close_client()` when completely done
+## Insert result
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="Performance.ts" copy
-// For high-throughput scenarios
-const result = await eventsTable.insert(largeDataset, {
-  validate: false,  // Skip validation for performance
-  strategy: 'discard'
-});
-
-// Clean up when completely done (optional)
-await eventsTable.closeClient();
-```
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>What it means</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>successful</code></td>
+      <td>Number of records inserted successfully.</td>
+    </tr>
+    <tr>
+      <td><code>failed</code></td>
+      <td>Number of records that failed validation or insertion.</td>
+    </tr>
+    <tr>
+      <td><code>total</code></td>
+      <td>Total number of records processed.</td>
+    </tr>
+    <tr>
+      <td><code>failedRecords</code></td>
+      <td>Detailed failure information when Moose can isolate which records failed.</td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="Performance.py" copy
-from moose_lib import InsertOptions
-
-# For high-throughput scenarios
-result = events_table.insert(large_dataset, InsertOptions(
-    validate=False,  # Skip validation for performance
-    strategy="discard"
-))
-
-# Clean up when completely done (optional)
-events_table.close_client()
-```
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>What it means</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>successful</code></td>
+      <td>Number of records inserted successfully.</td>
+    </tr>
+    <tr>
+      <td><code>failed</code></td>
+      <td>Number of records that failed validation or insertion.</td>
+    </tr>
+    <tr>
+      <td><code>total</code></td>
+      <td>Total number of records processed.</td>
+    </tr>
+    <tr>
+      <td><code>failed_records</code></td>
+      <td>Detailed failure information when Moose can isolate which records failed.</td>
+    </tr>
+  </tbody>
+</table>
   </LanguageTabContent>
 </LanguageTabs>
 
-## Best Practices
+## Insert behavior
 
-<BulletPointsCard
-  title="Insert Best Practices"
-  bullets={[
-    {
-      title: "Use streams for real-time data",
-      description: "Use IngestPipeline with streams for continuous data ingestion from APIs and external sources"
-    },
-    {
-      title: "Use direct insertion for batch processing",
-      description: "Use OlapTable.insert() for ETL workflows and bulk data imports"
-    },
-    {
-      title: "Validate data before insertion",
-      description: "Use validation methods to catch data quality issues early"
-    },
-    {
-      title: "Choose appropriate error handling",
-      description: "Use fail-fast for critical data, discard for high-volume scenarios, and isolate for debugging"
-    }
-  ]}
-/>
+<table>
+  <thead>
+    <tr>
+      <th>Behavior</th>
+      <th>Current behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Computed columns</td>
+      <td>Alias and materialized columns are excluded automatically from direct inserts.</td>
+    </tr>
+    <tr>
+      <td>Defaulted columns</td>
+      <td>Columns with ClickHouse defaults can be omitted from inserted records.</td>
+    </tr>
+    <tr>
+      <td>Stream or generator input</td>
+      <td>Validation is skipped for streaming input, and Moose does not report per-record counts for successful streamed inserts.</td>
+    </tr>
+    <tr>
+      <td><code>isolate</code> strategy</td>
+      <td>Supported for array or list input only. It is not available for stream or generator input.</td>
+    </tr>
+    <tr>
+      <td>Discard thresholds</td>
+      <td><code>allowErrors</code> and <code>allowErrorsRatio</code> only matter when using discard mode.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Related capabilities
+
+- [Model table](/moosestack/olap/model-table) for defining the table schema and insertable shape
+- [Read data](/moosestack/olap/read-data) for querying inserted records
+- [Stream](/moosestack/streaming/create-stream) for record-at-a-time ingest with automatic batching into ClickHouse
+- [Ingest API](/moosestack/apis/ingest-api) for HTTP ingestion from external producers
