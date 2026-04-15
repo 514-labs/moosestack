@@ -69,6 +69,54 @@ async fn create_consumer_group(
     (member_id, generation_id)
 }
 
+async fn send_join_group(stream: &mut TcpStream, group_id: &str, correlation_id: i32) {
+    let mut request = JoinGroupRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.protocol_type = StrBytes::from_string("consumer".to_string());
+    request.session_timeout_ms = 30_000;
+    request.rebalance_timeout_ms = 30_000;
+
+    let mut protocol = JoinGroupRequestProtocol::default();
+    protocol.name = StrBytes::from_string("range".to_string());
+    protocol.metadata = Bytes::from_static(&[0, 0, 0, 0]);
+    request.protocols.push(protocol);
+
+    send_request(stream, ApiKey::JoinGroup, 7, correlation_id, &request).await;
+}
+
+async fn read_join_group(stream: &mut TcpStream) -> JoinGroupResponse {
+    let (_, mut body) = read_response(stream, ApiKey::JoinGroup, 7).await;
+    JoinGroupResponse::decode(&mut body, 7).unwrap()
+}
+
+async fn send_sync_group(
+    stream: &mut TcpStream,
+    group_id: &str,
+    member_id: &StrBytes,
+    generation_id: i32,
+    assignments: &[(StrBytes, Bytes)],
+    correlation_id: i32,
+) {
+    let mut request = SyncGroupRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.member_id = member_id.clone();
+    request.generation_id = generation_id;
+
+    for (assignment_member_id, assignment_bytes) in assignments {
+        let mut assignment = SyncGroupRequestAssignment::default();
+        assignment.member_id = assignment_member_id.clone();
+        assignment.assignment = assignment_bytes.clone();
+        request.assignments.push(assignment);
+    }
+
+    send_request(stream, ApiKey::SyncGroup, 5, correlation_id, &request).await;
+}
+
+async fn read_sync_group(stream: &mut TcpStream) -> SyncGroupResponse {
+    let (_, mut body) = read_response(stream, ApiKey::SyncGroup, 5).await;
+    SyncGroupResponse::decode(&mut body, 5).unwrap()
+}
+
 /// Helper to extract &str from StrBytes for unambiguous comparisons.
 fn str_val(s: &StrBytes) -> &str {
     s
@@ -319,6 +367,124 @@ async fn full_group_lifecycle_list_and_describe() {
         state == "Empty" || state == "Dead",
         "Group should be Empty or Dead after LeaveGroup, got: {state}",
     );
+}
+
+#[tokio::test]
+async fn join_group_waits_for_peers_before_finalizing_generation() {
+    let tb = TestBroker::start().await;
+    let mut leader_stream = tb.connect().await;
+    let mut follower_stream = tb.connect().await;
+
+    send_join_group(&mut leader_stream, "barrier-group", 1).await;
+    let leader_pending = tokio::time::timeout(
+        std::time::Duration::from_millis(40),
+        read_join_group(&mut leader_stream),
+    )
+    .await;
+    assert!(
+        leader_pending.is_err(),
+        "leader JoinGroup should wait briefly for peer members",
+    );
+
+    send_join_group(&mut follower_stream, "barrier-group", 2).await;
+
+    let leader_response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut leader_stream),
+    )
+    .await
+    .expect("leader JoinGroup should eventually resolve");
+    let follower_response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut follower_stream),
+    )
+    .await
+    .expect("follower JoinGroup should eventually resolve");
+
+    assert_eq!(leader_response.error_code, 0);
+    assert_eq!(follower_response.error_code, 0);
+    assert_eq!(
+        leader_response.generation_id,
+        follower_response.generation_id
+    );
+    assert_eq!(leader_response.members.len(), 2);
+    assert_eq!(leader_response.member_id, leader_response.leader);
+    assert_eq!(follower_response.leader, leader_response.leader);
+    assert!(
+        leader_response
+            .members
+            .iter()
+            .any(|member| member.member_id == follower_response.member_id),
+        "leader must see follower metadata before SyncGroup",
+    );
+}
+
+#[tokio::test]
+async fn sync_group_waits_for_leader_assignment_before_releasing_followers() {
+    let tb = TestBroker::start().await;
+    let mut leader_stream = tb.connect().await;
+    let mut follower_stream = tb.connect().await;
+
+    send_join_group(&mut leader_stream, "sync-barrier-group", 1).await;
+    send_join_group(&mut follower_stream, "sync-barrier-group", 2).await;
+
+    let leader_join = read_join_group(&mut leader_stream).await;
+    let follower_join = read_join_group(&mut follower_stream).await;
+    assert_eq!(leader_join.members.len(), 2);
+    assert_eq!(leader_join.generation_id, follower_join.generation_id);
+
+    send_sync_group(
+        &mut follower_stream,
+        "sync-barrier-group",
+        &follower_join.member_id,
+        follower_join.generation_id,
+        &[],
+        3,
+    )
+    .await;
+
+    let follower_pending = tokio::time::timeout(
+        std::time::Duration::from_millis(40),
+        read_sync_group(&mut follower_stream),
+    )
+    .await;
+    assert!(
+        follower_pending.is_err(),
+        "follower SyncGroup should wait for leader assignment",
+    );
+
+    let leader_assignment = Bytes::from_static(&[1, 2, 3]);
+    let follower_assignment = Bytes::from_static(&[4, 5, 6]);
+    send_sync_group(
+        &mut leader_stream,
+        "sync-barrier-group",
+        &leader_join.member_id,
+        leader_join.generation_id,
+        &[
+            (leader_join.member_id.clone(), leader_assignment.clone()),
+            (follower_join.member_id.clone(), follower_assignment.clone()),
+        ],
+        4,
+    )
+    .await;
+
+    let leader_sync = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_sync_group(&mut leader_stream),
+    )
+    .await
+    .expect("leader SyncGroup should complete after assignment");
+    let follower_sync = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_sync_group(&mut follower_stream),
+    )
+    .await
+    .expect("follower SyncGroup should complete after leader assignment");
+
+    assert_eq!(leader_sync.error_code, 0);
+    assert_eq!(follower_sync.error_code, 0);
+    assert_eq!(leader_sync.assignment, leader_assignment);
+    assert_eq!(follower_sync.assignment, follower_assignment);
 }
 
 /// ListGroups v0 round-trip (minimum supported version).

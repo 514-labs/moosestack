@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use kafka_protocol::messages::leave_group_response::{LeaveGroupResponse, MemberResponse};
 use kafka_protocol::messages::LeaveGroupRequest;
 
@@ -27,7 +29,7 @@ pub async fn handle(
             let mut member_resp = MemberResponse::default();
             member_resp.member_id = member.member_id.clone();
             if group.members.contains_key(&member.member_id) {
-                group.remove_member(&member.member_id);
+                group.remove_member(&member.member_id, Instant::now());
                 member_resp.error_code = error::NONE;
                 tracing::info!(group = %request.group_id.0, member = %member.member_id, "Member left group");
             } else {
@@ -37,7 +39,7 @@ pub async fn handle(
         }
         response.error_code = error::NONE;
     } else if group.members.contains_key(&request.member_id) {
-        group.remove_member(&request.member_id);
+        group.remove_member(&request.member_id, Instant::now());
         response.error_code = error::NONE;
         tracing::info!(group = %request.group_id.0, member = %request.member_id, "Member left group");
     } else {
