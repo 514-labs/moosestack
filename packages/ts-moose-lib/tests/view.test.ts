@@ -8,6 +8,7 @@ import { OlapTable } from "../src/dmv2";
 import { getMooseInternal, toInfraMap } from "../src/dmv2/internal";
 import { getView } from "../src/dmv2/registry";
 import { SqlResource } from "../src/dmv2/sdk/sqlResource";
+import { sql } from "../src/sqlHelpers";
 
 function clearRegistry() {
   const registry = getMooseInternal();
@@ -285,5 +286,50 @@ describe("View — SqlResource dependency IDs", () => {
     // The dependency id must match the key in the views map so consumers can correlate them
     expect(infra.views[depId]).to.exist;
     expect(infra.views[depId].name).to.equal("metrics");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sql template interpolation: database-qualified references
+// ---------------------------------------------------------------------------
+
+describe("sql template — View and OlapTable interpolation", () => {
+  it("interpolates View without database as plain backtick name", () => {
+    const view = new View("my_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+    });
+    const query = sql`SELECT * FROM ${view}`;
+    expect(query.strings[0] + query.strings[1]).to.include("`my_view`");
+    expect(query.strings.join("")).to.not.include("`.`");
+  });
+
+  it("interpolates View with database as database-qualified reference", () => {
+    const view = new View("my_view", {
+      selectStatement: "SELECT 1",
+      baseTables: [],
+      database: "analytics",
+    });
+    const query = sql`SELECT * FROM ${view}`;
+    expect(query.strings[0] + query.strings[1]).to.include(
+      "`analytics`.`my_view`",
+    );
+  });
+
+  it("interpolates OlapTable without database as plain backtick name", () => {
+    const table = new OlapTable<{ id: string }>("events");
+    const query = sql`SELECT * FROM ${table}`;
+    expect(query.strings[0] + query.strings[1]).to.include("`events`");
+    expect(query.strings.join("")).to.not.include("`.`");
+  });
+
+  it("interpolates OlapTable with database as database-qualified reference", () => {
+    const table = new OlapTable<{ id: string }>("events", {
+      database: "analytics",
+    });
+    const query = sql`SELECT * FROM ${table}`;
+    expect(query.strings[0] + query.strings[1]).to.include(
+      "`analytics`.`events`",
+    );
   });
 });
