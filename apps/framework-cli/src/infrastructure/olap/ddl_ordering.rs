@@ -2124,7 +2124,25 @@ fn order_operations_by_dependencies(
             }
         }
 
+        // Views are table-like entities in ClickHouse and can be referenced in
+        // FROM clauses. DataLineage::pulls_data_from() always emits
+        // InfrastructureSignature::Table for source references, even when the
+        // source is actually a View. Register View operations under the Table
+        // variant as well so that View-to-View dependency edges resolve correctly.
+        let view_table_alias = if let InfrastructureSignature::View { id } = &signature {
+            Some(InfrastructureSignature::Table { id: id.clone() })
+        } else {
+            None
+        };
+
         signature_to_node.insert(signature, node_idx);
+
+        if let Some(table_sig) = view_table_alias {
+            // Use entry().or_insert() to avoid overwriting a real Table's node
+            // if one happens to exist with the same id.
+            signature_to_node.entry(table_sig).or_insert(node_idx);
+        }
+
         nodes.push(node_idx);
         op_indices.push(i); // Keep track of valid operation indices
         previous_idx = Some(node_idx);
@@ -2228,6 +2246,7 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::table::{ColumnType, OrderBy, TableReference};
+    use crate::framework::core::infrastructure::view::View;
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -5583,6 +5602,149 @@ mod tests {
                 "re-added projection must use the new body"
             );
         }
+    }
+
+    /// Helper: build a View for tests
+    fn make_view(name: &str, database: Option<&str>, source_tables: Vec<String>) -> View {
+        View {
+            name: name.to_string(),
+            database: database.map(str::to_string),
+            select_sql: "SELECT 1".to_string(),
+            source_tables,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn test_view_to_view_cross_database_dependency_ordering() {
+        // View A in db_a has no dependencies.
+        // View B in db_b depends on View A (SELECT * FROM db_a.ViewA).
+        // Operations are given in reverse order (B first) to confirm the
+        // topological sort enforces A → B.
+
+        let view_a = make_view("ViewA", Some("db_a"), vec![]);
+        let view_b = make_view("ViewB", Some("db_b"), vec!["`db_a`.`ViewA`".to_string()]);
+
+        let op_create_a = AtomicOlapOperation::CreateView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_a.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_a.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_a.clone(),
+        };
+        let op_create_b = AtomicOlapOperation::CreateView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_b.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_b.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_b.clone(),
+        };
+
+        // Pass in reverse order: B first, A second
+        let operations = vec![op_create_b.clone(), op_create_a.clone()];
+        let ordered =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
+
+        let pos_a = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::CreateView { view, .. } if view.name == "ViewA"))
+            .expect("CreateView for ViewA not found");
+        let pos_b = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::CreateView { view, .. } if view.name == "ViewB"))
+            .expect("CreateView for ViewB not found");
+
+        assert!(
+            pos_a < pos_b,
+            "ViewA (pos {pos_a}) must be created before ViewB (pos {pos_b})"
+        );
+    }
+
+    #[test]
+    fn test_view_to_view_same_database_dependency_ordering() {
+        // Both views share the default database.
+        // View A has no dependencies; View B depends on View A.
+        // Operations are given in reverse order to confirm ordering.
+
+        let view_a = make_view("ViewA", None, vec![]);
+        let view_b = make_view("ViewB", None, vec!["`ViewA`".to_string()]);
+
+        let op_create_a = AtomicOlapOperation::CreateView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_a.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_a.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_a.clone(),
+        };
+        let op_create_b = AtomicOlapOperation::CreateView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_b.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_b.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_b.clone(),
+        };
+
+        // Pass in reverse order: B first, A second
+        let operations = vec![op_create_b.clone(), op_create_a.clone()];
+        let ordered =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
+
+        let pos_a = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::CreateView { view, .. } if view.name == "ViewA"))
+            .expect("CreateView for ViewA not found");
+        let pos_b = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::CreateView { view, .. } if view.name == "ViewB"))
+            .expect("CreateView for ViewB not found");
+
+        assert!(
+            pos_a < pos_b,
+            "ViewA (pos {pos_a}) must be created before ViewB (pos {pos_b})"
+        );
+    }
+
+    #[test]
+    fn test_view_to_view_cross_database_teardown_ordering() {
+        // Teardown ordering must be the reverse of setup ordering:
+        // the dependent (ViewB) must be DROPPED before the dependency (ViewA).
+
+        let view_a = make_view("ViewA", Some("db_a"), vec![]);
+        let view_b = make_view("ViewB", Some("db_b"), vec!["`db_a`.`ViewA`".to_string()]);
+
+        let op_drop_a = AtomicOlapOperation::DropView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_a.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_a.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_a.clone(),
+        };
+        let op_drop_b = AtomicOlapOperation::DropView {
+            dependency_info: DependencyInfo {
+                pulls_data_from: view_b.pulls_data_from(DEFAULT_DATABASE_NAME),
+                pushes_data_to: view_b.pushes_data_to(DEFAULT_DATABASE_NAME),
+            },
+            view: view_b.clone(),
+        };
+
+        // Pass in wrong order: A first, B second
+        let operations = vec![op_drop_a.clone(), op_drop_b.clone()];
+        let ordered =
+            order_operations_by_dependencies(&operations, true, DEFAULT_DATABASE_NAME).unwrap();
+
+        let pos_a = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropView { view, .. } if view.name == "ViewA"))
+            .expect("DropView for ViewA not found");
+        let pos_b = ordered
+            .iter()
+            .position(|op| matches!(op, AtomicOlapOperation::DropView { view, .. } if view.name == "ViewB"))
+            .expect("DropView for ViewB not found");
+
+        assert!(
+            pos_b < pos_a,
+            "ViewB (dependent, pos {pos_b}) must be dropped before ViewA (dependency, pos {pos_a})"
+        );
     }
 
     #[test]
