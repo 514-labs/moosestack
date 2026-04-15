@@ -159,13 +159,13 @@ def test_map_sql_resource_ref_view_without_database():
 
 
 def test_map_sql_resource_ref_view_with_database():
-    """Dependency ID uses dot-separated format (database.name) matching ClickHouse qualified names."""
+    """Dependency ID uses underscore separator to match the views map key for CLI correlation."""
     view = View(
         "dep_view_with_db",
         ViewConfig(select_statement="SELECT 1", base_tables=[], database="analytics"),
     )
     sig = _map_sql_resource_ref(view)
-    assert sig.id == "analytics.dep_view_with_db"
+    assert sig.id == "analytics_dep_view_with_db"
     assert sig.kind == "View"
 
 
@@ -237,8 +237,8 @@ def test_duplicate_view_same_database_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_registry_key_uses_underscore_infra_id_uses_dot():
-    """Internal registry key uses '_' separator; external infra ID uses '.' (ClickHouse convention)."""
+def test_registry_key_and_infra_id_both_use_underscore():
+    """Registry key and dependency ID both use '_' separator so the CLI can correlate them."""
     view = View(
         "my_view",
         ViewConfig(select_statement="SELECT 1", base_tables=[], database="my_db"),
@@ -247,6 +247,6 @@ def test_registry_key_uses_underscore_infra_id_uses_dot():
     infra = to_infra_map()
     assert "my_db_my_view" in infra.get("views", {})
 
-    # External: reported as "my_db.my_view"
+    # Dependency ID matches the map key so consumers can look it up
     sig = _map_sql_resource_ref(view)
-    assert sig.id == "my_db.my_view"
+    assert sig.id == "my_db_my_view"
