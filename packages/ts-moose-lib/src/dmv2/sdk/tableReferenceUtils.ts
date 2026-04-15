@@ -9,8 +9,10 @@ export function formatTableReference(
 ): string {
   const database =
     table instanceof OlapTable ? table.config.database : table.database;
+  const deployedName =
+    table instanceof OlapTable ? table.generateTableName() : table.name;
   if (database) {
-    return `\`${database}\`.\`${table.name}\``;
+    return `\`${database}\`.\`${deployedName}\``;
   }
-  return `\`${table.name}\``;
+  return `\`${deployedName}\``;
 }
