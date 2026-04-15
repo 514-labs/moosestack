@@ -78,6 +78,8 @@ pub enum ComponentType {
     TopicTableSync,
     /// Topic-to-topic transformation process
     TopicTopicSync,
+    /// ClickHouse Dictionary
+    OlapDictionary,
 }
 
 /// Type of connection between components
@@ -504,6 +506,33 @@ fn add_topic_topic_syncs(compressed: &mut CompressedInfraMap, infra_map: &Infras
     }
 }
 
+/// Add all OLAP dictionaries to the compressed map
+fn add_olap_dictionaries(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
+    use crate::framework::core::infrastructure::DataLineage;
+
+    for (key, dict) in &infra_map.olap_dictionaries {
+        compressed.add_component(ComponentNode {
+            id: key.clone(),
+            component_type: ComponentType::OlapDictionary,
+            name: dict.name.clone(),
+            source_file: extract_source_file(dict.metadata.as_ref()),
+        });
+
+        // Dictionary pulls from its source table (if table source)
+        let default_db = dict
+            .database
+            .as_deref()
+            .unwrap_or(&infra_map.default_database);
+        for source in dict.pulls_data_from(default_db) {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+    }
+}
+
 /// Build a compressed infrastructure map from the full InfrastructureMap
 pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap {
     let mut compressed = CompressedInfraMap::new();
@@ -518,6 +547,7 @@ pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap
     add_web_apps(&mut compressed, infra_map);
     add_topic_table_syncs(&mut compressed, infra_map);
     add_topic_topic_syncs(&mut compressed, infra_map);
+    add_olap_dictionaries(&mut compressed, infra_map);
 
     compressed
 }
@@ -754,6 +784,82 @@ mod tests {
             connection.from == "lineage_workflow"
                 && connection.to == "WorkflowTarget"
                 && connection.connection_type == ConnectionType::PushesTo
+        }));
+    }
+
+    #[test]
+    fn test_dictionary_component_and_pulls_from_edge() {
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+
+        let dict = OlapDictionary {
+            name: "user_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![
+                DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+                DictionaryColumn {
+                    name: "name".to_string(),
+                    type_string: "String".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                },
+            ],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: Default::default(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        };
+        let dict_id = dict.id("local");
+        infra_map.olap_dictionaries.insert(dict_id.clone(), dict);
+
+        let compressed = build_compressed_map(&infra_map);
+
+        // Dictionary component should be present
+        assert!(compressed
+            .get_component(&dict_id)
+            .is_some_and(|c| c.component_type == ComponentType::OlapDictionary));
+
+        // PullsFrom edge: source table → dictionary
+        assert!(compressed.connections().iter().any(|c| {
+            c.from == "local_users"
+                && c.to == dict_id
+                && c.connection_type == ConnectionType::PullsFrom
         }));
     }
 
