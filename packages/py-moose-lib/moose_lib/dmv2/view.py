@@ -77,6 +77,7 @@ class View:
         name: str,
         config_or_select: Union["ViewConfig", str],
         base_tables: Optional[list[Union[OlapTable, "View"]]] = None,
+        database: Optional[str] = None,
         metadata: Optional[dict] = None,
     ):
         if isinstance(config_or_select, ViewConfig):
@@ -91,6 +92,7 @@ class View:
             config = ViewConfig(
                 select_statement=config_or_select,
                 base_tables=base_tables or [],
+                database=database,
                 metadata=metadata,
             )
         else:
