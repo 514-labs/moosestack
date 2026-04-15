@@ -589,11 +589,7 @@ async fn sync_kafka_to_clickhouse(
         source_topic_name
     );
 
-    // Use a per-topic consumer group ID so each sync process is the sole member
-    // of its group. This avoids issues with consumer group coordination in
-    // lightweight Kafka implementations (e.g. devkafka) that don't implement a
-    // full JoinGroup synchronization barrier.
-    let group_id = format!("{TABLE_SYNC_GROUP_ID}_{source_topic_name}");
+    let group_id = TABLE_SYNC_GROUP_ID.to_string();
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
         &group_id,
