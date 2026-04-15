@@ -27,7 +27,7 @@ from ._registry import (
     _views,
 )
 from .materialized_view import MaterializedView
-from .view import View
+from .view import View, view_registry_key
 
 
 def get_tables() -> Dict[str, OlapTable]:
@@ -134,7 +134,7 @@ def get_views() -> Dict[str, "View"]:
 
 def get_view(name: str, database: Optional[str] = None) -> Optional["View"]:
     """Get a registered view by name, optionally scoped to a database."""
-    key = f"{database}::{name}" if database else name
+    key = view_registry_key(database, name)
     return _views.get(key)
 
 

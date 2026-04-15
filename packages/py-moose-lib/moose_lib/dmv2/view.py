@@ -15,6 +15,13 @@ from ._registry import _views
 from ._source_capture import get_source_file_from_stack
 
 
+def view_registry_key(database: Optional[str], name: str) -> str:
+    """Returns the registry key for a view, using `database::name` when a database is set.
+    Centralizes the key format so all callers stay in sync.
+    """
+    return f"{database}::{name}" if database else name
+
+
 def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
     """Helper function to format a table reference as `database`.`table` or just `table`"""
     if isinstance(table, OlapTable):
@@ -125,7 +132,7 @@ class View:
 
         # Database-aware registry key to allow same view name in different databases.
         # Uses '::' separator (collision-free: underscores are valid in ClickHouse names).
-        registry_key = f"{self.database}::{self.name}" if self.database else self.name
+        registry_key = view_registry_key(self.database, self.name)
         if registry_key in _views:
             qualified = f"{self.database}.{self.name}" if self.database else self.name
             raise ValueError(f"View with name {qualified} already exists")
