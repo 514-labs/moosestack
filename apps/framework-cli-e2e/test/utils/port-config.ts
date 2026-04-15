@@ -13,6 +13,8 @@ export interface TestPorts {
   httpPort: number;
   /** Moose management / console server */
   managementPort: number;
+  /** Consumption API proxy server */
+  proxyPort: number;
   /** ClickHouse HTTP port */
   clickhouseHttpPort: number;
   /** ClickHouse native TCP port */
@@ -51,6 +53,7 @@ export interface ServerEndpointsConfig {
 const BASE_PORTS: TestPorts = {
   httpPort: 4000,
   managementPort: 5001,
+  proxyPort: 4001,
   clickhouseHttpPort: 18123,
   clickhouseNativePort: 19000,
   keeperPort: 9181,
@@ -70,6 +73,7 @@ export function getTestPorts(offset: number): TestPorts {
   return {
     httpPort: BASE_PORTS.httpPort + offset,
     managementPort: BASE_PORTS.managementPort + offset,
+    proxyPort: BASE_PORTS.proxyPort + offset,
     clickhouseHttpPort: BASE_PORTS.clickhouseHttpPort + offset,
     clickhouseNativePort: BASE_PORTS.clickhouseNativePort + offset,
     keeperPort: BASE_PORTS.keeperPort + offset,
@@ -88,6 +92,7 @@ export function buildPortEnv(ports: TestPorts): Record<string, string> {
   return {
     MOOSE_HTTP_SERVER_CONFIG__PORT: `${ports.httpPort}`,
     MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT: `${ports.managementPort}`,
+    MOOSE_HTTP_SERVER_CONFIG__PROXY_PORT: `${ports.proxyPort}`,
     MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${ports.clickhouseHttpPort}`,
     MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT: `${ports.clickhouseNativePort}`,
     MOOSE_CLICKHOUSE_CONFIG__KEEPER_PORT: `${ports.keeperPort}`,
