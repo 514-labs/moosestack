@@ -110,6 +110,19 @@ export const cleanupDocker = async (
   const log = options.logger ?? dockerLogger;
   log.debug("Cleaning up Docker resources", { appName });
 
+  // Skip if docker-compose.yml doesn't exist (e.g. in --dockerless mode)
+  const composePath = require("path").join(
+    projectDir,
+    ".moose",
+    "docker-compose.yml",
+  );
+  try {
+    require("fs").accessSync(composePath);
+  } catch {
+    log.debug("No docker-compose.yml found, skipping Docker cleanup");
+    return;
+  }
+
   try {
     // Stop containers and remove volumes with timeout
     await withTimeout(

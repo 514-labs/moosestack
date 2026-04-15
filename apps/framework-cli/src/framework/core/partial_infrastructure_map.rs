@@ -605,6 +605,9 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     select_row_policies:
         HashMap<String, crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
+    #[serde(default)]
+    olap_dictionaries:
+        HashMap<String, crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -722,6 +725,7 @@ impl PartialInfrastructureMap {
         project_root: &Path,
     ) -> Result<InfrastructureMap, DmV2LoadingError> {
         let tables = self.convert_tables(default_database)?;
+        let olap_dictionaries = self.convert_dictionaries(default_database);
         let topics = self.convert_topics();
         let api_endpoints = self.convert_api_endpoints(main_file, &topics);
         let topic_to_table_sync_processes =
@@ -754,6 +758,7 @@ impl PartialInfrastructureMap {
             materialized_views: self.materialized_views,
             views: self.views,
             select_row_policies: self.select_row_policies,
+            olap_dictionaries,
             moose_version: None,
         };
 
@@ -866,6 +871,32 @@ impl PartialInfrastructureMap {
                 let table = table.canonicalize();
 
                 Ok((table.id(default_database), table))
+            })
+            .collect()
+    }
+
+    /// Converts dictionary definitions into complete [`OlapDictionary`] instances.
+    ///
+    /// When a dictionary carries a `version`, the version suffix is baked into `name`
+    /// (e.g. `"my_dict"` + `"0.1"` → `"my_dict_0_1"`) so that versioned dictionaries are
+    /// distinct ClickHouse objects that can coexist side-by-side. The HashMap is re-keyed
+    /// using `dict.id(default_database)` for canonical lookup.
+    fn convert_dictionaries(
+        &self,
+        default_database: &str,
+    ) -> HashMap<String, crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary> {
+        self.olap_dictionaries
+            .values()
+            .map(|dict| {
+                let mut dict = dict.clone();
+                if let Some(ref v) = dict.version {
+                    dict.name = format!("{}_{}", dict.name, v.as_suffix());
+                    // Clear version after baking it into the name so dict.id() does not
+                    // append the suffix a second time (it also derives the suffix from version).
+                    dict.version = None;
+                }
+                let id = dict.id(default_database);
+                (id, dict)
             })
             .collect()
     }
@@ -1563,6 +1594,12 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
             *source_file = normalize_path_string(source_file, project_root);
         }
     }
+
+    for dict in infra_map.olap_dictionaries.values_mut() {
+        if let Some(metadata) = &mut dict.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1803,5 +1840,153 @@ mod tests {
         let sf = get_seed_filter(payload);
         assert_eq!(sf.limit, Some(20));
         assert_eq!(sf.where_clause, None);
+    }
+
+    /// Regression: normalize_all_metadata_paths() must also normalize source paths
+    /// on olap_dictionaries. Previously only tables/topics/views/etc. were covered.
+    #[test]
+    fn test_normalize_all_metadata_paths_normalizes_dictionary_source_file() {
+        use crate::framework::core::infrastructure::table::{Metadata, SourceLocation};
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+        use std::path::Path;
+
+        let abs_path = "/home/user/myproject/app/datamodels/UserDict.ts".to_string();
+        let project_root = Path::new("/home/user/myproject");
+
+        let dict = OlapDictionary {
+            name: "user_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "users".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Flat,
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: Some(Metadata {
+                description: None,
+                source: Some(SourceLocation {
+                    file: abs_path.clone(),
+                }),
+            }),
+        };
+
+        let dict_id = dict.id("local");
+        let mut infra_map = crate::framework::core::infrastructure_map::InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+        infra_map.olap_dictionaries.insert(dict_id.clone(), dict);
+
+        normalize_all_metadata_paths(&mut infra_map, project_root);
+
+        let normalized_file = infra_map.olap_dictionaries[&dict_id]
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| s.file.as_str())
+            .unwrap_or("");
+
+        assert_eq!(
+            normalized_file, "app/datamodels/UserDict.ts",
+            "dictionary source path should be normalized to relative; got: {normalized_file}"
+        );
+    }
+
+    /// Regression test: convert_dictionaries must not double-apply the version suffix.
+    ///
+    /// When a dictionary has `version = Some("0.1")`, the name is baked into
+    /// `"my_dict_0_1"` and then `dict.version` is cleared so that `dict.id()` does
+    /// not append the suffix a second time (it also derives the suffix from `version`).
+    /// Before the fix, the HashMap key was `"local_my_dict_0_1_0_1"`.
+    ///
+    /// Uses struct construction (not JSON strings) so the compiler enforces correctness
+    /// when field names, serde tags, or rename_all attributes change.
+    #[test]
+    fn test_convert_dictionaries_version_suffix_not_doubled() {
+        use crate::framework::versions::Version;
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+
+        // Start with an empty PartialInfrastructureMap and insert directly into the
+        // private field (allowed from within the same file's mod tests).
+        let mut partial: PartialInfrastructureMap =
+            serde_json::from_str("{}").expect("empty PartialInfrastructureMap");
+
+        partial.olap_dictionaries.insert(
+            "local_my_dict_0_1".to_string(),
+            OlapDictionary {
+                name: "my_dict".to_string(),
+                database: None,
+                cluster_name: None,
+                source: DictionarySource::Table(DictionaryTableSource {
+                    table: "src".to_string(),
+                    database: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+                primary_key: vec!["id".to_string()],
+                columns: vec![DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                }],
+                layout: DictionaryLayout::Flat,
+                lifetime: DictionaryLifetime::Single { seconds: 3600 },
+                invalidate_query: None,
+                settings: HashMap::new(),
+                comment: None,
+                life_cycle: LifeCycle::default(),
+                version: Some(Version::from_string("0.1".to_string())),
+                metadata: None,
+            },
+        );
+
+        let result = partial.convert_dictionaries("local");
+
+        // Exactly one key, correctly suffixed once
+        assert_eq!(result.len(), 1, "expected exactly one dictionary");
+        let key = result.keys().next().unwrap();
+        assert_eq!(
+            key, "local_my_dict_0_1",
+            "version suffix must appear exactly once in the key; got: {key}"
+        );
+        // name was baked, version cleared
+        let dict = result.values().next().unwrap();
+        assert_eq!(dict.name, "my_dict_0_1");
+        assert!(
+            dict.version.is_none(),
+            "dict.version must be None after baking into name"
+        );
     }
 }

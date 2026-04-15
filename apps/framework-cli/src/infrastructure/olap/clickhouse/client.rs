@@ -218,6 +218,7 @@ impl ClickHouseClient {
 
         if status != 200 {
             error!("Failed to execute SQL: Res {} - {}", &status, body_str);
+            debug!("Failed SQL statement:\n{}", sql);
             Err(anyhow::anyhow!("Failed to execute SQL: {}", body_str))
         } else {
             debug!("SQL executed successfully: {}", sql);

@@ -257,7 +257,7 @@ jobs:
           python -m pytest tests/
 
   test-e2e-module-compilation:
-    needs: [detect-changes, check, test-cli, test-ts-moose-lib]
+    needs: [detect-changes, check, test-ts-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Module Compilation (ESM/CJS)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -305,7 +305,7 @@ jobs:
 
   test-e2e-typescript-default:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -391,10 +391,11 @@ jobs:
 
   test-e2e-typescript-tests:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
+    name: "Test E2E TS Tests: ${{ matrix.group-name }} (Node ${{ matrix.node-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 20
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -405,10 +406,17 @@ jobs:
       matrix:
         node-version: [20, 22, 24]
         package-manager: [npm]
+        group-name: [core, db-pull, s3]
         include:
           - package-manager: npm
             pm-name: npm
             pm-version: bundled
+          - group-name: core
+            suite-grep: "typescript template tests main|typescript template tests - migration|typescript template tests - \\.env|Unloaded Files Warning"
+          - group-name: db-pull
+            suite-grep: "typescript template tests - db-pull"
+          - group-name: s3
+            suite-grep: "typescript template tests - S3Queue|typescript template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -447,8 +455,8 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
-      - name: Run TypeScript E2E Tests (Tests Template)
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
+      - name: "Run TypeScript E2E Tests (${{ matrix.group-name }})"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
         env:
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
@@ -459,7 +467,7 @@ jobs:
 
   test-e2e-python-default:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
     runs-on: blacksmith-8vcpu-ubuntu-2404
@@ -530,10 +538,11 @@ jobs:
 
   test-e2e-python-tests:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
+    name: "Test E2E PY Tests: ${{ matrix.group-name }} (Python ${{ matrix.python-version }})"
     runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 20
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -543,6 +552,14 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
+        group-name: [core, db-pull, s3]
+        include:
+          - group-name: core
+            suite-grep: "python template tests main|python template tests - \\.env"
+          - group-name: db-pull
+            suite-grep: "python template tests - db-pull"
+          - group-name: s3
+            suite-grep: "python template tests - S3Queue|python template tests - S3 Engine"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -589,8 +606,8 @@ jobs:
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
 
-      - name: Run Python E2E Tests (Tests Template)
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template tests"
+      - name: "Run Python E2E Tests (${{ matrix.group-name }})"
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "${{ matrix.suite-grep }}"
         env:
           TEST_PACKAGE_MANAGER: pip
 
@@ -601,7 +618,7 @@ jobs:
 
   test-e2e-backward-compatibility-typescript:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - TypeScript (Node 20)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -661,7 +678,7 @@ jobs:
 
   test-e2e-backward-compatibility-python:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - Python (Python 3.13)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -729,7 +746,7 @@ jobs:
 
   test-e2e-cluster-typescript:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - TypeScript (Node 20)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -785,7 +802,7 @@ jobs:
 
   test-e2e-cluster-python:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - Python (Python 3.13)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -849,7 +866,7 @@ jobs:
 
   test-e2e-row-level-security:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Row-Level Security (TypeScript)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -903,7 +920,7 @@ jobs:
 
   test-e2e-otlp-export:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E OTLP Log Export (TypeScript)
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -957,7 +974,7 @@ jobs:
 
   test-e2e-init-from-remote-and-seed:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Init From Remote & Seed
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -999,6 +1016,14 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
+
+      - name: Cache ClickHouse binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.moose/binaries
+          key: ${{ runner.os }}-${{ runner.arch }}-moose-binaries-${{ hashFiles('apps/framework-cli/src/utilities/constants.rs') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-moose-binaries-
 
       - name: Run Init From Remote & Seed E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "moose seed clickhouse with seedFilter"

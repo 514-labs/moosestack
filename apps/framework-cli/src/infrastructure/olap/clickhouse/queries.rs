@@ -6145,7 +6145,10 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     }
 
     #[test]
-    fn test_replication_params_dev_no_cluster_with_keeper_args_succeeds() {
+    fn test_replication_params_dev_no_cluster_with_keeper_args_preserves_explicit() {
+        // In dev mode without cluster, explicit keeper paths are preserved as-is.
+        // Users who set keeperPath/replicaName in their table config expect those
+        // paths to be used verbatim.
         let result = build_replication_params(
             &Some("/clickhouse/tables/{database}/{table}".to_string()),
             &Some("{replica}".to_string()),
@@ -6159,6 +6162,30 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         let params = result.unwrap();
         assert_eq!(params.len(), 2);
         assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_static_path_preserves_explicit() {
+        // Static keeper paths are preserved when the user configured them
+        // explicitly. `--from-remote` imports strip remote keeper paths earlier
+        // during code generation, so generic DDL generation should not guess.
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/e4e54432-1101-4ec9-943d-da21f477321c/1".to_string()),
+            &Some("{replica}".to_string()),
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.len(), 2);
+        assert_eq!(
+            params[0],
+            "'/clickhouse/tables/e4e54432-1101-4ec9-943d-da21f477321c/1'"
+        );
         assert_eq!(params[1], "'{replica}'");
     }
 

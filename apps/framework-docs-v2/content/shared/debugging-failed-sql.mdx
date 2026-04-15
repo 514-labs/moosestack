@@ -1,0 +1,11 @@
+Enable debug-level logging to see the full SQL statement in the logs:
+
+```bash
+MOOSE_LOGGER__LEVEL=Debug moose dev
+```
+
+Then filter the logs for the failing statement:
+
+```bash
+moose logs --filter "Failed SQL"
+```

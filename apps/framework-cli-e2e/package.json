@@ -22,6 +22,7 @@
     "chai": "catalog:",
     "jose": "5.9.2",
     "js-yaml": "catalog:",
+    "kafkajs": "2.2.4",
     "mocha": "catalog:",
     "posthog-node": "catalog:",
     "ts-node": "catalog:",
