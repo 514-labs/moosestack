@@ -338,7 +338,7 @@ fn render_passive_clickhouse_sync_table(app: &mut App, frame: &mut Frame, layout
         .kafka_messages_out_total
         .iter()
         .collect();
-    sorted_messages.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    sorted_messages.sort_by_key(|a| a.0.to_lowercase());
 
     for item in &sorted_messages {
         rows.push(
@@ -419,7 +419,7 @@ fn render_active_clickhouse_sync_table(app: &mut App, frame: &mut Frame, layout:
         .kafka_messages_out_total
         .iter()
         .collect();
-    sorted_messages.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    sorted_messages.sort_by_key(|a| a.0.to_lowercase());
 
     for item in &sorted_messages {
         rows.push(

@@ -9,10 +9,8 @@ pub async fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<
         KeyCode::Char('q') | KeyCode::Char('Q') => {
             app.quit();
         }
-        KeyCode::Char('c') | KeyCode::Char('C') => {
-            if key_event.modifiers == KeyModifiers::CONTROL {
-                app.quit();
-            }
+        KeyCode::Char('c') | KeyCode::Char('C') if key_event.modifiers == KeyModifiers::CONTROL => {
+            app.quit();
         }
 
         KeyCode::Down => match app.table_state {
@@ -50,16 +48,15 @@ pub async fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<
             }
         },
 
-        KeyCode::Enter => {
+        KeyCode::Enter
             if !app.overview_data.summary.is_empty()
-                && matches!(app.table_state, TableState::Endpoint)
-            {
-                app.set_state(State::PathDetails(
-                    app.overview_data.summary[app.table_scroll_data.endpoint_starting_row]
-                        .path
-                        .to_string(),
-                ));
-            }
+                && matches!(app.table_state, TableState::Endpoint) =>
+        {
+            app.set_state(State::PathDetails(
+                app.overview_data.summary[app.table_scroll_data.endpoint_starting_row]
+                    .path
+                    .to_string(),
+            ));
         }
         KeyCode::Esc => match app.state {
             State::Main() => {
