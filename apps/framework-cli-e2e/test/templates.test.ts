@@ -3043,6 +3043,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       describe("DLQ with namespace prefixing", function () {
         const NAMESPACE = "testns";
         const NS_APP_NAME = `${config.appName}-ns`;
+        const NS_PROXY_PORT =
+          config.language === "typescript" ? "4091" : "4101";
         let nsProjectDir: string;
         let nsDevProcess: ChildProcess | null = null;
 
@@ -3079,10 +3081,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          const devEnv = {
-            ...buildDevEnv(config.language, nsProjectDir),
-            MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
-          };
+          const devEnv = buildMooseDevEnv({
+            language: config.language,
+            projectDir: nsProjectDir,
+            extraEnv: {
+              TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+              TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+              MOOSE_HTTP_SERVER_CONFIG__PROXY_PORT: NS_PROXY_PORT,
+              MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
+            },
+          });
 
           nsDevProcess = startMooseDev({
             cliPath: CLI_PATH,
