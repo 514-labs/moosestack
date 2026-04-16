@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use bytes::Bytes;
 use kafka_protocol::messages::{GroupId, TopicName};
 use kafka_protocol::protocol::StrBytes;
+use tokio::sync::watch;
 
 /// Consumer group lifecycle state, following the Kafka protocol state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,11 +55,18 @@ pub struct ConsumerGroup {
     pub protocol_name: Option<StrBytes>,
     pub leader_id: Option<StrBytes>,
     pub members: HashMap<StrBytes, GroupMember>,
+    pub rebalance_started_at: Option<Instant>,
+    pub last_join_at: Option<Instant>,
+    pub rebalance_timeout_ms: i32,
+    pub joined_members: HashSet<StrBytes>,
+    state_epoch: u64,
+    pub state_updates: watch::Sender<u64>,
 }
 
 impl ConsumerGroup {
     /// Create an empty consumer group with the given ID.
     pub fn new(group_id: GroupId) -> Self {
+        let (state_updates, _) = watch::channel(0);
         Self {
             group_id,
             state: GroupState::Empty,
@@ -67,7 +75,18 @@ impl ConsumerGroup {
             protocol_name: None,
             leader_id: None,
             members: HashMap::new(),
+            rebalance_started_at: None,
+            last_join_at: None,
+            rebalance_timeout_ms: 0,
+            joined_members: HashSet::new(),
+            state_epoch: 0,
+            state_updates,
         }
+    }
+
+    fn notify_state_change(&mut self) {
+        self.state_epoch += 1;
+        let _ = self.state_updates.send_replace(self.state_epoch);
     }
 
     /// Select a partition assignment protocol supported by all members.
@@ -92,7 +111,7 @@ impl ConsumerGroup {
     }
 
     /// Remove a member from the group, re-electing the leader if necessary.
-    pub fn remove_member(&mut self, member_id: &StrBytes) {
+    pub fn remove_member(&mut self, member_id: &StrBytes, now: Instant) {
         self.members.remove(member_id);
         if self.leader_id.as_ref() == Some(member_id) {
             self.leader_id = self.members.keys().next().cloned();
@@ -103,9 +122,124 @@ impl ConsumerGroup {
             self.leader_id = None;
             self.protocol_type = None;
             self.protocol_name = None;
+            self.rebalance_started_at = None;
+            self.last_join_at = None;
+            self.rebalance_timeout_ms = 0;
+            self.joined_members.clear();
         } else {
             self.state = GroupState::PreparingRebalance;
+            self.rebalance_started_at = Some(now);
+            self.last_join_at = Some(now);
+            self.rebalance_timeout_ms = self
+                .members
+                .values()
+                .map(|member| member.rebalance_timeout_ms.max(1000))
+                .max()
+                .unwrap_or(1000);
+            self.joined_members.remove(member_id);
         }
+        self.notify_state_change();
+    }
+
+    pub fn prepare_rebalance(&mut self, now: Instant, rebalance_timeout_ms: i32) {
+        let rebalance_timeout_ms = rebalance_timeout_ms.max(1000);
+        if self.state != GroupState::PreparingRebalance {
+            self.rebalance_started_at = Some(now);
+            self.rebalance_timeout_ms = rebalance_timeout_ms;
+            self.joined_members.clear();
+        } else {
+            self.rebalance_timeout_ms = self.rebalance_timeout_ms.max(rebalance_timeout_ms);
+        }
+
+        self.state = GroupState::PreparingRebalance;
+        self.last_join_at = Some(now);
+        self.notify_state_change();
+    }
+
+    pub fn note_member_joined(&mut self, member_id: &StrBytes, now: Instant) {
+        self.joined_members.insert(member_id.clone());
+        self.last_join_at = Some(now);
+        self.notify_state_change();
+    }
+
+    pub fn should_finalize_rebalance(
+        &self,
+        now: Instant,
+        quiet_period: std::time::Duration,
+    ) -> bool {
+        if self.state != GroupState::PreparingRebalance {
+            return false;
+        }
+
+        let all_members_joined =
+            !self.members.is_empty() && self.joined_members.len() == self.members.len();
+
+        let quiet_elapsed = self
+            .last_join_at
+            .map(|last_join_at| now.duration_since(last_join_at) >= quiet_period)
+            .unwrap_or(false);
+
+        let timed_out = self
+            .rebalance_started_at
+            .map(|rebalance_started_at| {
+                now.duration_since(rebalance_started_at).as_millis()
+                    >= self.rebalance_timeout_ms.max(0) as u128
+            })
+            .unwrap_or(false);
+
+        (all_members_joined && quiet_elapsed) || timed_out
+    }
+
+    pub fn rebalance_wait_duration(
+        &self,
+        now: Instant,
+        quiet_period: std::time::Duration,
+    ) -> std::time::Duration {
+        let until_quiet = self
+            .last_join_at
+            .map(|last_join_at| {
+                quiet_period.saturating_sub(now.saturating_duration_since(last_join_at))
+            })
+            .unwrap_or_default();
+
+        let until_timeout = self
+            .rebalance_started_at
+            .map(|rebalance_started_at| {
+                std::time::Duration::from_millis(self.rebalance_timeout_ms.max(0) as u64)
+                    .saturating_sub(now.saturating_duration_since(rebalance_started_at))
+            })
+            .unwrap_or_default();
+
+        match (until_quiet.is_zero(), until_timeout.is_zero()) {
+            (true, true) => std::time::Duration::from_millis(0),
+            (true, false) => until_timeout,
+            (false, true) => until_quiet,
+            (false, false) => until_quiet.min(until_timeout),
+        }
+    }
+
+    pub fn finalize_rebalance(&mut self) {
+        if self.leader_id.is_none()
+            || !self
+                .members
+                .contains_key(self.leader_id.as_ref().expect("leader_id checked above"))
+        {
+            self.leader_id = self.members.keys().next().cloned();
+        }
+
+        self.protocol_name = self.choose_protocol();
+        self.generation_id += 1;
+        self.state = GroupState::CompletingRebalance;
+        self.rebalance_started_at = None;
+        self.last_join_at = None;
+        self.joined_members.clear();
+        self.notify_state_change();
+    }
+
+    pub fn mark_stable(&mut self) {
+        self.state = GroupState::Stable;
+        self.joined_members.clear();
+        self.notify_state_change();
     }
 
     /// Remove members whose last heartbeat exceeds their session timeout.
@@ -127,7 +261,7 @@ impl ConsumerGroup {
                 reason,
                 "Reaping expired member"
             );
-            self.remove_member(&member_id);
+            self.remove_member(&member_id, now);
         }
     }
 }
