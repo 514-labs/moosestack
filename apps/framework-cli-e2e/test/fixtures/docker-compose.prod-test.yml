@@ -192,3 +192,5 @@ services:
       - MOOSE_REDPANDA_CONFIG__BROKER=redpanda:9092
       - MOOSE_REDIS_CONFIG__URL=redis://redis:6379
       - MOOSE_TELEMETRY__ENABLED=false
+      - TEST_AWS_ACCESS_KEY_ID=test-access-key-id
+      - TEST_AWS_SECRET_ACCESS_KEY=test-secret-access-key
