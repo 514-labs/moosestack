@@ -25,13 +25,17 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
-/// Returns true when running a local dev build on Linux, where the current
-/// binary can be copied directly into Docker images instead of downloading
-/// from releases. Uses the same `CLI_VERSION == "0.0.1"` pattern as
-/// `bin.rs` and `python_project.rs`.
+/// Returns true when the Docker build should copy the current binary into
+/// images instead of downloading from releases. Triggered by:
+/// - `CLI_VERSION == "0.0.1"` or contains `"dev"` (local dev builds), OR
+/// - `MOOSE_DOCKER_LOCAL_BUILD` env var is set (explicit opt-in, e.g. from E2E tests)
+///
+/// Only applies on Linux where the host binary is compatible with Docker images.
 fn is_local_dev_linux_build() -> bool {
-    (constants::CLI_VERSION == "0.0.1" || constants::CLI_VERSION.contains("dev"))
-        && cfg!(target_os = "linux")
+    let version_is_dev =
+        constants::CLI_VERSION == "0.0.1" || constants::CLI_VERSION.contains("dev");
+    let env_override = std::env::var("MOOSE_DOCKER_LOCAL_BUILD").is_ok();
+    (version_is_dev || env_override) && cfg!(target_os = "linux")
 }
 
 /// Docker install section for local dev builds -- copies the binary from the

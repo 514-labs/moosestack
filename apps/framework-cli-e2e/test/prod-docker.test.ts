@@ -142,6 +142,7 @@ describe("Prod Docker Mode", function () {
         cwd: testProjectDir,
         env: {
           MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_DOCKER_LOCAL_BUILD: "1",
           TEST_AWS_ACCESS_KEY_ID: "test-access-key",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
         },

@@ -50,7 +50,10 @@ fn check_moose_lib_version(project_path: &Path) -> Result<(), String> {
 
     let lib_version = String::from_utf8_lossy(&output.stdout);
     let lib_version = lib_version.trim();
-    if lib_version != CLI_VERSION {
+
+    // Skip mismatch when moose-lib is a local dev build (0.0.x versions)
+    let is_dev_lib = lib_version.starts_with("0.0.");
+    if !is_dev_lib && lib_version != CLI_VERSION {
         return Err(format!(
             "Version mismatch: installed @514labs/moose-lib is {lib_version}, \
              but the Moose CLI is {CLI_VERSION}. \
