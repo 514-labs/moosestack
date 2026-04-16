@@ -48,11 +48,10 @@ impl EventHandler {
                   }
                   Some(Ok(evt)) = crossterm_event => {
                     match evt {
-                      CrosstermEvent::Key(key) => {
-                        if key.kind == crossterm::event::KeyEventKind::Press {
+                      CrosstermEvent::Key(key)
+                        if key.kind == crossterm::event::KeyEventKind::Press => {
                           _sender.send(Event::Key(key)).unwrap();
-                        }
-                      },
+                        },
                       CrosstermEvent::FocusLost => {
                       },
                       CrosstermEvent::FocusGained => {

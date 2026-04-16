@@ -181,7 +181,7 @@ pub fn find_compatible_lts_version(requirement: Option<&VersionReq>) -> NodeVers
         .collect();
 
     // Sort by version (highest first)
-    compatible_versions.sort_by(|a, b| b.major.cmp(&a.major));
+    compatible_versions.sort_by_key(|v| std::cmp::Reverse(v.major));
 
     if let Some(best_version) = compatible_versions.first() {
         info!(

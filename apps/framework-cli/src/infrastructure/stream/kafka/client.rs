@@ -93,21 +93,17 @@ fn build_rdkafka_client_config(config: &KafkaConfig) -> ClientConfig {
 pub fn validate_changes(changes: &[KafkaChange]) -> Result<(), KafkaChangesError> {
     for change in changes.iter() {
         match change {
-            KafkaChange::Added(topic) => {
-                if topic.partitions == 0 {
-                    return Err(KafkaChangesError::NotSupported(
-                        "Partition count cannot be 0".to_string(),
-                    ));
-                }
+            KafkaChange::Added(topic) if topic.partitions == 0 => {
+                return Err(KafkaChangesError::NotSupported(
+                    "Partition count cannot be 0".to_string(),
+                ));
             }
 
-            KafkaChange::Updated { before, after } => {
-                if before.partitions > after.partitions {
-                    return Err(KafkaChangesError::NotSupported(format!(
-                        "Cannot decrease parallelism from {:?} to {:?}",
-                        before.partitions, after.partitions
-                    )));
-                }
+            KafkaChange::Updated { before, after } if before.partitions > after.partitions => {
+                return Err(KafkaChangesError::NotSupported(format!(
+                    "Cannot decrease parallelism from {:?} to {:?}",
+                    before.partitions, after.partitions
+                )));
             }
             _ => {}
         }

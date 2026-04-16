@@ -318,14 +318,14 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                     dictionary_name: dict.name.clone(),
                 });
             }
-            OlapChange::OlapDictionary(Change::Updated { after, .. }) => {
-                if is_cache_layout(&after.layout) {
-                    operational_risks.push(OperationalRisk::DictionaryReplace {
-                        database: after.database.clone(),
-                        dictionary_name: after.name.clone(),
-                        layout_type: after.layout.layout_type_label().to_string(),
-                    });
-                }
+            OlapChange::OlapDictionary(Change::Updated { after, .. })
+                if is_cache_layout(&after.layout) =>
+            {
+                operational_risks.push(OperationalRisk::DictionaryReplace {
+                    database: after.database.clone(),
+                    dictionary_name: after.name.clone(),
+                    layout_type: after.layout.layout_type_label().to_string(),
+                });
             }
             _ => {}
         }
