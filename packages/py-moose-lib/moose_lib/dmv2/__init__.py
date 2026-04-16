@@ -65,6 +65,7 @@ from .sql_resource import (
 
 from .view import (
     View,
+    ViewConfig,
 )
 
 from .materialized_view import (
@@ -163,6 +164,7 @@ __all__ = [
     # SQL
     "SqlResource",
     "View",
+    "ViewConfig",
     "MaterializedViewOptions",
     "MaterializedView",
     # Workflow
