@@ -25,17 +25,46 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
-/// Returns true when the Docker build should copy the current binary into
+/// Returns true when the Docker build should copy a local binary into
 /// images instead of downloading from releases. Triggered by:
-/// - `CLI_VERSION == "0.0.1"` or contains `"dev"` (local dev builds), OR
-/// - `MOOSE_DOCKER_LOCAL_BUILD` env var is set (explicit opt-in, e.g. from E2E tests)
-///
-/// Only applies on Linux where the host binary is compatible with Docker images.
-fn is_local_dev_linux_build() -> bool {
+/// - On Linux: `CLI_VERSION == "0.0.1"` or contains `"dev"` (can copy current_exe directly)
+/// - Any OS: `MOOSE_DOCKER_LOCAL_BUILD` env var is set (explicit opt-in).
+///   The env var value can be a path to a Linux binary; if empty/`"1"`, falls
+///   back to `current_exe()` on Linux or errors on other platforms.
+fn is_local_dev_build() -> bool {
     let version_is_dev =
         constants::CLI_VERSION == "0.0.1" || constants::CLI_VERSION.contains("dev");
     let env_override = std::env::var("MOOSE_DOCKER_LOCAL_BUILD").is_ok();
-    (version_is_dev || env_override) && cfg!(target_os = "linux")
+    (version_is_dev && cfg!(target_os = "linux")) || env_override
+}
+
+/// Resolves the path to the Linux moose-cli binary for local Docker builds.
+/// - If `MOOSE_DOCKER_LOCAL_BUILD` is set to a file path, uses that path.
+/// - Otherwise on Linux, uses `current_exe()`.
+/// - On non-Linux without an explicit path, returns an error.
+fn resolve_local_cli_binary() -> Result<PathBuf, String> {
+    if let Ok(val) = std::env::var("MOOSE_DOCKER_LOCAL_BUILD") {
+        let val = val.trim();
+        if !val.is_empty() && val != "1" {
+            let p = PathBuf::from(val);
+            if p.exists() {
+                return Ok(p);
+            }
+            return Err(format!(
+                "MOOSE_DOCKER_LOCAL_BUILD points to '{}' which does not exist",
+                p.display()
+            ));
+        }
+    }
+    if cfg!(target_os = "linux") {
+        std::env::current_exe().map_err(|e| format!("Failed to resolve current executable: {e}"))
+    } else {
+        Err(
+            "Local Docker build on non-Linux requires MOOSE_DOCKER_LOCAL_BUILD \
+             to point to a Linux moose-cli binary (e.g. target/x86_64-unknown-linux-gnu/debug/moose-cli)"
+                .to_string(),
+        )
+    }
 }
 
 /// Docker install section for local dev builds -- copies the binary from the
@@ -202,7 +231,7 @@ RUN npm install -g pnpm@latest
 fn generate_typescript_compile_step(source_dir: &str) -> String {
     let escaped_source_dir = source_dir.replace('\'', r"'\''");
 
-    let moose_cmd = if is_local_dev_linux_build() {
+    let moose_cmd = if is_local_dev_build() {
         "moose"
     } else {
         "npx moose"
@@ -703,7 +732,7 @@ COPY --chown=moose:moose ./{} ./{}"#,
         }
     };
 
-    let moose_install = if is_local_dev_linux_build() {
+    let moose_install = if is_local_dev_build() {
         MOOSE_INSTALL_LOCAL
     } else {
         MOOSE_INSTALL_RELEASE
@@ -870,22 +899,19 @@ pub fn build_dockerfile(
         }
     }
 
-    let is_local_dev = is_local_dev_linux_build();
+    let is_local_dev = is_local_dev_build();
 
     if is_local_dev {
-        let exe_path = std::env::current_exe().map_err(|err| {
-            error!("Failed to resolve current executable path: {}", err);
+        let exe_path = resolve_local_cli_binary().map_err(|msg| {
+            error!("{}", msg);
             RoutineFailure::new(
-                Message::new(
-                    "Failed".to_string(),
-                    "to resolve current moose-cli binary path for local Docker build".to_string(),
-                ),
-                err,
+                Message::new("Failed".to_string(), msg.clone()),
+                std::io::Error::new(std::io::ErrorKind::NotFound, msg),
             )
         })?;
         let dest = internal_dir.join("packager/moose-cli");
         info!(
-            "Local dev Linux build: copying {} -> {}",
+            "Local dev build: copying {} -> {}",
             exe_path.display(),
             dest.display()
         );
@@ -1612,7 +1638,7 @@ fn create_standard_typescript_dockerfile(
     node_version: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
-    let moose_install = if is_local_dev_linux_build() {
+    let moose_install = if is_local_dev_build() {
         MOOSE_INSTALL_LOCAL
     } else {
         MOOSE_INSTALL_RELEASE

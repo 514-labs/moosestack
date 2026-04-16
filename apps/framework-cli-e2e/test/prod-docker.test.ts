@@ -14,22 +14,25 @@ import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
 import http from "http";
+import os from "os";
 
 import { TIMEOUTS, SERVER_CONFIG } from "./constants";
 import { createTempTestDirectory, performGlobalCleanup } from "./utils";
 
-const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
-const TEMPLATE_SOURCE_DIR = path.resolve(
-  __dirname,
-  "../../../template-packages/_staging_typescript-tests",
+const REPO_ROOT = path.resolve(__dirname, "../../..");
+const CLI_PATH = path.join(REPO_ROOT, "target/debug/moose-cli");
+const TEMPLATE_SOURCE_DIR = path.join(
+  REPO_ROOT,
+  "template-packages/_staging_typescript-tests",
 );
-const MOOSE_LIB_DIR = path.resolve(__dirname, "../../../packages/ts-moose-lib");
+const MOOSE_LIB_DIR = path.join(REPO_ROOT, "packages/ts-moose-lib");
 const COMPOSE_FIXTURE = path.resolve(
   __dirname,
   "fixtures/docker-compose.prod-test.yml",
 );
 
 const COMPOSE_PROJECT_NAME = "moose-prod-docker-test";
+const IS_LINUX = os.platform() === "linux";
 
 function httpGet(url: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
@@ -83,6 +86,59 @@ function dumpComposeLogs(cwd: string): void {
   }
 }
 
+/**
+ * On Linux the native debug build is already a usable Linux binary.
+ * On macOS we cross-compile inside Docker using the host's native arch
+ * (arm64 on Apple Silicon, amd64 on Intel) so there's no QEMU penalty.
+ * Returns the absolute path to the Linux moose-cli binary.
+ */
+function ensureLinuxCliBinary(): string {
+  if (IS_LINUX) {
+    console.log("  Linux detected – using native debug binary");
+    return CLI_PATH;
+  }
+
+  const linuxBinary = path.join(REPO_ROOT, "target/debug/moose-cli-linux");
+  if (fs.existsSync(linuxBinary)) {
+    console.log(`  Reusing cached Linux binary: ${linuxBinary}`);
+    return linuxBinary;
+  }
+
+  const rustToolchain =
+    fs
+      .readFileSync(path.join(REPO_ROOT, "rust-toolchain.toml"), "utf-8")
+      .match(/channel\s*=\s*"(.+?)"/)?.[1] ?? "stable";
+
+  console.log(
+    `  macOS detected – cross-compiling moose-cli inside Docker (rust:${rustToolchain}, ${os.arch()})...`,
+  );
+  const startMs = Date.now();
+
+  // Build artifacts go on a Docker volume (not the mounted host filesystem)
+  // to avoid virtiofs race conditions that cause "can't find crate" errors.
+  // After building, we copy the binary out to the host.
+  const platform = os.arch() === "arm64" ? "arm64" : "amd64";
+  execSync(
+    [
+      "docker run --rm",
+      `--platform linux/${platform}`,
+      `-v "${REPO_ROOT}":/workspace`,
+      "-v moose-prod-test-cargo-registry:/usr/local/cargo/registry",
+      "-v moose-prod-test-cargo-git:/usr/local/cargo/git",
+      "-v moose-prod-test-target:/build-target",
+      `-v "${path.dirname(linuxBinary)}":/output`,
+      "-w /workspace",
+      `rust:${rustToolchain}`,
+      `bash -c "apt-get update -qq && apt-get install -y -qq protobuf-compiler > /dev/null 2>&1 && CARGO_TARGET_DIR=/build-target cargo build --package moose-cli && cp /build-target/debug/moose-cli /output/${path.basename(linuxBinary)}"`,
+    ].join(" "),
+    { encoding: "utf-8", stdio: "inherit", timeout: 20 * 60 * 1000 },
+  );
+
+  const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
+  console.log(`  Linux binary built in ${elapsed}s: ${linuxBinary}`);
+  return linuxBinary;
+}
+
 function runCommand(
   cmd: string,
   opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
@@ -105,7 +161,11 @@ describe("Prod Docker Mode", function () {
   let testProjectDir: string;
 
   before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.SERVER_STARTUP_MS);
+    // Extra time on macOS for cross-compiling the Linux binary inside Docker
+    const crossCompileBuffer = IS_LINUX ? 0 : 20 * 60 * 1000;
+    this.timeout(
+      TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.SERVER_STARTUP_MS + crossCompileBuffer,
+    );
 
     console.log("\n=== Prod Docker Mode - Setup ===");
 
@@ -149,9 +209,14 @@ describe("Prod Docker Mode", function () {
     fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + "\n");
     console.log("  Patched package.json to use local moose-lib");
 
-    // 3. Build Docker image via moose-cli
-    // No local npm install needed -- Docker handles dependency installation.
-    // Without a lockfile, the Dockerfile uses a non-strict install command.
+    // 3. Ensure we have a Linux moose-cli binary for the Docker image.
+    // On Linux this is just the native debug build; on macOS we cross-compile
+    // inside Docker using the host's native arch (no QEMU).
+    const linuxCliBinary = ensureLinuxCliBinary();
+
+    // 4. Build Docker image via moose-cli.
+    // MOOSE_DOCKER_LOCAL_BUILD points to the Linux binary so the Dockerfile
+    // generator copies it into the image instead of downloading a release.
     console.log("Building Docker image with moose-cli build --docker...");
     startMs = Date.now();
     try {
@@ -159,7 +224,7 @@ describe("Prod Docker Mode", function () {
         cwd: testProjectDir,
         env: {
           MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_DOCKER_LOCAL_BUILD: "1",
+          MOOSE_DOCKER_LOCAL_BUILD: linuxCliBinary,
           TEST_AWS_ACCESS_KEY_ID: "test-access-key",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
         },
@@ -172,7 +237,7 @@ describe("Prod Docker Mode", function () {
     elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
     console.log(`  Docker image built in ${elapsed}s`);
 
-    // 4. Copy compose file and start the stack
+    // 5. Copy compose file and start the stack
     const composeFile = path.join(
       testProjectDir,
       "docker-compose.prod-test.yml",
@@ -188,7 +253,7 @@ describe("Prod Docker Mode", function () {
     elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
     console.log(`  docker compose up completed in ${elapsed}s`);
 
-    // 5. Wait for moose-app health
+    // 6. Wait for moose-app health
     console.log("Waiting for moose-app health check...");
     try {
       await waitForHealth(
