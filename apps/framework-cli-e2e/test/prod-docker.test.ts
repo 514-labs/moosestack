@@ -66,6 +66,23 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`Health check at ${url} did not pass within ${timeoutMs}ms`);
 }
 
+function dumpComposeLogs(cwd: string): void {
+  try {
+    const logs = execSync(
+      `docker compose -f docker-compose.prod-test.yml -p ${COMPOSE_PROJECT_NAME} logs --tail=300`,
+      {
+        cwd,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 30_000,
+      },
+    );
+    console.log("\n=== Docker Compose Logs ===\n" + logs);
+  } catch (err: any) {
+    console.error("Failed to collect compose logs:", err.message);
+  }
+}
+
 function runCommand(
   cmd: string,
   opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
@@ -173,10 +190,15 @@ describe("Prod Docker Mode", function () {
 
     // 5. Wait for moose-app health
     console.log("Waiting for moose-app health check...");
-    await waitForHealth(
-      `${SERVER_CONFIG.url}/health`,
-      TIMEOUTS.SERVER_STARTUP_MS,
-    );
+    try {
+      await waitForHealth(
+        `${SERVER_CONFIG.url}/health`,
+        TIMEOUTS.SERVER_STARTUP_MS,
+      );
+    } catch (err) {
+      dumpComposeLogs(testProjectDir);
+      throw err;
+    }
 
     console.log("=== Prod Docker Mode - Setup Complete ===\n");
   });
@@ -192,6 +214,8 @@ describe("Prod Docker Mode", function () {
     console.log("\n=== Prod Docker Mode - Cleanup ===");
 
     if (testProjectDir) {
+      dumpComposeLogs(testProjectDir);
+
       try {
         console.log("Stopping docker compose stack...");
         execSync(
