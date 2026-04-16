@@ -11,6 +11,8 @@
 export interface TestPorts {
   /** Moose HTTP ingestion / API server */
   httpPort: number;
+  /** Moose consumption proxy / internal health server */
+  proxyPort: number;
   /** Moose management / console server */
   managementPort: number;
   /** Consumption API proxy server */
@@ -52,6 +54,7 @@ export interface ServerEndpointsConfig {
  */
 const BASE_PORTS: TestPorts = {
   httpPort: 4000,
+  proxyPort: 4001,
   managementPort: 5001,
   proxyPort: 4001,
   clickhouseHttpPort: 18123,
@@ -72,6 +75,7 @@ const BASE_PORTS: TestPorts = {
 export function getTestPorts(offset: number): TestPorts {
   return {
     httpPort: BASE_PORTS.httpPort + offset,
+    proxyPort: BASE_PORTS.proxyPort + offset,
     managementPort: BASE_PORTS.managementPort + offset,
     proxyPort: BASE_PORTS.proxyPort + offset,
     clickhouseHttpPort: BASE_PORTS.clickhouseHttpPort + offset,
@@ -91,6 +95,7 @@ export function getTestPorts(offset: number): TestPorts {
 export function buildPortEnv(ports: TestPorts): Record<string, string> {
   return {
     MOOSE_HTTP_SERVER_CONFIG__PORT: `${ports.httpPort}`,
+    MOOSE_HTTP_SERVER_CONFIG__PROXY_PORT: `${ports.proxyPort}`,
     MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT: `${ports.managementPort}`,
     MOOSE_HTTP_SERVER_CONFIG__PROXY_PORT: `${ports.proxyPort}`,
     MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: `${ports.clickhouseHttpPort}`,
