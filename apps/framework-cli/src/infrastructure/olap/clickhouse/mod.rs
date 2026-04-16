@@ -75,6 +75,7 @@ pub mod client;
 pub mod config;
 pub mod config_resolver;
 pub mod diagnostics;
+pub mod dictionary;
 pub mod diff_strategy;
 pub mod errors;
 pub mod inserter;
@@ -315,6 +316,21 @@ pub enum SerializableOlapOperation {
     CreateRowPolicy { policy: SelectRowPolicy },
     /// Drop row policies from one or more tables.
     DropRowPolicy { policy: SelectRowPolicy },
+    /// Create a dictionary (CREATE DICTIONARY IF NOT EXISTS)
+    CreateDictionary {
+        /// The dictionary to create
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    },
+    /// Replace a dictionary (CREATE OR REPLACE DICTIONARY)
+    ReplaceDictionary {
+        /// The dictionary state after update
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    },
+    /// Drop a dictionary (DROP DICTIONARY IF EXISTS)
+    DropDictionary {
+        /// The dictionary to drop
+        dict: crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -461,6 +477,9 @@ fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
         | AtomicOlapOperation::DropView { .. }
         | AtomicOlapOperation::CreateRowPolicy { .. }
         | AtomicOlapOperation::DropRowPolicy { .. } => None,
+        AtomicOlapOperation::CreateDictionary { dict, .. } => dict.cluster_name.as_deref(),
+        AtomicOlapOperation::ReplaceDictionary { after, .. } => after.cluster_name.as_deref(),
+        AtomicOlapOperation::DropDictionary { dict, .. } => dict.cluster_name.as_deref(),
     }
 }
 
@@ -519,17 +538,35 @@ pub async fn execute_changes(
     let mut db_to_clusters: HashMap<String, HashSet<String>> = HashMap::new();
 
     for op in setup_plan {
-        if let AtomicOlapOperation::CreateTable { table, .. } = op {
-            // Get database (defaults to project.clickhouse_config.db_name)
-            let db = table.database.as_ref().unwrap_or(db_name);
-
-            // If table has cluster, track it
-            if let Some(cluster) = &table.cluster_name {
-                db_to_clusters
-                    .entry(db.clone())
-                    .or_default()
-                    .insert(cluster.clone());
+        match op {
+            AtomicOlapOperation::CreateTable { table, .. } => {
+                let db = table.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &table.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
             }
+            AtomicOlapOperation::CreateDictionary { dict, .. } => {
+                let db = dict.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &dict.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
+            }
+            AtomicOlapOperation::ReplaceDictionary { after, .. } => {
+                let db = after.database.as_ref().unwrap_or(db_name);
+                if let Some(cluster) = &after.cluster_name {
+                    db_to_clusters
+                        .entry(db.clone())
+                        .or_default()
+                        .insert(cluster.clone());
+                }
+            }
+            _ => {}
         }
     }
 
@@ -721,6 +758,15 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::DropRowPolicy { policy } => {
             format!("Dropping row policy '{}'", policy.name)
         }
+        SerializableOlapOperation::CreateDictionary { dict } => {
+            format!("Creating dictionary '{}'", dict.name)
+        }
+        SerializableOlapOperation::ReplaceDictionary { dict } => {
+            format!("Replacing dictionary '{}'", dict.name)
+        }
+        SerializableOlapOperation::DropDictionary { dict } => {
+            format!("Dropping dictionary '{}'", dict.name)
+        }
     }
 }
 
@@ -750,7 +796,10 @@ fn extract_cluster_name_from_serializable(op: &SerializableOlapOperation) -> Opt
         | SerializableOlapOperation::DropView { .. }
         | SerializableOlapOperation::RawSql { .. }
         | SerializableOlapOperation::CreateRowPolicy { .. }
-        | SerializableOlapOperation::DropRowPolicy { .. } => None,
+        | SerializableOlapOperation::DropRowPolicy { .. }
+        | SerializableOlapOperation::CreateDictionary { .. }
+        | SerializableOlapOperation::ReplaceDictionary { .. }
+        | SerializableOlapOperation::DropDictionary { .. } => None,
     }
 }
 
@@ -1055,6 +1104,15 @@ pub async fn execute_atomic_operation(
         }
         SerializableOlapOperation::DropRowPolicy { policy } => {
             execute_drop_row_policy(db_name, policy, client).await?;
+        }
+        SerializableOlapOperation::CreateDictionary { dict } => {
+            execute_create_dictionary(db_name, dict, client).await?;
+        }
+        SerializableOlapOperation::ReplaceDictionary { dict } => {
+            execute_replace_dictionary(db_name, dict, client).await?;
+        }
+        SerializableOlapOperation::DropDictionary { dict } => {
+            execute_drop_dictionary(db_name, dict, client).await?;
         }
     }
     Ok(())
@@ -2008,6 +2066,69 @@ async fn execute_drop_row_policy(
                 resource: Some(format!("row-policy:{}:{}", policy.name, table_ref.name)),
             })?;
     }
+    Ok(())
+}
+
+/// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
+///
+/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
+/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
+/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
+async fn execute_create_dictionary(
+    _db_name: &str,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_create_if_not_exists_sql();
+    // Log the operation without the SQL body to avoid leaking credentials.
+    tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
+    build_query(&client.client, &sql)
+        .execute()
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
+    Ok(())
+}
+
+/// Execute a CREATE OR REPLACE DICTIONARY operation.
+///
+/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
+/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
+/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
+async fn execute_replace_dictionary(
+    _db_name: &str,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_replace_sql();
+    // Log the operation without the SQL body to avoid leaking credentials.
+    tracing::debug!("Replacing dictionary: {} (SQL redacted)", dict.name);
+    build_query(&client.client, &sql)
+        .execute()
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
+    Ok(())
+}
+
+/// Execute a DROP DICTIONARY IF EXISTS operation.
+async fn execute_drop_dictionary(
+    _db_name: &str,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = dict.to_drop_sql();
+    tracing::debug!("Dropping dictionary: {}", dict.name);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(dict.name.clone()),
+        })?;
     Ok(())
 }
 
@@ -3270,6 +3391,44 @@ impl OlapOperations for ConfiguredDBClient {
             policies.len()
         );
         Ok(policies)
+    }
+
+    /// Retrieves the names of all dictionaries present in the given database.
+    ///
+    /// Queries `system.dictionaries` for existence/presence checks. Full schema
+    /// diffing is handled separately by comparing normalized DDL.
+    async fn list_dictionaries(&self, db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+        #[derive(clickhouse::Row, serde::Deserialize)]
+        struct DictionaryNameRow {
+            name: String,
+        }
+
+        debug!(
+            "Starting list_dictionaries operation for database: {}",
+            db_name
+        );
+
+        let mut cursor = self
+            .client
+            .query("SELECT name FROM system.dictionaries WHERE database = ? ORDER BY name")
+            .bind(db_name)
+            .fetch::<DictionaryNameRow>()
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?;
+
+        let mut names = Vec::new();
+        while let Some(row) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            names.push(row.name);
+        }
+
+        debug!(
+            "Completed list_dictionaries operation, found {} dictionaries",
+            names.len()
+        );
+        Ok(names)
     }
 
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.

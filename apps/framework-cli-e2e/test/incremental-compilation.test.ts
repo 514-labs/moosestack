@@ -60,13 +60,15 @@ describe("Incremental TypeScript Compilation", function () {
 
     // Add a simple data model and function for testing hot reload
     const modelTs = `
-import { OlapTable, Key } from "@514labs/moose-lib";
+import { Key, OlapTable } from "@514labs/moose-lib";
 
-export interface TestModel extends OlapTable {
+export interface TestModel {
   id: Key<string>;
   value: number;
   timestamp: Date;
 }
+
+export const TestModelTable = new OlapTable<TestModel>("TestModel");
 `;
     fs.writeFileSync(path.join(projectDir, "app", "models.ts"), modelTs);
 
@@ -102,11 +104,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev with incremental compilation...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -146,11 +152,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -228,11 +238,15 @@ export * from "./models";
 
     testLogger.info("Starting moose dev...");
 
-    devProcess = spawn(CLI_PATH, ["dev"], {
+    devProcess = spawn(CLI_PATH, ["dev", "--dockerless"], {
       cwd: projectDir,
       env: {
         ...process.env,
         MOOSE_TELEMETRY__ENABLED: "false",
+        MOOSE_REDPANDA_CONFIG__BROKER: "127.0.0.1:19092",
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        MOOSE_FEATURES__WORKFLOWS: "false",
+        MOOSE_ACCEPT_DESTRUCTIVE: "1",
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],

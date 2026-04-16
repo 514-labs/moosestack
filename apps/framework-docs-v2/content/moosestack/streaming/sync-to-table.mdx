@@ -1,275 +1,104 @@
 ---
-title: Sync to Table
-description: Automatically sync stream data to OLAP tables with intelligent batching
+title: Sync to table
+description: Sync stream records into OLAP tables with the stream `destination` option
 order: 2
 category: streaming
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, ToggleBlock } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Sync to Table
+# Sync to table
 
-## Overview
+Use the `destination` option on a `Stream` when records from that stream should be batched and written into an OLAP table automatically.
 
-Moose automatically handles batch writes between streams and OLAP tables through a **destination configuration**. When you specify a `destination` OLAP table for a stream, Moose provisions a background synchronization process that batches and writes data from the stream to the table.
+This page covers the sync behavior after you set `destination`. To define the `Stream` itself, start with [Stream](/moosestack/streaming/create-stream).
 
-### Basic Usage
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="SyncToTable.ts" copy
-import { Stream, OlapTable, Key } from "@514labs/moose-lib";
-
-interface Event {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-const eventsTable = new OlapTable<Event>("events");
-
-const eventsStream = new Stream<Event>("events", {
-  destination: eventsTable // This configures automatic batching
-});
-
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="SyncToTable.py" copy
-from moose_lib import Stream, OlapTable, Key
-
-class Event(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-events_table = OlapTable[Event]("events")
-
-events_stream = Stream[Event]("events", StreamConfig(
-    destination=events_table  # This configures automatic batching
-))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-<BulletPointsCard
-  title="What is Automatic Sync?"
-  compact={true}
-  separator={false}
-  bulletStyle="check"
-  bullets={[
-    {
-      title: "ClickHouse Optimized Batching",
-      description: "Automatically batches inserts according to ClickHouse-recommended best practices"
-    },
-    {
-      title: "At-least-once Delivery",
-      description: "Guarantees that data is delivered at least once, even in the face of transient errors"
-    },
-    {
-      title: "1-line Setup",
-      description: "Works automatically once destination is set to a valid OLAP Table reference"
-    }
-  ]}
-/>
-
-## Setting Up Automatic Sync
-
-### Using IngestPipeline (Easiest)
-
-The simplest way to set up automatic syncing is with an `IngestPipeline`, which creates all components and wires them together:
+## Basic usage
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```ts filename="AutoSync.ts" copy
-import { IngestPipeline, Key } from "@514labs/moose-lib";
+```ts filename="app/stream.ts" copy
+import { OlapTable, Stream } from "@514labs/moose-lib";
 
-interface Event {
-  id: Key<string>;
-  userId: string;
+interface Record {
+  id: string;
+  name: string;
   timestamp: Date;
-  eventType: string;
+  type: "foo" | "bar";
 }
 
-// Creates stream, table, API, and automatic sync
-const eventsPipeline = new IngestPipeline<Event>("events", {
-  ingestApi: true,   // Creates HTTP endpoint at POST /ingest/events
-  stream: true,   // Creates buffering stream
-  table: true     // Creates destination table + auto-sync process
+const table = new OlapTable<Record>("table");
+
+const stream = new Stream<Record>("stream", {
+  destination: table,
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="AutoSync.py" copy
-from moose_lib import IngestPipeline, IngestPipelineConfig, Key
-from pydantic import BaseModel
+```py filename="app/stream.py" copy
 from datetime import datetime
+from typing import Literal
 
-class Event(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-# Creates stream, table, API, and automatic sync
-events_pipeline = IngestPipeline[Event]("events", IngestPipelineConfig(
-    ingest_api=True,   
-    stream=True,   # Creates stream  
-    table=True     # Creates destination table + auto-sync process
-))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Standalone Components
-
-For more granular control, you can configure components individually:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="ManualSync.ts" copy
-import { Stream, OlapTable, IngestApi, Key } from "@514labs/moose-lib";
-
-interface Event {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-// Create table first
-const eventsTable = new OlapTable<Event>("events");
-
-// Create stream with destination table (enables auto-sync)
-const eventsStream = new Stream<Event>("events", {
-  destination: eventsTable  // This configures automatic batching
-});
-
-// Create API that writes to the stream
-const eventsApi = new IngestApi<Event>("events", {
-  destination: eventsStream
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="ManualSync.py" copy
-from moose_lib import Stream, OlapTable, IngestApi, StreamConfig, Key
+from moose_lib import OlapTable, Stream, StreamConfig
 from pydantic import BaseModel
-from datetime import datetime
 
-class Event(BaseModel):
-    id: Key[str]
-    user_id: str
+class Record(BaseModel):
+    id: str
+    name: str
     timestamp: datetime
-    event_type: str
+    type: Literal["foo", "bar"]
 
-# Create table first
-events_table = OlapTable[Event]("events")
+table = OlapTable[Record]("table")
 
-# Create stream with destination table (enables auto-sync)
-events_stream = Stream[Event]("events", StreamConfig(
-    destination=events_table  # This configures automatic batching
+stream = Stream[Record]("stream", StreamConfig(
+    destination=table,
 ))
-
-# Create API that writes to the stream
-events_api = IngestApi[Event]("events", {
-    "destination": events_stream
-})
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-## How Automatic Syncing Works
+## Runtime behavior
 
-When you configure a stream with a `destination` table, Moose automatically handles the synchronization by managing a Rust process process in the background.
+This section explains what Moose does after you set `destination`, not additional options you need to configure on the stream.
 
-<ToggleBlock openText="Show Internal Implementation Details" closeText="Hide Internal Implementation Details" defaultOpen={false}>
+When a stream has a `destination` option set to an `OlapTable`, Moose starts a background sync worker that reads records from the stream topic, buffers them into batches, and writes those batches to the destination table in ClickHouse.
 
-Moose creates a **Rust background process** that:
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>What happens</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Batch flush trigger</td>
+      <td>Moose flushes when a batch reaches <code>100000</code> records or when the 1 second flush interval ticks.</td>
+    </tr>
+    <tr>
+      <td>Query visibility</td>
+      <td>Rows become queryable only after the destination table receives a successful batch insert.</td>
+    </tr>
+    <tr>
+      <td>Failed inserts</td>
+      <td>If a ClickHouse insert fails, the batch stays queued and Moose retries it on later flush attempts.</td>
+    </tr>
+    <tr>
+      <td>Delivery guarantee</td>
+      <td>Delivery is at least once. Moose stores stream offsets after a batch insert succeeds.</td>
+    </tr>
+  </tbody>
+</table>
 
-1. **Consumes** messages from the stream (Kafka/Redpanda topic)
-2. **Batches** records up to 100,000 or flushes every second (whichever comes first)
-3. **Executes** optimized ClickHouse `INSERT` statements  
-4. **Commits** stream offsets after successful writes
-5. **Retries** failed batches with exponential backoff
+## Destination requirements
 
-Default batching parameters:
+- `destination` must point at an `OlapTable` instance.
+- The destination table schema must match the stream schema.
+- If you need to define the table first, start with [Model Table](/moosestack/olap/model-table).
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `MAX_BATCH_SIZE` | 100,000 records | Maximum records per batch insert |
-| `FLUSH_INTERVAL` | 1 second | Automatic flush regardless of batch size |
+## Related capabilities
 
-<Callout type="info" title="Paramters are not configurable" href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg" ctaLabel="Join Slack">
-Currently, you cannot configure the batching parameters, but we're interested in adding this feature. If you need this capability, let us know on slack!
-</Callout>
-
-</ToggleBlock>
-
-<Callout type="info" title="ClickHouse Requires Batched Inserts">
-[ClickHouse inserts need to be batched for optimal performance](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance). Moose automatically handles this optimization internally, ensuring your data is efficiently written to ClickHouse without any configuration required.
-</Callout>
-
-## Data Flow Example
-
-Here's how data flows through the automatic sync process:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="DataFlow.ts" copy
-// 1. Data sent to ingestion API
-fetch('http://localhost:4000/ingest/events', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    id: 'evt_123',
-    userId: 'user_456',
-    timestamp: '2024-01-15T10:30:00Z',
-    eventType: 'click'
-  })
-})
-
-// 2. API validates and writes to stream
-// 3. Background sync process batches stream data
-// 4. Batch automatically written to ClickHouse table when:
-//    - Batch reaches 100,000 records, OR
-//    - 1 second has elapsed since last flush
-
-// 5. Data available for queries in events table
-sql.statement`SELECT * FROM events WHERE userId = 'user_456';`
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="DataFlow.py" copy
-# 1. Data sent to ingestion API  
-requests.post('http://localhost:4000/ingest/events', json={
-    "id": "evt_123",
-    "user_id": "user_456",
-    "timestamp": "2024-01-15T10:30:00Z", 
-    "event_type": "click"
-})
-
-# 2. API validates and writes to stream
-# 3. Background sync process batches stream data
-# 4. Batch automatically written to ClickHouse table when:
-#    - Batch reaches 100,000 records, OR
-#    - 1 second has elapsed since last flush
-
-# 5. Data available for queries in events table
-# SELECT * FROM events WHERE user_id = 'user_456';
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Monitoring and Observability
-
-The sync process provides built-in observability within the Moose runtime:
-
-- **Batch Insert Logs**: Records successful batch insertions with sizes and offsets
-- **Error Handling**: Logs transient failures with retry information
-- **Metrics**: Tracks throughput, batch sizes, and error rates
-- **Offset Tracking**: Maintains Kafka consumer group offsets for reliability
+- [Stream](/moosestack/streaming/create-stream) for defining the source stream
+- [Define OLAP table](/moosestack/olap/model-table) for defining the destination OLAP table
+- [Transform functions](/moosestack/streaming/transform-functions) for reshaping records before they land in ClickHouse
+- [Ingest API](/moosestack/apis/ingest-api) for HTTP producers that write into streams which then sync to tables

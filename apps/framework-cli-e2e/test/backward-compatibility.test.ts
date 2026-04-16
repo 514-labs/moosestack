@@ -62,6 +62,13 @@ let LATEST_CLI_PATH: string;
 let CLI_INSTALL_DIR: string;
 
 const testLogger = logger.scope("backward-compatibility-test");
+const LEGACY_TEMPORAL_DYNAMIC_CONFIG = `limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true # Dev setup only. Please don't turn this on in production.
+    constraints: {}
+`;
 
 /**
  * Install and check the latest published version of moose-cli
@@ -175,6 +182,33 @@ function enforceLatestPythonRequirements(projectDir: string): void {
     requirementsPath,
     `${normalizedLines.join("\n").trimEnd()}\n`,
   );
+}
+
+function ensureLegacyTemporalDynamicConfig(projectDir: string): void {
+  const mooseInternalDir = path.join(projectDir, ".moose");
+  const temporalConfigPath = path.join(
+    mooseInternalDir,
+    "temporal-dynamic-config.yaml",
+  );
+
+  if (fs.existsSync(temporalConfigPath)) {
+    return;
+  }
+
+  fs.mkdirSync(mooseInternalDir, { recursive: true });
+  fs.writeFileSync(temporalConfigPath, LEGACY_TEMPORAL_DYNAMIC_CONFIG);
+}
+
+function startLegacyTemporalConfigWriter(projectDir: string): () => void {
+  const interval = global.setInterval(() => {
+    try {
+      ensureLegacyTemporalDynamicConfig(projectDir);
+    } catch {
+      // Ignore transient filesystem races while the legacy CLI recreates .moose.
+    }
+  }, 100);
+
+  return () => global.clearInterval(interval);
 }
 
 /**
@@ -361,6 +395,7 @@ describe("Backward Compatibility Tests", function () {
 
       before(async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS * 2); // Double timeout for setup
+        let stopTemporalConfigWriter = () => {};
 
         // Create temporary directory for this test
         TEST_PROJECT_DIR = createTempTestDirectory(config.projectDirSuffix);
@@ -400,6 +435,11 @@ describe("Backward Compatibility Tests", function () {
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
 
+        // Older published CLIs mount this file into the Temporal container in
+        // Docker mode. Precreate it so backward-compat startup exercises the
+        // old runtime path instead of failing on a missing bind source.
+        ensureLegacyTemporalDynamicConfig(TEST_PROJECT_DIR);
+
         // Start dev server with LATEST published CLI (npm-installed)
         testLogger.info(
           "Starting dev server with LATEST published CLI (npm-installed)...",
@@ -414,6 +454,7 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
               MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+              MOOSE_FEATURES__WORKFLOWS: "false",
             }
           : {
               ...process.env,
@@ -421,28 +462,35 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
               MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+              MOOSE_FEATURES__WORKFLOWS: "false",
             };
 
+        stopTemporalConfigWriter =
+          startLegacyTemporalConfigWriter(TEST_PROJECT_DIR);
         devProcess = spawn(LATEST_CLI_PATH, ["dev"], {
           stdio: "pipe",
           cwd: TEST_PROJECT_DIR,
           env: devEnv,
         });
 
-        await waitForServerStart(
-          devProcess,
-          TIMEOUTS.SERVER_STARTUP_MS,
-          SERVER_CONFIG.startupMessage,
-          SERVER_CONFIG.url,
-        );
-        testLogger.info(
-          "Server started with latest CLI, infrastructure is ready",
-        );
-        // Brief wait to ensure everything is fully settled
-        await setTimeoutAsync(5000);
+        try {
+          await waitForServerStart(
+            devProcess,
+            TIMEOUTS.SERVER_STARTUP_MS,
+            SERVER_CONFIG.startupMessage,
+            SERVER_CONFIG.url,
+          );
+          testLogger.info(
+            "Server started with latest CLI, infrastructure is ready",
+          );
+          // Brief wait to ensure everything is fully settled
+          await setTimeoutAsync(5000);
 
-        // Keep the server running so the new CLI can query its state
-        testLogger.info("Keeping dev server running for moose plan test...");
+          // Keep the server running so the new CLI can query its state
+          testLogger.info("Keeping dev server running for moose plan test...");
+        } finally {
+          stopTemporalConfigWriter();
+        }
       });
 
       after(async function () {

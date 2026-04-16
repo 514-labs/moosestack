@@ -13,7 +13,7 @@
  * 6. Resolved environment variable values are correctly used in infrastructure
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as path from "path";
 
@@ -28,6 +28,13 @@ import {
   setupPythonProject,
   cleanupTestSuite,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
+  getCleanupOptionsForMode,
+  isDockerlessMode,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -41,6 +48,11 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 );
 
 const testLogger = logger.scope("s3-engine-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+
+const PORTS = getTestPorts(50);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
 
 describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -64,28 +76,30 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          // Set dummy credentials for both S3 engine and S3Queue testing
-          // Both use the same env vars for consistency
+        projectDir: TEST_PROJECT_DIR,
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
-      });
+      }).devProcess;
 
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120000, {
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
@@ -97,6 +111,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         APP_NAMES.TYPESCRIPT_TESTS,
         {
           logPrefix: "TypeScript S3 Engine Test (With Env Vars)",
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
         },
       );
     });
@@ -138,30 +153,31 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
       );
 
       // Start dev server WITH the required environment variables set
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-          PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set dummy credentials for both S3 engine and S3Queue testing
-          // Both use the same env vars for consistency
+        projectDir: TEST_PROJECT_DIR,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
-      });
+      }).devProcess;
 
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        "started successfully",
-        "http://localhost:4000",
+        SERVER.startupMessage,
+        SERVER.url,
       );
 
       testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions();
+      await waitForStreamingFunctions(120000, {
+        dockerless: isDockerlessMode(E2E_DEV_MODE),
+        baseUrl: SERVER.url,
+      });
       testLogger.info("All components ready");
     });
 
@@ -173,6 +189,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         APP_NAMES.PYTHON_TESTS,
         {
           logPrefix: "Python S3 Engine Test (With Env Vars)",
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
         },
       );
     });

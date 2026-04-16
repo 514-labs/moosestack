@@ -1,3 +1,5 @@
+import os
+
 from pydantic import BaseModel
 from moose_lib import Key, OlapTable, OlapConfig, Stream, IngestApi
 from moose_lib.blocks import KafkaEngine
@@ -17,6 +19,7 @@ class KafkaTestEvent(BaseModel):
 
 
 KAFKA_TOPIC_NAME = "kafka_test_input"
+KAFKA_BROKER = os.getenv("MOOSE_REDPANDA_CONFIG__BROKER", "localhost:19092")
 
 kafka_test_input_stream = Stream[KafkaTestEvent](KAFKA_TOPIC_NAME)
 
@@ -28,7 +31,7 @@ kafka_test_source_table = OlapTable[KafkaTestEvent](
     "kafka_test_source",
     OlapConfig(
         engine=KafkaEngine(
-            broker_list="redpanda:9092",
+            broker_list=KAFKA_BROKER,
             topic_list=KAFKA_TOPIC_NAME,
             group_name="e2e_kafka_test_consumer_py",
             format="JSONEachRow",

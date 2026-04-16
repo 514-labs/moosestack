@@ -79,6 +79,142 @@ pub enum MigrationHistoryError {
     },
 }
 
+/// Differences in a single category of OLAP resources (tables, views, etc.)
+/// between an expected state and the actual database state.
+///
+/// "Extra" = in actual but not expected (drifted in — someone added it outside the migration log).
+/// "Missing" = in expected but not actual (drifted out — someone removed it outside the migration log).
+/// "Changed" = in both but with schema differences.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DriftCategory {
+    pub extra: Vec<String>,
+    pub missing: Vec<String>,
+    pub changed: Vec<String>,
+}
+
+impl DriftCategory {
+    pub fn is_empty(&self) -> bool {
+        self.extra.is_empty() && self.missing.is_empty() && self.changed.is_empty()
+    }
+}
+
+/// Forensic report of the divergence between an expected infrastructure map
+/// (typically the fold of applied migrations) and the actual live map.
+///
+/// Produced when `validate_parent_hash` fails, so the user can see exactly
+/// which tables/views/etc. drifted rather than just a hash mismatch.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DriftReport {
+    pub tables: DriftCategory,
+    pub views: DriftCategory,
+    pub materialized_views: DriftCategory,
+    pub dmv1_views: DriftCategory,
+    pub select_row_policies: DriftCategory,
+    pub sql_resources: DriftCategory,
+}
+
+impl DriftReport {
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+            && self.views.is_empty()
+            && self.materialized_views.is_empty()
+            && self.dmv1_views.is_empty()
+            && self.select_row_policies.is_empty()
+            && self.sql_resources.is_empty()
+    }
+}
+
+impl std::fmt::Display for DriftReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_drift_category(f, "Tables", &self.tables)?;
+        write_drift_category(f, "Views", &self.views)?;
+        write_drift_category(f, "Materialized views", &self.materialized_views)?;
+        write_drift_category(f, "DMv1 views", &self.dmv1_views)?;
+        write_drift_category(f, "Row policies", &self.select_row_policies)?;
+        write_drift_category(f, "SQL resources", &self.sql_resources)?;
+        Ok(())
+    }
+}
+
+fn write_drift_category(
+    f: &mut std::fmt::Formatter<'_>,
+    label: &str,
+    cat: &DriftCategory,
+) -> std::fmt::Result {
+    if cat.is_empty() {
+        return Ok(());
+    }
+    writeln!(f, "{}:", label)?;
+    for item in &cat.extra {
+        writeln!(
+            f,
+            "  + {} (present in database but not in migration log)",
+            item
+        )?;
+    }
+    for item in &cat.missing {
+        writeln!(
+            f,
+            "  - {} (in migration log but missing from database)",
+            item
+        )?;
+    }
+    for item in &cat.changed {
+        writeln!(f, "  ~ {} (schema differs from migration log)", item)?;
+    }
+    Ok(())
+}
+
+/// Compute a drift report between an expected infrastructure map (typically
+/// the fold of applied migrations) and the actual live map.
+pub fn compute_drift(expected: &InfrastructureMap, actual: &InfrastructureMap) -> DriftReport {
+    DriftReport {
+        tables: diff_map(&expected.tables, &actual.tables),
+        views: diff_map(&expected.views, &actual.views),
+        materialized_views: diff_map(&expected.materialized_views, &actual.materialized_views),
+        dmv1_views: diff_map(&expected.dmv1_views, &actual.dmv1_views),
+        select_row_policies: diff_map(&expected.select_row_policies, &actual.select_row_policies),
+        sql_resources: diff_map(&expected.sql_resources, &actual.sql_resources),
+    }
+}
+
+/// Key-by-key diff of two HashMaps: categorize keys as extra (only in actual),
+/// missing (only in expected), or changed (in both but values differ).
+fn diff_map<T: PartialEq>(
+    expected: &HashMap<String, T>,
+    actual: &HashMap<String, T>,
+) -> DriftCategory {
+    let mut extra = Vec::new();
+    let mut missing = Vec::new();
+    let mut changed = Vec::new();
+
+    for (key, actual_val) in actual {
+        match expected.get(key) {
+            None => extra.push(key.clone()),
+            Some(expected_val) => {
+                if expected_val != actual_val {
+                    changed.push(key.clone());
+                }
+            }
+        }
+    }
+    for key in expected.keys() {
+        if !actual.contains_key(key) {
+            missing.push(key.clone());
+        }
+    }
+
+    extra.sort();
+    missing.sort();
+    changed.sort();
+
+    DriftCategory {
+        extra,
+        missing,
+        changed,
+    }
+}
+
 /// A semantic conflict detected between two branches' migration files.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MigrationConflict {
@@ -125,6 +261,24 @@ impl MigrationFile {
     /// Deserialize a migration file from YAML.
     pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
         serde_yaml::from_str(yaml)
+    }
+
+    /// Validate that this migration file's `parent_state_hash` matches the given actual hash.
+    ///
+    /// Used by `moose migrate` to ensure a migration is applied only against the same
+    /// base state it was generated against. A mismatch indicates the live database has
+    /// diverged (e.g., migrations from another branch were applied, manual DDL was run,
+    /// or this migration is stale) and applying this file anyway could silently corrupt
+    /// state — so callers must treat a mismatch as a hard error.
+    pub fn validate_parent_hash(&self, actual_hash: &str) -> Result<(), MigrationHistoryError> {
+        if self.parent_state_hash != actual_hash {
+            return Err(MigrationHistoryError::HashMismatch {
+                migration_id: self.id.clone(),
+                expected: self.parent_state_hash.clone(),
+                actual: actual_hash.to_string(),
+            });
+        }
+        Ok(())
     }
 
     /// Returns a list of all table IDs touched by deltas in this file.
@@ -220,6 +374,7 @@ impl MigrationHistory {
             materialized_views: HashMap::new(),
             views: HashMap::new(),
             select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
             moose_version: None,
         };
 
@@ -235,6 +390,27 @@ impl MigrationHistory {
         }
 
         Ok(map)
+    }
+
+    /// Fold only the migration files whose IDs appear in `applied_ids`, preserving file order.
+    ///
+    /// Used when a hash mismatch is detected during `moose migrate` to reconstruct
+    /// what the database *should* look like according to the applied migration log,
+    /// so the caller can diff it against the live database and show forensics.
+    pub fn reconstruct_olap_map_for_applied(
+        &self,
+        default_database: &str,
+        applied_ids: &[String],
+    ) -> Result<InfrastructureMap, MigrationHistoryError> {
+        let subset = Self {
+            files: self
+                .files
+                .iter()
+                .filter(|f| applied_ids.iter().any(|id| id == &f.id))
+                .cloned()
+                .collect(),
+        };
+        subset.reconstruct_olap_map(default_database)
     }
 
     /// Detect semantic conflicts between two sets of migration files.
@@ -715,5 +891,208 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"test_db_events".to_string()));
         assert!(ids.contains(&"test_db_users".to_string()));
+    }
+
+    #[test]
+    fn test_validate_parent_hash_matches_returns_ok() {
+        let file = MigrationFile {
+            id: "20260406_150000_test".to_string(),
+            description: "test".to_string(),
+            parent_state_hash: "abc123".to_string(),
+            deltas: vec![],
+            created_at: Utc::now(),
+        };
+
+        assert!(file.validate_parent_hash("abc123").is_ok());
+    }
+
+    #[test]
+    fn test_compute_drift_identical_maps_is_empty() {
+        let table = make_test_table("events");
+        let mut map = InfrastructureMap {
+            default_database: TEST_DB.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            dmv1_views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
+            select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
+            moose_version: None,
+        };
+        map.tables.insert(table.id(TEST_DB), table);
+
+        let drift = compute_drift(&map, &map);
+
+        assert!(drift.is_empty());
+    }
+
+    #[test]
+    fn test_compute_drift_detects_extra_table_in_actual() {
+        let events = make_test_table("events");
+        let users = make_test_table("users");
+
+        let mut expected = empty_infra_map();
+        expected.tables.insert(events.id(TEST_DB), events.clone());
+
+        let mut actual = empty_infra_map();
+        actual.tables.insert(events.id(TEST_DB), events);
+        actual.tables.insert(users.id(TEST_DB), users);
+
+        let drift = compute_drift(&expected, &actual);
+
+        assert_eq!(drift.tables.extra, vec![format!("{}_users", TEST_DB)]);
+        assert!(drift.tables.missing.is_empty());
+        assert!(drift.tables.changed.is_empty());
+        assert!(!drift.is_empty());
+    }
+
+    #[test]
+    fn test_compute_drift_detects_missing_table_in_actual() {
+        let events = make_test_table("events");
+        let users = make_test_table("users");
+
+        let mut expected = empty_infra_map();
+        expected.tables.insert(events.id(TEST_DB), events.clone());
+        expected.tables.insert(users.id(TEST_DB), users);
+
+        let mut actual = empty_infra_map();
+        actual.tables.insert(events.id(TEST_DB), events);
+
+        let drift = compute_drift(&expected, &actual);
+
+        assert!(drift.tables.extra.is_empty());
+        assert_eq!(drift.tables.missing, vec![format!("{}_users", TEST_DB)]);
+        assert!(drift.tables.changed.is_empty());
+    }
+
+    #[test]
+    fn test_compute_drift_detects_changed_table() {
+        let events = make_test_table("events");
+        let mut events_modified = events.clone();
+        events_modified.columns.push(Column {
+            name: "new_col".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+            alias: None,
+        });
+
+        let mut expected = empty_infra_map();
+        expected.tables.insert(events.id(TEST_DB), events);
+
+        let mut actual = empty_infra_map();
+        actual
+            .tables
+            .insert(events_modified.id(TEST_DB), events_modified);
+
+        let drift = compute_drift(&expected, &actual);
+
+        assert!(drift.tables.extra.is_empty());
+        assert!(drift.tables.missing.is_empty());
+        assert_eq!(drift.tables.changed, vec![format!("{}_events", TEST_DB)]);
+    }
+
+    #[test]
+    fn test_reconstruct_olap_map_for_applied_folds_only_listed_ids() {
+        let events = make_test_table("events");
+        let users = make_test_table("users");
+
+        let m1 = MigrationFile {
+            id: "20260406_100000_create_events".to_string(),
+            description: "events".to_string(),
+            parent_state_hash: "a".repeat(64),
+            deltas: vec![InfraDelta::CreateTable {
+                table: events.clone(),
+            }],
+            created_at: Utc::now(),
+        };
+        let m2 = MigrationFile {
+            id: "20260407_100000_create_users".to_string(),
+            description: "users".to_string(),
+            parent_state_hash: "b".repeat(64),
+            deltas: vec![InfraDelta::CreateTable {
+                table: users.clone(),
+            }],
+            created_at: Utc::now(),
+        };
+
+        let history = MigrationHistory {
+            files: vec![m1.clone(), m2],
+        };
+
+        // Only m1 is applied → resulting map should have events but NOT users
+        let applied_ids = vec![m1.id.clone()];
+        let map = history
+            .reconstruct_olap_map_for_applied(TEST_DB, &applied_ids)
+            .unwrap();
+
+        assert!(map.tables.contains_key(&events.id(TEST_DB)));
+        assert!(!map.tables.contains_key(&users.id(TEST_DB)));
+    }
+
+    fn empty_infra_map() -> InfrastructureMap {
+        InfrastructureMap {
+            default_database: TEST_DB.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            dmv1_views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
+            select_row_policies: HashMap::new(),
+            olap_dictionaries: HashMap::new(),
+            moose_version: None,
+        }
+    }
+
+    #[test]
+    fn test_validate_parent_hash_mismatch_returns_hash_mismatch_error() {
+        let file = MigrationFile {
+            id: "20260406_150000_test".to_string(),
+            description: "test".to_string(),
+            parent_state_hash: "expected_hash".to_string(),
+            deltas: vec![],
+            created_at: Utc::now(),
+        };
+
+        let result = file.validate_parent_hash("actual_different_hash");
+
+        match result {
+            Err(MigrationHistoryError::HashMismatch {
+                migration_id,
+                expected,
+                actual,
+            }) => {
+                assert_eq!(migration_id, "20260406_150000_test");
+                assert_eq!(expected, "expected_hash");
+                assert_eq!(actual, "actual_different_hash");
+            }
+            other => panic!("expected HashMismatch error, got {:?}", other),
+        }
     }
 }

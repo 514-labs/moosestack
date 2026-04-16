@@ -8,7 +8,7 @@
  * These tests follow the same pattern as the main template tests - setup once, test multiple scenarios.
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -20,14 +20,15 @@ import {
   stopDevProcess,
   waitForServerStart,
   killRemainingProcesses,
-  cleanupDocker,
-  globalDockerCleanup,
   removeTestProject,
   createTempTestDirectory,
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
   logger,
+  getTestPorts,
+  resolveE2eDevMode,
+  startMooseDev,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -44,6 +45,25 @@ const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 
 const testLogger = logger.scope("dotenv-config-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+
+const PORTS = getTestPorts(20);
+
+const fetchHealth = async (port: number) => {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const response = await fetch(`http://localhost:${port}/health`);
+      return response;
+    } catch (error) {
+      if (attempt === 29) {
+        throw error;
+      }
+      await setTimeoutAsync(1000);
+    }
+  }
+
+  throw new Error(`Timed out waiting for health endpoint on port ${port}`);
+};
 
 describe("typescript template tests - .env file configuration", function () {
   let devProcess: ChildProcess | null = null;
@@ -54,7 +74,7 @@ describe("typescript template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await globalDockerCleanup();
+    await killRemainingProcesses({ ports: PORTS });
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
@@ -90,14 +110,17 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Start dev server
     testLogger.info("Starting dev server for .env configuration tests...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      projectDir: TEST_PROJECT_DIR,
+      mode: E2E_DEV_MODE,
+      ports: PORTS,
+      preserveHttpPortsFromEnv: true,
+      extraEnv: {
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
       },
-    });
+    }).devProcess;
 
     // Wait for server to start
     // If .env files work correctly, it should start on port 9992 (from .env.local)
@@ -118,13 +141,12 @@ describe("typescript template tests - .env file configuration", function () {
 
     // Stop dev process
     if (devProcess) {
-      await stopDevProcess(devProcess);
+      await stopDevProcess(devProcess, { ports: PORTS });
       devProcess = null;
     }
 
     // Cleanup
-    await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "ts-dotenv-config");
+    await killRemainingProcesses({ ports: PORTS });
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });
@@ -133,7 +155,7 @@ describe("typescript template tests - .env file configuration", function () {
     // Verify server is running on port 9992 (from .env.local)
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9992/health");
+    const response = await fetchHealth(9992);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -149,7 +171,7 @@ describe("typescript template tests - .env file configuration", function () {
     // The .env files are loaded, we can verify the server responds correctly
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9992/health");
+    const response = await fetchHealth(9992);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -169,7 +191,7 @@ describe("python template tests - .env file configuration", function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
     // Cleanup first
-    await globalDockerCleanup();
+    await killRemainingProcesses({ ports: PORTS });
     await cleanupLeftoverTestDirectories();
 
     // Create test directory
@@ -207,16 +229,18 @@ describe("python template tests - .env file configuration", function () {
     testLogger.info(
       "Starting dev server for Python .env configuration tests...",
     );
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
+    devProcess = startMooseDev({
+      cliPath: CLI_PATH,
       cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-        PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      projectDir: TEST_PROJECT_DIR,
+      language: "python",
+      mode: E2E_DEV_MODE,
+      ports: PORTS,
+      preserveHttpPortsFromEnv: true,
+      extraEnv: {
+        MOOSE_FEATURES__STREAMING_ENGINE: "false",
       },
-    });
+    }).devProcess;
 
     // Wait for server to start
     // If .env files work correctly, it should start on port 9982 (from .env.local)
@@ -237,13 +261,12 @@ describe("python template tests - .env file configuration", function () {
 
     // Stop dev process
     if (devProcess) {
-      await stopDevProcess(devProcess);
+      await stopDevProcess(devProcess, { ports: PORTS });
       devProcess = null;
     }
 
     // Cleanup
-    await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "py-dotenv-config");
+    await killRemainingProcesses({ ports: PORTS });
     removeTestProject(TEST_PROJECT_DIR);
     await cleanupLeftoverTestDirectories();
   });
@@ -252,7 +275,7 @@ describe("python template tests - .env file configuration", function () {
     // Verify server is running on port 9982 (from .env.local)
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9982/health");
+    const response = await fetchHealth(9982);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
@@ -268,7 +291,7 @@ describe("python template tests - .env file configuration", function () {
     // The .env files are loaded, we can verify the server responds correctly
     // Note: Health endpoint may return 503 if some services are unhealthy,
     // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9982/health");
+    const response = await fetchHealth(9982);
     expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
