@@ -3540,6 +3540,7 @@ pub struct InfraMapResponse {
 ///   `extra_mv_ids`      – materialized view IDs
 ///   `extra_view_ids`    – view IDs
 ///   `extra_policy_ids`  – select row policy IDs
+///   `extra_dict_ids`    – dictionary IDs
 ///
 /// Returns `None` when no extra IDs are present.
 fn parse_extra_reconciliation_filter(
@@ -3569,12 +3570,14 @@ fn parse_extra_reconciliation_filter(
     let materialized_view_ids = csv_set(&params, "extra_mv_ids");
     let view_ids = csv_set(&params, "extra_view_ids");
     let select_row_policy_ids = csv_set(&params, "extra_policy_ids");
+    let dictionary_ids = csv_set(&params, "extra_dict_ids");
 
     if table_ids.is_empty()
         && sql_resource_ids.is_empty()
         && materialized_view_ids.is_empty()
         && view_ids.is_empty()
         && select_row_policy_ids.is_empty()
+        && dictionary_ids.is_empty()
     {
         return None;
     }
@@ -3585,6 +3588,7 @@ fn parse_extra_reconciliation_filter(
         materialized_view_ids,
         view_ids,
         select_row_policy_ids,
+        dictionary_ids,
     };
 
     if let Some(source_db) = params.get("source_db") {
@@ -3962,6 +3966,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3990,6 +3997,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -4034,6 +4044,9 @@ mod tests {
             unmapped_row_policies: vec![],
             missing_row_policies: vec![],
             mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

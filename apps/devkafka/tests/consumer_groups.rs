@@ -9,6 +9,8 @@ mod raw_protocol;
 use bytes::Bytes;
 use kafka_protocol::messages::describe_groups_request::DescribeGroupsRequest;
 use kafka_protocol::messages::describe_groups_response::DescribeGroupsResponse;
+use kafka_protocol::messages::heartbeat_request::HeartbeatRequest;
+use kafka_protocol::messages::heartbeat_response::HeartbeatResponse;
 use kafka_protocol::messages::join_group_request::{JoinGroupRequest, JoinGroupRequestProtocol};
 use kafka_protocol::messages::join_group_response::JoinGroupResponse;
 use kafka_protocol::messages::list_groups_request::ListGroupsRequest;
@@ -67,6 +69,84 @@ async fn create_consumer_group(
     assert_eq!(sg_resp.error_code, 0, "SyncGroup should succeed");
 
     (member_id, generation_id)
+}
+
+async fn send_join_group(stream: &mut TcpStream, group_id: &str, correlation_id: i32) {
+    let mut request = JoinGroupRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.protocol_type = StrBytes::from_string("consumer".to_string());
+    request.session_timeout_ms = 30_000;
+    request.rebalance_timeout_ms = 30_000;
+
+    let mut protocol = JoinGroupRequestProtocol::default();
+    protocol.name = StrBytes::from_string("range".to_string());
+    protocol.metadata = Bytes::from_static(&[0, 0, 0, 0]);
+    request.protocols.push(protocol);
+
+    send_request(stream, ApiKey::JoinGroup, 7, correlation_id, &request).await;
+}
+
+async fn read_join_group(stream: &mut TcpStream) -> JoinGroupResponse {
+    let (_, mut body) = read_response(stream, ApiKey::JoinGroup, 7).await;
+    JoinGroupResponse::decode(&mut body, 7).unwrap()
+}
+
+async fn send_sync_group(
+    stream: &mut TcpStream,
+    group_id: &str,
+    member_id: &StrBytes,
+    generation_id: i32,
+    assignments: &[(StrBytes, Bytes)],
+    correlation_id: i32,
+) {
+    let mut request = SyncGroupRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.member_id = member_id.clone();
+    request.generation_id = generation_id;
+
+    for (assignment_member_id, assignment_bytes) in assignments {
+        let mut assignment = SyncGroupRequestAssignment::default();
+        assignment.member_id = assignment_member_id.clone();
+        assignment.assignment = assignment_bytes.clone();
+        request.assignments.push(assignment);
+    }
+
+    send_request(stream, ApiKey::SyncGroup, 5, correlation_id, &request).await;
+}
+
+async fn read_sync_group(stream: &mut TcpStream) -> SyncGroupResponse {
+    let (_, mut body) = read_response(stream, ApiKey::SyncGroup, 5).await;
+    SyncGroupResponse::decode(&mut body, 5).unwrap()
+}
+
+async fn send_heartbeat(
+    stream: &mut TcpStream,
+    group_id: &str,
+    member_id: &StrBytes,
+    generation_id: i32,
+    correlation_id: i32,
+) {
+    let mut request = HeartbeatRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.member_id = member_id.clone();
+    request.generation_id = generation_id;
+
+    send_request(stream, ApiKey::Heartbeat, 4, correlation_id, &request).await;
+}
+
+async fn read_heartbeat(stream: &mut TcpStream) -> HeartbeatResponse {
+    let (_, mut body) = read_response(stream, ApiKey::Heartbeat, 4).await;
+    HeartbeatResponse::decode(&mut body, 4).unwrap()
+}
+
+async fn assert_stream_not_readable_within(stream: &TcpStream, duration: std::time::Duration) {
+    let mut buf = [0u8; 1];
+    let readiness = tokio::time::timeout(duration, stream.peek(&mut buf)).await;
+    assert!(
+        readiness.is_err(),
+        "stream unexpectedly became readable within {:?}",
+        duration,
+    );
 }
 
 /// Helper to extract &str from StrBytes for unambiguous comparisons.
@@ -319,6 +399,225 @@ async fn full_group_lifecycle_list_and_describe() {
         state == "Empty" || state == "Dead",
         "Group should be Empty or Dead after LeaveGroup, got: {state}",
     );
+}
+
+#[tokio::test]
+async fn join_group_waits_for_peers_before_finalizing_generation() {
+    let tb = TestBroker::start().await;
+    let mut leader_stream = tb.connect().await;
+    let mut follower_stream = tb.connect().await;
+
+    send_join_group(&mut leader_stream, "barrier-group", 1).await;
+    assert_stream_not_readable_within(&leader_stream, std::time::Duration::from_millis(40)).await;
+
+    send_join_group(&mut follower_stream, "barrier-group", 2).await;
+
+    let leader_response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut leader_stream),
+    )
+    .await
+    .expect("leader JoinGroup should eventually resolve");
+    let follower_response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut follower_stream),
+    )
+    .await
+    .expect("follower JoinGroup should eventually resolve");
+
+    assert_eq!(leader_response.error_code, 0);
+    assert_eq!(follower_response.error_code, 0);
+    assert_eq!(
+        leader_response.generation_id,
+        follower_response.generation_id
+    );
+    assert_eq!(leader_response.members.len(), 2);
+    assert_eq!(leader_response.member_id, leader_response.leader);
+    assert_eq!(follower_response.leader, leader_response.leader);
+    assert!(
+        leader_response
+            .members
+            .iter()
+            .any(|member| member.member_id == follower_response.member_id),
+        "leader must see follower metadata before SyncGroup",
+    );
+}
+
+#[tokio::test]
+async fn rebalance_waits_for_existing_members_to_rejoin_before_finalizing() {
+    let tb = TestBroker::start().await;
+    let mut leader_stream = tb.connect().await;
+    let mut follower_stream = tb.connect().await;
+    let mut newcomer_stream = tb.connect().await;
+
+    send_join_group(&mut leader_stream, "staggered-group", 1).await;
+    send_join_group(&mut follower_stream, "staggered-group", 2).await;
+
+    let leader_join = read_join_group(&mut leader_stream).await;
+    let follower_join = read_join_group(&mut follower_stream).await;
+    assert_eq!(leader_join.generation_id, follower_join.generation_id);
+
+    send_sync_group(
+        &mut leader_stream,
+        "staggered-group",
+        &leader_join.member_id,
+        leader_join.generation_id,
+        &[
+            (leader_join.member_id.clone(), Bytes::from_static(&[1])),
+            (follower_join.member_id.clone(), Bytes::from_static(&[2])),
+        ],
+        3,
+    )
+    .await;
+    send_sync_group(
+        &mut follower_stream,
+        "staggered-group",
+        &follower_join.member_id,
+        follower_join.generation_id,
+        &[],
+        4,
+    )
+    .await;
+    let _ = read_sync_group(&mut leader_stream).await;
+    let _ = read_sync_group(&mut follower_stream).await;
+
+    send_join_group(&mut newcomer_stream, "staggered-group", 5).await;
+    assert_stream_not_readable_within(&newcomer_stream, std::time::Duration::from_millis(150))
+        .await;
+
+    send_heartbeat(
+        &mut leader_stream,
+        "staggered-group",
+        &leader_join.member_id,
+        leader_join.generation_id,
+        6,
+    )
+    .await;
+    let heartbeat = read_heartbeat(&mut leader_stream).await;
+    assert_eq!(heartbeat.error_code, 27);
+
+    send_request_join_group_with_member(
+        &mut leader_stream,
+        "staggered-group",
+        &leader_join.member_id,
+        7,
+    )
+    .await;
+    assert_stream_not_readable_within(&leader_stream, std::time::Duration::from_millis(150)).await;
+    assert_stream_not_readable_within(&newcomer_stream, std::time::Duration::from_millis(150))
+        .await;
+
+    send_request_join_group_with_member(
+        &mut follower_stream,
+        "staggered-group",
+        &follower_join.member_id,
+        8,
+    )
+    .await;
+
+    let leader_rejoin = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut leader_stream),
+    )
+    .await
+    .expect("leader should rejoin once all known members have joined");
+    let follower_rejoin = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut follower_stream),
+    )
+    .await
+    .expect("follower should rejoin once all known members have joined");
+    let newcomer_join = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_join_group(&mut newcomer_stream),
+    )
+    .await
+    .expect("new member should join once all known members have joined");
+
+    assert_eq!(leader_rejoin.generation_id, follower_rejoin.generation_id);
+    assert_eq!(leader_rejoin.generation_id, newcomer_join.generation_id);
+    assert_eq!(leader_rejoin.members.len(), 3);
+}
+
+async fn send_request_join_group_with_member(
+    stream: &mut TcpStream,
+    group_id: &str,
+    member_id: &StrBytes,
+    correlation_id: i32,
+) {
+    let mut request = JoinGroupRequest::default();
+    request.group_id = StrBytes::from_string(group_id.to_string()).into();
+    request.member_id = member_id.clone();
+    request.protocol_type = StrBytes::from_string("consumer".to_string());
+    request.session_timeout_ms = 30_000;
+    request.rebalance_timeout_ms = 30_000;
+
+    let mut protocol = JoinGroupRequestProtocol::default();
+    protocol.name = StrBytes::from_string("range".to_string());
+    protocol.metadata = Bytes::from_static(&[0, 0, 0, 0]);
+    request.protocols.push(protocol);
+
+    send_request(stream, ApiKey::JoinGroup, 7, correlation_id, &request).await;
+}
+
+#[tokio::test]
+async fn sync_group_waits_for_leader_assignment_before_releasing_followers() {
+    let tb = TestBroker::start().await;
+    let mut leader_stream = tb.connect().await;
+    let mut follower_stream = tb.connect().await;
+
+    send_join_group(&mut leader_stream, "sync-barrier-group", 1).await;
+    send_join_group(&mut follower_stream, "sync-barrier-group", 2).await;
+
+    let leader_join = read_join_group(&mut leader_stream).await;
+    let follower_join = read_join_group(&mut follower_stream).await;
+    assert_eq!(leader_join.members.len(), 2);
+    assert_eq!(leader_join.generation_id, follower_join.generation_id);
+
+    send_sync_group(
+        &mut follower_stream,
+        "sync-barrier-group",
+        &follower_join.member_id,
+        follower_join.generation_id,
+        &[],
+        3,
+    )
+    .await;
+
+    assert_stream_not_readable_within(&follower_stream, std::time::Duration::from_millis(40)).await;
+
+    let leader_assignment = Bytes::from_static(&[1, 2, 3]);
+    let follower_assignment = Bytes::from_static(&[4, 5, 6]);
+    send_sync_group(
+        &mut leader_stream,
+        "sync-barrier-group",
+        &leader_join.member_id,
+        leader_join.generation_id,
+        &[
+            (leader_join.member_id.clone(), leader_assignment.clone()),
+            (follower_join.member_id.clone(), follower_assignment.clone()),
+        ],
+        4,
+    )
+    .await;
+
+    let leader_sync = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_sync_group(&mut leader_stream),
+    )
+    .await
+    .expect("leader SyncGroup should complete after assignment");
+    let follower_sync = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        read_sync_group(&mut follower_stream),
+    )
+    .await
+    .expect("follower SyncGroup should complete after leader assignment");
+
+    assert_eq!(leader_sync.error_code, 0);
+    assert_eq!(follower_sync.error_code, 0);
+    assert_eq!(leader_sync.assignment, leader_assignment);
+    assert_eq!(follower_sync.assignment, follower_assignment);
 }
 
 /// ListGroups v0 round-trip (minimum supported version).

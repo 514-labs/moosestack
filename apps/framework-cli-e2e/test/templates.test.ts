@@ -115,19 +115,21 @@ if (process.env.TEST_PACKAGE_MANAGER) {
   );
 }
 
-it("should return the dummy version in debug build", async () => {
-  const { stdout } = await execAsync(`"${CLI_PATH}" --version`);
-  const version = stdout.trim();
-  const expectedVersion = TEST_DATA.EXPECTED_CLI_VERSION;
+export const registerCliVersionTest = (): void => {
+  it("should return the dummy version in debug build", async () => {
+    const { stdout } = await execAsync(`"${CLI_PATH}" --version`);
+    const version = stdout.trim();
+    const expectedVersion = TEST_DATA.EXPECTED_CLI_VERSION;
 
-  testLogger.info("Resulting version:", version);
-  testLogger.info("Expected version:", expectedVersion);
+    testLogger.info("Resulting version:", version);
+    testLogger.info("Expected version:", expectedVersion);
 
-  expect(version).to.equal(expectedVersion);
-});
+    expect(version).to.equal(expectedVersion);
+  });
+};
 
 // Template test configuration
-interface TemplateTestConfig {
+export interface TemplateTestConfig {
   templateName: string;
   displayName: string;
   projectDirSuffix: string;
@@ -137,43 +139,51 @@ interface TemplateTestConfig {
   packageManager: "npm" | "pnpm" | "pip";
 }
 
+export const TYPESCRIPT_DEFAULT_TEMPLATE_CONFIG: TemplateTestConfig = {
+  templateName: TEMPLATE_NAMES.TYPESCRIPT_DEFAULT,
+  displayName: `TypeScript Default Template (${TEST_PACKAGE_MANAGER})`,
+  projectDirSuffix: `ts-default-${TEST_PACKAGE_MANAGER}`,
+  appName: APP_NAMES.TYPESCRIPT_DEFAULT,
+  language: "typescript",
+  isTestsVariant: false,
+  packageManager: TEST_PACKAGE_MANAGER,
+};
+
+export const TYPESCRIPT_TESTS_TEMPLATE_CONFIG: TemplateTestConfig = {
+  templateName: TEMPLATE_NAMES.TYPESCRIPT_TESTS,
+  displayName: `TypeScript Tests Template (${TEST_PACKAGE_MANAGER})`,
+  projectDirSuffix: `ts-tests-${TEST_PACKAGE_MANAGER}`,
+  appName: APP_NAMES.TYPESCRIPT_TESTS,
+  language: "typescript",
+  isTestsVariant: true,
+  packageManager: TEST_PACKAGE_MANAGER,
+};
+
+export const PYTHON_DEFAULT_TEMPLATE_CONFIG: TemplateTestConfig = {
+  templateName: TEMPLATE_NAMES.PYTHON_DEFAULT,
+  displayName: "Python Default Template",
+  projectDirSuffix: "py-default",
+  appName: APP_NAMES.PYTHON_DEFAULT,
+  language: "python",
+  isTestsVariant: false,
+  packageManager: "pip",
+};
+
+export const PYTHON_TESTS_TEMPLATE_CONFIG: TemplateTestConfig = {
+  templateName: TEMPLATE_NAMES.PYTHON_TESTS,
+  displayName: "Python Tests Template",
+  projectDirSuffix: "py-tests",
+  appName: APP_NAMES.PYTHON_TESTS,
+  language: "python",
+  isTestsVariant: true,
+  packageManager: "pip",
+};
+
 const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
-  {
-    templateName: TEMPLATE_NAMES.TYPESCRIPT_DEFAULT,
-    displayName: `TypeScript Default Template (${TEST_PACKAGE_MANAGER})`,
-    projectDirSuffix: `ts-default-${TEST_PACKAGE_MANAGER}`,
-    appName: APP_NAMES.TYPESCRIPT_DEFAULT,
-    language: "typescript",
-    isTestsVariant: false,
-    packageManager: TEST_PACKAGE_MANAGER,
-  },
-  {
-    templateName: TEMPLATE_NAMES.TYPESCRIPT_TESTS,
-    displayName: `TypeScript Tests Template (${TEST_PACKAGE_MANAGER})`,
-    projectDirSuffix: `ts-tests-${TEST_PACKAGE_MANAGER}`,
-    appName: APP_NAMES.TYPESCRIPT_TESTS,
-    language: "typescript",
-    isTestsVariant: true,
-    packageManager: TEST_PACKAGE_MANAGER,
-  },
-  {
-    templateName: TEMPLATE_NAMES.PYTHON_DEFAULT,
-    displayName: "Python Default Template",
-    projectDirSuffix: "py-default",
-    appName: APP_NAMES.PYTHON_DEFAULT,
-    language: "python",
-    isTestsVariant: false,
-    packageManager: "pip",
-  },
-  {
-    templateName: TEMPLATE_NAMES.PYTHON_TESTS,
-    displayName: "Python Tests Template",
-    projectDirSuffix: "py-tests",
-    appName: APP_NAMES.PYTHON_TESTS,
-    language: "python",
-    isTestsVariant: true,
-    packageManager: "pip",
-  },
+  TYPESCRIPT_DEFAULT_TEMPLATE_CONFIG,
+  TYPESCRIPT_TESTS_TEMPLATE_CONFIG,
+  PYTHON_DEFAULT_TEMPLATE_CONFIG,
+  PYTHON_TESTS_TEMPLATE_CONFIG,
 ];
 
 const buildDevEnv = (
@@ -192,7 +202,7 @@ const buildDevEnv = (
   });
 };
 
-const createTemplateTestSuite = (config: TemplateTestConfig) => {
+export const createTemplateTestSuite = (config: TemplateTestConfig): void => {
   const testName =
     config.isTestsVariant ?
       `${config.language} template tests main`
@@ -3043,6 +3053,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       describe("DLQ with namespace prefixing", function () {
         const NAMESPACE = "testns";
         const NS_APP_NAME = `${config.appName}-ns`;
+        const NS_PROXY_PORT =
+          config.language === "typescript" ? "4091" : "4101";
         let nsProjectDir: string;
         let nsDevProcess: ChildProcess | null = null;
 
@@ -3079,10 +3091,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          const devEnv = {
-            ...buildDevEnv(config.language, nsProjectDir),
-            MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
-          };
+          const devEnv = buildMooseDevEnv({
+            language: config.language,
+            projectDir: nsProjectDir,
+            extraEnv: {
+              TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+              TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
+              MOOSE_HTTP_SERVER_CONFIG__PROXY_PORT: NS_PROXY_PORT,
+              MOOSE_REDPANDA_CONFIG__NAMESPACE: NAMESPACE,
+            },
+          });
 
           nsDevProcess = startMooseDev({
             cliPath: CLI_PATH,
@@ -3273,22 +3292,38 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
   });
 };
 
-describe("Moose Templates", () => {
-  // Generate test suites for all template configurations
-  TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
-});
+export const registerTemplateGlobalHooks = (): void => {
+  before(async function () {
+    this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+    await performGlobalCleanup(
+      "Running global setup - cleaning Docker state from previous runs...",
+    );
+  });
 
-// Global setup to clean Docker state from previous runs (useful for local dev)
-// Github hosted runners start with a clean slate.
-before(async function () {
-  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
-  await performGlobalCleanup(
-    "Running global setup - cleaning Docker state from previous runs...",
-  );
-});
+  after(async function () {
+    this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+    await performGlobalCleanup();
+  });
+};
 
-// Global cleanup to ensure no hanging processes
-after(async function () {
-  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
-  await performGlobalCleanup();
-});
+const VALID_TEMPLATE_TARGETS = new Set([
+  "ts-default",
+  "ts-tests-main",
+  "py-default",
+  "py-tests-main",
+]);
+const templateTarget = process.env.E2E_TEMPLATE_TARGET;
+
+if (templateTarget && !VALID_TEMPLATE_TARGETS.has(templateTarget)) {
+  throw new Error(`Unsupported E2E_TEMPLATE_TARGET: ${templateTarget}`);
+}
+
+if (!templateTarget) {
+  registerCliVersionTest();
+
+  describe("Moose Templates", () => {
+    TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
+  });
+
+  registerTemplateGlobalHooks();
+}

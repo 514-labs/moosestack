@@ -55,6 +55,10 @@ pub enum DestructiveChange {
         database: Option<String>,
         view_name: String,
     },
+    DictionaryDrop {
+        database: Option<String>,
+        dictionary_name: String,
+    },
 }
 
 fn fmt_qualified(f: &mut fmt::Formatter<'_>, db: &Option<String>, name: &str) -> fmt::Result {
@@ -107,6 +111,43 @@ impl fmt::Display for DestructiveChange {
                 write!(f, "DROP MATERIALIZED VIEW ")?;
                 fmt_qualified(f, database, view_name)
             }
+            DestructiveChange::DictionaryDrop {
+                database,
+                dictionary_name,
+            } => {
+                write!(f, "DROP DICTIONARY ")?;
+                fmt_qualified(f, database, dictionary_name)
+            }
+        }
+    }
+}
+
+/// A non-destructive but operationally significant change identified in a migration plan.
+///
+/// Operational risks do not block execution (unlike destructive changes) but are surfaced
+/// as warnings so operators can anticipate performance or availability impact.
+#[derive(Debug, Clone)]
+pub enum OperationalRisk {
+    /// Replacing a dictionary that uses a cache-based layout causes a full re-fetch from
+    /// the source on the next load, temporarily increasing source system load.
+    DictionaryReplace {
+        database: Option<String>,
+        dictionary_name: String,
+        layout_type: String,
+    },
+}
+
+impl fmt::Display for OperationalRisk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OperationalRisk::DictionaryReplace {
+                database,
+                dictionary_name,
+                layout_type,
+            } => {
+                write!(f, "REPLACE DICTIONARY ({layout_type} layout) ")?;
+                fmt_qualified(f, database, dictionary_name)
+            }
         }
     }
 }
@@ -120,12 +161,20 @@ pub struct PlanRisk {
     /// Every destructive operation found in the plan. Empty when the migration
     /// is purely additive / non-destructive.
     pub destructive_changes: Vec<DestructiveChange>,
+    /// Operationally significant but non-destructive changes.
+    /// Logged as warnings; do not gate execution.
+    pub operational_risks: Vec<OperationalRisk>,
 }
 
 impl PlanRisk {
     /// Returns `true` when the plan contains at least one destructive operation.
     pub fn is_destructive(&self) -> bool {
         !self.destructive_changes.is_empty()
+    }
+
+    /// Returns `true` when the plan contains at least one operational risk.
+    pub fn has_operational_risks(&self) -> bool {
+        !self.operational_risks.is_empty()
     }
 
     /// Removes column drops that the user already approved during the rename
@@ -163,6 +212,23 @@ pub struct ApprovedColumnDrop {
     pub column_name: String,
 }
 
+/// Returns `true` if `layout` is a cache-based variant.
+///
+/// Cache layouts cause a full re-fetch from the source when a dictionary is replaced,
+/// which can temporarily increase source-system load.
+fn is_cache_layout(
+    layout: &crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout,
+) -> bool {
+    use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+    matches!(
+        layout,
+        DictionaryLayout::Cache { .. }
+            | DictionaryLayout::SsdCache { .. }
+            | DictionaryLayout::ComplexKeyCache { .. }
+            | DictionaryLayout::ComplexKeySsdCache { .. }
+    )
+}
+
 /// Walks the OLAP changes and collects every operation that may cause data loss.
 ///
 /// A `TableChange::Removed` followed by a `TableChange::Added` with the same
@@ -170,6 +236,7 @@ pub struct ApprovedColumnDrop {
 /// `ColumnChange::Renamed` is non-destructive and is intentionally skipped.
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
     let mut destructive_changes = Vec::new();
+    let mut operational_risks = Vec::new();
 
     // Collect (database, name) pairs for tables that are both removed and added (recreates).
     let removed_table_keys: HashSet<(Option<&str>, &str)> = changes
@@ -245,12 +312,28 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
                     view_name: v.name.clone(),
                 });
             }
+            OlapChange::OlapDictionary(Change::Removed(dict)) => {
+                destructive_changes.push(DestructiveChange::DictionaryDrop {
+                    database: dict.database.clone(),
+                    dictionary_name: dict.name.clone(),
+                });
+            }
+            OlapChange::OlapDictionary(Change::Updated { after, .. })
+                if is_cache_layout(&after.layout) =>
+            {
+                operational_risks.push(OperationalRisk::DictionaryReplace {
+                    database: after.database.clone(),
+                    dictionary_name: after.name.clone(),
+                    layout_type: after.layout.layout_type_label().to_string(),
+                });
+            }
             _ => {}
         }
     }
 
     PlanRisk {
         destructive_changes,
+        operational_risks,
     }
 }
 
@@ -308,12 +391,19 @@ pub fn classify_risk_from_deltas(
                     view_name: view.name.clone(),
                 });
             }
+            InfraDelta::DropDictionary { dict } => {
+                destructive_changes.push(DestructiveChange::DictionaryDrop {
+                    database: dict.database.clone(),
+                    dictionary_name: dict.name.clone(),
+                });
+            }
             _ => {}
         }
     }
 
     PlanRisk {
         destructive_changes,
+        operational_risks: Vec::new(),
     }
 }
 
@@ -1472,6 +1562,7 @@ mod tests {
                 reason: "order by changed".to_string(),
                 version: Some(v),
             }],
+            operational_risks: vec![],
         };
         let info = collect_destructive_table_info(&risk);
         assert_eq!(info.len(), 1);
@@ -1487,6 +1578,7 @@ mod tests {
                 table_name_with_suffix: "Users".to_string(),
                 version: None,
             }],
+            operational_risks: vec![],
         };
         let info = collect_destructive_table_info(&risk);
         assert_eq!(info.len(), 1);
@@ -1510,8 +1602,211 @@ mod tests {
                     column_name: "old_col".to_string(),
                 },
             ],
+            operational_risks: vec![],
         };
         let info = collect_destructive_table_info(&risk);
         assert!(info.is_empty());
+    }
+
+    // ─── Dictionary risk tests ───────────────────────────────────────────────
+
+    fn make_simple_dict(
+        name: &str,
+        layout: crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout,
+    ) -> crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryLifetime, DictionaryQuerySource, DictionarySource, OlapDictionary,
+        };
+        use std::collections::HashMap;
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Query(DictionaryQuerySource {
+                query: "SELECT id, val FROM src".to_string(),
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![],
+            layout,
+            lifetime: DictionaryLifetime::Single { seconds: 300 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn dictionary_drop_is_destructive() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::OlapDictionary(Change::Removed(Box::new(
+                make_simple_dict(
+                    "dict_products",
+                    DictionaryLayout::Hashed {
+                        initial_array_size: None,
+                        max_load_factor: None,
+                    },
+                ),
+            ))));
+
+        let risk = classify_plan_risk(&changes);
+        assert!(risk.is_destructive());
+        assert!(matches!(
+            &risk.destructive_changes[0],
+            DestructiveChange::DictionaryDrop { database: None, dictionary_name }
+                if dictionary_name == "dict_products"
+        ));
+    }
+
+    #[test]
+    fn dictionary_replace_cache_layout_has_operational_risk() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let before = make_simple_dict(
+            "dict_products",
+            DictionaryLayout::Cache {
+                size_in_cells: 1000,
+                max_threads_for_updates: None,
+            },
+        );
+        let after = make_simple_dict(
+            "dict_products",
+            DictionaryLayout::Cache {
+                size_in_cells: 2000,
+                max_threads_for_updates: None,
+            },
+        );
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::OlapDictionary(Change::Updated {
+                before: Box::new(before),
+                after: Box::new(after),
+            }));
+
+        let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive(), "Cache replace is not destructive");
+        assert!(risk.has_operational_risks());
+        assert!(matches!(
+            &risk.operational_risks[0],
+            OperationalRisk::DictionaryReplace { dictionary_name, layout_type, .. }
+                if dictionary_name == "dict_products" && layout_type == "Cache"
+        ));
+    }
+
+    #[test]
+    fn dictionary_replace_hashed_layout_no_operational_risk() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let before = make_simple_dict(
+            "dict_products",
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let after = make_simple_dict(
+            "dict_products",
+            DictionaryLayout::Hashed {
+                initial_array_size: Some(512),
+                max_load_factor: None,
+            },
+        );
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::OlapDictionary(Change::Updated {
+                before: Box::new(before),
+                after: Box::new(after),
+            }));
+
+        let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive());
+        assert!(!risk.has_operational_risks());
+    }
+
+    #[test]
+    fn dictionary_add_is_not_destructive() {
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::OlapDictionary(Change::Added(Box::new(
+                make_simple_dict("dict_products", DictionaryLayout::Flat),
+            ))));
+
+        let risk = classify_plan_risk(&changes);
+        assert!(!risk.is_destructive());
+        assert!(!risk.has_operational_risks());
+    }
+
+    // ── classify_risk_from_deltas — dictionary coverage ──────────────────────
+
+    #[test]
+    fn delta_drop_dictionary_is_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let dict = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let deltas = vec![InfraDelta::DropDictionary { dict }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            risk.is_destructive(),
+            "DropDictionary delta must be classified as destructive"
+        );
+        assert!(
+            matches!(
+                &risk.destructive_changes[0],
+                DestructiveChange::DictionaryDrop { dictionary_name, .. }
+                    if dictionary_name == "dict_orders"
+            ),
+            "Expected DictionaryDrop for 'dict_orders', got {:?}",
+            risk.destructive_changes
+        );
+    }
+
+    #[test]
+    fn delta_create_dictionary_is_not_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let dict = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let deltas = vec![InfraDelta::CreateDictionary { dict }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            !risk.is_destructive(),
+            "CreateDictionary delta must not be classified as destructive"
+        );
+    }
+
+    #[test]
+    fn delta_replace_dictionary_is_not_destructive() {
+        use crate::framework::core::infra_delta::InfraDelta;
+        use crate::infrastructure::olap::clickhouse::dictionary::DictionaryLayout;
+
+        let before = make_simple_dict("dict_orders", DictionaryLayout::Flat);
+        let after = make_simple_dict(
+            "dict_orders",
+            DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+        );
+        let deltas = vec![InfraDelta::ReplaceDictionary { before, after }];
+
+        let risk = classify_risk_from_deltas(&deltas);
+
+        assert!(
+            !risk.is_destructive(),
+            "ReplaceDictionary delta must not be classified as destructive"
+        );
     }
 }
