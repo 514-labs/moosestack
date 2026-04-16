@@ -43,14 +43,8 @@
           # Safe-chain wrapper for malware protection
           safeChain = inputs.safe-chain-nix.lib.${system}.safeChain;
 
-          # Rust toolchain
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-            extensions = [
-              "rust-src"
-              "clippy"
-              "rustfmt"
-            ];
-          };
+          # Rust toolchain pinned from rust-toolchain.toml
+          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
           # Node.js with PNPM (wrapped with safe-chain for malware protection)
           nodejs = safeChain.wrapNode pkgs.nodejs_20;

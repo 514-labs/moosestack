@@ -116,7 +116,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -173,7 +172,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -288,7 +286,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
@@ -370,7 +367,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -446,7 +442,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -509,7 +504,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -589,7 +583,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -655,7 +648,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -715,7 +707,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -783,7 +774,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -839,7 +829,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
           # This allows cache sharing across all Linux/macOS jobs in this workflow
@@ -903,7 +892,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
@@ -957,7 +945,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
@@ -1010,7 +997,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
@@ -1056,7 +1042,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           components: rustfmt, clippy
           cache: true
           # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
