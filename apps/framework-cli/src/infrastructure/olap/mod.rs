@@ -107,6 +107,18 @@ pub trait OlapOperations {
         db_name: &str,
     ) -> Result<Vec<SelectRowPolicy>, OlapChangesError>;
 
+    /// Retrieves the names of all dictionaries present in the given database.
+    ///
+    /// Used for reality checking — presence/absence only; full schema diffing is
+    /// handled by comparing `SHOW CREATE DICTIONARY` output via `normalize_sql`.
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list dictionaries from
+    ///
+    /// # Returns
+    /// * `Result<Vec<String>, OlapChangesError>` - Dictionary names found in the database
+    async fn list_dictionaries(&self, db_name: &str) -> Result<Vec<String>, OlapChangesError>;
+
     /// Normalizes SQL using the database's native formatting.
     ///
     /// This is used to compare SQL statements for semantic equivalence,

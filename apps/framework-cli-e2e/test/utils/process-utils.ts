@@ -252,16 +252,16 @@ export const killRemainingProcesses = async (
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
-  // Default infrastructure ports used when no override is provided.
-  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 16379, 7233];
+  // Default ports for a single dev server instance when no override is provided.
+  const defaultPorts = [
+    4000, 4001, 5001, 18123, 19000, 9181, 9234, 19092, 16379, 7233,
+  ];
   const rawPorts =
     Array.isArray(options.ports) ? options.ports
     : options.ports ? Object.values(options.ports)
     : defaultPorts;
   const portsToKill = [...new Set(rawPorts)];
-  const portsToWait = portsToKill.filter((port) =>
-    [18123, 19000, 9181, 9234, 19092, 16379, 7233].includes(port),
-  );
+  const portsToWait = portsToKill;
 
   // Kill processes holding the specified ports.
   try {
