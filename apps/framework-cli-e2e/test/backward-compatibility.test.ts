@@ -125,7 +125,7 @@ async function checkLatestPublishedCLI(): Promise<void> {
 
 async function getCliVersion(cliPath: string): Promise<string> {
   const { stdout } = await execAsync(`"${cliPath}" --version`);
-  return stdout.trim();
+  return stdout.trim().replace(/^moose-cli\s+/, "");
 }
 
 async function getInstalledTypeScriptLibVersion(
