@@ -144,6 +144,40 @@ fn normalize_source_tables(tables: &[String], default_database: &str) -> HashSet
         .collect()
 }
 
+/// Returns all key forms that can identify a view in infra maps.
+///
+/// - `database::name` for database-scoped views
+/// - `name` for default-db / legacy unscoped entries
+fn view_lookup_keys(view: &View, default_database: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+
+    if let Some(db) = &view.database {
+        keys.push(format!("{}::{}", db, view.name));
+    }
+
+    if view.database.is_none() || view.database.as_deref() == Some(default_database) {
+        keys.push(view.name.clone());
+    }
+
+    if keys.is_empty() {
+        keys.push(view.name.clone());
+    }
+
+    keys
+}
+
+fn find_actual_view_for_id<'a>(
+    actual_views: &'a [View],
+    view_id: &str,
+    default_database: &str,
+) -> Option<&'a View> {
+    actual_views.iter().find(|view| {
+        view_lookup_keys(view, default_database)
+            .iter()
+            .any(|candidate| candidate == view_id)
+    })
+}
+
 /// Checks if two MaterializedViews are semantically equivalent.
 /// Compares target table, source tables (order-independent), and normalized SELECT SQL.
 /// Uses default_database to normalize `None` database references.
@@ -512,7 +546,7 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         // Convert SQL resources from reality to structured types (MVs and views)
         // This allows us to compare them with the infra_map's materialized_views and views
         let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
-        let mut actual_views: HashMap<String, View> = HashMap::new();
+        let mut actual_views: Vec<View> = Vec::new();
         let mut remaining_sql_resources: Vec<SqlResource> = Vec::new();
 
         for sql_resource in actual_sql_resources {
@@ -533,7 +567,7 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
                 &infra_map.default_database,
             ) {
                 debug!("Converted SQL resource '{}' to View", sql_resource.name);
-                actual_views.insert(view.name.clone(), view);
+                actual_views.push(view);
             }
             // Keep as SqlResource if it doesn't match MV or View patterns
             else {
@@ -712,9 +746,13 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 
         // Compare Views
         debug!("Comparing views with infrastructure map");
+        let actual_view_ids: HashSet<String> = actual_views
+            .iter()
+            .flat_map(|v| view_lookup_keys(v, &infra_map.default_database))
+            .collect();
         debug!(
             "Actual view IDs: {:?}",
-            actual_views.keys().collect::<Vec<_>>()
+            actual_view_ids.iter().collect::<Vec<_>>()
         );
         debug!(
             "Infrastructure map view IDs: {:?}",
@@ -723,8 +761,12 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 
         // Find unmapped views (exist in reality but not in map)
         let unmapped_views: Vec<_> = actual_views
-            .values()
-            .filter(|view| !infra_map.views.contains_key(&view.name))
+            .iter()
+            .filter(|view| {
+                !view_lookup_keys(view, &infra_map.default_database)
+                    .iter()
+                    .any(|id| infra_map.views.contains_key(id))
+            })
             .cloned()
             .collect();
 
@@ -734,7 +776,9 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         let missing_views: Vec<String> = infra_map
             .views
             .keys()
-            .filter(|id| !actual_views.contains_key(*id))
+            .filter(|id| {
+                find_actual_view_for_id(&actual_views, id, &infra_map.default_database).is_none()
+            })
             .cloned()
             .collect();
 
@@ -748,7 +792,9 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
         // Normalize SQL at the edge using ClickHouse's native formatting
         let mut mismatched_views = Vec::new();
         for (id, desired) in &infra_map.views {
-            if let Some(actual) = actual_views.get(id) {
+            if let Some(actual) =
+                find_actual_view_for_id(&actual_views, id, &infra_map.default_database)
+            {
                 // Normalize both SQLs via ClickHouse for accurate comparison
                 let actual_sql_normalized = self
                     .olap_client

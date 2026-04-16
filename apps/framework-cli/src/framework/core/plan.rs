@@ -13,6 +13,7 @@
 ///
 /// The resulting plan is then used by the execution module to apply the changes.
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
+use crate::framework::core::infrastructure::view::View;
 use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
@@ -28,6 +29,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use tracing::{debug, error, info};
+
+/// Returns key candidates that may identify a view in infra maps.
+///
+/// New multi-database view IDs use `database::name`. Legacy/default-db IDs use `name`.
+/// During reconciliation we accept both forms to avoid dropping existing scoped views.
+fn view_reconciliation_ids(view: &View, default_database: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+
+    if let Some(db) = &view.database {
+        ids.push(format!("{}::{}", db, view.name));
+    }
+
+    if view.database.is_none() || view.database.as_deref() == Some(default_database) {
+        ids.push(view.name.clone());
+    }
+
+    if ids.is_empty() {
+        ids.push(view.name.clone());
+    }
+
+    ids
+}
 
 /// Filter sets used by `reconcile_with_reality` to decide which unmapped database
 /// objects to adopt into the infrastructure map.
@@ -522,29 +545,49 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     // Same filtering logic as unmapped tables/SQL resources—only adopt views in filter
     // to avoid managing external views.
     for unmapped_view in discrepancies.unmapped_views {
-        let name = &unmapped_view.name;
-
-        if filter.view_ids.contains(name) {
+        let candidate_ids =
+            view_reconciliation_ids(&unmapped_view, &reconciled_map.default_database);
+        if let Some(key) = candidate_ids
+            .iter()
+            .find(|id| filter.view_ids.contains(*id))
+            .cloned()
+        {
             debug!(
                 "Adding unmapped view found in reality to infrastructure map: {}",
-                name
+                key
             );
-            reconciled_map.views.insert(name.clone(), unmapped_view);
+            reconciled_map.views.insert(key, unmapped_view);
         }
     }
 
     // Update mismatched views (exist in both but differ)
     for change in discrepancies.mismatched_views {
         match change {
-            OlapChange::View(Change::Updated { before, .. }) => {
+            OlapChange::View(Change::Updated { before, after }) => {
                 // We use 'before' (the actual view from reality) because we want the
                 // reconciled map to reflect the current state of the database.
-                let name = &before.name;
+                let mut candidate_ids =
+                    view_reconciliation_ids(&before, &reconciled_map.default_database);
+                for id in view_reconciliation_ids(&after, &reconciled_map.default_database) {
+                    if !candidate_ids.iter().any(|existing| existing == &id) {
+                        candidate_ids.push(id);
+                    }
+                }
+                let key = candidate_ids
+                    .iter()
+                    .find(|id| reconciled_map.views.contains_key(*id))
+                    .or_else(|| {
+                        candidate_ids
+                            .iter()
+                            .find(|id| filter.view_ids.contains(*id))
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| before.name.clone());
                 debug!(
                     "Updating mismatched view in infrastructure map to match reality: {}",
-                    name
+                    key
                 );
-                reconciled_map.views.insert(name.clone(), *before);
+                reconciled_map.views.insert(key, *before);
             }
             _ => {
                 tracing::warn!("Unexpected change type in mismatched_views: {:?}", change);
@@ -1755,6 +1798,60 @@ mod tests {
         assert_eq!(reconciled.sql_resources.len(), 1);
         let reconciled_view = reconciled.sql_resources.get(&reality_view.name).unwrap();
         assert_eq!(reconciled_view.setup, reality_view.setup);
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_with_reality_database_scoped_view_key() {
+        let mut project = create_test_project();
+        project.clickhouse_config.db_name = "analytics".to_string();
+
+        let mut infra_map = InfrastructureMap {
+            default_database: "analytics".to_string(),
+            ..InfrastructureMap::default()
+        };
+        infra_map.views.insert(
+            "analytics::orders_view".to_string(),
+            crate::framework::core::infrastructure::view::View {
+                name: "orders_view".to_string(),
+                database: Some("analytics".to_string()),
+                select_sql: "SELECT 1".to_string(),
+                source_tables: vec![],
+                metadata: None,
+            },
+        );
+
+        let reality_view = SqlResource {
+            name: "orders_view".to_string(),
+            database: Some("analytics".to_string()),
+            source_file: None,
+            source_line: None,
+            source_column: None,
+            setup: vec!["CREATE VIEW IF NOT EXISTS orders_view AS SELECT 2".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS orders_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let filter = ReconciliationFilter::from_infra_map(&infra_map);
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &filter,
+            MockOlapClient {
+                tables: vec![],
+                sql_resources: vec![reality_view],
+            },
+        )
+        .await
+        .unwrap();
+
+        // Regression guard: keep the database-qualified key so follow-up diffs/migrations
+        // update the existing view instead of re-adding it under a different ID.
+        assert!(reconciled.views.contains_key("analytics::orders_view"));
+        assert_eq!(
+            reconciled.views["analytics::orders_view"].select_sql,
+            "SELECT 2"
+        );
     }
 
     #[test]
