@@ -151,11 +151,31 @@ impl StateStorage for RedisStateStorage {
     }
 
     async fn load_applied_migrations(&self) -> Result<Vec<String>> {
+        // Try current prefix first (same-deployment restarts); fall back to the
+        // previous deploy's prefix so applied-migration state survives a new
+        // deploy_id. Without this fallback, every deployment would replay all
+        // delta files and fail on parent_state_hash validation because the
+        // infra map (which does carry over via load_from_last_redis_prefix) is
+        // already past the first migration's parent hash.
         let value: Option<String> = self
             .client
             .get_with_service_prefix(Self::APPLIED_MIGRATIONS_KEY)
             .await?;
-        match value {
+        if let Some(json) = value {
+            return Ok(serde_json::from_str(&json)?);
+        }
+
+        let last_prefix = &self.client.config.last_key_prefix;
+        let default_prefix = crate::infrastructure::redis::RedisConfig::default_key_prefix();
+        if *last_prefix == default_prefix {
+            return Ok(vec![]);
+        }
+
+        let fallback: Option<String> = self
+            .client
+            .get_with_explicit_prefix(last_prefix, Self::APPLIED_MIGRATIONS_KEY)
+            .await?;
+        match fallback {
             Some(json) => Ok(serde_json::from_str(&json)?),
             None => Ok(vec![]),
         }
