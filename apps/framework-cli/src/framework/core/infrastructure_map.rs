@@ -4112,10 +4112,13 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
 /// username changes and trigger a dictionary rebuild.
 fn mask_dict_credentials(dict: &mut OlapDictionary) {
     use crate::infrastructure::olap::clickhouse::dictionary::{
-        DictionarySource, ExternalDictionarySource,
+        DictionarySource, ExternalDictionarySource, ExternalDictionarySourceWrapper,
     };
-    if let DictionarySource::External(ref mut ext) = dict.source {
-        match ext {
+    if let DictionarySource::External(ExternalDictionarySourceWrapper {
+        ref mut external_source,
+    }) = dict.source
+    {
+        match external_source {
             ExternalDictionarySource::ClickHouse(s) => {
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
