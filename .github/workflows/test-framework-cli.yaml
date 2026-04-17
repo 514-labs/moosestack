@@ -1031,7 +1031,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
@@ -1043,13 +1042,7 @@ jobs:
 
       - name: Inspect Logs
         if: always()
-        run: |
-          cat ~/.moose/*-cli.log || true
-
-      - name: Inspect Docker Logs
-        if: failure()
-        run: |
-          docker compose -p moose-prod-docker-test logs --tail=200 || true
+        uses: ./.github/actions/dump-cli-logs
 
   lints:
     needs: detect-changes
