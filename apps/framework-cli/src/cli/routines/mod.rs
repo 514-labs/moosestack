@@ -985,22 +985,33 @@ pub async fn start_production_mode(
     maybe_warmup_connections(&project, &redis_client).await;
 
     let use_deltas = project.features.migrate_with_deltas;
-    let has_delta_files = use_deltas && has_delta_migration_files()?;
-    let has_legacy_plan_yaml = !use_deltas && std::fs::exists(MIGRATION_FILE)?;
-    let execute_migration_yaml = has_delta_files || has_legacy_plan_yaml;
+    // "Pending" here means the delta file exists on disk but its id is not yet in
+    // `applied_migrations`. We deliberately do NOT key off "any delta file exists"
+    // because delta files are permanent in git — once a single one is committed,
+    // an any-file check would permanently short-circuit the block gate below and
+    // force skip_olap=true forever, silently hiding future un-migrated changes.
+    let has_unapplied_delta_files =
+        use_deltas && has_unapplied_delta_migrations(&project, &*state_storage).await?;
+    let has_legacy_plan_yaml =
+        !use_deltas && std::fs::exists(project.project_location.join(MIGRATION_FILE))?;
+    let execute_migration_yaml = has_unapplied_delta_files || has_legacy_plan_yaml;
 
     if !execute_migration_yaml {
-        info!("Migration file not found.")
+        if use_deltas {
+            info!("No pending delta migration files found under ./migrations/.");
+        } else {
+            info!("Legacy migration plan.yaml not found.");
+        }
     }
 
     // Delta mode: all OLAP changes must flow through a committed delta file.
-    // If changes are pending and no delta file exists, block startup — auto-applying
-    // via execute_initial_infra_change would mutate Redis's infrastructure map and
-    // invalidate the parent_state_hash of any later-generated delta.
-    if use_deltas && !has_delta_files && !plan.changes.olap_changes.is_empty() {
+    // If changes are pending and no unapplied delta covers them, block startup —
+    // auto-applying via execute_initial_infra_change would mutate Redis's infrastructure
+    // map and invalidate the parent_state_hash of any later-generated delta.
+    if use_deltas && !has_unapplied_delta_files && !plan.changes.olap_changes.is_empty() {
         return Err(anyhow::anyhow!(
             "Production startup blocked: {} pending OLAP change(s) detected but no \
-             delta migration files exist in ./migrations/.\n\n\
+             unapplied delta migration files exist in ./migrations/.\n\n\
              In delta mode, every infrastructure change must flow through a \
              committed migration file so prod can apply them with a validated \
              parent state hash.\n\n\
@@ -1041,7 +1052,7 @@ pub async fn start_production_mode(
         }
     }
 
-    if has_delta_files {
+    if has_unapplied_delta_files {
         migrate::execute_migration_deltas(
             &project,
             &project.clickhouse_config,
@@ -1109,19 +1120,34 @@ pub async fn start_production_mode(
     Ok(())
 }
 
-/// Returns true if `./migrations/` contains any delta migration YAML files.
+/// Returns true if `{project}/migrations/` contains delta migration files that
+/// have not yet been recorded in `applied_migrations`.
 ///
 /// Delta files are any `*.yaml` under the directory other than the legacy
 /// `plan.yaml` / `pending.yaml`. Parses them via `MigrationHistory::load_from_dir`
 /// so malformed files surface as errors rather than being silently skipped.
-fn has_delta_migration_files() -> anyhow::Result<bool> {
-    let dir = std::path::Path::new("./migrations");
+///
+/// Checking only for file presence would be incorrect: delta files are permanent
+/// in version control, so once any delta is committed the presence check would
+/// return true on every subsequent deploy and bypass the destructive gate even
+/// when the user added new un-migrated code changes. Filtering by
+/// `load_applied_migrations` means this returns true only when there is genuinely
+/// new migration work to run.
+async fn has_unapplied_delta_migrations(
+    project: &Project,
+    state_storage: &dyn crate::framework::core::state_storage::StateStorage,
+) -> anyhow::Result<bool> {
+    let dir = project.project_location.join("migrations");
     if !dir.exists() {
         return Ok(false);
     }
-    let history = MigrationHistory::load_from_dir(dir)
+    let history = MigrationHistory::load_from_dir(&dir)
         .map_err(|e| anyhow::anyhow!("Failed to load migration files: {}", e))?;
-    Ok(!history.is_empty())
+    if history.is_empty() {
+        return Ok(false);
+    }
+    let applied = state_storage.load_applied_migrations().await?;
+    Ok(history.files.iter().any(|f| !applied.contains(&f.id)))
 }
 
 fn prepend_base_url(base_url: Option<&str>, path: &str) -> String {

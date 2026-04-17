@@ -157,6 +157,12 @@ impl StateStorage for RedisStateStorage {
         // delta files and fail on parent_state_hash validation because the
         // infra map (which does carry over via load_from_last_redis_prefix) is
         // already past the first migration's parent hash.
+        //
+        // The fallback guard matches `load_from_last_redis_prefix` semantics:
+        // skip only when `last_key_prefix` would re-read the current prefix
+        // (i.e. they're identical). A previous deploy that legitimately ran
+        // with the default prefix still gets its applied list carried forward,
+        // consistent with how the infra map itself is loaded.
         let value: Option<String> = self
             .client
             .get_with_service_prefix(Self::APPLIED_MIGRATIONS_KEY)
@@ -166,8 +172,8 @@ impl StateStorage for RedisStateStorage {
         }
 
         let last_prefix = &self.client.config.last_key_prefix;
-        let default_prefix = crate::infrastructure::redis::RedisConfig::default_key_prefix();
-        if *last_prefix == default_prefix {
+        let current_prefix = &self.client.config.key_prefix;
+        if last_prefix == current_prefix {
             return Ok(vec![]);
         }
 
