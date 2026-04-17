@@ -726,11 +726,7 @@ system.forceSearchAttributesCacheRefreshOnRead:
         dockerfile_path: Option<&Path>,
     ) -> std::io::Result<()> {
         let mut cmd = self.create_command();
-        cmd.current_dir(directory)
-            .arg("build")
-            .arg("--load")
-            .arg("-t")
-            .arg(tag);
+        cmd.current_dir(directory).arg("build").arg("-t").arg(tag);
 
         if let Some(path) = dockerfile_path {
             cmd.arg("-f").arg(path);

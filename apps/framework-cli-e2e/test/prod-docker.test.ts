@@ -9,7 +9,7 @@
  * the service comes up healthy.
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -71,8 +71,17 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 
 function dumpComposeLogs(cwd: string): void {
   try {
-    const logs = execSync(
-      `docker compose -f docker-compose.prod-test.yml -p ${COMPOSE_PROJECT_NAME} logs --tail=300`,
+    const logs = execFileSync(
+      "docker",
+      [
+        "compose",
+        "-f",
+        "docker-compose.prod-test.yml",
+        "-p",
+        COMPOSE_PROJECT_NAME,
+        "logs",
+        "--tail=300",
+      ],
       {
         cwd,
         encoding: "utf-8",
@@ -118,19 +127,30 @@ function ensureLinuxCliBinary(): string {
   // to avoid virtiofs race conditions that cause "can't find crate" errors.
   // After building, we copy the binary out to the host.
   const platform = os.arch() === "arm64" ? "arm64" : "amd64";
-  execSync(
+  execFileSync(
+    "docker",
     [
-      "docker run --rm",
-      `--platform linux/${platform}`,
-      `-v "${REPO_ROOT}":/workspace`,
-      "-v moose-prod-test-cargo-registry:/usr/local/cargo/registry",
-      "-v moose-prod-test-cargo-git:/usr/local/cargo/git",
-      "-v moose-prod-test-target:/build-target",
-      `-v "${path.dirname(linuxBinary)}":/output`,
-      "-w /workspace",
+      "run",
+      "--rm",
+      "--platform",
+      `linux/${platform}`,
+      "-v",
+      `${REPO_ROOT}:/workspace`,
+      "-v",
+      "moose-prod-test-cargo-registry:/usr/local/cargo/registry",
+      "-v",
+      "moose-prod-test-cargo-git:/usr/local/cargo/git",
+      "-v",
+      "moose-prod-test-target:/build-target",
+      "-v",
+      `${path.dirname(linuxBinary)}:/output`,
+      "-w",
+      "/workspace",
       `rust:${rustToolchain}`,
-      `bash -c "apt-get update -qq && apt-get install -y -qq protobuf-compiler > /dev/null 2>&1 && CARGO_TARGET_DIR=/build-target cargo build --package moose-cli && cp /build-target/debug/moose-cli /output/${path.basename(linuxBinary)}"`,
-    ].join(" "),
+      "bash",
+      "-c",
+      `apt-get update -qq && apt-get install -y -qq protobuf-compiler > /dev/null 2>&1 && CARGO_TARGET_DIR=/build-target cargo build --package moose-cli && cp /build-target/debug/moose-cli /output/${path.basename(linuxBinary)}`,
+    ],
     { encoding: "utf-8", stdio: "inherit", timeout: 20 * 60 * 1000 },
   );
 
@@ -140,12 +160,13 @@ function ensureLinuxCliBinary(): string {
 }
 
 function runCommand(
-  cmd: string,
+  file: string,
+  args: string[],
   opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): string {
   const startMs = Date.now();
-  console.log(`  > ${cmd}`);
-  const output = execSync(cmd, {
+  console.log(`  > ${file} ${args.join(" ")}`);
+  const output = execFileSync(file, args, {
     cwd: opts.cwd,
     env: { ...process.env, ...opts.env },
     encoding: "utf-8",
@@ -184,7 +205,7 @@ describe("Prod Docker Mode", function () {
     // instead of pulling @514labs/moose-lib@latest from npm.
     console.log("Packing local ts-moose-lib...");
     let startMs = Date.now();
-    const tgzFilename = execSync("pnpm pack", {
+    const tgzFilename = execFileSync("pnpm", ["pack"], {
       cwd: MOOSE_LIB_DIR,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
@@ -220,7 +241,7 @@ describe("Prod Docker Mode", function () {
     console.log("Building Docker image with moose-cli build --docker...");
     startMs = Date.now();
     try {
-      runCommand(`${CLI_PATH} build --docker`, {
+      runCommand(CLI_PATH, ["build", "--docker"], {
         cwd: testProjectDir,
         env: {
           MOOSE_TELEMETRY__ENABLED: "false",
@@ -247,7 +268,16 @@ describe("Prod Docker Mode", function () {
     console.log("Starting docker compose stack...");
     startMs = Date.now();
     runCommand(
-      `docker compose -f docker-compose.prod-test.yml -p ${COMPOSE_PROJECT_NAME} up -d`,
+      "docker",
+      [
+        "compose",
+        "-f",
+        "docker-compose.prod-test.yml",
+        "-p",
+        COMPOSE_PROJECT_NAME,
+        "up",
+        "-d",
+      ],
       { cwd: testProjectDir },
     );
     elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
@@ -283,8 +313,18 @@ describe("Prod Docker Mode", function () {
 
       try {
         console.log("Stopping docker compose stack...");
-        execSync(
-          `docker compose -f docker-compose.prod-test.yml -p ${COMPOSE_PROJECT_NAME} down -v --remove-orphans`,
+        execFileSync(
+          "docker",
+          [
+            "compose",
+            "-f",
+            "docker-compose.prod-test.yml",
+            "-p",
+            COMPOSE_PROJECT_NAME,
+            "down",
+            "-v",
+            "--remove-orphans",
+          ],
           {
             cwd: testProjectDir,
             encoding: "utf-8",
@@ -307,13 +347,10 @@ describe("Prod Docker Mode", function () {
 
     // Remove the locally-built test image
     try {
-      execSync(
-        "docker rmi moose-df-deployment-local:latest 2>/dev/null || true",
-        {
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      execFileSync("docker", ["rmi", "moose-df-deployment-local:latest"], {
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
     } catch {
       // image may not exist
     }

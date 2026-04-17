@@ -27,15 +27,14 @@ use tracing::{debug, error, info, warn};
 
 /// Returns true when the Docker build should copy a local binary into
 /// images instead of downloading from releases. Triggered by:
-/// - On Linux: `CLI_VERSION == "0.0.1"` or contains `"dev"` (can copy current_exe directly)
+/// - On Linux: `CLI_VERSION == "0.0.1"` (ad-hoc local dev builds)
 /// - Any OS: `MOOSE_DOCKER_LOCAL_BUILD` env var is set (explicit opt-in).
 ///   The env var value can be a path to a Linux binary; if empty/`"1"`, falls
 ///   back to `current_exe()` on Linux or errors on other platforms.
 fn is_local_dev_build() -> bool {
-    let version_is_dev =
-        constants::CLI_VERSION == "0.0.1" || constants::CLI_VERSION.contains("dev");
+    let version_is_local_dev = constants::CLI_VERSION == "0.0.1";
     let env_override = std::env::var("MOOSE_DOCKER_LOCAL_BUILD").is_ok();
-    (version_is_dev && cfg!(target_os = "linux")) || env_override
+    (version_is_local_dev && cfg!(target_os = "linux")) || env_override
 }
 
 /// Resolves the path to the Linux moose-cli binary for local Docker builds.
@@ -69,7 +68,7 @@ fn resolve_local_cli_binary() -> Result<PathBuf, String> {
 
 /// Docker install section for local dev builds -- copies the binary from the
 /// build context instead of downloading from releases.
-static MOOSE_INSTALL_LOCAL: &str = r#"# Install Moose (local dev binary)
+const MOOSE_INSTALL_LOCAL: &str = r#"# Install Moose (local dev binary)
 COPY moose-cli /usr/local/bin/moose
 RUN chmod +x /usr/local/bin/moose
 
@@ -77,7 +76,7 @@ RUN moose --version"#;
 
 /// Docker install section for release builds -- downloads the binary from
 /// the release server.
-static MOOSE_INSTALL_RELEASE: &str = r#"# Install Moose
+const MOOSE_INSTALL_RELEASE: &str = r#"# Install Moose
 ARG FRAMEWORK_VERSION="0.0.0"
 ARG DOWNLOAD_URL
 RUN echo "DOWNLOAD_URL: ${DOWNLOAD_URL}"
@@ -732,7 +731,10 @@ COPY --chown=moose:moose ./{} ./{}"#,
         }
     };
 
-    let moose_install = if is_local_dev_build() {
+    // Custom Dockerfiles persist in the project and are reused across builds,
+    // so always write the release install step. The local dev binary injection
+    // happens at build time via the managed Dockerfile in .moose/packager/.
+    let moose_install = if !project.docker_config.custom_dockerfile && is_local_dev_build() {
         MOOSE_INSTALL_LOCAL
     } else {
         MOOSE_INSTALL_RELEASE
@@ -1102,6 +1104,29 @@ pub fn build_dockerfile(
     );
 
     if is_local_dev {
+        // Ensure the staged moose-cli binary is inside the resolved build context.
+        // For monorepo builds the context switches to the workspace root, so
+        // we need to copy the binary there.
+        let staged_binary = internal_dir.join("packager/moose-cli");
+        let context_binary = build_context.join("moose-cli");
+        if staged_binary.exists() && staged_binary != context_binary {
+            info!(
+                "Copying moose-cli binary into build context: {} -> {}",
+                staged_binary.display(),
+                context_binary.display()
+            );
+            fs::copy(&staged_binary, &context_binary).map_err(|err| {
+                error!("Failed to copy moose-cli binary to build context: {}", err);
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to copy moose-cli binary to Docker build context".to_string(),
+                    ),
+                    err,
+                )
+            })?;
+        }
+
         info!("Local dev build: using native docker build (no cross-compilation)");
         let build_start = Instant::now();
         let build_result = with_spinner_completion(
@@ -1135,11 +1160,20 @@ pub fn build_dockerfile(
             }
             Err(err) => {
                 error!("Failed to create local dev docker image: {}", err);
+                // Clean up binary from build context before returning
+                if context_binary.exists() && staged_binary != context_binary {
+                    let _ = fs::remove_file(&context_binary);
+                }
                 return Err(RoutineFailure::new(
                     Message::new("Failed".to_string(), "to create docker image".to_string()),
                     err,
                 ));
             }
+        }
+
+        // Clean up binary from build context (don't leave it in workspace root)
+        if context_binary.exists() && staged_binary != context_binary {
+            let _ = fs::remove_file(&context_binary);
         }
     } else {
         let build_all = is_amd64 == is_arm64;
