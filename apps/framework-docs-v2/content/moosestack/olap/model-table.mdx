@@ -7,9 +7,11 @@ category: olap
 
 import { Callout, ExportRequirement, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Model table
+# Olap Table
 
-Use `OlapTable<T>` or `OlapTable[Model]` to define a typed ClickHouse table in your Moose project. The model shape becomes the table schema, and the table object becomes the resource you query, insert into, use as a stream destination, or target from materialized views.
+Use `OlapTable` to define a typed ClickHouse table to be managed in code. The model type becomes the table schema, and the table object becomes the resource you query, insert into, use as a stream destination, or target from materialized views.
+
+Use this page to look up constructor syntax, config fields, default behavior, and engine-specific options for `OlapTable`.
 
 <Callout type="info" title="Enable OLAP before defining tables">
 Turn on `features.olap` in `moose.config.toml` before creating OLAP tables.
@@ -23,13 +25,15 @@ Turn on `features.olap` in `moose.config.toml` before creating OLAP tables.
 
 ## Basic usage
 
+Use the simplest constructor when the default `MergeTree` engine and inferred primary key are enough.
+
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="app/table.ts" copy
-import { Key, OlapTable } from "@514labs/moose-lib";
+import { OlapTable } from "@514labs/moose-lib";
 
 interface Record {
-  id: Key<string>;
+  id: string;
   name: string;
   timestamp: Date;
 }
@@ -41,11 +45,11 @@ export const table = new OlapTable<Record>("table");
 ```py filename="app/table.py" copy
 from datetime import datetime
 
-from moose_lib import Key, OlapTable
+from moose_lib import OlapTable
 from pydantic import BaseModel
 
 class Record(BaseModel):
-    id: Key[str]
+    id: str
     name: str
     timestamp: datetime
 
@@ -54,9 +58,17 @@ table = OlapTable[Record]("table")
   </LanguageTabContent>
 </LanguageTabs>
 
-If you do not specify an engine, Moose creates the table with the default `MergeTree` engine. `Key` in TypeScript and `Key[...]` in Python mark fields Moose should treat as part of the inferred primary key unless you override that behavior with a custom primary-key expression.
+`Key` in TypeScript and `Key[...]` in Python mark fields Moose should use for inferred primary-key generation unless you override that behavior with `primaryKeyExpression` or `primary_key_expression`.
 
-## Example configuration
+<Callout type="warning" title="Plan ORDER BY before you create the table">
+ClickHouse cannot change `ORDER BY` in place. Choose `orderByFields` or `order_by_fields` from real filter patterns before you create the table, and place lower-cardinality columns before higher-cardinality ones for better pruning.
+</Callout>
+
+<Callout type="info" title="Start without partitioning unless you need lifecycle management">
+Use `partitionBy` or `partition_by` when you need retention, archival, or other data-lifecycle operations. If you do not have a clear lifecycle need yet, start without partitioning.
+</Callout>
+
+## Common configuration
 
 Use table config when you need to control ordering, versioning, partitioning, lifecycle behavior, or a non-default engine.
 
@@ -65,13 +77,12 @@ Use table config when you need to control ordering, versioning, partitioning, li
 ```ts filename="app/table.ts" copy
 import {
   ClickHouseEngines,
-  Key,
   LifeCycle,
   OlapTable,
 } from "@514labs/moose-lib";
 
 interface EventRecord {
-  id: Key<string>;
+  id: string;
   userId: string;
   timestamp: Date;
   updatedAt: Date;
@@ -91,11 +102,11 @@ export const events = new OlapTable<EventRecord>("events", {
 ```py filename="app/table.py" copy
 from datetime import datetime
 
-from moose_lib import Key, LifeCycle, OlapConfig, OlapTable, ReplacingMergeTreeEngine
+from moose_lib import LifeCycle, OlapConfig, OlapTable, ReplacingMergeTreeEngine
 from pydantic import BaseModel
 
 class EventRecord(BaseModel):
-    id: Key[str]
+    id: str
     user_id: str
     timestamp: datetime
     updated_at: datetime
@@ -108,248 +119,107 @@ events = OlapTable[EventRecord]("events", config=OlapConfig(
     life_cycle=LifeCycle.FULLY_MANAGED,
 ))
 ```
-  </LanguageTabContent>
-</LanguageTabs>
-
 <Callout type="info" title="Python engine config classes are preferred">
 Use engine config classes such as `MergeTreeEngine()` or `ReplacingMergeTreeEngine(...)` in Python. The `ClickHouseEngines` enum still works for backward compatibility, but it emits a deprecation warning.
 </Callout>
 
-## Configuration options
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>What it does</th>
-      <th>Default</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>engine</code></td>
-      <td>Choose the ClickHouse table engine.</td>
-      <td><code>MergeTree</code></td>
-    </tr>
-    <tr>
-      <td><code>orderByFields</code></td>
-      <td>Ordered list of columns for the ClickHouse <code>ORDER BY</code> clause.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>orderByExpression</code></td>
-      <td>Custom ClickHouse <code>ORDER BY</code> expression instead of column names.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>partitionBy</code></td>
-      <td>ClickHouse <code>PARTITION BY</code> expression.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>sampleByExpression</code></td>
-      <td>ClickHouse <code>SAMPLE BY</code> expression for approximate query processing.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>primaryKeyExpression</code></td>
-      <td>Custom ClickHouse primary-key expression that overrides inferred <code>Key</code> columns.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>version</code></td>
-      <td>Version label Moose uses when managing the table resource.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>lifeCycle</code></td>
-      <td>Control how Moose applies schema changes when code changes.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>settings</code></td>
-      <td>ClickHouse table settings that apply to the configured engine.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>ttl</code></td>
-      <td>Table-level ClickHouse <code>TTL</code> expression.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>indexes</code></td>
-      <td>Secondary data-skipping indexes.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>projections</code></td>
-      <td>Alternative sort orders stored inside table parts.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>constraints</code></td>
-      <td>Table-level ClickHouse constraints such as <code>CHECK</code> or <code>ASSUME</code>.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>database</code></td>
-      <td>Create and reference the table in a specific ClickHouse database.</td>
-      <td>Global ClickHouse database</td>
-    </tr>
-    <tr>
-      <td><code>cluster</code></td>
-      <td>Enable <code>ON CLUSTER</code> DDL for clustered ClickHouse deployments.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>seedFilter</code></td>
-      <td>Filter rows when <code>moose seed clickhouse</code> populates a local or test database.</td>
-      <td>-</td>
-    </tr>
-  </tbody>
-</table>
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-<table>
-  <thead>
-    <tr>
-      <th>Option</th>
-      <th>What it does</th>
-      <th>Default</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>engine</code></td>
-      <td>Choose the ClickHouse table engine.</td>
-      <td><code>MergeTree</code></td>
-    </tr>
-    <tr>
-      <td><code>order_by_fields</code></td>
-      <td>Ordered list of columns for the ClickHouse <code>ORDER BY</code> clause.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>order_by_expression</code></td>
-      <td>Custom ClickHouse <code>ORDER BY</code> expression instead of column names.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>partition_by</code></td>
-      <td>ClickHouse <code>PARTITION BY</code> expression.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>sample_by_expression</code></td>
-      <td>ClickHouse <code>SAMPLE BY</code> expression for approximate query processing.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>primary_key_expression</code></td>
-      <td>Custom ClickHouse primary-key expression that overrides inferred <code>Key</code> columns.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>version</code></td>
-      <td>Version label Moose uses when managing the table resource.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>life_cycle</code></td>
-      <td>Control how Moose applies schema changes when code changes.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>settings</code></td>
-      <td>ClickHouse table settings that apply to the configured engine.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>ttl</code></td>
-      <td>Table-level ClickHouse <code>TTL</code> expression.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>indexes</code></td>
-      <td>Secondary data-skipping indexes.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>projections</code></td>
-      <td>Alternative sort orders stored inside table parts.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>constraints</code></td>
-      <td>Table-level ClickHouse constraints such as <code>CHECK</code> or <code>ASSUME</code>.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>database</code></td>
-      <td>Create and reference the table in a specific ClickHouse database.</td>
-      <td>Global ClickHouse database</td>
-    </tr>
-    <tr>
-      <td><code>cluster</code></td>
-      <td>Enable <code>ON CLUSTER</code> DDL for clustered ClickHouse deployments.</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>seed_filter</code></td>
-      <td>Filter rows when <code>moose seed clickhouse</code> populates a local or test database.</td>
-      <td>-</td>
-    </tr>
-  </tbody>
-</table>
   </LanguageTabContent>
 </LanguageTabs>
 
-## Behavior and edge cases
 
-<table>
-  <thead>
-    <tr>
-      <th>Behavior</th>
-      <th>Current behavior</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Default engine</td>
-      <td>If you omit <code>engine</code>, Moose creates the table with the default <code>MergeTree</code> engine.</td>
-    </tr>
-    <tr>
-      <td>Inferred primary key</td>
-      <td><code>Key</code> in TypeScript and <code>Key[...]</code> in Python mark fields Moose should infer as primary-key columns unless you set <code>primaryKeyExpression</code> or <code>primary_key_expression</code>.</td>
-    </tr>
-    <tr>
-      <td>Versioned table names</td>
-      <td>If you set <code>version</code>, Moose appends that version to the physical table name. For example, <code>"events"</code> with version <code>"1.0"</code> becomes <code>events_1_0</code>.</td>
-    </tr>
-    <tr>
-      <td>Ordering config</td>
-      <td>Use either <code>orderByFields</code> or <code>orderByExpression</code> in TypeScript, and either <code>order_by_fields</code> or <code>order_by_expression</code> in Python. Do not set both.</td>
-    </tr>
-    <tr>
-      <td>Optional fields with defaults</td>
-      <td>If a field is optional in your app model but also has a ClickHouse default annotation, Moose keeps it optional at the app layer while generating a non-nullable ClickHouse column with a <code>DEFAULT</code> clause.</td>
-    </tr>
-    <tr>
-      <td>Column comments</td>
-      <td>TypeScript TSDoc comments and Python <code>Field(description=...)</code> or attribute docstrings become ClickHouse column <code>COMMENT</code> clauses.</td>
-    </tr>
-    <tr>
-      <td>Engine-specific clauses</td>
-      <td>Some engines do not support clauses such as <code>ORDER BY</code>, <code>PARTITION BY</code>, <code>SAMPLE BY</code>, or projections. Match the config fields you set to the capabilities of the chosen engine.</td>
-    </tr>
-    <tr>
-      <td>Database-qualified names</td>
-      <td>If you set <code>database</code>, Moose qualifies the table as <code>`database`.`table_name`</code> when it renders SQL references.</td>
-    </tr>
-  </tbody>
-</table>
+## Table Configuration
+
+### Common Configuration
+These are the fields most readers look up first when defining table shape, ordering, and lifecycle behavior.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+| Option | What it does | Default |
+| --- | --- | --- |
+| `engine` | Choose the ClickHouse table engine. | `MergeTree` |
+| `orderByFields` | Ordered list of columns for the ClickHouse `ORDER BY` clause. | - |
+| `orderByExpression` | Custom ClickHouse `ORDER BY` expression instead of column names. | - |
+| `primaryKeyExpression` | Custom ClickHouse `PRIMARY KEY` expression that overrides inferred `Key` columns. | - |
+| `partitionBy` | ClickHouse `PARTITION BY` expression. | - |
+| `sampleByExpression` | ClickHouse `SAMPLE BY` expression for approximate query processing. | - |
+| `version` | Version label Moose uses when managing the table resource. | - |
+| `lifeCycle` | Control how Moose applies schema changes when code changes. | - |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+| Option | What it does | Default |
+| --- | --- | --- |
+| `engine` | Choose the ClickHouse table engine. | `MergeTree` |
+| `order_by_fields` | Ordered list of columns for the ClickHouse `ORDER BY` clause. | - |
+| `order_by_expression` | Custom ClickHouse `ORDER BY` expression instead of column names. | - |
+| `primary_key_expression` | Custom ClickHouse `PRIMARY KEY` expression that overrides inferred `Key` columns. | - |
+| `partition_by` | ClickHouse `PARTITION BY` expression. | - |
+| `sample_by_expression` | ClickHouse `SAMPLE BY` expression for approximate query processing. | - |
+| `version` | Version label Moose uses when managing the table resource. | - |
+| `life_cycle` | Control how Moose applies schema changes when code changes. | - |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Advanced Configuration
+
+Use these when you need table settings, retention rules, alternate access paths, or environment-specific ownership details.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+| Option | What it does | Default |
+| --- | --- | --- |
+| `settings` | ClickHouse table settings that apply to the configured engine. | - |
+| `ttl` | Table-level ClickHouse `TTL` expression. | - |
+| `indexes` | Secondary data-skipping indexes. | - |
+| `projections` | Alternative sort orders stored inside table parts. | - |
+| `constraints` | Table-level ClickHouse constraints such as `CHECK` or `ASSUME`. | - |
+| `database` | Create and reference the table in a specific ClickHouse database. | Global ClickHouse database |
+| `cluster` | Enable `ON CLUSTER` DDL for clustered ClickHouse deployments. | - |
+| `seedFilter` | Filter rows when `moose seed clickhouse` populates a local or test database. | - |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+| Option | What it does | Default |
+| --- | --- | --- |
+| `settings` | ClickHouse table settings that apply to the configured engine. | - |
+| `ttl` | Table-level ClickHouse `TTL` expression. | - |
+| `indexes` | Secondary data-skipping indexes. | - |
+| `projections` | Alternative sort orders stored inside table parts. | - |
+| `constraints` | Table-level ClickHouse constraints such as `CHECK` or `ASSUME`. | - |
+| `database` | Create and reference the table in a specific ClickHouse database. | Global ClickHouse database |
+| `cluster` | Enable `ON CLUSTER` DDL for clustered ClickHouse deployments. | - |
+| `seed_filter` | Filter rows when `moose seed clickhouse` populates a local or test database. | - |
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Engine-specific options
+
+Use these fields only when the selected engine supports them.
+
+| Engine | Extra fields | Use it when |
+| --- | --- | --- |
+| `MergeTree` / `MergeTreeEngine()` | None | You want the default append-oriented engine. |
+| `ReplacingMergeTree` / `ReplacingMergeTreeEngine(...)` | `ver`, `isDeleted` in TypeScript; `ver`, `is_deleted` in Python | Later rows should replace earlier rows that share the same sorting key. |
+| `SummingMergeTree` / `SummingMergeTreeEngine(...)` | `columns` | Numeric columns should be summed during merges. |
+| `CollapsingMergeTree` / `CollapsingMergeTreeEngine(...)` | `sign` | You model state and cancel rows explicitly. |
+| `VersionedCollapsingMergeTree` / `VersionedCollapsingMergeTreeEngine(...)` | `sign`, `ver` | You need collapsing semantics with explicit version ordering. |
+| `AggregatingMergeTree` / `AggregatingMergeTreeEngine()` | None on the table config itself | You are storing aggregate states or simple aggregate values in the table model. |
+| `Replicated*MergeTree` engines | `keeperPath`, `replicaName` in TypeScript; `keeper_path`, `replica_name` in Python engine classes | You are running self-managed replicated ClickHouse. Omit both in ClickHouse Cloud. |
+
+`isDeleted` in TypeScript and `is_deleted` in Python require a version column as well.
+
+## Default behavior and constraints
+
+| Behavior | What happens |
+| --- | --- |
+| Default engine | If you omit `engine`, Moose creates the table with the default `MergeTree` engine. |
+| Inferred primary key | `Key` in TypeScript and `Key[...]` in Python mark fields Moose should infer as primary-key columns unless you set `primaryKeyExpression` or `primary_key_expression`. |
+| Custom primary key expression | If you set `primaryKeyExpression` or `primary_key_expression`, Moose ignores `Key` annotations for primary-key generation. |
+| Ordering config | Use either `orderByFields` or `orderByExpression` in TypeScript, and either `order_by_fields` or `order_by_expression` in Python. Do not set both. |
+| Sampling config | `sampleByExpression` or `sample_by_expression` must evaluate to an unsigned integer and must also appear in the `ORDER BY` expression. |
+| Versioned table names | If you set `version`, Moose appends that version to the physical table name. For example, `"events"` with version `"1.0"` becomes `events_1_0`. |
+| Optional fields with defaults | If a field is optional in your app model but also has a ClickHouse default annotation, Moose keeps it optional at the app layer while generating a non-nullable ClickHouse column with a `DEFAULT` clause. |
+| Column comments | TypeScript TSDoc comments and Python `Field(description=...)` or attribute docstrings become ClickHouse column `COMMENT` clauses. |
+| Engine-specific clauses | Some engines do not support clauses such as `ORDER BY`, `PARTITION BY`, `SAMPLE BY`, or projections. Match the config fields you set to the capabilities of the chosen engine. |
+| Database-qualified names | If you set `database`, Moose qualifies the table as `` `database`.`table_name` `` when it renders SQL references. |
 
 ## ReplacingMergeTree example
 
@@ -360,12 +230,11 @@ Use `ReplacingMergeTree` when later rows should replace earlier rows that share 
 ```ts filename="app/table.ts" copy
 import {
   ClickHouseEngines,
-  Key,
   OlapTable,
 } from "@514labs/moose-lib";
 
 interface UserSnapshot {
-  id: Key<string>;
+  id: string;
   email: string;
   updatedAt: Date;
   deleted: 0 | 1;
@@ -383,11 +252,11 @@ export const users = new OlapTable<UserSnapshot>("users", {
 ```py filename="app/table.py" copy
 from datetime import datetime
 
-from moose_lib import Key, OlapConfig, OlapTable, ReplacingMergeTreeEngine
+from moose_lib import OlapConfig, OlapTable, ReplacingMergeTreeEngine
 from pydantic import BaseModel
 
 class UserSnapshot(BaseModel):
-    id: Key[str]
+    id: str
     email: str
     updated_at: datetime
     deleted: int
@@ -403,22 +272,20 @@ users = OlapTable[UserSnapshot]("users", config=OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-`isDeleted` in TypeScript and `is_deleted` in Python require a version column as well.
-
 <Callout
   type="info"
-  title="Use schema optimization for data-type and ordering guidance"
+  title="Use schema optimization for type, nullability, and ordering guidance"
   href="/moosestack/olap/schema-optimization"
   ctaLabel="Schema optimization"
   compact
 >
-This page covers the `OlapTable` API surface. For guidance on nullable columns, `LowCardinality`, integer widths, decimals, and sort-key design, use Schema Optimization.
+This page covers the `OlapTable` API surface. For guidance on `LowCardinality`, integer widths, defaults versus nullable columns, partitioning tradeoffs, and sort-key design, use Schema Optimization.
 </Callout>
 
 ## Related capabilities
 
-- [Read data](/moosestack/olap/read-data) for querying typed tables from app code
 - [Insert data](/moosestack/olap/insert-data) for direct inserts, ingestion flows, and batch writes
+- [Read data](/moosestack/olap/read-data) for querying typed tables from app code
 - [Materialized view](/moosestack/olap/model-materialized-view) for write-time transformations into destination tables
 - [External tables](/moosestack/olap/external-tables) when Moose should not manage the table lifecycle
 - [TTL](/moosestack/olap/ttl), [Indexes](/moosestack/olap/indexes), and [Projections](/moosestack/olap/projections) for advanced ClickHouse table configuration
