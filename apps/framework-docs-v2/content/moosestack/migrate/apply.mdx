@@ -1,0 +1,41 @@
+---
+title: Apply migrations
+description: Execute generated migrations against your database
+order: 2
+category: migrate
+---
+
+# Apply migrations
+
+Once a migration plan has been generated, Moose provides two execution paths. Choose the one that matches your deployment model.
+
+## moose migrate (CLI)
+
+Apply migrations manually or from a CI/CD step as a one-shot command. Use this for serverless deployments or pipelines that don't run a long-lived Moose server.
+
+See [moose migrate (CLI)](/moosestack/migrate/apply-planned-migrations-cli) for details.
+
+## moose prod (Runtime)
+
+Apply migrations automatically when the Moose server starts. Use this for long-lived server deployments where migrations run as part of the application lifecycle.
+
+See [moose prod (Runtime)](/moosestack/migrate/apply-planned-migrations-service) for details.
+
+## When to use each
+
+| Scenario | Recommended path |
+| :--- | :--- |
+| Serverless deployment | `moose migrate` (CLI) |
+| CI/CD-driven database changes | `moose migrate` (CLI) |
+| Long-lived Moose server | `moose prod` (Runtime) |
+| Manual execution for a one-off rollout | `moose migrate` (CLI) |
+
+## Recovering from failed migrations
+
+If a migration fails partway through, see [Failed Migrations](/moosestack/migrate/failed-migrations) for recovery guidance.
+
+## Related
+
+- [Generate migrations](/moosestack/migrate/generate) — how migration plans are produced
+- [Migration Plan](/moosestack/migrate/plan-format) — the plan-file format and editable operations
+- [Lifecycle management](/moosestack/migrate/lifecycle) — controlling which changes Moose is allowed to make

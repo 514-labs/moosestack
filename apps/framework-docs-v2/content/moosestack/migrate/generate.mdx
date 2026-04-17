@@ -1,0 +1,30 @@
+---
+title: Generate migrations
+description: How Moose generates schema migrations from code changes
+order: 1
+category: migrate
+---
+
+# Generate migrations
+
+Moose generates a migration plan from the diff between your code-defined schema and the database. The plan is written to `plan.yaml` — a reviewable, editable YAML file — that you commit alongside your code.
+
+## During development
+
+`moose dev` watches your code for schema changes and appends new operations to `plan.yaml` in realtime as you save. The plan always reflects what Moose would apply given the current state of your code, so you can review it as you work without manually regenerating.
+
+## Finalizing a plan for production
+
+When you're ready to commit a migration for deployment, run:
+
+```bash
+moose generate migration
+```
+
+This computes the final diff between your current code and your target production database, producing a `plan.yaml` ready to review, commit, and apply.
+
+## Related
+
+- [Migration Plan](/moosestack/migrate/plan-format) — the operation reference and plan-file format
+- [Apply migrations](/moosestack/migrate/apply) — how to execute the plan against your database
+- [Lifecycle management](/moosestack/migrate/lifecycle) — controlling which changes Moose is allowed to make
