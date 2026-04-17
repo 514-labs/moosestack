@@ -16,7 +16,7 @@ import { Callout } from "@/components/mdx";
   Added a new RPC handler that enables users to fetch and view build logs through the 514 logs command, providing better visibility into deployment build processes and debugging capabilities.
 
 **Add `514 logs build` command** ([@LucioFranco](https://github.com/LucioFranco))
-  Added a new CLI command to query and view build logs for deployments. Users can now monitor build processes, view build step details, and watch build logs in real-time using the `514 logs build` command with options for pagination, filtering, and live updates.
+  Added a new CLI command to query and view build logs for deployments. Users can now monitor build processes, view build step details, and watch build logs in real-time using the `514 logs build` command with options for pagination, truncation control, and live updates.
 
   **Monitor deployment build logs with 514 CLI**
 
@@ -72,7 +72,7 @@ import { Callout } from "@/components/mdx";
 
 ### Bug Fixes
 - Fix branch deployment recovery after schema initialization failures: Fixed an issue where branches that failed during schema initialization could not automatically recover and deploy when new code was pushed to GitHub. ([@groy-514](https://github.com/groy-514))
-- Fix branch seeding from parent deployments: Fixed an issue where branch schema initialization wasn't properly seeding data from parent deployments, ensuring branches inherit the correct initial data state. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Pass seed config through merge-base fallback path: Branch schema initialization now forwards the parent deployment's seed config when falling back to the merge-base path, so branches pick up the correct initial data state in that case. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
 - Fix Github webhook branch creation failures: Fixed issues preventing new branches from being created automatically when GitHub webhooks are triggered from pull requests and pushes. ([@groy-514](https://github.com/groy-514))
 
 ## 🦌 Moose
@@ -225,44 +225,46 @@ import { Callout } from "@/components/mdx";
   **Adding table constraints to enforce data validation rules**
 
   ```typescript
-  // src/datamodels/OrderModel.ts
-  import { Key } from "@moosedata/framework";
-  
-  // Define a data model with table constraints
-  export interface OrderModel {
-    @Key
-    id: string;
+  // src/ingest/models.ts
+  import {
+    Key,
+    OlapTable,
+    ClickHouseEngines,
+    TableConstraint,
+  } from "@514labs/moose-lib";
+
+  export interface Order {
+    id: Key<string>;
     customer_id: string;
     total_amount: number;
     status: string;
-    created_at: Date;
     discount_percentage: number;
   }
-  
-  // Configure table constraints to enforce data validation
-  export default {
-    tableName: "orders",
+
+  export const OrdersTable = new OlapTable<Order>("Orders", {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id"],
     constraints: [
       {
         name: "positive_amount",
         expression: "total_amount > 0",
-        type: "CHECK"
-      },
-      {
-        name: "valid_status", 
-        expression: "status IN ('pending', 'confirmed', 'shipped', 'delivered', 'cancelled')",
-        type: "CHECK"
+        type: "CHECK",
       },
       {
         name: "valid_discount",
-        expression: "discount_percentage >= 0 AND discount_percentage <= 100", 
-        type: "CHECK"
-      }
-    ]
-  };
+        expression: "discount_percentage >= 0 AND discount_percentage <= 100",
+        type: "CHECK",
+      },
+      {
+        name: "assume_short_status",
+        expression: "length(status) <= 64",
+        type: "ASSUME",
+      },
+    ],
+  });
   ```
 
-  This example shows how to add CHECK constraints to a data model in MooseStack. The constraints validate data at the database level, ensuring order amounts are positive, status values are valid, and discount percentages are within acceptable ranges.
+  This example shows how to add `CHECK` and `ASSUME` constraints to an `OlapTable` in MooseStack. `CHECK` constraints are enforced by ClickHouse on insert; `ASSUME` constraints are treated as hints the query planner can rely on without runtime enforcement.
 
   PR: [#3907](https://github.com/514-labs/moose/pull/3907) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
 
@@ -378,7 +380,7 @@ import { Callout } from "@/components/mdx";
 - Improve 514 CLI setup documentation: Clarified the setup steps for the 514 CLI integration by reordering authentication and project linking steps for better user flow. PR: [#3950](https://github.com/514-labs/moose/pull/3950) | Docs: [/guides/optimize-clickhouse-performance/tutorial](https://docs.moosejs.com/guides/optimize-clickhouse-performance/tutorial) ([@okane16](https://github.com/okane16))
 
 ### Bug Fixes
-- Fix Kafka consumer group synchronization issues: Fixed issues with Kafka consumer group management that could cause synchronization problems between producers and consumers in streaming data pipelines. PR: [#4006](https://github.com/514-labs/moose/pull/4006) ([@LucioFranco](https://github.com/LucioFranco))
+- Fix `kafka_clickhouse_sync` consumer group rename and devkafka rebalance barrier: Reverted an unintentional rename of the `kafka_clickhouse_sync` consumer group that broke backwards compatibility, and fixed a JoinGroup/SyncGroup rebalance barrier bug in the embedded devkafka broker. PR: [#4006](https://github.com/514-labs/moose/pull/4006) ([@LucioFranco](https://github.com/LucioFranco))
 - Fix View-to-View cross-database dependency ordering: Fixed an issue where Views depending on other Views across different databases were not being created in the correct order, which could cause deployment failures. PR: [#4007](https://github.com/514-labs/moose/pull/4007) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@514Ben](https://github.com/514Ben))
 
 
