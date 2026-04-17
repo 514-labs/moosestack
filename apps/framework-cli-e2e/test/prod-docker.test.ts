@@ -11,12 +11,13 @@
 
 import { execFileSync } from "child_process";
 import { expect } from "chai";
+import { createClient } from "@clickhouse/client";
 import * as fs from "fs";
 import * as path from "path";
 import http from "http";
 import os from "os";
 
-import { TIMEOUTS, SERVER_CONFIG } from "./constants";
+import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
 import { createTempTestDirectory, performGlobalCleanup } from "./utils";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -180,6 +181,60 @@ function runCommand(
 
 describe("Prod Docker Mode", function () {
   let testProjectDir: string;
+  let linuxCliBinary: string;
+
+  function buildDockerImage(): number {
+    const startMs = Date.now();
+    console.log("Building Docker image with moose-cli build --docker...");
+    try {
+      runCommand(CLI_PATH, ["build", "--docker"], {
+        cwd: testProjectDir,
+        env: {
+          MOOSE_TELEMETRY__ENABLED: "false",
+          MOOSE_DOCKER_LOCAL_BUILD: linuxCliBinary,
+          TEST_AWS_ACCESS_KEY_ID: "test-access-key",
+          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
+        },
+      });
+    } catch (err: any) {
+      console.error("Docker build stdout:", err.stdout?.toString());
+      console.error("Docker build stderr:", err.stderr?.toString());
+      throw err;
+    }
+    const elapsedMs = Date.now() - startMs;
+    console.log(`  Docker image built in ${(elapsedMs / 1000).toFixed(1)}s`);
+    return elapsedMs;
+  }
+
+  function restartMooseApp(): void {
+    console.log("Restarting moose-app container with new image...");
+    const composeArgs = [
+      "compose",
+      "-f",
+      "docker-compose.prod-test.yml",
+      "-p",
+      COMPOSE_PROJECT_NAME,
+    ];
+    execFileSync("docker", [...composeArgs, "stop", "moose-app"], {
+      cwd: testProjectDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+      timeout: 30_000,
+    });
+    execFileSync("docker", [...composeArgs, "rm", "-f", "moose-app"], {
+      cwd: testProjectDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+      timeout: 10_000,
+    });
+    execFileSync("docker", [...composeArgs, "up", "-d", "moose-app"], {
+      cwd: testProjectDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+      timeout: 30_000,
+    });
+    console.log("  moose-app restarted");
+  }
 
   before(async function () {
     // Extra time on macOS for cross-compiling the Linux binary inside Docker
@@ -213,10 +268,10 @@ describe("Prod Docker Mode", function () {
     let elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
     console.log(`  packed in ${elapsed}s: ${tgzFilename}`);
 
-    // Place tgz inside the source dir so it's included in the Docker build
-    // context (the Dockerfile does COPY ./src ./src).
+    // Place tgz at project root so it's available in the deps layer
+    // (copied alongside package.json, before npm install).
     const tgzSource = path.join(MOOSE_LIB_DIR, tgzFilename);
-    const tgzDest = path.join(testProjectDir, "src", "moose-lib.tgz");
+    const tgzDest = path.join(testProjectDir, "moose-lib.tgz");
     fs.copyFileSync(tgzSource, tgzDest);
     fs.unlinkSync(tgzSource);
 
@@ -224,39 +279,17 @@ describe("Prod Docker Mode", function () {
     const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
     for (const depKey of ["dependencies", "devDependencies"] as const) {
       if (pkgJson[depKey]?.["@514labs/moose-lib"]) {
-        pkgJson[depKey]["@514labs/moose-lib"] = "file:./src/moose-lib.tgz";
+        pkgJson[depKey]["@514labs/moose-lib"] = "file:./moose-lib.tgz";
       }
     }
     fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + "\n");
     console.log("  Patched package.json to use local moose-lib");
 
     // 3. Ensure we have a Linux moose-cli binary for the Docker image.
-    // On Linux this is just the native debug build; on macOS we cross-compile
-    // inside Docker using the host's native arch (no QEMU).
-    const linuxCliBinary = ensureLinuxCliBinary();
+    linuxCliBinary = ensureLinuxCliBinary();
 
-    // 4. Build Docker image via moose-cli.
-    // MOOSE_DOCKER_LOCAL_BUILD points to the Linux binary so the Dockerfile
-    // generator copies it into the image instead of downloading a release.
-    console.log("Building Docker image with moose-cli build --docker...");
-    startMs = Date.now();
-    try {
-      runCommand(CLI_PATH, ["build", "--docker"], {
-        cwd: testProjectDir,
-        env: {
-          MOOSE_TELEMETRY__ENABLED: "false",
-          MOOSE_DOCKER_LOCAL_BUILD: linuxCliBinary,
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key",
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
-        },
-      });
-    } catch (err: any) {
-      console.error("Docker build stdout:", err.stdout?.toString());
-      console.error("Docker build stderr:", err.stderr?.toString());
-      throw err;
-    }
-    elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-    console.log(`  Docker image built in ${elapsed}s`);
+    // 4. Build initial Docker image (v1)
+    buildDockerImage();
 
     // 5. Copy compose file and start the stack
     const composeFile = path.join(
@@ -302,6 +335,85 @@ describe("Prod Docker Mode", function () {
     this.timeout(30_000);
     const { status } = await httpGet(`${SERVER_CONFIG.url}/health`);
     expect(status).to.equal(200);
+  });
+
+  it("should apply additive migration after schema change and rebuild", async function () {
+    this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.SERVER_STARTUP_MS);
+
+    const chClient = createClient(CLICKHOUSE_CONFIG);
+    try {
+      // 1. Verify Bar table exists and does NOT have the new column yet
+      console.log("\n--- Migration Test: verifying initial Bar schema ---");
+      const beforeCols = await chClient
+        .query({
+          query: `SELECT name FROM system.columns WHERE database = '${CLICKHOUSE_CONFIG.database}' AND table = 'Bar' ORDER BY position`,
+          format: "JSONEachRow",
+        })
+        .then((r) => r.json<{ name: string }>());
+      const beforeColNames = beforeCols.map((c) => c.name);
+      console.log(
+        `  Bar columns before migration: ${beforeColNames.join(", ")}`,
+      );
+      expect(beforeColNames).to.include("primaryKey");
+      expect(beforeColNames).to.not.include("migrationNote");
+
+      // 2. Modify the Bar interface to add a new optional column
+      console.log("  Adding 'migrationNote' column to Bar interface...");
+      const modelsPath = path.join(
+        testProjectDir,
+        "src",
+        "ingest",
+        "models.ts",
+      );
+      const modelsContent = fs.readFileSync(modelsPath, "utf-8");
+      const modified = modelsContent.replace(
+        "textLength: number; // From Foo.optionalText.length\n}",
+        "textLength: number; // From Foo.optionalText.length\n  migrationNote?: string;\n}",
+      );
+      expect(modified).to.not.equal(
+        modelsContent,
+        "Failed to patch Bar interface",
+      );
+      fs.writeFileSync(modelsPath, modified);
+      console.log("  Bar interface patched");
+
+      // 3. Rebuild Docker image — should be fast due to layer caching
+      const rebuildMs = buildDockerImage();
+      console.log(
+        `  Rebuild took ${(rebuildMs / 1000).toFixed(1)}s (layer caching active)`,
+      );
+
+      // 4. Restart moose-app with new image (infrastructure stays running)
+      restartMooseApp();
+
+      // 5. Wait for moose-app to come back healthy
+      console.log("  Waiting for moose-app health after migration...");
+      try {
+        await waitForHealth(
+          `${SERVER_CONFIG.url}/health`,
+          TIMEOUTS.SERVER_STARTUP_MS,
+        );
+      } catch (err) {
+        dumpComposeLogs(testProjectDir);
+        throw err;
+      }
+
+      // 6. Verify the new column exists in ClickHouse
+      const afterCols = await chClient
+        .query({
+          query: `SELECT name FROM system.columns WHERE database = '${CLICKHOUSE_CONFIG.database}' AND table = 'Bar' ORDER BY position`,
+          format: "JSONEachRow",
+        })
+        .then((r) => r.json<{ name: string }>());
+      const afterColNames = afterCols.map((c) => c.name);
+      console.log(`  Bar columns after migration: ${afterColNames.join(", ")}`);
+      expect(afterColNames).to.include(
+        "migrationNote",
+        "Expected 'migrationNote' column to exist after migration",
+      );
+    } finally {
+      await chClient.close();
+    }
   });
 
   after(async function () {

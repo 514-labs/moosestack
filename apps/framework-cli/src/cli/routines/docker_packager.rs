@@ -347,18 +347,19 @@ WORKDIR /application
 # Ensure application directory is owned by moose user
 RUN chown -R moose:moose /application
 
-# Placeholder for the language specific copy package file copy
-COPY_PACKAGE_FILE
+# Copy dependency manifests (cached layer — only busted when deps change)
+COPY_DEPS_FILES
 
+# Placeholder for the language specific install command
+INSTALL_COMMAND
+
+# Copy project config, versioning data, and source code (busted on code changes)
 # https://stackoverflow.com/questions/70096208/dockerfile-copy-folder-if-it-exists-conditional-copy/70096420#70096420
 COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
 COPY --chown=moose:moose ./migration[s] ./migrations
-
-
-# Placeholder for the language specific install command
-INSTALL_COMMAND
+COPY_APP_SOURCE
 
 # Placeholder for TypeScript pre-compilation step (empty for Python)
 TYPESCRIPT_COMPILE_STEP
@@ -676,7 +677,8 @@ WORKDIR /application"#,
                     deploy_install_command,                  // 10: package manager install command
                 );
 
-                dockerfile = dockerfile.replace("COPY_PACKAGE_FILE", &copy_from_build);
+                dockerfile = dockerfile.replace("COPY_DEPS_FILES", &copy_from_build);
+                dockerfile = dockerfile.replace("COPY_APP_SOURCE", "");
                 dockerfile = dockerfile.replace(
                     "INSTALL_COMMAND",
                     "# Dependencies copied from monorepo build stage",
@@ -715,16 +717,16 @@ WORKDIR /application"#,
             }
         }
         SupportedLanguages::Python => {
-            let copy_package_content = format!(
-                r#"COPY --chown=moose:moose ./setup.py ./setup.py
-COPY --chown=moose:moose ./requirements.txt ./requirements.txt
-COPY --chown=moose:moose ./{} ./{}"#,
-                project.source_dir, project.source_dir
+            let deps_copy = "COPY --chown=moose:moose ./setup.py ./setup.py\n\
+                             COPY --chown=moose:moose ./requirements.txt ./requirements.txt";
+            let source_copy = format!(
+                "COPY --chown=moose:moose ./{src} ./{src}",
+                src = project.source_dir
             );
             let install = DOCKER_FILE_COMMON
-                .replace("COPY_PACKAGE_FILE", &copy_package_content)
+                .replace("COPY_DEPS_FILES", deps_copy)
+                .replace("COPY_APP_SOURCE", &source_copy)
                 .replace("INSTALL_COMMAND", "RUN pip install -r requirements.txt")
-                // No TypeScript compilation for Python projects
                 .replace("TYPESCRIPT_COMPILE_STEP", "");
 
             format!("{PY_BASE_DOCKER_FILE}{install}")
@@ -897,6 +899,23 @@ pub fn build_dockerfile(
                     ),
                     err,
                 ));
+            }
+        }
+    }
+
+    // Copy any local tarballs (e.g. packed moose-lib for file: deps in package.json)
+    // so they're available in the Docker build context during `npm install`.
+    let packager_dir = internal_dir.join("packager");
+    if let Ok(entries) = fs::read_dir(&project_root_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("tgz") {
+                let dest = packager_dir.join(entry.file_name());
+                if let Err(e) = fs::copy(&path, &dest) {
+                    warn!("Failed to copy {:?} to packager dir: {}", path, e);
+                } else {
+                    info!("Copied {:?} to packager directory", entry.file_name());
+                }
             }
         }
     }
@@ -1631,29 +1650,26 @@ fn create_standard_typescript_dockerfile_content(
             (format!("RUN {pm} install"), "")
         };
 
-    // Build copy commands for package files
-    let app_copy = format!(
-        "COPY --chown=moose:moose ./{} ./{}",
-        project.source_dir, project.source_dir
-    );
-    let mut copy_commands = vec![
+    // Dependency manifest files — cached until deps change.
+    // The *.tgz glob picks up any local file: dependencies (e.g. packed moose-lib).
+    let mut deps_commands = vec![
         "COPY --chown=moose:moose ./package.json ./package.json",
-        "COPY --chown=moose:moose ./tsconfig.json ./tsconfig.json",
-        &app_copy,
+        "COPY --chown=moose:moose ./*.tg[z] ./",
     ];
-
-    // Add lock file copy command if detected
     if !lock_file_copy.is_empty() {
-        copy_commands.push(lock_file_copy);
+        deps_commands.push(lock_file_copy);
     }
+    let deps_section = deps_commands.join("\n");
 
-    let copy_section = copy_commands.join("\n                    ");
+    // Source files — copied after install so dep cache survives code-only changes
+    let source_section = format!(
+        "COPY --chown=moose:moose ./tsconfig.json ./tsconfig.json\nCOPY --chown=moose:moose ./{src} ./{src}",
+        src = project.source_dir
+    );
 
     let install = DOCKER_FILE_COMMON
-        .replace(
-            "COPY_PACKAGE_FILE",
-            &format!("\n                    {copy_section}"),
-        )
+        .replace("COPY_DEPS_FILES", &deps_section)
+        .replace("COPY_APP_SOURCE", &source_section)
         .replace("INSTALL_COMMAND", &install_command)
         // Pre-compile TypeScript with moose plugins for faster worker startup
         .replace(
