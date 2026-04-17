@@ -1,0 +1,384 @@
+---
+title: April 17, 2026
+description: Release notes for April 17, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# April 17, 2026
+
+
+
+## 🐻 Boreal
+
+### New Features
+**Add build logs support to 514 logs command** ([@LucioFranco](https://github.com/LucioFranco))
+  Added a new RPC handler that enables users to fetch and view build logs through the 514 logs command, providing better visibility into deployment build processes and debugging capabilities.
+
+**Add `514 logs build` command** ([@LucioFranco](https://github.com/LucioFranco))
+  Added a new CLI command to query and view build logs for deployments. Users can now monitor build processes, view build step details, and watch build logs in real-time using the `514 logs build` command with options for pagination, filtering, and live updates.
+
+  **Monitor deployment build logs with 514 CLI**
+
+  ```bash
+  # View build logs for the latest deployment
+  514 logs build
+  
+  # View build logs for a specific deployment
+  514 logs build dep_abc123
+  
+  # Watch build logs in real-time (polls every 2 seconds)
+  514 logs build --watch
+  
+  # Customize watch interval to 5 seconds
+  514 logs build --watch 5
+  
+  # View build logs with pagination
+  514 logs build --limit 100 --offset 0
+  
+  # Show full log content without truncation
+  514 logs build --no-truncate
+  
+  # Get build logs in JSON format for processing
+  514 logs build --json | jq '.rows[] | select(.severity == "ERROR")'
+  
+  # View build logs for a specific project deployment
+  514 logs build --project my-project
+  
+  # Combine options: watch with full content and custom limit
+  514 logs build --watch 3 --no-truncate --limit 200
+  ```
+
+  This example demonstrates how to use the new `514 logs build` command to monitor deployment build processes. Users can view build logs in real-time, paginate through results, and filter content to troubleshoot build issues effectively.
+
+**Display branch statuses for non-default branch deployments** ([@groy-514](https://github.com/groy-514))
+  Non-default branch deployments now show branch status information alongside deployment statuses, providing better visibility into the branch creation and setup process. This helps users understand the complete lifecycle of their branch deployments from creation to active state.
+
+  📸 *[Screenshot needed: Non-default branch deployments now show branch status information alongside deployment statuses, providing better visibility into the branch creation and setup process. This helps users understand the complete lifecycle of their branch deployments from creation to active state.]*
+
+**Project status display in project list page** ([@groy-514](https://github.com/groy-514))
+  The project list page now displays real-time project status information, allowing users to see the current state of their deployments at a glance. This includes status badges and improved project management visibility within the dashboard.
+
+  📸 *[Screenshot needed: The project list page now displays real-time project status information, allowing users to see the current state of their deployments at a glance. This includes status badges and improved project management visibility within the dashboard.]*
+
+**State machine events table and visualizations in hosting admin** ([@groy-514](https://github.com/groy-514))
+  Added comprehensive state machine visualization and telemetry events tables to the hosting admin interface. Users can now view branch state transitions, deployment workflows, and telemetry data through interactive graphs and detailed event tables. This includes new tabbed interfaces for branches, projects, and deployments with state machine diagrams, event timelines, and improved data organization across the admin dashboard.
+
+  📸 *[Screenshot needed: Added comprehensive state machine visualization and telemetry events tables to the hosting admin interface. Users can now view branch state transitions, deployment workflows, and telemetry data through interactive graphs and detailed event tables. This includes new tabbed interfaces for branches, projects, and deployments with state machine diagrams, event timelines, and improved data organization across the admin dashboard.]*
+
+### Improvements
+- Improve build reliability for dependency changes: Lock file changes now trigger rebuilds for all projects, ensuring applications stay up-to-date when dependencies change. ([@jmsuzuki](https://github.com/jmsuzuki))
+- Improve CLI help text consistency and clarity: CLI help messages are now more consistent and user-friendly, with clearer command descriptions and updated branding from "hosting deployment management" to "Fiveonefour hosting CLI". ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+
+### Bug Fixes
+- Fix branch deployment recovery after schema initialization failures: Fixed an issue where branches that failed during schema initialization could not automatically recover and deploy when new code was pushed to GitHub. ([@groy-514](https://github.com/groy-514))
+- Fix branch seeding from parent deployments: Fixed an issue where branch schema initialization wasn't properly seeding data from parent deployments, ensuring branches inherit the correct initial data state. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Fix Github webhook branch creation failures: Fixed issues preventing new branches from being created automatically when GitHub webhooks are triggered from pull requests and pushes. ([@groy-514](https://github.com/groy-514))
+
+## 🦌 Moose
+
+### New Features
+**Add ClickHouse dictionary support with validation and CLI listing** ([@514Ben](https://github.com/514Ben))
+  Adds infrastructure planning, risk assessment, and validation for ClickHouse dictionaries. Users can now list dictionaries via the CLI and benefit from safety checks that prevent destructive dictionary operations and validate configuration before deployment. This is part 2 of the broader ClickHouse dictionary support feature.
+
+  PR: [#3886](https://github.com/514-labs/moose/pull/3886) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+**Add database parameter to View class for multi-database support** ([@514Ben](https://github.com/514Ben))
+  Views can now be created in specific ClickHouse databases using the new database parameter in ViewConfig. This enables better organization of views across multiple databases within a single MooseStack project. The View constructor has been updated to use a ViewConfig object instead of positional parameters for improved clarity and extensibility.
+
+  **Multi-database Views with ViewConfig**
+
+  ```typescript
+  import { View, sql } from "@514labs/moose-lib";
+  import { users } from "./models/Users";
+  import { events } from "./models/Events";
+  import { purchases } from "./models/Purchases";
+  
+  // Standard view in the default database
+  export const activeUserEvents = new View("active_user_events", {
+    selectStatement: sql.statement`
+      SELECT
+        ${events.columns.id} AS event_id,
+        ${users.columns.id} AS user_id,
+        ${events.columns.timestamp},
+        ${events.columns.event_type}
+      FROM ${events}
+      JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
+      WHERE ${users.columns.active} = true
+    `,
+    baseTables: [events, users],
+  });
+  
+  // Analytics view in a dedicated analytics database
+  export const purchaseAnalytics = new View("purchase_summary", {
+    selectStatement: sql.statement`
+      SELECT
+        ${users.columns.id} AS user_id,
+        COUNT(${purchases.columns.id}) AS total_purchases,
+        SUM(${purchases.columns.amount}) AS total_spent,
+        AVG(${purchases.columns.amount}) AS avg_purchase_amount
+      FROM ${purchases}
+      JOIN ${users} ON ${purchases.columns.user_id} = ${users.columns.id}
+      GROUP BY ${users.columns.id}
+    `,
+    baseTables: [purchases, users],
+    database: "analytics", // Creates view in analytics database
+  });
+  
+  // Reporting view combining multiple sources in reporting database
+  export const userEngagementReport = new View("user_engagement", {
+    selectStatement: sql.statement`
+      SELECT
+        u.id AS user_id,
+        u.email,
+        COUNT(e.id) AS total_events,
+        COUNT(p.id) AS total_purchases
+      FROM ${users} u
+      LEFT JOIN ${events} e ON u.id = e.user_id
+      LEFT JOIN ${purchases} p ON u.id = p.user_id
+      GROUP BY u.id, u.email
+    `,
+    baseTables: [users, events, purchases],
+    database: "reporting", // Organized in reporting database
+  });
+  ```
+
+  This example demonstrates the new multi-database support for Views in MooseStack. It shows how to create views in specific ClickHouse databases using the database parameter in ViewConfig, enabling better organization of views across analytics, reporting, and other specialized databases within a single project.
+
+  PR: [#3720](https://github.com/514-labs/moose/pull/3720) | Docs: [/moosestack/olap/model-view](https://docs.moosejs.com/moosestack/olap/model-view)
+
+**Lifecycle hooks for dev environment setup** ([@514Ben](https://github.com/514Ben))
+  Added comprehensive documentation for on_first_start_script and on_reload_complete_script configuration options, which allow developers to run shell commands automatically during moose dev lifecycle. These hooks are particularly useful for setting up SQL views, seeding reference data, or running any setup that depends on tables existing after infrastructure is applied. The documentation includes detailed examples for creating cross-database views and other common development workflows.
+
+  **Setting up SQL views with lifecycle hooks**
+
+  ```toml
+  # moose.config.toml
+  [http_server_config]
+  # Run setup script on first dev start and after each reload
+  on_first_start_script = "uv run python app/scripts/setup_views.py"
+  on_reload_complete_script = "uv run python app/scripts/setup_views.py"
+  
+  # app/scripts/setup_views.py
+  import os
+  import sys
+  import clickhouse_connect
+  
+  # Enable imports from app directory when running from project root
+  sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+  
+  from app.datamodels.silver.user_analytics import UserAnalytics_SQL
+  from app.datamodels.silver.order_summary import OrderSummary_SQL
+  
+  # Views in dependency order (dependencies first)
+  VIEWS = [
+      ("analytics.UserAnalytics", UserAnalytics_SQL),
+      ("analytics.OrderSummary", OrderSummary_SQL),
+  ]
+  
+  def get_client():
+      return clickhouse_connect.get_client(
+          host=os.getenv("CLICKHOUSE_HOST", "localhost"),
+          port=int(os.getenv("CLICKHOUSE_PORT", "18123")),
+          username=os.getenv("CLICKHOUSE_USER", "panda"),
+          password=os.getenv("CLICKHOUSE_PASSWORD", "pandapass"),
+      )
+  
+  if __name__ == "__main__":
+      client = get_client()
+      
+      for view_name, sql_definition in VIEWS:
+          # Create or replace view (idempotent operation)
+          client.command(f"CREATE OR REPLACE VIEW {view_name} AS {sql_definition}")
+          print(f"✓ Created view: {view_name}")
+      
+      print("All analytics views ready!")
+  ```
+
+  This example shows how to use lifecycle hooks to automatically set up SQL views after Moose infrastructure is deployed. The setup script runs on first start and after every reload, ensuring views are always up-to-date during development.
+
+  PR: [#4008](https://github.com/514-labs/moose/pull/4008) | Docs: [/moosestack/configuration/dev-environment](https://docs.moosejs.com/moosestack/configuration/dev-environment)
+
+**Add ClickHouse Dictionary support (core infrastructure)** ([@514Ben](https://github.com/514Ben))
+  Adds foundational support for ClickHouse dictionaries in the Moose framework, including dictionary creation, modification, and migration capabilities. This enables users to define and manage dictionaries alongside their data models, though the user-facing API is still in development (this is part 1 of 6 PRs).
+
+  PR: [#3997](https://github.com/514-labs/moose/pull/3997) | Docs: [/moosestack/olap](https://docs.moosejs.com/moosestack/olap)
+
+**Enhanced migration failure diagnostics with drift detection** ([@onelesd](https://github.com/onelesd))
+  Migration failures now provide detailed forensics showing which database operations succeeded, failed, and were skipped, along with automatic drift detection when the database state diverges from migration expectations. This helps developers understand exactly what happened during partial migration failures and provides clear recovery guidance, especially important since ClickHouse DDL operations cannot be rolled back transactionally.
+
+  PR: [#3999](https://github.com/514-labs/moose/pull/3999) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
+
+**Add embedded Kafka broker for development** ([@LucioFranco](https://github.com/LucioFranco))
+  Introduced devkafka, an embedded Kafka broker that runs locally during development. This eliminates the need to install and manage a separate Kafka instance when developing streaming applications with Moose. The embedded broker supports core Kafka operations including topic management, message production/consumption, and consumer group coordination, making it easier to test and develop data pipelines locally.
+
+  PR: [#3933](https://github.com/514-labs/moose/pull/3933) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
+
+**Add embedded Redis server for local development** ([@LucioFranco](https://github.com/LucioFranco))
+  Adds devredis, an embedded Redis server that runs automatically during local development. This eliminates the need for developers to install and manage Redis separately when working on MooseStack applications locally. The embedded server supports core Redis operations including data storage, lists, pub/sub, and Lua scripting, providing a seamless development experience without external dependencies.
+
+  PR: [#3932](https://github.com/514-labs/moose/pull/3932) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+**Support table constraints in data models** ([@phiSgr](https://github.com/phiSgr))
+  Added support for defining CHECK constraints and other table constraints in data models. Users can now enforce data validation rules at the database level by specifying constraints in their table definitions. Includes improved validation for ClickHouse cluster macro references to prevent deployment issues.
+
+  **Adding table constraints to enforce data validation rules**
+
+  ```typescript
+  // src/datamodels/OrderModel.ts
+  import { Key } from "@moosedata/framework";
+  
+  // Define a data model with table constraints
+  export interface OrderModel {
+    @Key
+    id: string;
+    customer_id: string;
+    total_amount: number;
+    status: string;
+    created_at: Date;
+    discount_percentage: number;
+  }
+  
+  // Configure table constraints to enforce data validation
+  export default {
+    tableName: "orders",
+    constraints: [
+      {
+        name: "positive_amount",
+        expression: "total_amount > 0",
+        type: "CHECK"
+      },
+      {
+        name: "valid_status", 
+        expression: "status IN ('pending', 'confirmed', 'shipped', 'delivered', 'cancelled')",
+        type: "CHECK"
+      },
+      {
+        name: "valid_discount",
+        expression: "discount_percentage >= 0 AND discount_percentage <= 100", 
+        type: "CHECK"
+      }
+    ]
+  };
+  ```
+
+  This example shows how to add CHECK constraints to a data model in MooseStack. The constraints validate data at the database level, ensuring order amounts are positive, status values are valid, and discount percentages are within acceptable ranges.
+
+  PR: [#3907](https://github.com/514-labs/moose/pull/3907) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
+
+**Add context_path for custom Dockerfile monorepo builds** ([@onelesd](https://github.com/onelesd))
+  Added a new `context_path` configuration option to `docker_config` in `moose.config.toml` that allows setting the Docker build context relative to the project root. This is particularly useful for monorepo setups where a Moose project lives in a subdirectory but needs to reference files from the monorepo root in its custom Dockerfile. When `context_path` is set, Docker uses the resolved path as the build context and automatically passes the `-f` flag to locate the Dockerfile.
+
+  **Monorepo Docker configuration with context_path**
+
+  ```toml
+  # moose.config.toml - Analytics service in a monorepo
+  project_name = "analytics"
+  
+  [docker_config]
+  # Enable custom Dockerfile for monorepo build optimizations
+  custom_dockerfile = true
+  dockerfile_path = "./Dockerfile"
+  # Set build context to monorepo root to access shared packages
+  context_path = "../../.."
+  
+  [infrastructure]
+  # Analytics pipeline infrastructure
+  olap_database = "clickhouse"
+  streaming_engine = "redpanda"
+  ```
+
+  Shows how to configure a Moose project in a monorepo using context_path to access shared packages and workspace files from a custom Dockerfile. The context_path setting allows the Docker build to reference files outside the project directory.
+
+  PR: [#3947](https://github.com/514-labs/moose/pull/3947) | Docs: [/moosestack/configuration/docker](https://docs.moosejs.com/moosestack/configuration/docker)
+
+**Add native infrastructure provider with --dockerless flag** ([@LucioFranco](https://github.com/LucioFranco))
+  Introduces a new --dockerless flag for the dev command that allows running ClickHouse and Temporal as native binaries instead of Docker containers. This provides an alternative for developers who prefer not to use Docker or encounter Docker-related issues. The feature automatically downloads and manages the required binaries (ClickHouse v25.8.18.1-lts and Temporal CLI v1.3.0) in a local cache, making local development more accessible and reducing Docker dependencies.
+
+  **Running MooseStack dev environment without Docker**
+
+  ```bash
+  # Start development with Docker (default behavior)
+  moose dev
+  
+  # Start development without Docker using native binaries
+  moose dev --dockerless
+  
+  # The --dockerless flag automatically:
+  # - Downloads ClickHouse v25.8.18.1-lts binary
+  # - Downloads Temporal CLI v1.3.0 binary
+  # - Caches binaries in ~/.moose/binaries/
+  # - Runs infrastructure as native processes instead of containers
+  
+  # Useful when Docker is unavailable or you prefer native binaries
+  # Logs are stored in .moose/native_infra/ for debugging
+  
+  # Clean up (stops both Docker containers and native processes)
+  moose clean
+  ```
+
+  Shows how to use the new --dockerless flag to run MooseStack development environment with native binaries instead of Docker containers. This is particularly useful for developers who don't have Docker installed or prefer native processes for better performance and debugging.
+
+  PR: [#3936](https://github.com/514-labs/moose/pull/3936) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+**Add migration validation with --validate flag** ([@georgevanderson](https://github.com/georgevanderson))
+  The migrate command now supports a --validate flag that validates migration files without executing them. This allows users to check for conflicts and verify migration consistency before applying changes to their database, improving safety in migration workflows.
+
+  **Validate migrations before applying with --validate flag**
+
+  ```bash
+  # Validate migration files without executing them
+  # This checks for conflicts and verifies migration consistency
+  
+  # Basic validation - checks if migrations can be applied safely
+  moose migrate --validate
+  
+  # Example output when migrations are valid:
+  # Validating 3 migration file(s)...
+  # 
+  #   20240115_initial_schema (2 delta(s))
+  #     - Create table users
+  #     - Create table events
+  # 
+  #   20240120_add_indexes (1 delta(s))  
+  #     - Add index on events.user_id
+  # 
+  #   20240125_new_columns (2 delta(s))
+  #     - Add column users.created_at
+  #     - Add column events.session_id
+  # 
+  # ✓ Fold succeeded: 2 table(s), 0 view(s), 0 MV(s)
+  # ✓ All migrations valid, no conflicts detected
+  
+  # Example output when conflicts are detected:
+  # Validating 4 migration file(s)...
+  # 
+  # ⚠ Conflict: table 'users' modified by both '20240125_branch_a' and '20240125_branch_b' (parent: a1b2c3d4e5f6..)
+  # ⚠ Conflict: table 'events' dropped by '20240130_cleanup' but modified by '20240130_add_fields' (parent: f6e5d4c3b2a1..)
+  # 
+  # ✗ Validation failed: 2 conflict(s)
+  
+  # Use validation in CI/CD pipeline to catch issues early
+  # before deploying to production environments
+  ```
+
+  Shows how to use the new --validate flag with the migrate command to check migration files for conflicts and consistency before applying them to the database. This is particularly useful in CI/CD pipelines to catch migration issues early.
+
+  PR: [#3941](https://github.com/514-labs/moose/pull/3941) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
+### Improvements
+- Update Moose dependencies to version 0.6.517: Updated moose-cli and moose-lib dependencies across all project templates from version 0.6.505 to 0.6.517, ensuring new projects get the latest bug fixes and improvements. PR: [#4016](https://github.com/514-labs/moose/pull/4016) ([@callicles](https://github.com/callicles))
+- Simplify Ingest API documentation: Streamlined the Ingest API documentation to focus on core usage patterns and removed references to deprecated pipeline patterns. PR: [#3995](https://github.com/514-labs/moose/pull/3995) | Docs: [/moosestack/apis/ingest-api](https://docs.moosejs.com/moosestack/apis/ingest-api) ([@okane16](https://github.com/okane16))
+- Improve CLI help text and documentation clarity: CLI commands now have clearer, more concise help text and descriptions throughout the documentation, making the developer experience more intuitive. PR: [#3998](https://github.com/514-labs/moose/pull/3998) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Add documentation for debugging failed SQL statements: Added comprehensive documentation explaining how to enable debug logging to see full SQL statements that fail in ClickHouse, including filtering commands and troubleshooting steps. PR: [#4000](https://github.com/514-labs/moose/pull/4000) | Docs: [/moosestack/help/troubleshooting](https://docs.moosejs.com/moosestack/help/troubleshooting) ([@514Ben](https://github.com/514Ben))
+- Add author credits to analytics agent guide: Added author attribution to all pages in the production-ready analytics agent guide to properly credit content creators. PR: [#3981](https://github.com/514-labs/moose/pull/3981) | Docs: [/guides/production-ready-analytics-agent](https://docs.moosejs.com/guides/production-ready-analytics-agent) ([@03cranec](https://github.com/03cranec))
+- Fix broken documentation links and navigation: Fixed multiple broken internal links across MooseStack documentation and removed outdated placeholder pages that were causing navigation issues for users. PR: [#3966](https://github.com/514-labs/moose/pull/3966) | Docs: [/moosestack/getting-started](https://docs.moosejs.com/moosestack/getting-started) ([@okane16](https://github.com/okane16))
+- Improve schema versioning documentation: Updated the schema versioning documentation to better explain the version field workflow and added helpful callouts linking to related migration features. PR: [#3951](https://github.com/514-labs/moose/pull/3951) | Docs: [/moosestack/olap/schema-versioning](https://docs.moosejs.com/moosestack/olap/schema-versioning) ([@okane16](https://github.com/okane16))
+- Improve AggregatingMergeTree documentation: Added comprehensive documentation and code examples for AggregatingMergeTree engine configuration, including guidance on using AggregateFunction and SimpleAggregateFunction types for proper column annotation. PR: [#3946](https://github.com/514-labs/moose/pull/3946) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@phiSgr](https://github.com/phiSgr))
+- Improve 514 CLI setup documentation: Clarified the setup steps for the 514 CLI integration by reordering authentication and project linking steps for better user flow. PR: [#3950](https://github.com/514-labs/moose/pull/3950) | Docs: [/guides/optimize-clickhouse-performance/tutorial](https://docs.moosejs.com/guides/optimize-clickhouse-performance/tutorial) ([@okane16](https://github.com/okane16))
+
+### Bug Fixes
+- Fix Kafka consumer group synchronization issues: Fixed issues with Kafka consumer group management that could cause synchronization problems between producers and consumers in streaming data pipelines. PR: [#4006](https://github.com/514-labs/moose/pull/4006) ([@LucioFranco](https://github.com/LucioFranco))
+- Fix View-to-View cross-database dependency ordering: Fixed an issue where Views depending on other Views across different databases were not being created in the correct order, which could cause deployment failures. PR: [#4007](https://github.com/514-labs/moose/pull/4007) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling) ([@514Ben](https://github.com/514Ben))
+
+
