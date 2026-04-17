@@ -611,7 +611,35 @@ export const runApis = async (config: ApisConfig) => {
       );
       // port is now passed via config.proxyPort or defaults to 4001
       const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
-      server.listen(port, "localhost", () => {
+
+      // Handle listen errors instead of letting Node emit an uncaught
+      // exception. EADDRINUSE here means a previous worker (or primary
+      // RoundRobinHandle) is still holding the socket; the cluster-level
+      // restart path will fork a replacement. Logging cleanly avoids
+      // stack-trace spam that masks the underlying cause.
+      server.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          console.error(
+            `[consumption-api] port ${port} already in use — worker exiting so cluster can respawn`,
+          );
+        } else {
+          console.error(
+            `[consumption-api] unexpected server error on port ${port}:`,
+            err,
+          );
+        }
+        // Surrender gracefully. The Cluster's workerStop isn't appropriate
+        // here (we never reached a healthy state), so exit non-zero and let
+        // the primary schedule a retry.
+        process.exit(1);
+      });
+
+      // Omit an explicit host so Node's cluster module intercepts via
+      // RoundRobinHandle and the primary holds the single OS-level listener;
+      // workers receive connection handles over IPC. With an explicit
+      // "localhost" each worker was trying to bind the socket itself, which
+      // raced and deterministically failed on workers after the first.
+      server.listen(port, () => {
         console.log(`Server running on port ${port}`);
       });
 

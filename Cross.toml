@@ -1,0 +1,32 @@
+# Local cross-compile config for dec-bench harness tests.
+# CI uses manylinux_2_28 directly; this is the convenience path for
+# `cross build --target aarch64-unknown-linux-gnu -p moose-cli`.
+[build.env]
+# Tell openssl-sys to link the system OpenSSL 1.1 inside the container
+# instead of vendoring OpenSSL 3.5.5. The vendored build strips deprecated
+# symbols (SSL_get_peer_certificate), which librdkafka still calls — so the
+# link fails. Using the system lib keeps both old and new names available.
+passthrough = ["OPENSSL_LIB_DIR", "OPENSSL_INCLUDE_DIR", "OPENSSL_STATIC"]
+
+[target.aarch64-unknown-linux-gnu]
+# The pinned 0.2.5 image ships libssl 1.0.0, which lacks SSL_get_peer_certificate
+# as an exported symbol and fails librdkafka's final link. `:main` is Ubuntu
+# 20.04 with libssl 1.1.1, which has the symbol.
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+# cross's /opt/toolchain.cmake pins CMAKE_FIND_ROOT_PATH to /usr/aarch64-linux-gnu
+# (sysroot layout), but apt multiarch installs arm64 libs to
+# /usr/lib/aarch64-linux-gnu (Debian layout). rdkafka-sys's cmake build of
+# librdkafka does FIND_PACKAGE(ZLIB) / FIND_PACKAGE(OpenSSL) and can't see
+# across that gap — so we symlink the multiarch lib/headers into the sysroot.
+pre-build = [
+  "dpkg --add-architecture arm64",
+  "apt-get update",
+  "apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev cmake pkg-config zlib1g-dev:arm64 libssl-dev:arm64",
+  "mkdir -p /usr/aarch64-linux-gnu/lib /usr/aarch64-linux-gnu/include",
+  "ln -sf /usr/lib/aarch64-linux-gnu/libz.so /usr/aarch64-linux-gnu/lib/libz.so",
+  "ln -sf /usr/lib/aarch64-linux-gnu/libz.a /usr/aarch64-linux-gnu/lib/libz.a",
+  "ln -sf /usr/include/zlib.h /usr/aarch64-linux-gnu/include/zlib.h",
+  "ln -sf /usr/include/zconf.h /usr/aarch64-linux-gnu/include/zconf.h",
+  "for f in libssl.so libssl.a libcrypto.so libcrypto.a; do ln -sf /usr/lib/aarch64-linux-gnu/$f /usr/aarch64-linux-gnu/lib/$f; done",
+  "ln -sfn /usr/include/openssl /usr/aarch64-linux-gnu/include/openssl",
+]

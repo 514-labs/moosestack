@@ -3,6 +3,7 @@ pub mod clickhouse;
 pub mod devkafka;
 pub mod devredis;
 pub mod errors;
+pub mod preflight;
 pub mod temporal;
 
 use crate::cli::display::{with_spinner_completion, with_timing, Message};
@@ -126,6 +127,19 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn start(&self, project: &Project) -> Result<(), RoutineFailure> {
+        // Preflight: surface EADDRINUSE in a single actionable message before
+        // anything starts. Prevents the Node consumption worker from entering
+        // an unbounded restart loop when a prior `moose dev --dockerless` is
+        // still holding ports 4001 / 6379 / 19092.
+        let specs = preflight::port_specs_for(
+            project,
+            self.scripts_enabled,
+            /* include_webserver = */ true,
+        );
+        preflight::check_ports(&specs, &preflight::native_dir_for(project))
+            .map_err(NativeInfraError::from)
+            .map_err(Self::map_native_err)?;
+
         // Start embedded devredis (Redis needed early for leadership/presence)
         let devredis_handle = with_timing("Start devredis", || {
             with_spinner_completion(

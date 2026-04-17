@@ -2698,7 +2698,11 @@ impl Webserver {
             .await
             .unwrap_or_else(|e| handle_listener_err(management_socket.port(), e));
 
-        // Check if proxy port is available
+        // Defense in depth: quick bind-and-drop on proxy_port so Docker-mode
+        // users get a clear error before the Node worker spawns. The
+        // --dockerless path also runs a structured preflight in
+        // NativeInfraProvider::start that covers this port alongside the
+        // embedded-infra ports.
         let proxy_socket = self.get_socket(project.http_server_config.proxy_port).await;
         TcpListener::bind(proxy_socket)
             .await
