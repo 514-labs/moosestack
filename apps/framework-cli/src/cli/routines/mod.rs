@@ -985,17 +985,35 @@ pub async fn start_production_mode(
     maybe_warmup_connections(&project, &redis_client).await;
 
     let use_deltas = project.features.migrate_with_deltas;
-    let execute_migration_yaml = if use_deltas {
-        has_delta_migration_files()?
-    } else {
-        std::fs::exists(MIGRATION_FILE)?
-    };
+    let has_delta_files = use_deltas && has_delta_migration_files()?;
+    let has_legacy_plan_yaml = !use_deltas && std::fs::exists(MIGRATION_FILE)?;
+    let execute_migration_yaml = has_delta_files || has_legacy_plan_yaml;
 
     if !execute_migration_yaml {
         info!("Migration file not found.")
     }
 
-    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+    // Delta mode: all OLAP changes must flow through a committed delta file.
+    // If changes are pending and no delta file exists, block startup — auto-applying
+    // via execute_initial_infra_change would mutate Redis's infrastructure map and
+    // invalidate the parent_state_hash of any later-generated delta.
+    if use_deltas && !has_delta_files && !plan.changes.olap_changes.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Production startup blocked: {} pending OLAP change(s) detected but no \
+             delta migration files exist in ./migrations/.\n\n\
+             In delta mode, every infrastructure change must flow through a \
+             committed migration file so prod can apply them with a validated \
+             parent state hash.\n\n\
+             To proceed, run `moose generate migration --save` locally, review the \
+             generated file, and commit it before deploying.",
+            plan.changes.olap_changes.len(),
+        ));
+    }
+
+    if !use_deltas
+        && !project.migration_config.prod_auto_allow_destructive
+        && !execute_migration_yaml
+    {
         info!("prod_auto_allow_destructive is false, analysing risk.");
         let risk = classify_plan_risk(&plan.changes);
         if risk.is_destructive() {
@@ -1005,56 +1023,41 @@ pub async fn start_production_mode(
                 .map(|c| format!("  - {c}"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            let missing_file_hint = if use_deltas {
-                "no migration files were found in ./migrations/"
-            } else {
-                "no plan.yaml was found"
-            };
-            let generate_hint = if use_deltas {
-                "1. Run `moose generate migration --save` to record the destructive \
-                 changes in a reviewed delta file under ./migrations/"
-            } else {
-                "1. Create a new version of the table by setting the `version` field in your \
-                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
-                 heuristic uses these to migrate data automatically"
-            };
             return Err(anyhow::anyhow!(
                 "Production startup blocked: the computed infrastructure diff contains {} \
-                 destructive operation(s) but {}.\n\
+                 destructive operation(s) but no plan.yaml was found.\n\
                  {}\n\n\
                  To proceed, either:\n  \
-                 {}\n  \
+                 1. Create a new version of the table by setting the `version` field in your \
+                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
+                 heuristic uses these to migrate data automatically\n  \
                  2. Set `prod_auto_allow_destructive = true` under [migration_config] \
                  in moose.config.toml to allow unplanned destructive changes.",
                 risk.destructive_changes.len(),
-                missing_file_hint,
                 summary,
-                generate_hint,
             ));
         } else {
             info!("PlanRisk: {:?}, proceeding.", risk)
         }
     }
 
-    if execute_migration_yaml {
-        if use_deltas {
-            migrate::execute_migration_deltas(
-                &project,
-                &project.clickhouse_config,
-                &current_state,
-                &*state_storage,
-            )
-            .await?;
-        } else {
-            migrate::execute_migration_plan(
-                &project,
-                &project.clickhouse_config,
-                &current_state,
-                &plan.target_infra_map,
-                &*state_storage,
-            )
-            .await?;
-        }
+    if has_delta_files {
+        migrate::execute_migration_deltas(
+            &project,
+            &project.clickhouse_config,
+            &current_state,
+            &*state_storage,
+        )
+        .await?;
+    } else if has_legacy_plan_yaml {
+        migrate::execute_migration_plan(
+            &project,
+            &project.clickhouse_config,
+            &current_state,
+            &plan.target_infra_map,
+            &*state_storage,
+        )
+        .await?;
     };
 
     plan_validator::validate(&project, &plan)?;
@@ -1069,7 +1072,7 @@ pub async fn start_production_mode(
         project: &project,
         settings,
         plan: &plan,
-        skip_olap: execute_migration_yaml,
+        skip_olap: execute_migration_yaml || use_deltas,
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
