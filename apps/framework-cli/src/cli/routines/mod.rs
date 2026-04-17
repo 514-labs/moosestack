@@ -95,6 +95,7 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
     compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
 };
+use crate::framework::core::migration_file::MigrationHistory;
 use crate::framework::core::migration_plan::MigrationPlanWithBeforeAfter;
 use crate::framework::core::plan_validator;
 use crate::framework::typescript::parser::get_compiled_index_path;
@@ -983,7 +984,12 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
+    let use_deltas = project.features.migrate_with_deltas;
+    let execute_migration_yaml = if use_deltas {
+        has_delta_migration_files()?
+    } else {
+        std::fs::exists(MIGRATION_FILE)?
+    };
 
     if !execute_migration_yaml {
         info!("Migration file not found.")
@@ -999,18 +1005,31 @@ pub async fn start_production_mode(
                 .map(|c| format!("  - {c}"))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let missing_file_hint = if use_deltas {
+                "no migration files were found in ./migrations/"
+            } else {
+                "no plan.yaml was found"
+            };
+            let generate_hint = if use_deltas {
+                "1. Run `moose generate migration --save` to record the destructive \
+                 changes in a reviewed delta file under ./migrations/"
+            } else {
+                "1. Create a new version of the table by setting the `version` field in your \
+                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
+                 heuristic uses these to migrate data automatically"
+            };
             return Err(anyhow::anyhow!(
                 "Production startup blocked: the computed infrastructure diff contains {} \
-                 destructive operation(s) but no plan.yaml was found.\n\
+                 destructive operation(s) but {}.\n\
                  {}\n\n\
                  To proceed, either:\n  \
-                 1. Create a new version of the table by setting the `version` field in your \
-                 OlapTable config and updating the table name (e.g. my_table_v2) — the backfill \
-                 heuristic uses these to migrate data automatically\n  \
+                 {}\n  \
                  2. Set `prod_auto_allow_destructive = true` under [migration_config] \
                  in moose.config.toml to allow unplanned destructive changes.",
                 risk.destructive_changes.len(),
+                missing_file_hint,
                 summary,
+                generate_hint,
             ));
         } else {
             info!("PlanRisk: {:?}, proceeding.", risk)
@@ -1018,14 +1037,24 @@ pub async fn start_production_mode(
     }
 
     if execute_migration_yaml {
-        migrate::execute_migration_plan(
-            &project,
-            &project.clickhouse_config,
-            &current_state,
-            &plan.target_infra_map,
-            &*state_storage,
-        )
-        .await?;
+        if use_deltas {
+            migrate::execute_migration_deltas(
+                &project,
+                &project.clickhouse_config,
+                &current_state,
+                &*state_storage,
+            )
+            .await?;
+        } else {
+            migrate::execute_migration_plan(
+                &project,
+                &project.clickhouse_config,
+                &current_state,
+                &plan.target_infra_map,
+                &*state_storage,
+            )
+            .await?;
+        }
     };
 
     plan_validator::validate(&project, &plan)?;
@@ -1075,6 +1104,21 @@ pub async fn start_production_mode(
         .await;
 
     Ok(())
+}
+
+/// Returns true if `./migrations/` contains any delta migration YAML files.
+///
+/// Delta files are any `*.yaml` under the directory other than the legacy
+/// `plan.yaml` / `pending.yaml`. Parses them via `MigrationHistory::load_from_dir`
+/// so malformed files surface as errors rather than being silently skipped.
+fn has_delta_migration_files() -> anyhow::Result<bool> {
+    let dir = std::path::Path::new("./migrations");
+    if !dir.exists() {
+        return Ok(false);
+    }
+    let history = MigrationHistory::load_from_dir(dir)
+        .map_err(|e| anyhow::anyhow!("Failed to load migration files: {}", e))?;
+    Ok(!history.is_empty())
 }
 
 fn prepend_base_url(base_url: Option<&str>, path: &str) -> String {
