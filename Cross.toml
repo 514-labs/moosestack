@@ -2,11 +2,17 @@
 # CI uses manylinux_2_28 directly; this is the convenience path for
 # `cross build --target aarch64-unknown-linux-gnu -p moose-cli`.
 [build.env]
-# Tell openssl-sys to link the system OpenSSL 1.1 inside the container
-# instead of vendoring OpenSSL 3.5.5. The vendored build strips deprecated
-# symbols (SSL_get_peer_certificate), which librdkafka still calls — so the
-# link fails. Using the system lib keeps both old and new names available.
-passthrough = ["OPENSSL_LIB_DIR", "OPENSSL_INCLUDE_DIR", "OPENSSL_STATIC"]
+# Tell openssl-sys to skip the vendored build (it strips deprecated symbols
+# like SSL_get_peer_certificate that librdkafka still calls) and link the
+# system OpenSSL 1.1 inside the container instead. OPENSSL_NO_VENDOR is the
+# documented opt-out for the `vendored` feature — it keeps moose-cli's
+# Cargo.toml unchanged so regular native builds keep vendoring.
+passthrough = [
+  "OPENSSL_NO_VENDOR",
+  "OPENSSL_LIB_DIR",
+  "OPENSSL_INCLUDE_DIR",
+  "OPENSSL_STATIC",
+]
 
 [target.aarch64-unknown-linux-gnu]
 # The pinned 0.2.5 image ships libssl 1.0.0, which lacks SSL_get_peer_certificate
