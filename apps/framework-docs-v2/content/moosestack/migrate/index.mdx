@@ -15,27 +15,24 @@ Migrations synchronize your code-defined database schema with your production in
 
 Moose Migrate operates by comparing two states:
 
-1. **Your code** - Tables and streams defined in your application
-2. **Your database** - The actual schema in ClickHouse, Kafka, or Redpanda
+1. **Your code** — Tables and streams defined in your application
+2. **Your database** — The actual schema in ClickHouse, Kafka, or Redpanda
 
-When these states differ, Moose Migrate generates operations to bring them into alignment. These operations might include:
+When these states differ, Moose generates operations to bring them into alignment. Operations might include adding or dropping tables, adding/removing/renaming columns, changing data types, or creating streaming topics.
 
-- Adding or dropping tables
-- Adding, removing, or renaming columns
-- Changing data types
-- Creating or modifying streaming topics
+Moose tracks these changes as a series of **migration files** under `./migrations/`. Each committed migration file records an incremental diff from the previous migrated state, and each is applied exactly once in production.
 
-The full list of operations is available in the [Migration Plan Format](/moosestack/migrate/plan-format) documentation.
+The full operation reference lives in [Migration Plan](/moosestack/migrate/plan-format).
 
 ## Core Concepts
 
 Migrations in Moose revolve around three key decisions:
 
-| Concept | What it is | Where to go |
+| Concept | What it controls | Where to go |
 | :--- | :--- | :--- |
-| [Lifecycle Management](#lifecycle-management) | Controlling *what* changes are allowed (e.g., preventing data deletion). | [Overview](/moosestack/migrate/lifecycle) • [Fully Managed](/moosestack/migrate/lifecycle-fully-managed) • [Deletion Protected](/moosestack/migrate/lifecycle-deletion-protected) • [Externally Managed](/moosestack/migrate/lifecycle-externally-managed) |
-| [Generating Migrations](#generating-migrations) | Deciding *how* changes are generated. | [Overview](/moosestack/migrate/modes) • [Automatic](/moosestack/migrate/automatic) • [Planned](/moosestack/migrate/planned-migrations) |
-| [Applying Changes](#applying-changes-to-production) | The workflow for executing migrations: serverless (`moose migrate`) vs server runtime (`moose prod`). | [Serverless](/moosestack/migrate/apply-planned-migrations-cli) • [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) |
+| [Lifecycle Management](#lifecycle-management) | *What* changes are allowed (e.g., preventing data deletion). | [Overview](/moosestack/migrate/lifecycle) • [Fully Managed](/moosestack/migrate/lifecycle-fully-managed) • [Deletion Protected](/moosestack/migrate/lifecycle-deletion-protected) • [Externally Managed](/moosestack/migrate/lifecycle-externally-managed) |
+| [Generating Migrations](/moosestack/migrate/generate) | *How* migration files are produced from code changes. | [Generate migrations](/moosestack/migrate/generate) |
+| [Applying Migrations](/moosestack/migrate/apply) | *How* committed migration files are executed against the database. | [Apply migrations](/moosestack/migrate/apply) • [`moose migrate` (CLI)](/moosestack/migrate/apply-planned-migrations-cli) • [`moose prod` (Runtime)](/moosestack/migrate/apply-planned-migrations-service) |
 
 
 ### Lifecycle Management
@@ -92,26 +89,29 @@ You configure lifecycle modes individually on each `OlapTable` and `Stream` obje
 
 ### Generating Migrations
 
-Moose Migrate provides two complementary ways to generate migrations. Each is designed for use in different stages of the application lifecycle, and it's best practice to use both in your workflow:
+`moose dev` watches your code for schema changes and appends operations to `./migrations/pending.yaml` in realtime. When you're ready to commit a migration for deployment, run:
 
-| Option | Behavior | Use Case |
-| :--- | :--- | :--- |
-| [Automatic](/moosestack/migrate/automatic) | Updates database instantly on file save. Fast iteration, but can be destructive. | Local development, fast prototyping |
-| [Planned](/moosestack/migrate/planned-migrations) | Generates reviewable plan files. Safe, deterministic, with drift detection. | Production deployment, CI/CD |
+```bash
+moose generate migration --save
+```
 
+This computes the final diff against the previous migrated state and writes a committed migration file under `./migrations/`. Review it, commit it to version control, then deploy.
 
-[Compare Migration Modes →](/moosestack/migrate/modes)
+[Generate migrations →](/moosestack/migrate/generate)
 
 ### Applying Changes
 
-You have two options for executing planned migrations against your production database:
+You have two options for executing committed migration files against your production database:
 
 | Mode | Behavior | Use Case |
 | :--- | :--- | :--- |
-| [Serverless (`moose migrate`)](/moosestack/migrate/apply-planned-migrations-cli) | You run migrations manually or via CI/CD. | Integrating Moose OLAP into an existing application as a library. |
-| [Server Runtime (`moose prod`)](/moosestack/migrate/apply-planned-migrations-service) | Migrations are automatically run within the Moose Runtime on server startup. | Building a dedicated analytics service with the full Moose Runtime. |
+| [`moose migrate` (CLI)](/moosestack/migrate/apply-planned-migrations-cli) | You run migrations manually or via CI/CD. | Integrating Moose OLAP into an existing application as a library, or serverless deployments. |
+| [`moose prod` (Runtime)](/moosestack/migrate/apply-planned-migrations-service) | Migrations are automatically run within the Moose Runtime on server startup. | Building a dedicated analytics service with the full Moose Runtime. |
 
+In production, Moose reads every file under `./migrations/`, compares against the applied-migrations list in state, and runs only the unapplied ones. If your code has pending OLAP changes with no committed migration file, production startup is blocked — every infrastructure change must flow through a reviewed migration.
+
+[Apply migrations →](/moosestack/migrate/apply)
 
 ## Advanced Topics
 
-- [Failed Migrations](/moosestack/migrate/failed-migrations) - Recover from migration errors
+- [Failed Migrations](/moosestack/migrate/failed-migrations) — Recover from migration errors
