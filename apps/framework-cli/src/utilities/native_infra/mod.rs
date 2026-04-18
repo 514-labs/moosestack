@@ -18,9 +18,9 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Relative path from project root to the native infrastructure directory.
 pub const NATIVE_INFRA_DIR: &str = ".moose/native_infra";
@@ -216,9 +216,17 @@ impl InfraProvider for NativeInfraProvider {
                         let _ = child.start_kill();
                         anyhow::anyhow!("ClickHouse process exited immediately after spawn")
                     })?;
-                    if let Err(e) =
-                        write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
-                    {
+                    // ClickHouse's watchdog sets its own comm via prctl(PR_SET_NAME)
+                    // to `clckhouse-watch` (missing the 'i', trimmed to fit the
+                    // 15-char TASK_COMM_LEN). The PID we capture here is the
+                    // watchdog — not the server child — so store the name that
+                    // `ps -o comm=` will actually report so `process_matches`
+                    // can later verify identity and issue SIGTERM on shutdown.
+                    if let Err(e) = write_pid_file(
+                        &clickhouse::pid_file_path(project),
+                        pid,
+                        clickhouse::WATCHDOG_COMM,
+                    ) {
                         let _ = child.start_kill();
                         return Err(anyhow::anyhow!("{}", e));
                     }
@@ -503,12 +511,43 @@ pub fn kill_pid_file(pid_path: &Path) {
         }
         Ok(_) => {
             info!("PID {pid} already exited or could not be signaled");
+            let _ = std::fs::remove_file(pid_path);
+            return;
         }
         Err(e) => {
             info!("Failed to run kill command for PID {pid}: {e}");
+            let _ = std::fs::remove_file(pid_path);
+            return;
         }
     }
 
+    // ClickHouse takes several seconds to flush and release its listen sockets;
+    // without waiting here the next `moose dev --dockerless` preflight sees the
+    // ports still bound and aborts with a false "another moose dev is running"
+    // error. Poll `kill -0` until the PID is gone, then escalate to SIGKILL.
+    const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+    let deadline = Instant::now() + WAIT_TIMEOUT;
+    while Instant::now() < deadline {
+        let still_alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !still_alive {
+            info!("PID {pid} exited after SIGTERM");
+            let _ = std::fs::remove_file(pid_path);
+            return;
+        }
+        sleep(POLL_INTERVAL);
+    }
+
+    warn!("PID {pid} did not exit within {WAIT_TIMEOUT:?}; sending SIGKILL");
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", &pid.to_string()])
+        .output();
+    // Brief grace for the kernel to release ports held by the killed process.
+    sleep(Duration::from_millis(200));
     let _ = std::fs::remove_file(pid_path);
 }
 
