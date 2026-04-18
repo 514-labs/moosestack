@@ -1,0 +1,28 @@
+---
+title: Ordering & primary key
+description: Configure ORDER BY, PRIMARY KEY, and SAMPLE BY on an OlapTable
+order: 3
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Ordering & primary key
+
+Reference for the ClickHouse `ORDER BY`, `PRIMARY KEY`, and `SAMPLE BY` clauses on an [`OlapTable`](/moosestack/olap/model-table). These are the most consequential decisions you make at table-creation time — ClickHouse cannot change `ORDER BY` in place.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the inline reference on the [OlapTable](/moosestack/olap/model-table) page.
+</Callout>
+
+## Config fields covered
+
+- `orderByFields` (TS) / `order_by_fields` (Py) — ordered list of columns for `ORDER BY`
+- `orderByExpression` (TS) / `order_by_expression` (Py) — custom `ORDER BY` expression
+- `primaryKeyExpression` (TS) / `primary_key_expression` (Py) — overrides inferred `Key` columns
+- `sampleByExpression` (TS) / `sample_by_expression` (Py) — `SAMPLE BY` expression for approximate query processing
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [Schema optimization](/moosestack/olap/schema-optimization) — sort-key design guidance

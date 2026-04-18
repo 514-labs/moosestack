@@ -1,8 +1,8 @@
 ---
-title: Schema Versioning
-description: Use the `version` field on an `OlapTable` to model breaking ClickHouse schema changes and review generated backfill SQL
-order: 8
-category: olap
+title: Schema versioning
+description: Use the `version` field on Moose primitives to model breaking schema changes and coordinate cutovers
+order: 1
+category: reference
 ---
 
 import {
@@ -105,7 +105,7 @@ For this `version: "0.0"` to `version: "0.1"` change, the plan can include:
 - `CreateTable` for the new `version: "0.1"` physical table, such as `aircraft_tracking_data_0_1`, with the updated sort key.
 - Optional `RawSql` `INSERT INTO ... SELECT ...` to copy rows from the `version: "0.0"` physical table into the `version: "0.1"` physical table when Moose detects a straight-copy backfill.
 
-For command options and connection modes, see [Planned Migrations](/moosestack/migrate/planned-migrations) and the [`moose generate migration` CLI reference](/moosestack/moose-cli).
+For command options and connection modes, see [Generate migrations](/moosestack/migrate/generate) and the [`moose generate migration` CLI reference](/moosestack/moose-cli).
 
 <Callout type="info" title="Backfill detection" compact>
 Moose detects a backfill opportunity when the old and new tables have the same schema. It will prompt you to accept the backfill if you run `moose generate migration --save` in an interactive terminal.
@@ -166,6 +166,6 @@ operations:
 
 ## Related
 
-- [Modeling Tables](/moosestack/olap/model-table)
-- [Planned Migrations](/moosestack/migrate/planned-migrations)
-- [Applying Migrations](/moosestack/olap/apply-migrations)
+- [OlapTable](/moosestack/olap/model-table)
+- [Generate migrations](/moosestack/migrate/generate)
+- [Apply migrations](/moosestack/migrate/apply)

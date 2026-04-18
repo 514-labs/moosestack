@@ -197,7 +197,7 @@ Locally, externally managed tables are created/kept in sync in your development 
 
 Moose will **not** apply schema changes to `EXTERNALLY_MANAGED` tables in production. If you edit these table models in code, those edits will not produce DDL operations in the migration plan (they will not appear in `plan.yaml`).
 
-For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moosestack/olap/planned-migrations](/moosestack/olap/planned-migrations).
+For more on how migrations are generated and what shows up in each migration file, see [Generate migrations](/moosestack/migrate/generate) and the [Migration Plan](/moosestack/migrate/plan-format) reference.
 </Callout>
 
 <Callout type="info" title="Automatic Local Mirroring">

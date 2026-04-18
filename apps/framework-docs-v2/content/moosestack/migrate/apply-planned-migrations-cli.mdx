@@ -1,19 +1,23 @@
 ---
-title: moose migrate
-description: Reference documentation for the manual migration CLI command used in serverless deployments.
+title: moose migrate (CLI)
+description: Reference for the manual migration CLI command used when running Moose OLAP without the Moose runtime.
 order: 7
-category: olap
+category: migrate
 ---
 
 import { Callout } from "@/components/mdx";
 
-# moose migrate
+# moose migrate (CLI)
 
-The **CLI** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose OLAP is integrated as a library rather than a standalone server (e.g. as a library in a Python or TypeScript application).
+`moose migrate` applies committed migration files against your database as a one-shot CLI command. Use it when you are running **Moose OLAP without the Moose runtime** — for example, embedding Moose OLAP as a library inside an existing Python or TypeScript application, or driving migrations from a CI/CD pipeline.
 
-## Overview
+If you run the full Moose stack (`moose prod`), migrations are applied automatically on server startup — see [moose prod (Runtime)](/moosestack/migrate/apply-planned-migrations-service) instead.
 
-In serverless or library-based deployments, MooseStack does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
+## When to use
+
+- **Library deployments** — Moose OLAP is imported into your application; there is no `moose prod` server to apply migrations on boot.
+- **Serverless deployments** — no long-lived process exists to run migrations as part of startup.
+- **CI/CD** — you want migrations applied as a discrete, reviewable step before deploying application code.
 
 | Feature | Description |
 | :--- | :--- |
@@ -40,19 +44,20 @@ moose migrate --clickhouse-url <CONNECTION_STRING>
 
 When `moose migrate` is executed:
 
-1.  **Load Plan:** Reads `migrations/plan.yaml` from the current directory.
-2.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against `remote_state.json`.
-3.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
-4.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
-5.  **Report Success:** Exits with code 0 if all operations succeed.
+1.  **Load migrations:** Reads every committed migration file under `./migrations/`.
+2.  **Check applied state:** Compares against the applied-migrations list stored in state.
+3.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against the recorded state.
+4.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
+5.  **Execute Migration:** Applies the operations from each unapplied migration file sequentially.
+6.  **Report Success:** Exits with code 0 if all operations succeed.
 
 ## Failure Modes
 
 | Condition | Outcome | Resolution |
 | :--- | :--- | :--- |
-| **Drift Detected** | Command fails (exit code 1). | Regenerate the plan against the current production DB and retry. |
+| **Drift Detected** | Command fails (exit code 1). | Regenerate the migration against the current production DB and retry. |
 | **Connection Error** | Command fails (exit code 1). | Check network connectivity and credentials in the connection string. |
-| **SQL Error** | Command fails (exit code 1). | Fix the problematic operation in `plan.yaml` or the database state and retry. |
+| **SQL Error** | Command fails (exit code 1). | Fix the problematic operation in the migration file or the database state and retry. See [Failed migrations](/moosestack/migrate/failed-migrations). |
 
 ## CI/CD Example
 
@@ -68,6 +73,8 @@ This command is typically used in a deployment pipeline before updating the appl
 
 ## See Also
 
-- [Planned Migrations](/moosestack/migrate/planned-migrations) — Generating the plan files
-- [moose prod (Moose Runtime Migrations)](/moosestack/migrate/apply-planned-migrations-service) — Automatic migrations for Moose Runtime deployments
-- [Migration Modes](/moosestack/migrate/modes) — Overview of schema evolution modes
+- [Generate migrations](/moosestack/migrate/generate) — produce committed migration files from code changes
+- [Apply migrations](/moosestack/migrate/apply) — overview of execution paths
+- [moose prod (Runtime)](/moosestack/migrate/apply-planned-migrations-service) — automatic migrations on Moose server startup
+- [Migration Plan](/moosestack/migrate/plan-format) — file-format reference for migration files
+- [Failed migrations](/moosestack/migrate/failed-migrations) — recovery guidance

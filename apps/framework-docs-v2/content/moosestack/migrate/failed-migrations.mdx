@@ -205,6 +205,6 @@ Once the old column is no longer needed, you can drop it in a third PR.
 - Nullable(T) -> T (NOT NULL): fails if any NULLs exist and no default is provided; backfill then drop nullability
 - Narrowing types (e.g., Int64 -> Int32): fails if values overflow; validate and transform first
 
-<Callout type="info" title="Related" compact href="/moosestack/olap/planned-migrations" ctaLabel="Learn more" icon={false}>
-Read about migration planning and how to use it to safely manage schema changes in production.
+<Callout type="info" title="Related" compact href="/moosestack/migrate/generate" ctaLabel="Learn more" icon={false}>
+Read about how migrations are generated and how to safely evolve your schema in production.
 </Callout>

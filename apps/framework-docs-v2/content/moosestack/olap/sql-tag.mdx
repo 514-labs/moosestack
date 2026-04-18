@@ -79,7 +79,7 @@ The bare `sql` template tag still exists for backward compatibility, but `sql.st
 
 ## Interpolate tables and columns
 
-Use Moose table and column objects when you want identifier-safe SQL that follows the current table definition. For how those table objects are modeled, see [Model table](/moosestack/olap/model-table).
+Use Moose table and column objects when you want identifier-safe SQL that follows the current table definition. For how those table objects are modeled, see [OlapTable](/moosestack/olap/model-table).
 
 ```ts filename="app/query.ts" copy
 import { getMooseUtils } from "@514labs/moose-lib";
@@ -128,10 +128,10 @@ When a TypeScript materialized-view target table stores `AggregateFunction` colu
 | Behavior | What happens |
 | --- | --- |
 | `SELECT *` | Moose includes ClickHouse [materialized columns](/moosestack/olap/materialized-columns) and [alias columns](/moosestack/olap/alias-columns) when a query uses `*`. |
-| Database-qualified tables | Tables with a `database` config in [Model table](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
+| Database-qualified tables | Tables with a `database` config in [OlapTable](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
 
 ## Related capabilities
 
 - [Query client](/moosestack/olap/moose-client) for running `sql` queries against ClickHouse
-- [Model table](/moosestack/olap/model-table) for defining the tables you interpolate
+- [OlapTable](/moosestack/olap/model-table) for defining the tables you interpolate
 - [Materialized view](/moosestack/olap/model-materialized-view) for target tables that expose typed columns

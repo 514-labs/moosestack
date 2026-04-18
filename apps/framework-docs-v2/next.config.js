@@ -33,6 +33,46 @@ const nextConfig = {
         destination: "/moosestack",
         permanent: true,
       },
+      {
+        source: "/moosestack/migrate/automatic",
+        destination: "/moosestack/migrate/generate",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/migrate/planned-migrations",
+        destination: "/moosestack/migrate/generate",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/migrate/modes",
+        destination: "/moosestack/migrate",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/migrate/migration-types",
+        destination: "/moosestack/migrate",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/olap/apply-migrations",
+        destination: "/moosestack/migrate/apply",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/olap/planned-migrations",
+        destination: "/moosestack/migrate/generate",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/olap/schema-versioning",
+        destination: "/moosestack/schema-versioning",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/apis/trigger-api",
+        destination: "/moosestack/workflows/trigger-workflow",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

@@ -222,21 +222,56 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
   { type: "separator" },
-  { type: "label", title: "Schema management" },
-  {
-    type: "page",
-    slug: "moosestack/olap",
-    title: "Overview",
-    icon: IconDatabase,
-    languages: ["typescript", "python"],
-  },
-  { type: "separator" },
-  { type: "label", title: "Define tables" },
+  { type: "label", title: "Schema Management" },
   {
     type: "page",
     slug: "moosestack/olap/model-table",
-    title: "Model table",
+    title: "OlapTable",
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/olap/columns",
+        title: "Columns",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/ordering-and-primary-key",
+        title: "Ordering & primary key",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/partitioning",
+        title: "Partitioning",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/ttl",
+        title: "TTL",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/indexes",
+        title: "Indexes",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/projections",
+        title: "Projections",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/settings-and-advanced",
+        title: "Settings & advanced",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
@@ -388,30 +423,56 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/olap/schema-optimization",
-    title: "Schema optimization",
+    slug: "moosestack/schema-versioning",
+    title: "Schema versioning",
     languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/migrate/lifecycle",
+    title: "Lifecycle management",
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-fully-managed",
+        title: "Fully Managed",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-deletion-protected",
+        title: "Deletion Protected",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-externally-managed",
+        title: "Externally Managed",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   { type: "separator" },
   { type: "label", title: "Build derived data" },
   {
     type: "page",
     slug: "moosestack/olap/model-view",
-    title: "Views",
+    title: "View",
     languages: ["typescript", "python"],
   },
   {
     type: "page",
     slug: "moosestack/olap/model-materialized-view",
-    title: "Materialized views",
+    title: "Materialized View",
     languages: ["typescript", "python"],
   },
   { type: "separator" },
-  { type: "label", title: "Read" },
+  { type: "label", title: "Read & Write" },
   {
     type: "page",
     slug: "moosestack/olap/read-data",
-    title: "Read data",
+    title: "Read Data",
     languages: ["typescript", "python"],
     children: [
       {
@@ -440,8 +501,6 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
     ],
   },
-  { type: "separator" },
-  { type: "label", title: "Write" },
   {
     type: "page",
     slug: "moosestack/olap/insert-data",
@@ -449,51 +508,29 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
   { type: "separator" },
-  {
-    type: "page",
-    slug: "moosestack/migrate/lifecycle",
-    title: "Lifecycle management",
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-fully-managed",
-        title: "Fully Managed",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-deletion-protected",
-        title: "Deletion Protected",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-externally-managed",
-        title: "Externally Managed",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-  { type: "separator" },
   { type: "label", title: "Migrations" },
   {
     type: "page",
-    slug: "moosestack/migrate",
-    title: "Moose Migrate",
-    icon: IconGitMerge,
+    slug: "moosestack/migrate/generate",
+    title: "Generate migrations",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/migrate/apply",
+    title: "Apply migrations",
     languages: ["typescript", "python"],
     children: [
       {
         type: "page",
-        slug: "moosestack/migrate/generate",
-        title: "Generate migrations",
+        slug: "moosestack/migrate/apply-planned-migrations-cli",
+        title: "moose migrate (CLI)",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/migrate/apply",
-        title: "Apply migrations",
+        slug: "moosestack/migrate/apply-planned-migrations-service",
+        title: "moose prod (Runtime)",
         languages: ["typescript", "python"],
       },
     ],
@@ -504,13 +541,18 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "Migration Plan",
     languages: ["typescript", "python"],
   },
+  {
+    type: "page",
+    slug: "moosestack/migrate/failed-migrations",
+    title: "Failed migrations",
+    languages: ["typescript", "python"],
+  },
   { type: "separator" },
-  { type: "label", title: "Moose Modules" },
+  { type: "label", title: "Build on OLAP" },
   {
     type: "page",
     slug: "moosestack/streaming",
-    title: "Moose Streams",
-    icon: IconBolt,
+    title: "Streaming",
     languages: ["typescript", "python"],
     children: [
       { type: "label", title: "Define" },
@@ -575,8 +617,7 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/workflows",
-    title: "Moose Workflows",
-    icon: IconRoute,
+    title: "Workflows",
     languages: ["typescript", "python"],
     children: [
       {
@@ -614,12 +655,9 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/apis",
-    title: "Moose APIs & Web Apps",
-    icon: IconCode,
+    title: "APIs",
     languages: ["typescript", "python"],
     children: [
-      { type: "separator" },
-      { type: "label", title: "Native APIs" },
       {
         type: "page",
         slug: "moosestack/apis/ingest-api",
@@ -634,18 +672,6 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/apis/semantic-layer",
-        title: "Semantic Layer",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/apis/trigger-api",
-        title: "Workflow Trigger",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/apis/admin-api",
         title: "Admin APIs",
         languages: ["typescript", "python"],
@@ -656,16 +682,14 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Authentication",
         languages: ["typescript", "python"],
       },
-
-      // Modules section
-      { type: "separator" },
-      { type: "label", title: "Use Your Web Framework" },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks",
-        title: "Overview",
-        languages: ["typescript", "python"],
-      },
+    ],
+  },
+  {
+    type: "page",
+    slug: "moosestack/app-api-frameworks",
+    title: "Web frameworks",
+    languages: ["typescript", "python"],
+    children: [
       {
         type: "page",
         slug: "moosestack/app-api-frameworks/express",

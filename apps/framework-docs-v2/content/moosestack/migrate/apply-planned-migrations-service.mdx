@@ -1,19 +1,21 @@
 ---
-title: moose prod
-description: Reference documentation for automatic migration execution in the Moose server runtime.
+title: moose prod (Runtime)
+description: Reference for automatic migration execution in the Moose server runtime.
 order: 8
-category: olap
+category: migrate
 ---
 
 import { Callout } from "@/components/mdx";
 
-# moose prod
+# moose prod (Runtime)
 
-The **Moose Runtime** deployment model (invoked via `moose prod`) includes an automatic migration runner that executes planned changes during the application boot sequence.
+`moose prod` runs the full Moose server. As part of its boot sequence, it automatically applies any committed migration files that have not yet been run against the target database. Use this when you are deploying the **full Moose stack** as a long-lived server.
 
-## Overview
+If you are running Moose OLAP without the runtime (library or serverless), apply migrations with [moose migrate (CLI)](/moosestack/migrate/apply-planned-migrations-cli) instead.
 
-When running as a full server, Moose orchestrates the entire lifecycle of your data stack. Migrations are treated as a prerequisite for starting the application: the server will not accept traffic or process data until the database schema matches the code definition.
+## How it works
+
+The server treats migrations as a prerequisite for accepting traffic. It will not start ingestion APIs, consumption APIs, or streaming workers until the database schema matches the migration files in the deployment artifact.
 
 | Feature | Description |
 | :--- | :--- |
@@ -37,19 +39,19 @@ The server requires access to the ClickHouse database, typically configured via 
 
 When `moose prod` starts, it performs the following sequence:
 
-1.  **Load Plan:** Reads `migrations/plan.yaml` from the deployment artifact.
-2.  **Check Code Consistency:** Verifies that the running application code matches `local_infra_map.json`. If not, it aborts to prevent deploying code that doesn't match the plan.
-3.  **Check Database Drift:** Connects to ClickHouse and compares the current schema against `remote_state.json`. If drift is detected, it aborts.
-4.  **Execute Migration:** Applies the operations defined in `plan.yaml`.
+1.  **Load migrations:** Reads every committed migration file under `./migrations/` from the deployment artifact.
+2.  **Check Code Consistency:** Verifies that the running application code matches the recorded infrastructure map. If not, it aborts to prevent deploying code that doesn't match the migrations.
+3.  **Check Database Drift:** Connects to ClickHouse and compares the current schema against the recorded state. If drift is detected, it aborts.
+4.  **Execute Migration:** Applies operations from any migration files that are not yet in the applied-migrations list.
 5.  **Start Services:** Once migrations succeed, the Ingestion API, Consumption API, and Streaming workers are started.
 
 ## Failure Modes
 
 | Condition | Outcome | Resolution |
 | :--- | :--- | :--- |
-| **Drift Detected** | Server fails to start. | Regenerate the plan against the current production DB and redeploy. |
+| **Drift Detected** | Server fails to start. | Regenerate the migration against the current production DB and redeploy. |
 | **Plan Mismatch** | Server fails to start. | Ensure the `migrations/` directory matches the code in your deployment artifact. |
-| **Migration Error** | Server fails to start. | Fix the schema issue or plan file, then redeploy. |
+| **Migration Error** | Server fails to start. | Fix the schema issue or migration file, then redeploy. See [Failed migrations](/moosestack/migrate/failed-migrations). |
 
 <Callout type="info" title="Fiveonefour hosting">
 If you are using Fiveonefour hosting, this process is handled automatically. The platform ensures that your application only becomes healthy once `moose prod` has successfully completed the migration phase.
@@ -57,5 +59,8 @@ If you are using Fiveonefour hosting, this process is handled automatically. The
 
 ## See Also
 
-- [Planned Migrations](/moosestack/migrate/planned-migrations) — Generate the migration plan files
-- [moose migrate](/moosestack/migrate/apply-planned-migrations-cli) — Manual CLI migrations for serverless deployments
+- [Generate migrations](/moosestack/migrate/generate) — produce committed migration files from code changes
+- [Apply migrations](/moosestack/migrate/apply) — overview of execution paths
+- [moose migrate (CLI)](/moosestack/migrate/apply-planned-migrations-cli) — manual CLI migrations for headless / serverless deployments
+- [Migration Plan](/moosestack/migrate/plan-format) — file-format reference for migration files
+- [Failed migrations](/moosestack/migrate/failed-migrations) — recovery guidance
