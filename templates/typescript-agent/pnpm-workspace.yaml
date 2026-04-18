@@ -2,8 +2,8 @@ packages:
   - "packages/*"
 
 catalog:
-  "@514labs/moose-cli": "0.6.517"
-  "@514labs/moose-lib": "0.6.517"
+  "@514labs/moose-cli": "0.6.519"
+  "@514labs/moose-lib": "0.6.519"
   "@ai-sdk/amazon-bedrock": "4.0.83"
   "@ai-sdk/anthropic": "3.0.64"
   "@ai-sdk/mcp": "1.0.30"
