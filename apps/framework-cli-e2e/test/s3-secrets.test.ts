@@ -146,6 +146,12 @@ if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "ts") {
           APP_NAMES.TYPESCRIPT_TESTS,
           {
             logPrefix: "TypeScript S3Queue Test (With Env Vars)",
+            // Pass the test's actual port set so `killRemainingProcesses` can
+            // SIGKILL leftover ClickHouse/Node consumption workers on the
+            // offset-40 ports. Without this it would target the default
+            // (offset-0) ports and leave this suite's children alive,
+            // causing the next describe block's preflight to fail.
+            ports: PORTS,
             ...getCleanupOptionsForMode(E2E_DEV_MODE),
           },
         );
@@ -315,6 +321,8 @@ if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "py") {
           APP_NAMES.PYTHON_TESTS,
           {
             logPrefix: "Python S3Queue Test (With Env Vars)",
+            // See note on the TypeScript describe block above.
+            ports: PORTS,
             ...getCleanupOptionsForMode(E2E_DEV_MODE),
           },
         );
