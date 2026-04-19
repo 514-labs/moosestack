@@ -161,11 +161,10 @@ fn wait_for_port_free(host: &str, port: u16) {
 
     let deadline = Instant::now() + TIMEOUT;
     loop {
-        // A successful bind here proves the port is free. The TcpListener is
-        // dropped at end of this scope, releasing the port for the real
-        // owner to grab a few ms later. Using SO_REUSEADDR (Rust default on
-        // Linux) means the subsequent bind by the Node worker won't be
-        // blocked by our brief hold.
+        // A successful bind here proves the port is free. The TcpListener
+        // is dropped at the end of this scope, releasing the fd. Since we
+        // never accept a connection on it, no TIME_WAIT is created, so the
+        // Node worker can bind the same port a few ms later.
         match TcpListener::bind((host, port)) {
             Ok(_) => return,
             Err(_) if Instant::now() < deadline => thread::sleep(INTERVAL),

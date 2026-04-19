@@ -103,4 +103,7 @@ pub enum NativeInfraError {
 
     #[error("{0}")]
     PortConflict(#[from] super::preflight::PortConflictError),
+
+    #[error(transparent)]
+    InvalidPort(#[from] super::preflight::InvalidPortError),
 }

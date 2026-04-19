@@ -9,10 +9,12 @@
 use super::{process_matches, NATIVE_INFRA_DIR};
 use crate::project::Project;
 use std::fmt;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::path::Path;
 
 /// One port the dockerless dev path intends to bind.
+///
+/// Field order matches the `new()` parameter order: `(port, service, host)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PortSpec {
     pub port: u16,
@@ -21,13 +23,21 @@ pub struct PortSpec {
 }
 
 impl PortSpec {
-    pub const fn new(host: &'static str, port: u16, service: &'static str) -> Self {
+    pub const fn new(port: u16, service: &'static str, host: &'static str) -> Self {
         Self {
             port,
             service,
             host,
         }
     }
+}
+
+/// Port value from project config was outside the valid `u16` range.
+#[derive(Debug, thiserror::Error)]
+#[error("invalid port {value} for `{service}` in project config: must be in 1..=65535")]
+pub struct InvalidPortError {
+    pub service: &'static str,
+    pub value: i32,
 }
 
 /// A conflict detected for a single port, optionally attributed to a known
@@ -53,9 +63,14 @@ pub struct PortConflictError {
 impl fmt::Display for PortConflictError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // If any conflict is attributed to a PID file in THIS project's
-        // `.moose/native_infra/`, a healthy `moose dev` for this very
-        // project is almost certainly already running. In that case the user
-        // doesn't need to clean anything — they can just keep editing code.
+        // `.moose/native_infra/`, our own `moose dev` is running. Don't
+        // require `.all()` attributed — most services in the preflight
+        // (devredis, devkafka, http, management, proxy_port) never write
+        // PID files today, so `.all()` would make "keep editing" unreachable
+        // for same-project conflicts, which is the common case. The rare
+        // edge case of our own clickhouse + an unrelated process on another
+        // port is still covered by the fact that every conflicting port is
+        // listed above — the user can act on it if they need to.
         let same_project_instance = self.conflicts.iter().any(|c| c.owner_pid.is_some());
 
         writeln!(
@@ -96,10 +111,13 @@ impl fmt::Display for PortConflictError {
 
 impl std::error::Error for PortConflictError {}
 
-/// Attempt to bind each port synchronously. Returns `Err(PortConflictError)`
-/// if any port is already in use; any other bind error is also surfaced as a
-/// conflict (the caller cannot proceed either way, and a clean user-facing
-/// message is more useful than a stacktrace).
+/// Attempt to bind each port synchronously on both IPv4 loopback and IPv6
+/// loopback. Returns `Err(PortConflictError)` if any port is already in use
+/// on either stack.
+///
+/// The dual-stack probe matters because Node's `localhost` resolution can pick
+/// `::1`, meaning a stuck consumption worker may occupy only the IPv6 side.
+/// A probe that only checks 127.0.0.1 would miss it.
 ///
 /// `native_dir` is the `.moose/native_infra/` directory used for best-effort
 /// PID attribution in the error message.
@@ -107,34 +125,26 @@ pub fn check_ports(specs: &[PortSpec], native_dir: &Path) -> Result<(), PortConf
     let mut conflicts = Vec::new();
 
     for spec in specs {
-        // `TcpListener::bind` with port != 0 returns AddrInUse when the port
-        // is taken. Immediately drop the listener on success so the real
-        // service can bind shortly after.
-        match TcpListener::bind((spec.host, spec.port)) {
-            Ok(listener) => {
-                drop(listener);
-            }
-            Err(_) => {
-                // Only ClickHouse/Temporal write PID files today. For ports
-                // owned by those services, look up the matching pid file
-                // directly so each conflict is attributed to its own owner
-                // rather than short-circuiting on the first pid file found.
-                let owner_name: Option<&'static str> = match spec.service {
-                    "clickhouse-http"
-                    | "clickhouse-tcp"
-                    | "clickhouse-keeper"
-                    | "clickhouse-keeper-raft" => Some("clickhouse"),
-                    "temporal" | "temporal-ui" => Some("temporal"),
-                    _ => None,
-                };
-                let owner_pid = owner_name
-                    .and_then(|name| read_live_pid(&native_dir.join(format!("{name}.pid")), name));
-                conflicts.push(PortConflict {
-                    spec: *spec,
-                    owner_pid,
-                    owner_name: owner_name.filter(|_| owner_pid.is_some()),
-                });
-            }
+        if port_in_use(spec.port) {
+            // Only ClickHouse/Temporal write PID files today. For ports
+            // owned by those services, look up the matching pid file
+            // directly so each conflict is attributed to its own owner
+            // rather than short-circuiting on the first pid file found.
+            let owner_name: Option<&'static str> = match spec.service {
+                "clickhouse-http"
+                | "clickhouse-tcp"
+                | "clickhouse-keeper"
+                | "clickhouse-keeper-raft" => Some("clickhouse"),
+                "temporal" | "temporal-ui" => Some("temporal"),
+                _ => None,
+            };
+            let owner_pid = owner_name
+                .and_then(|name| read_live_pid(&native_dir.join(format!("{name}.pid")), name));
+            conflicts.push(PortConflict {
+                spec: *spec,
+                owner_pid,
+                owner_name: owner_name.filter(|_| owner_pid.is_some()),
+            });
         }
     }
 
@@ -143,6 +153,18 @@ pub fn check_ports(specs: &[PortSpec], native_dir: &Path) -> Result<(), PortConf
     } else {
         Err(PortConflictError { conflicts })
     }
+}
+
+/// Probe both IPv4 and IPv6 loopback for `port`. Returns `true` if a bind
+/// fails with any error on either address — we treat any bind failure as an
+/// effective conflict because the real service would fail too.
+fn port_in_use(port: u16) -> bool {
+    // A successful bind proves the port is free on that address family. The
+    // TcpListener is dropped immediately (no connection accepted, so no
+    // TIME_WAIT is created) and the real service can bind a few ms later.
+    let v4 = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let v6 = SocketAddr::from((Ipv6Addr::LOCALHOST, port));
+    TcpListener::bind(v4).is_err() || TcpListener::bind(v6).is_err()
 }
 
 /// Best-effort: read a `.pid` file, verify the PID still matches the
@@ -167,67 +189,79 @@ fn read_live_pid(pid_path: &Path, expected_name: &str) -> Option<u32> {
     }
 }
 
+/// Convert an `i32` port value from project config into a validated `u16`.
+fn port_from_config(value: i32, service: &'static str) -> Result<u16, InvalidPortError> {
+    u16::try_from(value)
+        .ok()
+        .filter(|p| *p != 0)
+        .ok_or(InvalidPortError { service, value })
+}
+
 /// Build the full list of ports the dockerless path will try to bind for the
 /// given project. Kafka / Temporal / webserver ports are included or skipped
 /// based on feature flags, mirroring the gating in `NativeInfraProvider::start`
 /// and the CLI webserver bootstrap.
+///
+/// Returns `Err(InvalidPortError)` if any ClickHouse port value in the project
+/// config is outside the valid `u16` range — catching configuration mistakes
+/// before we silently truncate them.
 pub fn port_specs_for(
     project: &Project,
     scripts_enabled: bool,
     include_webserver: bool,
-) -> Vec<PortSpec> {
+) -> Result<Vec<PortSpec>, InvalidPortError> {
     let mut specs = Vec::with_capacity(10);
 
     specs.push(PortSpec::new(
-        "127.0.0.1",
         project.redis_config.port,
         "devredis",
+        "127.0.0.1",
     ));
 
     if project.features.streaming_engine {
         specs.push(PortSpec::new(
-            "127.0.0.1",
             super::devkafka::broker_port(&project.redpanda_config),
             "devkafka",
+            "127.0.0.1",
         ));
     }
 
     let ch = &project.clickhouse_config;
     specs.push(PortSpec::new(
-        "127.0.0.1",
-        ch.host_port as u16,
+        port_from_config(ch.host_port, "clickhouse-http")?,
         "clickhouse-http",
+        "127.0.0.1",
     ));
     specs.push(PortSpec::new(
-        "127.0.0.1",
-        ch.native_port as u16,
+        port_from_config(ch.native_port, "clickhouse-tcp")?,
         "clickhouse-tcp",
+        "127.0.0.1",
     ));
     specs.push(PortSpec::new(
-        "127.0.0.1",
-        ch.keeper_port as u16,
+        port_from_config(ch.keeper_port, "clickhouse-keeper")?,
         "clickhouse-keeper",
+        "127.0.0.1",
     ));
     specs.push(PortSpec::new(
-        "127.0.0.1",
-        ch.keeper_raft_port as u16,
+        port_from_config(ch.keeper_raft_port, "clickhouse-keeper-raft")?,
         "clickhouse-keeper-raft",
+        "127.0.0.1",
     ));
 
     if scripts_enabled || project.features.workflows {
         let tc = &project.temporal_config;
-        specs.push(PortSpec::new("127.0.0.1", tc.temporal_port, "temporal"));
-        specs.push(PortSpec::new("127.0.0.1", tc.ui_port, "temporal-ui"));
+        specs.push(PortSpec::new(tc.temporal_port, "temporal", "127.0.0.1"));
+        specs.push(PortSpec::new(tc.ui_port, "temporal-ui", "127.0.0.1"));
     }
 
     if include_webserver {
         let hs = &project.http_server_config;
-        specs.push(PortSpec::new("127.0.0.1", hs.port, "http"));
-        specs.push(PortSpec::new("127.0.0.1", hs.management_port, "management"));
-        specs.push(PortSpec::new("127.0.0.1", hs.proxy_port, "proxy_port"));
+        specs.push(PortSpec::new(hs.port, "http", "127.0.0.1"));
+        specs.push(PortSpec::new(hs.management_port, "management", "127.0.0.1"));
+        specs.push(PortSpec::new(hs.proxy_port, "proxy_port", "127.0.0.1"));
     }
 
-    specs
+    Ok(specs)
 }
 
 /// Convenience: the `.moose/native_infra/` directory for a project. Callers
@@ -252,7 +286,7 @@ mod tests {
     fn check_ports_reports_conflict_on_bound_port() {
         let (_held, port) = bound_port();
         let tmp = tempfile::tempdir().expect("tempdir");
-        let specs = [PortSpec::new("127.0.0.1", port, "devredis")];
+        let specs = [PortSpec::new(port, "devredis", "127.0.0.1")];
 
         let err = check_ports(&specs, tmp.path()).expect_err("should conflict");
         assert_eq!(err.conflicts.len(), 1);
@@ -268,7 +302,7 @@ mod tests {
             port
         };
         let tmp = tempfile::tempdir().expect("tempdir");
-        let specs = [PortSpec::new("127.0.0.1", port, "devredis")];
+        let specs = [PortSpec::new(port, "devredis", "127.0.0.1")];
 
         // Might race with the OS reusing the port, but in practice a freshly
         // freed ephemeral port is available again immediately.
@@ -308,13 +342,8 @@ mod tests {
 
         // The spec must use a service name that the attribute path recognizes
         // as clickhouse-owned.
-        let specs = [PortSpec::new("127.0.0.1", port, "clickhouse-http")];
+        let specs = [PortSpec::new(port, "clickhouse-http", "127.0.0.1")];
 
-        // Patch attribution: replace the PID file's name field with
-        // "clickhouse" so the read_live_pid lookup runs process_matches
-        // against the real comm. Only matches when comm_name is a prefix of
-        // "clickhouse" — rare in test environments. Fall back to checking
-        // that the error renders cleanly regardless of attribution result.
         let err = check_ports(&specs, tmp.path()).expect_err("should conflict");
         assert_eq!(err.conflicts.len(), 1);
         // Rendering must always succeed.
@@ -322,44 +351,55 @@ mod tests {
     }
 
     #[test]
-    fn display_lists_each_conflict() {
+    fn display_any_attribution_suggests_keep_editing() {
+        // Most preflight services (devredis, devkafka, http, management,
+        // proxy_port) never write PID files, so in the common same-project
+        // case only clickhouse/temporal are attributed while the others
+        // are unattributed. `.any()` is the right signal: if we see our
+        // own PID, it's our own dev server — tell the user they can keep
+        // editing. Every conflicting port is still listed so the user can
+        // intervene on stragglers if any are present.
         let err = PortConflictError {
             conflicts: vec![
                 PortConflict {
-                    spec: PortSpec::new("127.0.0.1", 4001, "proxy_port"),
+                    spec: PortSpec::new(6379, "devredis", "127.0.0.1"),
                     owner_pid: None,
                     owner_name: None,
                 },
                 PortConflict {
-                    spec: PortSpec::new("127.0.0.1", 9000, "clickhouse-tcp"),
+                    spec: PortSpec::new(9000, "clickhouse-tcp", "127.0.0.1"),
                     owner_pid: Some(12345),
                     owner_name: Some("clickhouse"),
                 },
             ],
         };
         let rendered = err.to_string();
-        assert!(rendered.contains("4001 (proxy_port)"));
+        assert!(rendered.contains("6379 (devredis)"));
         assert!(rendered.contains("9000 (clickhouse-tcp)"));
         assert!(rendered.contains("PID 12345"));
-        // At least one conflict is attributed, so the message should tell
-        // the user they can keep editing instead of suggesting a clean.
-        assert!(rendered.contains("already running"));
         assert!(rendered.contains("keep editing"));
+        assert!(!rendered.contains("another moose project"));
     }
 
     #[test]
     fn display_suggests_cleanup_when_no_attribution() {
         let err = PortConflictError {
             conflicts: vec![PortConflict {
-                spec: PortSpec::new("127.0.0.1", 6379, "devredis"),
+                spec: PortSpec::new(6379, "devredis", "127.0.0.1"),
                 owner_pid: None,
                 owner_name: None,
             }],
         };
         let rendered = err.to_string();
-        // Unattributed: the user is told to clean the other project or
-        // kill the process. We do not encourage them to keep editing here.
         assert!(rendered.contains("another moose project"));
         assert!(!rendered.contains("keep editing"));
+    }
+
+    #[test]
+    fn port_from_config_rejects_out_of_range() {
+        assert!(port_from_config(70000, "clickhouse-http").is_err());
+        assert!(port_from_config(-1, "clickhouse-http").is_err());
+        assert!(port_from_config(0, "clickhouse-http").is_err());
+        assert_eq!(port_from_config(9000, "clickhouse-tcp").unwrap(), 9000);
     }
 }

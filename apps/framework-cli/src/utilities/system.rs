@@ -306,11 +306,15 @@ mod tests {
             "monitor task should terminate after circuit-breaker trips, not retry forever",
         );
 
-        // Bounded number of spawn attempts: 1 initial + up to 5 restarts.
+        // Deterministic total: 1 initial spawn (Ok), then the first child
+        // exits immediately which sets `consecutive_rapid_failures = 1`. The
+        // inner restart loop then tries `start()` up to MAX-1 more times
+        // (each Err increments + checks `>= MAX`), giving 1 + 4 = 5 calls
+        // before the breaker trips.
         let total = calls.load(Ordering::SeqCst);
-        assert!(
-            total <= 6,
-            "expected <= 6 spawn attempts, got {total} — circuit breaker did not engage",
+        assert_eq!(
+            total, 5,
+            "expected exactly 5 spawn attempts before the breaker trips, got {total}",
         );
     }
 }

@@ -634,12 +634,14 @@ export const runApis = async (config: ApisConfig) => {
         process.exit(1);
       });
 
-      // Omit an explicit host so Node's cluster module intercepts via
-      // RoundRobinHandle and the primary holds the single OS-level listener;
-      // workers receive connection handles over IPC. With an explicit
-      // "localhost" each worker was trying to bind the socket itself, which
-      // raced and deterministically failed on workers after the first.
-      server.listen(port, () => {
+      // Bind to IPv4 loopback explicitly. Node's `cluster` module intercepts
+      // `listen` calls regardless of the host arg (the primary holds the OS
+      // socket and distributes handles to workers via IPC), so passing
+      // "127.0.0.1" does not cause the bind race the previous code feared.
+      // Not specifying a host defaults to `::` (all interfaces), which would
+      // expose the dev consumption API — `enforceAuth` is off by default —
+      // to the local network. Loopback-only is the safer default.
+      server.listen(port, "127.0.0.1", () => {
         console.log(`Server running on port ${port}`);
       });
 

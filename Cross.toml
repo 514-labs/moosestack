@@ -7,11 +7,23 @@
 # system OpenSSL 1.1 inside the container instead. OPENSSL_NO_VENDOR is the
 # documented opt-out for the `vendored` feature — it keeps moose-cli's
 # Cargo.toml unchanged so regular native builds keep vendoring.
+#
+# CC / CXX / AR are passthrough because rdkafka-sys runs librdkafka's
+# autoconf `./configure` as a subprocess, which reads bare `$CC` from env
+# rather than cargo's target-qualified `CC_aarch64_unknown_linux_gnu`.
+# Without them configure defaults to the host `gcc` (x86_64) and ld fails
+# with `cannot find -lcrypto` because only arm64 libs are in the sysroot.
+# Invoke like:
+#   CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ AR=aarch64-linux-gnu-ar \
+#     OPENSSL_NO_VENDOR=1 cross build --target aarch64-unknown-linux-gnu -p moose-cli
 passthrough = [
   "OPENSSL_NO_VENDOR",
   "OPENSSL_LIB_DIR",
   "OPENSSL_INCLUDE_DIR",
   "OPENSSL_STATIC",
+  "CC",
+  "CXX",
+  "AR",
 ]
 
 [target.aarch64-unknown-linux-gnu]

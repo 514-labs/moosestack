@@ -135,7 +135,9 @@ impl InfraProvider for NativeInfraProvider {
             project,
             self.scripts_enabled,
             /* include_webserver = */ true,
-        );
+        )
+        .map_err(NativeInfraError::from)
+        .map_err(Self::map_native_err)?;
         preflight::check_ports(&specs, &preflight::native_dir_for(project))
             .map_err(NativeInfraError::from)
             .map_err(Self::map_native_err)?;
