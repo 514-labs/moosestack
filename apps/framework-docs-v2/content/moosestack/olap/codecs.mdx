@@ -1,0 +1,31 @@
+---
+title: Codecs
+description: Configure per-column compression on an OlapTable with ClickHouseCodec
+order: 18
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Codecs
+
+Reference for the `ClickHouseCodec` annotation, which sets per-column compression on an [`OlapTable`](/moosestack/olap/model-table). Codecs let you tune storage size and decompression cost individually for each column — replacing the default codec chain with one matched to the column's value distribution.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the [OlapTable](/moosestack/olap/model-table) reference and the [Materialized columns](/moosestack/olap/materialized-columns) page for usage examples.
+</Callout>
+
+## What this page covers
+
+- `ClickHouseCodec<"...">` (TS) / `ClickHouseCodec("...")` (Py) — per-column compression annotation
+- Codec chains (e.g. `"Delta, LZ4"`, `"Gorilla, ZSTD"`) — applied left-to-right
+- Specialized codecs: `Delta`, `DoubleDelta`, `Gorilla`, `T64`, `FPC`
+- General-purpose codecs: `LZ4`, `ZSTD(level)`, `NONE`
+- Combining codecs with other column annotations (`ClickHouseMaterialized`, `ClickHouseDefault`, `ClickHouseTTL`)
+- When per-column codecs are worth the complexity vs the default chain
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [Materialized columns](/moosestack/olap/materialized-columns) — codecs combine cleanly with materialized columns
+- [Schema optimization](/moosestack/olap/schema-optimization) — when to reach for codecs

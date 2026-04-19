@@ -5,15 +5,10 @@ import {
   IconBolt,
   IconRoute,
   IconCode,
-  IconGitMerge,
   IconChartBar,
   IconHammer,
-  IconTerminal,
   IconLayoutGrid,
   IconAtom,
-  IconDeviceLaptop,
-  IconSettings,
-  IconHelpCircle,
   IconList,
   IconFolderPlus,
   IconStars,
@@ -38,7 +33,6 @@ import {
   IconBrain,
   IconTrendingUp,
   IconSearch,
-  IconFlask,
   IconRobot,
   type IconProps,
 } from "@tabler/icons-react";
@@ -134,42 +128,30 @@ const moosestackNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "moosestack/index",
     title: "Overview",
-    icon: IconChartArea,
     languages: ["typescript", "python"],
   },
 
-  // Separator
-  { type: "separator" },
-
-  // Getting Started (top-level paths)
   { type: "label", title: "Build a New App" },
-
-  // Build a new app
   {
     type: "page",
     slug: "moosestack/getting-started/quickstart",
     title: "5 Minute Quickstart",
-    icon: IconRocket,
     languages: ["typescript", "python"],
   },
-  {
-    type: "page",
-    slug: "templates",
-    title: "Browse Templates",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    external: true,
-  },
-  // Connect to an existing ClickHouse
   {
     type: "page",
     slug: "moosestack/getting-started/from-clickhouse",
-    icon: IconDatabase,
     title: "Existing ClickHouse",
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/dev/cdc-managed-tables",
+        title: "CDC Managed Tables",
+        languages: ["typescript", "python"],
+      },
+    ],
     languages: ["typescript", "python"],
   },
-  // Embed in an existing app
-  { type: "separator" },
   { type: "label", title: "Add to Existing App" },
   {
     type: "page",
@@ -187,40 +169,39 @@ const moosestackNavigationConfig: NavigationConfig = [
   // Separator
   { type: "separator" },
 
-  // Concepts section (was Fundamentals)
+  // Developing section
+  { type: "label", title: "Developing" },
   {
     type: "page",
-    slug: "moosestack/concepts",
-    title: "Concepts",
-    icon: IconRoute,
+    slug: "moosestack/runtime",
+    title: "Moose Runtime",
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/runtime",
-        title: "Moose Runtime",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-modeling",
-        title: "Data Modeling",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/moosedev-mcp",
-        title: "MooseDev MCP",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/language-server",
-        title: "Language Server",
-        languages: ["typescript"],
-      },
-    ],
   },
+  {
+    type: "page",
+    slug: "moosestack/dev",
+    title: "Moose Dev",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/moosedev-mcp",
+    title: "MCP Server",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/data-modeling",
+    title: "Data Modeling",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/language-server",
+    title: "Language Server",
+    languages: ["typescript"],
+  },
+
   { type: "separator" },
   { type: "label", title: "Schema Management" },
   {
@@ -229,12 +210,33 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "OlapTable",
     languages: ["typescript", "python"],
     children: [
+      { type: "label", title: "Column Modifiers" },
       {
         type: "page",
-        slug: "moosestack/olap/columns",
-        title: "Columns",
+        slug: "moosestack/olap/materialized-columns",
+        title: "Materialized columns",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/olap/alias-columns",
+        title: "Alias columns",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/codecs",
+        title: "Codecs",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/defaults",
+        title: "Defaults",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Storage" },
       {
         type: "page",
         slug: "moosestack/olap/ordering-and-primary-key",
@@ -253,6 +255,8 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "TTL",
         languages: ["typescript", "python"],
       },
+      { type: "separator" },
+      { type: "label", title: "Indexing" },
       {
         type: "page",
         slug: "moosestack/olap/indexes",
@@ -265,6 +269,7 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Projections",
         languages: ["typescript", "python"],
       },
+      { type: "separator" },
       {
         type: "page",
         slug: "moosestack/olap/settings-and-advanced",
@@ -427,6 +432,8 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "Schema versioning",
     languages: ["typescript", "python"],
   },
+  { type: "separator" },
+  { type: "label", title: "Lifecycle" },
   {
     type: "page",
     slug: "moosestack/migrate/lifecycle",
@@ -726,28 +733,36 @@ const moosestackNavigationConfig: NavigationConfig = [
   // Separator
   { type: "separator" },
 
-  // Deployment & Lifecycle section
-  { type: "label", title: "Deployment & Lifecycle" },
+  // Observability & Testing section
+  { type: "label", title: "Observability & Testing" },
   {
     type: "page",
-    slug: "moosestack/dev",
-    title: "Moose Dev",
-    icon: IconDeviceLaptop,
+    slug: "moosestack/metrics",
+    title: "Observability",
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/dev/cdc-managed-tables",
-        title: "CDC Managed Tables",
-        languages: ["typescript", "python"],
-      },
-    ],
+  },
+  {
+    type: "page",
+    slug: "moosestack/reference/testing-utilities",
+    title: "Testing Utilities",
+    languages: ["typescript"],
+  },
+
+  // Separator
+  { type: "separator" },
+
+  // Deployment & Lifecycle section
+  { type: "label", title: "Deployment" },
+  {
+    type: "page",
+    slug: "hosting/",
+    title: "Managed Hosting",
+    languages: ["typescript", "python"],
   },
   {
     type: "page",
     slug: "moosestack/deploying",
-    title: "Moose Deploy",
-    icon: IconCloudUpload,
+    title: "Self Hosting",
     languages: ["typescript", "python"],
     children: [
       {
@@ -804,28 +819,18 @@ const moosestackNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "moosestack/reference",
     title: "API Reference",
-    icon: IconBook,
     languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "moosestack/reference/testing-utilities",
-    title: "Testing Utilities",
-    icon: IconFlask,
-    languages: ["typescript"],
   },
   {
     type: "page",
     slug: "moosestack/moose-cli",
     title: "CLI",
-    icon: IconTerminal,
     languages: ["typescript", "python"],
   },
   {
     type: "page",
     slug: "moosestack/configuration",
     title: "Configuration",
-    icon: IconSettings,
     languages: ["typescript", "python"],
     children: [
       { type: "label", title: "Core Settings" },
@@ -941,16 +946,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/metrics",
-    title: "Observability Metrics",
-    icon: IconChartBar,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
     slug: "moosestack/help",
     title: "Help",
-    icon: IconHelpCircle,
     languages: ["typescript", "python"],
     children: [
       {
@@ -977,7 +974,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "moosestack/release-notes",
     title: "Release Notes",
-    icon: IconFileReport,
     languages: ["typescript", "python"],
     children: [
       {
@@ -1078,14 +1074,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "moosestack/contribution/documentation",
     title: "Documentation",
-    icon: IconBook,
     languages: ["typescript", "python"],
   },
   {
     type: "page",
     slug: "moosestack/contribution/framework",
     title: "Framework",
-    icon: IconGitMerge,
     languages: ["typescript", "python"],
   },
 ];

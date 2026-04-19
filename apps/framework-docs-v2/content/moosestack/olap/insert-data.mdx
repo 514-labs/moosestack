@@ -187,6 +187,11 @@ Use discard mode when you want good records to continue through while bad record
 ```ts filename="app/insert.ts" copy
 import { table } from "./table";
 
+const data = [
+  { id: "evt_1", name: "signup", timestamp: new Date() },
+  { id: "evt_2", name: "purchase", timestamp: new Date() },
+];
+
 const result = await table.insert(data, {
   strategy: "discard",
   allowErrors: 10,
@@ -198,9 +203,16 @@ console.log(result.failedRecords);
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="app/insert.py" copy
+from datetime import datetime
+
 from moose_lib import InsertOptions
 
 from app.table import table
+
+data = [
+    {"id": "evt_1", "name": "signup", "timestamp": datetime.now()},
+    {"id": "evt_2", "name": "purchase", "timestamp": datetime.now()},
+]
 
 result = table.insert(
     data,
@@ -403,7 +415,7 @@ Validation is not available for stream or generator input, and isolate mode is n
     </tr>
     <tr>
       <td>Discard thresholds</td>
-      <td><code>allowErrors</code> and <code>allowErrorsRatio</code> only matter when using discard mode.</td>
+      <td>Discard threshold options (<code>allowErrors</code>/<code>allow_errors</code> and <code>allowErrorsRatio</code>/<code>allow_errors_ratio</code>) only matter when using discard mode.</td>
     </tr>
   </tbody>
 </table>

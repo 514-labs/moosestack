@@ -108,7 +108,7 @@ You have two options for executing committed migration files against your produc
 | [`moose migrate` (CLI)](/moosestack/migrate/apply-planned-migrations-cli) | You run migrations manually or via CI/CD. | Integrating Moose OLAP into an existing application as a library, or serverless deployments. |
 | [`moose prod` (Runtime)](/moosestack/migrate/apply-planned-migrations-service) | Migrations are automatically run within the Moose Runtime on server startup. | Building a dedicated analytics service with the full Moose Runtime. |
 
-In production, Moose reads every file under `./migrations/`, compares against the applied-migrations list in state, and runs only the unapplied ones. If your code has pending OLAP changes with no committed migration file, production startup is blocked — every infrastructure change must flow through a reviewed migration.
+In production, Moose reads committed migration files under `./migrations/` (the draft `pending.yaml` is excluded), compares them against the applied-migrations list in state, and runs only the unapplied ones. If your code has pending OLAP changes with no committed migration file, production startup is blocked — every infrastructure change must flow through a reviewed migration.
 
 [Apply migrations →](/moosestack/migrate/apply)
 
