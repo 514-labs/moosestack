@@ -155,16 +155,26 @@ pub fn check_ports(specs: &[PortSpec], native_dir: &Path) -> Result<(), PortConf
     }
 }
 
-/// Probe both IPv4 and IPv6 loopback for `port`. Returns `true` if a bind
-/// fails with any error on either address — we treat any bind failure as an
-/// effective conflict because the real service would fail too.
+/// Probe both IPv4 and IPv6 loopback for `port`. Returns `true` only when a
+/// bind fails specifically with `AddrInUse` on either stack. Other errors
+/// (e.g. `AddrNotAvailable` on systems with IPv6 disabled, or permission
+/// errors on privileged ports) are ignored — they are not port conflicts and
+/// reporting them as such would cause false positives that block startup.
 fn port_in_use(port: u16) -> bool {
     // A successful bind proves the port is free on that address family. The
     // TcpListener is dropped immediately (no connection accepted, so no
     // TIME_WAIT is created) and the real service can bind a few ms later.
     let v4 = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let v6 = SocketAddr::from((Ipv6Addr::LOCALHOST, port));
-    TcpListener::bind(v4).is_err() || TcpListener::bind(v6).is_err()
+    let v4_in_use = matches!(
+        TcpListener::bind(v4),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse
+    );
+    let v6_in_use = matches!(
+        TcpListener::bind(v6),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse
+    );
+    v4_in_use || v6_in_use
 }
 
 /// Best-effort: read a `.pid` file, verify the PID still matches the
