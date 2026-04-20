@@ -1,0 +1,29 @@
+---
+title: Settings & advanced
+description: Engine settings, constraints, multi-database, cluster DDL, and seed filters for OlapTable
+order: 9
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Settings & advanced
+
+Reference for engine-level settings, table constraints, and infrastructure-level configuration on an [`OlapTable`](/moosestack/olap/model-table). Use these when you need to tune ClickHouse engine behavior, enforce data invariants, target a specific database, deploy across a cluster, or filter seed data.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the inline reference on the [OlapTable](/moosestack/olap/model-table) page.
+</Callout>
+
+## Config fields covered
+
+- `settings` — ClickHouse table settings that apply to the configured engine
+- `constraints` — Table-level ClickHouse constraints such as `CHECK` or `ASSUME`
+- `database` — Create and reference the table in a specific ClickHouse database
+- `cluster` — Enable `ON CLUSTER` DDL for clustered ClickHouse deployments
+- `seedFilter` (TS) / `seed_filter` (Py) — Filter rows when `moose seed clickhouse` populates a local or test database
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [Table engines](/moosestack/engines) — engine choice and engine-specific options

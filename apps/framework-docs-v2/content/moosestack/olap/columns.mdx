@@ -1,0 +1,27 @@
+---
+title: Columns
+description: Schema design for OlapTable — data types, materialized columns, and alias columns
+order: 2
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Columns
+
+Reference for column-level configuration on an [`OlapTable`](/moosestack/olap/model-table) — choosing data types, defining materialized columns, and exposing computed values via alias columns.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the linked references below.
+</Callout>
+
+## Where to start
+
+- [Data types](/moosestack/data-types) — full reference for ClickHouse column types (strings, integers, decimals, datetimes, arrays, maps, nested, JSON, nullable, aggregates, etc.)
+- [Materialized columns](/moosestack/olap/materialized-columns) — pre-compute and store column values at insert time for faster queries
+- [Alias columns](/moosestack/olap/alias-columns) — virtual computed columns calculated at query time
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [Schema optimization](/moosestack/olap/schema-optimization) — best practices for column types, nullability, and cardinality

@@ -235,6 +235,36 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/olap/codecs",
+        title: "Codecs",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/defaults",
+        title: "Defaults",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/ordering-and-primary-key",
+        title: "Ordering & primary key",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/partitioning",
+        title: "Partitioning",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/settings-and-advanced",
+        title: "Settings & advanced",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/olap/model-view",
         title: "Views",
         languages: ["typescript", "python"],

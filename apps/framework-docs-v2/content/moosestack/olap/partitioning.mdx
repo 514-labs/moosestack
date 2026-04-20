@@ -1,0 +1,30 @@
+---
+title: Partitioning
+description: Configure PARTITION BY on an OlapTable for retention and lifecycle operations
+order: 4
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Partitioning
+
+Reference for the ClickHouse `PARTITION BY` clause on an [`OlapTable`](/moosestack/olap/model-table). Partitioning controls how data is physically split into parts on disk and is the primary mechanism for retention, archival, and other data-lifecycle operations.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the inline reference on the [OlapTable](/moosestack/olap/model-table) page.
+</Callout>
+
+## Config fields covered
+
+- `partitionBy` (TS) / `partition_by` (Py) — ClickHouse `PARTITION BY` expression
+
+## When to partition
+
+Use `partitionBy` when you need retention, archival, or other data-lifecycle operations. If you do not have a clear lifecycle need yet, start without partitioning.
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [TTL](/moosestack/olap/ttl) — table and column-level data expiration
+- [Schema optimization](/moosestack/olap/schema-optimization) — partitioning tradeoffs

@@ -1,0 +1,32 @@
+---
+title: Defaults
+description: Set column default SQL expressions on an OlapTable with ClickHouseDefault
+order: 19
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Defaults
+
+Reference for the `ClickHouseDefault` and `WithDefault` annotations, which attach a `DEFAULT` SQL expression to a column on an [`OlapTable`](/moosestack/olap/model-table). Defaults let ClickHouse fill in missing values at insert time — usually a better choice than `Nullable` columns for "may be absent" fields.
+
+<Callout type="info" title="Coming soon">
+This page is being expanded. For now, see the [OlapTable](/moosestack/olap/model-table) reference and the [Schema optimization](/moosestack/olap/schema-optimization) page on preferring defaults over nullable columns.
+</Callout>
+
+## What this page covers
+
+- `ClickHouseDefault<"...">` (TS) / `clickhouse_default("...")` (Py) — column default SQL expression
+- `WithDefault<T, "...">` (TS) — type-erasing variant for cases where typia struggles with the branded intersection
+- Common default expressions: `now()`, `now64()`, `0`, `''`, `toDate(now())`
+- Defaults vs `Nullable` — why ClickHouse defaults are usually preferred
+- Interaction with `Insertable<T>` — defaulted columns become optional in insert payloads
+- Mutual exclusivity with `ClickHouseMaterialized` — you can have one or the other, not both
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — the parent table reference
+- [Schema optimization](/moosestack/olap/schema-optimization) — the "use defaults instead of nulls" pattern
+- [Nullable](/moosestack/data-types/nullable) — when defaults aren't a fit
+- [Insert data](/moosestack/olap/insert-data) — how `Insertable<T>` treats defaulted columns
