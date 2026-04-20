@@ -9,6 +9,20 @@ use tracing::info;
 /// Data directory layout under `{project}/.moose/native_infra/clickhouse/`.
 const NATIVE_CH_DIR: &str = "native_infra/clickhouse";
 
+/// `ps -o comm=` value for the ClickHouse watchdog process.
+///
+/// On Linux the watchdog calls `prctl(PR_SET_NAME, "clckhouse-watch")` at
+/// startup — the 'i' is dropped so the name fits the 15-char
+/// `TASK_COMM_LEN`. On macOS no such rename happens and `ps` reports
+/// `clickhouse` for the spawned binary. Persisting the platform-appropriate
+/// string in the PID file lets `process_matches` confirm identity before
+/// sending SIGTERM on shutdown on both targets.
+#[cfg(target_os = "linux")]
+pub const WATCHDOG_COMM: &str = "clckhouse-watch";
+
+#[cfg(not(target_os = "linux"))]
+pub const WATCHDOG_COMM: &str = "clickhouse";
+
 /// Ensure the ClickHouse binary is cached and return its path.
 pub fn ensure_binary(manager: &BinaryManager) -> Result<PathBuf, NativeInfraError> {
     let (url, archive_path, expected_sha256) = clickhouse_download_metadata();

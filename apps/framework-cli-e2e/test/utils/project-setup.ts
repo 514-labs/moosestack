@@ -7,6 +7,7 @@ import { logger, ScopedLogger } from "./logger";
 const projectSetupLogger = logger.scope("utils:project-setup");
 
 export interface ProjectSetupOptions {
+  env?: NodeJS.ProcessEnv;
   logger?: ScopedLogger;
   onInitComplete?: (result: { stdout: string; stderr: string }) => void;
 }
@@ -92,12 +93,17 @@ export const setupTypeScriptProject = async (
   options: ProjectSetupOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? projectSetupLogger;
+  const env = {
+    ...process.env,
+    ...options.env,
+  };
 
   // Initialize project
   log.info(`Initializing TypeScript project with ${templateName} template`);
   try {
     const result = await execAsync(
       `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
+      { env },
     );
     log.debug("CLI init stdout", { stdout: result.stdout });
     if (result.stderr) {
@@ -126,6 +132,7 @@ export const setupTypeScriptProject = async (
     const installCmd = spawn(packageManager, ["install"], {
       stdio: "inherit",
       cwd: projectDir,
+      env,
     });
     installCmd.on("close", (code) => {
       log.debug(`${packageManager} install completed`, { exitCode: code });
@@ -150,12 +157,17 @@ export const setupPythonProject = async (
   options: ProjectSetupOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? projectSetupLogger;
+  const env = {
+    ...process.env,
+    ...options.env,
+  };
 
   // Initialize project
   log.info(`Initializing Python project with ${templateName} template`);
   try {
     const result = await execAsync(
       `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
+      { env },
     );
     log.debug("CLI init stdout", { stdout: result.stdout });
     if (result.stderr) {
@@ -174,9 +186,7 @@ export const setupPythonProject = async (
     const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
       stdio: "inherit",
       cwd: projectDir,
-      env: {
-        ...process.env,
-      },
+      env,
     });
     venvCmd.on("close", async (code) => {
       if (code !== 0) {
@@ -185,9 +195,9 @@ export const setupPythonProject = async (
       }
 
       const withVenv = {
-        ...process.env,
+        ...env,
         VIRTUAL_ENV: path.join(projectDir, ".venv"),
-        PATH: `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`,
+        PATH: `${path.join(projectDir, ".venv", "bin")}:${env.PATH}`,
       };
 
       // First install project dependencies from requirements.txt

@@ -225,13 +225,11 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                         println!(); // Move to next line after password entry
                         return Ok(password);
                     }
-                    KeyCode::Backspace => {
-                        if !password.is_empty() {
-                            password.pop();
-                            // Erase the last asterisk: move back, print space, move back again
-                            print!("\x08 \x08");
-                            let _ = stdout().flush();
-                        }
+                    KeyCode::Backspace if !password.is_empty() => {
+                        password.pop();
+                        // Erase the last asterisk: move back, print space, move back again
+                        print!("\x08 \x08");
+                        let _ = stdout().flush();
                     }
                     KeyCode::Char(c) => {
                         password.push(c);

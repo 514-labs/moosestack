@@ -448,6 +448,30 @@ pub enum DictionaryLayout {
 }
 
 impl DictionaryLayout {
+    /// Human-readable label for the layout variant, used by CLI display and risk reporting.
+    ///
+    /// Co-located with the enum so any new variant addition causes a compile error here,
+    /// caught immediately by `cargo test`.
+    pub fn layout_type_label(&self) -> &'static str {
+        match self {
+            DictionaryLayout::Flat => "Flat",
+            DictionaryLayout::Hashed { .. } => "Hashed",
+            DictionaryLayout::SparseHashed { .. } => "SparseHashed",
+            DictionaryLayout::HashedArray { .. } => "HashedArray",
+            DictionaryLayout::RangeHashed { .. } => "RangeHashed",
+            DictionaryLayout::Cache { .. } => "Cache",
+            DictionaryLayout::SsdCache { .. } => "SsdCache",
+            DictionaryLayout::Direct => "Direct",
+            DictionaryLayout::IpTrie { .. } => "IpTrie",
+            DictionaryLayout::ComplexKeyHashed { .. } => "ComplexKeyHashed",
+            DictionaryLayout::ComplexKeySparseHashed { .. } => "ComplexKeySparseHashed",
+            DictionaryLayout::ComplexKeyHashedArray { .. } => "ComplexKeyHashedArray",
+            DictionaryLayout::ComplexKeyCache { .. } => "ComplexKeyCache",
+            DictionaryLayout::ComplexKeySsdCache { .. } => "ComplexKeySsdCache",
+            DictionaryLayout::ComplexKeyDirect => "ComplexKeyDirect",
+        }
+    }
+
     /// Returns the ClickHouse LAYOUT(...) clause string
     pub fn to_ddl(&self) -> String {
         match self {

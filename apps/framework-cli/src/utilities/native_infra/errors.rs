@@ -100,4 +100,10 @@ pub enum NativeInfraError {
 
     #[error("health check failed for {service}: {reason}")]
     HealthCheck { service: String, reason: String },
+
+    #[error("{0}")]
+    PortConflict(#[from] super::preflight::PortConflictError),
+
+    #[error(transparent)]
+    InvalidPort(#[from] super::preflight::InvalidPortError),
 }

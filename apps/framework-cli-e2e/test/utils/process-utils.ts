@@ -124,6 +124,8 @@ export const waitForServerStart = async (
     let serverStarted = false;
     let timeoutId: any = null;
     let pingInterval: any = null;
+    const storedStdout: string[] = [];
+    const storedStderr: string[] = [];
 
     const cleanup = () => {
       if (pingInterval) {
@@ -139,14 +141,13 @@ export const waitForServerStart = async (
       devProcess.off("exit", onExit);
     };
 
-    const storedStdout: any[] = [];
     const onStdout = async (data: any) => {
       const output = data.toString();
       if (!output.match(/^\n[⢹⢺⢼⣸⣇⡧⡗⡏] Starting local infrastructure$/)) {
         log.debug("Moose server output", { output: output.trim() });
-        if (!serverStarted) {
-          storedStdout.push(output);
-        }
+      }
+      if (!serverStarted) {
+        storedStdout.push(output);
       }
 
       if (!serverStarted && output.includes(startupMessage)) {
@@ -158,18 +159,27 @@ export const waitForServerStart = async (
     };
 
     const onStderr = (data: any) => {
-      log.warn("Moose server stderr", { stderr: data.toString() });
+      const stderr = data.toString();
+      log.warn("Moose server stderr", { stderr });
+      if (!serverStarted) {
+        storedStderr.push(stderr);
+      }
     };
 
     const onExit = (code: number | null) => {
       log.debug(`Moose process exited`, { exitCode: code });
       if (!serverStarted) {
         cleanup();
-        try {
-          console.log("Moose server output:");
-          storedStdout.forEach((data) => console.log(data));
-        } catch {}
-        reject(new Error(`Moose process exited with code ${code}`));
+        const stdout = storedStdout.join("");
+        const stderr = storedStderr.join("");
+        const details = [
+          `Moose process exited with code ${code}`,
+          stdout ? `stdout:\n${stdout}` : null,
+          stderr ? `stderr:\n${stderr}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        reject(new Error(details));
       } else {
         cleanup();
       }
@@ -252,16 +262,16 @@ export const killRemainingProcesses = async (
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
-  // Default infrastructure ports used when no override is provided.
-  const defaultPorts = [18123, 19000, 9181, 9234, 19092, 16379, 7233];
+  // Default ports for a single dev server instance when no override is provided.
+  const defaultPorts = [
+    4000, 4001, 5001, 18123, 19000, 9181, 9234, 19092, 16379, 7233,
+  ];
   const rawPorts =
     Array.isArray(options.ports) ? options.ports
     : options.ports ? Object.values(options.ports)
     : defaultPorts;
   const portsToKill = [...new Set(rawPorts)];
-  const portsToWait = portsToKill.filter((port) =>
-    [18123, 19000, 9181, 9234, 19092, 16379, 7233].includes(port),
-  );
+  const portsToWait = portsToKill;
 
   // Kill processes holding the specified ports.
   try {

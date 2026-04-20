@@ -1,0 +1,15 @@
+name: Dump CLI Logs
+description: Print Moose CLI logs without failing when none exist
+runs:
+  using: composite
+  steps:
+    - name: Dump CLI logs
+      shell: bash
+      run: |
+        shopt -s nullglob
+        logs=(~/.moose/*-cli.log)
+        if [ ${#logs[@]} -eq 0 ]; then
+          echo "No CLI logs found"
+          exit 0
+        fi
+        cat "${logs[@]}"

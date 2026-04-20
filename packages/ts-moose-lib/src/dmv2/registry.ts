@@ -15,7 +15,7 @@ import { SqlResource } from "./sdk/sqlResource";
 import { Workflow } from "./sdk/workflow";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
-import { View } from "./sdk/view";
+import { View, viewRegistryKey } from "./sdk/view";
 import { SelectRowPolicy } from "./sdk/selectRowPolicy";
 import { getMooseInternal } from "./internal";
 
@@ -207,10 +207,12 @@ export function getViews(): Map<string, View> {
 /**
  * Get a registered view by name.
  * @param name - The name of the view
+ * @param database - Optional database the view belongs to (for multi-database setups)
  * @returns The View instance or undefined if not found
  */
-export function getView(name: string): View | undefined {
-  return getMooseInternal().views.get(name);
+export function getView(name: string, database?: string): View | undefined {
+  const key = viewRegistryKey(database, name);
+  return getMooseInternal().views.get(key);
 }
 
 /**

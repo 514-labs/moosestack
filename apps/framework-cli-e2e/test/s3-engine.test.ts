@@ -34,6 +34,7 @@ import {
   getCleanupOptionsForMode,
   isDockerlessMode,
   resolveE2eDevMode,
+  resolveSelectedTemplateLanguage,
   startMooseDev,
 } from "./utils";
 
@@ -49,160 +50,173 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 
 const testLogger = logger.scope("s3-engine-test");
 const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const SELECTED_LANGUAGE = resolveSelectedTemplateLanguage();
 
 const PORTS = getTestPorts(50);
 const PORT_ENV = buildPortEnv(PORTS);
 const SERVER = buildServerConfig(PORTS);
 
-describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
-  describe("With Environment Variables", () => {
-    let devProcess: ChildProcess | null = null;
-    let TEST_PROJECT_DIR: string;
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "ts") {
+  describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
+    describe("With Environment Variables", () => {
+      let devProcess: ChildProcess | null = null;
+      let TEST_PROJECT_DIR: string;
 
-    before(async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      before(async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      // Create temporary directory
-      TEST_PROJECT_DIR = createTempTestDirectory("ts-s3-engine-set");
+        // Create temporary directory
+        TEST_PROJECT_DIR = createTempTestDirectory("ts-s3-engine-set");
 
-      // Setup TypeScript project
-      await setupTypeScriptProject(
-        TEST_PROJECT_DIR,
-        TEMPLATE_NAMES.TYPESCRIPT_TESTS,
-        CLI_PATH,
-        MOOSE_LIB_PATH,
-        APP_NAMES.TYPESCRIPT_TESTS,
-        "npm",
-      );
+        // Setup TypeScript project
+        await setupTypeScriptProject(
+          TEST_PROJECT_DIR,
+          TEMPLATE_NAMES.TYPESCRIPT_TESTS,
+          CLI_PATH,
+          MOOSE_LIB_PATH,
+          APP_NAMES.TYPESCRIPT_TESTS,
+          "npm",
+        );
 
-      // Start dev server WITH the required environment variables set
-      devProcess = startMooseDev({
-        cliPath: CLI_PATH,
-        cwd: TEST_PROJECT_DIR,
-        projectDir: TEST_PROJECT_DIR,
-        mode: E2E_DEV_MODE,
-        portEnv: PORT_ENV,
-        extraEnv: {
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-        },
-      }).devProcess;
+        // Start dev server WITH the required environment variables set
+        devProcess = startMooseDev({
+          cliPath: CLI_PATH,
+          cwd: TEST_PROJECT_DIR,
+          projectDir: TEST_PROJECT_DIR,
+          mode: E2E_DEV_MODE,
+          portEnv: PORT_ENV,
+          extraEnv: {
+            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          },
+        }).devProcess;
 
-      await waitForServerStart(
-        devProcess,
-        TIMEOUTS.SERVER_STARTUP_MS,
-        SERVER.startupMessage,
-        SERVER.url,
-      );
+        await waitForServerStart(
+          devProcess,
+          TIMEOUTS.SERVER_STARTUP_MS,
+          SERVER.startupMessage,
+          SERVER.url,
+        );
 
-      testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, {
-        dockerless: isDockerlessMode(E2E_DEV_MODE),
-        baseUrl: SERVER.url,
+        testLogger.info("Server started, waiting for streaming functions...");
+        await waitForStreamingFunctions(120000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+          baseUrl: SERVER.url,
+        });
+        testLogger.info("All components ready");
       });
-      testLogger.info("All components ready");
-    });
 
-    after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP_MS);
-      await cleanupTestSuite(
-        devProcess,
-        TEST_PROJECT_DIR,
-        APP_NAMES.TYPESCRIPT_TESTS,
-        {
-          logPrefix: "TypeScript S3 Engine Test (With Env Vars)",
-          ...getCleanupOptionsForMode(E2E_DEV_MODE),
-        },
-      );
-    });
+      after(async function () {
+        this.timeout(TIMEOUTS.CLEANUP_MS);
+        await cleanupTestSuite(
+          devProcess,
+          TEST_PROJECT_DIR,
+          APP_NAMES.TYPESCRIPT_TESTS,
+          {
+            logPrefix: "TypeScript S3 Engine Test (With Env Vars)",
+            // Pass the offset-50 ports so `killRemainingProcesses` can
+            // SIGKILL leftover ClickHouse/Node consumption workers by port
+            // instead of targeting the default (offset-0) ports. The
+            // dockerless preflight in the next describe block depends on
+            // those ports being free.
+            ports: PORTS,
+            ...getCleanupOptionsForMode(E2E_DEV_MODE),
+          },
+        );
+      });
 
-    it("should start successfully and resolve S3 engine environment variables correctly", async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      it("should start successfully and resolve S3 engine environment variables correctly", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      // If we got here, the server started successfully with the environment variables set
-      // This verifies that:
-      // 1. mooseRuntimeEnv.get() markers were correctly generated by the TypeScript library
-      // 2. The Rust CLI successfully resolved the markers from environment variables
-      // 3. The resolved values were used to create the S3 engine table without errors
-      //
-      // If the environment variables were not resolved correctly, the server would have
-      // failed to start with an error message containing the table name and field name.
-      expect(devProcess?.killed).to.be.false;
+        // If we got here, the server started successfully with the environment variables set
+        // This verifies that:
+        // 1. mooseRuntimeEnv.get() markers were correctly generated by the TypeScript library
+        // 2. The Rust CLI successfully resolved the markers from environment variables
+        // 3. The resolved values were used to create the S3 engine table without errors
+        //
+        // If the environment variables were not resolved correctly, the server would have
+        // failed to start with an error message containing the table name and field name.
+        expect(devProcess?.killed).to.be.false;
+      });
     });
   });
-});
+}
 
-describe("python template tests - S3 Engine Runtime Environment Variable Resolution", () => {
-  describe("With Environment Variables", () => {
-    let devProcess: ChildProcess | null = null;
-    let TEST_PROJECT_DIR: string;
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "py") {
+  describe("python template tests - S3 Engine Runtime Environment Variable Resolution", () => {
+    describe("With Environment Variables", () => {
+      let devProcess: ChildProcess | null = null;
+      let TEST_PROJECT_DIR: string;
 
-    before(async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      before(async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      // Create temporary directory
-      TEST_PROJECT_DIR = createTempTestDirectory("py-s3-engine-set");
+        // Create temporary directory
+        TEST_PROJECT_DIR = createTempTestDirectory("py-s3-engine-set");
 
-      // Setup Python project
-      await setupPythonProject(
-        TEST_PROJECT_DIR,
-        TEMPLATE_NAMES.PYTHON_TESTS,
-        CLI_PATH,
-        MOOSE_PY_LIB_PATH,
-        APP_NAMES.PYTHON_TESTS,
-      );
+        // Setup Python project
+        await setupPythonProject(
+          TEST_PROJECT_DIR,
+          TEMPLATE_NAMES.PYTHON_TESTS,
+          CLI_PATH,
+          MOOSE_PY_LIB_PATH,
+          APP_NAMES.PYTHON_TESTS,
+        );
 
-      // Start dev server WITH the required environment variables set
-      devProcess = startMooseDev({
-        cliPath: CLI_PATH,
-        cwd: TEST_PROJECT_DIR,
-        projectDir: TEST_PROJECT_DIR,
-        language: "python",
-        mode: E2E_DEV_MODE,
-        portEnv: PORT_ENV,
-        extraEnv: {
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-        },
-      }).devProcess;
+        // Start dev server WITH the required environment variables set
+        devProcess = startMooseDev({
+          cliPath: CLI_PATH,
+          cwd: TEST_PROJECT_DIR,
+          projectDir: TEST_PROJECT_DIR,
+          language: "python",
+          mode: E2E_DEV_MODE,
+          portEnv: PORT_ENV,
+          extraEnv: {
+            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          },
+        }).devProcess;
 
-      await waitForServerStart(
-        devProcess,
-        TIMEOUTS.SERVER_STARTUP_MS,
-        SERVER.startupMessage,
-        SERVER.url,
-      );
+        await waitForServerStart(
+          devProcess,
+          TIMEOUTS.SERVER_STARTUP_MS,
+          SERVER.startupMessage,
+          SERVER.url,
+        );
 
-      testLogger.info("Server started, waiting for streaming functions...");
-      await waitForStreamingFunctions(120000, {
-        dockerless: isDockerlessMode(E2E_DEV_MODE),
-        baseUrl: SERVER.url,
+        testLogger.info("Server started, waiting for streaming functions...");
+        await waitForStreamingFunctions(120000, {
+          dockerless: isDockerlessMode(E2E_DEV_MODE),
+          baseUrl: SERVER.url,
+        });
+        testLogger.info("All components ready");
       });
-      testLogger.info("All components ready");
-    });
 
-    after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP_MS);
-      await cleanupTestSuite(
-        devProcess,
-        TEST_PROJECT_DIR,
-        APP_NAMES.PYTHON_TESTS,
-        {
-          logPrefix: "Python S3 Engine Test (With Env Vars)",
-          ...getCleanupOptionsForMode(E2E_DEV_MODE),
-        },
-      );
-    });
+      after(async function () {
+        this.timeout(TIMEOUTS.CLEANUP_MS);
+        await cleanupTestSuite(
+          devProcess,
+          TEST_PROJECT_DIR,
+          APP_NAMES.PYTHON_TESTS,
+          {
+            logPrefix: "Python S3 Engine Test (With Env Vars)",
+            // See note on the TypeScript describe block above.
+            ports: PORTS,
+            ...getCleanupOptionsForMode(E2E_DEV_MODE),
+          },
+        );
+      });
 
-    it("should start successfully and resolve S3 engine environment variables correctly", async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      it("should start successfully and resolve S3 engine environment variables correctly", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-      // If we got here, the server started successfully with the environment variables set
-      // This verifies that:
-      // 1. moose_runtime_env.get() markers were correctly generated by the Python library
-      // 2. The Rust CLI successfully resolved the markers from environment variables
-      // 3. The resolved values were used to create the S3 engine table without errors
-      expect(devProcess?.killed).to.be.false;
+        // If we got here, the server started successfully with the environment variables set
+        // This verifies that:
+        // 1. moose_runtime_env.get() markers were correctly generated by the Python library
+        // 2. The Rust CLI successfully resolved the markers from environment variables
+        // 3. The resolved values were used to create the S3 engine table without errors
+        expect(devProcess?.killed).to.be.false;
+      });
     });
   });
-});
+}

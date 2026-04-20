@@ -36,7 +36,6 @@ jobs:
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           target: x86_64-unknown-linux-gnu
 
       - name: Install Protoc (Needed for Temporal)

@@ -47,6 +47,7 @@ pub struct ReconciliationFilter {
     pub materialized_view_ids: HashSet<String>,
     pub view_ids: HashSet<String>,
     pub select_row_policy_ids: HashSet<String>,
+    pub dictionary_ids: HashSet<String>,
 }
 
 impl ReconciliationFilter {
@@ -62,6 +63,7 @@ impl ReconciliationFilter {
             materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
             view_ids: infra_map.views.keys().cloned().collect(),
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
+            dictionary_ids: infra_map.olap_dictionaries.keys().cloned().collect(),
         }
     }
 
@@ -75,6 +77,8 @@ impl ReconciliationFilter {
         self.view_ids.extend(other.view_ids.iter().cloned());
         self.select_row_policy_ids
             .extend(other.select_row_policy_ids.iter().cloned());
+        self.dictionary_ids
+            .extend(other.dictionary_ids.iter().cloned());
     }
 
     /// Re-prefix table IDs from `source_db` to `target_db`.
@@ -601,6 +605,32 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
 
+    // Handle Dictionary reconciliation (presence/absence only)
+    debug!("Reconciling Dictionaries");
+
+    // Remove missing dictionaries (in map but don't exist in reality).
+    // missing_dictionaries contains dictionary IDs ({db}_{name}), which are the map keys.
+    for missing_dict_id in discrepancies.missing_dictionaries {
+        debug!(
+            "Removing missing dictionary from infrastructure map: {}",
+            missing_dict_id
+        );
+        reconciled_map.olap_dictionaries.remove(&missing_dict_id);
+    }
+
+    // Unmapped dictionaries (exist in database but not in the current infrastructure map) are
+    // skipped: list_dictionaries() returns names only, so we cannot reconstruct a full
+    // OlapDictionary to adopt. The diff against the target map will produce an Added change
+    // which will re-create the dictionary on the next apply.
+    if !discrepancies.unmapped_dictionaries.is_empty() {
+        debug!(
+            "Skipping {} unmapped dictionaries — cannot adopt without full schema",
+            discrepancies.unmapped_dictionaries.len()
+        );
+    }
+
+    // Dictionaries have no mismatched entries (presence/absence only).
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -931,6 +961,7 @@ mod tests {
     struct MockOlapClient {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
+        dictionaries: Vec<String>,
     }
 
     #[async_trait]
@@ -962,7 +993,7 @@ mod tests {
         }
 
         async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
-            Ok(vec![])
+            Ok(self.dictionaries.clone())
         }
     }
 
@@ -1059,6 +1090,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create empty infrastructure map (no tables)
@@ -1086,6 +1118,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
@@ -1097,6 +1130,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1113,6 +1147,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 2: Non-empty filter = only include if in set
@@ -1124,6 +1159,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1142,6 +1178,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with one table
@@ -1170,6 +1207,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1178,6 +1216,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Reconcile the infrastructure map
@@ -1223,6 +1262,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -1254,6 +1294,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1262,6 +1303,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1288,6 +1330,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the same table
@@ -1315,6 +1358,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1323,6 +1367,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1379,6 +1424,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1387,6 +1433,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1441,6 +1488,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1449,6 +1497,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1538,6 +1587,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table_from_reality],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1556,6 +1606,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1602,6 +1653,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![reality_table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table
@@ -1620,6 +1672,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1662,6 +1715,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![sql_resource.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1674,6 +1728,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1713,6 +1768,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![view_a.clone(), view_b.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1727,6 +1783,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1770,6 +1827,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![reality_view.clone()],
+            dictionaries: vec![],
         };
 
         // Create infra map with the existing view
@@ -1787,6 +1845,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1883,6 +1942,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("local", "myapp_prod");
         assert_eq!(
@@ -1903,6 +1963,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("db", "db");
         assert_eq!(filter.table_ids, original);
@@ -1917,6 +1978,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("", "prod");
         assert_eq!(filter.table_ids, original);
@@ -1939,6 +2001,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("prod", "staging");
         assert!(
@@ -1963,6 +2026,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("local", "prod");
         assert!(filter.table_ids.contains("prod_users_0_0"));
