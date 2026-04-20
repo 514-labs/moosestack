@@ -1,0 +1,231 @@
+---
+title: Query client
+description: Set up the Moose query client and execute queries against OLAP tables
+order: 8
+category: olap
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Query client
+
+Use the Moose query client to run queries against ClickHouse from application code. The TypeScript client returns a result object. The Python client returns a list of rows.
+
+## Set up the client
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+### getMooseUtils
+
+Use `getMooseUtils()` to get both `client` and `sql`. Use the same helper inside Moose runtime handlers and standalone TypeScript code. For framework-specific setup, see [Express](/moosestack/app-api-frameworks/express).
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+const { client, sql } = await getMooseUtils();
+```
+
+`getMooseUtils()` reads ClickHouse connection details from these environment variables in both runtime and standalone use. If you're using the Moose client outside the Moose runtime, make sure these values are set in that environment:
+
+```bash title=".env" copy
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=18123
+MOOSE_CLICKHOUSE_CONFIG__USER=panda
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=pandapass
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
+```
+
+`getMooseUtils()` is async. Always await it before accessing `client` or `sql`.
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+### QueryClient
+
+Use `QueryClient(config_registry.get_clickhouse_config())` for standalone access to ClickHouse from Python code. For framework-specific setup, see [FastAPI](/moosestack/app-api-frameworks/fastapi).
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Execute queries
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Use `client.query.execute()` with a `sql.statement` query when you are reading from Moose OLAP in TypeScript.
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+import { table } from "./table";
+
+const { client, sql } = await getMooseUtils();
+
+const result = await client.query.execute(sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  LIMIT ${10}
+`);
+
+const rows = await result.json();
+```
+
+This method returns a ClickHouse JSONEachRow result set. Read rows with `await result.json()`. Change how you construct the SQL with `sql.statement`, `sql.fragment`, and `sql.join` — see [SQL tag](/moosestack/olap/sql-tag).
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Use `query_client.execute(...)` for Moose-managed interpolation. Use `query_client.execute_raw(...)` for raw ClickHouse SQL with explicit parameter types.
+
+### execute()
+
+Pass a SQL string with placeholders and a variables dict:
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+from app.table import table
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = """
+  SELECT
+    {id_column},
+    {name_column}
+  FROM {table}
+  WHERE {name_column} = {name}
+  LIMIT {limit}
+"""
+
+rows = query_client.execute(query, {
+    "id_column": table.cols.id,
+    "name_column": table.cols.name,
+    "table": table,
+    "name": "signup",
+    "limit": 10,
+})
+```
+
+`execute()` treats Moose [`OlapTable`](/moosestack/olap/model-table) and column objects as identifiers instead of scalar values. If the table has a `database` config in its [table definition](/moosestack/olap/model-table), Moose automatically qualifies it in generated SQL.
+
+Use the materialized-view target table when you want interpolation to follow the stored table shape:
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+from app.materialized_view import daily_stats
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = """
+  SELECT
+    {day_column},
+    sumMerge(total_views) AS total_views
+  FROM {table}
+  WHERE {day_column} >= {since}
+  GROUP BY {day_column}
+"""
+
+rows = query_client.execute(query, {
+    "day_column": daily_stats.target_table.cols.day,
+    "table": daily_stats.target_table,
+    "since": "2026-01-01",
+})
+```
+
+In Python, write the merge function explicitly in SQL when the target table stores aggregate states.
+
+Pass `row_type` when you want rows mapped into a Pydantic model:
+
+```py filename="app/query.py" copy
+from pydantic import BaseModel
+from moose_lib import QueryClient, config_registry
+
+from app.table import table
+
+class EventRow(BaseModel):
+    id: str
+    name: str
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+rows = query_client.execute(
+    """
+      SELECT id, name
+      FROM {table}
+      LIMIT {limit}
+    """,
+    {
+        "table": table,
+        "limit": 10,
+    },
+    row_type=EventRow,
+)
+```
+
+Pass a `Query` object when you want a structured builder instead of SQL text. See [Python query builder](/moosestack/olap/query-builder).
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+from moose_lib.query_builder import Query, col
+
+from app.table import table
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+    .limit(10)
+)
+
+rows = query_client.execute(query)
+```
+
+| Input form | Call shape | Returns |
+| --- | --- | --- |
+| SQL string | `query_client.execute(sql_string, variables, row_type=None)` | A list of row dicts by default, or a list of `row_type` instances when provided |
+| Query builder | `query_client.execute(query_builder, row_type=None)` | A list of row dicts by default, or a list of `row_type` instances when provided |
+
+### execute_raw()
+
+Use `query_client.execute_raw(clickhouse_query, parameters, row_type=None)` when you want full control over the SQL text and parameter types instead of Moose-managed interpolation.
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = """
+  SELECT id, name
+  FROM {table: Identifier}
+  WHERE name = {name:String}
+  LIMIT {limit:UInt32}
+"""
+
+rows = query_client.execute_raw(query, {
+    "table": "events",
+    "name": "signup",
+    "limit": 10,
+})
+```
+
+| Call shape | Use it for | Returns |
+| --- | --- | --- |
+| `query_client.execute_raw(clickhouse_query, parameters, row_type=None)` | Raw ClickHouse SQL with explicit parameter typing | A list of row dicts by default, or a list of `row_type` instances when provided |
+
+Use typed placeholders such as <code>{"{limit:UInt32}"}</code> and <code>{"{table: Identifier}"}</code> when ClickHouse needs explicit parameter types.
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Related capabilities
+
+- [Read data](/moosestack/olap/read-data) for the full querying overview
+- [SQL tag](/moosestack/olap/sql-tag) for TypeScript SQL helpers
+- [Python query builder](/moosestack/olap/query-builder) for typed Python query construction
+- [OlapTable](/moosestack/olap/model-table) for defining the table objects you query

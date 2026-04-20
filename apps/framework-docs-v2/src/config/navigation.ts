@@ -315,6 +315,24 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Reading Data",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/olap/moose-client",
+        title: "Query client",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/sql-tag",
+        title: "SQL tag",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/query-builder",
+        title: "Python query builder",
+        languages: ["python"],
+      },
       { type: "separator" },
       { type: "label", title: "Performance & Optimization" },
       {

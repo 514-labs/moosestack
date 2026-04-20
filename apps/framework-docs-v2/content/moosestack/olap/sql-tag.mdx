@@ -1,0 +1,137 @@
+---
+title: SQL tag
+description: TypeScript SQL helpers for building type-safe queries with Moose tables and columns
+order: 9
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# SQL tag
+
+Use the `sql` tag helpers when you want structured TypeScript query construction without switching to a separate query-builder API.
+
+The snippets below assume `sql` and `table` are already in scope. See [Query client](/moosestack/olap/moose-client) for how to obtain the `sql` tag.
+
+## sql.statement
+
+Use `sql.statement` for complete SQL statements such as `SELECT` queries.
+
+```ts filename="app/query.ts" copy
+const query = sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  WHERE ${table.columns.name} = ${"signup"}
+  ORDER BY ${table.columns.id}
+`;
+```
+
+## sql.fragment
+
+Use `sql.fragment` for reusable partial SQL such as predicates, expressions, and clause fragments.
+
+```ts filename="app/query.ts" copy
+const nameFilter = sql.fragment`${table.columns.name} ILIKE ${"%moose%"}`;
+
+const query = sql.statement`
+  SELECT * FROM ${table}
+  WHERE ${nameFilter}
+`;
+```
+
+## sql.join
+
+Use `sql.join` to combine multiple SQL fragments with a separator.
+
+```ts filename="app/query.ts" copy
+const conditions = [
+  sql.fragment`${table.columns.name} ILIKE ${"%moose%"}`,
+  sql.fragment`${table.columns.id} != ${"system"}`,
+];
+
+const query = sql.statement`
+  SELECT * FROM ${table}
+  WHERE ${sql.join(conditions, " AND ")}
+`;
+```
+
+## sql.raw
+
+Use `sql.raw` only when you need trusted static SQL text that should not be parameterized or escaped.
+
+```ts filename="app/query.ts" copy
+const direction = sql.raw("DESC");
+
+const query = sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  ORDER BY ${table.columns.id} ${direction}
+`;
+```
+
+<Callout type="info" title="Prefer sql.statement and sql.fragment">
+The bare `sql` template tag still exists for backward compatibility, but `sql.statement` and `sql.fragment` are the preferred forms.
+</Callout>
+
+## Interpolate tables and columns
+
+Use Moose table and column objects when you want identifier-safe SQL that follows the current table definition. For how those table objects are modeled, see [OlapTable](/moosestack/olap/model-table).
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+import { table } from "./table";
+
+const { client, sql } = await getMooseUtils();
+
+const query = sql.statement`
+  SELECT
+    ${table.columns.id},
+    ${table.columns.name}
+  FROM ${table}
+  WHERE ${table.columns.id} = ${"user_123"}
+`;
+
+const result = await client.query.execute(query);
+```
+
+If the table has a `database` config in its [table definition](/moosestack/olap/model-table), Moose automatically qualifies it as `` `database`.`table_name` `` in generated SQL.
+
+For materialized views, use the target table when you want interpolation to follow the stored table shape instead of treating the materialized-view definition as a generic string reference.
+
+```ts filename="app/query.ts" copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+import { dailyStats } from "./materialized-view";
+
+const { client, sql } = await getMooseUtils();
+
+const query = sql.statement`
+  SELECT
+    ${dailyStats.targetTable.columns.day},
+    ${dailyStats.targetTable.columns.totalViews}
+  FROM ${dailyStats.targetTable}
+  WHERE ${dailyStats.targetTable.columns.day} >= ${"2026-01-01"}
+`;
+
+const result = await client.query.execute(query);
+```
+
+When a TypeScript materialized-view target table stores `AggregateFunction` columns, Moose expands the correct merge function when you interpolate the column through `sql.statement`.
+
+## Behavior
+
+| Behavior | What happens |
+| --- | --- |
+| `SELECT *` | Moose includes ClickHouse [materialized columns](/moosestack/olap/materialized-columns) and [alias columns](/moosestack/olap/alias-columns) when a query uses `*`. |
+| Database-qualified tables | Tables with a `database` config in [OlapTable](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
+
+## Related capabilities
+
+- [Query client](/moosestack/olap/moose-client) for running `sql` queries against ClickHouse
+- [OlapTable](/moosestack/olap/model-table) for defining the tables you interpolate
+- [Materialized view](/moosestack/olap/model-materialized-view) for target tables that expose typed columns

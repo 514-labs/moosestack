@@ -1,0 +1,305 @@
+---
+title: Python query builder
+description: Build typed ClickHouse queries in Python with the `Query` builder API
+order: 10
+category: olap
+---
+
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+
+# Python query builder
+
+Use `Query()` when you want a structured alternative to formatter-style SQL strings and still execute the finished query with `query_client.execute(query)`.
+
+```py filename="app/query.py" copy
+from moose_lib import QueryClient, config_registry
+from moose_lib.query_builder import Query, col
+
+from app.table import table
+
+query_client = QueryClient(config_registry.get_clickhouse_config())
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+    .order_by((table.cols.id, "desc"))
+    .limit(10)
+)
+
+rows = query_client.execute(query)
+```
+
+The snippets below assume `Query`, `col`, `and_`, `or_`, and `table` are already imported.
+
+## from_()
+
+Use `from_()` to set the source table for the query.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+)
+```
+
+## select()
+
+Use `select()` to choose the Moose columns you want returned.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+)
+```
+
+## where()
+
+Use `where()` to apply a filter predicate or SQL expression.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+)
+```
+
+Use `col(...)` helpers inside `where()` for common predicates.
+
+### Equality predicates
+
+<Tabs defaultValue="eq">
+<TabsList>
+  <TabsTrigger value="eq">`eq()`</TabsTrigger>
+  <TabsTrigger value="ne">`ne()`</TabsTrigger>
+</TabsList>
+<TabsContent value="eq">
+
+Use `eq()` when a column must match one value exactly.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).eq("signup"))
+)
+```
+
+</TabsContent>
+<TabsContent value="ne">
+
+Use `ne()` when a column must exclude one value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).ne("signup"))
+)
+```
+
+</TabsContent>
+</Tabs>
+
+### Compound predicates
+
+<Tabs defaultValue="and">
+<TabsList>
+  <TabsTrigger value="and">`and_()`</TabsTrigger>
+  <TabsTrigger value="or">`or_()`</TabsTrigger>
+</TabsList>
+<TabsContent value="and">
+
+Use `and_()` when every grouped predicate must be true.
+
+```py filename="app/query.py" copy
+from moose_lib.query_builder import Query, and_, col
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(
+        and_(
+            col(table.cols.name).eq("signup"),
+            col(table.cols.id).ne("system"),
+        )
+    )
+)
+```
+
+</TabsContent>
+<TabsContent value="or">
+
+Use `or_()` when any one of the grouped predicates can match.
+
+```py filename="app/query.py" copy
+from moose_lib.query_builder import Query, col, or_
+
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(
+        or_(
+            col(table.cols.name).eq("signup"),
+            col(table.cols.name).eq("purchase"),
+        )
+    )
+)
+```
+
+</TabsContent>
+</Tabs>
+
+### Range predicates
+
+<Tabs defaultValue="lt">
+<TabsList>
+  <TabsTrigger value="lt">`lt()`</TabsTrigger>
+  <TabsTrigger value="le">`le()`</TabsTrigger>
+  <TabsTrigger value="gt">`gt()`</TabsTrigger>
+  <TabsTrigger value="ge">`ge()`</TabsTrigger>
+</TabsList>
+<TabsContent value="lt">
+
+Apply `lt()` when the column value must be strictly less than the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).lt("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="le">
+
+Choose `le()` when the column value can be less than or equal to the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).le("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="gt">
+
+Use `gt()` when the column value must be strictly greater than the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).gt("evt_100"))
+)
+```
+
+</TabsContent>
+<TabsContent value="ge">
+
+Use `ge()` when the column value can be greater than or equal to the comparison value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.id).ge("evt_100"))
+)
+```
+
+</TabsContent>
+</Tabs>
+
+### Other predicates
+
+<Tabs defaultValue="in">
+<TabsList>
+  <TabsTrigger value="in">`in_()`</TabsTrigger>
+  <TabsTrigger value="null">`is_null()`</TabsTrigger>
+</TabsList>
+<TabsContent value="in">
+
+Use `in_()` when a column can match any value in a list.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).in_(["signup", "purchase"]))
+)
+```
+
+</TabsContent>
+<TabsContent value="null">
+
+Use `is_null()` when you need rows where the column has no value.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .where(col(table.cols.name).is_null())
+)
+```
+
+</TabsContent>
+</Tabs>
+
+## order_by()
+
+Use `order_by()` to sort by columns or `(column, "asc" | "desc")` tuples.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .order_by((table.cols.id, "desc"))
+)
+```
+
+## limit()
+
+Use `limit()` to cap the number of returned rows.
+
+```py filename="app/query.py" copy
+query = (
+    Query()
+    .from_(table)
+    .select(table.cols.id, table.cols.name)
+    .limit(10)
+)
+```
+
+For debugging or inspection, `query.to_sql()` returns the generated ClickHouse SQL and `query.to_sql_and_params()` returns the SQL plus bound parameters.
+
+## Behavior
+
+| Behavior | What happens |
+| --- | --- |
+| `SELECT *` | Moose includes ClickHouse [materialized columns](/moosestack/olap/materialized-columns) and [alias columns](/moosestack/olap/alias-columns) when a query uses `*`. |
+| Database-qualified tables | Tables with a `database` config in [OlapTable](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
+
+## Related capabilities
+
+- [Query client](/moosestack/olap/moose-client) for running query-builder objects
+- [OlapTable](/moosestack/olap/model-table) for defining the tables you query
