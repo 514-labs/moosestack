@@ -166,7 +166,7 @@ export const EventsTable = new OlapTable<Event>("Events", {
 ```python filename="combined.py" copy
 from typing import Annotated, Any
 from datetime import datetime
-from moose_lib import OlapTable, ClickHouseCodec, ClickHouseMaterialized, clickhouse_default
+from moose_lib import OlapTable, OlapConfig, ClickHouseCodec, ClickHouseMaterialized, clickhouse_default
 from pydantic import BaseModel
 
 class Event(BaseModel):
