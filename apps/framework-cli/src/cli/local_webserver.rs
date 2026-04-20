@@ -583,9 +583,11 @@ async fn get_consumption_api_res(
         .collect();
     let url_parsed: reqwest::Url = url.parse()?;
 
-    // Retry only on genuine connect errors — these are the hot-reload window
-    // (consumption-api primary restarting → :proxy_port momentarily closed).
-    // Other failures (timeouts, TLS errors, 5xx from upstream) surface once.
+    // Retry only on genuine connect errors — a transient "socket not
+    // accepting" window where the consumption-api is momentarily
+    // unavailable. In dev this is most often the hot-reload restart of the
+    // primary worker; in prod it can happen on any brief restart / socket
+    // reset. Other failures (timeouts, TLS, 5xx from upstream) surface once.
     const MAX_ATTEMPTS: usize = 3;
     const BACKOFF_MS: [u64; 2] = [150, 400]; // applied between attempts 1→2 and 2→3
 
@@ -638,7 +640,7 @@ async fn get_consumption_api_res(
         "error": "consumption_api_unavailable",
         "retryable": true,
         "message": format!(
-            "Consumption API is temporarily unavailable (restarting on hot reload). \
+            "Consumption API is temporarily unavailable. \
              Retry shortly. Attempts: {}/{}.",
             MAX_ATTEMPTS, MAX_ATTEMPTS
         ),
@@ -3204,7 +3206,21 @@ async fn shutdown(
 
         // Step 5: Shut down native infrastructure (embedded servers + child processes).
         if project.dev.dockerless {
+            super::display::show_message_wrapper(
+                MessageType::Highlight,
+                Message {
+                    action: "Stopping".to_string(),
+                    details: "native infrastructure (up to ~10s per service)...".to_string(),
+                },
+            );
             crate::utilities::native_infra::stop_native_infra(project);
+            super::display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Stopped".to_string(),
+                    details: "native infrastructure".to_string(),
+                },
+            );
         }
     }
 

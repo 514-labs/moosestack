@@ -131,13 +131,9 @@ impl InfraProvider for NativeInfraProvider {
         // anything starts. Prevents the Node consumption worker from entering
         // an unbounded restart loop when a prior `moose dev --dockerless` is
         // still holding ports 4001 / 6379 / 19092.
-        let specs = preflight::port_specs_for(
-            project,
-            self.scripts_enabled,
-            /* include_webserver = */ true,
-        )
-        .map_err(NativeInfraError::from)
-        .map_err(Self::map_native_err)?;
+        let specs = preflight::port_specs_for(project, self.scripts_enabled, true)
+            .map_err(NativeInfraError::from)
+            .map_err(Self::map_native_err)?;
         preflight::check_ports(&specs, &preflight::native_dir_for(project))
             .map_err(NativeInfraError::from)
             .map_err(Self::map_native_err)?;
