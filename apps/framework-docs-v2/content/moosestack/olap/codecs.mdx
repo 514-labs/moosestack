@@ -1,0 +1,198 @@
+---
+title: Codecs
+description: Configure per-column compression on an OlapTable with ClickHouseCodec
+order: 18
+category: olap
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Codecs
+
+The `ClickHouseCodec` annotation sets per-column compression on an [`OlapTable`](/moosestack/olap/model-table). Each codec replaces the default codec chain for that column with one matched to its value distribution.
+
+## Syntax
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Apply `ClickHouseCodec<"...">` as an intersection on any column field.
+
+```ts filename="Syntax.ts"
+import { ClickHouseCodec } from "@514labs/moose-lib";
+
+interface MyTable {
+  column: Type & ClickHouseCodec<"CODEC_EXPR">;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Apply `ClickHouseCodec("...")` as `Annotated` metadata on any column field.
+
+```python filename="syntax.py"
+from typing import Annotated
+from moose_lib import ClickHouseCodec
+from pydantic import BaseModel
+
+class MyTable(BaseModel):
+    column: Annotated[Type, ClickHouseCodec("CODEC_EXPR")]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+`CODEC_EXPR` is either a single codec (`"ZSTD(3)"`) or a comma-separated chain applied left to right (`"Delta, LZ4"`).
+
+## Basic usage
+
+Pick a codec that fits the column's value distribution. Here, `ZSTD(3)` compresses a JSON payload harder than the default LZ4, trading CPU for size.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="CodecExample.ts" copy
+import { OlapTable, DateTime, ClickHouseCodec } from "@514labs/moose-lib";
+
+interface Event {
+  id: string;
+  timestamp: DateTime;
+  payload: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+}
+
+export const EventsTable = new OlapTable<Event>("Events", {
+    orderByFields: ["id"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="codec_example.py" copy
+from typing import Annotated, Any
+from datetime import datetime
+from moose_lib import OlapTable, OlapConfig, ClickHouseCodec
+from pydantic import BaseModel
+
+class Event(BaseModel):
+    id: str
+    timestamp: datetime
+    payload: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+
+events_table = OlapTable[Event]("Events", config=OlapConfig(
+    order_by_fields=["id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Codec chains
+
+Chain a specialized codec with a general-purpose codec. The specialized codec transforms raw values; the general-purpose codec compresses the transformed bytes.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Chains.ts" copy
+import { DateTime, ClickHouseCodec, UInt64 } from "@514labs/moose-lib";
+
+interface Metrics {
+  id: string;
+  // Monotonic timestamps: delta encoding + LZ4
+  recordedAt: DateTime & ClickHouseCodec<"Delta, LZ4">;
+  // Slowly-changing float series: Gorilla + ZSTD
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD">;
+  // Small-range integers: T64 bit-packing + ZSTD
+  count: UInt64 & ClickHouseCodec<"T64, ZSTD">;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="chains.py" copy
+from typing import Annotated
+from datetime import datetime
+from moose_lib import ClickHouseCodec, UInt64
+from pydantic import BaseModel
+
+class Metrics(BaseModel):
+    id: str
+    # Monotonic timestamps: delta encoding + LZ4
+    recorded_at: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
+    # Slowly-changing float series: Gorilla + ZSTD
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD")]
+    # Small-range integers: T64 bit-packing + ZSTD
+    count: Annotated[UInt64, ClickHouseCodec("T64, ZSTD")]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Available codecs
+
+Codec names are strings inside the annotation and are identical in TypeScript and Python.
+
+**Specialized codecs** — pick based on column shape:
+
+| Codec | Best for |
+| --- | --- |
+| `Delta` | Monotonic sequences (timestamps, counters) |
+| `DoubleDelta` | Near-constant-rate sequences |
+| `Gorilla` | Float time-series that change slowly |
+| `T64` | Integers with a small actual value range |
+| `FPC` | 64-bit floats with correlated values |
+
+**General-purpose codecs** — usually the last step in a chain:
+
+| Codec | Behavior |
+| --- | --- |
+| `LZ4` | Fast, moderate ratio (ClickHouse default) |
+| `ZSTD(level)` | Higher ratio at higher CPU cost. Levels 1–22; 3 is a common starting point |
+| `NONE` | Disable compression for this column |
+
+## Combining with other annotations
+
+`ClickHouseCodec` composes with `ClickHouseDefault`, `ClickHouseMaterialized`, `ClickHouseAlias`, and `ClickHouseTTL` on the same column.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Combined.ts" copy
+import { OlapTable, DateTime, ClickHouseCodec, ClickHouseDefault, ClickHouseMaterialized } from "@514labs/moose-lib";
+
+interface Event {
+  id: string;
+  createdAt: DateTime & ClickHouseDefault<"now64()"> & ClickHouseCodec<"Delta, LZ4">;
+  payload: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+  payloadSize: number & ClickHouseMaterialized<"length(toString(payload))"> & ClickHouseCodec<"T64, LZ4">;
+}
+
+export const EventsTable = new OlapTable<Event>("Events", {
+    orderByFields: ["id"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="combined.py" copy
+from typing import Annotated, Any
+from datetime import datetime
+from moose_lib import OlapTable, OlapConfig, ClickHouseCodec, ClickHouseMaterialized, clickhouse_default
+from pydantic import BaseModel
+
+class Event(BaseModel):
+    id: str
+    created_at: Annotated[datetime, clickhouse_default("now64()"), ClickHouseCodec("Delta, LZ4")]
+    payload: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+    payload_size: Annotated[int, ClickHouseMaterialized("length(toString(payload))"), ClickHouseCodec("T64, LZ4")]
+
+events_table = OlapTable[Event]("Events", config=OlapConfig(
+    order_by_fields=["id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Notes
+
+- The codec string is passed through to ClickHouse unmodified. Any codec and level supported by your ClickHouse version is accepted.
+- If no codec is set, ClickHouse uses the server-level default (usually LZ4).
+- `ClickHouseAlias` columns are computed at query time and not stored, so codecs on alias columns have no effect.
+- Changing a codec on an existing column applies immediately to new data parts. Existing parts are rewritten with the new codec during background merges.
+
+## Related
+
+- [OlapTable](/moosestack/olap/model-table) — parent table reference
+- [Materialized columns](/moosestack/olap/materialized-columns) — codecs combine with materialized columns
+- [Defaults](/moosestack/olap/defaults) — codecs combine with `ClickHouseDefault`
+- [Schema optimization](/moosestack/olap/schema-optimization) — when to reach for custom codecs
+- [ClickHouse column compression codec reference](https://clickhouse.com/docs/en/sql-reference/statements/create/table#column_compression_codec) — upstream codec list and semantics
