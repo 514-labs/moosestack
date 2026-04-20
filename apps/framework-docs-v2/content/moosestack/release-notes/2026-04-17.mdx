@@ -3,8 +3,6 @@ title: April 17, 2026
 description: Release notes for April 17, 2026
 ---
 
-import { Callout } from "@/components/mdx";
-
 # April 17, 2026
 
 
@@ -12,9 +10,6 @@ import { Callout } from "@/components/mdx";
 ## 🐻 Boreal
 
 ### New Features
-**Add build logs support to 514 logs command** ([@LucioFranco](https://github.com/LucioFranco))
-  Added a new RPC handler that enables users to fetch and view build logs through the 514 logs command, providing better visibility into deployment build processes and debugging capabilities.
-
 **Add `514 logs build` command** ([@LucioFranco](https://github.com/LucioFranco))
   Added a new CLI command to query and view build logs for deployments. Users can now monitor build processes, view build step details, and watch build logs in real-time using the `514 logs build` command with options for pagination, truncation control, and live updates.
 
@@ -54,17 +49,11 @@ import { Callout } from "@/components/mdx";
 **Display branch statuses for non-default branch deployments** ([@groy-514](https://github.com/groy-514))
   Non-default branch deployments now show branch status information alongside deployment statuses, providing better visibility into the branch creation and setup process. This helps users understand the complete lifecycle of their branch deployments from creation to active state.
 
-  📸 *[Screenshot needed: Non-default branch deployments now show branch status information alongside deployment statuses, providing better visibility into the branch creation and setup process. This helps users understand the complete lifecycle of their branch deployments from creation to active state.]*
-
 **Project status display in project list page** ([@groy-514](https://github.com/groy-514))
   The project list page now displays real-time project status information, allowing users to see the current state of their deployments at a glance. This includes status badges and improved project management visibility within the dashboard.
 
-  📸 *[Screenshot needed: The project list page now displays real-time project status information, allowing users to see the current state of their deployments at a glance. This includes status badges and improved project management visibility within the dashboard.]*
-
 **State machine events table and visualizations in hosting admin** ([@groy-514](https://github.com/groy-514))
   Added comprehensive state machine visualization and telemetry events tables to the hosting admin interface. Users can now view branch state transitions, deployment workflows, and telemetry data through interactive graphs and detailed event tables. This includes new tabbed interfaces for branches, projects, and deployments with state machine diagrams, event timelines, and improved data organization across the admin dashboard.
-
-  📸 *[Screenshot needed: Added comprehensive state machine visualization and telemetry events tables to the hosting admin interface. Users can now view branch state transitions, deployment workflows, and telemetry data through interactive graphs and detailed event tables. This includes new tabbed interfaces for branches, projects, and deployments with state machine diagrams, event timelines, and improved data organization across the admin dashboard.]*
 
 ### Improvements
 - Improve build reliability for dependency changes: Lock file changes now trigger rebuilds for all projects, ensuring applications stay up-to-date when dependencies change. ([@jmsuzuki](https://github.com/jmsuzuki))
@@ -78,6 +67,35 @@ import { Callout } from "@/components/mdx";
 ## 🦌 Moose
 
 ### New Features
+**Add dockerless provider for `moose dev` with the new alpha --dockerless flag** ([@LucioFranco](https://github.com/LucioFranco))
+  Introduces a new --dockerless flag for the dev command that allows running all of the dependencies for `moose dev` without the need for docker.
+
+  **Running MooseStack dev environment without Docker**
+
+  ```bash
+  # Start development with Docker (default behavior)
+  moose dev
+
+  # Start development without Docker using native binaries
+  moose dev --dockerless
+
+  # The --dockerless flag automatically:
+  # - Downloads ClickHouse v25.8.18.1-lts binary
+  # - Downloads Temporal CLI v1.3.0 binary
+  # - Caches binaries in ~/.moose/binaries/
+  # - Runs infrastructure as native processes instead of containers
+
+  # Useful when Docker is unavailable or you prefer native binaries
+  # Logs are stored in .moose/native_infra/ for debugging
+
+  # Clean up (stops both Docker containers and native processes)
+  moose clean
+  ```
+
+  Shows how to use the new --dockerless flag to run MooseStack development environment with native binaries instead of Docker containers. This is particularly useful for developers who don't have Docker installed or prefer native processes for better performance and debugging.
+
+  PR: [#3936](https://github.com/514-labs/moose/pull/3936) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
+
 **Add ClickHouse dictionary support with validation and CLI listing** ([@514Ben](https://github.com/514Ben))
   Adds infrastructure planning, risk assessment, and validation for ClickHouse dictionaries. Users can now list dictionaries via the CLI and benefit from safety checks that prevent destructive dictionary operations and validate configuration before deployment. This is part 2 of the broader ClickHouse dictionary support feature.
 
@@ -199,28 +217,13 @@ import { Callout } from "@/components/mdx";
 
   PR: [#4008](https://github.com/514-labs/moose/pull/4008) | Docs: [/moosestack/configuration/dev-environment](https://docs.moosejs.com/moosestack/configuration/dev-environment)
 
-**Add ClickHouse Dictionary support (core infrastructure)** ([@514Ben](https://github.com/514Ben))
-  Adds foundational support for ClickHouse dictionaries in the Moose framework, including dictionary creation, modification, and migration capabilities. This enables users to define and manage dictionaries alongside their data models, though the user-facing API is still in development (this is part 1 of 6 PRs).
-
-  PR: [#3997](https://github.com/514-labs/moose/pull/3997) | Docs: [/moosestack/olap](https://docs.moosejs.com/moosestack/olap)
-
 **Enhanced migration failure diagnostics with drift detection** ([@onelesd](https://github.com/onelesd))
   Migration failures now provide detailed forensics showing which database operations succeeded, failed, and were skipped, along with automatic drift detection when the database state diverges from migration expectations. This helps developers understand exactly what happened during partial migration failures and provides clear recovery guidance, especially important since ClickHouse DDL operations cannot be rolled back transactionally.
 
   PR: [#3999](https://github.com/514-labs/moose/pull/3999) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
 
-**Add embedded Kafka broker for development** ([@LucioFranco](https://github.com/LucioFranco))
-  Introduced devkafka, an embedded Kafka broker that runs locally during development. This eliminates the need to install and manage a separate Kafka instance when developing streaming applications with Moose. The embedded broker supports core Kafka operations including topic management, message production/consumption, and consumer group coordination, making it easier to test and develop data pipelines locally.
-
-  PR: [#3933](https://github.com/514-labs/moose/pull/3933) | Docs: [/moosestack/data-modeling](https://docs.moosejs.com/moosestack/data-modeling)
-
-**Add embedded Redis server for local development** ([@LucioFranco](https://github.com/LucioFranco))
-  Adds devredis, an embedded Redis server that runs automatically during local development. This eliminates the need for developers to install and manage Redis separately when working on MooseStack applications locally. The embedded server supports core Redis operations including data storage, lists, pub/sub, and Lua scripting, providing a seamless development experience without external dependencies.
-
-  PR: [#3932](https://github.com/514-labs/moose/pull/3932) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
-
-**Support table constraints in data models** ([@phiSgr](https://github.com/phiSgr))
-  Added support for defining CHECK constraints and other table constraints in data models. Users can now enforce data validation rules at the database level by specifying constraints in their table definitions. Includes improved validation for ClickHouse cluster macro references to prevent deployment issues.
+**Support table constraints in data models** ([@Korg95](https://github.com/Korg95))
+  Added support for defining CHECK constraints and other table constraints in data models. Users can now enforce data validation rules at the database level by specifying constraints in their table definitions. Includes improved validation for ClickHouse cluster macro references to prevent deployment issues. Original work from PR [#3810](https://github.com/514-labs/moosestack/pull/3810).
 
   **Adding table constraints to enforce data validation rules**
 
@@ -293,35 +296,6 @@ import { Callout } from "@/components/mdx";
   Shows how to configure a Moose project in a monorepo using context_path to access shared packages and workspace files from a custom Dockerfile. The context_path setting allows the Docker build to reference files outside the project directory.
 
   PR: [#3947](https://github.com/514-labs/moose/pull/3947) | Docs: [/moosestack/configuration/docker](https://docs.moosejs.com/moosestack/configuration/docker)
-
-**Add native infrastructure provider with --dockerless flag** ([@LucioFranco](https://github.com/LucioFranco))
-  Introduces a new --dockerless flag for the dev command that allows running ClickHouse and Temporal as native binaries instead of Docker containers. This provides an alternative for developers who prefer not to use Docker or encounter Docker-related issues. The feature automatically downloads and manages the required binaries (ClickHouse v25.8.18.1-lts and Temporal CLI v1.3.0) in a local cache, making local development more accessible and reducing Docker dependencies.
-
-  **Running MooseStack dev environment without Docker**
-
-  ```bash
-  # Start development with Docker (default behavior)
-  moose dev
-  
-  # Start development without Docker using native binaries
-  moose dev --dockerless
-  
-  # The --dockerless flag automatically:
-  # - Downloads ClickHouse v25.8.18.1-lts binary
-  # - Downloads Temporal CLI v1.3.0 binary
-  # - Caches binaries in ~/.moose/binaries/
-  # - Runs infrastructure as native processes instead of containers
-  
-  # Useful when Docker is unavailable or you prefer native binaries
-  # Logs are stored in .moose/native_infra/ for debugging
-  
-  # Clean up (stops both Docker containers and native processes)
-  moose clean
-  ```
-
-  Shows how to use the new --dockerless flag to run MooseStack development environment with native binaries instead of Docker containers. This is particularly useful for developers who don't have Docker installed or prefer native processes for better performance and debugging.
-
-  PR: [#3936](https://github.com/514-labs/moose/pull/3936) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli)
 
 **Add migration validation with --validate flag** ([@georgevanderson](https://github.com/georgevanderson))
   The migrate command now supports a --validate flag that validates migration files without executing them. This allows users to check for conflicts and verify migration consistency before applying changes to their database, improving safety in migration workflows.
