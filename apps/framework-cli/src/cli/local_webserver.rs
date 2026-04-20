@@ -571,26 +571,113 @@ async fn get_consumption_api_res(
         let _ = execute!(std::io::stdout(), Print(msg + "\n"));
     }
 
-    let mut client_req = reqwest::Request::new(req.method().clone(), url.parse()?);
+    // Capture method + headers up front so we can rebuild the reqwest::Request
+    // across retry attempts (reqwest::Request isn't Clone when building via
+    // reqwest::Request::new). Only GET requests are proxied here and they
+    // carry no body, so rebuild-per-attempt is cheap.
+    let method = req.method().clone();
+    let hdrs: Vec<(hyper::http::HeaderName, hyper::http::HeaderValue)> = req
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let url_parsed: reqwest::Url = url.parse()?;
 
-    // Copy headers
-    let headers = client_req.headers_mut();
-    for (key, value) in req.headers() {
-        headers.insert(key, value.clone());
+    // Retry only on genuine connect errors — a transient "socket not
+    // accepting" window where the consumption-api is momentarily
+    // unavailable. In dev this is most often the hot-reload restart of the
+    // primary worker; in prod it can happen on any brief restart / socket
+    // reset. Other failures (timeouts, TLS, 5xx from upstream) surface once.
+    const MAX_ATTEMPTS: usize = 3;
+    const BACKOFF_MS: [u64; 2] = [150, 400]; // applied between attempts 1→2 and 2→3
+
+    let mut last_connect_err: Option<reqwest::Error> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        let mut client_req = reqwest::Request::new(method.clone(), url_parsed.clone());
+        let req_headers = client_req.headers_mut();
+        for (k, v) in hdrs.iter() {
+            req_headers.insert(k, v.clone());
+        }
+
+        match http_client.execute(client_req).await {
+            Ok(res) => {
+                let status = res.status();
+                let body = res.bytes().await?;
+                return Ok(add_cors_headers(Response::builder())
+                    .status(status)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(body))
+                    .unwrap());
+            }
+            Err(e) if is_connect_error(&e) => {
+                debug!(
+                    "consumption proxy connect error on attempt {}/{}: {}",
+                    attempt + 1,
+                    MAX_ATTEMPTS,
+                    e
+                );
+                last_connect_err = Some(e);
+                if let Some(&ms) = BACKOFF_MS.get(attempt) {
+                    tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                    continue;
+                }
+                // No more attempts left.
+                break;
+            }
+            Err(e) => {
+                // Non-connect error: bail immediately, preserving existing
+                // behavior (caller turns this into 500 "Error").
+                return Err(e.into());
+            }
+        }
     }
 
-    // Send request
-    let res = http_client.execute(client_req).await?;
-    let status = res.status();
-    let body = res.bytes().await?;
-
-    let returned_response = add_cors_headers(Response::builder())
-        .status(status)
+    // All retries exhausted with connect errors — return a structured 503 so
+    // agents can reason about this as a transient hot-reload window instead
+    // of an ambiguous 500. Retry-After tells well-behaved clients to try
+    // again shortly.
+    let body = serde_json::json!({
+        "error": "consumption_api_unavailable",
+        "retryable": true,
+        "message": format!(
+            "Consumption API is temporarily unavailable. \
+             Retry shortly. Attempts: {}/{}.",
+            MAX_ATTEMPTS, MAX_ATTEMPTS
+        ),
+        "upstream_error": last_connect_err.as_ref().map(|e| e.to_string()),
+    });
+    Ok(add_cors_headers(Response::builder())
+        .status(StatusCode::SERVICE_UNAVAILABLE)
         .header("Content-Type", "application/json")
-        .body(Full::new(body))
-        .unwrap();
+        .header("Retry-After", "1")
+        .body(Full::new(Bytes::from(body.to_string())))?)
+}
 
-    Ok(returned_response)
+/// Classify a reqwest error as a pure connect-failure (server not accepting
+/// connections) vs anything else. Connect errors are the hot-reload race
+/// signature and the only case we want to retry — timeouts / TLS / upstream
+/// 5xx are surfaced directly.
+fn is_connect_error(e: &reqwest::Error) -> bool {
+    use std::error::Error as _;
+
+    if e.is_connect() {
+        return true;
+    }
+    // reqwest wraps hyper wraps std::io::Error; walk the source chain.
+    let mut src: Option<&(dyn std::error::Error + 'static)> = e.source();
+    while let Some(err) = src {
+        if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+            use std::io::ErrorKind::*;
+            if matches!(
+                io_err.kind(),
+                ConnectionRefused | ConnectionReset | ConnectionAborted | NotConnected
+            ) {
+                return true;
+            }
+        }
+        src = err.source();
+    }
+    false
 }
 
 #[derive(Clone)]
@@ -2698,7 +2785,11 @@ impl Webserver {
             .await
             .unwrap_or_else(|e| handle_listener_err(management_socket.port(), e));
 
-        // Check if proxy port is available
+        // Defense in depth: quick bind-and-drop on proxy_port so Docker-mode
+        // users get a clear error before the Node worker spawns. The
+        // --dockerless path also runs a structured preflight in
+        // NativeInfraProvider::start that covers this port alongside the
+        // embedded-infra ports.
         let proxy_socket = self.get_socket(project.http_server_config.proxy_port).await;
         TcpListener::bind(proxy_socket)
             .await
@@ -3115,7 +3206,21 @@ async fn shutdown(
 
         // Step 5: Shut down native infrastructure (embedded servers + child processes).
         if project.dev.dockerless {
+            super::display::show_message_wrapper(
+                MessageType::Highlight,
+                Message {
+                    action: "Stopping".to_string(),
+                    details: "native infrastructure (up to ~10s per service)...".to_string(),
+                },
+            );
             crate::utilities::native_infra::stop_native_infra(project);
+            super::display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Stopped".to_string(),
+                    details: "native infrastructure".to_string(),
+                },
+            );
         }
     }
 

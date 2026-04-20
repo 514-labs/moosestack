@@ -71,9 +71,13 @@ describe("Unloaded Files Warning", () => {
   let devProcess: ChildProcess | null = null;
 
   afterEach(async () => {
-    await stopDevProcess(devProcess, { logger: testLogger });
+    await stopDevProcess(devProcess, { logger: testLogger, ports: PORTS });
     devProcess = null;
-    await killRemainingProcesses({ logger: testLogger });
+    // Pass the test's actual offset ports so killRemainingProcesses both
+    // targets them with SIGKILL and waits until they are released. Without
+    // this, ClickHouse's async shutdown still holds files in testDir when
+    // `rmSync` runs, producing ENOTEMPTY.
+    await killRemainingProcesses({ logger: testLogger, ports: PORTS });
 
     if (testDir && fs.existsSync(testDir)) {
       testLogger.debug("Cleaning up test directory", { testDir });
