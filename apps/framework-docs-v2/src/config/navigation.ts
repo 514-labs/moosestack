@@ -573,6 +573,20 @@ const moosestackNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
       },
       { type: "separator" },
+      { type: "label", title: "Delta migrations (beta)" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/generate",
+        title: "Generate migrations",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply",
+        title: "Apply migrations",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
       { type: "label", title: "Lifecycle Management" },
       {
         type: "page",
