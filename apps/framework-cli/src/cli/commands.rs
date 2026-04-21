@@ -404,6 +404,25 @@ pub enum GenerateCommand {
         /// Disable automatic backfill SQL generation
         #[arg(long)]
         no_auto_backfill_sql: bool,
+
+        // ── Raw SQL escape hatch ─────────────────────────────────────────
+        // Switches this command into raw-SQL mode: no remote connection is
+        // used, `parent_state_hash` is computed locally by folding existing
+        // delta files in `./migrations/`, and a single `RawSql` delta is
+        // written. Use for backfills, OPTIMIZE, ALTER SETTINGS, or anything
+        // the typed deltas can't express.
+        //
+        //   --raw-sql "SQL ..."   → inline SQL
+        //   --raw-sql             → stub file with a TODO placeholder to edit
+        /// Raw SQL escape hatch. Pass SQL inline, or use the flag alone to
+        /// scaffold a stub file you can fill in later.
+        #[arg(long, num_args = 0..=1, default_missing_value = "")]
+        raw_sql: Option<String>,
+
+        /// Human description. Required when --raw-sql is used; ignored
+        /// otherwise (typed migrations use auto-generated descriptions).
+        #[arg(long, short = 'd')]
+        description: Option<String>,
     },
 }
 

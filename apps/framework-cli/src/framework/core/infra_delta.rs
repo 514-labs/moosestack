@@ -217,6 +217,19 @@ pub enum InfraDelta {
         select_statement: String,
         should_truncate: bool,
     },
+
+    /// Arbitrary SQL escape hatch for things the typed deltas can't express
+    /// (data backfills via UPDATE/INSERT, OPTIMIZE, ALTER SETTINGS, cluster-
+    /// specific DDL, one-off cleanups). Fold-invisible — does not affect the
+    /// `parent_state_hash` of later migrations. Use typed deltas for any
+    /// schema change the system understands; reach for `RawSql` only when
+    /// none apply.
+    RawSql {
+        /// Short human label shown in apply logs and drift forensics.
+        description: String,
+        /// One or more SQL statements executed in order.
+        sql: String,
+    },
 }
 
 // ── Error types ─────────────────────────────────────────────────────
@@ -664,7 +677,9 @@ impl InfraDelta {
             }
 
             // ── Execution-only (no-op) ──────────────────────────
-            InfraDelta::BackfillTable { .. } | InfraDelta::PopulateMaterializedView { .. } => {
+            InfraDelta::BackfillTable { .. }
+            | InfraDelta::PopulateMaterializedView { .. }
+            | InfraDelta::RawSql { .. } => {
                 // These only matter at DDL execution time, not during map reconstruction.
             }
         }
@@ -772,6 +787,13 @@ impl InfraDelta {
             } => format!("Backfill '{}' from '{}'", target_table, source_table),
             InfraDelta::PopulateMaterializedView { view_name, .. } => {
                 format!("Populate materialized view '{}'", view_name)
+            }
+            InfraDelta::RawSql { description, .. } => {
+                if description.is_empty() {
+                    "Raw SQL".to_string()
+                } else {
+                    format!("Raw SQL: {}", description)
+                }
             }
         }
     }
@@ -1228,6 +1250,31 @@ impl InfraDelta {
                     target_database: target_database.clone(),
                     select_statement: select_statement.clone(),
                     should_truncate: *should_truncate,
+                    dependency_info: empty_deps,
+                }]
+            }
+            InfraDelta::RawSql { description, sql } => {
+                // Lower via the SqlResource/RunSetupSql machinery so RawSql
+                // reuses the existing atomic executor; the description is
+                // surfaced through `SqlResource::name` which is what the
+                // executor logs.
+                let name = if description.is_empty() {
+                    "raw_sql".to_string()
+                } else {
+                    format!("raw_sql: {}", description)
+                };
+                vec![AtomicOlapOperation::RunSetupSql {
+                    resource: SqlResource {
+                        name,
+                        database: None,
+                        source_file: None,
+                        source_line: None,
+                        source_column: None,
+                        setup: vec![sql.clone()],
+                        teardown: vec![],
+                        pulls_data_from: vec![],
+                        pushes_data_to: vec![],
+                    },
                     dependency_info: empty_deps,
                 }]
             }
@@ -2244,6 +2291,64 @@ mod tests {
         };
         delta.apply(&mut map, TEST_DB).unwrap();
         assert!(map.materialized_views.is_empty());
+    }
+
+    #[test]
+    fn test_apply_raw_sql_is_noop() {
+        let mut map = empty_map();
+        let pre_hash = map.olap_hash();
+        let delta = InfraDelta::RawSql {
+            description: "cleanup legacy rows".to_string(),
+            sql: "ALTER TABLE foo DELETE WHERE legacy = 1".to_string(),
+        };
+        delta.apply(&mut map, TEST_DB).unwrap();
+        assert!(map.tables.is_empty());
+        // Fold invariance: RawSql must not shift the parent_state_hash chain.
+        assert_eq!(pre_hash, map.olap_hash());
+    }
+
+    #[test]
+    fn test_raw_sql_lowers_to_run_setup_sql() {
+        let map = empty_map();
+        let delta = InfraDelta::RawSql {
+            description: "backfill created_at".to_string(),
+            sql: "ALTER TABLE foo UPDATE created_at = now() WHERE created_at IS NULL".to_string(),
+        };
+        let ops = delta.to_atomic_operations(&map, TEST_DB);
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            AtomicOlapOperation::RunSetupSql { resource, .. } => {
+                assert!(
+                    resource.name.contains("backfill created_at"),
+                    "description should be surfaced via resource.name, got {:?}",
+                    resource.name
+                );
+                assert_eq!(resource.setup.len(), 1);
+                assert!(resource.setup[0].contains("ALTER TABLE foo UPDATE"));
+                assert!(resource.teardown.is_empty());
+            }
+            other => panic!("expected RunSetupSql, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_raw_sql_round_trips_through_yaml() {
+        let delta = InfraDelta::RawSql {
+            description: "one-off optimize".to_string(),
+            sql: "OPTIMIZE TABLE events FINAL".to_string(),
+        };
+        let yaml = serde_yaml::to_string(&delta).unwrap();
+        // Tagged enum serialization should emit `type: RawSql` so hand-written
+        // yaml matches what serde writes.
+        assert!(yaml.contains("type: RawSql"), "yaml missing tag: {}", yaml);
+        let parsed: InfraDelta = serde_yaml::from_str(&yaml).unwrap();
+        match parsed {
+            InfraDelta::RawSql { description, sql } => {
+                assert_eq!(description, "one-off optimize");
+                assert_eq!(sql, "OPTIMIZE TABLE events FINAL");
+            }
+            other => panic!("expected RawSql, got {:?}", other),
+        }
     }
 
     // ── Fold: full sequence from empty map ──────────────────────

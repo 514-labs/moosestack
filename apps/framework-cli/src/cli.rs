@@ -95,6 +95,131 @@ fn env_bool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Generate a migration file containing a single `RawSql` delta.
+///
+/// Computes `parent_state_hash` by folding every existing delta file in the
+/// project's `migrations/` directory — purely local, no Redis/ClickHouse
+/// connection required.
+///
+/// `sql_arg` comes from the `--raw-sql` flag: a non-empty string is taken
+/// verbatim; an empty string (flag passed without a value) produces a stub
+/// seeded with a `-- TODO` placeholder so the user can fill the SQL in
+/// their editor before deploying.
+fn generate_raw_sql_migration(
+    project: &crate::project::Project,
+    description: Option<&str>,
+    sql_arg: &str,
+) -> Result<crate::cli::routines::RoutineSuccess, crate::cli::routines::RoutineFailure> {
+    use crate::cli::display::{Message, MessageType};
+    use crate::cli::routines::{RoutineFailure, RoutineSuccess};
+    use crate::framework::core::infra_delta::InfraDelta;
+    use crate::framework::core::migration_file::{MigrationFile, MigrationHistory};
+
+    let trimmed_description = description.map(|s| s.trim()).unwrap_or("");
+    if trimmed_description.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "Raw SQL".to_string(),
+            "--description is required when using --raw-sql".to_string(),
+        )));
+    }
+
+    let sql = if sql_arg.is_empty() {
+        format!(
+            "-- TODO: {}\n-- Fill in your SQL here, then commit and deploy.\n",
+            trimmed_description
+        )
+    } else {
+        sql_arg.to_string()
+    };
+
+    let migrations_dir = project.project_location.join("migrations");
+    let default_database = &project.clickhouse_config.db_name;
+
+    // Fold existing delta files to compute the projected state the new file
+    // will be applied against. Empty dir / missing dir is fine — that just
+    // means parent_state_hash = empty-map hash for the very first migration.
+    let parent_state_hash = if migrations_dir.exists() {
+        let history = MigrationHistory::load_from_dir(&migrations_dir).map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Raw SQL".to_string(),
+                    format!(
+                        "Failed to load existing migration files from {}",
+                        migrations_dir.display()
+                    ),
+                ),
+                e,
+            )
+        })?;
+        history
+            .reconstruct_olap_map(default_database)
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Raw SQL".to_string(),
+                        "Failed to fold existing migrations to compute parent_state_hash"
+                            .to_string(),
+                    ),
+                    e,
+                )
+            })?
+    } else {
+        std::fs::create_dir_all(&migrations_dir).map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Raw SQL".to_string(),
+                    format!("Failed to create {}", migrations_dir.display()),
+                ),
+                e,
+            )
+        })?;
+        crate::framework::core::infrastructure_map::InfrastructureMap::empty_from_project(project)
+    }
+    .olap_hash();
+
+    let delta = InfraDelta::RawSql {
+        description: trimmed_description.to_string(),
+        sql,
+    };
+    let file = MigrationFile::new(
+        trimmed_description.to_string(),
+        parent_state_hash,
+        vec![delta],
+    );
+    let yaml = file.to_yaml().map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Raw SQL".to_string(),
+                "Failed to serialize migration yaml".to_string(),
+            ),
+            e,
+        )
+    })?;
+    let out_path = migrations_dir.join(format!("{}.yaml", file.id));
+    std::fs::write(&out_path, yaml).map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Raw SQL".to_string(),
+                format!("Failed to write {}", out_path.display()),
+            ),
+            e,
+        )
+    })?;
+
+    crate::cli::display::show_message_wrapper(
+        MessageType::Success,
+        Message::new(
+            "Migration".to_string(),
+            format!("Written to {}", out_path.display()),
+        ),
+    );
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Migration".to_string(),
+        "raw SQL migration generated".to_string(),
+    )))
+}
+
 /// Generic prompt function with hints, default values, and better formatting
 pub fn prompt_user(
     prompt_text: &str,
@@ -877,6 +1002,8 @@ pub async fn top_command_handler(
                 yes_destructive,
                 yes_rename,
                 no_auto_backfill_sql,
+                raw_sql,
+                description,
             }) => {
                 info!("Running generate migration command");
 
@@ -891,6 +1018,17 @@ pub async fn top_command_handler(
                 );
 
                 check_project_name(&project.name())?;
+
+                // Raw-SQL branch — activated by --raw-sql. Skips the remote
+                // diff entirely; parent_state_hash is computed locally from
+                // ./migrations/. `Some("")` means the flag was passed without
+                // a value → scaffold a stub with a TODO placeholder.
+                if let Some(sql_arg) = raw_sql {
+                    let outcome =
+                        generate_raw_sql_migration(&project, description.as_deref(), sql_arg);
+                    wait_for_usage_capture(capture_handle).await;
+                    return outcome;
+                }
 
                 // Determine which remote source to use and generate migration
                 let result = if let Some(ref moose_url) = url {
