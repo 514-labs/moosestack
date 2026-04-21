@@ -690,7 +690,6 @@ fn is_connect_error(e: &reqwest::Error) -> bool {
 
 #[derive(Clone)]
 struct RouteService {
-    host: String,
     path_prefix: Option<String>,
     route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
     consumption_apis: &'static RwLock<HashSet<String>>,
@@ -791,7 +790,6 @@ impl Service<Request<Incoming>> for RouteService {
             self.web_apps,
             self.jwt_config.clone(),
             self.configured_producer.clone(),
-            self.host.clone(),
             self.is_prod,
             self.metrics.clone(),
             self.http_client.clone(),
@@ -1924,7 +1922,6 @@ async fn router(
     web_apps: &RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
-    host: String,
     is_prod: bool,
     metrics: Arc<Metrics>,
     http_client: Arc<Client>,
@@ -2879,7 +2876,6 @@ impl Webserver {
         };
 
         let route_service = RouteService {
-            host: self.host.clone(),
             path_prefix: project.http_server_config.normalized_path_prefix(),
             route_table,
             consumption_apis,
