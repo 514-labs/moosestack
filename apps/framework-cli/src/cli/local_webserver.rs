@@ -462,6 +462,23 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
+/// Internal proxy target for the local Node consumption/webapp server.
+///
+/// This is intentionally pinned to IPv4 loopback because the Node runner binds
+/// to `127.0.0.1`. Using `localhost` here is unsafe on hosts where it resolves
+/// to `::1` first, which would cause permanent connection failures.
+const INTERNAL_PROXY_HOST: &str = "127.0.0.1";
+
+fn internal_proxy_url(port: u16, path: &str, query: Option<&str>) -> String {
+    format!(
+        "http://{}:{}{}{}",
+        INTERNAL_PROXY_HOST,
+        port,
+        path,
+        query.map_or("".to_string(), |q| format!("?{q}"))
+    )
+}
+
 /// Normalizes consumption API paths by removing /api/ or /consumption/ prefixes
 fn normalize_consumption_path(path: &str) -> &str {
     path.strip_prefix("/api/")
@@ -529,7 +546,6 @@ async fn resolve_consumption_context(
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
-    host: String,
     api_context: ConsumptionApiContext,
     is_prod: bool,
     proxy_port: u16,
@@ -548,15 +564,7 @@ async fn get_consumption_api_res(
 
     let full_path = req.uri().path();
     // Don't strip the prefix - let Node.js and python targets handle routing for both Api and WebApp
-    let url = format!(
-        "http://{}:{}{}{}",
-        host,
-        proxy_port,
-        full_path,
-        req.uri()
-            .query()
-            .map_or("".to_string(), |q| format!("?{q}"))
-    );
+    let url = internal_proxy_url(proxy_port, full_path, req.uri().query());
 
     debug!("Creating client for route: {:?}", url);
 
@@ -1011,10 +1019,7 @@ async fn live_route(project: &Project) -> Result<Response<Full<Bytes>>, hyper::h
     // Only check Consumption API if enabled
     let (healthy, unhealthy) = if project.features.apis {
         let consumption_api_port = project.http_server_config.proxy_port;
-        let health_url = format!(
-            "http://localhost:{}/_moose_internal/health",
-            consumption_api_port
-        );
+        let health_url = internal_proxy_url(consumption_api_port, "/_moose_internal/health", None);
 
         let client = match reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
@@ -1118,10 +1123,8 @@ async fn health_route(
     if project.features.apis {
         let consumption_api_port = project.http_server_config.proxy_port;
         join_set.spawn(async move {
-            let health_url = format!(
-                "http://localhost:{}/_moose_internal/health",
-                consumption_api_port
-            );
+            let health_url =
+                internal_proxy_url(consumption_api_port, "/_moose_internal/health", None);
             let client = match reqwest::Client::builder()
                 .timeout(Duration::from_secs(2))
                 .build()
@@ -2070,7 +2073,6 @@ async fn router(
             match get_consumption_api_res(
                 http_client,
                 req,
-                host,
                 api_context,
                 is_prod,
                 project.http_server_config.proxy_port,
@@ -2140,14 +2142,10 @@ async fn router(
                     .collect();
 
                 // Proxy to Node.js server with full path (Node.js server will strip mount path)
-                let url = format!(
-                    "http://{}:{}{}{}",
-                    host,
+                let url = internal_proxy_url(
                     project.http_server_config.proxy_port,
                     full_path,
-                    req.uri()
-                        .query()
-                        .map_or("".to_string(), |q| format!("?{q}"))
+                    req.uri().query(),
                 );
 
                 debug!("Proxying WebApp {} request to: {:?}", method, url);
@@ -4279,5 +4277,17 @@ mod tests {
 
         // Leading slash edge case
         assert_eq!(find_api_name("/api/1", &apis), "/api/1");
+    }
+
+    #[test]
+    fn test_internal_proxy_url_uses_ipv4_loopback() {
+        assert_eq!(
+            internal_proxy_url(4001, "/_moose_internal/health", None),
+            "http://127.0.0.1:4001/_moose_internal/health"
+        );
+        assert_eq!(
+            internal_proxy_url(4001, "/api/foo", Some("k=v")),
+            "http://127.0.0.1:4001/api/foo?k=v"
+        );
     }
 }
