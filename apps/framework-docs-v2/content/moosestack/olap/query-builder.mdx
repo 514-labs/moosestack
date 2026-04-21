@@ -297,7 +297,6 @@ For debugging or inspection, `query.to_sql()` returns the generated ClickHouse S
 | Behavior | What happens |
 | --- | --- |
 | `SELECT *` | Moose includes ClickHouse [materialized columns](/moosestack/olap/materialized-columns) and [alias columns](/moosestack/olap/alias-columns) when a query uses `*`. |
-| Database-qualified tables | Tables with a `database` config in [OlapTable](/moosestack/olap/model-table) are rendered with both identifiers instead of a single bare table name. |
 
 ## Related capabilities
 
