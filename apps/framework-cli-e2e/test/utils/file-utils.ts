@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { logger, ScopedLogger } from "./logger";
 
 const fileLogger = logger.scope("utils:file");
+const LEFTOVER_TEST_DIR_MIN_AGE_MS = 5 * 60 * 1000;
 
 export interface FileOptions {
   logger?: ScopedLogger;
@@ -68,7 +69,32 @@ export const cleanupLeftoverTestDirectories = (
         (entry) =>
           entry.isDirectory() && entry.name.startsWith("moose-e2e-test-"),
       )
-      .map((entry) => path.join(tempDir, entry.name));
+      .map((entry) => path.join(tempDir, entry.name))
+      .filter((dir) => {
+        try {
+          const stats = fs.statSync(dir);
+          const ageMs = Date.now() - stats.mtimeMs;
+          const isStale = ageMs >= LEFTOVER_TEST_DIR_MIN_AGE_MS;
+
+          if (!isStale) {
+            log.debug(
+              "Skipping active test directory during leftover cleanup",
+              {
+                path: dir,
+                ageMs,
+              },
+            );
+          }
+
+          return isStale;
+        } catch (error) {
+          log.debug("Skipping test directory with unreadable metadata", {
+            path: dir,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return false;
+        }
+      });
 
     for (const dir of testDirs) {
       log.debug("Removing leftover test directory", { path: dir });

@@ -33,5 +33,5 @@ language = "Typescript"
 |:----|:-------------|:-----|:--------|:------------|
 | `language` | `MOOSE_LANGUAGE` | String | "Typescript" | The programming language used for your data models and flows. |
 | `source_dir` | `MOOSE_SOURCE_DIR` | String | "app" | The directory containing your Moose application code. |
-| `load_infra` | `MOOSE_LOAD_INFRA` | Boolean | true | If `true`, `moose dev` spins up local Docker containers using the settings in [Infrastructure](/moosestack/configuration/infrastructure). If `false`, no containers are created, allowing you to connect to external infra. |
+| `load_infra` | `MOOSE_LOAD_INFRA` | Boolean | true | If `true`, `moose dev` starts local infrastructure using the settings in [Infrastructure](/moosestack/configuration/infrastructure). If `false`, no infrastructure is started, allowing you to connect to external services. |
 | `supported_old_versions` | N/A | Map | {} | Mapping of older project versions to their paths for backward compatibility. |

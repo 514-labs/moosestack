@@ -17,6 +17,8 @@ export interface KafkaTestEvent {
 }
 
 const KAFKA_TOPIC_NAME = "KafkaTestInput";
+const KAFKA_BROKER =
+  process.env.MOOSE_REDPANDA_CONFIG__BROKER ?? "localhost:19092";
 
 export const kafkaTestInputStream = new Stream<KafkaTestEvent>(
   KAFKA_TOPIC_NAME,
@@ -30,7 +32,7 @@ export const KafkaTestSourceTable = new OlapTable<KafkaTestEvent>(
   "KafkaTestSource",
   {
     engine: ClickHouseEngines.Kafka,
-    brokerList: "redpanda:9092",
+    brokerList: KAFKA_BROKER,
     topicList: KAFKA_TOPIC_NAME,
     groupName: "e2e_kafka_test_consumer",
     format: "JSONEachRow",

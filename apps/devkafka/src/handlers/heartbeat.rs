@@ -23,6 +23,11 @@ pub async fn handle(
         }
     };
 
+    if group.state != crate::groups::GroupState::Stable {
+        response.error_code = error::REBALANCE_IN_PROGRESS;
+        return response;
+    }
+
     if request.generation_id != group.generation_id {
         response.error_code = error::ILLEGAL_GENERATION;
         return response;

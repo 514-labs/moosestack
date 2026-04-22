@@ -3,9 +3,18 @@
   "version": "1.0.0",
   "description": "E2E tests for framework-cli",
   "scripts": {
-    "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
+    "test:ci:prepare": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
+    "pretest": "pnpm run test:ci:prepare",
     "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 240000",
-    "test:llm-docs": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 600000"
+    "test:llm-docs": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 600000",
+    "test:ts-default": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/ts-default.test.ts && E2E_TEMPLATE_TARGET=ts-default mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/ts-default.test.ts",
+    "test:ts-tests:core": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/ts-tests-main.test.ts test/dotenv-config.test.ts test/migration.test.ts test/unloaded-files-warning.test.ts && E2E_TEMPLATE_TARGET=ts-tests-main E2E_TEMPLATE_LANGUAGE=ts mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/ts-tests-main.test.ts test/dotenv-config.test.ts test/migration.test.ts test/unloaded-files-warning.test.ts",
+    "test:ts-tests:db-pull": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/db-pull-defaults.test.ts && E2E_TEMPLATE_LANGUAGE=ts mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/db-pull-defaults.test.ts",
+    "test:ts-tests:s3": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/s3-engine.test.ts test/s3-secrets.test.ts && E2E_TEMPLATE_LANGUAGE=ts mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/s3-engine.test.ts test/s3-secrets.test.ts",
+    "test:py-default": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/py-default.test.ts && E2E_TEMPLATE_TARGET=py-default mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/py-default.test.ts",
+    "test:py-tests:core": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/py-tests-main.test.ts test/dotenv-config.test.ts && E2E_TEMPLATE_TARGET=py-tests-main E2E_TEMPLATE_LANGUAGE=py mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/py-tests-main.test.ts test/dotenv-config.test.ts",
+    "test:py-tests:db-pull": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/db-pull-defaults.test.ts && E2E_TEMPLATE_LANGUAGE=py mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/db-pull-defaults.test.ts",
+    "test:py-tests:s3": "pnpm run test:ci:prepare && node ./scripts/validate-ci-bucket.js test/s3-engine.test.ts test/s3-secrets.test.ts && E2E_TEMPLATE_LANGUAGE=py mocha -r ts-node/register --jobs 1 --slow 180000 --async-only --timeout 240000 test/s3-engine.test.ts test/s3-secrets.test.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "catalog:",
@@ -22,6 +31,7 @@
     "chai": "catalog:",
     "jose": "5.9.2",
     "js-yaml": "catalog:",
+    "kafkajs": "2.2.4",
     "mocha": "catalog:",
     "posthog-node": "catalog:",
     "ts-node": "catalog:",

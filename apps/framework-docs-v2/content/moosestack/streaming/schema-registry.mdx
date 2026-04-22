@@ -1,34 +1,23 @@
 ---
-title: Schema Registry
-description: Use Confluent Schema Registry with Moose streams (JSON Schema first)
+title: Schema registry
+description: Publish a `Stream` through Confluent Schema Registry with `schemaConfig` or `schema_config`
 order: 7
 category: streaming
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Schema Registry Integration
+# Schema registry
 
-<Callout type="info" title="JSON Schema first">
-The first supported encoding is JSON Schema. Avro and Protobuf are planned.
+<Callout type="info" title="Current support">
+Only JSON Schema is supported today. Avro and Protobuf are planned.
 </Callout>
 
-## Overview
+Use `schemaConfig` (TypeScript) or `schema_config` (Python) to publish a [Stream](/moosestack/streaming/create-stream) through Confluent Schema Registry.
 
-Moose can publish and consume Kafka/Redpanda messages using Confluent Schema Registry. The first supported encoding is JSON Schema; Avro and Protobuf are planned.
+## Requirements
 
-<BulletPointsCard
-  title="What you get"
-  bullets={[
-    { title: "Typed payloads", description: "Use your Moose data models with JSON Schema in Schema Registry" },
-    { title: "Standards-compliant envelope", description: "Messages use Confluent wire format: 0x00 + 4-byte schema id + payload" },
-    { title: "Works across TypeScript and Python", description: "Both SDKs support producing with JSON Schema; runners can consume SR JSON automatically" },
-  ]}
-/>
-
-## Configure Schema Registry URL
-
-Set the Schema Registry URL in `moose.config.toml` under `redpanda_config` (aliased as `kafka_config`). You can also override with environment variables.
+Configure the Schema Registry URL in `moose.config.toml` under `redpanda_config`, or override it with environment variables.
 
 ```toml filename="moose.config.toml" copy
 [redpanda_config]
@@ -44,12 +33,15 @@ export MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL=http://localhost:8081
 export MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL=http://localhost:8081
 ```
 
-## Referencing Schemas
+For Python, install `confluent-kafka[json,schemaregistry]` before publishing to a Schema Registry stream:
 
-You can attach a Schema Registry reference to any `Stream` via `schemaConfig`. Use one of:
-- Subject latest: `{ subjectLatest: string }`
-- Subject and version: `{ subject: string, version: number }`
-- Schema id: `{ id: number }`
+```bash filename="Terminal" copy
+pip install "confluent-kafka[json,schemaregistry]"
+```
+
+## Attach Schema Registry config to a stream
+
+Set `kind` to choose the payload format and `reference` to choose which registered schema Moose uses when it publishes.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -75,9 +67,9 @@ await events.send({ id: "e1", value: 42 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
+
 ```py filename="sr_stream.py" copy
-from moose_lib import Stream, StreamConfig
-from moose_lib.dmv2.stream import KafkaSchemaConfig, SubjectLatest
+from moose_lib import KafkaSchemaConfig, Stream, StreamConfig, SubjectLatest
 from pydantic import BaseModel
 
 class Event(BaseModel):
@@ -99,19 +91,42 @@ events.send(Event(id="e1", value=42))
   </LanguageTabContent>
 </LanguageTabs>
 
-## Consuming SR JSON in Runners
+### Schema Registry config fields
 
-Moose streaming runners automatically detect the Confluent JSON envelope
-when consuming and strip the header before parsing the JSON.
-Your transformation code continues to work unchanged.
+The `kind` field tells Moose which Schema Registry payload format to use for the stream. `JSON` publishes records using Schema Registry JSON, and it is the only supported value today.
 
-## Ingestion APIs and SR
+The `reference` field tells Moose how to resolve the schema id before it encodes and publishes a record. Use it to look up the latest version for a subject, pin a specific subject version, or use a fixed schema id directly.
 
-When an Ingest API routes to a topic that has a `schemaConfig` of kind JSON,
-Moose resolves the schema id and publishes requests using the Schema Registry envelope.
-You can also set the reference to a fixed `id` to skip lookups.
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+TypeScript reference formats:
 
-## Discover existing topics and schemas
+<ul>
+  <li>Latest subject version: <code>{`{ subjectLatest: string }`}</code> looks up the newest schema version registered under that subject.</li>
+  <li>Specific subject version: <code>{`{ subject: string, version: number }`}</code> pins publishing to one subject version.</li>
+  <li>Fixed schema id: <code>{`{ id: number }`}</code> uses a known schema id directly.</li>
+</ul>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Python reference formats:
+
+<ul>
+  <li>Latest subject version: <code>SubjectLatest(name="...")</code> looks up the newest schema version registered under that subject.</li>
+  <li>Specific subject version: <code>SubjectVersion(subject="...", version=...)</code> pins publishing to one subject version.</li>
+  <li>Fixed schema id: <code>SchemaById(id=...)</code> uses a known schema id directly.</li>
+</ul>
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Runtime behavior
+
+- If `schemaConfig.kind = "JSON"` or `schema_config.kind = "JSON"` is set, [`Stream.send()`](/moosestack/streaming/from-your-code) publishes records using the Confluent wire format.
+- Moose resolves the schema id from the configured reference before sending unless you provide a fixed `id`.
+- Moose streaming runners automatically detect the Schema Registry JSON envelope and strip the header before parsing the payload.
+- When an [Ingest API](/moosestack/apis/ingest-api) routes to a stream configured this way, Moose also publishes using the Schema Registry envelope.
+- Publishing fails if `schema_registry_url` is not configured.
+
+## Pull existing topics and schemas
 
 Use the CLI to pull external topics and optionally fetch JSON Schemas from Schema Registry to emit typed models.
 
@@ -123,9 +138,10 @@ moose kafka pull <bootstrap> \
   --exclude "{__consumer_offsets,_schemas}"
 ```
 
-This writes external topic declarations under the provided path based on language (default path is inferred).
+This writes external topic declarations under the provided path. When Schema Registry subjects are available, Moose also emits typed models from the fetched JSON Schemas.
 
-## Current limitations
+## Related capabilities
 
-- JSON Schema only (Avro/Protobuf planned)
-- Ingest API schema declared in code may not match the actual schema in registry.
+- [Stream](/moosestack/streaming/create-stream) for defining the stream resource
+- [`Stream.send()`](/moosestack/streaming/from-your-code) for publishing records to a Schema Registry stream
+- [Ingest API](/moosestack/apis/ingest-api) for external HTTP ingestion into a Schema Registry stream

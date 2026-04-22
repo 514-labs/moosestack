@@ -478,9 +478,10 @@ async fn sync_kafka_to_kafka(
     metrics: Arc<Metrics>,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
+    let group_id = format!("{VERSION_SYNC_GROUP_ID}_{source_topic_name}");
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
-        VERSION_SYNC_GROUP_ID,
+        &group_id,
         &source_topic_name,
     ));
     let producer = create_producer(kafka_config.clone());
@@ -588,9 +589,10 @@ async fn sync_kafka_to_clickhouse(
         source_topic_name
     );
 
+    let group_id = TABLE_SYNC_GROUP_ID.to_string();
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
-        TABLE_SYNC_GROUP_ID,
+        &group_id,
         &source_topic_name,
     ));
 

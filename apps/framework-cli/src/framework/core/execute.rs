@@ -107,16 +107,12 @@ pub async fn execute_initial_infra_change(
                 olap::bootstrap_rls(ctx.project, &desired_policies).await?;
             }
 
-            if ctx.version_bump_decisions.is_empty() {
-                olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
-            } else {
-                olap::execute_changes_with_version_bumps(
-                    ctx.project,
-                    &ctx.plan.changes.olap_changes,
-                    &ctx.version_bump_decisions,
-                )
-                .await?;
-            }
+            olap::execute_changes(
+                ctx.project,
+                &ctx.plan.changes.olap_changes,
+                &ctx.version_bump_decisions,
+            )
+            .await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
         if ctx.project.features.streaming_engine {
@@ -196,6 +192,7 @@ pub async fn execute_online_change(
     settings: &Settings,
     version_bump_decisions: &[VersionBumpDecision],
 ) -> Result<(), ExecutionError> {
+    // This probably can be parallelized through Tokio Spawn
     if settings.should_bypass_infrastructure_execution() {
         tracing::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
     } else {
@@ -210,16 +207,8 @@ pub async fn execute_online_change(
                 olap::bootstrap_rls(project, &desired_policies).await?;
             }
 
-            if version_bump_decisions.is_empty() {
-                olap::execute_changes(project, &plan.changes.olap_changes).await?;
-            } else {
-                olap::execute_changes_with_version_bumps(
-                    project,
-                    &plan.changes.olap_changes,
-                    version_bump_decisions,
-                )
+            olap::execute_changes(project, &plan.changes.olap_changes, version_bump_decisions)
                 .await?;
-            }
         }
         if project.features.streaming_engine {
             stream::execute_changes(project, &plan.changes.streaming_engine_changes).await?;

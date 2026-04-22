@@ -78,7 +78,7 @@ use crate::cli::routines::ls::ls;
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
     classify_risk_from_deltas, migration_destructive_gate, print_migration_rejected_guidance,
-    ConfirmationPolicy, DestructiveChange, MigrationGateOutcome,
+    ConfirmationPolicy, MigrationGateOutcome,
 };
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::version_bump;
@@ -226,13 +226,11 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                         println!(); // Move to next line after password entry
                         return Ok(password);
                     }
-                    KeyCode::Backspace => {
-                        if !password.is_empty() {
-                            password.pop();
-                            // Erase the last asterisk: move back, print space, move back again
-                            print!("\x08 \x08");
-                            let _ = stdout().flush();
-                        }
+                    KeyCode::Backspace if !password.is_empty() => {
+                        password.pop();
+                        // Erase the last asterisk: move back, print space, move back again
+                        print!("\x08 \x08");
+                        let _ = stdout().flush();
                     }
                     KeyCode::Char(c) => {
                         password.push(c);
@@ -261,7 +259,7 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 #[command(
     author,
     version = constants::CLI_VERSION,
-    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends, by the team at Fiveonefour.",
+    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends.",
     long_about = None,
     arg_required_else_help(true),
     next_display_order = None,
@@ -284,11 +282,7 @@ pub struct Cli {
     debug: bool,
 
     /// Print backtraces for all errors (same as RUST_LIB_BACKTRACE=1)
-    #[arg(
-        long,
-        global = true,
-        help = "Print backtraces for all errors (same as RUST_LIB_BACKTRACE=1)"
-    )]
+    #[arg(long, global = true)]
     pub backtrace: bool,
 
     #[command(subcommand)]
@@ -705,6 +699,7 @@ pub async fn top_command_handler(
 
             let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
             let confirmation_policy = ConfirmationPolicy {
+                accept_all,
                 accept_destructive: accept_all
                     || *yes_destructive
                     || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
@@ -1986,6 +1981,7 @@ async fn confirm_and_save_migration(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
@@ -2007,15 +2003,13 @@ async fn confirm_and_save_migration(
         };
 
     // Step 2: Version bump detection and prompting.
-    // Extract version bumps before delta generation so they get correct ordering
-    // (create new → backfill → drop old) instead of the default (drop old, create new).
     let (mut version_bumps, remaining_changes) =
         version_bump::extract_version_bumps(&result.changes.olap_changes);
     let backfill_only =
         version_bump::find_backfill_only_bumps(&remaining_changes, &result.remote_state);
     version_bumps.extend(backfill_only);
 
-    let version_bump_decisions = if !version_bumps.is_empty() {
+    let mut version_bump_decisions = if !version_bumps.is_empty() {
         match version_bump::version_bump_gate(
             version_bumps,
             &result.default_database,
@@ -2036,6 +2030,12 @@ async fn confirm_and_save_migration(
         vec![]
     };
 
+    if _no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
+
     // Step 3: Generate deltas from the remaining (non-version-bump) changes.
     let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
         &remaining_changes,
@@ -2046,6 +2046,13 @@ async fn confirm_and_save_migration(
     // so the new table exists before anything that might reference it.
     let bump_deltas = version_bump::version_bump_decisions_to_deltas(&version_bump_decisions);
     if !bump_deltas.is_empty() {
+        // Strip duplicate CreateTable for NewAlongside tables (already in bump_deltas).
+        let alongside = version_bump::alongside_new_table_names(&version_bump_decisions);
+        if !alongside.is_empty() {
+            infra_deltas.retain(|d| {
+                !matches!(d, crate::framework::core::infra_delta::InfraDelta::CreateTable { table } if alongside.contains(&table.name))
+            });
+        }
         let mut combined = bump_deltas;
         combined.append(&mut infra_deltas);
         infra_deltas = combined;
@@ -2057,23 +2064,7 @@ async fn confirm_and_save_migration(
     let mut risk = classify_risk_from_deltas(&infra_deltas);
     risk.exclude_approved_drops(&approved_drops);
 
-    // Exclude version-bump drops from the destructive gate (user already confirmed them).
-    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
-        .iter()
-        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
-        .map(|d| d.bump.old_table.name.clone())
-        .collect();
-    risk.destructive_changes.retain(|dc| {
-        if let DestructiveChange::TableDrop {
-            table_name_with_suffix,
-            ..
-        } = dc
-        {
-            !vb_drop_names.contains(table_name_with_suffix)
-        } else {
-            true
-        }
-    });
+    version_bump::exclude_bump_drops_from_risk(&version_bump_decisions, &mut risk);
 
     // Step 5: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy, bridge).await? {
@@ -2166,14 +2157,30 @@ async fn confirm_and_save_migration(
                 ),
             },
         );
+    } else if infra_deltas.is_empty() {
+        println!("No changes detected.");
+        return Ok(RoutineSuccess::success(Message::new(
+            "Migration".to_string(),
+            "no changes detected".to_string(),
+        )));
     } else {
-        if infra_deltas.is_empty() {
-            println!("No changes detected.");
-        } else {
-            println!("Changes ({} delta(s)):\n", infra_deltas.len());
-            for (i, delta) in infra_deltas.iter().enumerate() {
-                println!("  {}. {}", i + 1, delta.summary());
-            }
+        println!("Changes ({} delta(s)):\n", infra_deltas.len());
+        for (i, delta) in infra_deltas.iter().enumerate() {
+            println!("  {}. {}", i + 1, delta.summary());
+        }
+        if version_bump_decisions
+            .iter()
+            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
+        {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Note".to_string(),
+                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
+                              when you run with --save"
+                        .to_string(),
+                },
+            );
         }
         if version_bump_decisions
             .iter()
@@ -2220,6 +2227,7 @@ async fn confirm_and_save_migration_legacy(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
@@ -2237,52 +2245,32 @@ async fn confirm_and_save_migration_legacy(
             }
         };
 
-    // Version bump detection and prompting (legacy path).
-    let (mut version_bumps, remaining) =
-        version_bump::extract_version_bumps(&result.changes.olap_changes);
-    let backfill_only = version_bump::find_backfill_only_bumps(&remaining, &result.remote_state);
-    version_bumps.extend(backfill_only);
-
-    let version_bump_decisions = if !version_bumps.is_empty() {
-        match version_bump::version_bump_gate(
-            version_bumps,
-            &result.default_database,
-            accept_all,
-            bridge,
-        )
-        .await?
-        {
-            Some(decisions) => decisions,
-            None => {
-                return Ok(RoutineSuccess::success(Message::new(
-                    "Migration".to_string(),
-                    "generation cancelled during version bump confirmation".to_string(),
-                )));
-            }
+    // Version bump detection, prompting, and risk exclusion (legacy path).
+    let mut filtered_risk = risk;
+    let mut version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &result.changes.olap_changes,
+        &result.remote_state,
+        &result.default_database,
+        accept_all,
+        &mut filtered_risk,
+        bridge,
+    )
+    .await?
+    {
+        Some(d) => d,
+        None => {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation cancelled during version bump confirmation".to_string(),
+            )));
         }
-    } else {
-        vec![]
     };
 
-    // Exclude version bump table drops from the destructive gate
-    // since the user already confirmed them via the version bump gate.
-    let mut filtered_risk = risk;
-    let vb_drop_names: std::collections::HashSet<String> = version_bump_decisions
-        .iter()
-        .filter(|d| d.old_table_disposition == version_bump::OldTableDisposition::Drop)
-        .map(|d| d.bump.old_table.name.clone())
-        .collect();
-    filtered_risk.destructive_changes.retain(|dc| match dc {
-        DestructiveChange::TableDrop {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        DestructiveChange::TableRecreate {
-            table_name_with_suffix,
-            ..
-        } => !vb_drop_names.contains(table_name_with_suffix),
-        _ => true,
-    });
+    if _no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
 
     match migration_destructive_gate(&filtered_risk, &migration_policy, bridge).await? {
         MigrationGateOutcome::Rejected { tables } => {

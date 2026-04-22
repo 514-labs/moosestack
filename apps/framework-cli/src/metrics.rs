@@ -202,21 +202,14 @@ impl Metrics {
             topic_to_olap_event_total_count: Counter::default(),
             blocks_count: Gauge::default(),
             topic_to_olap_bytes_total_count: Counter::default(),
-            http_latency_histogram_aggregate: Histogram::new(
-                [
+            http_latency_histogram_aggregate: Histogram::new([
+                0.001, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 240.0,
+            ]),
+            http_latency_histogram: Family::<HTTPLabel, Histogram>::new_with_constructor(|| {
+                Histogram::new([
                     0.001, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0,
                     240.0,
-                ]
-                .into_iter(),
-            ),
-            http_latency_histogram: Family::<HTTPLabel, Histogram>::new_with_constructor(|| {
-                Histogram::new(
-                    [
-                        0.001, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0,
-                        240.0,
-                    ]
-                    .into_iter(),
-                )
+                ])
             }),
             http_ingested_bytes: Family::<HTTPLabel, Counter>::new_with_constructor(|| {
                 Counter::default()

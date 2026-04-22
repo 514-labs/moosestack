@@ -16,10 +16,16 @@ host = "localhost"
 port = 4000
 # Port for the management server (Default: 5001)
 management_port = 5001
+# Script to run once when moose dev first starts (optional)
+on_first_start_script = "uv run python app/scripts/setup_views.py"
+# Script to run after every successful reload (optional)
+on_reload_complete_script = "uv run python app/scripts/setup_views.py"
 ```
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
 | `host` | `MOOSE_HTTP_SERVER_CONFIG__HOST` | "localhost" | Server bind address. |
 | `port` | `MOOSE_HTTP_SERVER_CONFIG__PORT` | 4000 | Main API port. |
-| `management_port`| `MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT` | 5001 | Internal management port. |
+| `management_port` | `MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT` | 5001 | Internal management port. |
+| `on_first_start_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_FIRST_START_SCRIPT` | — | Shell command run once when `moose dev` starts, after all infrastructure is applied. See [Dev Environment — Lifecycle Hooks](/moosestack/configuration/dev-environment#lifecycle-hooks). |
+| `on_reload_complete_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_RELOAD_COMPLETE_SCRIPT` | — | Shell command run after every successful reload. See [Dev Environment — Lifecycle Hooks](/moosestack/configuration/dev-environment#lifecycle-hooks). |

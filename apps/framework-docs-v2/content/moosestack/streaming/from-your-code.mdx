@@ -1,228 +1,130 @@
 ---
-title: Publish Data
-description: Write data to streams from applications, APIs, or external sources
+title: Stream.send()
+description: Publish records from code that can import a `Stream` directly with `Stream.send()`
 order: 6
 category: streaming
 ---
 
 import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-# Publishing Data to Streams
+# Stream.send()
 
-## Overview
+Use `Stream.send()` to publish one or more records to an existing `Stream` when the producer can import your Moose SDK models and `Stream` definition directly. If the producer should only send JSON over HTTP, use an [Ingest API](/moosestack/apis/ingest-api) instead.
 
-Publishing data to streams allows you to write data from various sources into your Kafka/Redpanda topics. This is the first step in building real-time data pipelines.
+This page covers in-process producers. To define the stream itself, start with [Stream](/moosestack/streaming/create-stream).
 
-## Publishing Methods
+## When to use
 
-### Using REST APIs
+Use `Stream.send()` when the producer can import the stream definition directly, such as an existing app in your monorepo or a [Moose workflow](/moosestack/workflows).
 
-The most common way to publish data is through Moose's built-in ingestion APIs. These are configured to automatically sit in front of your streams and publish data to them whenever a request is made to the endpoint:
+Use an [Ingest API](/moosestack/apis/ingest-api) when the producer should only send JSON over HTTP or cannot import Moose objects directly.
+
+## Send records
+
+`Stream.send()` takes one argument. Pass a single record to publish one message, or pass an array or list to publish multiple messages. Moose publishes one stream record per element, not one array payload. There are no per-call options on `send()`.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-```typescript filename="PublishViaAPI.ts"
-// When you create an IngestPipeline with ingestApi: true, Moose automatically creates an API endpoint
-const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingestApi: true, // Creates POST /ingest/raw_data endpoint
-  stream: true,
-  table: true
-});
+Send one record:
 
-// You can then publish data via HTTP POST requests
-const response = await fetch('/ingest/raw_data', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    id: '123',
-    value: 42
-  })
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="PublishViaAPI.py" copy
-import requests
-from moose_lib import IngestPipeline, IngestPipelineConfig
+```ts filename="app/publish.ts" copy
+import { userEvents } from "./stream";
 
-# When you create an IngestPipeline with ingest_api: True, Moose automatically creates an API endpoint
-raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
-  ingest_api=True, # Creates POST /ingest/raw_data endpoint
-  stream=True,
-  table=True
-))
-
-# You can then publish data via HTTP POST requests
-response = requests.post('/ingest/raw_data', json={
-  'id': '123',
-  'value': 42
-})
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="info" title="Using OpenAPI">
-See the [OpenAPI documentation](/moosestack/apis/openapi-sdk) to learn more about how to generate type-safe client SDKs in your language of choice for all of your Moose APIs.
-</Callout>
-
-### Direct Stream Publishing
-
-You can publish directly to a stream from your Moose code using the stream's `send` method.
-This is useful when emitting events from workflows or other backend logic.
-`send` accepts a single record or an array of records.
-
-<Callout type="info" title="Using Schema Registry JSON">
-If your `Stream` is configured with `schemaConfig.kind = "JSON"`,
-Moose produces using the Confluent envelope automatically (0x00 + schema id + JSON).
-No code changes are needed beyond setting `schemaConfig`. See the [Schema Registry guide](/moosestack/streaming/schema-registry).
-</Callout>
-
-<Tabs defaultValue="typescript">
-  <TabsList>
-    <TabsTrigger value="typescript">TypeScript</TabsTrigger>
-    <TabsTrigger value="python">Python</TabsTrigger>
-  </TabsList>
-  <TabsContent value="typescript">
-```ts filename="DirectPublish.ts" copy
-import { Stream, Key } from "@514labs/moose-lib";
-
-interface UserEvent {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-// Create a stream (optionally configure destination to sync to a table)
-const events = new Stream<UserEvent>("user-events");
-
-// Publish a single record
-await events.send({
+await userEvents.send({
   id: "evt_1",
   userId: "user_123",
   timestamp: new Date(),
   eventType: "click",
 });
+```
 
-// Publish multiple records
-await events.send([
+Send many records:
+
+```ts filename="app/publish.ts" copy
+import { userEvents } from "./stream";
+
+await userEvents.send([
   { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
   { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
 ]);
 ```
-  </TabsContent>
-  <TabsContent value="python">
-```py filename="DirectPublish.py" copy
-from moose_lib import Stream, StreamConfig, Key
-from pydantic import BaseModel
-from datetime import datetime
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Send one record:
 
-class UserEvent(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
+```py filename="app/publish.py" copy
+from datetime import datetime, timezone
 
-# Create a stream (optionally pass StreamConfig with destination/table settings)
-events = Stream[UserEvent]("user_events", StreamConfig())
+from app.stream import UserEvent, user_events
 
-# Publish a single record
-events.send(UserEvent(
-    id="evt_1",
-    user_id="user_123",
-    timestamp=datetime.now(),
-    event_type="click"
-))
+user_events.send(
+    UserEvent(
+        id="evt_1",
+        user_id="user_123",
+        timestamp=datetime.now(timezone.utc),
+        event_type="click",
+    )
+)
+```
 
-# Publish multiple records
-events.send([
-    UserEvent(id="evt_2", user_id="user_456", timestamp=datetime.now(), event_type="view"),
-    UserEvent(id="evt_3", user_id="user_789", timestamp=datetime.now(), event_type="signup"),
+Send many records:
+
+```py filename="app/publish.py" copy
+from datetime import datetime, timezone
+
+from app.stream import UserEvent, user_events
+
+user_events.send([
+    UserEvent(
+        id="evt_2",
+        user_id="user_456",
+        timestamp=datetime.now(timezone.utc),
+        event_type="view",
+    ),
+    UserEvent(
+        id="evt_3",
+        user_id="user_789",
+        timestamp=datetime.now(timezone.utc),
+        event_type="signup",
+    ),
 ])
 ```
-  </TabsContent>
-</Tabs>
 
-<Callout type="info" title="Topic naming and versions">
-Moose builds the Kafka topic name from your stream name,
-optional namespace, and optional version (dots become underscores).
-For example, a stream named `events` with version `1.2.0` becomes `events_1_2_0`
-(or `my_ns.events_1_2_0` when the namespace is `"my_ns"`).
+<Callout type="warning">
+Values passed to `send()` must be instances of the stream model type. Passing a `dict` or other non-model value raises `TypeError`.
 </Callout>
+  </LanguageTabContent>
+</LanguageTabs>
 
-### Using the Kafka/Redpanda Client from External Applications
+## Send nothing
 
-You can also publish to streams from external applications using Kafka/Redpanda clients:
+This is useful in helper code that batches optional records or filters a collection down to zero results. Top-level empty inputs are valid and send nothing:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-See the [Kafka.js documentation](https://kafka.js.org/docs/getting-started) for more information on how to use the Kafka.js client to publish to streams.
-
-```typescript filename="ExternalPublish.ts"
-import { KafkaJS } from '@confluentinc/kafka-javascript';
-const { Kafka } = KafkaJS;
-
-const kafka = new Kafka({
-  kafkaJS: {
-    clientId: 'my-app',
-    brokers: ['localhost:19092']
-  }
-});
-
-const producer = kafka.producer();
-
-await producer.connect();
-
-// Publish to the stream topic
-await producer.send({
-  topic: 'user-events', // Stream name becomes the topic name
-  messages: [
-    {
-      key: 'event-123',
-      value: JSON.stringify({
-        id: 'event-123',
-        userId: 'user-456',
-        timestamp: new Date().toISOString(),
-        eventType: 'page_view'
-      })
-    }
-  ]
-});
+```ts filename="app/publish.ts" copy
+await userEvents.send(undefined);
+await userEvents.send(null);
+await userEvents.send([]);
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```py filename="ExternalPublish.py" copy
-from kafka import KafkaProducer
-import json
-from datetime import datetime
-
-producer = KafkaProducer(
-    bootstrap_servers=['localhost:19092'],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-# Publish to the stream topic
-producer.send('user-events', {  # Stream name becomes the topic name
-    'id': 'event-123',
-    'user_id': 'user-456',
-    'timestamp': datetime.now().isoformat(),
-    'event_type': 'page_view'
-})
+```py filename="app/publish.py" copy
+user_events.send(None)
+user_events.send([])
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-#### Locating Redpanda Connection Details
+## Behavior
 
-When running your Moose backend within your local dev environment, you can find the connection details for your Redpanda cluster in the `moose.config.toml` file in the root of your project:
+`Stream.send()` publishes to the stream topic. If the stream also has a destination table, records become queryable only after Moose syncs them into ClickHouse.
 
-```toml filename="moose.config.toml" copy
-[redpanda_config]
-broker = "localhost:19092"
-message_timeout_ms = 1000
-retention_ms = 30000
-replication_factor = 1
-```
+If the stream is configured for Schema Registry JSON, `send()` publishes using the Confluent wire format automatically. See [Schema Registry](/moosestack/streaming/schema-registry).
+
+## Related capabilities
+
+- [Stream](/moosestack/streaming/create-stream) for defining the stream resource
+- [Sync to table](/moosestack/streaming/sync-to-table) when records should land in ClickHouse
+- [Schema registry](/moosestack/streaming/schema-registry) when payloads should use Confluent Schema Registry
+- [Ingest API](/moosestack/apis/ingest-api) for external HTTP ingestion into streams

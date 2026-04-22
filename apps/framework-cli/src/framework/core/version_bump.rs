@@ -10,15 +10,17 @@
 //! 3. Drop old table (optional — if kept, a file is generated marking it `EXTERNALLY_MANAGED`)
 
 use std::collections::{HashMap, HashSet};
-use std::io::{stdout, IsTerminal};
+use std::io::{stdout, IsTerminal, Write};
+
+use tracing::{debug, info};
 
 use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user_async;
 use crate::cli::routines::RoutineFailure;
-use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
+use crate::framework::core::infrastructure::table::{Column, Table};
 use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
-use crate::framework::core::plan_risk::PinnedSession;
+use crate::framework::core::plan_risk::{DestructiveChange, PinnedSession, PlanRisk};
 use crate::framework::core::prompt_bridge::{PendingPrompt, PromptBridge, PromptKind};
 use crate::framework::languages::SupportedLanguages;
 
@@ -113,7 +115,12 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
 
     for (key, removed_tables) in &removed_by_group {
         if let Some(added_tables) = added_by_group.get(key) {
-            for old in removed_tables {
+            // Sort removed tables by version descending so the highest old version
+            // pairs with the new table first, backfilling the most recent data.
+            let mut sorted_removed: Vec<&&Table> = removed_tables.iter().collect();
+            sorted_removed.sort_by(|a, b| b.version.cmp(&a.version));
+
+            for old in sorted_removed {
                 let old_key = table_key(old);
                 if consumed_removed.contains(&old_key) {
                     continue;
@@ -138,6 +145,20 @@ pub fn extract_version_bumps(changes: &[OlapChange]) -> (Vec<VersionBump>, Vec<O
                 }
             }
         }
+    }
+
+    debug!(
+        bumps = bumps.len(),
+        remaining = changes.len() - bumps.len() * 2,
+        "Extracted version bump pairs from OLAP changes"
+    );
+    for bump in &bumps {
+        debug!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            primitive = %bump.old_table.source_primitive.name,
+            "Detected version bump pair"
+        );
     }
 
     let remaining: Vec<OlapChange> = changes
@@ -221,9 +242,14 @@ pub fn check_backfill_eligibility(
         .collect();
 
     if !columns_equivalent(&old_insertable, &new_insertable) {
-        return BackfillEligibility::NotEligible {
-            reason: schema_diff_reason(&old_insertable, &new_insertable),
-        };
+        let reason = schema_diff_reason(&old_insertable, &new_insertable);
+        info!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            reason = %reason,
+            "Backfill not eligible: schema mismatch"
+        );
+        return BackfillEligibility::NotEligible { reason };
     }
 
     let src_db = bump
@@ -248,6 +274,12 @@ pub fn check_backfill_eligibility(
         bump.new_table.name, bump.old_table.name
     );
 
+    info!(
+        old = %bump.old_table.name,
+        new = %bump.new_table.name,
+        "Backfill eligible: insertable columns match"
+    );
+
     BackfillEligibility::Eligible { sql }
 }
 
@@ -261,29 +293,34 @@ async fn vb_get_response(
     plain_text: &str,
     prompt_info: PendingPrompt,
 ) -> Result<String, RoutineFailure> {
+    let default_for_stdin = prompt_info.default_response.clone();
+    let plain_default = default_for_stdin.as_deref();
     match (is_interactive, bridge) {
         (true, Some(bridge)) => {
             let stdin_fut = async {
                 if let Some(ref mut s) = session {
                     Ok(s.prompt(pinned_text).await.unwrap_or_default())
                 } else {
-                    prompt_user_async(plain_text, Some("N"), None).await
+                    prompt_user_async(plain_text, plain_default, None).await
                 }
             };
             let bridge_fut = bridge.prompt(prompt_info);
             tokio::select! {
                 biased;
                 line = stdin_fut => line,
-                resp = bridge_fut => resp.ok_or_else(|| RoutineFailure::error(
-                    Message::new("Prompt".to_string(), "Prompt bridge closed unexpectedly".to_string()),
-                )),
+                resp = bridge_fut => resp.ok_or_else(|| {
+                    RoutineFailure::error(Message::new(
+                        "Prompt".to_string(),
+                        "Prompt bridge closed unexpectedly".to_string(),
+                    ))
+                }),
             }
         }
         (true, None) => {
             if let Some(ref mut s) = session {
                 Ok(s.prompt(pinned_text).await.unwrap_or_default())
             } else {
-                prompt_user_async(plain_text, Some("N"), None).await
+                prompt_user_async(plain_text, plain_default, None).await
             }
         }
         (false, Some(bridge)) => {
@@ -317,9 +354,6 @@ async fn vb_get_response(
 ///
 /// For each detected version bump, asks whether to backfill and whether to
 /// keep the old table. Returns `None` if the user cancels.
-///
-/// When a [`PromptBridge`] is provided the gate publishes the prompt so that an
-/// MCP client can respond via the `respond_to_prompt` tool.
 pub async fn version_bump_gate(
     bumps: Vec<VersionBump>,
     default_database: &str,
@@ -438,7 +472,7 @@ pub async fn version_bump_gate(
                     info,
                 )
                 .await?;
-                !matches!(input.as_str(), "n" | "no")
+                !matches!(input.trim().to_lowercase().as_str(), "n" | "no")
             } else {
                 false
             };
@@ -475,7 +509,7 @@ pub async fn version_bump_gate(
                         info,
                     )
                     .await?;
-                    if matches!(input.as_str(), "y" | "yes") {
+                    if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
                         OldTableDisposition::Retain
                     } else {
                         OldTableDisposition::Drop
@@ -531,6 +565,14 @@ pub async fn version_bump_gate(
             OldTableDisposition::Untouched => {}
         }
 
+        info!(
+            old = %bump.old_table.name,
+            new = %bump.new_table.name,
+            backfill = backfill_sql.is_some(),
+            disposition = ?disposition,
+            "Version bump decision recorded"
+        );
+
         decisions.push(VersionBumpDecision {
             bump,
             backfill_sql,
@@ -544,61 +586,9 @@ pub async fn version_bump_gate(
     Ok(Some(decisions))
 }
 
-// ── Backfill column helpers (reused from migration_plan.rs) ──────────
-
-fn is_insertable(col: &Column) -> bool {
-    col.materialized.is_none() && col.alias.is_none()
-}
-
-fn columns_equivalent(a: &[&Column], b: &[&Column]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    type ColKey<'c> = (&'c str, &'c ColumnType, bool);
-    let set_a: HashSet<ColKey> = a
-        .iter()
-        .map(|c| (c.name.as_str(), &c.data_type, c.required))
-        .collect();
-    let set_b: HashSet<ColKey> = b
-        .iter()
-        .map(|c| (c.name.as_str(), &c.data_type, c.required))
-        .collect();
-    set_a == set_b
-}
-
-fn schema_diff_reason(source: &[&Column], target: &[&Column]) -> String {
-    let src_names: HashSet<&str> = source.iter().map(|c| c.name.as_str()).collect();
-    let tgt_names: HashSet<&str> = target.iter().map(|c| c.name.as_str()).collect();
-
-    let extra_in_target: Vec<&&str> = tgt_names.difference(&src_names).collect();
-    let extra_in_source: Vec<&&str> = src_names.difference(&tgt_names).collect();
-
-    let mut parts = Vec::new();
-    if !extra_in_target.is_empty() {
-        parts.push(format!(
-            "new table has columns not present in old: {}",
-            extra_in_target
-                .iter()
-                .map(|s| format!("`{s}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if !extra_in_source.is_empty() {
-        parts.push(format!(
-            "old table has columns not present in new: {}",
-            extra_in_source
-                .iter()
-                .map(|s| format!("`{s}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if parts.is_empty() {
-        parts.push("column type or nullability mismatch".to_string());
-    }
-    parts.join("; ")
-}
+use crate::framework::core::migration_plan::{
+    columns_equivalent, is_insertable, schema_diff_reason,
+};
 
 // ── Code generation for retained (EXTERNALLY_MANAGED) tables ─────────
 
@@ -685,7 +675,6 @@ fn ensure_import(root_path: &std::path::Path, import_line: &str) -> Result<(), s
         return Ok(());
     }
 
-    use std::io::Write;
     let mut file = std::fs::OpenOptions::new().append(true).open(root_path)?;
     writeln!(file)?;
     writeln!(file, "{import_line}")?;
@@ -697,21 +686,28 @@ fn ensure_import(root_path: &std::path::Path, import_line: &str) -> Result<(), s
 use crate::framework::core::infra_delta::{DestructivePolicy, InfraDelta};
 use chrono::Utc;
 
-/// Convert version bump decisions to correctly-ordered `InfraDelta`s.
+/// Convert version bump decisions to correctly-phased `InfraDelta`s.
 ///
-/// Order: CreateTable(new) → BackfillTable(old→new) → DropTable(old)
+/// Phase order: all CreateTable → all BackfillTable → all DropTable.
+/// This mirrors [`version_bump_decisions_to_phased_operations`] and avoids
+/// interleaving drops before later backfills when multiple decisions exist.
+///
+/// CreateTable is emitted for all bump kinds (InPlace and NewAlongside) so that
+/// the new table is guaranteed to exist before the backfill runs. Callers that
+/// also generate deltas from the full diff should strip duplicate CreateTable
+/// entries for NewAlongside tables using [`alongside_new_table_names`].
 pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Vec<InfraDelta> {
-    let mut deltas = Vec::new();
+    let mut creates = Vec::new();
+    let mut backfills = Vec::new();
+    let mut drops = Vec::new();
 
     for decision in decisions {
-        if decision.bump.kind == VersionBumpKind::InPlace {
-            deltas.push(InfraDelta::CreateTable {
-                table: decision.bump.new_table.clone(),
-            });
-        }
+        creates.push(InfraDelta::CreateTable {
+            table: decision.bump.new_table.clone(),
+        });
 
         if let Some(sql) = &decision.backfill_sql {
-            deltas.push(InfraDelta::BackfillTable {
+            backfills.push(InfraDelta::BackfillTable {
                 source_table: decision.bump.old_table.name.clone(),
                 target_table: decision.bump.new_table.name.clone(),
                 columns: vec![],
@@ -720,7 +716,7 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
         }
 
         if decision.old_table_disposition == OldTableDisposition::Drop {
-            deltas.push(InfraDelta::DropTable {
+            drops.push(InfraDelta::DropTable {
                 table: decision.bump.old_table.clone(),
                 policy: DestructivePolicy {
                     description: format!(
@@ -733,7 +729,9 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
         }
     }
 
-    deltas
+    creates.extend(backfills);
+    creates.extend(drops);
+    creates
 }
 
 /// Split version bump decisions into three ordered phases of `SerializableOlapOperation`s:
@@ -741,10 +739,18 @@ pub fn version_bump_decisions_to_deltas(decisions: &[VersionBumpDecision]) -> Ve
 ///
 /// Callers interleave these with normal teardown/setup ops to ensure correct ordering:
 /// bump creates land before dependent setup ops, and bump drops land after backfills.
+/// Returns (creates, backfills) operations for version bump decisions.
+///
+/// Creates are emitted for all bump kinds so the new table exists before backfill.
+/// Callers that also derive operations from the full diff should strip duplicate
+/// creates for NewAlongside tables using [`alongside_new_table_names`].
+///
+/// Bump drops are not returned here — callers should re-inject the old table's
+/// `Removed` change into the regular change list so it participates in
+/// dependency-ordered teardown alongside non-bump drops.
 pub fn version_bump_decisions_to_phased_operations(
     decisions: &[VersionBumpDecision],
 ) -> (
-    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
 ) {
@@ -752,14 +758,11 @@ pub fn version_bump_decisions_to_phased_operations(
 
     let mut creates = Vec::new();
     let mut backfills = Vec::new();
-    let mut drops = Vec::new();
 
     for decision in decisions {
-        if decision.bump.kind == VersionBumpKind::InPlace {
-            creates.push(SerializableOlapOperation::CreateTable {
-                table: decision.bump.new_table.clone(),
-            });
-        }
+        creates.push(SerializableOlapOperation::CreateTable {
+            table: decision.bump.new_table.clone(),
+        });
 
         if let Some(sql) = &decision.backfill_sql {
             backfills.push(SerializableOlapOperation::RawSql {
@@ -770,17 +773,94 @@ pub fn version_bump_decisions_to_phased_operations(
                 ),
             });
         }
-
-        if decision.old_table_disposition == OldTableDisposition::Drop {
-            drops.push(SerializableOlapOperation::DropTable {
-                table: decision.bump.old_table.name.clone(),
-                database: decision.bump.old_table.database.clone(),
-                cluster_name: decision.bump.old_table.cluster_name.clone(),
-            });
-        }
     }
 
-    (creates, backfills, drops)
+    (creates, backfills)
+}
+
+/// Collect the `OlapChange::Removed` entries for bump decisions that chose `Drop`.
+/// These should be appended to the regular change list so they participate in
+/// dependency-ordered teardown.
+pub fn bump_drop_changes(decisions: &[VersionBumpDecision]) -> Vec<OlapChange> {
+    decisions
+        .iter()
+        .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
+        .map(|d| OlapChange::Table(TableChange::Removed(d.bump.old_table.clone())))
+        .collect()
+}
+
+/// Returns table names of NewAlongside bump decisions.
+///
+/// When bump functions emit CreateTable for all bump kinds, the NewAlongside
+/// table's `Added` change (or `CreateTable` delta) is duplicated in the regular
+/// change list. Callers use this set to strip the duplicate.
+pub fn alongside_new_table_names(decisions: &[VersionBumpDecision]) -> HashSet<String> {
+    decisions
+        .iter()
+        .filter(|d| d.bump.kind == VersionBumpKind::NewAlongside)
+        .map(|d| d.bump.new_table.name.clone())
+        .collect()
+}
+
+/// Shared helper: detect version bumps, prompt the user, and exclude confirmed
+/// bump drops from `risk.destructive_changes` so they aren't double-prompted.
+///
+/// Returns the decisions (empty if no bumps detected). On user rejection returns
+/// `Ok(None)` so the caller can abort.
+pub async fn detect_prompt_and_exclude(
+    olap_changes: &[OlapChange],
+    current_infra: &InfrastructureMap,
+    default_database: &str,
+    accept_all: bool,
+    risk: &mut PlanRisk,
+    bridge: Option<&PromptBridge>,
+) -> Result<Option<Vec<VersionBumpDecision>>, RoutineFailure> {
+    let (mut version_bumps, remaining) = extract_version_bumps(olap_changes);
+    let backfill_only = find_backfill_only_bumps(&remaining, current_infra);
+    version_bumps.extend(backfill_only);
+
+    let decisions = if !version_bumps.is_empty() {
+        match version_bump_gate(version_bumps, default_database, accept_all, bridge).await? {
+            Some(d) => d,
+            None => return Ok(None),
+        }
+    } else {
+        vec![]
+    };
+
+    exclude_bump_drops_from_risk(&decisions, risk);
+    Ok(Some(decisions))
+}
+
+/// Remove `TableDrop` and `TableRecreate` entries from `risk.destructive_changes`
+/// for old tables whose drop was already confirmed via the version-bump gate.
+pub fn exclude_bump_drops_from_risk(decisions: &[VersionBumpDecision], risk: &mut PlanRisk) {
+    if decisions.is_empty() {
+        return;
+    }
+    let vb_drop_names: HashSet<String> = decisions
+        .iter()
+        .filter(|d| d.old_table_disposition == OldTableDisposition::Drop)
+        .map(|d| d.bump.old_table.name.clone())
+        .collect();
+    if vb_drop_names.is_empty() {
+        return;
+    }
+    risk.destructive_changes.retain(|dc| match dc {
+        DestructiveChange::TableDrop {
+            table_name_with_suffix,
+            ..
+        }
+        | DestructiveChange::TableRecreate {
+            table_name_with_suffix,
+            ..
+        } => !vb_drop_names.contains(table_name_with_suffix),
+        _ => true,
+    });
+    debug!(
+        excluded_tables = ?vb_drop_names,
+        "Excluded version-bump drops from destructive risk assessment"
+    );
 }
 
 #[cfg(test)]
@@ -996,6 +1076,44 @@ mod tests {
     }
 
     #[test]
+    fn decisions_to_deltas_phases_creates_before_backfills_before_drops() {
+        let decisions = vec![
+            VersionBumpDecision {
+                bump: in_place(
+                    make_table("A_1_0", "1.0", "A"),
+                    make_table("A_2_0", "2.0", "A"),
+                ),
+                backfill_sql: Some("INSERT A".to_string()),
+                old_table_disposition: OldTableDisposition::Drop,
+            },
+            VersionBumpDecision {
+                bump: in_place(
+                    make_table("B_1_0", "1.0", "B"),
+                    make_table("B_2_0", "2.0", "B"),
+                ),
+                backfill_sql: Some("INSERT B".to_string()),
+                old_table_disposition: OldTableDisposition::Drop,
+            },
+        ];
+
+        let deltas = version_bump_decisions_to_deltas(&decisions);
+        assert_eq!(deltas.len(), 6);
+        // Phase 1: all creates
+        assert!(matches!(&deltas[0], InfraDelta::CreateTable { table } if table.name == "A_2_0"));
+        assert!(matches!(&deltas[1], InfraDelta::CreateTable { table } if table.name == "B_2_0"));
+        // Phase 2: all backfills
+        assert!(
+            matches!(&deltas[2], InfraDelta::BackfillTable { target_table, .. } if target_table == "A_2_0")
+        );
+        assert!(
+            matches!(&deltas[3], InfraDelta::BackfillTable { target_table, .. } if target_table == "B_2_0")
+        );
+        // Phase 3: all drops
+        assert!(matches!(&deltas[4], InfraDelta::DropTable { table, .. } if table.name == "A_1_0"));
+        assert!(matches!(&deltas[5], InfraDelta::DropTable { table, .. } if table.name == "B_1_0"));
+    }
+
+    #[test]
     fn multi_version_pairing_picks_highest_added() {
         let old_v1 = make_table("Events_1_0", "1.0", "Events");
         let old_v2 = make_table("Events_2_0", "2.0", "Events");
@@ -1010,11 +1128,15 @@ mod tests {
         let (bumps, remaining) = extract_version_bumps(&changes);
         // Only one bump possible: new_v3 can only be consumed once.
         assert_eq!(bumps.len(), 1);
-        // The first old version (v1) pairs with the only new version (v3).
-        assert_eq!(bumps[0].old_table.name, "Events_1_0");
+        // Highest removed version (v2) pairs with the new version (v3),
+        // ensuring backfill copies the most recent data.
+        assert_eq!(bumps[0].old_table.name, "Events_2_0");
         assert_eq!(bumps[0].new_table.name, "Events_3_0");
-        // v2 removal is left as a remaining change.
+        // v1 removal is left as a remaining change (orphaned drop).
         assert_eq!(remaining.len(), 1);
+        assert!(
+            matches!(&remaining[0], OlapChange::Table(TableChange::Removed(t)) if t.name == "Events_1_0")
+        );
     }
 
     #[test]
@@ -1053,5 +1175,143 @@ mod tests {
             "tables from different databases should not pair"
         );
         assert_eq!(remaining.len(), 2);
+    }
+
+    #[test]
+    fn phased_operations_backfill_and_drop() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some(
+                "INSERT INTO `default`.`Events_2_0` (`id`) SELECT `id` FROM `default`.`Events_1_0`"
+                    .to_string(),
+            ),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert!(
+            matches!(&creates[0], crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Events_2_0")
+        );
+        assert_eq!(backfills.len(), 1);
+        assert!(matches!(
+            &backfills[0],
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::RawSql { .. }
+        ));
+
+        // bump_drop_changes should produce the Removed change for dependency-ordered teardown
+        let drops = bump_drop_changes(&decisions);
+        assert_eq!(drops.len(), 1);
+        assert!(
+            matches!(&drops[0], OlapChange::Table(TableChange::Removed(t)) if t.name == "Events_1_0")
+        );
+    }
+
+    #[test]
+    fn phased_operations_retain_keeps_old() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Retain,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert_eq!(backfills.len(), 1);
+
+        // No drop changes when retaining
+        let drops = bump_drop_changes(&decisions);
+        assert!(drops.is_empty());
+    }
+
+    #[test]
+    fn phased_operations_no_backfill_drop() {
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: None,
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let (creates, backfills) = version_bump_decisions_to_phased_operations(&decisions);
+        assert_eq!(creates.len(), 1);
+        assert!(backfills.is_empty());
+
+        let drops = bump_drop_changes(&decisions);
+        assert_eq!(drops.len(), 1);
+    }
+
+    #[test]
+    fn exclude_bump_drops_from_risk_filters_confirmed_drops() {
+        use crate::framework::core::plan_risk::{DestructiveChange, PlanRisk};
+
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: Some("INSERT INTO ...".to_string()),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let mut risk = PlanRisk {
+            destructive_changes: vec![
+                DestructiveChange::TableDrop {
+                    database: None,
+                    table_name_with_suffix: "Events_1_0".to_string(),
+                    version: Some(Version::from_string("1.0".to_string())),
+                },
+                DestructiveChange::TableDrop {
+                    database: None,
+                    table_name_with_suffix: "Users_1_0".to_string(),
+                    version: Some(Version::from_string("1.0".to_string())),
+                },
+            ],
+            operational_risks: vec![],
+        };
+
+        exclude_bump_drops_from_risk(&decisions, &mut risk);
+
+        // Events_1_0 drop was confirmed via version bump — should be excluded
+        assert_eq!(risk.destructive_changes.len(), 1);
+        assert!(matches!(
+            &risk.destructive_changes[0],
+            DestructiveChange::TableDrop { table_name_with_suffix, .. } if table_name_with_suffix == "Users_1_0"
+        ));
+    }
+
+    #[test]
+    fn exclude_bump_drops_also_filters_recreates() {
+        use crate::framework::core::plan_risk::{DestructiveChange, PlanRisk};
+
+        let decisions = vec![VersionBumpDecision {
+            bump: in_place(
+                make_table("Events_1_0", "1.0", "Events"),
+                make_table("Events_2_0", "2.0", "Events"),
+            ),
+            backfill_sql: None,
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let mut risk = PlanRisk {
+            destructive_changes: vec![DestructiveChange::TableRecreate {
+                database: None,
+                table_name_with_suffix: "Events_1_0".to_string(),
+                reason: "schema change".to_string(),
+                version: Some(Version::from_string("1.0".to_string())),
+            }],
+            operational_risks: vec![],
+        };
+
+        exclude_bump_drops_from_risk(&decisions, &mut risk);
+        assert!(risk.destructive_changes.is_empty());
     }
 }

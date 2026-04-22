@@ -12,23 +12,31 @@
  * 5. Insert data and verify defaults are applied
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 import { createClient } from "@clickhouse/client";
 
-import { TIMEOUTS, CLICKHOUSE_CONFIG } from "./constants";
+import { TIMEOUTS } from "./constants";
 import {
   waitForServerStart,
   cleanupClickhouseData,
   createTempTestDirectory,
   cleanupTestSuite,
-  getTableSchema,
   setupPythonProject,
   setupTypeScriptProject,
   logger,
+  getTestPorts,
+  buildPortEnv,
+  buildServerConfig,
+  buildClickHouseConfig,
+  buildPythonVenvPaths,
+  getCleanupOptionsForMode,
+  resolveE2eDevMode,
+  resolveSelectedTemplateLanguage,
+  startMooseDev,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -42,89 +50,108 @@ const MOOSE_TS_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/ts-moose-lib",
 );
-const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123?database=${CLICKHOUSE_CONFIG.database}`;
 
 const testLogger = logger.scope("db-pull-defaults-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const SELECTED_LANGUAGE = resolveSelectedTemplateLanguage();
 
-describe("python template tests - db-pull code generation", () => {
-  let devProcess: ChildProcess;
-  let testProjectDir: string;
-  let client: ReturnType<typeof createClient>;
+const PORTS = getTestPorts(30);
+const PORT_ENV = buildPortEnv(PORTS);
+const SERVER = buildServerConfig(PORTS);
+const CH_CONFIG = buildClickHouseConfig(PORTS);
+const CLICKHOUSE_URL = `http://${CH_CONFIG.username}:${CH_CONFIG.password}@localhost:${PORTS.clickhouseHttpPort}?database=${CH_CONFIG.database}`;
 
-  const TEST_TABLE_NAME = "test_defaults_pull_py";
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "py") {
+  describe("python template tests - db-pull code generation", () => {
+    let devProcess: ChildProcess;
+    let testProjectDir: string;
+    let client: ReturnType<typeof createClient>;
 
-  before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+    const TEST_TABLE_NAME = "test_defaults_pull_py";
 
-    testLogger.info("\n=== Starting Python db-pull Defaults Test ===");
+    before(async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    // Create temp test directory
-    testProjectDir = createTempTestDirectory("py-db-pull-defaults");
-    testLogger.info("Test project dir:", testProjectDir);
+      testLogger.info("\n=== Starting Python db-pull Defaults Test ===");
 
-    // Setup Python project with dependencies
-    await setupPythonProject(
-      testProjectDir,
-      "python-empty",
-      CLI_PATH,
-      MOOSE_PY_LIB_PATH,
-      "test-app",
-    );
+      // Create temp test directory
+      testProjectDir = createTempTestDirectory("py-db-pull-defaults");
+      testLogger.info("Test project dir:", testProjectDir);
 
-    // Start moose dev for infrastructure
-    testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
-      cwd: testProjectDir,
-      env: {
-        ...process.env,
-        VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-        PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-      },
+      // Setup Python project with dependencies
+      await setupPythonProject(
+        testProjectDir,
+        "python-empty",
+        CLI_PATH,
+        MOOSE_PY_LIB_PATH,
+        "test-app",
+      );
+
+      // Start moose dev for infrastructure
+      testLogger.info("\nStarting moose dev...");
+      const pythonPaths = buildPythonVenvPaths(testProjectDir);
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
+        cwd: testProjectDir,
+        projectDir: testProjectDir,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
+          VIRTUAL_ENV: pythonPaths.virtualEnv,
+          PATH: `${pythonPaths.binPath}:${process.env.PATH}`,
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
+
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        SERVER.startupMessage,
+        SERVER.url,
+      );
+
+      testLogger.info("✓ Infrastructure ready");
+
+      // Clean ClickHouse and create test table
+      await cleanupClickhouseData({ clickhouseConfig: CH_CONFIG });
+      client = createClient(CH_CONFIG);
     });
 
-    await waitForServerStart(
-      devProcess,
-      TIMEOUTS.SERVER_STARTUP_MS,
-      "development server started",
-      "http://localhost:4000",
-    );
+    after(async function () {
+      this.timeout(TIMEOUTS.CLEANUP_MS);
+      testLogger.info("\n=== Cleaning up Python db-pull Defaults Test ===");
 
-    testLogger.info("✓ Infrastructure ready");
+      if (client) {
+        await client.close();
+      }
 
-    // Clean ClickHouse and create test table
-    await cleanupClickhouseData();
-    client = createClient(CLICKHOUSE_CONFIG);
-  });
-
-  after(async function () {
-    this.timeout(TIMEOUTS.CLEANUP_MS);
-    testLogger.info("\n=== Cleaning up Python db-pull Defaults Test ===");
-
-    if (client) {
-      await client.close();
-    }
-
-    await cleanupTestSuite(devProcess, testProjectDir, "py-db-pull-defaults", {
-      logPrefix: "Python db-pull Defaults Test",
-    });
-  });
-
-  it("should handle SQL function defaults in db-pull workflow", async function () {
-    this.timeout(TIMEOUTS.MIGRATION_MS * 2);
-
-    // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
-    testLogger.info(
-      "\n--- Creating ClickHouse table with function defaults ---",
-    );
-
-    // Drop table if it exists from previous run
-    await client.command({
-      query: `DROP TABLE IF EXISTS ${TEST_TABLE_NAME}`,
+      await cleanupTestSuite(
+        devProcess,
+        testProjectDir,
+        "py-db-pull-defaults",
+        {
+          logPrefix: "Python db-pull Defaults Test",
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
+          ports: PORTS,
+        },
+      );
     });
 
-    const createTableSQL = `
+    it("should handle SQL function defaults in db-pull workflow", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS * 2);
+
+      // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
+      testLogger.info(
+        "\n--- Creating ClickHouse table with function defaults ---",
+      );
+
+      // Drop table if it exists from previous run
+      await client.command({
+        query: `DROP TABLE IF EXISTS ${TEST_TABLE_NAME}`,
+      });
+
+      const createTableSQL = `
     CREATE TABLE ${TEST_TABLE_NAME} (
       _id String,
       sample_hash UInt64 DEFAULT xxHash64(_id),
@@ -140,126 +167,22 @@ describe("python template tests - db-pull code generation", () => {
     ORDER BY _id
     `;
 
-    await client.command({ query: createTableSQL });
-    testLogger.info("✓ Test table created with function defaults");
+      await client.command({ query: createTableSQL });
+      testLogger.info("✓ Test table created with function defaults");
 
-    // Verify table exists
-    const tables = await client.query({
-      query: "SHOW TABLES",
-      format: "JSONEachRow",
-    });
-    const tableList: any[] = await tables.json();
-    expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
+      // Verify table exists
+      const tables = await client.query({
+        query: "SHOW TABLES",
+        format: "JSONEachRow",
+      });
+      const tableList: any[] = await tables.json();
+      expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
 
-    // ============ STEP 2: Run db pull ============
-    testLogger.info("\n--- Running db pull ---");
+      // ============ STEP 2: Run db pull ============
+      testLogger.info("\n--- Running db pull ---");
 
-    const { stdout: pullOutput } = await execAsync(
-      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
-      {
-        cwd: testProjectDir,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
-        },
-      },
-    );
-
-    testLogger.info("db-pull output:", pullOutput);
-
-    // ============ STEP 3: Verify Generated Python Code ============
-    testLogger.info("\n--- Verifying generated Python code ---");
-
-    const externalModelsPath = path.join(
-      testProjectDir,
-      "app",
-      "external_models.py",
-    );
-
-    expect(fs.existsSync(externalModelsPath)).to.be.true;
-
-    const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
-    testLogger.info("Generated Python code:\n", generatedCode);
-
-    // CRITICAL: Verify defaults are NOT double-quoted
-    // Bug would generate: clickhouse_default("\"xxHash64(_id)\"")  ❌
-    // Correct should be:   clickhouse_default("xxHash64(_id)")    ✅
-
-    expect(generatedCode).to.include('clickhouse_default("xxHash64(_id)")');
-    expect(generatedCode).to.not.include('clickhouse_default("\\"xxHash64');
-    expect(generatedCode).to.not.include("clickhouse_default(\"'xxHash64");
-
-    expect(generatedCode).to.include(
-      'clickhouse_default("toStartOfHour(toDateTime(_time_observed / 1000))")',
-    );
-    expect(generatedCode).to.not.include(
-      'clickhouse_default("\\"toStartOfHour',
-    );
-
-    expect(generatedCode).to.include('clickhouse_default("now()")');
-    expect(generatedCode).to.include('clickhouse_default("today()")');
-
-    // Literal values should preserve quotes
-    expect(generatedCode).to.include("clickhouse_default(\"'active'\")");
-    expect(generatedCode).to.include('clickhouse_default("42")');
-
-    // Verify Enum16 with values > 255
-    expect(generatedCode).to.include("OK = 200");
-    expect(generatedCode).to.include("Created = 201");
-    expect(generatedCode).to.include("NotFound = 404");
-    expect(generatedCode).to.include("LargeValue = 1000"); // Value > 255 that previously overflowed
-
-    // Verify LowCardinality column
-    expect(generatedCode).to.include(
-      'Annotated[str, "LowCardinality"]',
-      'LowCardinality(String) should generate Annotated[str, "LowCardinality"]',
-    );
-
-    testLogger.info("✓ Generated Python code has correct default syntax");
-    testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
-    testLogger.info("✓ LowCardinality column correctly generated");
-
-    // ============ STEP 3.5: Move external model to datamodels for migration ============
-    testLogger.info("\n--- Moving external model to datamodels ---");
-    // Migration system only processes models in datamodels/, not external_models.py
-    // We need to move the generated code to test the roundtrip
-    const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
-    if (!fs.existsSync(datamodelsDir)) {
-      fs.mkdirSync(datamodelsDir, { recursive: true });
-    }
-    const datamodelPath = path.join(datamodelsDir, "test_defaults_model.py");
-    fs.copyFileSync(externalModelsPath, datamodelPath);
-    testLogger.info("✓ Model copied to datamodels");
-
-    // ============ STEP 4: Generate Migration Plan ============
-    testLogger.info("\n--- Generating migration plan ---");
-
-    const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
-      {
-        cwd: testProjectDir,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
-        },
-      },
-    );
-
-    testLogger.info("Migration plan output:", planOutput);
-
-    // ============ STEP 5: Apply Migration (Roundtrip Test) ============
-    testLogger.info(
-      "\n--- Applying migration (this would fail with the bug) ---",
-    );
-
-    // This is where the bug manifests: ALTER TABLE tries to apply
-    // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
-
-    try {
-      const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
+      const { stdout: pullOutput } = await execAsync(
+        `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
         {
           cwd: testProjectDir,
           env: {
@@ -269,231 +192,353 @@ describe("python template tests - db-pull code generation", () => {
           },
         },
       );
-      testLogger.info("Migration output:", migrateOutput);
-      testLogger.info("✓ Migration applied successfully (bug is fixed!)");
-    } catch (error: any) {
-      testLogger.info("Migration failed!");
-      testLogger.info("stdout:", error.stdout || "(empty)");
-      testLogger.info("stderr:", error.stderr || "(empty)");
-      testLogger.info("message:", error.message);
 
-      // Check if it's the expected bug error
-      if (error.stdout && error.stdout.includes("Cannot parse string")) {
-        throw new Error(
-          "Migration failed with 'Cannot parse string' error - BUG NOT FIXED!\n" +
-            "The default expression is being quoted as a string literal.\n" +
-            error.stdout,
-        );
+      testLogger.info("db-pull output:", pullOutput);
+
+      // ============ STEP 3: Verify Generated Python Code ============
+      testLogger.info("\n--- Verifying generated Python code ---");
+
+      const externalModelsPath = path.join(
+        testProjectDir,
+        "app",
+        "external_models.py",
+      );
+
+      expect(fs.existsSync(externalModelsPath)).to.be.true;
+
+      const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
+      testLogger.info("Generated Python code:\n", generatedCode);
+
+      // CRITICAL: Verify defaults are NOT double-quoted
+      // Bug would generate: clickhouse_default("\"xxHash64(_id)\"")  ❌
+      // Correct should be:   clickhouse_default("xxHash64(_id)")    ✅
+
+      expect(generatedCode).to.include('clickhouse_default("xxHash64(_id)")');
+      expect(generatedCode).to.not.include('clickhouse_default("\\"xxHash64');
+      expect(generatedCode).to.not.include("clickhouse_default(\"'xxHash64");
+
+      expect(generatedCode).to.include(
+        'clickhouse_default("toStartOfHour(toDateTime(_time_observed / 1000))")',
+      );
+      expect(generatedCode).to.not.include(
+        'clickhouse_default("\\"toStartOfHour',
+      );
+
+      expect(generatedCode).to.include('clickhouse_default("now()")');
+      expect(generatedCode).to.include('clickhouse_default("today()")');
+
+      // Literal values should preserve quotes
+      expect(generatedCode).to.include("clickhouse_default(\"'active'\")");
+      expect(generatedCode).to.include('clickhouse_default("42")');
+
+      // Verify Enum16 with values > 255
+      expect(generatedCode).to.include("OK = 200");
+      expect(generatedCode).to.include("Created = 201");
+      expect(generatedCode).to.include("NotFound = 404");
+      expect(generatedCode).to.include("LargeValue = 1000"); // Value > 255 that previously overflowed
+
+      // Verify LowCardinality column
+      expect(generatedCode).to.include(
+        'Annotated[str, "LowCardinality"]',
+        'LowCardinality(String) should generate Annotated[str, "LowCardinality"]',
+      );
+
+      testLogger.info("✓ Generated Python code has correct default syntax");
+      testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
+      testLogger.info("✓ LowCardinality column correctly generated");
+
+      // ============ STEP 3.5: Move external model to datamodels for migration ============
+      testLogger.info("\n--- Moving external model to datamodels ---");
+      // Migration system only processes models in datamodels/, not external_models.py
+      // We need to move the generated code to test the roundtrip
+      const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
+      if (!fs.existsSync(datamodelsDir)) {
+        fs.mkdirSync(datamodelsDir, { recursive: true });
       }
-      throw error;
-    }
+      const datamodelPath = path.join(datamodelsDir, "test_defaults_model.py");
+      fs.copyFileSync(externalModelsPath, datamodelPath);
+      testLogger.info("✓ Model copied to datamodels");
 
-    // ============ STEP 6: Verify Table Schema ============
-    testLogger.info("\n--- Verifying table schema after migration ---");
+      // ============ STEP 4: Generate Migration Plan ============
+      testLogger.info("\n--- Generating migration plan ---");
 
-    const schema = await getTableSchema(TEST_TABLE_NAME);
-    testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
-
-    const sampleHashCol = schema.find((col) => col.name === "sample_hash");
-    testLogger.info(
-      "sample_hash column:",
-      JSON.stringify(sampleHashCol, null, 2),
-    );
-    expect(sampleHashCol).to.exist;
-    expect(sampleHashCol!.default_type).to.equal("DEFAULT");
-    expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
-
-    const hourStampCol = schema.find((col) => col.name === "hour_stamp");
-    expect(hourStampCol).to.exist;
-    expect(hourStampCol!.default_type).to.equal("DEFAULT");
-    expect(hourStampCol!.default_expression).to.equal(
-      "toStartOfHour(toDateTime(_time_observed / 1000))",
-    );
-
-    testLogger.info("✓ Table schema is correct after migration");
-
-    // ============ STEP 7: Test Data Insertion with Defaults ============
-    testLogger.info("\n--- Testing data insertion with defaults ---");
-
-    const testId = "test-row-" + Date.now();
-    const testTime = Date.now();
-
-    await client.insert({
-      table: TEST_TABLE_NAME,
-      values: [
+      const { stdout: planOutput } = await execAsync(
+        `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}" --save`,
         {
-          _id: testId,
-          _time_observed: testTime,
+          cwd: testProjectDir,
+          env: {
+            ...process.env,
+            VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+            PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+          },
         },
-      ],
-      format: "JSONEachRow",
+      );
+
+      testLogger.info("Migration plan output:", planOutput);
+
+      // ============ STEP 5: Apply Migration (Roundtrip Test) ============
+      testLogger.info(
+        "\n--- Applying migration (this would fail with the bug) ---",
+      );
+
+      // This is where the bug manifests: ALTER TABLE tries to apply
+      // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
+
+      try {
+        const { stdout: migrateOutput } = await execAsync(
+          `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}"`,
+          {
+            cwd: testProjectDir,
+            env: {
+              ...process.env,
+              VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+              PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+            },
+          },
+        );
+        testLogger.info("Migration output:", migrateOutput);
+        testLogger.info("✓ Migration applied successfully (bug is fixed!)");
+      } catch (error: any) {
+        testLogger.info("Migration failed!");
+        testLogger.info("stdout:", error.stdout || "(empty)");
+        testLogger.info("stderr:", error.stderr || "(empty)");
+        testLogger.info("message:", error.message);
+
+        // Check if it's the expected bug error
+        if (error.stdout && error.stdout.includes("Cannot parse string")) {
+          throw new Error(
+            "Migration failed with 'Cannot parse string' error - BUG NOT FIXED!\n" +
+              "The default expression is being quoted as a string literal.\n" +
+              error.stdout,
+          );
+        }
+        throw error;
+      }
+
+      // ============ STEP 6: Verify Table Schema ============
+      testLogger.info("\n--- Verifying table schema after migration ---");
+
+      const schemaResult = await client.query({
+        query: `DESCRIBE TABLE ${TEST_TABLE_NAME}`,
+        format: "JSONEachRow",
+      });
+      const schema: any[] = await schemaResult.json();
+      testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
+
+      const sampleHashCol = schema.find(
+        (col: any) => col.name === "sample_hash",
+      );
+      testLogger.info(
+        "sample_hash column:",
+        JSON.stringify(sampleHashCol, null, 2),
+      );
+      expect(sampleHashCol).to.exist;
+      expect(sampleHashCol!.default_type).to.equal("DEFAULT");
+      expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
+
+      const hourStampCol = schema.find((col: any) => col.name === "hour_stamp");
+      expect(hourStampCol).to.exist;
+      expect(hourStampCol!.default_type).to.equal("DEFAULT");
+      expect(hourStampCol!.default_expression).to.equal(
+        "toStartOfHour(toDateTime(_time_observed / 1000))",
+      );
+
+      testLogger.info("✓ Table schema is correct after migration");
+
+      // ============ STEP 7: Test Data Insertion with Defaults ============
+      testLogger.info("\n--- Testing data insertion with defaults ---");
+
+      const testId = "test-row-" + Date.now();
+      const testTime = Date.now();
+
+      await client.insert({
+        table: TEST_TABLE_NAME,
+        values: [
+          {
+            _id: testId,
+            _time_observed: testTime,
+          },
+        ],
+        format: "JSONEachRow",
+      });
+
+      testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
+
+      // Verify defaults were applied
+      const result = await client.query({
+        query: `SELECT * FROM ${TEST_TABLE_NAME} WHERE _id = '${testId}'`,
+        format: "JSONEachRow",
+      });
+
+      const rows: any[] = await result.json();
+      expect(rows.length).to.equal(1);
+
+      const row = rows[0];
+      testLogger.info("Inserted row:", row);
+
+      // Verify computed defaults
+      expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
+      expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
+      expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
+      expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
+      expect(row.literal_default).to.equal("active");
+      expect(row.numeric_default).to.equal(42);
+
+      testLogger.info("✓ All defaults applied correctly");
+      testLogger.info("✅ ENG-1162 Python test passed - bug is fixed!");
     });
 
-    testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
+    it("should handle defaults with special characters", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    // Verify defaults were applied
-    const result = await client.query({
-      query: `SELECT * FROM ${TEST_TABLE_NAME} WHERE _id = '${testId}'`,
-      format: "JSONEachRow",
-    });
+      const tableName = "test_special_chars_py";
 
-    const rows: any[] = await result.json();
-    expect(rows.length).to.equal(1);
+      testLogger.info("\n--- Testing special characters in defaults ---");
 
-    const row = rows[0];
-    testLogger.info("Inserted row:", row);
+      // Drop table if it exists from previous run
+      await client.command({
+        query: `DROP TABLE IF EXISTS ${tableName}`,
+      });
 
-    // Verify computed defaults
-    expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
-    expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
-    expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
-    expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
-    expect(row.literal_default).to.equal("active");
-    expect(row.numeric_default).to.equal(42);
-
-    testLogger.info("✓ All defaults applied correctly");
-    testLogger.info("✅ ENG-1162 Python test passed - bug is fixed!");
-  });
-
-  it("should handle defaults with special characters", async function () {
-    this.timeout(TIMEOUTS.MIGRATION_MS);
-
-    const tableName = "test_special_chars_py";
-
-    testLogger.info("\n--- Testing special characters in defaults ---");
-
-    // Drop table if it exists from previous run
-    await client.command({
-      query: `DROP TABLE IF EXISTS ${tableName}`,
-    });
-
-    await client.command({
-      query: `
+      await client.command({
+        query: `
       CREATE TABLE ${tableName} (
         id String,
         quoted_str String DEFAULT 'it\\'s "quoted"',
         backslash String DEFAULT 'path\\\\to\\\\file'
       ) ENGINE = MergeTree() ORDER BY id
     `,
-    });
+      });
 
-    testLogger.info("✓ Created table with special character defaults");
+      testLogger.info("✓ Created table with special character defaults");
 
-    // Run db pull
-    await execAsync(
-      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
-      {
-        cwd: testProjectDir,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+      // Run db pull
+      await execAsync(
+        `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
+        {
+          cwd: testProjectDir,
+          env: {
+            ...process.env,
+            VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+            PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+          },
         },
-      },
-    );
+      );
 
-    const code = fs.readFileSync(
-      path.join(testProjectDir, "app", "external_models.py"),
-      "utf-8",
-    );
+      const code = fs.readFileSync(
+        path.join(testProjectDir, "app", "external_models.py"),
+        "utf-8",
+      );
 
-    testLogger.info("Generated code (snippet):");
-    const lines = code.split("\n");
-    const relevantLines = lines.filter(
-      (line) =>
-        line.includes("quoted_str") ||
-        line.includes("backslash") ||
-        line.includes("test_special_chars"),
-    );
-    testLogger.info(relevantLines.join("\n"));
+      testLogger.info("Generated code (snippet):");
+      const lines = code.split("\n");
+      const relevantLines = lines.filter(
+        (line) =>
+          line.includes("quoted_str") ||
+          line.includes("backslash") ||
+          line.includes("test_special_chars"),
+      );
+      testLogger.info(relevantLines.join("\n"));
 
-    // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
-    // Just verify it doesn't have the double-quote bug
-    expect(code).to.not.include('clickhouse_default("\\"\'it');
-    expect(code).to.not.include('clickhouse_default("\\"\'path');
+      // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
+      // Just verify it doesn't have the double-quote bug
+      expect(code).to.not.include('clickhouse_default("\\"\'it');
+      expect(code).to.not.include('clickhouse_default("\\"\'path');
 
-    testLogger.info("✓ Special characters handled correctly");
-  });
-});
-
-describe("typescript template tests - db-pull code generation", () => {
-  let devProcess: ChildProcess;
-  let testProjectDir: string;
-  let client: ReturnType<typeof createClient>;
-
-  const TEST_TABLE_NAME = "test_defaults_pull_ts";
-
-  before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-    testLogger.info("\n=== Starting TypeScript db-pull Defaults Test ===");
-
-    // Create temp test directory
-    testProjectDir = createTempTestDirectory("ts-db-pull-defaults");
-    testLogger.info("Test project dir:", testProjectDir);
-
-    // Setup TypeScript project with dependencies
-    await setupTypeScriptProject(
-      testProjectDir,
-      "typescript-empty",
-      CLI_PATH,
-      MOOSE_TS_LIB_PATH,
-      "test-app",
-      "npm",
-    );
-
-    // Start moose dev for infrastructure
-    testLogger.info("\nStarting moose dev...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
-      cwd: testProjectDir,
-      env: {
-        ...process.env,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-      },
-    });
-
-    await waitForServerStart(
-      devProcess,
-      TIMEOUTS.SERVER_STARTUP_MS,
-      "development server started",
-      "http://localhost:4000",
-    );
-
-    testLogger.info("✓ Infrastructure ready");
-
-    // Clean ClickHouse and create test table
-    await cleanupClickhouseData();
-    client = createClient(CLICKHOUSE_CONFIG);
-  });
-
-  after(async function () {
-    this.timeout(TIMEOUTS.CLEANUP_MS);
-    testLogger.info("\n=== Cleaning up TypeScript db-pull Defaults Test ===");
-
-    if (client) {
-      await client.close();
-    }
-
-    await cleanupTestSuite(devProcess, testProjectDir, "ts-db-pull-defaults", {
-      logPrefix: "TypeScript db-pull Defaults Test",
+      testLogger.info("✓ Special characters handled correctly");
     });
   });
+}
 
-  it("should handle SQL function defaults in db-pull workflow", async function () {
-    this.timeout(TIMEOUTS.MIGRATION_MS * 2);
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "ts") {
+  describe("typescript template tests - db-pull code generation", () => {
+    let devProcess: ChildProcess;
+    let testProjectDir: string;
+    let client: ReturnType<typeof createClient>;
 
-    // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
-    testLogger.info(
-      "\n--- Creating ClickHouse table with function defaults ---",
-    );
+    const TEST_TABLE_NAME = "test_defaults_pull_ts";
 
-    // Drop table if it exists from previous run
-    await client.command({
-      query: `DROP TABLE IF EXISTS ${TEST_TABLE_NAME}`,
+    before(async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+      testLogger.info("\n=== Starting TypeScript db-pull Defaults Test ===");
+
+      // Create temp test directory
+      testProjectDir = createTempTestDirectory("ts-db-pull-defaults");
+      testLogger.info("Test project dir:", testProjectDir);
+
+      // Setup TypeScript project with dependencies
+      await setupTypeScriptProject(
+        testProjectDir,
+        "typescript-empty",
+        CLI_PATH,
+        MOOSE_TS_LIB_PATH,
+        "test-app",
+        "npm",
+      );
+
+      // Start moose dev for infrastructure
+      testLogger.info("\nStarting moose dev...");
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
+        cwd: testProjectDir,
+        projectDir: testProjectDir,
+        language: "typescript",
+        mode: E2E_DEV_MODE,
+        portEnv: PORT_ENV,
+        extraEnv: {
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
+
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        SERVER.startupMessage,
+        SERVER.url,
+      );
+
+      testLogger.info("✓ Infrastructure ready");
+
+      // Clean ClickHouse and create test table
+      await cleanupClickhouseData({ clickhouseConfig: CH_CONFIG });
+      client = createClient(CH_CONFIG);
     });
 
-    const createTableSQL = `
+    after(async function () {
+      this.timeout(TIMEOUTS.CLEANUP_MS);
+      testLogger.info("\n=== Cleaning up TypeScript db-pull Defaults Test ===");
+
+      if (client) {
+        await client.close();
+      }
+
+      await cleanupTestSuite(
+        devProcess,
+        testProjectDir,
+        "ts-db-pull-defaults",
+        {
+          logPrefix: "TypeScript db-pull Defaults Test",
+          ...getCleanupOptionsForMode(E2E_DEV_MODE),
+          ports: PORTS,
+        },
+      );
+    });
+
+    it("should handle SQL function defaults in db-pull workflow", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS * 2);
+
+      // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
+      testLogger.info(
+        "\n--- Creating ClickHouse table with function defaults ---",
+      );
+
+      // Drop table if it exists from previous run
+      await client.command({
+        query: `DROP TABLE IF EXISTS ${TEST_TABLE_NAME}`,
+      });
+
+      const createTableSQL = `
       CREATE TABLE ${TEST_TABLE_NAME} (
         _id String,
         sample_hash UInt64 DEFAULT xxHash64(_id),
@@ -509,118 +554,97 @@ describe("typescript template tests - db-pull code generation", () => {
       ORDER BY _id
     `;
 
-    await client.command({ query: createTableSQL });
-    testLogger.info("✓ Test table created with function defaults");
+      await client.command({ query: createTableSQL });
+      testLogger.info("✓ Test table created with function defaults");
 
-    // Verify table exists
-    const tables = await client.query({
-      query: "SHOW TABLES",
-      format: "JSONEachRow",
-    });
-    const tableList: any[] = await tables.json();
-    expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
+      // Verify table exists
+      const tables = await client.query({
+        query: "SHOW TABLES",
+        format: "JSONEachRow",
+      });
+      const tableList: any[] = await tables.json();
+      expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
 
-    // ============ STEP 2: Run db pull ============
-    testLogger.info("\n--- Running db pull ---");
+      // ============ STEP 2: Run db pull ============
+      testLogger.info("\n--- Running db pull ---");
 
-    const { stdout: pullOutput } = await execAsync(
-      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
-      { cwd: testProjectDir },
-    );
+      const { stdout: pullOutput } = await execAsync(
+        `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
+        { cwd: testProjectDir },
+      );
 
-    testLogger.info("db-pull output:", pullOutput);
+      testLogger.info("db-pull output:", pullOutput);
 
-    // ============ STEP 3: Verify Generated TypeScript Code ============
-    testLogger.info("\n--- Verifying generated TypeScript code ---");
+      // ============ STEP 3: Verify Generated TypeScript Code ============
+      testLogger.info("\n--- Verifying generated TypeScript code ---");
 
-    const externalModelsPath = path.join(
-      testProjectDir,
-      "app",
-      "externalModels.ts",
-    );
+      const externalModelsPath = path.join(
+        testProjectDir,
+        "app",
+        "externalModels.ts",
+      );
 
-    expect(fs.existsSync(externalModelsPath)).to.be.true;
+      expect(fs.existsSync(externalModelsPath)).to.be.true;
 
-    const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
-    testLogger.info("Generated TypeScript code:\n", generatedCode);
+      const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
+      testLogger.info("Generated TypeScript code:\n", generatedCode);
 
-    // CRITICAL: Verify defaults are NOT double-quoted
-    // Bug would generate: ClickHouseDefault<"\"xxHash64(_id)\"">  ❌
-    // Correct should be:   ClickHouseDefault<"xxHash64(_id)">    ✅
+      // CRITICAL: Verify defaults are NOT double-quoted
+      // Bug would generate: ClickHouseDefault<"\"xxHash64(_id)\"">  ❌
+      // Correct should be:   ClickHouseDefault<"xxHash64(_id)">    ✅
 
-    expect(generatedCode).to.include('ClickHouseDefault<"xxHash64(_id)">');
-    expect(generatedCode).to.not.include('ClickHouseDefault<"\\"xxHash64');
-    expect(generatedCode).to.not.include("ClickHouseDefault<\"'xxHash64");
+      expect(generatedCode).to.include('ClickHouseDefault<"xxHash64(_id)">');
+      expect(generatedCode).to.not.include('ClickHouseDefault<"\\"xxHash64');
+      expect(generatedCode).to.not.include("ClickHouseDefault<\"'xxHash64");
 
-    expect(generatedCode).to.include(
-      'ClickHouseDefault<"toStartOfHour(toDateTime(_time_observed / 1000))">',
-    );
-    expect(generatedCode).to.not.include('ClickHouseDefault<"\\"toStartOfHour');
+      expect(generatedCode).to.include(
+        'ClickHouseDefault<"toStartOfHour(toDateTime(_time_observed / 1000))">',
+      );
+      expect(generatedCode).to.not.include(
+        'ClickHouseDefault<"\\"toStartOfHour',
+      );
 
-    // For Date/DateTime columns, TypeScript uses WithDefault<Date, "..."> instead of ClickHouseDefault
-    expect(generatedCode).to.include('WithDefault<Date, "now()">');
-    expect(generatedCode).to.include('WithDefault<Date, "today()">');
+      // For Date/DateTime columns, TypeScript uses WithDefault<Date, "..."> instead of ClickHouseDefault
+      expect(generatedCode).to.include('WithDefault<Date, "now()">');
+      expect(generatedCode).to.include('WithDefault<Date, "today()">');
 
-    // Literal values should preserve quotes
-    expect(generatedCode).to.include("ClickHouseDefault<\"'active'\">");
-    expect(generatedCode).to.include('ClickHouseDefault<"42">');
+      // Literal values should preserve quotes
+      expect(generatedCode).to.include("ClickHouseDefault<\"'active'\">");
+      expect(generatedCode).to.include('ClickHouseDefault<"42">');
 
-    // Verify Enum16 with values > 255
-    expect(generatedCode).to.include('"OK" = 200');
-    expect(generatedCode).to.include('"Created" = 201');
-    expect(generatedCode).to.include('"NotFound" = 404');
-    expect(generatedCode).to.include('"LargeValue" = 1000'); // Value > 255 that previously overflowed
+      // Verify Enum16 with values > 255
+      expect(generatedCode).to.include('"OK" = 200');
+      expect(generatedCode).to.include('"Created" = 201');
+      expect(generatedCode).to.include('"NotFound" = 404');
+      expect(generatedCode).to.include('"LargeValue" = 1000'); // Value > 255 that previously overflowed
 
-    // Verify LowCardinality column
-    expect(generatedCode).to.include(
-      "string & LowCardinality",
-      "LowCardinality(String) should generate string & LowCardinality",
-    );
+      // Verify LowCardinality column
+      expect(generatedCode).to.include(
+        "string & LowCardinality",
+        "LowCardinality(String) should generate string & LowCardinality",
+      );
 
-    testLogger.info("✓ Generated TypeScript code has correct default syntax");
-    testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
-    testLogger.info("✓ LowCardinality column correctly generated");
+      testLogger.info("✓ Generated TypeScript code has correct default syntax");
+      testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
+      testLogger.info("✓ LowCardinality column correctly generated");
 
-    // ============ STEP 3.5: Move external model to datamodels for migration ============
-    testLogger.info("\n--- Moving external model to datamodels ---");
-    // Migration system only processes models in datamodels/, not external_models.ts
-    // We need to move the generated code to test the roundtrip
-    const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
-    if (!fs.existsSync(datamodelsDir)) {
-      fs.mkdirSync(datamodelsDir, { recursive: true });
-    }
-    const datamodelPath = path.join(datamodelsDir, "TestDefaultsModel.ts");
-    fs.copyFileSync(externalModelsPath, datamodelPath);
-    testLogger.info("✓ Model copied to datamodels");
+      // ============ STEP 3.5: Move external model to datamodels for migration ============
+      testLogger.info("\n--- Moving external model to datamodels ---");
+      // Migration system only processes models in datamodels/, not external_models.ts
+      // We need to move the generated code to test the roundtrip
+      const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
+      if (!fs.existsSync(datamodelsDir)) {
+        fs.mkdirSync(datamodelsDir, { recursive: true });
+      }
+      const datamodelPath = path.join(datamodelsDir, "TestDefaultsModel.ts");
+      fs.copyFileSync(externalModelsPath, datamodelPath);
+      testLogger.info("✓ Model copied to datamodels");
 
-    // ============ STEP 4: Generate Migration Plan ============
-    testLogger.info("\n--- Generating migration plan ---");
+      // ============ STEP 4: Generate Migration Plan ============
+      testLogger.info("\n--- Generating migration plan ---");
 
-    const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
-      {
-        cwd: testProjectDir,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
-          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
-        },
-      },
-    );
-
-    testLogger.info("Migration plan output:", planOutput);
-
-    // ============ STEP 5: Apply Migration (Roundtrip Test) ============
-    testLogger.info(
-      "\n--- Applying migration (this would fail with the bug) ---",
-    );
-
-    // This is where the bug manifests: ALTER TABLE tries to apply
-    // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
-
-    try {
-      const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
+      const { stdout: planOutput } = await execAsync(
+        `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}" --save`,
         {
           cwd: testProjectDir,
           env: {
@@ -630,142 +654,170 @@ describe("typescript template tests - db-pull code generation", () => {
           },
         },
       );
-      testLogger.info("Migration output:", migrateOutput);
-      testLogger.info("✓ Migration applied successfully (bug is fixed!)");
-    } catch (error: any) {
-      testLogger.info("Migration failed!");
-      testLogger.info("stdout:", error.stdout || "(empty)");
-      testLogger.info("stderr:", error.stderr || "(empty)");
-      testLogger.info("message:", error.message);
 
-      // Check if it's the expected bug error
-      if (error.stdout && error.stdout.includes("Cannot parse string")) {
-        throw new Error(
-          "Migration failed with 'Cannot parse string' error - BUG NOT FIXED!\n" +
-            "The default expression is being quoted as a string literal.\n" +
-            error.stdout,
+      testLogger.info("Migration plan output:", planOutput);
+
+      // ============ STEP 5: Apply Migration (Roundtrip Test) ============
+      testLogger.info(
+        "\n--- Applying migration (this would fail with the bug) ---",
+      );
+
+      // This is where the bug manifests: ALTER TABLE tries to apply
+      // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
+
+      try {
+        const { stdout: migrateOutput } = await execAsync(
+          `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:${PORTS.redisPort}"`,
+          {
+            cwd: testProjectDir,
+            env: {
+              ...process.env,
+              VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+              PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+            },
+          },
         );
+        testLogger.info("Migration output:", migrateOutput);
+        testLogger.info("✓ Migration applied successfully (bug is fixed!)");
+      } catch (error: any) {
+        testLogger.info("Migration failed!");
+        testLogger.info("stdout:", error.stdout || "(empty)");
+        testLogger.info("stderr:", error.stderr || "(empty)");
+        testLogger.info("message:", error.message);
+
+        // Check if it's the expected bug error
+        if (error.stdout && error.stdout.includes("Cannot parse string")) {
+          throw new Error(
+            "Migration failed with 'Cannot parse string' error - BUG NOT FIXED!\n" +
+              "The default expression is being quoted as a string literal.\n" +
+              error.stdout,
+          );
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    // ============ STEP 6: Verify Table Schema ============
-    testLogger.info("\n--- Verifying table schema after migration ---");
+      // ============ STEP 6: Verify Table Schema ============
+      testLogger.info("\n--- Verifying table schema after migration ---");
 
-    const schema = await getTableSchema(TEST_TABLE_NAME);
-    testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
+      const schemaResult = await client.query({
+        query: `DESCRIBE TABLE ${TEST_TABLE_NAME}`,
+        format: "JSONEachRow",
+      });
+      const schema: any[] = await schemaResult.json();
+      testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
 
-    const sampleHashCol = schema.find((col) => col.name === "sample_hash");
-    testLogger.info(
-      "sample_hash column:",
-      JSON.stringify(sampleHashCol, null, 2),
-    );
-    expect(sampleHashCol).to.exist;
-    expect(sampleHashCol!.default_type).to.equal("DEFAULT");
-    expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
+      const sampleHashCol = schema.find((col) => col.name === "sample_hash");
+      testLogger.info(
+        "sample_hash column:",
+        JSON.stringify(sampleHashCol, null, 2),
+      );
+      expect(sampleHashCol).to.exist;
+      expect(sampleHashCol!.default_type).to.equal("DEFAULT");
+      expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
 
-    const hourStampCol = schema.find((col) => col.name === "hour_stamp");
-    expect(hourStampCol).to.exist;
-    expect(hourStampCol!.default_type).to.equal("DEFAULT");
-    expect(hourStampCol!.default_expression).to.equal(
-      "toStartOfHour(toDateTime(_time_observed / 1000))",
-    );
+      const hourStampCol = schema.find((col) => col.name === "hour_stamp");
+      expect(hourStampCol).to.exist;
+      expect(hourStampCol!.default_type).to.equal("DEFAULT");
+      expect(hourStampCol!.default_expression).to.equal(
+        "toStartOfHour(toDateTime(_time_observed / 1000))",
+      );
 
-    testLogger.info("✓ Table schema is correct after migration");
+      testLogger.info("✓ Table schema is correct after migration");
 
-    // ============ STEP 7: Test Data Insertion with Defaults ============
-    testLogger.info("\n--- Testing data insertion with defaults ---");
+      // ============ STEP 7: Test Data Insertion with Defaults ============
+      testLogger.info("\n--- Testing data insertion with defaults ---");
 
-    const testId = "test-row-" + Date.now();
-    const testTime = Date.now();
+      const testId = "test-row-" + Date.now();
+      const testTime = Date.now();
 
-    await client.insert({
-      table: TEST_TABLE_NAME,
-      values: [
-        {
-          _id: testId,
-          _time_observed: testTime,
-        },
-      ],
-      format: "JSONEachRow",
+      await client.insert({
+        table: TEST_TABLE_NAME,
+        values: [
+          {
+            _id: testId,
+            _time_observed: testTime,
+          },
+        ],
+        format: "JSONEachRow",
+      });
+
+      testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
+
+      // Verify defaults were applied
+      const result = await client.query({
+        query: `SELECT * FROM ${TEST_TABLE_NAME} WHERE _id = '${testId}'`,
+        format: "JSONEachRow",
+      });
+
+      const rows: any[] = await result.json();
+      expect(rows.length).to.equal(1);
+
+      const row = rows[0];
+      testLogger.info("Inserted row:", row);
+
+      // Verify computed defaults
+      expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
+      expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
+      expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
+      expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
+      expect(row.literal_default).to.equal("active");
+      expect(row.numeric_default).to.equal(42);
+
+      testLogger.info("✓ All defaults applied correctly");
+      testLogger.info("✅ ENG-1162 TypeScript test passed - bug is fixed!");
     });
 
-    testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
+    it("should handle defaults with special characters", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    // Verify defaults were applied
-    const result = await client.query({
-      query: `SELECT * FROM ${TEST_TABLE_NAME} WHERE _id = '${testId}'`,
-      format: "JSONEachRow",
-    });
+      const tableName = "test_special_chars_ts";
 
-    const rows: any[] = await result.json();
-    expect(rows.length).to.equal(1);
+      testLogger.info("\n--- Testing special characters in defaults ---");
 
-    const row = rows[0];
-    testLogger.info("Inserted row:", row);
+      // Drop table if it exists from previous run
+      await client.command({
+        query: `DROP TABLE IF EXISTS ${tableName}`,
+      });
 
-    // Verify computed defaults
-    expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
-    expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
-    expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
-    expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
-    expect(row.literal_default).to.equal("active");
-    expect(row.numeric_default).to.equal(42);
-
-    testLogger.info("✓ All defaults applied correctly");
-    testLogger.info("✅ ENG-1162 TypeScript test passed - bug is fixed!");
-  });
-
-  it("should handle defaults with special characters", async function () {
-    this.timeout(TIMEOUTS.MIGRATION_MS);
-
-    const tableName = "test_special_chars_ts";
-
-    testLogger.info("\n--- Testing special characters in defaults ---");
-
-    // Drop table if it exists from previous run
-    await client.command({
-      query: `DROP TABLE IF EXISTS ${tableName}`,
-    });
-
-    await client.command({
-      query: `
+      await client.command({
+        query: `
         CREATE TABLE ${tableName} (
           id String,
           quoted_str String DEFAULT 'it\\'s "quoted"',
           backslash String DEFAULT 'path\\\\to\\\\file'
         ) ENGINE = MergeTree() ORDER BY id
       `,
+      });
+
+      testLogger.info("✓ Created table with special character defaults");
+
+      // Run db pull
+      await execAsync(
+        `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
+        { cwd: testProjectDir },
+      );
+
+      const code = fs.readFileSync(
+        path.join(testProjectDir, "app", "externalModels.ts"),
+        "utf-8",
+      );
+
+      testLogger.info("Generated code (snippet):");
+      const lines = code.split("\n");
+      const relevantLines = lines.filter(
+        (line) =>
+          line.includes("quoted_str") ||
+          line.includes("backslash") ||
+          line.includes("test_special_chars_ts"),
+      );
+      testLogger.info(relevantLines.join("\n"));
+
+      // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
+      // Just verify it doesn't have the double-quote bug
+      expect(code).to.not.include('ClickHouseDefault<"\\"\'it');
+      expect(code).to.not.include('ClickHouseDefault<"\\"\'path');
+
+      testLogger.info("✓ Special characters handled correctly");
     });
-
-    testLogger.info("✓ Created table with special character defaults");
-
-    // Run db pull
-    await execAsync(
-      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
-      { cwd: testProjectDir },
-    );
-
-    const code = fs.readFileSync(
-      path.join(testProjectDir, "app", "externalModels.ts"),
-      "utf-8",
-    );
-
-    testLogger.info("Generated code (snippet):");
-    const lines = code.split("\n");
-    const relevantLines = lines.filter(
-      (line) =>
-        line.includes("quoted_str") ||
-        line.includes("backslash") ||
-        line.includes("test_special_chars_ts"),
-    );
-    testLogger.info(relevantLines.join("\n"));
-
-    // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
-    // Just verify it doesn't have the double-quote bug
-    expect(code).to.not.include('ClickHouseDefault<"\\"\'it');
-    expect(code).to.not.include('ClickHouseDefault<"\\"\'path');
-
-    testLogger.info("✓ Special characters handled correctly");
   });
-});
+}

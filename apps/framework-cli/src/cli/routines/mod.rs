@@ -94,10 +94,10 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
     compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
 };
+use crate::framework::core::migration_file::MigrationHistory;
 use crate::framework::core::migration_plan::MigrationPlanWithBeforeAfter;
 use crate::framework::core::plan_validator;
 use crate::framework::typescript::parser::get_compiled_index_path;
-use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use serde::Deserialize;
@@ -122,9 +122,13 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan::{load_reconciled_infrastructure, load_target_infrastructure};
-use crate::framework::core::plan_risk::{classify_plan_risk, ConfirmationPolicy};
+use crate::framework::core::plan_risk::{
+    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
+    ConfirmationPolicy,
+};
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
@@ -552,7 +556,7 @@ pub async fn start_development_mode(
     let target_infra_map = load_target_infrastructure(&project).await?;
     let olap_client = create_client(project.clickhouse_config.clone());
     let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
-    let current_infra =
+    let _current_infra =
         load_reconciled_infrastructure(&project, &*state_storage, olap_client, &filter).await?;
 
     let externally_managed: Vec<_> = target_infra_map
@@ -713,6 +717,8 @@ pub async fn start_development_mode(
 
     maybe_warmup_connections(&project, &redis_client).await;
 
+    let (reconciled_map, mut plan) = plan_changes(&*state_storage, &project).await?;
+
     let prompt_bridge = if enable_mcp {
         let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
         Some(PromptBridge::new(mcp_url))
@@ -720,24 +726,76 @@ pub async fn start_development_mode(
         None
     };
 
-    // Infrastructure execution (confirmation gates + table creation) is handled by
-    // the watcher's initial pass rather than here. This ensures the MCP server is
-    // already listening when confirmation prompts fire, so both interactive (stdin)
-    // and agent-driven (MCP) workflows use the same code path.
-    use crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry;
-    let syncing = SyncingProcessesRegistry::new(
-        project.redpanda_config.clone(),
-        project.clickhouse_config.clone(),
-    );
-    let registries = ProcessRegistries::new(&project, settings, syncing);
-    let process_registry = Arc::new(RwLock::new(registries));
+    plan_validator::validate(&project, &plan)?;
 
-    // Capture the current (reconciled) infra as the dev session baseline for
-    // pending migration generation and backfill-only version bump detection.
-    let dev_baseline = Arc::new(current_infra.clone());
+    let mut risk = match confirm_renames_and_classify(
+        &mut plan.changes,
+        &confirmation_policy,
+        prompt_bridge.as_ref(),
+    )
+    .await?
+    {
+        Some(risk) => risk,
+        None => return Ok(()),
+    };
+
+    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &plan.changes.olap_changes,
+        &reconciled_map,
+        &project.clickhouse_config.db_name,
+        confirmation_policy.accept_all,
+        &mut risk,
+        prompt_bridge.as_ref(),
+    )
+    .await?
+    {
+        Some(d) => d,
+        None => return Ok(()),
+    };
+
+    if !destructive_confirmation_gate(&risk, &confirmation_policy, prompt_bridge.as_ref()).await? {
+        return Ok(());
+    }
+
+    // Capture the reconciled map as the dev session baseline for pending migration generation.
+    let dev_baseline = Arc::new(reconciled_map.clone());
+
+    let process_registry = execute_initial_infra_change(ExecutionContext {
+        project: &project,
+        settings,
+        plan: &plan,
+        skip_olap: false,
+        api_changes_channel: route_update_channel.clone(),
+        webapp_changes_channel: webapp_update_channel.clone(),
+        metrics: metrics.clone(),
+        version_bump_decisions,
+    })
+    .await?;
+
+    let process_registry = Arc::new(RwLock::new(process_registry));
+
+    let stored_map = plan.target_infra_map;
+
+    // Create mirrors after infra is set up (databases exist)
+    create_external_mirrors(&project, &stored_map, remote_for_mirrors.as_ref()).await;
+
+    let _openapi_path = crate::cli::routines::openapi::openapi(&project, &stored_map).await?;
+
+    state_storage.store_infrastructure_map(&stored_map).await?;
+
+    // Generate initial pending migration (best-effort, delta mode only)
+    if project.features.migrate_with_deltas {
+        if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
+            &dev_baseline,
+            &stored_map,
+            &project,
+        ) {
+            tracing::warn!("Failed to write pending migration: {}", e);
+        }
+    }
 
     let infra_map: &'static RwLock<InfrastructureMap> =
-        Box::leak(Box::new(RwLock::new(current_infra)));
+        Box::leak(Box::new(RwLock::new(reconciled_map)));
 
     let openapi_file = project
         .internal_dir()
@@ -970,13 +1028,47 @@ pub async fn start_production_mode(
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let execute_migration_yaml = std::fs::exists(MIGRATION_FILE)?;
+    let use_deltas = project.features.migrate_with_deltas;
+    // "Pending" here means the delta file exists on disk but its id is not yet in
+    // `applied_migrations`. We deliberately do NOT key off "any delta file exists"
+    // because delta files are permanent in git — once a single one is committed,
+    // an any-file check would permanently short-circuit the block gate below and
+    // force skip_olap=true forever, silently hiding future un-migrated changes.
+    let has_unapplied_delta_files =
+        use_deltas && has_unapplied_delta_migrations(&project, &*state_storage).await?;
+    let has_legacy_plan_yaml =
+        !use_deltas && std::fs::exists(project.project_location.join(MIGRATION_FILE))?;
+    let execute_migration_yaml = has_unapplied_delta_files || has_legacy_plan_yaml;
 
     if !execute_migration_yaml {
-        info!("Migration file not found.")
+        if use_deltas {
+            info!("No pending delta migration files found under ./migrations/.");
+        } else {
+            info!("Legacy migration plan.yaml not found.");
+        }
     }
 
-    if !project.migration_config.prod_auto_allow_destructive && !execute_migration_yaml {
+    // Delta mode: all OLAP changes must flow through a committed delta file.
+    // If changes are pending and no unapplied delta covers them, block startup —
+    // auto-applying via execute_initial_infra_change would mutate Redis's infrastructure
+    // map and invalidate the parent_state_hash of any later-generated delta.
+    if use_deltas && !has_unapplied_delta_files && !plan.changes.olap_changes.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Production startup blocked: {} pending OLAP change(s) detected but no \
+             unapplied delta migration files exist in ./migrations/.\n\n\
+             In delta mode, every infrastructure change must flow through a \
+             committed migration file so prod can apply them with a validated \
+             parent state hash.\n\n\
+             To proceed, run `moose generate migration --save` locally, review the \
+             generated file, and commit it before deploying.",
+            plan.changes.olap_changes.len(),
+        ));
+    }
+
+    if !use_deltas
+        && !project.migration_config.prod_auto_allow_destructive
+        && !execute_migration_yaml
+    {
         info!("prod_auto_allow_destructive is false, analysing risk.");
         let risk = classify_plan_risk(&plan.changes);
         if risk.is_destructive() {
@@ -1004,11 +1096,19 @@ pub async fn start_production_mode(
         }
     }
 
-    if execute_migration_yaml {
+    if has_unapplied_delta_files {
+        migrate::execute_migration_deltas(
+            &project,
+            &project.clickhouse_config,
+            &current_state,
+            &*state_storage,
+        )
+        .await?;
+    } else if has_legacy_plan_yaml {
         migrate::execute_migration_plan(
             &project,
             &project.clickhouse_config,
-            &current_state.tables,
+            &current_state,
             &plan.target_infra_map,
             &*state_storage,
         )
@@ -1027,7 +1127,7 @@ pub async fn start_production_mode(
         project: &project,
         settings,
         plan: &plan,
-        skip_olap: execute_migration_yaml,
+        skip_olap: execute_migration_yaml || use_deltas,
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
@@ -1064,6 +1164,36 @@ pub async fn start_production_mode(
         .await;
 
     Ok(())
+}
+
+/// Returns true if `{project}/migrations/` contains delta migration files that
+/// have not yet been recorded in `applied_migrations`.
+///
+/// Delta files are any `*.yaml` under the directory other than the legacy
+/// `plan.yaml` / `pending.yaml`. Parses them via `MigrationHistory::load_from_dir`
+/// so malformed files surface as errors rather than being silently skipped.
+///
+/// Checking only for file presence would be incorrect: delta files are permanent
+/// in version control, so once any delta is committed the presence check would
+/// return true on every subsequent deploy and bypass the destructive gate even
+/// when the user added new un-migrated code changes. Filtering by
+/// `load_applied_migrations` means this returns true only when there is genuinely
+/// new migration work to run.
+async fn has_unapplied_delta_migrations(
+    project: &Project,
+    state_storage: &dyn crate::framework::core::state_storage::StateStorage,
+) -> anyhow::Result<bool> {
+    let dir = project.project_location.join("migrations");
+    if !dir.exists() {
+        return Ok(false);
+    }
+    let history = MigrationHistory::load_from_dir(&dir)
+        .map_err(|e| anyhow::anyhow!("Failed to load migration files: {}", e))?;
+    if history.is_empty() {
+        return Ok(false);
+    }
+    let applied = state_storage.load_applied_migrations().await?;
+    Ok(history.files.iter().any(|f| !applied.contains(&f.id)))
 }
 
 fn prepend_base_url(base_url: Option<&str>, path: &str) -> String {

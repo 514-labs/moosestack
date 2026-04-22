@@ -47,35 +47,96 @@ echo -e '\n[dev]\ncontainer_cli_path = "finch"' >> ~/.moose/config.toml
 
 ## Lifecycle Hooks
 
-Configure shell commands to run automatically during the development server's lifecycle. These are defined within the `[http_server_config]` section of your configuration.
+Configure shell commands that run automatically during the `moose dev` lifecycle. Hooks are defined in the `[http_server_config]` section and execute *after* all infrastructure (OlapTables, topics, etc.) has been applied — making them the right place for any work that depends on tables already existing.
 
-```toml
+```toml filename="moose.config.toml"
 [http_server_config]
-# Script to run once on first start
-on_first_start_script = "echo 'Dev server started'"
+# Runs once when `moose dev` first starts
+on_first_start_script = "uv run python app/scripts/setup_views.py"
 
-# Script to run after every reload completes
-on_reload_complete_script = "echo 'Reload complete'"
+# Runs after every successful file-change reload
+on_reload_complete_script = "uv run python app/scripts/setup_views.py"
 ```
 
 | Key | Env Variable | Type | Default | Description |
 |:----|:-------------|:-----|:--------|:------------|
-| `on_first_start_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_FIRST_START_SCRIPT` | String | - | Shell command executed once when `moose dev` starts. |
-| `on_reload_complete_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_RELOAD_COMPLETE_SCRIPT` | String | - | Shell command executed after every code/infra reload. |
+| `on_first_start_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_FIRST_START_SCRIPT` | String | — | Shell command executed once when `moose dev` starts. Guaranteed to run only once per process. |
+| `on_reload_complete_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_RELOAD_COMPLETE_SCRIPT` | String | — | Shell command executed after every successful code/infra reload. |
 
-<Callout type="info" title="Execution Context">
-Scripts run from your project root using your system's default shell (usually `/bin/sh` or `bash`). You can chain commands using `&&`.
+<Callout type="info" title="Execution semantics">
+- Scripts run via `$SHELL -c <script>` from your project root (stdout/stderr appear in the terminal).
+- `on_first_start_script` runs exactly **once per `moose dev` process** — an atomic flag prevents duplicate runs even if the start path is triggered multiple times.
+- `on_reload_complete_script` runs only after a **successful** reload; failed reloads (e.g. TypeScript compile errors) do not trigger it.
+- Both hooks are **blocking** — Moose waits for the script to finish before continuing.
+- Hooks are **dev-only** and are never executed in production.
 </Callout>
 
-### Common Examples
+### Post-Startup SQL Setup
 
-**Sync External Tables on Start**
+The most common use case is running SQL against ClickHouse after all tables are guaranteed to exist. This is especially useful in multi-database setups where views in one database reference tables in another, since Moose's infrastructure ordering cannot guarantee cross-database dependency resolution.
+
+**`moose.config.toml`**
 ```toml
+[http_server_config]
+on_first_start_script = "uv run python app/scripts/setup_views.py"
+on_reload_complete_script = "uv run python app/scripts/setup_views.py"
+```
+
+Setting both hooks ensures views are created on first start and kept up-to-date whenever your SQL definitions change during development.
+
+**`app/scripts/setup_views.py`**
+```python
+import os
+import sys
+import clickhouse_connect
+
+# Make app-level imports available when the script runs from the project root
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from app.datamodels.silver.open_orders import OpenOrders_SQL
+# Import other SQL strings here...
+
+# List views in strict dependency order (dependencies before dependants)
+VIEWS = [
+    ("silver.OpenOrders", OpenOrders_SQL),
+    # ("silver.OtherView", OtherView_SQL),
+]
+
+def get_client():
+    return clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "localhost"),
+        port=int(os.getenv("CLICKHOUSE_PORT", "18123")),
+        username=os.getenv("CLICKHOUSE_USER", "panda"),
+        password=os.getenv("CLICKHOUSE_PASSWORD", "pandapass"),
+    )
+
+if __name__ == "__main__":
+    client = get_client()
+    for name, sql in VIEWS:
+        client.command(f"CREATE OR REPLACE VIEW {name} AS {sql}")
+        print(f"  created {name}")
+    print("Views ready.")
+```
+
+`CREATE OR REPLACE VIEW` makes the script idempotent — safe to run on every reload.
+
+<Callout type="info" title="When to use this pattern">
+- **Multi-database setups**: views in one database that reference tables in `additional_databases`
+- **Reference data seeding**: inserting lookup data after tables are created
+- **Any SQL that must run after all OlapTables exist**, such as materialized views with complex cross-table dependencies
+</Callout>
+
+### Other Common Examples
+
+**Sync external tables on start**
+```toml
+[http_server_config]
 on_first_start_script = "moose db pull --clickhouse-url $REMOTE_DB_URL"
 ```
 
-**Regenerate Clients on Reload**
+**Regenerate SDK clients on reload**
 ```toml
+[http_server_config]
 on_reload_complete_script = "openapi-generator-cli generate -i .moose/openapi.yaml ..."
 ```
 
@@ -108,6 +169,14 @@ This logs payloads at three key points with searchable prefixes:
 - `PAYLOAD:STREAM_OUT` - Data after streaming function
 
 All logs appear in Moose logs and can be viewed using `moose logs --tail`.
+
+## Debugging SQL Queries
+
+When a ClickHouse SQL query fails, Moose logs the error status and message at `error` level. To also see the full SQL statement that failed:
+
+:::include /shared/debugging-failed-sql.mdx
+
+See the [Troubleshooting guide](/moosestack/help/troubleshooting#issue-debugging-failed-clickhouse-queries) for more details.
 
 ## Docker Infrastructure Extensions
 

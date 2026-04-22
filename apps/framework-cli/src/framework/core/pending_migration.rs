@@ -55,13 +55,12 @@ pub fn write_pending_migration(
         &[],   // no ignored operations
     );
 
-    let (bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (mut bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let backfill_only = version_bump::find_backfill_only_bumps(&remaining_changes, baseline);
+    bumps.extend(backfill_only);
 
     let mut deltas = olap_changes_to_deltas(&remaining_changes, default_database);
 
-    // Infer decisions from what the diff tells us:
-    // - backfill if schemas are compatible
-    // - retain old table if it's still in the target state, otherwise drop
     if !bumps.is_empty() {
         let decisions: Vec<version_bump::VersionBumpDecision> = bumps
             .into_iter()
@@ -89,6 +88,12 @@ pub fn write_pending_migration(
 
         let bump_deltas = version_bump::version_bump_decisions_to_deltas(&decisions);
         if !bump_deltas.is_empty() {
+            let alongside = version_bump::alongside_new_table_names(&decisions);
+            if !alongside.is_empty() {
+                deltas.retain(|d| {
+                    !matches!(d, crate::framework::core::infra_delta::InfraDelta::CreateTable { table } if alongside.contains(&table.name))
+                });
+            }
             let mut combined = bump_deltas;
             combined.append(&mut deltas);
             deltas = combined;

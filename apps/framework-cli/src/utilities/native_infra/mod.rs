@@ -3,6 +3,7 @@ pub mod clickhouse;
 pub mod devkafka;
 pub mod devredis;
 pub mod errors;
+pub mod preflight;
 pub mod temporal;
 
 use crate::cli::display::{with_spinner_completion, with_timing, Message};
@@ -17,9 +18,9 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Relative path from project root to the native infrastructure directory.
 pub const NATIVE_INFRA_DIR: &str = ".moose/native_infra";
@@ -78,13 +79,18 @@ pub struct NativeInfraProvider {
     binary_manager: BinaryManager,
     /// Handle to the tokio runtime for spawning embedded servers.
     rt_handle: Handle,
+    /// Whether the CLI-level `scripts` feature flag is enabled.
+    /// Mirrors the check in `dev.rs`: Temporal is needed when
+    /// `settings.features.scripts || project.features.workflows`.
+    scripts_enabled: bool,
 }
 
 impl NativeInfraProvider {
-    pub fn new(_settings: &Settings) -> Result<Self, NativeInfraError> {
+    pub fn new(settings: &Settings) -> Result<Self, NativeInfraError> {
         Ok(Self {
             binary_manager: BinaryManager::new()?,
             rt_handle: Handle::current(),
+            scripts_enabled: settings.features.scripts,
         })
     }
 
@@ -102,9 +108,11 @@ impl InfraProvider for NativeInfraProvider {
         let _ch_binary =
             clickhouse::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
 
-        info!("Ensuring native Temporal binary is available...");
-        let _temporal_binary =
-            temporal::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
+        if self.scripts_enabled || project.features.workflows {
+            info!("Ensuring native Temporal binary is available...");
+            let _temporal_binary =
+                temporal::ensure_binary(&self.binary_manager).map_err(Self::map_native_err)?;
+        }
 
         // Generate ClickHouse config
         clickhouse::write_config(project).map_err(Self::map_native_err)?;
@@ -119,6 +127,17 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn start(&self, project: &Project) -> Result<(), RoutineFailure> {
+        // Preflight: surface EADDRINUSE in a single actionable message before
+        // anything starts. Prevents the Node consumption worker from entering
+        // an unbounded restart loop when a prior `moose dev --dockerless` is
+        // still holding ports 4001 / 6379 / 19092.
+        let specs = preflight::port_specs_for(project, self.scripts_enabled, true)
+            .map_err(NativeInfraError::from)
+            .map_err(Self::map_native_err)?;
+        preflight::check_ports(&specs, &preflight::native_dir_for(project))
+            .map_err(NativeInfraError::from)
+            .map_err(Self::map_native_err)?;
+
         // Start embedded devredis (Redis needed early for leadership/presence)
         let devredis_handle = with_timing("Start devredis", || {
             with_spinner_completion(
@@ -142,34 +161,40 @@ impl InfraProvider for NativeInfraProvider {
             )
         })?;
 
-        // Start embedded devkafka
-        let devkafka_handle = with_timing("Start devkafka", || {
-            with_spinner_completion(
-                "Starting native Kafka (devkafka)",
-                "Native Kafka (devkafka) started",
-                || {
-                    let port = devkafka::broker_port(&project.redpanda_config);
-                    let handle = self
-                        .rt_handle
-                        .block_on(devkafka::start_embedded("127.0.0.1", port))
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    Ok::<_, anyhow::Error>(handle)
-                },
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-        })
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Failed".to_string(), "to start devkafka".to_string()),
-                e,
-            )
-        })?;
+        // Start embedded devkafka (only when streaming is enabled)
+        let devkafka_handle = if project.features.streaming_engine {
+            let handle = with_timing("Start devkafka", || {
+                with_spinner_completion(
+                    "Starting native Kafka (devkafka)",
+                    "Native Kafka (devkafka) started",
+                    || {
+                        let port = devkafka::broker_port(&project.redpanda_config);
+                        let handle = self
+                            .rt_handle
+                            .block_on(devkafka::start_embedded("127.0.0.1", port))
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        Ok::<_, anyhow::Error>(handle)
+                    },
+                    !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            })
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Failed".to_string(), "to start devkafka".to_string()),
+                    e,
+                )
+            })?;
+            Some(handle)
+        } else {
+            info!("Skipping devkafka: streaming_engine feature is disabled");
+            None
+        };
 
         // Store embedded handles for later shutdown
         {
             let mut guard = handles_lock().lock().unwrap();
             *guard = Some(EmbeddedHandles {
-                devkafka: Some(devkafka_handle),
+                devkafka: devkafka_handle,
                 devredis: Some(devredis_handle),
             });
         }
@@ -189,9 +214,17 @@ impl InfraProvider for NativeInfraProvider {
                         let _ = child.start_kill();
                         anyhow::anyhow!("ClickHouse process exited immediately after spawn")
                     })?;
-                    if let Err(e) =
-                        write_pid_file(&clickhouse::pid_file_path(project), pid, "clickhouse")
-                    {
+                    // ClickHouse's watchdog sets its own comm via prctl(PR_SET_NAME)
+                    // to `clckhouse-watch` (missing the 'i', trimmed to fit the
+                    // 15-char TASK_COMM_LEN). The PID we capture here is the
+                    // watchdog — not the server child — so store the name that
+                    // `ps -o comm=` will actually report so `process_matches`
+                    // can later verify identity and issue SIGTERM on shutdown.
+                    if let Err(e) = write_pid_file(
+                        &clickhouse::pid_file_path(project),
+                        pid,
+                        clickhouse::WATCHDOG_COMM,
+                    ) {
                         let _ = child.start_kill();
                         return Err(anyhow::anyhow!("{}", e));
                     }
@@ -213,41 +246,45 @@ impl InfraProvider for NativeInfraProvider {
             )
         })?;
 
-        // Start native Temporal
-        let temporal_result = with_timing("Start Temporal", || {
-            with_spinner_completion(
-                "Starting native Temporal dev server",
-                "Native Temporal started",
-                || {
-                    let temporal_binary = temporal::ensure_binary(&self.binary_manager)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let mut child = temporal::start_command(&temporal_binary, project)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    let pid = child.id().ok_or_else(|| {
-                        let _ = child.start_kill();
-                        anyhow::anyhow!("Temporal process exited immediately after spawn")
-                    })?;
-                    if let Err(e) =
-                        write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
-                    {
-                        let _ = child.start_kill();
-                        return Err(anyhow::anyhow!("{}", e));
-                    }
-                    Ok::<(), anyhow::Error>(())
-                },
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-        });
+        // Start native Temporal (only when workflows or scripts are enabled)
+        if self.scripts_enabled || project.features.workflows {
+            let temporal_result = with_timing("Start Temporal", || {
+                with_spinner_completion(
+                    "Starting native Temporal dev server",
+                    "Native Temporal started",
+                    || {
+                        let temporal_binary = temporal::ensure_binary(&self.binary_manager)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        let mut child = temporal::start_command(&temporal_binary, project)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        let pid = child.id().ok_or_else(|| {
+                            let _ = child.start_kill();
+                            anyhow::anyhow!("Temporal process exited immediately after spawn")
+                        })?;
+                        if let Err(e) =
+                            write_pid_file(&temporal::pid_file_path(project), pid, "temporal")
+                        {
+                            let _ = child.start_kill();
+                            return Err(anyhow::anyhow!("{}", e));
+                        }
+                        Ok::<(), anyhow::Error>(())
+                    },
+                    !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            });
 
-        if let Err(e) = temporal_result {
-            // Roll back: kill ClickHouse and devredis since we failed to start Temporal
-            info!("Temporal startup failed, rolling back ClickHouse and devredis");
-            kill_pid_file(&clickhouse::pid_file_path(project));
-            shutdown_embedded_servers();
-            return Err(RoutineFailure::new(
-                Message::new("Failed".to_string(), "to start native Temporal".to_string()),
-                e,
-            ));
+            if let Err(e) = temporal_result {
+                // Roll back: kill ClickHouse and devredis since we failed to start Temporal
+                info!("Temporal startup failed, rolling back ClickHouse and devredis");
+                kill_pid_file(&clickhouse::pid_file_path(project));
+                shutdown_embedded_servers();
+                return Err(RoutineFailure::new(
+                    Message::new("Failed".to_string(), "to start native Temporal".to_string()),
+                    e,
+                ));
+            }
+        } else {
+            info!("Skipping Temporal: workflows feature is disabled");
         }
 
         Ok(())
@@ -275,6 +312,20 @@ impl InfraProvider for NativeInfraProvider {
                     )
                 })?;
 
+                // Wait for the embedded Keeper to finish bootstrapping before
+                // moose creates ReplicatedMergeTree tables.
+                self.rt_handle
+                    .block_on(clickhouse::wait_for_keeper(project))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failed".to_string(),
+                                "embedded Keeper not ready".to_string(),
+                            ),
+                            anyhow::anyhow!("{}", e),
+                        )
+                    })?;
+
                 return Ok(RoutineSuccess::success(Message::new(
                     "Validated".to_string(),
                     "native ClickHouse server".to_string(),
@@ -290,6 +341,14 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn validate_redpanda(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        if !project.features.streaming_engine {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Skipped".to_string(),
+                "native Kafka broker (devkafka) disabled because streaming_engine is off"
+                    .to_string(),
+            )));
+        }
+
         let port = devkafka::broker_port(&project.redpanda_config);
 
         for _ in 0..30 {
@@ -320,6 +379,14 @@ impl InfraProvider for NativeInfraProvider {
     }
 
     fn validate_temporal(&self, project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
+        if !(self.scripts_enabled || project.features.workflows) {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Skipped".to_string(),
+                "native Temporal dev server disabled because workflows and scripts are off"
+                    .to_string(),
+            )));
+        }
+
         let port = project.temporal_config.temporal_port;
 
         for _ in 0..30 {
@@ -442,12 +509,43 @@ pub fn kill_pid_file(pid_path: &Path) {
         }
         Ok(_) => {
             info!("PID {pid} already exited or could not be signaled");
+            let _ = std::fs::remove_file(pid_path);
+            return;
         }
         Err(e) => {
             info!("Failed to run kill command for PID {pid}: {e}");
+            let _ = std::fs::remove_file(pid_path);
+            return;
         }
     }
 
+    // ClickHouse takes several seconds to flush and release its listen sockets;
+    // without waiting here the next `moose dev --dockerless` preflight sees the
+    // ports still bound and aborts with a false "another moose dev is running"
+    // error. Poll `kill -0` until the PID is gone, then escalate to SIGKILL.
+    const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+    let deadline = Instant::now() + WAIT_TIMEOUT;
+    while Instant::now() < deadline {
+        let still_alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !still_alive {
+            info!("PID {pid} exited after SIGTERM");
+            let _ = std::fs::remove_file(pid_path);
+            return;
+        }
+        sleep(POLL_INTERVAL);
+    }
+
+    warn!("PID {pid} did not exit within {WAIT_TIMEOUT:?}; sending SIGKILL");
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", &pid.to_string()])
+        .output();
+    // Brief grace for the kernel to release ports held by the killed process.
+    sleep(Duration::from_millis(200));
     let _ = std::fs::remove_file(pid_path);
 }
 

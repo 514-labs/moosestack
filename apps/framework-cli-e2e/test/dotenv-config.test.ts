@@ -8,7 +8,7 @@
  * These tests follow the same pattern as the main template tests - setup once, test multiple scenarios.
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
@@ -20,14 +20,16 @@ import {
   stopDevProcess,
   waitForServerStart,
   killRemainingProcesses,
-  cleanupDocker,
-  globalDockerCleanup,
   removeTestProject,
   createTempTestDirectory,
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
   logger,
+  getTestPorts,
+  resolveE2eDevMode,
+  resolveSelectedTemplateLanguage,
+  startMooseDev,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -44,237 +46,264 @@ const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 
 const testLogger = logger.scope("dotenv-config-test");
+const E2E_DEV_MODE = resolveE2eDevMode({ logger: testLogger });
+const SELECTED_LANGUAGE = resolveSelectedTemplateLanguage();
 
-describe("typescript template tests - .env file configuration", function () {
-  let devProcess: ChildProcess | null = null;
-  let TEST_PROJECT_DIR: string;
-  const APP_NAME = "ts-dotenv-config-test";
+const PORTS = getTestPorts(20);
 
-  before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+const fetchHealth = async (port: number) => {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const response = await fetch(`http://localhost:${port}/health`);
+      return response;
+    } catch (error) {
+      if (attempt === 29) {
+        throw error;
+      }
+      await setTimeoutAsync(1000);
+    }
+  }
 
-    // Cleanup first
-    await globalDockerCleanup();
-    await cleanupLeftoverTestDirectories();
+  throw new Error(`Timed out waiting for health endpoint on port ${port}`);
+};
 
-    // Create test directory
-    TEST_PROJECT_DIR = createTempTestDirectory("ts-dotenv-config");
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "ts") {
+  describe("typescript template tests - .env file configuration", function () {
+    let devProcess: ChildProcess | null = null;
+    let TEST_PROJECT_DIR: string;
+    const APP_NAME = "ts-dotenv-config-test";
 
-    // Setup TypeScript project
-    await setupTypeScriptProject(
-      TEST_PROJECT_DIR,
-      "typescript-empty",
-      CLI_PATH,
-      MOOSE_LIB_PATH,
-      APP_NAME,
-    );
+    before(async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    // Create .env files to test precedence
-    // Base file with port 9990
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9990\n",
-    );
+      // Cleanup first
+      await killRemainingProcesses({ ports: PORTS });
+      await cleanupLeftoverTestDirectories();
 
-    // Dev file with port 9991 (should override base)
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env.dev"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9991\n",
-    );
+      // Create test directory
+      TEST_PROJECT_DIR = createTempTestDirectory("ts-dotenv-config");
 
-    // Local file with port 9992 (should override both in dev mode)
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env.local"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9992\nMOOSE_LOGGER__LEVEL=debug\n",
-    );
+      // Setup TypeScript project
+      await setupTypeScriptProject(
+        TEST_PROJECT_DIR,
+        "typescript-empty",
+        CLI_PATH,
+        MOOSE_LIB_PATH,
+        APP_NAME,
+      );
 
-    // Start dev server
-    testLogger.info("Starting dev server for .env configuration tests...");
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
-      cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-      },
+      // Create .env files to test precedence
+      // Base file with port 9990
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9990\n",
+      );
+
+      // Dev file with port 9991 (should override base)
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env.dev"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9991\n",
+      );
+
+      // Local file with port 9992 (should override both in dev mode)
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env.local"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9992\nMOOSE_LOGGER__LEVEL=debug\n",
+      );
+
+      // Start dev server
+      testLogger.info("Starting dev server for .env configuration tests...");
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
+        cwd: TEST_PROJECT_DIR,
+        projectDir: TEST_PROJECT_DIR,
+        mode: E2E_DEV_MODE,
+        ports: PORTS,
+        preserveHttpPortsFromEnv: true,
+        extraEnv: {
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
+
+      // Wait for server to start
+      // If .env files work correctly, it should start on port 9992 (from .env.local)
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        "Your local development server is running",
+        "http://localhost:9992",
+      );
+
+      testLogger.info("Server started successfully!");
+      // Brief wait to ensure server is fully ready
+      await setTimeoutAsync(5000);
     });
 
-    // Wait for server to start
-    // If .env files work correctly, it should start on port 9992 (from .env.local)
-    await waitForServerStart(
-      devProcess,
-      TIMEOUTS.SERVER_STARTUP_MS,
-      "Your local development server is running",
-      "http://localhost:9992",
-    );
+    after(async function () {
+      this.timeout(TIMEOUTS.CLEANUP_MS);
 
-    testLogger.info("Server started successfully!");
-    // Brief wait to ensure server is fully ready
-    await setTimeoutAsync(5000);
-  });
+      // Stop dev process
+      if (devProcess) {
+        await stopDevProcess(devProcess, { ports: PORTS });
+        devProcess = null;
+      }
 
-  after(async function () {
-    this.timeout(TIMEOUTS.CLEANUP_MS);
-
-    // Stop dev process
-    if (devProcess) {
-      await stopDevProcess(devProcess);
-      devProcess = null;
-    }
-
-    // Cleanup
-    await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "ts-dotenv-config");
-    removeTestProject(TEST_PROJECT_DIR);
-    await cleanupLeftoverTestDirectories();
-  });
-
-  it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
-    // Verify server is running on port 9992 (from .env.local)
-    // Note: Health endpoint may return 503 if some services are unhealthy,
-    // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9992/health");
-    expect(response.status).to.be.oneOf([200, 503]);
-
-    const health = await response.json();
-    expect(health).to.have.property("healthy");
-    expect(health).to.have.property("unhealthy");
-
-    testLogger.info(
-      "✓ Server is running on port 9992 from .env.local (correct precedence)",
-    );
-  });
-
-  it("should have .env.local values accessible via environment", async () => {
-    // The .env files are loaded, we can verify the server responds correctly
-    // Note: Health endpoint may return 503 if some services are unhealthy,
-    // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9992/health");
-    expect(response.status).to.be.oneOf([200, 503]);
-
-    const health = await response.json();
-    expect(health).to.have.property("healthy");
-    expect(health).to.have.property("unhealthy");
-
-    testLogger.info("✓ .env.local configuration is active");
-  });
-});
-
-describe("python template tests - .env file configuration", function () {
-  let devProcess: ChildProcess | null = null;
-  let TEST_PROJECT_DIR: string;
-  const APP_NAME = "py-dotenv-config-test";
-
-  before(async function () {
-    this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-    // Cleanup first
-    await globalDockerCleanup();
-    await cleanupLeftoverTestDirectories();
-
-    // Create test directory
-    TEST_PROJECT_DIR = createTempTestDirectory("py-dotenv-config");
-
-    // Setup Python project
-    await setupPythonProject(
-      TEST_PROJECT_DIR,
-      "python-empty",
-      CLI_PATH,
-      MOOSE_PY_LIB_PATH,
-      APP_NAME,
-    );
-
-    // Create .env files to test precedence
-    // Base file with port 9980
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9980\n",
-    );
-
-    // Dev file with port 9981 (should override base)
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env.dev"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9981\n",
-    );
-
-    // Local file with port 9982 (should override both in dev mode)
-    fs.writeFileSync(
-      path.join(TEST_PROJECT_DIR, ".env.local"),
-      "MOOSE_HTTP_SERVER_CONFIG__PORT=9982\nMOOSE_LOGGER__LEVEL=debug\n",
-    );
-
-    // Start dev server
-    testLogger.info(
-      "Starting dev server for Python .env configuration tests...",
-    );
-    devProcess = spawn(CLI_PATH, ["dev"], {
-      stdio: "pipe",
-      cwd: TEST_PROJECT_DIR,
-      env: {
-        ...process.env,
-        VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-        PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
-      },
+      // Cleanup
+      await killRemainingProcesses({ ports: PORTS });
+      removeTestProject(TEST_PROJECT_DIR);
+      await cleanupLeftoverTestDirectories();
     });
 
-    // Wait for server to start
-    // If .env files work correctly, it should start on port 9982 (from .env.local)
-    await waitForServerStart(
-      devProcess,
-      TIMEOUTS.SERVER_STARTUP_MS,
-      "Your local development server is running",
-      "http://localhost:9982",
-    );
+    it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
+      // Verify server is running on port 9992 (from .env.local)
+      // Note: Health endpoint may return 503 if some services are unhealthy,
+      // but a response means the server is running on the correct port
+      const response = await fetchHealth(9992);
+      expect(response.status).to.be.oneOf([200, 503]);
 
-    testLogger.info("Python server started successfully!");
-    // Brief wait to ensure server is fully ready
-    await setTimeoutAsync(5000);
+      const health = await response.json();
+      expect(health).to.have.property("healthy");
+      expect(health).to.have.property("unhealthy");
+
+      testLogger.info(
+        "✓ Server is running on port 9992 from .env.local (correct precedence)",
+      );
+    });
+
+    it("should have .env.local values accessible via environment", async () => {
+      // The .env files are loaded, we can verify the server responds correctly
+      // Note: Health endpoint may return 503 if some services are unhealthy,
+      // but getting a valid JSON response proves the server is configured correctly
+      const response = await fetchHealth(9992);
+      expect(response.status).to.be.oneOf([200, 503]);
+
+      const health = await response.json();
+      expect(health).to.have.property("healthy");
+      expect(health).to.have.property("unhealthy");
+
+      testLogger.info("✓ .env.local configuration is active");
+    });
   });
+}
 
-  after(async function () {
-    this.timeout(TIMEOUTS.CLEANUP_MS);
+if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "py") {
+  describe("python template tests - .env file configuration", function () {
+    let devProcess: ChildProcess | null = null;
+    let TEST_PROJECT_DIR: string;
+    const APP_NAME = "py-dotenv-config-test";
 
-    // Stop dev process
-    if (devProcess) {
-      await stopDevProcess(devProcess);
-      devProcess = null;
-    }
+    before(async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    // Cleanup
-    await killRemainingProcesses();
-    await cleanupDocker(TEST_PROJECT_DIR, "py-dotenv-config");
-    removeTestProject(TEST_PROJECT_DIR);
-    await cleanupLeftoverTestDirectories();
+      // Cleanup first
+      await killRemainingProcesses({ ports: PORTS });
+      await cleanupLeftoverTestDirectories();
+
+      // Create test directory
+      TEST_PROJECT_DIR = createTempTestDirectory("py-dotenv-config");
+
+      // Setup Python project
+      await setupPythonProject(
+        TEST_PROJECT_DIR,
+        "python-empty",
+        CLI_PATH,
+        MOOSE_PY_LIB_PATH,
+        APP_NAME,
+      );
+
+      // Create .env files to test precedence
+      // Base file with port 9980
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9980\n",
+      );
+
+      // Dev file with port 9981 (should override base)
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env.dev"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9981\n",
+      );
+
+      // Local file with port 9982 (should override both in dev mode)
+      fs.writeFileSync(
+        path.join(TEST_PROJECT_DIR, ".env.local"),
+        "MOOSE_HTTP_SERVER_CONFIG__PORT=9982\nMOOSE_LOGGER__LEVEL=debug\n",
+      );
+
+      // Start dev server
+      testLogger.info(
+        "Starting dev server for Python .env configuration tests...",
+      );
+      devProcess = startMooseDev({
+        cliPath: CLI_PATH,
+        cwd: TEST_PROJECT_DIR,
+        projectDir: TEST_PROJECT_DIR,
+        language: "python",
+        mode: E2E_DEV_MODE,
+        ports: PORTS,
+        preserveHttpPortsFromEnv: true,
+        extraEnv: {
+          MOOSE_FEATURES__STREAMING_ENGINE: "false",
+        },
+      }).devProcess;
+
+      // Wait for server to start
+      // If .env files work correctly, it should start on port 9982 (from .env.local)
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        "Your local development server is running",
+        "http://localhost:9982",
+      );
+
+      testLogger.info("Python server started successfully!");
+      // Brief wait to ensure server is fully ready
+      await setTimeoutAsync(5000);
+    });
+
+    after(async function () {
+      this.timeout(TIMEOUTS.CLEANUP_MS);
+
+      // Stop dev process
+      if (devProcess) {
+        await stopDevProcess(devProcess, { ports: PORTS });
+        devProcess = null;
+      }
+
+      // Cleanup
+      await killRemainingProcesses({ ports: PORTS });
+      removeTestProject(TEST_PROJECT_DIR);
+      await cleanupLeftoverTestDirectories();
+    });
+
+    it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
+      // Verify server is running on port 9982 (from .env.local)
+      // Note: Health endpoint may return 503 if some services are unhealthy,
+      // but a response means the server is running on the correct port
+      const response = await fetchHealth(9982);
+      expect(response.status).to.be.oneOf([200, 503]);
+
+      const health = await response.json();
+      expect(health).to.have.property("healthy");
+      expect(health).to.have.property("unhealthy");
+
+      testLogger.info(
+        "✓ Python server is running on port 9982 from .env.local (correct precedence)",
+      );
+    });
+
+    it("should have .env.local values accessible via environment", async () => {
+      // The .env files are loaded, we can verify the server responds correctly
+      // Note: Health endpoint may return 503 if some services are unhealthy,
+      // but getting a valid JSON response proves the server is configured correctly
+      const response = await fetchHealth(9982);
+      expect(response.status).to.be.oneOf([200, 503]);
+
+      const health = await response.json();
+      expect(health).to.have.property("healthy");
+      expect(health).to.have.property("unhealthy");
+
+      testLogger.info("✓ Python .env.local configuration is active");
+    });
   });
-
-  it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
-    // Verify server is running on port 9982 (from .env.local)
-    // Note: Health endpoint may return 503 if some services are unhealthy,
-    // but a response means the server is running on the correct port
-    const response = await fetch("http://localhost:9982/health");
-    expect(response.status).to.be.oneOf([200, 503]);
-
-    const health = await response.json();
-    expect(health).to.have.property("healthy");
-    expect(health).to.have.property("unhealthy");
-
-    testLogger.info(
-      "✓ Python server is running on port 9982 from .env.local (correct precedence)",
-    );
-  });
-
-  it("should have .env.local values accessible via environment", async () => {
-    // The .env files are loaded, we can verify the server responds correctly
-    // Note: Health endpoint may return 503 if some services are unhealthy,
-    // but getting a valid JSON response proves the server is configured correctly
-    const response = await fetch("http://localhost:9982/health");
-    expect(response.status).to.be.oneOf([200, 503]);
-
-    const health = await response.json();
-    expect(health).to.have.property("healthy");
-    expect(health).to.have.property("unhealthy");
-
-    testLogger.info("✓ Python .env.local configuration is active");
-  });
-});
+}

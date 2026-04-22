@@ -10,6 +10,7 @@ use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
     project::Project,
 };
+use tracing::{error, info};
 
 pub mod clickhouse;
 pub mod clickhouse_http_client;
@@ -108,6 +109,18 @@ pub trait OlapOperations {
         db_name: &str,
     ) -> Result<Vec<SelectRowPolicy>, OlapChangesError>;
 
+    /// Retrieves the names of all dictionaries present in the given database.
+    ///
+    /// Used for reality checking — presence/absence only; full schema diffing is
+    /// handled by comparing `SHOW CREATE DICTIONARY` output via `normalize_sql`.
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list dictionaries from
+    ///
+    /// # Returns
+    /// * `Result<Vec<String>, OlapChangesError>` - Dictionary names found in the database
+    async fn list_dictionaries(&self, db_name: &str) -> Result<Vec<String>, OlapChangesError>;
+
     /// Normalizes SQL using the database's native formatting.
     ///
     /// This is used to compare SQL statements for semantic equivalence,
@@ -148,27 +161,110 @@ pub trait OlapOperations {
 /// pipeline should have already blocked protected operations, but this guard
 /// ensures that even if a bug allows a violation through, it will be caught here
 /// before any changes reach the database.
+/// Execute OLAP changes, with optional version-bump phasing.
+///
+/// When `version_bump_decisions` is empty this is a straightforward
+/// teardown-then-setup execution. When bumps are present the ordering becomes:
+///
+/// 1. Bump creates (InPlace only)
+/// 2. Bump backfills (old table still alive, new table populated)
+/// 3. Teardown (all drops — non-bump + old bump tables that chose `Drop`)
+/// 4. Setup (all creates — MVs/views see fully-populated bump tables)
 pub async fn execute_changes(
     project: &Project,
     changes: &[OlapChange],
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
 ) -> Result<(), OlapChangesError> {
-    // LIFECYCLE GUARD: Final safety check before execution
-    // This catches any lifecycle violations that may have slipped through the
-    // diff/filter pipeline. A violation here indicates a bug that should be fixed.
-    let violations = lifecycle_filter::validate_lifecycle_compliance(
-        changes,
-        &project.clickhouse_config.db_name,
-    );
-    if !violations.is_empty() {
-        return Err(OlapChangesError::LifecycleViolation(violations));
+    use crate::framework::core::infrastructure_map::TableChange;
+
+    let db_name = &project.clickhouse_config.db_name;
+
+    if !version_bump_decisions.is_empty() {
+        info!(
+            bump_count = version_bump_decisions.len(),
+            total_changes = changes.len(),
+            "Executing OLAP changes with version bumps"
+        );
+    }
+
+    let (remaining_changes, has_bumps) = if version_bump_decisions.is_empty() {
+        (std::borrow::Cow::Borrowed(changes), false)
+    } else {
+        let (_bumps, mut remaining) = version_bump::extract_version_bumps(changes);
+        remaining.extend(version_bump::bump_drop_changes(version_bump_decisions));
+
+        // Strip NewAlongside Added tables — they're created in Phase 1 now
+        // so the backfill target table exists before Phase 2 runs.
+        let alongside = version_bump::alongside_new_table_names(version_bump_decisions);
+        if !alongside.is_empty() {
+            remaining.retain(|c| match c {
+                OlapChange::Table(TableChange::Added(t)) => !alongside.contains(&t.name),
+                _ => true,
+            });
+        }
+
+        (std::borrow::Cow::Owned(remaining), true)
     };
 
-    // Order changes based on dependencies, including database context for SQL resources
-    let (teardown_plan, setup_plan) =
-        ddl_ordering::order_olap_changes(changes, &project.clickhouse_config.db_name)?;
+    let violations = lifecycle_filter::validate_lifecycle_compliance(&remaining_changes, db_name);
+    if !violations.is_empty() {
+        return Err(OlapChangesError::LifecycleViolation(violations));
+    }
 
-    // Execute the ordered changes
-    clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
+    let (teardown_plan, setup_plan) =
+        ddl_ordering::order_olap_changes(&remaining_changes, db_name)?;
+
+    if !has_bumps {
+        clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
+        return Ok(());
+    }
+
+    // Phase 1: Bump creates (all kinds — table must exist before backfill)
+    for decision in version_bump_decisions {
+        info!(table = %decision.bump.new_table.name, "Phase 1: Creating new versioned table");
+        let create = [OlapChange::Table(TableChange::Added(
+            decision.bump.new_table.clone(),
+        ))];
+        let (_, create_plan) = ddl_ordering::order_olap_changes(&create, db_name)?;
+        clickhouse::execute_changes(project, &[], &create_plan).await?;
+    }
+
+    // Phase 2: Backfills (old table still alive, new table populated)
+    for decision in version_bump_decisions {
+        if let Some(sql) = &decision.backfill_sql {
+            info!(
+                old = %decision.bump.old_table.name,
+                new = %decision.bump.new_table.name,
+                "Phase 2: Running backfill query"
+            );
+            let client = clickhouse::create_client(project.clickhouse_config.clone());
+            clickhouse::run_query(sql, &client).await.map_err(|e| {
+                error!(
+                    old = %decision.bump.old_table.name,
+                    new = %decision.bump.new_table.name,
+                    "Phase 2: Backfill query failed"
+                );
+                OlapChangesError::ClickhouseChanges(ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!(
+                        "backfill {} → {}",
+                        decision.bump.old_table.name, decision.bump.new_table.name
+                    )),
+                })
+            })?;
+        }
+    }
+
+    // Phase 3: Teardown (all drops including old bump tables)
+    if !teardown_plan.is_empty() {
+        clickhouse::execute_changes(project, &teardown_plan, &[]).await?;
+    }
+
+    // Phase 4: Setup (all creates — MVs/views see fully-populated bump tables)
+    if !setup_plan.is_empty() {
+        clickhouse::execute_changes(project, &[], &setup_plan).await?;
+    }
+
     Ok(())
 }
 
@@ -211,7 +307,7 @@ pub async fn execute_changes_with_version_bumps(
             let create = vec![OlapChange::Table(TableChange::Added(
                 decision.bump.new_table.clone(),
             ))];
-            execute_changes(project, &create).await?;
+            execute_changes(project, &create, &[]).await?;
         }
     }
 
@@ -242,7 +338,7 @@ pub async fn execute_changes_with_version_bumps(
             let drop = vec![OlapChange::Table(TableChange::Removed(
                 decision.bump.old_table.clone(),
             ))];
-            execute_changes(project, &drop).await?;
+            execute_changes(project, &drop, &[]).await?;
         }
     }
 

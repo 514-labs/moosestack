@@ -47,6 +47,7 @@ pub struct ReconciliationFilter {
     pub materialized_view_ids: HashSet<String>,
     pub view_ids: HashSet<String>,
     pub select_row_policy_ids: HashSet<String>,
+    pub dictionary_ids: HashSet<String>,
 }
 
 impl ReconciliationFilter {
@@ -62,6 +63,7 @@ impl ReconciliationFilter {
             materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
             view_ids: infra_map.views.keys().cloned().collect(),
             select_row_policy_ids: infra_map.select_row_policies.keys().cloned().collect(),
+            dictionary_ids: infra_map.olap_dictionaries.keys().cloned().collect(),
         }
     }
 
@@ -75,6 +77,8 @@ impl ReconciliationFilter {
         self.view_ids.extend(other.view_ids.iter().cloned());
         self.select_row_policy_ids
             .extend(other.select_row_policy_ids.iter().cloned());
+        self.dictionary_ids
+            .extend(other.dictionary_ids.iter().cloned());
     }
 
     /// Re-prefix table IDs from `source_db` to `target_db`.
@@ -601,6 +605,32 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
 
+    // Handle Dictionary reconciliation (presence/absence only)
+    debug!("Reconciling Dictionaries");
+
+    // Remove missing dictionaries (in map but don't exist in reality).
+    // missing_dictionaries contains dictionary IDs ({db}_{name}), which are the map keys.
+    for missing_dict_id in discrepancies.missing_dictionaries {
+        debug!(
+            "Removing missing dictionary from infrastructure map: {}",
+            missing_dict_id
+        );
+        reconciled_map.olap_dictionaries.remove(&missing_dict_id);
+    }
+
+    // Unmapped dictionaries (exist in database but not in the current infrastructure map) are
+    // skipped: list_dictionaries() returns names only, so we cannot reconstruct a full
+    // OlapDictionary to adopt. The diff against the target map will produce an Added change
+    // which will re-create the dictionary on the next apply.
+    if !discrepancies.unmapped_dictionaries.is_empty() {
+        debug!(
+            "Skipping {} unmapped dictionaries — cannot adopt without full schema",
+            discrepancies.unmapped_dictionaries.len()
+        );
+    }
+
+    // Dictionaries have no mismatched entries (presence/absence only).
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -618,25 +648,11 @@ pub struct InfraPlan {
     pub changes: InfraChanges,
 }
 
-/// Converts infrastructure changes to ordered executable operations.
+/// Converts infrastructure changes to ordered executable operations (no version bumps).
 ///
-/// Used by both display and execution to guarantee consistency. Converts high-level
-/// infrastructure changes into a sequence of atomic OLAP operations.
-///
-/// The operations are ordered in three phases:
+/// Operations are ordered in two phases:
 /// 1. Teardown operations (drops, removals) executed first
 /// 2. Setup operations (creates, adds) executed second
-/// 3. Version-bump operations (create new → backfill → drop old) executed last
-///
-/// Version bumps are extracted before the normal ordering pass so that the old
-/// table is still available for backfill.
-///
-/// # Arguments
-/// * `changes` - The infrastructure changes to convert
-/// * `default_database` - The default database name for table operations
-///
-/// # Returns
-/// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
@@ -652,11 +668,10 @@ pub fn infra_changes_to_operations(
 /// operations derived from `version_bump_decisions`.
 ///
 /// Ordering:
-/// 1. Teardown ops from non-bump changes
-/// 2. Bump creates (new tables) — before setup so dependent MVs/views can reference them
-/// 3. Setup ops from non-bump changes
-/// 4. Bump backfills (old table must still exist)
-/// 5. Bump drops (old tables removed last)
+/// 1. Bump creates (new versioned tables)
+/// 2. Bump backfills (old table still alive, new table populated)
+/// 3. Teardown (all drops — non-bump + old bump tables that chose `Drop`)
+/// 4. Setup (all creates — MVs/views see fully-populated bump tables)
 pub fn infra_changes_to_operations_with_version_bumps(
     changes: &InfraChanges,
     default_database: &str,
@@ -667,28 +682,37 @@ pub fn infra_changes_to_operations_with_version_bumps(
 > {
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    let (_bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (_bumps, mut remaining_changes) =
+        version_bump::extract_version_bumps(&changes.olap_changes);
+    remaining_changes.extend(version_bump::bump_drop_changes(version_bump_decisions));
+
+    let alongside = version_bump::alongside_new_table_names(version_bump_decisions);
+    if !alongside.is_empty() {
+        remaining_changes.retain(|c| match c {
+            OlapChange::Table(TableChange::Added(t)) => !alongside.contains(&t.name),
+            _ => true,
+        });
+    }
+
     let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
 
-    let (bump_creates, bump_backfills, bump_drops) =
+    let (bump_creates, bump_backfills) =
         version_bump::version_bump_decisions_to_phased_operations(version_bump_decisions);
 
     let mut operations = Vec::new();
 
-    // Phase 1: Teardown (drops/removals from non-bump changes)
+    // Phase 1: Bump creates
+    operations.extend(bump_creates);
+    // Phase 2: Bump backfills (old table still alive, new table populated)
+    operations.extend(bump_backfills);
+    // Phase 3: Teardown (all drops including old bump tables)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
-    // Phase 2: Bump creates (new tables exist before setup ops that may reference them)
-    operations.extend(bump_creates);
-    // Phase 3: Setup (creates/adds from non-bump changes, may reference bump tables)
+    // Phase 4: Setup (all creates — MVs/views see fully-populated bump tables)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
-    // Phase 4: Backfills (old table still alive)
-    operations.extend(bump_backfills);
-    // Phase 5: Bump drops
-    operations.extend(bump_drops);
 
     Ok(operations)
 }
@@ -935,6 +959,7 @@ mod tests {
     struct MockOlapClient {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
+        dictionaries: Vec<String>,
     }
 
     #[async_trait]
@@ -963,6 +988,10 @@ mod tests {
             OlapChangesError,
         > {
             Ok(vec![])
+        }
+
+        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
+            Ok(self.dictionaries.clone())
         }
     }
 
@@ -1059,6 +1088,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create empty infrastructure map (no tables)
@@ -1086,6 +1116,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
@@ -1097,6 +1128,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1113,6 +1145,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Test 2: Non-empty filter = only include if in set
@@ -1124,6 +1157,7 @@ mod tests {
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
+                dictionaries: vec![],
             },
         )
         .await
@@ -1142,6 +1176,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with one table
@@ -1170,6 +1205,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1178,6 +1214,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         // Reconcile the infrastructure map
@@ -1223,6 +1260,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -1254,6 +1292,7 @@ mod tests {
                 ..actual_table.clone()
             }],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1262,6 +1301,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1288,6 +1328,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the same table
@@ -1315,6 +1356,7 @@ mod tests {
         let reconcile_mock_client = MockOlapClient {
             tables: vec![table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let filter = ReconciliationFilter {
@@ -1323,6 +1365,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         // Reconcile the infrastructure map
         let reconciled =
@@ -1379,6 +1422,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1387,6 +1431,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1441,6 +1486,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1449,6 +1495,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
@@ -1538,6 +1585,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![table_from_reality],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1556,6 +1604,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1602,6 +1651,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![reality_table.clone()],
             sql_resources: vec![],
+            dictionaries: vec![],
         };
 
         // Create infrastructure map with the infra table
@@ -1620,6 +1670,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1662,6 +1713,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![sql_resource.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1674,6 +1726,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
             .await
@@ -1713,6 +1766,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![view_a.clone(), view_b.clone()],
+            dictionaries: vec![],
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1727,6 +1781,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1770,6 +1825,7 @@ mod tests {
         let mock_client = MockOlapClient {
             tables: vec![],
             sql_resources: vec![reality_view.clone()],
+            dictionaries: vec![],
         };
 
         // Create infra map with the existing view
@@ -1787,6 +1843,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
 
         let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
@@ -1883,6 +1940,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("local", "myapp_prod");
         assert_eq!(
@@ -1903,6 +1961,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("db", "db");
         assert_eq!(filter.table_ids, original);
@@ -1917,6 +1976,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("", "prod");
         assert_eq!(filter.table_ids, original);
@@ -1939,6 +1999,7 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("prod", "staging");
         assert!(
@@ -1963,9 +2024,127 @@ mod tests {
             materialized_view_ids: HashSet::new(),
             view_ids: HashSet::new(),
             select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
         };
         filter.reprefix_table_ids("local", "prod");
         assert!(filter.table_ids.contains("prod_users_0_0"));
         assert!(filter.table_ids.contains("other_db_orders_0_0"));
+    }
+
+    #[test]
+    fn test_infra_changes_to_operations_with_version_bumps_ordering() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+        use crate::framework::core::version_bump::{
+            OldTableDisposition, VersionBump, VersionBumpDecision, VersionBumpKind,
+        };
+        use crate::framework::versions::Version;
+
+        // Create a version bump pair: Events_1_0 removed + Events_2_0 added
+        let mut old_events = create_test_table("Events_1_0");
+        old_events.version = Some(Version::from_string("1.0".to_string()));
+        old_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        let mut new_events = create_test_table("Events_2_0");
+        new_events.version = Some(Version::from_string("2.0".to_string()));
+        new_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        // Unrelated table add
+        let users_table = create_test_table("Users_1_0");
+
+        let changes = InfraChanges {
+            olap_changes: vec![
+                OlapChange::Table(TableChange::Removed(old_events.clone())),
+                OlapChange::Table(TableChange::Added(new_events.clone())),
+                OlapChange::Table(TableChange::Added(users_table.clone())),
+            ],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            workflow_changes: vec![],
+            filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
+        };
+
+        let decisions = vec![VersionBumpDecision {
+            bump: VersionBump {
+                old_table: old_events.clone(),
+                new_table: new_events.clone(),
+                kind: VersionBumpKind::InPlace,
+            },
+            backfill_sql: Some(
+                "INSERT INTO `local`.`Events_2_0` (`id`) SELECT `id` FROM `local`.`Events_1_0`"
+                    .to_string(),
+            ),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let ops = infra_changes_to_operations_with_version_bumps(
+            &changes,
+            DEFAULT_DATABASE_NAME,
+            &decisions,
+        )
+        .unwrap();
+
+        // Verify ordering invariant:
+        // 1. Bump creates (Events_2_0)
+        // 2. Bump backfills (RawSql)
+        // 3. Teardown (DropTable Events_1_0)
+        // 4. Setup (CreateTable Users_1_0)
+        assert!(!ops.is_empty());
+
+        // Find positions of key operations
+        let create_events_2_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Events_2_0"
+        ));
+        let backfill_pos = ops.iter().position(|op| {
+            matches!(
+                op,
+                crate::infrastructure::olap::clickhouse::SerializableOlapOperation::RawSql { .. }
+            )
+        });
+        let drop_events_1_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::DropTable { table, .. } if table == "Events_1_0"
+        ));
+        let create_users_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Users_1_0"
+        ));
+
+        // All operations should be present
+        assert!(
+            create_events_2_pos.is_some(),
+            "Events_2_0 create should exist"
+        );
+        assert!(backfill_pos.is_some(), "Backfill should exist");
+        assert!(drop_events_1_pos.is_some(), "Events_1_0 drop should exist");
+        assert!(create_users_pos.is_some(), "Users_1_0 create should exist");
+
+        let ce2 = create_events_2_pos.unwrap();
+        let bf = backfill_pos.unwrap();
+        let de1 = drop_events_1_pos.unwrap();
+        let cu = create_users_pos.unwrap();
+
+        // Bump create before backfill
+        assert!(
+            ce2 < bf,
+            "Events_2_0 create ({ce2}) must come before backfill ({bf})"
+        );
+        // Backfill before teardown (old table still alive during backfill)
+        assert!(
+            bf < de1,
+            "Backfill ({bf}) must come before Events_1_0 drop ({de1})"
+        );
+        // Teardown before setup
+        assert!(
+            de1 < cu,
+            "Events_1_0 drop ({de1}) must come before Users_1_0 create ({cu})"
+        );
     }
 }

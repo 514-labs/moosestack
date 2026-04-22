@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use kafka_protocol::messages::TopicName;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 
 use crate::error::BrokerError;
 
@@ -19,18 +18,39 @@ pub struct PartitionState {
     pub partition_id: i32,
     pub records: Vec<StoredRecordBatch>,
     pub next_offset: i64,
-    pub notify: Arc<Notify>,
+    /// Watch channel for notifying consumers of new data.
+    ///
+    /// The sender is stored here; consumers subscribe via `data_version()`.
+    /// Using `watch` instead of `Notify` ensures:
+    /// - All consumers are woken (not just one, unlike `notify_one`)
+    /// - Notifications between fetch and wait registration are not lost
+    ///   (unlike `notify_waiters` which drops notifications with no waiters)
+    pub version_tx: watch::Sender<u64>,
+    version_rx: watch::Receiver<u64>,
 }
 
 impl PartitionState {
     /// Create an empty partition with no records.
     pub fn new(partition_id: i32) -> Self {
+        let (version_tx, version_rx) = watch::channel(0u64);
         Self {
             partition_id,
             records: Vec::new(),
             next_offset: 0,
-            notify: Arc::new(Notify::new()),
+            version_tx,
+            version_rx,
         }
+    }
+
+    /// Subscribe to data-arrival notifications for this partition.
+    ///
+    /// The returned receiver will see a value change each time new data is
+    /// appended.  Calling `changed().await` on it will return immediately if
+    /// data arrived since the receiver was created (or since the last
+    /// `changed()` call), solving both the multi-consumer problem and the
+    /// race between fetch and wait registration.
+    pub fn data_version(&self) -> watch::Receiver<u64> {
+        self.version_rx.clone()
     }
 
     /// Append a raw record batch, assigning the next sequential base offset.
@@ -52,7 +72,8 @@ impl PartitionState {
             raw_batch: patched,
         });
         self.next_offset += record_count as i64;
-        self.notify.notify_waiters();
+        // Bump the version to notify all subscribed consumers.
+        let _ = self.version_tx.send(self.next_offset as u64);
         Ok(base_offset)
     }
 

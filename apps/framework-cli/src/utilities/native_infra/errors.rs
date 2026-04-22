@@ -28,8 +28,40 @@ pub enum NativeInfraError {
         source: std::io::Error,
     },
 
+    #[error("failed to read file {path}")]
+    ReadFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write file {path}")]
+    WriteFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove path {path}")]
+    RemovePath {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("binary not found at expected path {path}")]
     BinaryNotFound { path: PathBuf },
+
+    #[error(
+        "checksum verification failed for {name} v{version} from {url}: expected {expected_sha256}, got {actual_sha256}"
+    )]
+    ChecksumMismatch {
+        name: String,
+        version: String,
+        url: String,
+        expected_sha256: String,
+        actual_sha256: String,
+    },
 
     #[error("failed to set executable permissions on {path}")]
     Chmod {
@@ -68,4 +100,10 @@ pub enum NativeInfraError {
 
     #[error("health check failed for {service}: {reason}")]
     HealthCheck { service: String, reason: String },
+
+    #[error("{0}")]
+    PortConflict(#[from] super::preflight::PortConflictError),
+
+    #[error(transparent)]
+    InvalidPort(#[from] super::preflight::InvalidPortError),
 }
