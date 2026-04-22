@@ -521,10 +521,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
   {
-    type: "section",
+    type: "page",
+    slug: "moosestack/migrate",
     title: "Moose Migrate",
     icon: IconGitMerge,
-    items: [
+    languages: ["typescript", "python"],
+    children: [
       { type: "label", title: "Delta migrations (beta)" },
       {
         type: "page",
