@@ -191,8 +191,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   { type: "label", title: "Fundamentals" },
   {
     type: "page",
-    slug: "moosestack/server",
-    title: "Moose Server",
+    slug: "moosestack/runtime",
+    title: "Moose Runtime",
     icon: IconRoute,
     languages: ["typescript", "python"],
   },
@@ -447,6 +447,18 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/apis/semantic-layer",
+        title: "Semantic Layer",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/trigger-api",
+        title: "Workflow Trigger",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/apis/admin-api",
         title: "Admin APIs",
         languages: ["typescript", "python"],
@@ -521,12 +533,10 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
   {
-    type: "page",
-    slug: "moosestack/migrate",
+    type: "section",
     title: "Moose Migrate",
     icon: IconGitMerge,
-    languages: ["typescript", "python"],
-    children: [
+    items: [
       { type: "label", title: "Delta migrations (beta)" },
       {
         type: "page",
