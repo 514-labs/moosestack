@@ -182,9 +182,22 @@ pub enum Commands {
     },
     /// View Moose processes
     Ps {},
-    /// View Moose primitives & infrastructure
+    /// List the project's Moose resources with queryable names and hittable URLs.
+    ///
+    /// Renders a table per resource type:
+    ///   - tables: database-qualified name + schema fields (pastable into `moose query`)
+    ///   - streams: topic id, schema fields, destination table
+    ///   - ingestion_apis: name, HTTP method, full URL, destination topic
+    ///   - consumption_apis: name, HTTP method, full URL, query params
+    ///   - sql_resources, dictionaries, workflows, stream_transformations, web_apps
+    ///
+    /// URLs are built from the dev server's host/port in `moose.config.toml`;
+    /// table names are the SQL-queryable form (database.name or bare name).
     Ls {
         /// Filter by infrastructure type
+        /// (one of: tables, streams, ingestion, consumption, sql_resource,
+        /// stream_transformations, workflows, web_apps, dictionaries). Omit
+        /// to list every type.
         #[arg(long)]
         _type: Option<String>,
 
