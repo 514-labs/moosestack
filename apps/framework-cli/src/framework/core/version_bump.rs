@@ -1184,18 +1184,15 @@ mod tests {
                 DestructiveChange::TableDrop {
                     database: None,
                     table_name_with_suffix: "Events_1_0".to_string(),
-                    version: Some(crate::framework::versions::Version::from_string(
-                        "1.0".to_string(),
-                    )),
+                    version: Some(Version::from_string("1.0".to_string())),
                 },
                 DestructiveChange::TableDrop {
                     database: None,
                     table_name_with_suffix: "Users_1_0".to_string(),
-                    version: Some(crate::framework::versions::Version::from_string(
-                        "1.0".to_string(),
-                    )),
+                    version: Some(Version::from_string("1.0".to_string())),
                 },
             ],
+            operational_risks: vec![],
         };
 
         exclude_bump_drops_from_risk(&decisions, &mut risk);
@@ -1226,10 +1223,9 @@ mod tests {
                 database: None,
                 table_name_with_suffix: "Events_1_0".to_string(),
                 reason: "schema change".to_string(),
-                version: Some(crate::framework::versions::Version::from_string(
-                    "1.0".to_string(),
-                )),
+                version: Some(Version::from_string("1.0".to_string())),
             }],
+            operational_risks: vec![],
         };
 
         exclude_bump_drops_from_risk(&decisions, &mut risk);
