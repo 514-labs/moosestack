@@ -320,9 +320,12 @@ impl WebAppInfo {
         } else {
             format!("/{}", value.mount_path)
         };
+        // Trim any trailing slash from `base_url` so we never emit a
+        // doubled slash when `LocalWebserverConfig::url()` already includes
+        // a path prefix — same normalization as `endpoint_url` above.
         Self {
             name: value.name,
-            url: format!("{}{}", base_url, mount),
+            url: format!("{}{}", base_url.trim_end_matches('/'), mount),
             mount_path: value.mount_path,
         }
     }
@@ -435,7 +438,6 @@ pub async fn ls(
         tables: infra_map
             .tables
             .into_values()
-            .filter(|api| name.is_none_or(|name| api.name.contains(name)))
             .map(|t| TableInfo {
                 // Use the display name (bare `name` for the default database,
                 // `database.name` otherwise) so the output is directly
@@ -446,6 +448,9 @@ pub async fn ls(
                 name: t.display_name(),
                 schema_fields: t.columns.iter().map(|col| col.name.clone()).collect(),
             })
+            // Filter *after* mapping so `--name db.foo` matches the value we
+            // render (not the bare `foo` stored on the Table).
+            .filter(|t| name.is_none_or(|n| t.name.contains(n)))
             .collect(),
         streams: infra_map
             .topics
@@ -484,7 +489,6 @@ pub async fn ls(
         dictionaries: infra_map
             .olap_dictionaries
             .into_values()
-            .filter(|d| name.is_none_or(|n| d.name.contains(n)))
             .map(|d| DictionaryInfo {
                 // Same reasoning as for tables: render the query-pastable
                 // display name, not the infra-map `id()`.
@@ -492,6 +496,9 @@ pub async fn ls(
                 source_type: d.source.source_type_label().to_string(),
                 layout: d.layout.layout_type_label().to_string(),
             })
+            // Filter after mapping so `--name db.foo` matches the rendered
+            // display name rather than the bare stored `name`.
+            .filter(|d| name.is_none_or(|n| d.name.contains(n)))
             .collect(),
     };
     let listing: &dyn ResourceInfo = match _type {
@@ -501,13 +508,17 @@ pub async fn ls(
         Some("ingestion") => &resources.ingestion_apis,
         Some("sql_resource") => &resources.sql_resources,
         Some("consumption") => &resources.consumption_apis,
+        Some("stream_transformations") => &resources.stream_transformations,
         Some("workflows") => &resources.workflows,
         Some("web_apps") => &resources.web_apps,
         Some("dictionaries") => &resources.dictionaries,
-        _ => {
+        Some(other) => {
             return Err(RoutineFailure::error(Message::new(
                 "Unknown".to_string(),
-                "type".to_string(),
+                format!(
+                    "type '{other}'. Valid values: tables, streams, ingestion, consumption, \
+                     sql_resource, stream_transformations, workflows, web_apps, dictionaries."
+                ),
             )))
         }
     };
@@ -576,6 +587,17 @@ mod tests {
         assert_eq!(
             WebAppInfo::from_web_app(without_leading, base).url,
             "http://localhost:4000/admin"
+        );
+    }
+
+    #[test]
+    fn web_app_info_normalizes_trailing_slash_in_base_url() {
+        // `LocalWebserverConfig::url()` can emit a trailing slash when
+        // `path_prefix` is configured; ensure we don't double-slash.
+        let app = WebApp::new("docs".to_string(), "/docs".to_string());
+        assert_eq!(
+            WebAppInfo::from_web_app(app, "http://localhost:4000/").url,
+            "http://localhost:4000/docs"
         );
     }
 }

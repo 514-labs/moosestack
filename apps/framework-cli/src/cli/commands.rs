@@ -196,7 +196,8 @@ pub enum Commands {
     Ls {
         /// Filter by infrastructure type
         /// (one of: tables, streams, ingestion, consumption, sql_resource,
-        /// workflows, web_apps, dictionaries). Omit to list every type.
+        /// stream_transformations, workflows, web_apps, dictionaries). Omit
+        /// to list every type.
         #[arg(long)]
         _type: Option<String>,
 
