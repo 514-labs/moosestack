@@ -55,7 +55,9 @@ pub fn write_pending_migration(
         &[],   // no ignored operations
     );
 
-    let (bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let (mut bumps, remaining_changes) = version_bump::extract_version_bumps(&changes.olap_changes);
+    let backfill_only = version_bump::find_backfill_only_bumps(&remaining_changes, baseline);
+    bumps.extend(backfill_only);
 
     let mut deltas = olap_changes_to_deltas(&remaining_changes, default_database);
 
