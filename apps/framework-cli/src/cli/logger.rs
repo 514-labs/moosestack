@@ -404,21 +404,78 @@ impl DateBasedWriter {
     }
 }
 
+/// `Writer` alternative for `DateBasedWriter` that either wraps a real log
+/// file handle or silently drops output if the log directory is currently
+/// unwritable. Logging is cross-cutting — if `~/.moose/` disappears
+/// mid-run (e.g. an install script rewrites it under a running `moose dev`),
+/// we must not panic the host process: dropped log lines are acceptable,
+/// a crashed tokio worker is not.
+enum LogWriter {
+    File(std::fs::File),
+    Sink,
+}
+
+impl std::io::Write for LogWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            LogWriter::File(f) => f.write(buf),
+            LogWriter::Sink => Ok(buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            LogWriter::File(f) => f.flush(),
+            LogWriter::Sink => Ok(()),
+        }
+    }
+}
+
 impl<'a> MakeWriter<'a> for DateBasedWriter {
-    type Writer = std::fs::File;
+    type Writer = LogWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        let formatted_name = chrono::Local::now().format(&self.date_format).to_string();
-        // HOME was already validated during CLI startup in setup_user_directory()
-        let file_path = user_directory()
-            .expect("HOME was validated at startup")
-            .join(&formatted_name);
+        open_log_writer(&self.date_format)
+    }
+}
 
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(file_path)
-            .expect("Failed to open log file")
+fn open_log_writer(date_format: &str) -> LogWriter {
+    let formatted_name = chrono::Local::now().format(date_format).to_string();
+    let Ok(dir) = user_directory() else {
+        // Can't resolve HOME — shouldn't happen after startup validation,
+        // but silently drop rather than crash the process.
+        return LogWriter::Sink;
+    };
+    let file_path = dir.join(&formatted_name);
+
+    // Self-heal: `~/.moose/` (or a subpath if `log_file_date_format` contains
+    // `/`) may have been removed out-of-band after startup. Recreate it on
+    // every write; `create_dir_all` is a no-op when the directory already
+    // exists.
+    let parent = file_path.parent().unwrap_or(&dir);
+    if let Err(e) = std::fs::create_dir_all(parent) {
+        eprintln!(
+            "moose: could not create log directory {}: {} (dropping log output)",
+            parent.display(),
+            e
+        );
+        return LogWriter::Sink;
+    }
+
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+    {
+        Ok(file) => LogWriter::File(file),
+        Err(e) => {
+            eprintln!(
+                "moose: could not open log file {}: {} (dropping log output)",
+                file_path.display(),
+                e
+            );
+            LogWriter::Sink
+        }
     }
 }
 
@@ -1182,5 +1239,62 @@ Plain error line"#;
         assert_eq!(captured.len(), 2);
         assert_eq!(captured[0].1.details, "Structured error");
         assert_eq!(captured[1].1.details, "Plain error line");
+    }
+
+    /// Regression: `make_writer` must not panic when the log directory
+    /// vanishes between startup and a log write (e.g. user/installer
+    /// rewriting `~/.moose/`). `open_log_writer` should self-heal by
+    /// recreating the parent directory and, failing that, return a
+    /// sink instead of crashing the tokio worker.
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn open_log_writer_self_heals_missing_parent_directory() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Point HOME at an empty tempdir so `user_directory()` resolves to
+        // `<tmp>/.moose` — a path that does not exist yet.
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", tmp.path());
+
+        let mut writer = open_log_writer("%Y-%m-%d-cli.log");
+        // Must be a real file (self-healed), not a sink.
+        assert!(matches!(writer, LogWriter::File(_)));
+        writer.write_all(b"hello\n").expect("write");
+
+        // Parent dir and file both exist after the write.
+        let moose_dir = tmp.path().join(".moose");
+        assert!(moose_dir.exists(), "parent directory was not created");
+        let entries: Vec<_> = std::fs::read_dir(&moose_dir).unwrap().flatten().collect();
+        assert_eq!(entries.len(), 1, "expected exactly one log file");
+
+        // Restore HOME.
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    /// If the date format contains a path separator, `open_log_writer` must
+    /// create the nested parent (not panic) and write to the leaf file.
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn open_log_writer_handles_nested_path_in_date_format() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", tmp.path());
+
+        let mut writer = open_log_writer("subdir/%Y-cli.log");
+        assert!(matches!(writer, LogWriter::File(_)));
+        writer.write_all(b"nested\n").expect("write");
+
+        assert!(tmp.path().join(".moose").join("subdir").exists());
+
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
     }
 }
