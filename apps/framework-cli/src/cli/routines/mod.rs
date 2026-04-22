@@ -122,13 +122,10 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
 use crate::framework::core::plan::{load_reconciled_infrastructure, load_target_infrastructure};
-use crate::framework::core::plan_risk::{
-    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
-    ConfirmationPolicy,
-};
+use crate::framework::core::plan_risk::{classify_plan_risk, ConfirmationPolicy};
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorageBuilder;
-use crate::framework::core::version_bump;
+
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
@@ -556,7 +553,7 @@ pub async fn start_development_mode(
     let target_infra_map = load_target_infrastructure(&project).await?;
     let olap_client = create_client(project.clickhouse_config.clone());
     let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
-    let _current_infra =
+    let reconciled_map =
         load_reconciled_infrastructure(&project, &*state_storage, olap_client, &filter).await?;
 
     let externally_managed: Vec<_> = target_infra_map
@@ -717,8 +714,6 @@ pub async fn start_development_mode(
 
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let (reconciled_map, mut plan) = plan_changes(&*state_storage, &project).await?;
-
     let prompt_bridge = if enable_mcp {
         let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
         Some(PromptBridge::new(mcp_url))
@@ -726,73 +721,23 @@ pub async fn start_development_mode(
         None
     };
 
-    plan_validator::validate(&project, &plan)?;
-
-    let mut risk = match confirm_renames_and_classify(
-        &mut plan.changes,
-        &confirmation_policy,
-        prompt_bridge.as_ref(),
-    )
-    .await?
-    {
-        Some(risk) => risk,
-        None => return Ok(()),
-    };
-
-    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
-        &plan.changes.olap_changes,
-        &reconciled_map,
-        &project.clickhouse_config.db_name,
-        confirmation_policy.accept_all,
-        &mut risk,
-        prompt_bridge.as_ref(),
-    )
-    .await?
-    {
-        Some(d) => d,
-        None => return Ok(()),
-    };
-
-    if !destructive_confirmation_gate(&risk, &confirmation_policy, prompt_bridge.as_ref()).await? {
-        return Ok(());
-    }
-
-    // Capture the reconciled map as the dev session baseline for pending migration generation.
+    // The full plan/confirm/execute pipeline is deferred to the watcher's
+    // initial pass, which runs after the web server (and MCP endpoint) is up.
+    // Here we only bootstrap empty process registries so the web server can start.
     let dev_baseline = Arc::new(reconciled_map.clone());
 
-    let process_registry = execute_initial_infra_change(ExecutionContext {
-        project: &project,
-        settings,
-        plan: &plan,
-        skip_olap: false,
-        api_changes_channel: route_update_channel.clone(),
-        webapp_changes_channel: webapp_update_channel.clone(),
-        metrics: metrics.clone(),
-        version_bump_decisions,
-    })
-    .await?;
-
-    let process_registry = Arc::new(RwLock::new(process_registry));
-
-    let stored_map = plan.target_infra_map;
-
-    // Create mirrors after infra is set up (databases exist)
-    create_external_mirrors(&project, &stored_map, remote_for_mirrors.as_ref()).await;
-
-    let _openapi_path = crate::cli::routines::openapi::openapi(&project, &stored_map).await?;
-
-    state_storage.store_infrastructure_map(&stored_map).await?;
-
-    // Generate initial pending migration (best-effort, delta mode only)
-    if project.features.migrate_with_deltas {
-        if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
-            &dev_baseline,
-            &stored_map,
+    let syncing_registry =
+        crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry::new(
+            project.redpanda_config.clone(),
+            project.clickhouse_config.clone(),
+        );
+    let process_registry = Arc::new(RwLock::new(
+        crate::infrastructure::processes::process_registry::ProcessRegistries::new(
             &project,
-        ) {
-            tracing::warn!("Failed to write pending migration: {}", e);
-        }
-    }
+            settings,
+            syncing_registry,
+        ),
+    ));
 
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(reconciled_map)));
