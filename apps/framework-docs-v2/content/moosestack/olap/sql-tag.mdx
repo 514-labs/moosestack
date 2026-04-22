@@ -43,7 +43,7 @@ const query = sql.statement`
 
 ## sql.join
 
-Use `sql.join` to combine multiple SQL fragments with a separator.
+Use `sql.join` to combine multiple SQL fragments with a **trusted static separator**. The separator is inserted as raw SQL text (not parameterized), so it must never come from user input.
 
 ```ts filename="app/query.ts" copy
 const conditions = [
