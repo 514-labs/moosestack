@@ -360,33 +360,59 @@ fn clean_old_logs() {
         Ok(p) => p,
         Err(_) => return,
     };
-    if let Ok(dir) = dir_path.read_dir() {
-        for entry in dir.flatten() {
-            if entry.path().extension().is_some_and(|ext| ext == "log") {
-                match entry.metadata().and_then(|md| md.modified()) {
-                    // Smaller time means older than the cut_off
-                    Ok(t) if t < cut_off => {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                    Ok(_) => {}
-                    // Escalated to WARN to surface unexpected FS errors encountered
-                    // during housekeeping.
-                    Err(e) => {
-                        // Escalated to warn! — inability to read file metadata may indicate FS issues
-                        warn!(
-                            "Failed to read modification time for {:?}. {}",
-                            entry.path(),
-                            e
-                        )
-                    }
-                }
+    // Recursive sweep: `log_file_date_format` may contain a `/`, producing
+    // nested log files (e.g. `~/.moose/2026-04/22-cli.log`). Walking only
+    // the top level would silently skip those and leak disk over time.
+    sweep_logs(&dir_path, cut_off);
+}
+
+fn sweep_logs(dir: &std::path::Path, cut_off: SystemTime) {
+    let entries = match dir.read_dir() {
+        Ok(entries) => entries,
+        Err(_) => {
+            // Directory unreadable: surface as warn instead of info so users notice
+            // Emitting WARN instead of INFO: inability to read the log directory means
+            // housekeeping could not run at all, which can later cause disk-space issues.
+            warn!("failed to read directory {}", dir.display());
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to read file type for {:?}. {}", path, e);
+                continue;
+            }
+        };
+
+        if file_type.is_dir() {
+            // Skip symlinks so we don't escape `~/.moose/` via a stray link.
+            if file_type.is_symlink() {
+                continue;
+            }
+            sweep_logs(&path, cut_off);
+            continue;
+        }
+
+        if path.extension().is_none_or(|ext| ext != "log") {
+            continue;
+        }
+
+        match entry.metadata().and_then(|md| md.modified()) {
+            // Smaller time means older than the cut_off
+            Ok(t) if t < cut_off => {
+                let _ = std::fs::remove_file(&path);
+            }
+            Ok(_) => {}
+            // Escalated to WARN to surface unexpected FS errors encountered
+            // during housekeeping.
+            Err(e) => {
+                warn!("Failed to read modification time for {:?}. {}", path, e)
             }
         }
-    } else {
-        // Directory unreadable: surface as warn instead of info so users notice
-        // Emitting WARN instead of INFO: inability to read the log directory means
-        // housekeeping could not run at all, which can later cause disk-space issues.
-        warn!("failed to read directory")
     }
 }
 
@@ -439,6 +465,19 @@ impl<'a> MakeWriter<'a> for DateBasedWriter {
     }
 }
 
+/// `make_writer` can be called once per log event; if the log directory
+/// stays unwritable, an unbounded number of writes would print a fallback
+/// diagnostic each time and spam stderr. Emit the diagnostic exactly once
+/// per process lifetime, then return `Sink` silently.
+static LOG_WRITER_FALLBACK_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn report_log_writer_fallback(message: std::fmt::Arguments<'_>) {
+    if !LOG_WRITER_FALLBACK_REPORTED.swap(true, Ordering::Relaxed) {
+        eprintln!("moose: {message} (dropping log output)");
+    }
+}
+
 fn open_log_writer(date_format: &str) -> LogWriter {
     let formatted_name = chrono::Local::now().format(date_format).to_string();
     let Ok(dir) = user_directory() else {
@@ -454,11 +493,11 @@ fn open_log_writer(date_format: &str) -> LogWriter {
     // exists.
     let parent = file_path.parent().unwrap_or(&dir);
     if let Err(e) = std::fs::create_dir_all(parent) {
-        eprintln!(
-            "moose: could not create log directory {}: {} (dropping log output)",
+        report_log_writer_fallback(format_args!(
+            "could not create log directory {}: {}",
             parent.display(),
             e
-        );
+        ));
         return LogWriter::Sink;
     }
 
@@ -469,11 +508,11 @@ fn open_log_writer(date_format: &str) -> LogWriter {
     {
         Ok(file) => LogWriter::File(file),
         Err(e) => {
-            eprintln!(
-                "moose: could not open log file {}: {} (dropping log output)",
+            report_log_writer_fallback(format_args!(
+                "could not open log file {}: {}",
                 file_path.display(),
                 e
-            );
+            ));
             LogWriter::Sink
         }
     }
@@ -1241,6 +1280,28 @@ Plain error line"#;
         assert_eq!(captured[1].1.details, "Plain error line");
     }
 
+    /// Panic-safe RAII guard for the process-wide `HOME` env var. Restoring
+    /// in `Drop` means a panicking test can't leak mutated state into the
+    /// next test in the suite.
+    struct HomeGuard(Option<std::ffi::OsString>);
+
+    impl HomeGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let previous = std::env::var_os("HOME");
+            std::env::set_var("HOME", path);
+            Self(previous)
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
     /// Regression: `make_writer` must not panic when the log directory
     /// vanishes between startup and a log write (e.g. user/installer
     /// rewriting `~/.moose/`). `open_log_writer` should self-heal by
@@ -1254,8 +1315,7 @@ Plain error line"#;
         let tmp = tempfile::tempdir().expect("tempdir");
         // Point HOME at an empty tempdir so `user_directory()` resolves to
         // `<tmp>/.moose` — a path that does not exist yet.
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", tmp.path());
+        let _home = HomeGuard::set(tmp.path());
 
         let mut writer = open_log_writer("%Y-%m-%d-cli.log");
         // Must be a real file (self-healed), not a sink.
@@ -1267,12 +1327,6 @@ Plain error line"#;
         assert!(moose_dir.exists(), "parent directory was not created");
         let entries: Vec<_> = std::fs::read_dir(&moose_dir).unwrap().flatten().collect();
         assert_eq!(entries.len(), 1, "expected exactly one log file");
-
-        // Restore HOME.
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
     }
 
     /// If the date format contains a path separator, `open_log_writer` must
@@ -1283,18 +1337,43 @@ Plain error line"#;
         use std::io::Write;
 
         let tmp = tempfile::tempdir().expect("tempdir");
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", tmp.path());
+        let _home = HomeGuard::set(tmp.path());
 
         let mut writer = open_log_writer("subdir/%Y-cli.log");
         assert!(matches!(writer, LogWriter::File(_)));
         writer.write_all(b"nested\n").expect("write");
 
         assert!(tmp.path().join(".moose").join("subdir").exists());
+    }
 
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+    /// `clean_old_logs` now recurses, so retention works even when
+    /// `log_file_date_format` contains a path separator.
+    #[test]
+    fn sweep_logs_removes_old_files_in_nested_directories() {
+        use std::time::Duration;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let nested = tmp.path().join("2026-04");
+        std::fs::create_dir_all(&nested).unwrap();
+        let old_log = nested.join("21-cli.log");
+        std::fs::write(&old_log, b"old").unwrap();
+        let fresh_log = nested.join("22-cli.log");
+        std::fs::write(&fresh_log, b"fresh").unwrap();
+        // Backdate the "old" file to 30 days ago so it's past any reasonable
+        // retention cutoff; leave the "fresh" one at its current mtime.
+        let thirty_days_ago = SystemTime::now() - Duration::from_secs(30 * 24 * 60 * 60);
+        std::fs::File::options()
+            .write(true)
+            .open(&old_log)
+            .unwrap()
+            .set_modified(thirty_days_ago)
+            .unwrap();
+
+        // Cutoff = 7 days ago (matches `clean_old_logs`).
+        let cut_off = SystemTime::now() - Duration::from_secs(7 * 24 * 60 * 60);
+        sweep_logs(tmp.path(), cut_off);
+
+        assert!(!old_log.exists(), "old nested log should have been removed");
+        assert!(fresh_log.exists(), "fresh log should be kept");
     }
 }
