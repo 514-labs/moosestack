@@ -992,6 +992,18 @@ impl OlapDictionary {
         }
     }
 
+    /// Human-readable, query-pastable name for UX surfaces (`moose ls`,
+    /// logs, error messages). Mirrors `Table::display_name`: returns
+    /// `database.name` when the dictionary pins a specific database,
+    /// otherwise the bare `name` — which is directly pastable into
+    /// `moose query` against the default database.
+    pub fn display_name(&self) -> String {
+        match &self.database {
+            Some(db) => format!("{}.{}", db, self.name),
+            None => self.name.clone(),
+        }
+    }
+
     /// Optional ON CLUSTER clause
     fn cluster_clause(&self) -> String {
         match &self.cluster_name {
@@ -2770,5 +2782,31 @@ mod tests {
 
         let restored = OlapDictionary::from_proto(proto);
         assert_eq!(restored.version, None);
+    }
+
+    #[test]
+    fn display_name_bare_when_no_database() {
+        let dict = simple_dict("user_agents");
+        assert_eq!(dict.display_name(), "user_agents");
+    }
+
+    #[test]
+    fn display_name_qualified_when_database_set() {
+        let mut dict = simple_dict("user_agents");
+        dict.database = Some("analytics".to_string());
+        assert_eq!(dict.display_name(), "analytics.user_agents");
+    }
+
+    #[test]
+    fn display_name_is_queryable_unlike_id() {
+        // `id()` uses `_` as separator ("local_user_agents"), which is an
+        // infra-map key rather than a ClickHouse identifier. `display_name`
+        // uses `.` so the string is directly pastable into `moose query`.
+        let dict = simple_dict("user_agents");
+        let id = dict.id("local");
+        let display = dict.display_name();
+        assert_eq!(id, "local_user_agents");
+        assert_eq!(display, "user_agents");
+        assert_ne!(id, display);
     }
 }
