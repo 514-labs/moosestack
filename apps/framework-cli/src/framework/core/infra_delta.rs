@@ -9,6 +9,7 @@ use crate::framework::core::infrastructure::view::{Dmv1View, View};
 use crate::framework::core::infrastructure_map::{
     Change, ColumnChange, InfrastructureMap, OlapChange, TableChange,
 };
+use crate::framework::core::plan_risk::DestructiveChange;
 use crate::infrastructure::olap::ddl_ordering::{AtomicOlapOperation, DependencyInfo};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -1655,8 +1656,6 @@ pub fn fill_policies_from_risk(
     deltas: &mut [InfraDelta],
     risk: &crate::framework::core::plan_risk::PlanRisk,
 ) {
-    use crate::framework::core::plan_risk::DestructiveChange;
-
     for delta in deltas.iter_mut() {
         match delta {
             InfraDelta::RecreateTable {

@@ -35,3 +35,4 @@ pub mod plan;
 pub mod plan_risk;
 pub mod plan_validator;
 pub mod state_storage;
+pub mod version_bump;

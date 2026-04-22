@@ -2154,6 +2154,54 @@ mod tests {
     }
 
     #[test]
+    fn test_display_name_is_queryable_unlike_id() {
+        // `display_name` is what `moose ls` renders: it must be a valid SQL
+        // identifier users/agents can paste straight into `moose query`.
+        // `id()` uses `_` as separator ("local_users") for infra-map
+        // uniqueness — not a valid ClickHouse identifier.
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        let base = Table {
+            name: "users".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Users".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            projections: vec![],
+            constraints: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            seed_filter: Default::default(),
+        };
+
+        // database: None → bare name, pastable in default-db context.
+        assert_eq!(base.display_name(), "users");
+        assert_eq!(base.id(DEFAULT_DATABASE_NAME), "local_users");
+        assert_ne!(base.display_name(), base.id(DEFAULT_DATABASE_NAME));
+
+        // database: Some → `db.name`, pastable as a fully-qualified ident.
+        let qualified = Table {
+            database: Some("analytics".to_string()),
+            ..base.clone()
+        };
+        assert_eq!(qualified.display_name(), "analytics.users");
+    }
+
+    #[test]
     fn test_order_by_equals_with_implicit_primary_key() {
         use crate::framework::core::infrastructure_map::PrimitiveTypes;
 

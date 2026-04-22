@@ -137,7 +137,11 @@ fn main() -> ExitCode {
             ExitCode::from(0)
         }
         Err(e) => {
-            show_message!(e.message_type, e.message);
+            // Skip displaying empty messages (used when the routine has already
+            // printed its own user-facing failure output).
+            if !e.message.action.is_empty() || !e.message.details.is_empty() {
+                show_message!(e.message_type, e.message);
+            }
             if let Some(err) = e.error {
                 eprintln!("{err:?}");
             }

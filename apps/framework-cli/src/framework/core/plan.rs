@@ -17,6 +17,7 @@ use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::olap::clickhouse;
 #[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
@@ -647,31 +648,11 @@ pub struct InfraPlan {
     pub changes: InfraChanges,
 }
 
-/// Converts infrastructure changes to ordered executable operations.
+/// Converts infrastructure changes to ordered executable operations (no version bumps).
 ///
-/// Used by both display and execution to guarantee consistency. Converts high-level
-/// infrastructure changes into a sequence of atomic OLAP operations.
-///
-/// The operations are ordered in two phases:
+/// Operations are ordered in two phases:
 /// 1. Teardown operations (drops, removals) executed first
 /// 2. Setup operations (creates, adds) executed second
-///
-/// # Arguments
-/// * `changes` - The infrastructure changes to convert
-/// * `default_database` - The default database name for table operations
-///
-/// # Returns
-/// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
-///
-/// # Example
-/// ```ignore
-/// let operations = infra_changes_to_operations(&plan.changes, "my_database")?;
-/// // Display path
-/// show_operations(&operations);
-/// // Execution path
-/// execute_operations(&operations);
-/// // Both use the same operations!
-/// ```
 pub fn infra_changes_to_operations(
     changes: &InfraChanges,
     default_database: &str,
@@ -679,23 +660,84 @@ pub fn infra_changes_to_operations(
     Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
     crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
 > {
+    order_olap_changes_to_ops(&changes.olap_changes, default_database)
+}
+
+/// Like [`infra_changes_to_operations`] but version-bump `Removed`/`Added` pairs
+/// are extracted from `olap_changes` and replaced with correctly-ordered
+/// operations derived from `version_bump_decisions`.
+///
+/// Ordering:
+/// 1. Bump creates (new versioned tables)
+/// 2. Bump backfills (old table still alive, new table populated)
+/// 3. Teardown (all drops — non-bump + old bump tables that chose `Drop`)
+/// 4. Setup (all creates — MVs/views see fully-populated bump tables)
+pub fn infra_changes_to_operations_with_version_bumps(
+    changes: &InfraChanges,
+    default_database: &str,
+    version_bump_decisions: &[version_bump::VersionBumpDecision],
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
     use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
 
-    // Convert OLAP changes to atomic operations with dependency ordering
-    let (teardown_ops, setup_ops) = order_olap_changes(&changes.olap_changes, default_database)?;
+    let (_bumps, mut remaining_changes) =
+        version_bump::extract_version_bumps(&changes.olap_changes);
+    remaining_changes.extend(version_bump::bump_drop_changes(version_bump_decisions));
+
+    // Strip NewAlongside Added tables from remaining — they're now created in
+    // Phase 1 via bump_creates to guarantee they exist before backfill runs.
+    let alongside = version_bump::alongside_new_table_names(version_bump_decisions);
+    if !alongside.is_empty() {
+        remaining_changes.retain(|c| match c {
+            OlapChange::Table(TableChange::Added(t)) => !alongside.contains(&t.name),
+            _ => true,
+        });
+    }
+
+    let (teardown_ops, setup_ops) = order_olap_changes(&remaining_changes, default_database)?;
+
+    let (bump_creates, bump_backfills) =
+        version_bump::version_bump_decisions_to_phased_operations(version_bump_decisions);
 
     let mut operations = Vec::new();
 
-    // Add teardown operations first (drops, removals)
+    // Phase 1: Bump creates
+    operations.extend(bump_creates);
+    // Phase 2: Bump backfills (old table still alive, new table populated)
+    operations.extend(bump_backfills);
+    // Phase 3: Teardown (all drops including old bump tables)
     for op in teardown_ops {
         operations.push(op.to_minimal());
     }
-
-    // Add setup operations second (creates, adds)
+    // Phase 4: Setup (all creates — MVs/views see fully-populated bump tables)
     for op in setup_ops {
         operations.push(op.to_minimal());
     }
 
+    Ok(operations)
+}
+
+/// Shared helper: order `OlapChange`s into teardown → setup `SerializableOlapOperation`s.
+fn order_olap_changes_to_ops(
+    olap_changes: &[crate::framework::core::infrastructure_map::OlapChange],
+    default_database: &str,
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
+    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
+
+    let (teardown_ops, setup_ops) = order_olap_changes(olap_changes, default_database)?;
+
+    let mut operations = Vec::new();
+    for op in teardown_ops {
+        operations.push(op.to_minimal());
+    }
+    for op in setup_ops {
+        operations.push(op.to_minimal());
+    }
     Ok(operations)
 }
 
@@ -1989,5 +2031,122 @@ mod tests {
         filter.reprefix_table_ids("local", "prod");
         assert!(filter.table_ids.contains("prod_users_0_0"));
         assert!(filter.table_ids.contains("other_db_orders_0_0"));
+    }
+
+    #[test]
+    fn test_infra_changes_to_operations_with_version_bumps_ordering() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+        use crate::framework::core::version_bump::{
+            OldTableDisposition, VersionBump, VersionBumpDecision, VersionBumpKind,
+        };
+        use crate::framework::versions::Version;
+
+        // Create a version bump pair: Events_1_0 removed + Events_2_0 added
+        let mut old_events = create_test_table("Events_1_0");
+        old_events.version = Some(Version::from_string("1.0".to_string()));
+        old_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        let mut new_events = create_test_table("Events_2_0");
+        new_events.version = Some(Version::from_string("2.0".to_string()));
+        new_events.source_primitive = PrimitiveSignature {
+            name: "Events".to_string(),
+            primitive_type: PrimitiveTypes::DataModel,
+        };
+
+        // Unrelated table add
+        let users_table = create_test_table("Users_1_0");
+
+        let changes = InfraChanges {
+            olap_changes: vec![
+                OlapChange::Table(TableChange::Removed(old_events.clone())),
+                OlapChange::Table(TableChange::Added(new_events.clone())),
+                OlapChange::Table(TableChange::Added(users_table.clone())),
+            ],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            workflow_changes: vec![],
+            filtered_olap_changes: vec![],
+            pending_column_renames: vec![],
+        };
+
+        let decisions = vec![VersionBumpDecision {
+            bump: VersionBump {
+                old_table: old_events.clone(),
+                new_table: new_events.clone(),
+                kind: VersionBumpKind::InPlace,
+            },
+            backfill_sql: Some(
+                "INSERT INTO `local`.`Events_2_0` (`id`) SELECT `id` FROM `local`.`Events_1_0`"
+                    .to_string(),
+            ),
+            old_table_disposition: OldTableDisposition::Drop,
+        }];
+
+        let ops = infra_changes_to_operations_with_version_bumps(
+            &changes,
+            DEFAULT_DATABASE_NAME,
+            &decisions,
+        )
+        .unwrap();
+
+        // Verify ordering invariant:
+        // 1. Bump creates (Events_2_0)
+        // 2. Bump backfills (RawSql)
+        // 3. Teardown (DropTable Events_1_0)
+        // 4. Setup (CreateTable Users_1_0)
+        assert!(!ops.is_empty());
+
+        // Find positions of key operations
+        let create_events_2_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Events_2_0"
+        ));
+        let backfill_pos = ops.iter().position(|op| {
+            matches!(
+                op,
+                crate::infrastructure::olap::clickhouse::SerializableOlapOperation::RawSql { .. }
+            )
+        });
+        let drop_events_1_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::DropTable { table, .. } if table == "Events_1_0"
+        ));
+        let create_users_pos = ops.iter().position(|op| matches!(op,
+            crate::infrastructure::olap::clickhouse::SerializableOlapOperation::CreateTable { table } if table.name == "Users_1_0"
+        ));
+
+        // All operations should be present
+        assert!(
+            create_events_2_pos.is_some(),
+            "Events_2_0 create should exist"
+        );
+        assert!(backfill_pos.is_some(), "Backfill should exist");
+        assert!(drop_events_1_pos.is_some(), "Events_1_0 drop should exist");
+        assert!(create_users_pos.is_some(), "Users_1_0 create should exist");
+
+        let ce2 = create_events_2_pos.unwrap();
+        let bf = backfill_pos.unwrap();
+        let de1 = drop_events_1_pos.unwrap();
+        let cu = create_users_pos.unwrap();
+
+        // Bump create before backfill
+        assert!(
+            ce2 < bf,
+            "Events_2_0 create ({ce2}) must come before backfill ({bf})"
+        );
+        // Backfill before teardown (old table still alive during backfill)
+        assert!(
+            bf < de1,
+            "Backfill ({bf}) must come before Events_1_0 drop ({de1})"
+        );
+        // Teardown before setup
+        assert!(
+            de1 < cu,
+            "Events_1_0 drop ({de1}) must come before Users_1_0 create ({cu})"
+        );
     }
 }

@@ -114,6 +114,12 @@ if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "ts") {
           APP_NAMES.TYPESCRIPT_TESTS,
           {
             logPrefix: "TypeScript S3 Engine Test (With Env Vars)",
+            // Pass the offset-50 ports so `killRemainingProcesses` can
+            // SIGKILL leftover ClickHouse/Node consumption workers by port
+            // instead of targeting the default (offset-0) ports. The
+            // dockerless preflight in the next describe block depends on
+            // those ports being free.
+            ports: PORTS,
             ...getCleanupOptionsForMode(E2E_DEV_MODE),
           },
         );
@@ -194,6 +200,8 @@ if (!SELECTED_LANGUAGE || SELECTED_LANGUAGE === "py") {
           APP_NAMES.PYTHON_TESTS,
           {
             logPrefix: "Python S3 Engine Test (With Env Vars)",
+            // See note on the TypeScript describe block above.
+            ports: PORTS,
             ...getCleanupOptionsForMode(E2E_DEV_MODE),
           },
         );

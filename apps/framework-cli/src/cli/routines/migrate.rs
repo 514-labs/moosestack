@@ -4,7 +4,7 @@ use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::core::migration_file::MigrationFile;
+use crate::framework::core::migration_file::{MigrationFile, MigrationHistoryError};
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::plan::{reconcile_with_reality, ReconciliationFilter};
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
@@ -1062,6 +1062,10 @@ pub async fn execute_migration_deltas(
             println!("  • This migration is stale\n");
             println!("To resolve, regenerate the migration against the current database state:");
             println!("  moose generate migration --clickhouse-url <url>\n");
+            // Preserve the raw error in the log file; the user-facing output is
+            // already above, and the outer `execute_migration` suppresses the
+            // duplicate anyhow chain so the terminal stays clean.
+            tracing::error!("Migration hash mismatch: {}", e);
             return Err(e.into());
         }
 
@@ -1208,13 +1212,23 @@ pub async fn execute_migration(
             )
             .await
             .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "\nMigration".to_string(),
-                        "Failed to execute migration deltas".to_string(),
-                    ),
-                    e,
-                )
+                // `HashMismatch` already emitted a detailed, user-friendly explanation
+                // (including drift forensics and recovery steps) to stdout before
+                // bubbling up. Return a silent failure so we don't tack a redundant
+                // "Migration: Failed to execute migration deltas …" tail onto it.
+                if e.downcast_ref::<MigrationHistoryError>()
+                    .is_some_and(|err| matches!(err, MigrationHistoryError::HashMismatch { .. }))
+                {
+                    RoutineFailure::error(Message::new(String::new(), String::new()))
+                } else {
+                    RoutineFailure::new(
+                        Message::new(
+                            "\nMigration".to_string(),
+                            "Failed to execute migration deltas".to_string(),
+                        ),
+                        e,
+                    )
+                }
             })?;
         } else {
             // Legacy plan.yaml migration path
