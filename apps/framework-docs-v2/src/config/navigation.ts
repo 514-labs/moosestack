@@ -533,46 +533,10 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
   {
-    type: "page",
-    slug: "moosestack/migrate",
+    type: "section",
     title: "Moose Migrate",
     icon: IconGitMerge,
-    languages: ["typescript", "python"],
-    children: [
-      { type: "label", title: "Migration Modes" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/automatic",
-        title: "Automatic Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/planned-migrations",
-        title: "Planned Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/plan-format",
-        title: "Plan Reference",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Executing Migrations" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/apply-planned-migrations-cli",
-        title: "moose migrate (CLI)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/apply-planned-migrations-service",
-        title: "moose prod (Runtime)",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
+    items: [
       { type: "label", title: "Delta migrations (beta)" },
       {
         type: "page",
@@ -584,6 +548,14 @@ const moosestackNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "moosestack/migrate/apply",
         title: "Apply migrations",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Reference" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/plan-format",
+        title: "Plan Reference",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
