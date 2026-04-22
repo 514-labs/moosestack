@@ -21,13 +21,65 @@ Moose represents schema changes as a series of **migration files** under `./migr
 
 ## Finalizing a migration
 
-When you're ready to commit a migration for deployment, run:
+When you're ready to commit a migration for deployment, run `moose generate migration --save`. This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/`. Review the file, commit it to version control, then deploy.
+
+## Command
+
+Generate a migration by comparing your local code against a remote environment:
 
 ```bash
-moose generate migration --save
+# For Server Runtime (connect to Moose Admin API)
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+
+# For Serverless (connect to ClickHouse directly)
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 ```
 
-This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/`. Review the file, commit it to version control, then deploy.
+## Command Options
+
+The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
+
+### via Moose Runtime (`moose prod`)
+
+Connect to the **Admin API** of the running service.
+
+```bash
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--url` | The endpoint of your production Moose Admin API. |
+| `--token` | The authentication token for the Admin API. |
+| `--save` | Writes the generated migration file to the `migrations/` directory. Without this, it performs a dry run. |
+
+### via Serverless (`moose migrate`)
+
+Connect directly to the **ClickHouse database**.
+
+```bash
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
+| `--save` | Writes the generated migration file to the `migrations/` directory. Without this, it performs a dry run. |
+
+### Confirmation flags
+
+These flags control the interactive confirmation prompts during migration generation:
+
+| Option | Environment Variable | Description |
+| :--- | :--- | :--- |
+| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames and destructive operations). |
+| `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE=1` | Skip the confirmation prompt for destructive operations. |
+| `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
+| `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
+
+<Callout type="info" title="Versioned table backfills" compact>
+If you are using migrations for a breaking OLAP table change, see [Schema Versioning](/moosestack/olap/schema-versioning) for the end-to-end version bump and generated backfill workflow.
+</Callout>
 
 ## How migrations are tracked in production
 
