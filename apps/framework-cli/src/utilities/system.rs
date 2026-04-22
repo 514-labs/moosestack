@@ -126,6 +126,15 @@ impl RestartingProcess {
         start: StartChildFn<E>,
         restart_policy: RestartPolicy,
     ) -> Result<RestartingProcess, E> {
+        Self::create_with_rapid_failure_limit(process_id, start, restart_policy, None)
+    }
+
+    pub fn create_with_rapid_failure_limit<E: Debug + 'static>(
+        process_id: String,
+        start: StartChildFn<E>,
+        restart_policy: RestartPolicy,
+        rapid_failure_limit: Option<u32>,
+    ) -> Result<RestartingProcess, E> {
         let child = start()?;
         let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
 
@@ -135,12 +144,6 @@ impl RestartingProcess {
                 const INITIAL_DELAY_MS: u64 = 1000;
                 const MAX_DELAY_MS: u64 = 60_000;
                 const MIN_RUNTIME_FOR_RESET: Duration = Duration::from_secs(10);
-                // Circuit breaker: stop retrying once the child has failed this
-                // many times in a row without running long enough. Prevents a
-                // permanently-broken process (e.g. EADDRINUSE on a port held by
-                // another moose dev) from flooding the log file with an
-                // unbounded stream of identical stack traces.
-                const MAX_CONSECUTIVE_RAPID_FAILURES: u32 = 5;
                 let mut delay_ms: u64 = INITIAL_DELAY_MS;
                 let mut process_start_time = Instant::now();
                 let mut consecutive_rapid_failures: u32 = 0;
@@ -192,12 +195,14 @@ impl RestartingProcess {
                                 consecutive_rapid_failures += 1;
                             }
 
-                            if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
-                                error!(
-                                    "Process {} failed {} times in a row without running for at least {:?}; giving up. Check the errors above for the underlying cause (e.g. a busy port).",
-                                    process_id, consecutive_rapid_failures, MIN_RUNTIME_FOR_RESET,
-                                );
-                                break 'monitor;
+                            if let Some(limit) = rapid_failure_limit {
+                                if consecutive_rapid_failures >= limit {
+                                    error!(
+                                        "Process {} failed {} times in a row without running for at least {:?}; giving up. Check the errors above for the underlying cause (e.g. a busy port).",
+                                        process_id, consecutive_rapid_failures, MIN_RUNTIME_FOR_RESET,
+                                    );
+                                    break 'monitor;
+                                }
                             }
 
                             'restart: loop {
@@ -226,12 +231,14 @@ impl RestartingProcess {
                                         error!("Failed to restart process {}: {:?}", process_id, e);
                                         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
                                         consecutive_rapid_failures += 1;
-                                        if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
-                                            error!(
-                                                "Process {} failed to spawn {} times in a row; giving up.",
-                                                process_id, consecutive_rapid_failures,
-                                            );
-                                            break 'monitor;
+                                        if let Some(limit) = rapid_failure_limit {
+                                            if consecutive_rapid_failures >= limit {
+                                                error!(
+                                                    "Process {} failed to spawn {} times in a row; giving up.",
+                                                    process_id, consecutive_rapid_failures,
+                                                );
+                                                break 'monitor;
+                                            }
                                         }
                                     }
                                 }
@@ -264,7 +271,7 @@ mod tests {
     use std::sync::Arc;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn restarting_process_gives_up_after_consecutive_spawn_failures() {
+    async fn restarting_process_gives_up_after_consecutive_spawn_failures_when_limited() {
         // A StartChildFn that always fails. The monitor's inner restart loop
         // should trip the circuit breaker after a bounded number of attempts
         // instead of retrying forever.
@@ -290,10 +297,11 @@ mod tests {
             }
         });
 
-        let proc = RestartingProcess::create(
+        let proc = RestartingProcess::create_with_rapid_failure_limit(
             "test-circuit-breaker".to_string(),
             start,
             RestartPolicy::Always,
+            Some(5),
         )
         .expect("initial spawn should succeed");
 
@@ -316,5 +324,41 @@ mod tests {
             total, 5,
             "expected exactly 5 spawn attempts before the breaker trips, got {total}",
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn restarting_process_default_keeps_retrying_after_rapid_failures() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let calls_for_start = calls.clone();
+
+        let start: StartChildFn<std::io::Error> = Box::new(move || {
+            let n = calls_for_start.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                tokio::process::Command::new("sh")
+                    .arg("-c")
+                    .arg("exit 1")
+                    .spawn()
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    "simulated EADDRINUSE",
+                ))
+            }
+        });
+
+        let mut proc = RestartingProcess::create(
+            "test-default-unlimited-retries".to_string(),
+            start,
+            RestartPolicy::Always,
+        )
+        .expect("initial spawn should succeed");
+
+        let joined = tokio::time::timeout(Duration::from_secs(34), &mut proc.monitor_task).await;
+        assert!(
+            joined.is_err(),
+            "default behavior should keep retrying instead of giving up after rapid failures",
+        );
+
+        proc.stop().await;
     }
 }
