@@ -127,6 +127,7 @@ use crate::framework::core::plan_risk::{
     ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
@@ -710,10 +711,25 @@ pub async fn start_development_mode(
 
     plan_validator::validate(&project, &plan)?;
 
-    let risk = match confirm_renames_and_classify(&mut plan.changes, &confirmation_policy).await? {
-        Some(risk) => risk,
+    let mut risk =
+        match confirm_renames_and_classify(&mut plan.changes, &confirmation_policy).await? {
+            Some(risk) => risk,
+            None => return Ok(()),
+        };
+
+    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &plan.changes.olap_changes,
+        &reconciled_map,
+        &project.clickhouse_config.db_name,
+        confirmation_policy.accept_all,
+        &mut risk,
+    )
+    .await?
+    {
+        Some(d) => d,
         None => return Ok(()),
     };
+
     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
         return Ok(());
     }
@@ -735,6 +751,7 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
+        version_bump_decisions,
     })
     .await?;
 
@@ -1087,6 +1104,7 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
+        version_bump_decisions: vec![],
     })
     .await?;
 

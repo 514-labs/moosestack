@@ -1,3 +1,6 @@
+use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::processing_coordinator::ProcessingCoordinator;
+use super::settings::Settings;
 /// # TypeScript Compilation Watcher Module
 ///
 /// This module provides functionality for watching TypeScript compilation via `tspc --watch`
@@ -27,6 +30,7 @@
 use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 use display::with_timing_async;
+use framework::core::execute::execute_online_change;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -34,15 +38,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use super::display::{self, with_spinner_completion_async, Message, MessageType};
-use super::processing_coordinator::ProcessingCoordinator;
-use super::settings::Settings;
-
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
 };
 use crate::framework::core::state_storage::StateStorage;
+use crate::framework::core::version_bump;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
 use crate::project::Project;
@@ -448,7 +449,7 @@ async fn watch(
                                             .await;
 
                                             match plan_result {
-                                                Ok((_, mut plan_result)) => {
+                                                Ok((current_infra, mut plan_result)) => {
                                                     with_timing_async("Validation", async {
                                                         framework::core::plan_validator::validate(
                                                             &project,
@@ -458,10 +459,23 @@ async fn watch(
                                                     .await?;
 
                                                     spinner_handle.pause();
-                                                    let risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
+                                                    let mut risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
                                                         Some(risk) => risk,
                                                         None => return Ok(false),
                                                     };
+
+                                                    // Version bump detection, prompting, and risk exclusion.
+                                                    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+                                                        &plan_result.changes.olap_changes,
+                                                        &current_infra,
+                                                        &project.clickhouse_config.db_name,
+                                                        confirmation_policy.accept_all,
+                                                        &mut risk,
+                                                    ).await? {
+                                                        Some(d) => d,
+                                                        None => return Ok(false),
+                                                    };
+
                                                     if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
                                                         return Ok(false);
                                                     }
@@ -476,7 +490,7 @@ async fn watch(
 
                                                     let execution_result =
                                                         with_timing_async("Execution", async {
-                                                            framework::core::execute::execute_online_change(
+                                                            execute_online_change(
                                                                 &project,
                                                                 &plan_result,
                                                                 route_update_channel.clone(),
@@ -484,6 +498,7 @@ async fn watch(
                                                                 &mut project_registries,
                                                                 metrics.clone(),
                                                                 &settings,
+                                                                &version_bump_decisions,
                                                             )
                                                             .await
                                                         })

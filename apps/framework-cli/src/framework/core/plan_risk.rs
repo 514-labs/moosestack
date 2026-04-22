@@ -234,13 +234,22 @@ fn is_cache_layout(
 /// A `TableChange::Removed` followed by a `TableChange::Added` with the same
 /// name is treated as a recreate rather than two independent operations.
 /// `ColumnChange::Renamed` is non-destructive and is intentionally skipped.
+///
+/// Callers that run a version-bump gate should use
+/// [`version_bump::exclude_bump_drops_from_risk`] afterward to remove
+/// already-confirmed drops. Callers that don't (e.g. `moose prod`) will
+/// correctly see version-bump drops as destructive.
 pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
+    classify_plan_risk_from_changes(&changes.olap_changes)
+}
+
+/// Core risk classification logic operating on a slice of `OlapChange`s.
+fn classify_plan_risk_from_changes(olap_changes: &[OlapChange]) -> PlanRisk {
     let mut destructive_changes = Vec::new();
     let mut operational_risks = Vec::new();
 
     // Collect (database, name) pairs for tables that are both removed and added (recreates).
-    let removed_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let removed_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Removed(t)) => {
@@ -250,8 +259,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         })
         .collect();
 
-    let added_table_keys: HashSet<(Option<&str>, &str)> = changes
-        .olap_changes
+    let added_table_keys: HashSet<(Option<&str>, &str)> = olap_changes
         .iter()
         .filter_map(|c| match c {
             OlapChange::Table(TableChange::Added(t)) => {
@@ -266,7 +274,7 @@ pub fn classify_plan_risk(changes: &InfraChanges) -> PlanRisk {
         .copied()
         .collect();
 
-    for change in &changes.olap_changes {
+    for change in olap_changes {
         match change {
             OlapChange::Table(TableChange::Removed(table)) => {
                 let key = (table.database.as_deref(), table.name.as_str());
@@ -410,6 +418,9 @@ pub fn classify_risk_from_deltas(
 /// Controls whether the confirmation gates auto-approve.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfirmationPolicy {
+    /// Auto-accept *all* prompts (destructive, renames, and version bump decisions).
+    /// Set by `--yes-all` / `MOOSE_ACCEPT_ALL=1`.
+    pub accept_all: bool,
     /// Auto-accept destructive operations (table/column drops, recreates, view removals).
     /// Set by `--yes-destructive` / `MOOSE_ACCEPT_DESTRUCTIVE=1`, or implied by `--yes-all`.
     pub accept_destructive: bool,
@@ -553,7 +564,7 @@ const PROMPT_REDRAW_INTERVAL: Duration = Duration::from_millis(500);
 ///
 /// Create via [`PinnedSession::start`], then call [`prompt`](PinnedSession::prompt)
 /// one or more times. The scroll region is restored when the session is dropped.
-struct PinnedSession {
+pub(crate) struct PinnedSession {
     current_rows: u16,
     current_text: String,
     lines: tokio::io::Lines<tokio::io::BufReader<tokio::io::Stdin>>,
@@ -561,7 +572,7 @@ struct PinnedSession {
 
 impl PinnedSession {
     /// Sets up the scroll region and returns a ready session.
-    fn start() -> std::io::Result<Self> {
+    pub(crate) fn start() -> std::io::Result<Self> {
         let (_cols, current_rows) = terminal::size()?;
 
         {
@@ -587,7 +598,7 @@ impl PinnedSession {
     /// The text should be a single line (long lines will be truncated by the
     /// terminal). Returns the trimmed, lowercased user input, or an empty
     /// string on EOF.
-    async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
+    pub(crate) async fn prompt(&mut self, text: &str) -> std::io::Result<String> {
         self.current_text = text.to_string();
         self.draw_full()?;
         self.park_cursor()?;

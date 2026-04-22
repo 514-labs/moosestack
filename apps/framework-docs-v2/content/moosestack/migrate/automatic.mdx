@@ -79,6 +79,24 @@ When the detected changes contain destructive operations (table drops, column re
 
 If you reject, the change cycle is skipped — your code change stays, and Moose will re-prompt on the next file save. To skip destructive prompts, pass `--yes-destructive` or set `MOOSE_ACCEPT_DESTRUCTIVE=1`. Use `--yes-all` to skip both rename and destructive prompts.
 
+### Version Bump Detection
+
+When you change the `version` field on an `OlapTable`, Moose recognizes this as a **version bump** rather than an independent drop + create. It prompts you for two decisions:
+
+1. **Backfill** — whether to copy data from the old table to the new one via `INSERT INTO ... SELECT` (offered only when schemas are compatible)
+2. **Keep or drop** — whether to retain the old table (marked `EXTERNALLY_MANAGED`) or drop it after migration
+
+```text
+Version bump  Detected 1 version bump(s). The old table(s) can be kept or dropped.
+Version bump  `events_1_0` (v1.0) → `events_2_0` (v2.0)
+Backfill data from `events_1_0` into `events_2_0`? [Y/n]
+> y
+Keep old table `events_1_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
+> n
+```
+
+Moose executes operations in the correct order: create the new table, run the backfill, then drop the old table (if not retained). See [Schema Versioning](/moosestack/olap/schema-versioning) for the full version bump workflow.
+
 <Callout type="warning" title="Production deployments">
   Even with confirmation prompts, automatic migrations are not recommended for production. Use [Planned Migrations](/moosestack/migrate/planned-migrations) for reviewed, safe schema changes.
 </Callout>

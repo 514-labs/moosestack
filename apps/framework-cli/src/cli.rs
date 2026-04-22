@@ -75,11 +75,12 @@ use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 use crate::cli::commands::{AddComponent, DbArgs};
 use crate::cli::routines::code_generation::{db_pull, db_pull_from_remote};
 use crate::cli::routines::ls::ls;
-use crate::framework::core::migration_plan::{BackfillCheckResult, MigrationPlanWithBeforeAfter};
+use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_risk::{
-    migration_destructive_gate, print_migration_rejected_guidance, ConfirmationPolicy,
-    MigrationGateOutcome,
+    classify_risk_from_deltas, migration_destructive_gate, print_migration_rejected_guidance,
+    ConfirmationPolicy, MigrationGateOutcome,
 };
+use crate::framework::core::version_bump;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
@@ -696,6 +697,7 @@ pub async fn top_command_handler(
 
             let accept_all = *yes_all || env_bool("MOOSE_ACCEPT_ALL");
             let confirmation_policy = ConfirmationPolicy {
+                accept_all,
                 accept_destructive: accept_all
                     || *yes_destructive
                     || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
@@ -1935,6 +1937,7 @@ async fn confirm_and_save_migration(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
@@ -1954,18 +1957,66 @@ async fn confirm_and_save_migration(
             }
         };
 
-    // Step 2: Generate deltas from snapshot diff.
+    // Step 2: Version bump detection and prompting.
+    let (mut version_bumps, remaining_changes) =
+        version_bump::extract_version_bumps(&result.changes.olap_changes);
+    let backfill_only =
+        version_bump::find_backfill_only_bumps(&remaining_changes, &result.remote_state);
+    version_bumps.extend(backfill_only);
+
+    let mut version_bump_decisions = if !version_bumps.is_empty() {
+        match version_bump::version_bump_gate(version_bumps, &result.default_database, accept_all)
+            .await?
+        {
+            Some(decisions) => decisions,
+            None => {
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Migration".to_string(),
+                    "generation cancelled during version bump confirmation".to_string(),
+                )));
+            }
+        }
+    } else {
+        vec![]
+    };
+
+    if no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
+
+    // Step 3: Generate deltas from the remaining (non-version-bump) changes.
     let mut infra_deltas = crate::framework::core::infra_delta::olap_changes_to_deltas(
-        &result.changes.olap_changes,
+        &remaining_changes,
         &result.default_database,
     );
 
-    // Step 3: Classify risk from deltas, excluding drops already approved during rename.
-    use crate::framework::core::plan_risk::classify_risk_from_deltas;
+    // Prepend version bump deltas (create → backfill → drop) before other deltas
+    // so the new table exists before anything that might reference it.
+    let bump_deltas = version_bump::version_bump_decisions_to_deltas(&version_bump_decisions);
+    if !bump_deltas.is_empty() {
+        // Strip duplicate CreateTable for NewAlongside tables (already in bump_deltas).
+        let alongside = version_bump::alongside_new_table_names(&version_bump_decisions);
+        if !alongside.is_empty() {
+            infra_deltas.retain(|d| {
+                !matches!(d, crate::framework::core::infra_delta::InfraDelta::CreateTable { table } if alongside.contains(&table.name))
+            });
+        }
+        let mut combined = bump_deltas;
+        combined.append(&mut infra_deltas);
+        infra_deltas = combined;
+    }
+
+    // Step 4: Classify risk from deltas, excluding drops already approved during rename.
+    // Version bumps are already excluded from the remaining changes, and their DropTable
+    // deltas (if any) have pre-filled policies from the version bump gate.
     let mut risk = classify_risk_from_deltas(&infra_deltas);
     risk.exclude_approved_drops(&approved_drops);
 
-    // Step 4: Destructive gate — prompt for production confirmation.
+    version_bump::exclude_bump_drops_from_risk(&version_bump_decisions, &mut risk);
+
+    // Step 5: Destructive gate — prompt for production confirmation.
     match migration_destructive_gate(&risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
@@ -1980,126 +2031,37 @@ async fn confirm_and_save_migration(
     // Step 6: Fill policies from the risk classification.
     crate::framework::core::infra_delta::fill_policies_from_risk(&mut infra_deltas, &risk);
 
-    // Legacy MigrationPlan for backfill detection only.
-    let db_migration = result.to_migration_plan().map_err(|e| {
-        RoutineFailure::new(
-            Message {
-                action: "Plan".to_string(),
-                details: "Failed to order migration operations".to_string(),
-            },
-            e,
-        )
-    })?;
-
-    // Check for backfill opportunities (uses legacy MigrationPlan for detection only)
-    if !no_auto_backfill_sql {
-        let candidates = db_migration.detect_backfill_candidates(
-            &result.remote_state.tables,
-            &project.clickhouse_config.db_name,
-        );
-
-        if !candidates.is_empty() {
+    if save {
+        // Generate EXTERNALLY_MANAGED files for retained old tables so Moose keeps tracking them.
+        if version_bump_decisions
+            .iter()
+            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
+        {
+            let source_dir = project.project_location.join(&project.source_dir);
+            version_bump::write_retained_table_files(
+                &version_bump_decisions,
+                &source_dir,
+                &project.language,
+            )
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Migration".to_string(),
+                        "failed to write retained table files".to_string(),
+                    ),
+                    e,
+                )
+            })?;
             display::show_message_wrapper(
-                MessageType::Info,
+                MessageType::Success,
                 Message {
-                    action: "Backfill".to_string(),
-                    details: "Checking versioned table backfill opportunities...".to_string(),
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
+                        .to_string(),
                 },
             );
         }
 
-        for check in &candidates {
-            match check {
-                BackfillCheckResult::Candidate(c) => {
-                    display::show_message_wrapper(
-                        MessageType::Success,
-                        Message {
-                            action: "Equivalent".to_string(),
-                            details: format!(
-                                "`{}` <- `{}`",
-                                c.target_table_name, c.source_table_name
-                            ),
-                        },
-                    );
-
-                    let should_append = {
-                        use std::io::IsTerminal;
-                        if std::io::stdin().is_terminal() && stdout().is_terminal() {
-                            let answer = prompt_user(
-                                "Append backfill operation to migration? [Y/n]",
-                                Some("Y"),
-                                None,
-                            )?;
-                            !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
-                        } else {
-                            info!("Non-interactive mode: auto-appending backfill SQL");
-                            true
-                        }
-                    };
-
-                    if should_append {
-                        // Extract column names from the SQL for the BackfillTable delta
-                        infra_deltas.push(
-                            crate::framework::core::infra_delta::InfraDelta::BackfillTable {
-                                source_table: c.source_table_name.clone(),
-                                target_table: c.target_table_name.clone(),
-                                columns: vec![],
-                                sql: c.sql.clone(),
-                            },
-                        );
-                        display::show_message_wrapper(
-                            MessageType::Success,
-                            Message {
-                                action: "Appended".to_string(),
-                                details: format!(
-                                    "Backfill: `{}` <- `{}`",
-                                    c.target_table_name, c.source_table_name
-                                ),
-                            },
-                        );
-                    } else {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message {
-                                action: "Skipped".to_string(),
-                                details: "auto-backfill by user choice".to_string(),
-                            },
-                        );
-                    }
-                }
-                BackfillCheckResult::NonEquivalent {
-                    target,
-                    source,
-                    reason,
-                } => {
-                    display::show_message_wrapper(
-                        MessageType::Warning,
-                        Message {
-                            action: "Skipped".to_string(),
-                            details: format!(
-                                "auto-backfill for `{target}`: schema is not \
-                                 equivalent to `{source}`\n  - Mismatch: {reason}"
-                            ),
-                        },
-                    );
-                }
-                BackfillCheckResult::Duplicate { target, source } => {
-                    display::show_message_wrapper(
-                        MessageType::Success,
-                        Message {
-                            action: "Exists".to_string(),
-                            details: format!(
-                                "Backfill SQL already exists for `{target}` <- \
-                                 `{source}`; no duplicate appended"
-                            ),
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    if save {
         if infra_deltas.is_empty() {
             return Ok(RoutineSuccess::success(Message::new(
                 "Migration".to_string(),
@@ -2156,6 +2118,20 @@ async fn confirm_and_save_migration(
         for (i, delta) in infra_deltas.iter().enumerate() {
             println!("  {}. {}", i + 1, delta.summary());
         }
+        if version_bump_decisions
+            .iter()
+            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
+        {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Note".to_string(),
+                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
+                              when you run with --save"
+                        .to_string(),
+                },
+            );
+        }
     }
 
     Ok(RoutineSuccess::success(Message::new(
@@ -2184,6 +2160,7 @@ async fn confirm_and_save_migration_legacy(
 
     let accept_all = yes_all || env_bool("MOOSE_ACCEPT_ALL");
     let migration_policy = ConfirmationPolicy {
+        accept_all,
         accept_destructive: accept_all || yes_destructive || env_bool("MOOSE_ACCEPT_DESTRUCTIVE"),
         accept_rename: accept_all || yes_rename || env_bool("MOOSE_ACCEPT_RENAME"),
         is_dev: false,
@@ -2199,7 +2176,33 @@ async fn confirm_and_save_migration_legacy(
         }
     };
 
-    match migration_destructive_gate(&risk, &migration_policy).await? {
+    // Version bump detection, prompting, and risk exclusion (legacy path).
+    let mut filtered_risk = risk;
+    let mut version_bump_decisions = match version_bump::detect_prompt_and_exclude(
+        &result.changes.olap_changes,
+        &result.remote_state,
+        &result.default_database,
+        accept_all,
+        &mut filtered_risk,
+    )
+    .await?
+    {
+        Some(d) => d,
+        None => {
+            return Ok(RoutineSuccess::success(Message::new(
+                "Migration".to_string(),
+                "generation cancelled during version bump confirmation".to_string(),
+            )));
+        }
+    };
+
+    if no_auto_backfill_sql {
+        for d in &mut version_bump_decisions {
+            d.backfill_sql = None;
+        }
+    }
+
+    match migration_destructive_gate(&filtered_risk, &migration_policy).await? {
         MigrationGateOutcome::Rejected { tables } => {
             print_migration_rejected_guidance(&tables, &project.language);
             return Ok(RoutineSuccess::success(Message::new(
@@ -2210,7 +2213,12 @@ async fn confirm_and_save_migration_legacy(
         MigrationGateOutcome::Accepted | MigrationGateOutcome::NoDestructiveChanges => {}
     }
 
-    let mut db_migration = result.to_migration_plan().map_err(|e| {
+    let db_migration = MigrationPlan::from_infra_plan_with_version_bumps(
+        &result.changes,
+        &result.default_database,
+        &version_bump_decisions,
+    )
+    .map_err(|e| {
         RoutineFailure::new(
             Message {
                 action: "Plan".to_string(),
@@ -2220,112 +2228,8 @@ async fn confirm_and_save_migration_legacy(
         )
     })?;
 
-    if no_auto_backfill_sql {
-        display::show_message_wrapper(
-            MessageType::Success,
-            Message {
-                action: "Auto-backfill".to_string(),
-                details: "disabled by --no-auto-backfill-sql".to_string(),
-            },
-        );
-    } else {
-        let candidates = db_migration.detect_backfill_candidates(
-            &result.remote_state.tables,
-            &project.clickhouse_config.db_name,
-        );
-
-        if !candidates.is_empty() {
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "Backfill".to_string(),
-                    details: "Checking versioned table backfill opportunities...".to_string(),
-                },
-            );
-        }
-
-        for check in &candidates {
-            match check {
-                BackfillCheckResult::Candidate(c) => {
-                    display::show_message_wrapper(
-                        MessageType::Success,
-                        Message {
-                            action: "Equivalent".to_string(),
-                            details: format!(
-                                "`{}` <- `{}`",
-                                c.target_table_name, c.source_table_name
-                            ),
-                        },
-                    );
-
-                    let should_append = {
-                        use std::io::IsTerminal;
-                        if std::io::stdin().is_terminal() && stdout().is_terminal() {
-                            let answer = prompt_user(
-                                "Append RawSql backfill operation to plan.yaml? [Y/n]",
-                                Some("Y"),
-                                None,
-                            )?;
-                            !matches!(answer.trim().to_lowercase().as_str(), "n" | "no")
-                        } else {
-                            info!("Non-interactive mode: auto-appending backfill SQL");
-                            true
-                        }
-                    };
-
-                    if should_append {
-                        db_migration.append_backfill(c);
-                        display::show_message_wrapper(
-                            MessageType::Success,
-                            Message {
-                                action: "Appended".to_string(),
-                                details: format!(
-                                    "RawSql backfill: `{}` <- `{}`",
-                                    c.target_table_name, c.source_table_name
-                                ),
-                            },
-                        );
-                    } else {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message {
-                                action: "Skipped".to_string(),
-                                details: "auto-backfill by user choice".to_string(),
-                            },
-                        );
-                    }
-                }
-                BackfillCheckResult::NonEquivalent {
-                    target,
-                    source,
-                    reason,
-                } => {
-                    display::show_message_wrapper(
-                        MessageType::Warning,
-                        Message {
-                            action: "Skipped".to_string(),
-                            details: format!(
-                                "auto-backfill for `{target}`: schema is not \
-                                 equivalent to `{source}`\n  - Mismatch: {reason}"
-                            ),
-                        },
-                    );
-                }
-                BackfillCheckResult::Duplicate { target, source } => {
-                    display::show_message_wrapper(
-                        MessageType::Success,
-                        Message {
-                            action: "Exists".to_string(),
-                            details: format!(
-                                "Backfill SQL already exists for `{target}` <- \
-                                 `{source}`; no duplicate appended"
-                            ),
-                        },
-                    );
-                }
-            }
-        }
-    }
+    // Backfill-only bumps (new table with older version in remote) are now
+    // handled by version_bump_gate above — no separate detect_backfill_candidates needed.
 
     let plan_yaml = db_migration.to_yaml().map_err(|e| {
         RoutineFailure::new(
@@ -2338,6 +2242,36 @@ async fn confirm_and_save_migration_legacy(
     })?;
 
     if save {
+        // Generate EXTERNALLY_MANAGED files for retained old tables so Moose keeps tracking them.
+        if version_bump_decisions
+            .iter()
+            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
+        {
+            let source_dir = project.project_location.join(&project.source_dir);
+            version_bump::write_retained_table_files(
+                &version_bump_decisions,
+                &source_dir,
+                &project.language,
+            )
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Migration".to_string(),
+                        "failed to write retained table files".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+            display::show_message_wrapper(
+                MessageType::Success,
+                Message {
+                    action: "Generated".to_string(),
+                    details: "EXTERNALLY_MANAGED table definition file(s) for retained tables"
+                        .to_string(),
+                },
+            );
+        }
+
         std::fs::create_dir_all("./migrations").map_err(|e| {
             RoutineFailure::new(
                 Message::new("Migration".to_string(), "plan writing failed.".to_string()),
@@ -2396,6 +2330,20 @@ async fn confirm_and_save_migration_legacy(
         })?;
     } else {
         println!("Changes: \n\n{}", plan_yaml);
+        if version_bump_decisions
+            .iter()
+            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
+        {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Note".to_string(),
+                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
+                              when you run with --save"
+                        .to_string(),
+                },
+            );
+        }
     }
 
     Ok(RoutineSuccess::success(Message::new(
