@@ -224,6 +224,7 @@ async fn watch(
     remote_for_mirrors: Option<ClickHouseRemote>,
     dev_baseline: Arc<InfrastructureMap>,
     initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -409,8 +410,9 @@ async fn watch(
         }
     }
 
-    // Signal to the web server that the initial infrastructure pass is done,
-    // so it can print the startup/routes message.
+    // Mark infrastructure as initialized so the HTTP server stops returning 503,
+    // then signal the web server to print the startup/routes message.
+    infra_initialized.store(true, std::sync::atomic::Ordering::Release);
     let _ = initial_ready_tx.send(());
 
     tracing::debug!("Initial plan pass complete, entering watch loop");
@@ -652,6 +654,7 @@ impl FileWatcher {
         remote_for_mirrors: Option<ClickHouseRemote>,
         dev_baseline: Arc<InfrastructureMap>,
         initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+        infra_initialized: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<(), Error> {
         let ignore_matcher = project
             .watcher_config
@@ -687,6 +690,7 @@ impl FileWatcher {
                 remote_for_mirrors,
                 dev_baseline,
                 initial_ready_tx,
+                infra_initialized,
             )
             .await
         };

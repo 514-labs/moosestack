@@ -753,6 +753,10 @@ pub async fn start_development_mode(
     // so the web server can hold the startup/routes message until tables exist.
     let (initial_ready_tx, initial_ready_rx) = tokio::sync::oneshot::channel::<()>();
 
+    // Shared flag: the watcher sets this to `true` after the initial plan pass
+    // so the HTTP server can reject data-plane requests with 503 until ready.
+    let infra_initialized = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     // Create processing coordinator to synchronize file watcher with MCP tools
     use crate::cli::processing_coordinator::ProcessingCoordinator;
     let processing_coordinator = ProcessingCoordinator::new();
@@ -783,6 +787,7 @@ pub async fn start_development_mode(
                 remote_for_mirrors.clone(),
                 dev_baseline.clone(),
                 initial_ready_tx,
+                infra_initialized.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -803,6 +808,7 @@ pub async fn start_development_mode(
                 remote_for_mirrors,
                 dev_baseline.clone(),
                 initial_ready_tx,
+                infra_initialized.clone(),
             )?;
         }
     }
@@ -841,6 +847,7 @@ pub async fn start_development_mode(
             prompt_bridge.clone(),
             Some(watcher_shutdown_tx),
             Some(initial_ready_rx),
+            infra_initialized,
         )
         .await;
 
@@ -1112,6 +1119,7 @@ pub async fn start_production_mode(
             None, // No prompt bridge in production mode
             None, // No file watcher in production mode
             None, // No initial-ready gate in production mode
+            Arc::new(std::sync::atomic::AtomicBool::new(true)), // Already initialized in prod
         )
         .await;
 

@@ -300,6 +300,7 @@ async fn watch(
     remote_for_mirrors: Option<ClickHouseRemote>,
     dev_baseline: Arc<InfrastructureMap>,
     initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -527,6 +528,7 @@ async fn watch(
             }
         }
         if let Some(tx) = initial_ready_tx.take() {
+            infra_initialized.store(true, std::sync::atomic::Ordering::Release);
             let _ = tx.send(());
         }
     }
@@ -756,6 +758,7 @@ async fn watch(
                                     // because initial_compilation_done was false),
                                     // send the ready signal now.
                                     if let Some(tx) = initial_ready_tx.take() {
+                                        infra_initialized.store(true, std::sync::atomic::Ordering::Release);
                                         let _ = tx.send(());
                                     }
                                 }
@@ -853,6 +856,7 @@ impl TsCompilationWatcher {
         remote_for_mirrors: Option<ClickHouseRemote>,
         dev_baseline: Arc<InfrastructureMap>,
         initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+        infra_initialized: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<(), std::io::Error> {
         let watch_task = async move {
             watch(
@@ -872,6 +876,7 @@ impl TsCompilationWatcher {
                 remote_for_mirrors,
                 dev_baseline,
                 initial_ready_tx,
+                infra_initialized,
             )
             .await
         };

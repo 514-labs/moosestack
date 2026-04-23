@@ -695,6 +695,7 @@ struct RouteService {
     http_client: Arc<Client>,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -793,6 +794,7 @@ impl Service<Request<Incoming>> for RouteService {
             },
             self.project.clone(),
             self.redis_client.clone(),
+            self.infra_initialized.clone(),
         ))
     }
 }
@@ -1928,6 +1930,7 @@ async fn router(
     request: RouterRequest,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let now = Instant::now();
 
@@ -1961,6 +1964,24 @@ async fn router(
     let metrics_method = req.method().to_string();
 
     let route_split = route.to_str().unwrap().split('/').collect::<Vec<&str>>();
+
+    // Until the initial infrastructure plan pass completes, reject requests to
+    // data-plane endpoints with 503.  Health/liveness/ready probes and MCP are
+    // allowed through so that readiness checks and agent prompts still work.
+    if !infra_initialized.load(std::sync::atomic::Ordering::Relaxed) {
+        let allow = matches!(
+            &route_split[..],
+            ["health"] | ["liveness"] | ["ready"] | ["mcp", ..]
+        );
+        if !allow {
+            return Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Full::new(Bytes::from(
+                    "Infrastructure initializing, please retry shortly",
+                )));
+        }
+    }
+
     let res = match (configured_producer, req.method(), &route_split[..]) {
         // Handle ingestion routes with nested paths
         (Some(configured_producer), &hyper::Method::POST, segments)
@@ -2774,6 +2795,7 @@ impl Webserver {
         prompt_bridge: Option<crate::framework::core::prompt_bridge::PromptBridge>,
         watcher_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
         initial_ready_rx: Option<tokio::sync::oneshot::Receiver<()>>,
+        infra_initialized: Arc<std::sync::atomic::AtomicBool>,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2912,6 +2934,7 @@ impl Webserver {
             metrics: metrics.clone(),
             project: project.clone(),
             redis_client: redis_client_arc.clone(),
+            infra_initialized: infra_initialized.clone(),
         };
 
         // Wrap route_service with ApiService to handle MCP routing at the top level
