@@ -2773,6 +2773,7 @@ impl Webserver {
         processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
         prompt_bridge: Option<crate::framework::core::prompt_bridge::PromptBridge>,
         watcher_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+        initial_ready_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2807,6 +2808,12 @@ impl Webserver {
         // Keep a reference to the producer for shutdown
         let producer_for_shutdown = producer.clone();
 
+        // In dev mode the watcher's initial plan pass runs concurrently. Wait
+        // for it to finish so that tables exist before we announce readiness.
+        if let Some(rx) = initial_ready_rx {
+            let _ = rx.await;
+        }
+
         show_message!(
             MessageType::Success,
             Message {
@@ -2819,7 +2826,6 @@ impl Webserver {
         print_available_routes(route_table, consumption_apis, &project, web_apps).await;
 
         if !project.is_production {
-            // Fire once-only startup script as soon as server starts
             {
                 let project_clone = project.clone();
                 spawn_with_span(async move {
@@ -2837,8 +2843,6 @@ impl Webserver {
                     details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project.http_server_config.url()),
                 }
             );
-
-            // Do not run after_dev_server_reload_script at initial start; it's intended for reloads only.
         }
 
         let mut sigterm =

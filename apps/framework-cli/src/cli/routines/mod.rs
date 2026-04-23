@@ -714,16 +714,18 @@ pub async fn start_development_mode(
 
     maybe_warmup_connections(&project, &redis_client).await;
 
-    let prompt_bridge = if enable_mcp {
+    // The full plan/confirm/execute pipeline is deferred to the watcher's
+    // initial pass, which runs after the web server (and MCP endpoint) are up.
+    // This means prompts—whether stdin or MCP-driven—always have a working
+    // transport.  The startup message is held until the watcher signals that
+    // the initial infrastructure changes have been processed.
+    let prompt_bridge = if confirmation_policy.agent {
         let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
         Some(PromptBridge::new(mcp_url))
     } else {
         None
     };
 
-    // The full plan/confirm/execute pipeline is deferred to the watcher's
-    // initial pass, which runs after the web server (and MCP endpoint) is up.
-    // Here we only bootstrap empty process registries so the web server can start.
     let dev_baseline = Arc::new(reconciled_map.clone());
 
     let syncing_registry =
@@ -747,6 +749,10 @@ pub async fn start_development_mode(
         .ok()
         .map(|d| d.join(crate::utilities::constants::OPENAPI_FILE));
 
+    // The watcher sends on this channel once the initial plan pass completes,
+    // so the web server can hold the startup/routes message until tables exist.
+    let (initial_ready_tx, initial_ready_rx) = tokio::sync::oneshot::channel::<()>();
+
     // Create processing coordinator to synchronize file watcher with MCP tools
     use crate::cli::processing_coordinator::ProcessingCoordinator;
     let processing_coordinator = ProcessingCoordinator::new();
@@ -759,9 +765,6 @@ pub async fn start_development_mode(
     let state_storage = Arc::new(state_storage);
     match project.language {
         SupportedLanguages::Typescript => {
-            // Pass the handle from spawn_and_await_initial_compile() if we have one.
-            // This continues watching the already-running tspc process instead of
-            // spawning a new one, and ensures we don't trigger duplicate plan_changes.
             let ts_watcher = TsCompilationWatcher::new();
             ts_watcher.start(
                 project.clone(),
@@ -779,6 +782,7 @@ pub async fn start_development_mode(
                 prompt_bridge.clone(),
                 remote_for_mirrors.clone(),
                 dev_baseline.clone(),
+                initial_ready_tx,
             )?;
         }
         SupportedLanguages::Python => {
@@ -798,6 +802,7 @@ pub async fn start_development_mode(
                 prompt_bridge.clone(),
                 remote_for_mirrors,
                 dev_baseline.clone(),
+                initial_ready_tx,
             )?;
         }
     }
@@ -835,6 +840,7 @@ pub async fn start_development_mode(
             processing_coordinator,
             prompt_bridge.clone(),
             Some(watcher_shutdown_tx),
+            Some(initial_ready_rx),
         )
         .await;
 
@@ -1105,6 +1111,7 @@ pub async fn start_production_mode(
             processing_coordinator,
             None, // No prompt bridge in production mode
             None, // No file watcher in production mode
+            None, // No initial-ready gate in production mode
         )
         .await;
 

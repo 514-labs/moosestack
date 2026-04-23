@@ -223,6 +223,7 @@ async fn watch(
     prompt_bridge: Option<PromptBridge>,
     remote_for_mirrors: Option<ClickHouseRemote>,
     dev_baseline: Arc<InfrastructureMap>,
+    initial_ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -430,6 +431,10 @@ async fn watch(
             }
         }
     }
+
+    // Signal to the web server that the initial infrastructure pass is done,
+    // so it can print the startup/routes message.
+    let _ = initial_ready_tx.send(());
 
     tracing::debug!("Initial plan pass complete, entering watch loop");
 
@@ -669,8 +674,8 @@ impl FileWatcher {
         prompt_bridge: Option<PromptBridge>,
         remote_for_mirrors: Option<ClickHouseRemote>,
         dev_baseline: Arc<InfrastructureMap>,
+        initial_ready_tx: tokio::sync::oneshot::Sender<()>,
     ) -> Result<(), Error> {
-        // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
             .watcher_config
             .build_ignore_matcher()
@@ -686,7 +691,6 @@ impl FileWatcher {
             }
         });
 
-        // Move everything into the spawned task to avoid Send issues
         let watch_task = async move {
             watch(
                 project,
@@ -705,6 +709,7 @@ impl FileWatcher {
                 prompt_bridge,
                 remote_for_mirrors,
                 dev_baseline,
+                initial_ready_tx,
             )
             .await
         };

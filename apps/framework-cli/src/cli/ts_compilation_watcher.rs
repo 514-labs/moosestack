@@ -299,6 +299,7 @@ async fn watch(
     prompt_bridge: Option<PromptBridge>,
     remote_for_mirrors: Option<ClickHouseRemote>,
     dev_baseline: Arc<InfrastructureMap>,
+    initial_ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -530,8 +531,10 @@ async fn watch(
         }
     }
 
-    // Track if we've seen the first compilation in this watcher session.
-    // If initial_compilation_done is true, we start as "already seen first".
+    // Signal to the web server that the initial infrastructure pass is done,
+    // so it can print the startup/routes message.
+    let _ = initial_ready_tx.send(());
+
     let mut seen_first_compile = initial_compilation_done;
 
     loop {
@@ -838,8 +841,8 @@ impl TsCompilationWatcher {
         prompt_bridge: Option<PromptBridge>,
         remote_for_mirrors: Option<ClickHouseRemote>,
         dev_baseline: Arc<InfrastructureMap>,
+        initial_ready_tx: tokio::sync::oneshot::Sender<()>,
     ) -> Result<(), std::io::Error> {
-        // Move everything into the spawned task
         let watch_task = async move {
             watch(
                 project,
@@ -857,6 +860,7 @@ impl TsCompilationWatcher {
                 prompt_bridge,
                 remote_for_mirrors,
                 dev_baseline,
+                initial_ready_tx,
             )
             .await
         };
