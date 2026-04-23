@@ -191,8 +191,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   { type: "label", title: "Fundamentals" },
   {
     type: "page",
-    slug: "moosestack/runtime",
-    title: "Moose Runtime",
+    slug: "moosestack/server",
+    title: "Moose Server",
     icon: IconRoute,
     languages: ["typescript", "python"],
   },

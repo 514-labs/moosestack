@@ -15,26 +15,26 @@ This overview describes the delta-based migration workflow, enabled with `featur
 
 Once a migration plan has been generated, Moose provides two execution paths. Choose the one that matches your deployment model.
 
-## moose migrate (CLI)
+## moose migrate (Standalone CLI)
 
-Apply migrations manually or from a CI/CD step as a one-shot command. Use this for serverless deployments or pipelines that don't run a long-lived Moose server.
+Apply migrations manually or from a CI/CD step as a one-shot command. Use this for Standalone CLI deployments or pipelines that don't run a long-lived Moose Server.
 
-See [moose migrate (CLI)](/moosestack/migrate/apply-planned-migrations-cli) for details.
+See [moose migrate (Standalone CLI)](/moosestack/migrate/apply-planned-migrations-cli) for details.
 
-## moose prod (Runtime)
+## moose prod (Moose Server)
 
-Apply migrations automatically when the Moose server starts. Use this for long-lived server deployments where migrations run as part of the application lifecycle.
+Apply migrations automatically when the Moose Server starts. Use this for long-lived server deployments where migrations run as part of the application lifecycle.
 
-See [moose prod (Runtime)](/moosestack/migrate/apply-planned-migrations-service) for details.
+See [moose prod (Moose Server)](/moosestack/migrate/apply-planned-migrations-service) for details.
 
 ## When to use each
 
 | Scenario | Recommended path |
 | :--- | :--- |
-| Serverless deployment | `moose migrate` (CLI) |
-| CI/CD-driven database changes | `moose migrate` (CLI) |
-| Long-lived Moose server | `moose prod` (Runtime) |
-| Manual execution for a one-off rollout | `moose migrate` (CLI) |
+| Standalone CLI deployment | `moose migrate` |
+| CI/CD-driven database changes | `moose migrate` |
+| Long-lived Moose Server | `moose prod` |
+| Manual execution for a one-off rollout | `moose migrate` |
 
 ## Recovering from failed migrations
 

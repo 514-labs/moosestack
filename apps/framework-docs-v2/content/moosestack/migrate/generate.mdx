@@ -30,18 +30,21 @@ When you're ready to commit a migration for deployment, run `moose generate migr
 Generate a migration by comparing your local code against a remote environment:
 
 ```bash
-# For Server Runtime (connect to Moose Admin API)
+# Moose Server (connect to the Admin API)
 moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 
-# For Serverless (connect to ClickHouse directly)
+# Standalone CLI (connect to ClickHouse directly)
 moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 ```
 
 ## Command Options
 
-The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
+The `moose generate migration` command accepts different arguments depending on how you run Moose:
 
-### via Moose Runtime (`moose prod`)
+- **Running the Moose Server in production** — use the first command below to connect to the Admin API with `--url` and `--token`.
+- **No Moose Server, using Moose only for remote schema management (Standalone CLI)** — use the second command below to connect directly to ClickHouse with `--clickhouse-url`.
+
+### via Moose Server (`moose prod`)
 
 Connect to the **Admin API** of the running service.
 
@@ -55,7 +58,7 @@ moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 | `--token` | The authentication token for the Admin API. |
 | `--save` | Writes the generated migration file to the `migrations/` directory. Without this, it performs a dry run. |
 
-### via Serverless (`moose migrate`)
+### via Standalone CLI (`moose migrate`)
 
 Connect directly to the **ClickHouse database**.
 
