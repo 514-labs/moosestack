@@ -449,16 +449,13 @@ async fn watch(
                                     }
                                     seen_first_compile = true;
                                 } else if event.is_compile_complete() {
+                                    let is_initial = !seen_first_compile;
                                     if !seen_first_compile {
                                         display_compilation_success(&event);
                                         seen_first_compile = true;
-                                        // Fall through to plan_changes below so the
-                                        // first compile triggers the initial plan.
                                     } else {
                                         display_compilation_success(&event);
                                     }
-
-                                    let is_initial = !seen_first_compile;
                                     let activate_spinner = {
                                         use crate::utilities::constants::SHOW_TIMING;
                                         use std::sync::atomic::Ordering;
