@@ -126,6 +126,17 @@ impl RestartingProcess {
         start: StartChildFn<E>,
         restart_policy: RestartPolicy,
     ) -> Result<RestartingProcess, E> {
+        // Default behavior keeps retrying forever with backoff. Callers that
+        // want a bounded retry budget can opt into `create_with_rapid_failure_limit`.
+        Self::create_with_rapid_failure_limit(process_id, start, restart_policy, None)
+    }
+
+    pub fn create_with_rapid_failure_limit<E: Debug + 'static>(
+        process_id: String,
+        start: StartChildFn<E>,
+        restart_policy: RestartPolicy,
+        max_consecutive_rapid_failures: Option<u32>,
+    ) -> Result<RestartingProcess, E> {
         let child = start()?;
         let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
 
@@ -135,12 +146,6 @@ impl RestartingProcess {
                 const INITIAL_DELAY_MS: u64 = 1000;
                 const MAX_DELAY_MS: u64 = 60_000;
                 const MIN_RUNTIME_FOR_RESET: Duration = Duration::from_secs(10);
-                // Circuit breaker: stop retrying once the child has failed this
-                // many times in a row without running long enough. Prevents a
-                // permanently-broken process (e.g. EADDRINUSE on a port held by
-                // another moose dev) from flooding the log file with an
-                // unbounded stream of identical stack traces.
-                const MAX_CONSECUTIVE_RAPID_FAILURES: u32 = 5;
                 let mut delay_ms: u64 = INITIAL_DELAY_MS;
                 let mut process_start_time = Instant::now();
                 let mut consecutive_rapid_failures: u32 = 0;
@@ -192,12 +197,14 @@ impl RestartingProcess {
                                 consecutive_rapid_failures += 1;
                             }
 
-                            if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
-                                error!(
-                                    "Process {} failed {} times in a row without running for at least {:?}; giving up. Check the errors above for the underlying cause (e.g. a busy port).",
-                                    process_id, consecutive_rapid_failures, MIN_RUNTIME_FOR_RESET,
-                                );
-                                break 'monitor;
+                            if let Some(limit) = max_consecutive_rapid_failures {
+                                if consecutive_rapid_failures >= limit {
+                                    error!(
+                                        "Process {} failed {} times in a row without running for at least {:?}; giving up. Check the errors above for the underlying cause (e.g. a busy port).",
+                                        process_id, consecutive_rapid_failures, MIN_RUNTIME_FOR_RESET,
+                                    );
+                                    break 'monitor;
+                                }
                             }
 
                             'restart: loop {
@@ -226,12 +233,14 @@ impl RestartingProcess {
                                         error!("Failed to restart process {}: {:?}", process_id, e);
                                         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
                                         consecutive_rapid_failures += 1;
-                                        if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
-                                            error!(
-                                                "Process {} failed to spawn {} times in a row; giving up.",
-                                                process_id, consecutive_rapid_failures,
-                                            );
-                                            break 'monitor;
+                                        if let Some(limit) = max_consecutive_rapid_failures {
+                                            if consecutive_rapid_failures >= limit {
+                                                error!(
+                                                    "Process {} failed to spawn {} times in a row; giving up.",
+                                                    process_id, consecutive_rapid_failures,
+                                                );
+                                                break 'monitor;
+                                            }
                                         }
                                     }
                                 }
@@ -290,10 +299,11 @@ mod tests {
             }
         });
 
-        let proc = RestartingProcess::create(
+        let proc = RestartingProcess::create_with_rapid_failure_limit(
             "test-circuit-breaker".to_string(),
             start,
             RestartPolicy::Always,
+            Some(5),
         )
         .expect("initial spawn should succeed");
 

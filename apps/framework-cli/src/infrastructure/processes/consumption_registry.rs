@@ -126,10 +126,11 @@ impl ConsumptionProcessRegistry {
             }
         };
 
-        self.api_process = Some(RestartingProcess::create(
+        self.api_process = Some(RestartingProcess::create_with_rapid_failure_limit(
             "consumption-api".to_string(),
             start_child,
             RestartPolicy::Always,
+            Some(5),
         )?);
 
         Ok(())
