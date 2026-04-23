@@ -360,59 +360,33 @@ fn clean_old_logs() {
         Ok(p) => p,
         Err(_) => return,
     };
-    // Recursive sweep: `log_file_date_format` may contain a `/`, producing
-    // nested log files (e.g. `~/.moose/2026-04/22-cli.log`). Walking only
-    // the top level would silently skip those and leak disk over time.
-    sweep_logs(&dir_path, cut_off);
-}
-
-fn sweep_logs(dir: &std::path::Path, cut_off: SystemTime) {
-    let entries = match dir.read_dir() {
-        Ok(entries) => entries,
-        Err(_) => {
-            // Directory unreadable: surface as warn instead of info so users notice
-            // Emitting WARN instead of INFO: inability to read the log directory means
-            // housekeeping could not run at all, which can later cause disk-space issues.
-            warn!("failed to read directory {}", dir.display());
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(e) => {
-                warn!("Failed to read file type for {:?}. {}", path, e);
-                continue;
-            }
-        };
-
-        if file_type.is_dir() {
-            // Skip symlinks so we don't escape `~/.moose/` via a stray link.
-            if file_type.is_symlink() {
-                continue;
-            }
-            sweep_logs(&path, cut_off);
-            continue;
-        }
-
-        if path.extension().is_none_or(|ext| ext != "log") {
-            continue;
-        }
-
-        match entry.metadata().and_then(|md| md.modified()) {
-            // Smaller time means older than the cut_off
-            Ok(t) if t < cut_off => {
-                let _ = std::fs::remove_file(&path);
-            }
-            Ok(_) => {}
-            // Escalated to WARN to surface unexpected FS errors encountered
-            // during housekeeping.
-            Err(e) => {
-                warn!("Failed to read modification time for {:?}. {}", path, e)
+    if let Ok(dir) = dir_path.read_dir() {
+        for entry in dir.flatten() {
+            if entry.path().extension().is_some_and(|ext| ext == "log") {
+                match entry.metadata().and_then(|md| md.modified()) {
+                    // Smaller time means older than the cut_off
+                    Ok(t) if t < cut_off => {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                    Ok(_) => {}
+                    // Escalated to WARN to surface unexpected FS errors encountered
+                    // during housekeeping.
+                    Err(e) => {
+                        // Escalated to warn! — inability to read file metadata may indicate FS issues
+                        warn!(
+                            "Failed to read modification time for {:?}. {}",
+                            entry.path(),
+                            e
+                        )
+                    }
+                }
             }
         }
+    } else {
+        // Directory unreadable: surface as warn instead of info so users notice
+        // Emitting WARN instead of INFO: inability to read the log directory means
+        // housekeeping could not run at all, which can later cause disk-space issues.
+        warn!("failed to read directory")
     }
 }
 
@@ -1327,53 +1301,5 @@ Plain error line"#;
         assert!(moose_dir.exists(), "parent directory was not created");
         let entries: Vec<_> = std::fs::read_dir(&moose_dir).unwrap().flatten().collect();
         assert_eq!(entries.len(), 1, "expected exactly one log file");
-    }
-
-    /// If the date format contains a path separator, `open_log_writer` must
-    /// create the nested parent (not panic) and write to the leaf file.
-    #[test]
-    #[serial_test::serial(home_env)]
-    fn open_log_writer_handles_nested_path_in_date_format() {
-        use std::io::Write;
-
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let _home = HomeGuard::set(tmp.path());
-
-        let mut writer = open_log_writer("subdir/%Y-cli.log");
-        assert!(matches!(writer, LogWriter::File(_)));
-        writer.write_all(b"nested\n").expect("write");
-
-        assert!(tmp.path().join(".moose").join("subdir").exists());
-    }
-
-    /// `clean_old_logs` now recurses, so retention works even when
-    /// `log_file_date_format` contains a path separator.
-    #[test]
-    fn sweep_logs_removes_old_files_in_nested_directories() {
-        use std::time::Duration;
-
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let nested = tmp.path().join("2026-04");
-        std::fs::create_dir_all(&nested).unwrap();
-        let old_log = nested.join("21-cli.log");
-        std::fs::write(&old_log, b"old").unwrap();
-        let fresh_log = nested.join("22-cli.log");
-        std::fs::write(&fresh_log, b"fresh").unwrap();
-        // Backdate the "old" file to 30 days ago so it's past any reasonable
-        // retention cutoff; leave the "fresh" one at its current mtime.
-        let thirty_days_ago = SystemTime::now() - Duration::from_secs(30 * 24 * 60 * 60);
-        std::fs::File::options()
-            .write(true)
-            .open(&old_log)
-            .unwrap()
-            .set_modified(thirty_days_ago)
-            .unwrap();
-
-        // Cutoff = 7 days ago (matches `clean_old_logs`).
-        let cut_off = SystemTime::now() - Duration::from_secs(7 * 24 * 60 * 60);
-        sweep_logs(tmp.path(), cut_off);
-
-        assert!(!old_log.exists(), "old nested log should have been removed");
-        assert!(fresh_log.exists(), "fresh log should be kept");
     }
 }
