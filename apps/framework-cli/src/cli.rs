@@ -1959,7 +1959,7 @@ async fn confirm_and_save_migration(
     yes_all: bool,
     yes_destructive: bool,
     yes_rename: bool,
-    _no_auto_backfill_sql: bool,
+    no_auto_backfill_sql: bool,
     save: bool,
     agent: bool,
     bridge: Option<&PromptBridge>,
@@ -1972,7 +1972,7 @@ async fn confirm_and_save_migration(
             yes_all,
             yes_destructive,
             yes_rename,
-            _no_auto_backfill_sql,
+            no_auto_backfill_sql,
             save,
             agent,
             bridge,
@@ -2031,7 +2031,7 @@ async fn confirm_and_save_migration(
         vec![]
     };
 
-    if _no_auto_backfill_sql {
+    if no_auto_backfill_sql {
         for d in &mut version_bump_decisions {
             d.backfill_sql = None;
         }
@@ -2214,7 +2214,7 @@ async fn confirm_and_save_migration_legacy(
     yes_all: bool,
     yes_destructive: bool,
     yes_rename: bool,
-    _no_auto_backfill_sql: bool,
+    no_auto_backfill_sql: bool,
     save: bool,
     agent: bool,
     bridge: Option<&PromptBridge>,
@@ -2267,7 +2267,7 @@ async fn confirm_and_save_migration_legacy(
         }
     };
 
-    if _no_auto_backfill_sql {
+    if no_auto_backfill_sql {
         for d in &mut version_bump_decisions {
             d.backfill_sql = None;
         }
