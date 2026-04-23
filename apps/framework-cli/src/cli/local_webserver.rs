@@ -2885,7 +2885,12 @@ impl Webserver {
                 project.clickhouse_config.clone(),
                 Arc::new(project.redpanda_config.clone()),
                 processing_coordinator.clone(),
-                prompt_bridge.clone().unwrap_or_default(),
+                prompt_bridge.clone().unwrap_or_else(|| {
+                    crate::framework::core::prompt_bridge::PromptBridge::new(format!(
+                        "http://{}:{}/mcp",
+                        project.http_server_config.host, project.http_server_config.port
+                    ))
+                }),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))

@@ -373,10 +373,11 @@ async fn watch(
         }
     });
 
-    // Run the initial plan pass before entering the watch loop. The compiled TS
-    // output already exists (spawn_and_await_initial_compile ran earlier), so
-    // plan_changes can read the target infrastructure from it.
-    {
+    // When initial compilation was already completed (initial_handle was
+    // provided), run the plan pass now. Otherwise defer it to the first
+    // compile_complete event in the watch loop.
+    let mut initial_ready_tx = Some(initial_ready_tx);
+    if initial_compilation_done {
         let activate_spinner = {
             use crate::utilities::constants::SHOW_TIMING;
             use std::sync::atomic::Ordering;
@@ -393,7 +394,7 @@ async fn watch(
                 .await;
 
                 match plan_result {
-                    Ok((_, mut plan_result)) => {
+                    Ok((current_infra, mut plan_result)) => {
                         with_timing_async("Validation", async {
                             framework::core::plan_validator::validate(&project, &plan_result)
                         })
@@ -411,8 +412,6 @@ async fn watch(
                             None => return Ok(false),
                         };
 
-                        // Version bump detection, prompting, and risk exclusion (initial pass).
-                        let current_infra = infrastructure_map.read().await;
                         let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
                             &plan_result.changes.olap_changes,
                             &current_infra,
@@ -426,7 +425,6 @@ async fn watch(
                             Some(d) => d,
                             None => return Ok(false),
                         };
-                        drop(current_infra);
 
                         if !destructive_confirmation_gate(
                             &risk,
@@ -479,7 +477,6 @@ async fn watch(
                                 )
                                 .await;
 
-                                // Generate pending migration (best-effort, delta mode only)
                                 if project.features.migrate_with_deltas {
                                     if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
                                         &dev_baseline,
@@ -529,11 +526,10 @@ async fn watch(
                 });
             }
         }
+        if let Some(tx) = initial_ready_tx.take() {
+            let _ = tx.send(());
+        }
     }
-
-    // Signal to the web server that the initial infrastructure pass is done,
-    // so it can print the startup/routes message.
-    let _ = initial_ready_tx.send(());
 
     let mut seen_first_compile = initial_compilation_done;
 
@@ -568,18 +564,21 @@ async fn watch(
                                     }
                                 } else if event.is_compile_error() {
                                     display_compilation_errors(&event);
+                                    if !seen_first_compile {
+                                        if let Some(tx) = initial_ready_tx.take() {
+                                            let _ = tx.send(());
+                                        }
+                                    }
                                     seen_first_compile = true;
                                 } else if event.is_compile_complete() {
-                                    // Skip the first compile_complete if tspc was spawned fresh
-                                    // (initial_compilation_done was false). The initial plan was
-                                    // already handled by the pre-loop pass above.
                                     if !seen_first_compile {
                                         display_compilation_success(&event);
                                         seen_first_compile = true;
-                                        continue;
+                                        // Fall through to plan_changes below so the
+                                        // first compile triggers the initial plan.
+                                    } else {
+                                        display_compilation_success(&event);
                                     }
-
-                                    display_compilation_success(&event);
 
                                     let activate_spinner = {
                                         use crate::utilities::constants::SHOW_TIMING;
@@ -752,6 +751,13 @@ async fn watch(
                                             });
                                         }
                                     }
+
+                                    // If this was the first plan pass (deferred
+                                    // because initial_compilation_done was false),
+                                    // send the ready signal now.
+                                    if let Some(tx) = initial_ready_tx.take() {
+                                        let _ = tx.send(());
+                                    }
                                 }
                             }
                             Err(_) => {
@@ -771,7 +777,12 @@ async fn watch(
         }
     }
 
-    // Clean up the child process on shutdown
+    // Ensure the webserver startup message is unblocked even if we exit
+    // without having run the plan pass (e.g. shutdown before first compile).
+    if let Some(tx) = initial_ready_tx.take() {
+        let _ = tx.send(());
+    }
+
     if let Some(mut child) = child_process {
         debug!("Killing moose-tspc process on watcher shutdown");
         let _ = child.kill();

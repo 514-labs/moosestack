@@ -271,7 +271,7 @@ async fn watch(
                 .await;
 
                 match plan_result {
-                    Ok((_, mut plan_result)) => {
+                    Ok((current_infra, mut plan_result)) => {
                         with_timing_async("Validation", async {
                             framework::core::plan_validator::validate(&project, &plan_result)
                         })
@@ -289,8 +289,6 @@ async fn watch(
                             None => return Ok(false),
                         };
 
-                        // Version bump detection, prompting, and risk exclusion (initial pass).
-                        let current_infra = infrastructure_map.read().await;
                         let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
                             &plan_result.changes.olap_changes,
                             &current_infra,
@@ -304,7 +302,6 @@ async fn watch(
                             Some(d) => d,
                             None => return Ok(false),
                         };
-                        drop(current_infra);
 
                         if !destructive_confirmation_gate(
                             &risk,
@@ -372,34 +369,14 @@ async fn watch(
                                 }
 
                                 let mut infra_ptr = infrastructure_map.write().await;
-                                *infra_ptr = plan_result.target_infra_map
+                                *infra_ptr = plan_result.target_infra_map;
+                                Ok(true)
                             }
-                            Err(e) => {
-                                let error: anyhow::Error = e.into();
-                                show_message!(MessageType::Error, {
-                                    Message {
-                                        action: "\nFailed".to_string(),
-                                        details: format!(
-                                            "Executing changes to the infrastructure failed:\n{error:?}"
-                                        ),
-                                    }
-                                });
-                            }
+                            Err(e) => Err(e.into()),
                         }
                     }
-                    Err(e) => {
-                        let error: anyhow::Error = e.into();
-                        show_message!(MessageType::Error, {
-                            Message {
-                                action: "\nFailed".to_string(),
-                                details: format!(
-                                    "Planning changes to the infrastructure failed:\n{error:?}"
-                                ),
-                            }
-                        });
-                    }
+                    Err(e) => Err(e.into()),
                 }
-                Ok(true)
             },
             activate_spinner,
         )

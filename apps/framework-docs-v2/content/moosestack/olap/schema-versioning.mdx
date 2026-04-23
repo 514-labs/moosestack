@@ -215,9 +215,10 @@ In CI/CD pipelines or non-interactive environments, use confirmation flags to co
 
 | Flag | Effect |
 | :--- | :--- |
-| `--yes-all` | Auto-accept all prompts: version bump decisions (backfill + drop old table) **and** destructive change confirmations. Equivalent to `MOOSE_ACCEPT_ALL=1`. |
+| `--yes-all` | Auto-accept all prompts: in-place version bump decisions (backfill + drop old table) **and** destructive change confirmations. Side-by-side (alongside) bumps are left untouched. Equivalent to `MOOSE_ACCEPT_ALL=1`. |
 | `--yes-destructive` | Auto-accept destructive change confirmations (table drops, column drops, recreates) but **not** version bump prompts. Use `--yes-all` to also auto-accept version bumps. Equivalent to `MOOSE_ACCEPT_DESTRUCTIVE=1`. |
 | `--no-auto-backfill-sql` | Skip automatic backfill SQL generation for versioned tables. |
+| `--agent` | Agent-driven mode: prompts are answered via the MCP `respond_to_prompt` tool instead of stdin. Equivalent to `MOOSE_AGENT=1`. |
 
 Without these flags, a non-interactive terminal causes the CLI to exit with an error asking you to re-run with `--yes-all`.
 

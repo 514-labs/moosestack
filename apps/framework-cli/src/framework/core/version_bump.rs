@@ -364,7 +364,8 @@ pub async fn version_bump_gate(
         return Ok(Some(vec![]));
     }
 
-    let is_interactive = std::io::stdin().is_terminal() && stdout().is_terminal();
+    let is_agent = bridge.is_some();
+    let is_interactive = std::io::stdin().is_terminal() && stdout().is_terminal() && !is_agent;
 
     display::show_message_wrapper(
         MessageType::Info,
@@ -377,7 +378,7 @@ pub async fn version_bump_gate(
         ),
     );
 
-    let use_pinned = stdout().is_terminal();
+    let use_pinned = stdout().is_terminal() && !is_agent;
     let mut session = if use_pinned && !auto_accept {
         PinnedSession::start().ok()
     } else {

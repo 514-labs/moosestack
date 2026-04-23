@@ -76,3 +76,118 @@ pub async fn handle_call(
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::prompt_bridge::{PendingPrompt, PromptKind};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn inspect_with_no_pending_prompt() {
+        let bridge = PromptBridge::default();
+        let result = handle_call(None, &bridge).await;
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.raw.as_text())
+            .map(|t| t.text.as_str())
+            .unwrap_or("");
+        assert!(
+            text.contains("No prompt is currently pending"),
+            "unexpected: {text}"
+        );
+        assert!(!result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn inspect_with_pending_prompt() {
+        let bridge = PromptBridge::new("http://localhost:4000/mcp".into());
+        let bridge2 = bridge.clone();
+        let _handle = tokio::spawn(async move {
+            bridge2
+                .prompt(PendingPrompt {
+                    kind: PromptKind::Destructive {
+                        change_count: 1,
+                        summary: "DROP TABLE foo".into(),
+                    },
+                    valid_responses: vec!["y".into(), "n".into()],
+                    default_response: Some("n".into()),
+                })
+                .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if bridge.get_pending().await.is_some() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out");
+
+        let result = handle_call(None, &bridge).await;
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.raw.as_text())
+            .map(|t| t.text.as_str())
+            .unwrap_or("");
+        assert!(text.contains("Pending prompt"), "unexpected: {text}");
+    }
+
+    #[tokio::test]
+    async fn respond_with_no_pending_prompt() {
+        let bridge = PromptBridge::default();
+        let mut args = Map::new();
+        args.insert("response".into(), json!("y"));
+        let result = handle_call(Some(&args), &bridge).await;
+        assert!(result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn respond_successfully() {
+        let bridge = PromptBridge::new("http://localhost:4000/mcp".into());
+        let bridge2 = bridge.clone();
+        let handle = tokio::spawn(async move {
+            bridge2
+                .prompt(PendingPrompt {
+                    kind: PromptKind::Destructive {
+                        change_count: 1,
+                        summary: "DROP TABLE foo".into(),
+                    },
+                    valid_responses: vec!["y".into(), "n".into()],
+                    default_response: Some("n".into()),
+                })
+                .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if bridge.get_pending().await.is_some() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out");
+
+        let mut args = Map::new();
+        args.insert("response".into(), json!("y"));
+        let result = handle_call(Some(&args), &bridge).await;
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.raw.as_text())
+            .map(|t| t.text.as_str())
+            .unwrap_or("");
+        assert!(text.contains("sent successfully"), "unexpected: {text}");
+        assert!(!result.is_error.unwrap_or(false));
+
+        let prompt_result = handle.await.unwrap();
+        assert_eq!(prompt_result, Some("y".to_string()));
+    }
+}

@@ -9,8 +9,11 @@
 //! MCP-driven flows coexist.
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
+
+static NEXT_PROMPT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// The kind of confirmation the gate is waiting for.
 #[derive(Debug, Clone)]
@@ -85,6 +88,7 @@ impl fmt::Display for PendingPrompt {
 }
 
 struct ActivePrompt {
+    id: u64,
     info: PendingPrompt,
     tx: oneshot::Sender<String>,
 }
@@ -111,6 +115,11 @@ impl Default for PromptBridge {
 }
 
 impl PromptBridge {
+    /// Create a new bridge that will direct agents to the given MCP endpoint.
+    ///
+    /// `mcp_url` is the URL where the MCP server listens (e.g.
+    /// `http://localhost:4000/mcp`). It is included in stdout messages so agents
+    /// know where to connect.
     pub fn new(mcp_url: String) -> Self {
         Self {
             active: Arc::default(),
@@ -126,17 +135,29 @@ impl PromptBridge {
     /// Publish a prompt and wait for a response (called by confirmation gates).
     ///
     /// Returns `None` if the receiver was dropped without sending (e.g. server
-    /// shutting down).
+    /// shutting down). Only one prompt can be active at a time; if a prior
+    /// prompt is still pending, the slot is *not* replaced and `None` is
+    /// returned immediately.
     pub async fn prompt(&self, info: PendingPrompt) -> Option<String> {
+        let id = NEXT_PROMPT_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         {
             let mut lock = self.active.lock().await;
-            *lock = Some(ActivePrompt { info, tx });
+            if lock.is_some() {
+                tracing::warn!("PromptBridge: prompt slot already occupied, refusing overlap");
+                return None;
+            }
+            *lock = Some(ActivePrompt { id, info, tx });
         }
         let result = rx.await.ok();
+        // Clean up the slot if respond() did not already take it (e.g. when
+        // the sender is dropped without a response). Only clear if the stored
+        // prompt still matches our id to avoid erasing a newer prompt.
         {
             let mut lock = self.active.lock().await;
-            *lock = None;
+            if lock.as_ref().map(|a| a.id) == Some(id) {
+                *lock = None;
+            }
         }
         result
     }
@@ -190,10 +211,17 @@ mod tests {
                 .await
         });
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let pending = bridge.get_pending().await;
-        assert!(pending.is_some());
+        let pending = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let Some(p) = bridge.get_pending().await {
+                    return p;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out waiting for prompt to become pending");
+        assert!(matches!(pending.kind, PromptKind::Destructive { .. }));
 
         let info = bridge.respond("y".to_string()).await.unwrap();
         assert!(matches!(info.kind, PromptKind::Destructive { .. }));

@@ -86,10 +86,16 @@ impl ServerHandler for PromptOnlyHandler {
 }
 
 /// Handle returned by [`start`] that owns the background server task
-/// and shuts it down on drop.
+/// and aborts it on drop.
 pub struct StandaloneMcpServer {
     url: String,
     _task: JoinHandle<()>,
+}
+
+impl Drop for StandaloneMcpServer {
+    fn drop(&mut self) {
+        self._task.abort();
+    }
 }
 
 impl StandaloneMcpServer {
@@ -97,6 +103,14 @@ impl StandaloneMcpServer {
     pub fn url(&self) -> &str {
         &self.url
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StandaloneServerError {
+    #[error("invalid bind address: {0}")]
+    InvalidAddress(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Start a standalone HTTP server that serves only the prompt MCP tool.
@@ -107,7 +121,7 @@ pub async fn start(
     host: &str,
     port: u16,
     bridge: PromptBridge,
-) -> Result<StandaloneMcpServer, std::io::Error> {
+) -> Result<StandaloneMcpServer, StandaloneServerError> {
     let handler = PromptOnlyHandler {
         prompt_bridge: bridge,
     };
@@ -123,12 +137,9 @@ pub async fn start(
         StreamableHttpService::new(move || Ok(handler.clone()), session_manager, config);
     let mcp_tower = TowerToHyperService::new(mcp_service);
 
-    let addr: SocketAddr = format!("{host}:{port}").parse().map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Bad address {host}:{port}: {e}"),
-        )
-    })?;
+    let addr: SocketAddr = format!("{host}:{port}")
+        .parse()
+        .map_err(|e| StandaloneServerError::InvalidAddress(format!("{host}:{port}: {e}")))?;
     let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
     let url = format!("http://{local_addr}/mcp");
@@ -166,10 +177,15 @@ pub async fn start(
                                         http_body_util::Full::new(bytes),
                                     ))
                                 }
-                                Err(_) => Ok(Response::builder()
-                                    .status(500)
-                                    .body(http_body_util::Full::new(Bytes::from("Internal error")))
-                                    .unwrap()),
+                                Err(e) => {
+                                    tracing::warn!("[MCP standalone] MCP service error: {e:?}");
+                                    Ok(Response::builder()
+                                        .status(500)
+                                        .body(http_body_util::Full::new(Bytes::from(
+                                            "Internal error",
+                                        )))
+                                        .unwrap())
+                                }
                             }
                         } else {
                             Ok(Response::builder()
