@@ -22,7 +22,7 @@
 //   Learn about task scheduling and data processing
 
 // 4. Configure Consumption APIs
-// Set up typed query endpoints with `Api<TInput, TRowArray>`, or define
+// Set up typed query endpoints with `Api<T, R = any>`, or define
 // materialized tables with `MaterializedView<T>` and logical `View`s.
 // → See: docs.fiveonefour.com/moose/building/consumption-apis
 
