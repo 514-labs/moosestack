@@ -527,8 +527,8 @@ async fn watch(
                 });
             }
         }
+        infra_initialized.store(true, std::sync::atomic::Ordering::Release);
         if let Some(tx) = initial_ready_tx.take() {
-            infra_initialized.store(true, std::sync::atomic::Ordering::Release);
             let _ = tx.send(());
         }
     }
@@ -754,11 +754,12 @@ async fn watch(
                                         }
                                     }
 
-                                    // If this was the first plan pass (deferred
-                                    // because initial_compilation_done was false),
-                                    // send the ready signal now.
+                                    // After any plan attempt (even failed), the
+                                    // initial pass is "done" — stop gating HTTP
+                                    // with 503 so the user can interact with the
+                                    // server while fixing errors.
+                                    infra_initialized.store(true, std::sync::atomic::Ordering::Release);
                                     if let Some(tx) = initial_ready_tx.take() {
-                                        infra_initialized.store(true, std::sync::atomic::Ordering::Release);
                                         let _ = tx.send(());
                                     }
                                 }
