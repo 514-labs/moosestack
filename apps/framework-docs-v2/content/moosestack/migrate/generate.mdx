@@ -10,7 +10,9 @@ import { Callout } from "@/components/mdx";
 # Generate migrations
 
 <Callout type="info" title="Delta-based workflow — opt-in during beta">
-This page describes the delta-based migration workflow, enabled with `features.migrate_with_deltas = true` in `moose.config.toml`. The current default is `false`; once beta testing ends, delta migrations will become the default. For the current default workflow, see [Planned Migrations](/moosestack/migrate/planned-migrations) and [Automatic Migrations](/moosestack/migrate/automatic).
+This page describes the delta-based migration workflow, available since the [April 9, 2026 release](/moosestack/release-notes/2026-04-09) and enabled by setting `features.migrate_with_deltas = true` in `moose.config.toml`. The current default is `false`; once beta testing ends, delta migrations will become the default.
+
+**On earlier Moose versions, or running with the default config?** See [Planned Migrations](/moosestack/migrate/planned-migrations) and [Automatic Migrations](/moosestack/migrate/automatic) for the current-default workflow.
 </Callout>
 
 Moose represents schema changes as a series of **migration files** under `./migrations/`. Each committed migration file records an incremental diff from the previous migrated state. Once applied, a migration is tracked in state and is never re-run.
@@ -21,7 +23,7 @@ Moose represents schema changes as a series of **migration files** under `./migr
 
 ## Finalizing a migration
 
-When you're ready to commit a migration for deployment, run `moose generate migration --save`. This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/`. Review the file, commit it to version control, then deploy.
+When you're ready to commit a migration for deployment, run `moose generate migration --save`. This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/` with a timestamp-prefixed ID (e.g., `20260415_add_user_prefs.yaml`). Review the file, commit it to version control, then deploy.
 
 ## Command
 
