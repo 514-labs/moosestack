@@ -2808,41 +2808,48 @@ impl Webserver {
         // Keep a reference to the producer for shutdown
         let producer_for_shutdown = producer.clone();
 
-        // In dev mode the watcher's initial plan pass runs concurrently. Wait
-        // for it to finish so that tables exist before we announce readiness.
-        if let Some(rx) = initial_ready_rx {
-            let _ = rx.await;
-        }
-
-        show_message!(
-            MessageType::Success,
-            Message {
-                action: "Started".to_string(),
-                details: "Webserver.\n\n".to_string(),
-            }
-        );
-
-        // Print available routes in table format
-        print_available_routes(route_table, consumption_apis, &project, web_apps).await;
-
-        if !project.is_production {
-            {
-                let project_clone = project.clone();
-                spawn_with_span(async move {
-                    project_clone
-                        .http_server_config
-                        .run_dev_start_script_once()
-                        .await;
-                });
-            }
-
-            show_message!(
-                MessageType::Highlight,
-                Message {
-                    action: "Next Steps  ".to_string(),
-                    details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project.http_server_config.url()),
+        // Print startup message / routes after the watcher's initial plan pass
+        // completes (so tables exist before we announce readiness). This runs in
+        // a spawned task so the HTTP accept loop can start immediately — the MCP
+        // endpoint must be reachable for agent-mode prompts during that pass.
+        {
+            let project_for_msg = project.clone();
+            spawn_with_span(async move {
+                if let Some(rx) = initial_ready_rx {
+                    let _ = rx.await;
                 }
-            );
+
+                show_message!(
+                    MessageType::Success,
+                    Message {
+                        action: "Started".to_string(),
+                        details: "Webserver.\n\n".to_string(),
+                    }
+                );
+
+                print_available_routes(route_table, consumption_apis, &project_for_msg, web_apps)
+                    .await;
+
+                if !project_for_msg.is_production {
+                    {
+                        let project_clone = project_for_msg.clone();
+                        spawn_with_span(async move {
+                            project_clone
+                                .http_server_config
+                                .run_dev_start_script_once()
+                                .await;
+                        });
+                    }
+
+                    show_message!(
+                        MessageType::Highlight,
+                        Message {
+                            action: "Next Steps  ".to_string(),
+                            details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project_for_msg.http_server_config.url()),
+                        }
+                    );
+                }
+            });
         }
 
         let mut sigterm =
