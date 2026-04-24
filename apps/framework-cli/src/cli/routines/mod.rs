@@ -134,6 +134,8 @@ use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
+use crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry;
+use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
@@ -728,18 +730,15 @@ pub async fn start_development_mode(
 
     let dev_baseline = Arc::new(reconciled_map.clone());
 
-    let syncing_registry =
-        crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry::new(
-            project.redpanda_config.clone(),
-            project.clickhouse_config.clone(),
-        );
-    let process_registry = Arc::new(RwLock::new(
-        crate::infrastructure::processes::process_registry::ProcessRegistries::new(
-            &project,
-            settings,
-            syncing_registry,
-        ),
-    ));
+    let syncing_registry = SyncingProcessesRegistry::new(
+        project.redpanda_config.clone(),
+        project.clickhouse_config.clone(),
+    );
+    let process_registry = Arc::new(RwLock::new(ProcessRegistries::new(
+        &project,
+        settings,
+        syncing_registry,
+    )));
 
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(reconciled_map)));

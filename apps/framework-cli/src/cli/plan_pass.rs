@@ -13,6 +13,7 @@ use crate::cli::settings::Settings;
 use crate::framework;
 use crate::framework::core::execute::execute_online_change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
+use crate::framework::core::pending_migration::write_pending_migration;
 use crate::framework::core::plan_risk::{
     confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
 };
@@ -133,11 +134,9 @@ pub(crate) async fn run_plan_pass(
             .await?;
 
             if ctx.project.features.migrate_with_deltas {
-                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
-                    &ctx.dev_baseline,
-                    &stored_map,
-                    &ctx.project,
-                ) {
+                if let Err(e) =
+                    write_pending_migration(&ctx.dev_baseline, &stored_map, &ctx.project)
+                {
                     tracing::warn!("Failed to write pending migration: {}", e);
                 }
             }
