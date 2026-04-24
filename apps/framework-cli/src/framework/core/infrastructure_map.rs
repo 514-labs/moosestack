@@ -4113,12 +4113,15 @@ fn mask_dict_credentials(dict: &mut OlapDictionary) {
     if let DictionarySource::External(ref mut ext) = dict.source {
         match ext {
             ExternalDictionarySource::ClickHouse(s) => {
+                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Mysql(s) => {
+                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Postgresql(s) => {
+                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Redis(s) => {
@@ -4127,6 +4130,7 @@ fn mask_dict_credentials(dict: &mut OlapDictionary) {
                 }
             }
             ExternalDictionarySource::Mongodb(s) => {
+                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::S3(s) => {
@@ -8865,19 +8869,19 @@ mod diff_orchestration_worker_tests {
             if let DictionarySource::External(ref ext) = d.source {
                 match ext {
                     ExternalDictionarySource::ClickHouse(s) => {
-                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Mysql(s) => {
-                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Postgresql(s) => {
-                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     ExternalDictionarySource::Mongodb(s) => {
-                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
                     }
                     _ => panic!("{name}: unexpected source variant"),
@@ -10971,9 +10975,9 @@ mod mask_credentials_dictionary_tests {
         }
     }
 
-    /// `mask_credentials_for_json_export` must mask passwords in ClickHouse external
-    /// source dictionaries while leaving the username as-is (by design — only passwords
-    /// are considered sensitive enough to mask in persisted JSON files).
+    /// `mask_credentials_for_json_export` must mask both password and user in ClickHouse
+    /// external source dictionaries — a runtime-resolved username must not be persisted
+    /// in plaintext to JSON migration files.
     #[test]
     fn test_mask_credentials_for_json_export_clickhouse_dict() {
         let source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
@@ -11004,8 +11008,10 @@ mod mask_credentials_dictionary_tests {
                 s.password, CREDENTIAL_PLACEHOLDER,
                 "ClickHouse dict password must be masked"
             );
-            // username is intentionally NOT masked in JSON export (only password)
-            assert_eq!(s.user, "admin", "ClickHouse dict user must NOT be masked");
+            assert_eq!(
+                s.user, CREDENTIAL_PLACEHOLDER,
+                "ClickHouse dict user must be masked"
+            );
         } else {
             panic!("Expected ClickHouse external source");
         }
