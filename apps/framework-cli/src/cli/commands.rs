@@ -152,6 +152,11 @@ pub enum Commands {
         #[arg(long)]
         yes_rename: bool,
 
+        /// Agent-driven mode: confirmation prompts are answered via the MCP
+        /// `respond_to_prompt` tool instead of stdin. Implies --mcp.
+        #[arg(long)]
+        agent: bool,
+
         /// Use native binaries for ClickHouse and Temporal instead of Docker
         #[arg(long)]
         dockerless: bool,
@@ -417,6 +422,11 @@ pub enum GenerateCommand {
         /// Disable automatic backfill SQL generation
         #[arg(long)]
         no_auto_backfill_sql: bool,
+
+        /// Agent-driven mode: confirmation prompts are answered via the MCP
+        /// `respond_to_prompt` tool instead of stdin.
+        #[arg(long)]
+        agent: bool,
     },
 }
 

@@ -97,6 +97,8 @@ Keep old table `events_1_0`? (will be marked EXTERNALLY_MANAGED) [y/N]
 
 Moose executes operations in the correct order: create the new table, run the backfill, then drop the old table (if not retained). See [Schema Versioning](/moosestack/olap/schema-versioning) for the full version bump workflow.
 
+In **agent mode** (`moose dev --agent`), these prompts are published to the MCP server instead of stdin. An AI agent answers them by calling the `respond_to_prompt` tool at the MCP endpoint.
+
 <Callout type="warning" title="Production deployments">
   Even with confirmation prompts, automatic migrations are not recommended for production. Use [Planned Migrations](/moosestack/migrate/planned-migrations) for reviewed, safe schema changes.
 </Callout>

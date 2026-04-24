@@ -215,8 +215,6 @@ pub async fn execute_online_change(
         }
     }
 
-    // In prod, the webserver is part of the current process that gets spawned. As such
-    // it is initialized from 0 and we don't need to apply diffs to it.
     api::execute_changes(
         &plan.target_infra_map,
         &plan.changes.api_changes,

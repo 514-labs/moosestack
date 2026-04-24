@@ -1,6 +1,7 @@
 mod compressed_map;
 pub mod proxy;
 mod server;
+pub mod standalone;
 mod tools;
 
 pub use compressed_map::{

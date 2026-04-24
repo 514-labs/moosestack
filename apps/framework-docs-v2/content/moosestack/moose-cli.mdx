@@ -122,9 +122,10 @@ Start a local development environment with hot reload and automatic infrastructu
 - **Python**: `pip install -r requirements.txt`
 
 ```bash
-moose dev [--mcp] [--no-infra] [--dockerless] [--timestamps] [--timing] [--log-payloads] [--yes-all] [--yes-destructive] [--yes-rename]
+moose dev [--mcp] [--agent] [--no-infra] [--dockerless] [--timestamps] [--timing] [--log-payloads] [--yes-all] [--yes-destructive] [--yes-rename]
 ```
 - `--mcp`: Enable or disable the MCP server (default: true). Provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp).
+- `--agent`: Agent-driven mode. Confirmation prompts (destructive changes, column renames, version bumps) are answered via the MCP `respond_to_prompt` tool instead of stdin. Implies `--mcp`. Can also be set via `MOOSE_AGENT=1`.
 - `--no-infra`: Skip starting local infrastructure
 - `--dockerless`: Use native binaries for ClickHouse and Temporal instead of Docker
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines
@@ -134,7 +135,7 @@ moose dev [--mcp] [--no-infra] [--dockerless] [--timestamps] [--timing] [--log-p
 - `--yes-destructive`: Auto-approve destructive operations (including old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
 - `--yes-rename`: Auto-approve column renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 
-When a [version bump](/moosestack/olap/schema-versioning) is detected (a `version` field change on an `OlapTable`), `moose dev` prompts for backfill and old-table retention decisions before applying the change.
+When a [version bump](/moosestack/olap/schema-versioning) is detected (a `version` field change on an `OlapTable`), `moose dev` prompts for backfill and old-table retention decisions before applying the change. In `--agent` mode, these prompts are published to the MCP server and must be answered by calling the `respond_to_prompt` tool.
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
@@ -356,7 +357,7 @@ moose generate hash-token [--json]
 ### Generate Migration
 Create an ordered ClickHouse DDL plan by comparing a remote instance with your local code.
 ```bash
-moose generate migration [--url <url> --token <token> | --clickhouse-url <url>] [--redis-url <url>] [--save] [--yes-all] [--yes-destructive] [--yes-rename] [--no-auto-backfill-sql]
+moose generate migration [--url <url> --token <token> | --clickhouse-url <url>] [--redis-url <url>] [--save] [--yes-all] [--yes-destructive] [--yes-rename] [--no-auto-backfill-sql] [--agent]
 ```
 
 **Connection options** (one required):
@@ -373,8 +374,9 @@ All connection flags accept env var fallbacks: `MOOSE_CLICKHOUSE_CONFIG__URL` fo
 - `--yes-destructive`: Auto-approve destructive operations (including old table drops from version bumps). Can also be set via `MOOSE_ACCEPT_DESTRUCTIVE=1`.
 - `--yes-rename`: Auto-approve column renames. Can also be set via `MOOSE_ACCEPT_RENAME=1`.
 - `--no-auto-backfill-sql`: Disable automatic backfill SQL generation for versioned tables.
+- `--agent`: Agent-driven mode. Confirmation prompts are answered via the MCP `respond_to_prompt` tool instead of stdin. A lightweight MCP server is started automatically. Can also be set via `MOOSE_AGENT=1`.
 
-When a [version bump](/moosestack/olap/schema-versioning) is detected, the CLI prompts for backfill and old-table retention. When `--save` is used and you choose to keep the old table, Moose generates a retained table file with `LifeCycle.EXTERNALLY_MANAGED` in your source directory.
+When a [version bump](/moosestack/olap/schema-versioning) is detected, the CLI prompts for backfill and old-table retention. In `--agent` mode, these prompts are published to the MCP server. When `--save` is used and you choose to keep the old table, Moose generates a retained table file with `LifeCycle.EXTERNALLY_MANAGED` in your source directory.
 
 Requires OLAP to be enabled in `moose.config.toml`:
 ```toml filename="moose.config.toml" copy

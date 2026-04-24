@@ -61,9 +61,6 @@ pub fn write_pending_migration(
 
     let mut deltas = olap_changes_to_deltas(&remaining_changes, default_database);
 
-    // Infer decisions from what the diff tells us:
-    // - backfill if schemas are compatible
-    // - retain old table if it's still in the target state, otherwise drop
     if !bumps.is_empty() {
         let decisions: Vec<version_bump::VersionBumpDecision> = bumps
             .into_iter()
@@ -91,7 +88,6 @@ pub fn write_pending_migration(
 
         let bump_deltas = version_bump::version_bump_decisions_to_deltas(&decisions);
         if !bump_deltas.is_empty() {
-            // Strip duplicate CreateTable for NewAlongside tables (already in bump_deltas).
             let alongside = version_bump::alongside_new_table_names(&decisions);
             if !alongside.is_empty() {
                 deltas.retain(|d| {
