@@ -686,6 +686,8 @@ pub fn infra_changes_to_operations_with_version_bumps(
         version_bump::extract_version_bumps(&changes.olap_changes);
     remaining_changes.extend(version_bump::bump_drop_changes(version_bump_decisions));
 
+    // Strip NewAlongside Added tables from remaining — they're now created in
+    // Phase 1 via bump_creates to guarantee they exist before backfill runs.
     let alongside = version_bump::alongside_new_table_names(version_bump_decisions);
     if !alongside.is_empty() {
         remaining_changes.retain(|c| match c {
