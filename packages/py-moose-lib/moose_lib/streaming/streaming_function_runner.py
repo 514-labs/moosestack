@@ -14,6 +14,7 @@ The runner handles:
 """
 
 import argparse
+import atexit
 import dataclasses
 import traceback
 from datetime import datetime, timezone
@@ -53,6 +54,27 @@ function_context = setup_structured_logging(
 PARTITION_ASSIGNMENT_TIMEOUT_SECONDS = 60
 # Polling interval (seconds) when waiting for partition assignment
 PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS = 0.1
+
+
+_worker_exit_reason: dict[str, str] = {"reason": "py_worker_exit_code_0"}
+
+
+def _set_worker_exit_reason(reason: str) -> None:
+    _worker_exit_reason["reason"] = reason
+
+
+def _report_worker_exit() -> None:
+    try:
+        requests.post(
+            f"http://localhost:{moose_management_port}/metrics-logs",
+            json={"reason": _worker_exit_reason["reason"]},
+            timeout=0.5,
+        )
+    except Exception:
+        pass
+
+
+atexit.register(_report_worker_exit)
 
 
 @dataclasses.dataclass
@@ -673,6 +695,11 @@ def main():
     def shutdown(signum, frame):
         """Handle shutdown signals gracefully"""
         log("Received shutdown signal, cleaning up...")
+        try:
+            name = signal.Signals(signum).name
+        except Exception:
+            name = f"signal_{signum}"
+        _set_worker_exit_reason(f"py_worker_killed_by_{name}")
         running.clear()  # This will trigger the main loop to exit
 
     # Set up signal handlers
@@ -739,6 +766,9 @@ def main():
                 log(f"Error closing producer: {e}")
 
         exit_code = 1 if fatal_error.is_set() else 0
+        _set_worker_exit_reason(
+            "py_worker_exit_code_nonzero" if exit_code != 0 else "py_worker_exit_code_0"
+        )
         log(f"Shutdown complete with exit code {exit_code}")
         sys.exit(exit_code)
 

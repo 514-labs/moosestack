@@ -1504,9 +1504,18 @@ impl InfrastructureMap {
 
         for (id, process) in self_processes {
             if let Some(target_process) = target_processes.get(id) {
-                // Always treat function processes as updated if they exist in both maps
-                // This ensures function code changes are always redeployed
-                tracing::debug!("FunctionProcess updated (forced): {}", id);
+                let reason = if process == target_process {
+                    "no_change"
+                } else {
+                    "forced_always"
+                };
+                crate::metrics::record_function_process_diff_updated(reason);
+
+                tracing::debug!(
+                    "FunctionProcess updated (forced, diff_reason={}): {}",
+                    reason,
+                    id
+                );
                 process_updates += 1;
                 process_changes.push(ProcessChange::FunctionProcess(
                     Change::<FunctionProcess>::Updated {

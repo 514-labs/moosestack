@@ -9,7 +9,7 @@
 //! batching, back pressure, and error handling mechanisms.
 
 use futures::TryFutureExt;
-use rdkafka::consumer::{Consumer, StreamConsumer};
+use rdkafka::consumer::Consumer;
 use rdkafka::producer::{DeliveryFuture, Producer};
 use rdkafka::Message;
 use serde_json::Value;
@@ -32,7 +32,9 @@ use crate::infrastructure::olap::clickhouse::model::{
     ClickHouseColumn, ClickHouseRecord, ClickHouseRuntimeEnum, ClickHouseValue,
 };
 use crate::infrastructure::stream::kafka::client::create_subscriber;
-use crate::infrastructure::stream::kafka::client::{create_producer, send_with_back_pressure};
+use crate::infrastructure::stream::kafka::client::{
+    create_producer, send_with_back_pressure, PURPOSE_SYNC_CONSUMER, PURPOSE_SYNC_PRODUCER,
+};
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
 use crate::metrics::{MetricEvent, Metrics};
 use crate::utilities::validate_passthrough::DECIMAL_REGEX;
@@ -479,12 +481,13 @@ async fn sync_kafka_to_kafka(
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     let group_id = format!("{VERSION_SYNC_GROUP_ID}_{source_topic_name}");
-    let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
+    let subscriber = Arc::new(create_subscriber(
         &kafka_config,
         &group_id,
         &source_topic_name,
+        PURPOSE_SYNC_CONSUMER,
     ));
-    let producer = create_producer(kafka_config.clone());
+    let producer = create_producer(kafka_config.clone(), PURPOSE_SYNC_PRODUCER);
 
     let mut queue: VecDeque<DeliveryFuture> = VecDeque::new();
     let target_topic_name = &target_topic_name;
@@ -590,10 +593,11 @@ async fn sync_kafka_to_clickhouse(
     );
 
     let group_id = TABLE_SYNC_GROUP_ID.to_string();
-    let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
+    let subscriber = Arc::new(create_subscriber(
         &kafka_config,
         &group_id,
         &source_topic_name,
+        PURPOSE_SYNC_CONSUMER,
     ));
 
     let clickhouse_columns: Vec<String> = target_table_columns

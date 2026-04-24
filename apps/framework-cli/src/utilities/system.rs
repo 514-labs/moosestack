@@ -11,6 +11,25 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};
 use tracing::{debug, error, info, warn};
 
+use crate::metrics::record_function_worker_restart;
+
+fn classify_rust_child_exit(
+    exit_status: &std::io::Result<std::process::ExitStatus>,
+) -> &'static str {
+    match exit_status {
+        Ok(status) => {
+            if status.success() {
+                "rust_child_exit_ok"
+            } else if status.code().is_some() {
+                "rust_child_exit_err_code"
+            } else {
+                "rust_child_exit_signal"
+            }
+        }
+        Err(_) => "rust_child_wait_err",
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum KillProcessError {
@@ -153,6 +172,7 @@ impl RestartingProcess {
                         }
                         exit_status_result = child.wait() => {
                             let process_runtime = process_start_time.elapsed();
+                            let exit_reason = classify_rust_child_exit(&exit_status_result);
                             let should_restart = match exit_status_result {
                                 Ok(exit_status) => {
                                     if exit_status.success() {
@@ -181,6 +201,8 @@ impl RestartingProcess {
                             if !should_restart {
                                 break 'monitor;
                             }
+
+                            record_function_worker_restart(exit_reason.to_string());
 
                             // Set initial delay based on whether the previous process ran long enough
                             if process_runtime >= MIN_RUNTIME_FOR_RESET {
@@ -316,5 +338,26 @@ mod tests {
             total, 5,
             "expected exactly 5 spawn attempts before the breaker trips, got {total}",
         );
+    }
+
+    #[test]
+    fn classify_rust_child_exit_reasons() {
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::ExitStatus;
+
+        let ok: std::io::Result<ExitStatus> = Ok(ExitStatus::from_raw(0));
+        assert_eq!(classify_rust_child_exit(&ok), "rust_child_exit_ok");
+
+        let err_code: std::io::Result<ExitStatus> = Ok(ExitStatus::from_raw(256));
+        assert_eq!(
+            classify_rust_child_exit(&err_code),
+            "rust_child_exit_err_code"
+        );
+
+        let signal: std::io::Result<ExitStatus> = Ok(ExitStatus::from_raw(9));
+        assert_eq!(classify_rust_child_exit(&signal), "rust_child_exit_signal");
+
+        let wait_err: std::io::Result<ExitStatus> = Err(std::io::Error::other("wait failure"));
+        assert_eq!(classify_rust_child_exit(&wait_err), "rust_child_wait_err");
     }
 }

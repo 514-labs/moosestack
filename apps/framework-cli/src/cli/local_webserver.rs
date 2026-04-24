@@ -1362,23 +1362,12 @@ async fn metrics_log_route(
     let parsed: Result<MetricEvent, serde_json::Error> = serde_json::from_reader(body);
     trace!("Parsed metrics log route: {:?}", parsed);
 
-    if let Ok(MetricEvent::StreamingFunctionEvent {
-        count_in,
-        count_out,
-        bytes,
-        function_name,
-        timestamp,
-    }) = parsed
-    {
-        metrics
-            .send_metric_event(MetricEvent::StreamingFunctionEvent {
-                timestamp,
-                count_in,
-                count_out,
-                bytes,
-                function_name: function_name.clone(),
-            })
-            .await;
+    match parsed {
+        Ok(event @ MetricEvent::StreamingFunctionEvent { .. })
+        | Ok(event @ MetricEvent::FunctionWorkerRestart { .. }) => {
+            metrics.send_metric_event(event).await;
+        }
+        _ => {}
     }
 
     Response::builder()
@@ -2798,6 +2787,7 @@ impl Webserver {
         let producer = if project.features.streaming_engine {
             Some(kafka::client::create_producer(
                 project.redpanda_config.clone(),
+                kafka::client::PURPOSE_INGEST_PRODUCER,
             ))
         } else {
             None
@@ -4279,5 +4269,101 @@ mod tests {
 
         // Leading slash edge case
         assert_eq!(find_api_name("/api/1", &apis), "/api/1");
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_e2e_exposes_new_churn_observability_series() {
+        use crate::metrics::{Metrics, TelemetryMetadata};
+        use hyper::service::service_fn;
+        use std::convert::Infallible;
+        use std::time::Duration;
+        use tokio::net::TcpListener;
+
+        let (metrics, rx) = Metrics::new(
+            TelemetryMetadata {
+                machine_id: "smoke".to_string(),
+                is_moose_developer: false,
+                metric_labels: None,
+                metric_endpoints: None,
+                is_production: false,
+                project_name: "smoke".to_string(),
+                export_metrics: false,
+            },
+            None,
+        );
+        let metrics = Arc::new(metrics);
+        metrics.start_listening_to_metrics(rx).await;
+
+        metrics.kafka_client_created("smoke_producer");
+        metrics.kafka_client_created("smoke_producer");
+        metrics.kafka_client_dropped("smoke_producer");
+        metrics.function_worker_restart("smoke_reason".to_string());
+        metrics.function_process_diff_updated("forced_always");
+        metrics.function_process_diff_updated("forced_always");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let metrics_for_server = metrics.clone();
+        let server_task = tokio::spawn(async move {
+            loop {
+                let (stream, _) = match listener.accept().await {
+                    Ok(pair) => pair,
+                    Err(_) => return,
+                };
+                let io = TokioIo::new(stream);
+                let metrics_clone = metrics_for_server.clone();
+                tokio::spawn(async move {
+                    let service = service_fn(move |_req: Request<Incoming>| {
+                        let m = metrics_clone.clone();
+                        async move {
+                            let resp = metrics_route(m).await.unwrap();
+                            Ok::<_, Infallible>(resp)
+                        }
+                    });
+                    let _ = auto::Builder::new(TokioExecutor::new())
+                        .serve_connection(io, service)
+                        .await;
+                });
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/metrics");
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let resp = client.get(&url).send().await.expect("GET /metrics failed");
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp.text().await.expect("read body");
+
+        assert!(
+            body.contains("# TYPE moose_kafka_client_gauge gauge"),
+            "missing kafka gauge TYPE header in /metrics body:\n{body}"
+        );
+        assert!(
+            body.contains(r#"moose_kafka_client_gauge{purpose="smoke_producer"} 1"#),
+            "expected gauge value of 1 after 2 creates + 1 drop:\n{body}"
+        );
+        assert!(
+            body.contains("# TYPE moose_function_worker_restarts counter"),
+            "missing worker restarts TYPE header:\n{body}"
+        );
+        assert!(
+            body.contains(r#"moose_function_worker_restarts_total{reason="smoke_reason"} 1"#),
+            "expected worker restart counter == 1:\n{body}"
+        );
+        assert!(
+            body.contains("# TYPE moose_function_process_diff_updated counter"),
+            "missing diff updated TYPE header:\n{body}"
+        );
+        assert!(
+            body.contains(r#"moose_function_process_diff_updated_total{reason="forced_always"} 2"#),
+            "expected diff counter == 2:\n{body}"
+        );
+
+        server_task.abort();
     }
 }

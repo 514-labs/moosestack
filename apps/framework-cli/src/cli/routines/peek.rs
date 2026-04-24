@@ -14,7 +14,9 @@ use crate::project::Project;
 use super::{setup_redis_client, RoutineFailure, RoutineSuccess};
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseTable;
-use crate::infrastructure::stream::kafka::client::create_consumer;
+use crate::infrastructure::stream::kafka::client::{
+    create_consumer, KafkaClientHandle, PURPOSE_PEEK_CONSUMER,
+};
 use futures::stream::BoxStream;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::{Message as KafkaMessage, Offset, TopicPartitionList};
@@ -76,13 +78,17 @@ pub async fn peek(
             ))
         })?;
 
-    let consumer_ref: StreamConsumer;
+    let consumer_ref: KafkaClientHandle<StreamConsumer>;
     let table_ref: ClickHouseTable;
 
     let mut stream: BoxStream<anyhow::Result<Value>> = if is_stream {
         let group_id = project.redpanda_config.prefix_with_namespace("peek");
 
-        consumer_ref = create_consumer(&project.redpanda_config, &[("group.id", &group_id)]);
+        consumer_ref = create_consumer(
+            &project.redpanda_config,
+            &[("group.id", &group_id)],
+            PURPOSE_PEEK_CONSUMER,
+        );
         let consumer = &consumer_ref;
 
         let topic = find_topic_by_name(&infra, name).ok_or_else(|| {

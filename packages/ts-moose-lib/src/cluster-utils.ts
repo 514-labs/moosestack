@@ -1,4 +1,5 @@
 import cluster from "node:cluster";
+import http from "node:http";
 import { availableParallelism } from "node:os";
 import { exit } from "node:process";
 import { Worker } from "node:cluster";
@@ -11,6 +12,59 @@ const RESTART_TIME_MS = 10000;
 const SIGTERM = "SIGTERM";
 const SIGINT = "SIGINT";
 const SHUTDOWN_WORKERS_INTERVAL = 500;
+
+const METRICS_LOGS_PATH = "/metrics-logs";
+const KNOWN_TERMINATION_SIGNALS: ReadonlyArray<string> = [
+  "SIGTERM",
+  "SIGKILL",
+  "SIGABRT",
+  "SIGINT",
+];
+
+function classifyWorkerExit(
+  code: number | null,
+  signal: NodeJS.Signals | string | null,
+): string {
+  if (signal) {
+    const normalized = String(signal);
+    if (KNOWN_TERMINATION_SIGNALS.includes(normalized)) {
+      return `ts_worker_killed_by_signal_${normalized}`;
+    }
+    return "ts_worker_killed_other";
+  }
+  if (code === null) {
+    return "ts_worker_exit_unknown";
+  }
+  if (code === 0) {
+    return "ts_worker_exit_code_0";
+  }
+  return "ts_worker_exit_code_nonzero";
+}
+
+function reportWorkerExit(
+  code: number | null,
+  signal: NodeJS.Signals | string | null,
+): void {
+  const reason = classifyWorkerExit(code, signal);
+  const managementPort = parseInt(
+    process.env.MOOSE_MANAGEMENT_PORT ?? "5001",
+    10,
+  );
+  const payload = JSON.stringify({ reason });
+  const req = http.request({
+    host: "127.0.0.1",
+    port: managementPort,
+    method: "POST",
+    path: METRICS_LOGS_PATH,
+    headers: {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(payload),
+    },
+  });
+  req.on("error", () => {});
+  req.write(payload);
+  req.end();
+}
 
 /**
  * Manages a cluster of worker processes, handling their lifecycle including startup,
@@ -144,6 +198,10 @@ export class Cluster<C> {
       console.info(
         `worker ${worker.process.pid} exited with code ${code} and signal ${signal}`,
       );
+
+      try {
+        reportWorkerExit(code, signal);
+      } catch {}
 
       if (!this.shutdownInProgress) {
         setTimeout(() => cluster.fork(), RESTART_TIME_MS);

@@ -16,7 +16,7 @@ use tracing::info;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
-use crate::infrastructure::stream::kafka::client::create_consumer;
+use crate::infrastructure::stream::kafka::client::{create_consumer, PURPOSE_MCP_SAMPLE_CONSUMER};
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
 use toon_format::{encode, types::KeyFoldingMode, EncodeOptions, ToonError};
 
@@ -320,7 +320,11 @@ async fn execute_get_stream_sample(
     // Create consumer with unique group ID for sampling
     let group_id =
         kafka_config.prefix_with_namespace(&format!("mcp_sample_{}", uuid::Uuid::new_v4()));
-    let consumer = create_consumer(&kafka_config, &[("group.id", &group_id)]);
+    let consumer = create_consumer(
+        &kafka_config,
+        &[("group.id", &group_id)],
+        PURPOSE_MCP_SAMPLE_CONSUMER,
+    );
 
     // Build topic partition list with tail offset for getting last N messages
     let topic_partition_map = build_partition_map(&topic.id(), topic.partition_count, params.limit);

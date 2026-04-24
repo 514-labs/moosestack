@@ -8,7 +8,7 @@ use prometheus_client::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -31,6 +31,12 @@ pub const STREAMING_FUNCTION_EVENT_OUPUT_COUNT: &str =
     "moose_streaming_functions_events_output_count";
 pub const STREAMING_FUNCTION_PROCESSED_BYTE_COUNT: &str =
     "moose_streaming_functions_processed_byte_count";
+pub const KAFKA_CLIENTS_GAUGE: &str = "moose_kafka_client_gauge";
+// Counter name constants deliberately exclude the `_total` suffix; the
+// OpenMetrics encoder in `prometheus_client` appends it automatically when
+// serialising. Scraped series end up as `..._total`, matching dashboards.
+pub const FUNCTION_WORKER_RESTARTS_TOTAL: &str = "moose_function_worker_restarts";
+pub const FUNCTION_PROCESS_DIFF_UPDATED_TOTAL: &str = "moose_function_process_diff_updated";
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -73,6 +79,18 @@ pub enum MetricEvent {
         bytes: u64,
         consumer_group: String,
         topic_name: String,
+    },
+    FunctionWorkerRestart {
+        reason: String,
+    },
+    FunctionProcessDiffUpdated {
+        diff_reason: String,
+    },
+    KafkaClientCreated {
+        purpose: String,
+    },
+    KafkaClientDropped {
+        purpose: String,
     },
 }
 
@@ -120,6 +138,9 @@ pub struct Statistics {
     pub streaming_functions_in_event_total_count: Counter,
     pub streaming_functions_out_event_total_count: Counter,
     pub streaming_functions_processed_bytes_total_count: Counter,
+    pub kafka_clients: Family<KafkaClientLabels, Gauge>,
+    pub function_worker_restarts_total: Family<FunctionWorkerRestartLabels, Counter>,
+    pub function_process_diff_updated_total: Family<FunctionProcessDiffLabels, Counter>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -144,6 +165,21 @@ pub struct MessagesInCounterLabels {
 pub struct MessagesOutCounterLabels {
     consumer_group: String,
     topic_name: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct KafkaClientLabels {
+    pub purpose: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct FunctionWorkerRestartLabels {
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct FunctionProcessDiffLabels {
+    pub reason: String,
 }
 
 impl Metrics {
@@ -179,6 +215,32 @@ impl Metrics {
 
     pub async fn send_metric_event(&self, data: MetricEvent) {
         let _ = self.tx_events.send(data).await;
+    }
+
+    pub fn try_send_metric_event(&self, data: MetricEvent) {
+        let _ = self.tx_events.try_send(data);
+    }
+
+    pub fn kafka_client_created(&self, purpose: &'static str) {
+        self.try_send_metric_event(MetricEvent::KafkaClientCreated {
+            purpose: purpose.to_string(),
+        });
+    }
+
+    pub fn kafka_client_dropped(&self, purpose: &'static str) {
+        self.try_send_metric_event(MetricEvent::KafkaClientDropped {
+            purpose: purpose.to_string(),
+        });
+    }
+
+    pub fn function_worker_restart(&self, reason: String) {
+        self.try_send_metric_event(MetricEvent::FunctionWorkerRestart { reason });
+    }
+
+    pub fn function_process_diff_updated(&self, reason: &'static str) {
+        self.try_send_metric_event(MetricEvent::FunctionProcessDiffUpdated {
+            diff_reason: reason.to_string(),
+        });
     }
 
     pub async fn get_metrics_registry_as_string(&self) -> String {
@@ -241,6 +303,13 @@ impl Metrics {
             >::new_with_constructor(
                 Counter::default
             ),
+            kafka_clients: Family::<KafkaClientLabels, Gauge>::new_with_constructor(Gauge::default),
+            function_worker_restarts_total:
+                Family::<FunctionWorkerRestartLabels, Counter>::new_with_constructor(
+                    Counter::default,
+                ),
+            function_process_diff_updated_total:
+                Family::<FunctionProcessDiffLabels, Counter>::new_with_constructor(Counter::default),
         });
 
         let mut registry = self.registry.lock().await;
@@ -297,6 +366,22 @@ impl Metrics {
             STREAMING_FUNCTION_PROCESSED_BYTE_COUNT,
             "Bytes sent from one data model to another using kafka stream",
             data.streaming_functions_processed_bytes_count.clone(),
+        );
+
+        registry.register(
+            KAFKA_CLIENTS_GAUGE,
+            "Number of live rdkafka client handles held by this process, by purpose",
+            data.kafka_clients.clone(),
+        );
+        registry.register(
+            FUNCTION_WORKER_RESTARTS_TOTAL,
+            "Count of streaming-function worker restarts, bucketed by reason",
+            data.function_worker_restarts_total.clone(),
+        );
+        registry.register(
+            FUNCTION_PROCESS_DIFF_UPDATED_TOTAL,
+            "Count of FunctionProcess diff entries that emit a Change::Updated, bucketed by reason",
+            data.function_process_diff_updated_total.clone(),
         );
 
         let metrics_inserter = self.metrics_inserter.clone();
@@ -433,6 +518,28 @@ impl Metrics {
                         data.streaming_functions_processed_bytes_total_count
                             .inc_by(bytes);
                     }
+                    MetricEvent::KafkaClientCreated { purpose } => {
+                        data.kafka_clients
+                            .get_or_create(&KafkaClientLabels { purpose })
+                            .inc();
+                    }
+                    MetricEvent::KafkaClientDropped { purpose } => {
+                        data.kafka_clients
+                            .get_or_create(&KafkaClientLabels { purpose })
+                            .dec();
+                    }
+                    MetricEvent::FunctionWorkerRestart { reason } => {
+                        data.function_worker_restarts_total
+                            .get_or_create(&FunctionWorkerRestartLabels { reason })
+                            .inc();
+                    }
+                    MetricEvent::FunctionProcessDiffUpdated { diff_reason } => {
+                        data.function_process_diff_updated_total
+                            .get_or_create(&FunctionProcessDiffLabels {
+                                reason: diff_reason,
+                            })
+                            .inc();
+                    }
                 };
 
                 trace!("Updated metrics: {:?}", data);
@@ -448,4 +555,142 @@ fn formatted_registry(data: &Registry) -> String {
     let mut buffer = String::new();
     let _ = encode(&mut buffer, data);
     buffer
+}
+
+static GLOBAL_METRICS: OnceLock<Weak<Metrics>> = OnceLock::new();
+
+pub const KAFKA_METRICS_DISABLED_ENV: &str = "MOOSE_KAFKA_CLIENT_METRICS_DISABLED";
+
+pub fn set_global_metrics_handle(metrics: &Arc<Metrics>) {
+    let weak = Arc::downgrade(metrics);
+    if GLOBAL_METRICS.set(weak).is_err() {
+        tracing::warn!("set_global_metrics_handle called more than once; ignoring subsequent call");
+    }
+}
+
+fn with_global_metrics<F>(f: F)
+where
+    F: FnOnce(&Metrics),
+{
+    if let Some(weak) = GLOBAL_METRICS.get() {
+        if let Some(metrics) = weak.upgrade() {
+            f(&metrics);
+        }
+    }
+}
+
+pub fn kafka_client_tracking_enabled() -> bool {
+    std::env::var(KAFKA_METRICS_DISABLED_ENV).is_err()
+}
+
+pub fn record_kafka_client_created(purpose: &'static str) {
+    if !kafka_client_tracking_enabled() {
+        return;
+    }
+    with_global_metrics(|m| m.kafka_client_created(purpose));
+}
+
+pub fn record_kafka_client_dropped(purpose: &'static str) {
+    if !kafka_client_tracking_enabled() {
+        return;
+    }
+    with_global_metrics(|m| m.kafka_client_dropped(purpose));
+}
+
+pub fn record_function_worker_restart(reason: String) {
+    with_global_metrics(|m| m.function_worker_restart(reason));
+}
+
+pub fn record_function_process_diff_updated(reason: &'static str) {
+    with_global_metrics(|m| m.function_process_diff_updated(reason));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_metrics() -> (Arc<Metrics>, tokio::sync::mpsc::Receiver<MetricEvent>) {
+        let (metrics, rx) = Metrics::new(
+            TelemetryMetadata {
+                machine_id: "test".to_string(),
+                is_moose_developer: false,
+                metric_labels: None,
+                metric_endpoints: None,
+                is_production: false,
+                project_name: "test".to_string(),
+                export_metrics: false,
+            },
+            None,
+        );
+        (Arc::new(metrics), rx)
+    }
+
+    async fn drain_and_scrape(metrics: &Arc<Metrics>) -> String {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        metrics.get_metrics_registry_as_string().await
+    }
+
+    #[tokio::test]
+    async fn new_kafka_client_event_updates_gauge() {
+        let (metrics, rx) = test_metrics();
+        metrics.start_listening_to_metrics(rx).await;
+
+        metrics.kafka_client_created("unit_test_purpose");
+        metrics.kafka_client_created("unit_test_purpose");
+        metrics.kafka_client_dropped("unit_test_purpose");
+
+        let scraped = drain_and_scrape(&metrics).await;
+        assert!(
+            scraped.contains("moose_kafka_client_gauge"),
+            "expected gauge metric in registry output, got:\n{scraped}"
+        );
+        assert!(
+            scraped.contains(r#"moose_kafka_client_gauge{purpose="unit_test_purpose"} 1"#),
+            "expected gauge value of 1 after 2 creates and 1 drop, got:\n{scraped}"
+        );
+    }
+
+    #[tokio::test]
+    async fn new_worker_restart_event_updates_counter() {
+        let (metrics, rx) = test_metrics();
+        metrics.start_listening_to_metrics(rx).await;
+
+        metrics.function_worker_restart("unit_test_reason".to_string());
+
+        let scraped = drain_and_scrape(&metrics).await;
+        assert!(
+            scraped
+                .contains(r#"moose_function_worker_restarts_total{reason="unit_test_reason"} 1"#),
+            "expected worker restart counter, got:\n{scraped}"
+        );
+    }
+
+    #[tokio::test]
+    async fn new_diff_updated_event_updates_counter() {
+        let (metrics, rx) = test_metrics();
+        metrics.start_listening_to_metrics(rx).await;
+
+        metrics.function_process_diff_updated("forced_always");
+        metrics.function_process_diff_updated("forced_always");
+
+        let scraped = drain_and_scrape(&metrics).await;
+        assert!(
+            scraped
+                .contains(r#"moose_function_process_diff_updated_total{reason="forced_always"} 2"#),
+            "expected diff counter of 2, got:\n{scraped}"
+        );
+    }
+
+    #[test]
+    fn tracking_disabled_env_suppresses_events() {
+        let prev = std::env::var(KAFKA_METRICS_DISABLED_ENV).ok();
+        std::env::set_var(KAFKA_METRICS_DISABLED_ENV, "1");
+        assert!(!kafka_client_tracking_enabled());
+        record_kafka_client_created("should_not_panic");
+        record_kafka_client_dropped("should_not_panic");
+        match prev {
+            Some(v) => std::env::set_var(KAFKA_METRICS_DISABLED_ENV, v),
+            None => std::env::remove_var(KAFKA_METRICS_DISABLED_ENV),
+        }
+    }
 }

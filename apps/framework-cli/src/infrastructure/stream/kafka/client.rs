@@ -12,6 +12,7 @@
 use crate::infrastructure::stream::kafka::constants::{
     DEFAULT_MAX_MESSAGE_BYTES, KAFKA_MAX_MESSAGE_BYTES_CONFIG_KEY, KAFKA_RETENTION_CONFIG_KEY,
 };
+use crate::metrics::{record_kafka_client_created, record_kafka_client_dropped};
 use crate::project::Project;
 use rdkafka::admin::{AlterConfig, NewPartitions, ResourceSpecifier};
 use rdkafka::config::RDKafkaLogLevel;
@@ -26,8 +27,81 @@ use rdkafka::{
     producer::FutureProducer,
 };
 use std::collections::{HashMap, VecDeque};
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
+
+pub const PURPOSE_INGEST_PRODUCER: &str = "ingest_producer";
+pub const PURPOSE_IDEMPOTENT_PRODUCER: &str = "idempotent_producer";
+pub const PURPOSE_SYNC_PRODUCER: &str = "sync_producer";
+pub const PURPOSE_SYNC_CONSUMER: &str = "sync_consumer";
+pub const PURPOSE_PEEK_CONSUMER: &str = "peek_consumer";
+pub const PURPOSE_MCP_SAMPLE_CONSUMER: &str = "mcp_sample_consumer";
+pub const PURPOSE_HEALTH_PROBE: &str = "health_probe";
+pub const PURPOSE_FETCH_TOPICS_CONSUMER: &str = "fetch_topics_consumer";
+pub const PURPOSE_FETCH_TOPICS_ADMIN: &str = "fetch_topics_admin";
+pub const PURPOSE_CHECK_TOPIC_SIZE_CONSUMER: &str = "check_topic_size_consumer";
+pub const PURPOSE_ADMIN_ADD_PARTITIONS: &str = "admin_add_partitions";
+pub const PURPOSE_ADMIN_UPDATE_TOPIC_CONFIG: &str = "admin_update_topic_config";
+pub const PURPOSE_ADMIN_CREATE_TOPICS: &str = "admin_create_topics";
+pub const PURPOSE_ADMIN_DELETE_TOPICS: &str = "admin_delete_topics";
+pub const PURPOSE_ADMIN_DESCRIBE_TOPIC_CONFIG: &str = "admin_describe_topic_config";
+// Option A (plan §0.6.7): function worker Kafka handles (TS/Python) are not
+// rdkafka, so we approximate their presence in the gauge with one tick per
+// parallel worker instance. Treat this as a proxy for "an external worker is
+// alive and holding at least one Kafka socket"; actual socket count per
+// worker is tracked separately on the language runtime side if/when needed.
+pub const PURPOSE_FUNCTION_WORKER_ESTIMATED: &str = "function_worker_estimated";
+
+struct KafkaClientTracker {
+    purpose: &'static str,
+}
+
+impl KafkaClientTracker {
+    fn new(purpose: &'static str) -> Arc<Self> {
+        record_kafka_client_created(purpose);
+        Arc::new(KafkaClientTracker { purpose })
+    }
+}
+
+impl Drop for KafkaClientTracker {
+    fn drop(&mut self) {
+        record_kafka_client_dropped(self.purpose);
+    }
+}
+
+#[derive(Clone)]
+pub struct KafkaClientHandle<T> {
+    inner: T,
+    _tracker: Arc<KafkaClientTracker>,
+}
+
+impl<T> KafkaClientHandle<T> {
+    pub fn wrap(inner: T, purpose: &'static str) -> Self {
+        KafkaClientHandle {
+            inner,
+            _tracker: KafkaClientTracker::new(purpose),
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+impl<T> Deref for KafkaClientHandle<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T> DerefMut for KafkaClientHandle<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+}
 
 use super::constants::{
     DEFAULT_RETENTION_MS, KAFKA_ACKS_CONFIG_KEY, KAFKA_AUTO_COMMIT_INTERVAL_MS_CONFIG_KEY,
@@ -201,6 +275,7 @@ async fn add_partitions(
     let admin_client: AdminClient<_> = build_rdkafka_client_config(kafka_config)
         .create()
         .expect("Redpanda Admin Client creation failed");
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_ADMIN_ADD_PARTITIONS);
 
     let options = AdminOptions::new().operation_timeout(Some(Duration::from_secs(5)));
     let new_partitions = NewPartitions::new(id, partition_count);
@@ -249,6 +324,7 @@ async fn update_topic_config(
     let admin_client: AdminClient<_> = build_rdkafka_client_config(kafka_config)
         .create()
         .expect("Redpanda Admin Client creation failed");
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_ADMIN_UPDATE_TOPIC_CONFIG);
 
     let options = AdminOptions::new().operation_timeout(Some(Duration::from_secs(5)));
 
@@ -302,6 +378,7 @@ pub async fn create_topics(
     let admin_client: AdminClient<_> = build_rdkafka_client_config(config)
         .create()
         .expect("Redpanda Admin Client creation failed");
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_ADMIN_CREATE_TOPICS);
 
     // Prepare the AdminOptions
     let options = AdminOptions::new().operation_timeout(Some(std::time::Duration::from_secs(5)));
@@ -369,6 +446,7 @@ pub async fn delete_topics(
     let admin_client: AdminClient<_> = build_rdkafka_client_config(config)
         .create()
         .expect("Redpanda Admin Client creation failed");
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_ADMIN_DELETE_TOPICS);
 
     // Prepare the AdminOptions
     let options = AdminOptions::new().operation_timeout(Some(std::time::Duration::from_secs(5)));
@@ -418,6 +496,7 @@ pub async fn describe_topic_config(
     let admin_client: AdminClient<_> = build_rdkafka_client_config(config)
         .create()
         .expect("Redpanda Admin Client creation failed");
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_ADMIN_DESCRIBE_TOPIC_CONFIG);
 
     let options = AdminOptions::new().operation_timeout(Some(std::time::Duration::from_secs(5)));
 
@@ -464,7 +543,7 @@ pub async fn describe_topic_config(
 ///
 /// # Panics
 /// * Panics if the producer creation fails
-pub fn create_idempotent_producer(config: &KafkaConfig) -> FutureProducer {
+pub fn create_idempotent_producer(config: &KafkaConfig) -> KafkaClientHandle<FutureProducer> {
     let mut client_config = build_rdkafka_client_config(config);
 
     client_config
@@ -475,7 +554,8 @@ pub fn create_idempotent_producer(config: &KafkaConfig) -> FutureProducer {
         .set(KAFKA_ENABLE_IDEMPOTENCE_CONFIG_KEY, true.to_string())
         .set(KAFKA_ACKS_CONFIG_KEY, "all")
         .set(KAFKA_ENABLE_GAPLESS_GUARANTEE_CONFIG_KEY, true.to_string());
-    client_config.create().expect("Failed to create producer")
+    let producer: FutureProducer = client_config.create().expect("Failed to create producer");
+    KafkaClientHandle::wrap(producer, PURPOSE_IDEMPOTENT_PRODUCER)
 }
 
 /// Creates a standard producer with custom message timeout and at-least-once delivery guarantees.
@@ -488,7 +568,7 @@ pub fn create_idempotent_producer(config: &KafkaConfig) -> FutureProducer {
 ///
 /// # Panics
 /// * Panics if the producer creation fails
-pub fn create_producer(config: KafkaConfig) -> ConfiguredProducer {
+pub fn create_producer(config: KafkaConfig, purpose: &'static str) -> ConfiguredProducer {
     let mut client_config = build_rdkafka_client_config(&config);
 
     client_config.set(
@@ -503,7 +583,8 @@ pub fn create_producer(config: KafkaConfig) -> ConfiguredProducer {
     // This is the maximum number of retries that will be made before the timeout.
     client_config.set(KAFKA_RETRIES_CONFIG_KEY, "2147483647");
 
-    let producer = client_config.create().expect("Failed to create producer");
+    let producer: FutureProducer = client_config.create().expect("Failed to create producer");
+    let producer = KafkaClientHandle::wrap(producer, purpose);
     ConfiguredProducer { producer, config }
 }
 
@@ -525,7 +606,8 @@ pub fn create_producer(config: KafkaConfig) -> ConfiguredProducer {
 /// * Returns error if metadata fetch fails
 /// * Returns error if watermark fetch fails for any partition
 pub async fn check_topic_size(topic: &str, config: &KafkaConfig) -> Result<i64, KafkaError> {
-    let client: StreamConsumer<_> = build_rdkafka_client_config(config).create()?;
+    let client: StreamConsumer = build_rdkafka_client_config(config).create()?;
+    let client = KafkaClientHandle::wrap(client, PURPOSE_CHECK_TOPIC_SIZE_CONSUMER);
     let timeout = Duration::from_secs(1);
     let md = client.fetch_metadata(Some(topic), timeout)?;
     let partitions = match md.topics().iter().find(|t| t.name() == topic) {
@@ -566,7 +648,9 @@ pub async fn fetch_topics(
 ) -> Result<Vec<KafkaStreamConfig>, rdkafka::error::KafkaError> {
     let rdkafka_config = build_rdkafka_client_config(config);
     let client: BaseConsumer = rdkafka_config.create()?;
+    let client = KafkaClientHandle::wrap(client, PURPOSE_FETCH_TOPICS_CONSUMER);
     let admin_client: AdminClient<_> = rdkafka_config.create()?;
+    let admin_client = KafkaClientHandle::wrap(admin_client, PURPOSE_FETCH_TOPICS_ADMIN);
     let mut topics: Vec<KafkaStreamConfig> = Vec::new();
 
     let options = AdminOptions::new().operation_timeout(Some(std::time::Duration::from_secs(5)));
@@ -617,13 +701,18 @@ pub async fn fetch_topics(
 ///
 /// # Panics
 /// * Panics if the consumer creation fails
-pub fn create_consumer(config: &KafkaConfig, extra_config: &[(&str, &str)]) -> StreamConsumer {
+pub fn create_consumer(
+    config: &KafkaConfig,
+    extra_config: &[(&str, &str)],
+    purpose: &'static str,
+) -> KafkaClientHandle<StreamConsumer> {
     let mut client_config = build_rdkafka_client_config(config);
 
     extra_config.iter().for_each(|(k, v)| {
         client_config.set(*k, *v);
     });
-    client_config.create().expect("Failed to create consumer")
+    let consumer: StreamConsumer = client_config.create().expect("Failed to create consumer");
+    KafkaClientHandle::wrap(consumer, purpose)
 }
 
 /// Creates a subscriber (consumer) for a specific topic with standard configuration.
@@ -642,7 +731,12 @@ pub fn create_consumer(config: &KafkaConfig, extra_config: &[(&str, &str)]) -> S
 /// # Panics
 /// * Panics if the consumer creation fails
 /// * Panics if the subscription fails
-pub fn create_subscriber(config: &KafkaConfig, group_id: &str, topic: &str) -> StreamConsumer {
+pub fn create_subscriber(
+    config: &KafkaConfig,
+    group_id: &str,
+    topic: &str,
+    purpose: &'static str,
+) -> KafkaClientHandle<StreamConsumer> {
     let group_id = config.prefix_with_namespace(group_id);
     let consumer = create_consumer(
         config,
@@ -658,6 +752,7 @@ pub fn create_subscriber(config: &KafkaConfig, group_id: &str, topic: &str) -> S
             (KAFKA_GROUP_ID_CONFIG_KEY, &group_id),
             (KAFKA_ISOLATION_LEVEL_CONFIG_KEY, "read_committed"),
         ],
+        purpose,
     );
 
     let topics = [topic];
@@ -785,6 +880,7 @@ pub async fn send_with_back_pressure(
 pub async fn health_check(config: &KafkaConfig) -> Result<bool, KafkaError> {
     let client_config = build_rdkafka_client_config(config);
     let client: BaseConsumer = client_config.create()?;
+    let client = KafkaClientHandle::wrap(client, PURPOSE_HEALTH_PROBE);
 
     // Simple client.metadata() call without iterating over topics
     match client.fetch_metadata(None, Duration::from_secs(2)) {

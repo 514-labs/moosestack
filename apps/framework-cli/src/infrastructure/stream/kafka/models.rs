@@ -1,4 +1,6 @@
 use rdkafka::{metadata::MetadataTopic, producer::FutureProducer};
+
+use super::client::KafkaClientHandle;
 use serde::{Deserialize, Serialize};
 
 use crate::framework::{core::infrastructure::topic::Topic, versions::Version};
@@ -321,8 +323,9 @@ impl Default for KafkaConfig {
 /// for convenience in passing both together.
 #[derive(Clone)]
 pub struct ConfiguredProducer {
-    /// The underlying Redpanda/Kafka producer
-    pub producer: FutureProducer,
+    /// The underlying Redpanda/Kafka producer, wrapped in a tracking handle so
+    /// live client counts are visible via the `moose_kafka_client_gauge` metric.
+    pub producer: KafkaClientHandle<FutureProducer>,
     /// The configuration used to create this producer
     pub config: KafkaConfig,
 }

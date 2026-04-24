@@ -4,7 +4,11 @@ use crate::{
         infrastructure::function_process::FunctionProcess, infrastructure_map::InfrastructureMap,
     },
     framework::{python, typescript},
-    infrastructure::stream::{kafka::models::KafkaStreamConfig, StreamConfig},
+    infrastructure::stream::{
+        kafka::client::PURPOSE_FUNCTION_WORKER_ESTIMATED, kafka::models::KafkaStreamConfig,
+        StreamConfig,
+    },
+    metrics::{record_kafka_client_created, record_kafka_client_dropped},
     project::Project,
     utilities::system::KillProcessError,
 };
@@ -29,8 +33,15 @@ pub enum FunctionRegistryError {
     TopicNotFound { topic_id: String },
 }
 
+struct RegistryEntry {
+    process: RestartingProcess,
+    // Number of `PURPOSE_FUNCTION_WORKER_ESTIMATED` gauge increments we made
+    // on start; `stop` must decrement the same count so the gauge balances.
+    estimated_clients: usize,
+}
+
 pub struct FunctionProcessRegistry {
-    registry: HashMap<String, RestartingProcess>,
+    registry: HashMap<String, RegistryEntry>,
     project: Arc<Project>,
 }
 
@@ -140,8 +151,17 @@ impl FunctionProcessRegistry {
                     start_fn,
                     RestartPolicy::Always,
                 )?;
-                self.registry
-                    .insert(function_process.id(), restarting_process);
+                let estimated_clients = parallel_process_count.max(1);
+                for _ in 0..estimated_clients {
+                    record_kafka_client_created(PURPOSE_FUNCTION_WORKER_ESTIMATED);
+                }
+                self.registry.insert(
+                    function_process.id(),
+                    RegistryEntry {
+                        process: restarting_process,
+                        estimated_clients,
+                    },
+                );
 
                 Ok(())
             }
@@ -197,8 +217,17 @@ impl FunctionProcessRegistry {
                     start_fn,
                     RestartPolicy::Always,
                 )?;
-                self.registry
-                    .insert(function_process.id(), restarting_process);
+                let estimated_clients = parallel_process_count.max(1);
+                for _ in 0..estimated_clients {
+                    record_kafka_client_created(PURPOSE_FUNCTION_WORKER_ESTIMATED);
+                }
+                self.registry.insert(
+                    function_process.id(),
+                    RegistryEntry {
+                        process: restarting_process,
+                        estimated_clients,
+                    },
+                );
 
                 Ok(())
             }
@@ -212,15 +241,21 @@ impl FunctionProcessRegistry {
         info!("Stopping function process {:?}...", function_process.id());
 
         let id = &function_process.id();
-        if let Some(restarting_process) = self.registry.remove(id) {
-            restarting_process.stop().await;
+        if let Some(entry) = self.registry.remove(id) {
+            for _ in 0..entry.estimated_clients {
+                record_kafka_client_dropped(PURPOSE_FUNCTION_WORKER_ESTIMATED);
+            }
+            entry.process.stop().await;
         }
     }
 
     pub async fn stop_all(&mut self) {
-        for (id, restarting_process) in self.registry.drain() {
+        for (id, entry) in self.registry.drain() {
             info!("Stopping function_process {:?}...", id);
-            restarting_process.stop().await;
+            for _ in 0..entry.estimated_clients {
+                record_kafka_client_dropped(PURPOSE_FUNCTION_WORKER_ESTIMATED);
+            }
+            entry.process.stop().await;
         }
     }
 }

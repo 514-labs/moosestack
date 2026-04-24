@@ -14,7 +14,7 @@ pub mod settings;
 /// `spawn_and_await_initial_compile`.
 pub mod ts_compilation_watcher;
 pub mod watcher;
-use super::metrics::Metrics;
+use super::metrics::{set_global_metrics_handle, Metrics};
 use crate::utilities::constants;
 use crate::utilities::docker::DockerClient;
 use crate::utilities::docker_provider::DockerInfraProvider;
@@ -773,6 +773,7 @@ pub async fn top_command_handler(
 
             let arc_metrics = Arc::new(metrics);
             arc_metrics.start_listening_to_metrics(rx_events).await;
+            set_global_metrics_handle(&arc_metrics);
 
             routines::start_development_mode(
                 project_arc,
@@ -1018,6 +1019,7 @@ pub async fn top_command_handler(
 
             let arc_metrics = Arc::new(metrics);
             arc_metrics.start_listening_to_metrics(rx_events).await;
+            set_global_metrics_handle(&arc_metrics);
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::ProdCommand,

@@ -137,6 +137,12 @@ async fn flush(
                             "topic_name": topic_name,
                         }),
                     ),
+                    MetricEvent::FunctionWorkerRestart { .. }
+                    | MetricEvent::FunctionProcessDiffUpdated { .. }
+                    | MetricEvent::KafkaClientCreated { .. }
+                    | MetricEvent::KafkaClientDropped { .. } => {
+                        continue;
+                    }
                 };
 
                 let mut payload = payload.clone();
