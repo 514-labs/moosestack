@@ -162,7 +162,7 @@ Add more tables by exporting additional `OlapTable` objects from `moose/app/inde
 
 ## Start local ClickHouse
 
-Start the Moose Runtime in `dev` mode. This brings up a local ClickHouse instance (via Docker) and hot-reloads schema changes to it whenever you edit your models.
+Start the Moose Server in `dev` mode. This brings up a local ClickHouse instance (via Docker) and hot-reloads schema changes to it whenever you edit your models.
 
 Navigate to your `moose` directory and run:
 
@@ -265,7 +265,7 @@ export default async function clickhouseController(fastify: FastifyInstance) {
 
 ## Deploy to production
 
-There's no separate production Moose Runtime to deploy. You just need to:
+There's no separate production Moose Server to deploy. You just need to:
 
 1. Apply your schema to production ClickHouse
 2. Configure your production environment with production credentials

@@ -1,6 +1,6 @@
 ---
 title: moose migrate
-description: Reference documentation for the manual migration CLI command used in serverless deployments.
+description: Reference documentation for the manual migration CLI command used in Standalone CLI deployments.
 order: 7
 category: olap
 ---
@@ -9,11 +9,11 @@ import { Callout } from "@/components/mdx";
 
 # moose migrate
 
-The **CLI** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose OLAP is integrated as a library rather than a standalone server (e.g. as a library in a Python or TypeScript application).
+The **Standalone CLI** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose OLAP is integrated as a library rather than a long-lived server (e.g. as a library in a Python or TypeScript application).
 
 ## Overview
 
-In serverless or library-based deployments, MooseStack does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
+In Standalone CLI deployments (Moose used as a library, with no long-lived server), MooseStack does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
 
 | Feature | Description |
 | :--- | :--- |
@@ -69,5 +69,5 @@ This command is typically used in a deployment pipeline before updating the appl
 ## See Also
 
 - [Planned Migrations](/moosestack/migrate/planned-migrations) — Generating the plan files
-- [moose prod (Moose Runtime Migrations)](/moosestack/migrate/apply-planned-migrations-service) — Automatic migrations for Moose Runtime deployments
+- [moose prod (Moose Server)](/moosestack/migrate/apply-planned-migrations-service) — Automatic migrations for Moose Server deployments
 - [Migration Modes](/moosestack/migrate/modes) — Overview of schema evolution modes

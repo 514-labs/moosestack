@@ -326,7 +326,7 @@ moose plan [--url <url>] [--token <token>] [--json]
 - `--token`: API token for the remote Moose instance
 - `--json`: Output plan as JSON
 
-**For serverless deployments:**
+**For Standalone CLI deployments:**
 ```bash
 moose plan --clickhouse-url <url>
 ```
@@ -361,8 +361,8 @@ moose generate migration [--url <url> --token <token> | --clickhouse-url <url>] 
 ```
 
 **Connection options** (one required):
-- `--url` + `--token`: Connect to a running Moose server
-- `--clickhouse-url`: Connect directly to ClickHouse (for serverless). Also requires `--redis-url` when `state_config.storage = "redis"`.
+- `--url` + `--token`: Connect to a running Moose Server
+- `--clickhouse-url`: Connect directly to ClickHouse (for Standalone CLI). Also requires `--redis-url` when `state_config.storage = "redis"`.
 
 All connection flags accept env var fallbacks: `MOOSE_CLICKHOUSE_CONFIG__URL` for `--clickhouse-url` and `MOOSE_REDIS_CONFIG__URL` for `--redis-url`.
 
