@@ -2169,34 +2169,7 @@ async fn confirm_and_save_migration(
         for (i, delta) in infra_deltas.iter().enumerate() {
             println!("  {}. {}", i + 1, delta.summary());
         }
-        if version_bump_decisions
-            .iter()
-            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
-        {
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "Note".to_string(),
-                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
-                              when you run with --save"
-                        .to_string(),
-                },
-            );
-        }
-        if version_bump_decisions
-            .iter()
-            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
-        {
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "Note".to_string(),
-                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
-                              when you run with --save"
-                        .to_string(),
-                },
-            );
-        }
+        version_bump::show_retained_table_note(&version_bump_decisions);
     }
 
     Ok(RoutineSuccess::success(Message::new(
@@ -2401,20 +2374,7 @@ async fn confirm_and_save_migration_legacy(
         })?;
     } else {
         println!("Changes: \n\n{}", plan_yaml);
-        if version_bump_decisions
-            .iter()
-            .any(|d| d.old_table_disposition == version_bump::OldTableDisposition::Retain)
-        {
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "Note".to_string(),
-                    details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
-                              when you run with --save"
-                        .to_string(),
-                },
-            );
-        }
+        version_bump::show_retained_table_note(&version_bump_decisions);
     }
 
     Ok(RoutineSuccess::success(Message::new(

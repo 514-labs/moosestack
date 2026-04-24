@@ -864,6 +864,26 @@ pub fn exclude_bump_drops_from_risk(decisions: &[VersionBumpDecision], risk: &mu
     );
 }
 
+/// If any decision retains the old table, show a note about the
+/// `EXTERNALLY_MANAGED` definition file that will be generated on `--save`.
+pub fn show_retained_table_note(decisions: &[VersionBumpDecision]) {
+    if decisions
+        .iter()
+        .any(|d| d.old_table_disposition == OldTableDisposition::Retain)
+    {
+        use crate::cli::display::{self, Message, MessageType};
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Note".to_string(),
+                details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
+                          when you run with --save"
+                    .to_string(),
+            },
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
