@@ -4101,11 +4101,15 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
 ///
 /// # Returns
 /// `true` if the dictionaries are equal ignoring metadata, `false` otherwise
-/// Masks credential-bearing fields in a dictionary external source in-place.
+/// Masks secret credential fields in a dictionary external source in-place.
 ///
-/// Replaces passwords, keys, and tokens with [`CREDENTIAL_PLACEHOLDER`] so that
-/// round-tripped dictionaries (whose credentials are masked before proto/Redis
-/// persistence) compare equal to their plaintext counterparts.
+/// Replaces **passwords, keys, and tokens** with [`CREDENTIAL_PLACEHOLDER`] so that
+/// round-tripped dictionaries (whose secrets are masked before JSON persistence)
+/// compare equal to their plaintext counterparts.
+///
+/// **Usernames are intentionally NOT masked** — they are identifiers, not secrets,
+/// and must remain in plaintext so that `dicts_equal_ignore_metadata` can detect
+/// username changes and trigger a dictionary rebuild.
 fn mask_dict_credentials(dict: &mut OlapDictionary) {
     use crate::infrastructure::olap::clickhouse::dictionary::{
         DictionarySource, ExternalDictionarySource,
@@ -4113,15 +4117,12 @@ fn mask_dict_credentials(dict: &mut OlapDictionary) {
     if let DictionarySource::External(ref mut ext) = dict.source {
         match ext {
             ExternalDictionarySource::ClickHouse(s) => {
-                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Mysql(s) => {
-                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Postgresql(s) => {
-                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::Redis(s) => {
@@ -4130,7 +4131,6 @@ fn mask_dict_credentials(dict: &mut OlapDictionary) {
                 }
             }
             ExternalDictionarySource::Mongodb(s) => {
-                s.user = CREDENTIAL_PLACEHOLDER.to_string();
                 s.password = CREDENTIAL_PLACEHOLDER.to_string();
             }
             ExternalDictionarySource::S3(s) => {
@@ -8753,11 +8753,11 @@ mod diff_orchestration_worker_tests {
     }
 
     #[test]
-    fn test_mask_credentials_masks_dict_user_fields() {
-        // Regression: mask_credentials_for_json_export() must scrub both `user` and
-        // `password` for dictionary external sources that have a user field.
-        // Prior to the fix, only `password` was masked; a runtime-resolved username
-        // would have been persisted to JSON in plaintext.
+    fn test_mask_credentials_masks_dict_password_not_user() {
+        // Regression: mask_credentials_for_json_export() must scrub `password` but
+        // leave `user` (username) in plaintext. Usernames are identifiers, not secrets,
+        // and must be preserved so that username changes are detectable by
+        // dicts_equal_ignore_metadata().
         use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
             DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
@@ -8869,20 +8869,20 @@ mod diff_orchestration_worker_tests {
             if let DictionarySource::External(ref ext) = d.source {
                 match ext {
                     ExternalDictionarySource::ClickHouse(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
-                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
                     }
                     ExternalDictionarySource::Mysql(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
-                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
                     }
                     ExternalDictionarySource::Postgresql(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
-                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
                     }
                     ExternalDictionarySource::Mongodb(s) => {
-                        assert_eq!(s.user, "[HIDDEN]", "{name}: user must be masked");
-                        assert_eq!(s.password, "[HIDDEN]", "{name}: password not masked");
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
                     }
                     _ => panic!("{name}: unexpected source variant"),
                 }
@@ -10594,6 +10594,71 @@ mod diff_dictionaries_metadata_tests {
             "expected an OlapDictionary Updated change"
         );
     }
+
+    /// Regression: a username change in an external-source dict must be detectable.
+    ///
+    /// `dicts_equal_ignore_metadata` must NOT mask the `user` field — usernames are
+    /// identifiers, not secrets. Masking them would make "alice" → "bob" changes
+    /// invisible, preventing the dictionary from ever being rebuilt with the new user.
+    #[test]
+    fn test_diff_dictionaries_detects_username_change() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, ExternalDictionarySource,
+        };
+
+        let make_ext_dict = |user: &str| -> OlapDictionary {
+            OlapDictionary {
+                source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
+                    DictionaryClickHouseSource {
+                        host: "ch.example.com".to_string(),
+                        port: 9000,
+                        user: user.to_string(),
+                        password: "s3cr3t".to_string(),
+                        db: "mydb".to_string(),
+                        table: "users".to_string(),
+                        query: None,
+                        where_clause: None,
+                        invalidate_query: None,
+                    },
+                )),
+                ..simple_dict()
+            }
+        };
+
+        let current_dict = make_ext_dict("alice");
+        let target_dict = make_ext_dict("bob");
+
+        let dict_id = current_dict.id("local");
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id, target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            false,
+        );
+
+        assert_eq!(
+            olap_changes.len(),
+            1,
+            "username change must produce exactly one update, got: {:?}",
+            olap_changes
+        );
+        assert!(
+            matches!(
+                &olap_changes[0],
+                OlapChange::OlapDictionary(Change::Updated { .. })
+            ),
+            "expected an OlapDictionary Updated change for username change"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -10975,9 +11040,9 @@ mod mask_credentials_dictionary_tests {
         }
     }
 
-    /// `mask_credentials_for_json_export` must mask both password and user in ClickHouse
-    /// external source dictionaries — a runtime-resolved username must not be persisted
-    /// in plaintext to JSON migration files.
+    /// `mask_credentials_for_json_export` must mask the password but leave the username
+    /// in plaintext. Usernames are identifiers, not secrets; masking them would prevent
+    /// `dicts_equal_ignore_metadata` from detecting username changes.
     #[test]
     fn test_mask_credentials_for_json_export_clickhouse_dict() {
         let source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
@@ -11008,10 +11073,7 @@ mod mask_credentials_dictionary_tests {
                 s.password, CREDENTIAL_PLACEHOLDER,
                 "ClickHouse dict password must be masked"
             );
-            assert_eq!(
-                s.user, CREDENTIAL_PLACEHOLDER,
-                "ClickHouse dict user must be masked"
-            );
+            assert_eq!(s.user, "admin", "ClickHouse dict user must NOT be masked");
         } else {
             panic!("Expected ClickHouse external source");
         }
