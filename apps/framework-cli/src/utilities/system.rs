@@ -194,10 +194,10 @@ impl RestartingProcess {
 
                             if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
                                 error!(
-                                    "Process {} failed {} times in a row without running for at least {:?}; giving up. Check the errors above for the underlying cause (e.g. a busy port).",
+                                    "Process {} failed {} times in a row without running for at least {:?}. Keeping retry loop alive with backoff so the process can recover automatically once the underlying issue clears.",
                                     process_id, consecutive_rapid_failures, MIN_RUNTIME_FOR_RESET,
                                 );
-                                break 'monitor;
+                                consecutive_rapid_failures = 0;
                             }
 
                             'restart: loop {
@@ -228,10 +228,10 @@ impl RestartingProcess {
                                         consecutive_rapid_failures += 1;
                                         if consecutive_rapid_failures >= MAX_CONSECUTIVE_RAPID_FAILURES {
                                             error!(
-                                                "Process {} failed to spawn {} times in a row; giving up.",
+                                                "Process {} failed to spawn {} times in a row. Keeping retry loop alive with backoff so it can recover automatically.",
                                                 process_id, consecutive_rapid_failures,
                                             );
-                                            break 'monitor;
+                                            consecutive_rapid_failures = 0;
                                         }
                                     }
                                 }
@@ -264,10 +264,10 @@ mod tests {
     use std::sync::Arc;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn restarting_process_gives_up_after_consecutive_spawn_failures() {
-        // A StartChildFn that always fails. The monitor's inner restart loop
-        // should trip the circuit breaker after a bounded number of attempts
-        // instead of retrying forever.
+    async fn restarting_process_keeps_retrying_after_consecutive_spawn_failures() {
+        // A StartChildFn that fails after the first child exits. The monitor
+        // should keep retrying with backoff rather than permanently giving up,
+        // so transient outages can self-heal once dependencies recover.
         let calls = Arc::new(AtomicU32::new(0));
         let calls_for_start = calls.clone();
 
@@ -297,24 +297,31 @@ mod tests {
         )
         .expect("initial spawn should succeed");
 
-        // Wait for the monitor to hit the breaker. The first child exits
-        // ~immediately, then each restart attempt fails with increasing
-        // backoff (1s, 2s, 4s, 8s, 16s) — well under 40s for 5 failures.
-        let joined = tokio::time::timeout(Duration::from_secs(45), proc.monitor_task).await;
+        // Wait long enough for at least five restart attempts (2s + 4s + 8s + 16s),
+        // then verify the monitor is still alive.
+        let RestartingProcess {
+            mut monitor_task,
+            kill,
+        } = proc;
+        let joined = tokio::time::timeout(Duration::from_secs(45), &mut monitor_task).await;
         assert!(
-            joined.is_ok(),
-            "monitor task should terminate after circuit-breaker trips, not retry forever",
+            joined.is_err(),
+            "monitor task should keep running so retries continue after rapid failures",
         );
 
-        // Deterministic total: 1 initial spawn (Ok), then the first child
-        // exits immediately which sets `consecutive_rapid_failures = 1`. The
-        // inner restart loop then tries `start()` up to MAX-1 more times
-        // (each Err increments + checks `>= MAX`), giving 1 + 4 = 5 calls
-        // before the breaker trips.
+        // Deterministic total by ~45s: 1 initial spawn (Ok), then 4 failing
+        // restart attempts at roughly 2s, 6s, 14s, 30s.
         let total = calls.load(Ordering::SeqCst);
         assert_eq!(
             total, 5,
-            "expected exactly 5 spawn attempts before the breaker trips, got {total}",
+            "expected 5 spawn attempts by this point, got {total}",
+        );
+
+        let _ = kill.send(());
+        let stopped = tokio::time::timeout(Duration::from_secs(5), &mut monitor_task).await;
+        assert!(
+            stopped.is_ok(),
+            "monitor should stop promptly after kill signal"
         );
     }
 }
