@@ -1,0 +1,67 @@
+---
+title: April 24, 2026
+description: Release notes for April 24, 2026
+commits:
+  moosestack: cef83676c0a74faa1a0e07f36457dad05c24d6c6
+  commercial: 9fdfb93cd914f94ffb6eaa4ef4bf527e6631b346
+---
+
+import { Callout } from "@/components/mdx";
+
+# April 24, 2026
+
+AI agents can now drive `moose dev` and `moose generate migration` end-to-end — confirmation prompts (renames, destructive changes, version bumps) are answerable via a new `respond_to_prompt` MCP tool. Schema versioning gets first-class version bump handling with backfill and retain-vs-drop prompts, and `moose ls` output is now directly pastable into `moose query` and curl.
+
+<Callout type="info" title="Highlights">
+* **New:** `--agent` flag on `moose dev` and `moose generate migration` — AI agents answer prompts via MCP
+* **New:** Version bump prompts for schema versioning — backfill decisions, old-table retention, `EXTERNALLY_MANAGED` files
+* **Improved:** `moose ls` shows SQL-queryable table names and full API URLs with HTTP methods
+* **Improved:** Production startup now applies delta migration files
+* **Fixed:** Dev startup reliability — port preflight checks, consumption proxy retries, process restart circuit breaker
+</Callout>
+
+## Moose
+
+### New Features
+
+**Agent-driven prompt handling via MCP** ([@phiSgr](https://github.com/phiSgr))
+  `moose dev` and `moose generate migration` now accept an `--agent` flag (or `MOOSE_AGENT=true`) that exposes a `respond_to_prompt` MCP tool for AI agents. When enabled, confirmation prompts — rename detection, destructive change approval, version bump decisions — are served through MCP instead of requiring interactive terminal input. In dev mode, MCP is enabled automatically with `--agent`; for one-shot commands like `generate migration`, a lightweight standalone MCP server starts on the project's configured host/port.
+
+  The dev server also gates data-plane endpoints with `503` until the initial infrastructure plan pass completes, so agents don't hit partially-ready routes.
+
+  ```bash
+  # Run dev with agent mode — MCP is enabled, prompts go through respond_to_prompt tool
+  moose dev --agent
+
+  # Generate migration with agent-driven prompts
+  moose generate migration --agent
+
+  # Or via environment variable
+  MOOSE_AGENT=true moose dev
+  ```
+
+  PR: [#3905](https://github.com/514-labs/moose/pull/3905)
+
+**Version bump handling for schema versioning** ([@phiSgr](https://github.com/phiSgr))
+  When a table's `version` field changes, Moose now detects paired old/new tables and prompts for three decisions: whether to backfill data from the old table, what SQL to use for the backfill, and whether to retain or drop the old table. In `moose dev`, these prompts appear interactively (or via MCP in `--agent` mode). In `moose generate migration --save`, retained old tables get auto-generated `EXTERNALLY_MANAGED` definition files so Moose keeps tracking them without managing their lifecycle.
+
+  Flags `--yes-all`, `--yes-destructive`, and `--yes-rename` auto-accept the corresponding prompts for CI/CD pipelines.
+
+  PR: [#3953](https://github.com/514-labs/moose/pull/3953) | Docs: [Schema Versioning](/moosestack/olap/schema-versioning)
+
+### Improvements
+
+- **`moose ls` shows queryable names and full URLs:** Tables now display their SQL-queryable form (`database.table_name`), and APIs show HTTP method + full URL built from the dev server's host/port — directly pastable into `moose query` or curl. `--name` filtering matches the rendered display name, and `--type` now supports `stream_transformations`. PR: [#4040](https://github.com/514-labs/moose/pull/4040) ([@callicles](https://github.com/callicles))
+- **Production delta migration support:** `moose prod` and `moose migrate` now detect unapplied delta migration files in `./migrations/` and execute them at startup. In delta mode, production blocks startup if there are pending OLAP changes without corresponding migration files, preventing accidental auto-applies. Redis state handling falls back to the previous key prefix across deploy ID changes so migrations aren't reapplied on new deploys. PR: [#4020](https://github.com/514-labs/moose/pull/4020) ([@georgevanderson](https://github.com/georgevanderson))
+- **Consolidated migration documentation:** Migration docs restructured into focused "Generate" and "Apply" pages, schema versioning promoted to a top-level page, and "Moose Runtime" renamed to "Moose Server" throughout. PR: [#4032](https://github.com/514-labs/moose/pull/4032) ([@okane16](https://github.com/okane16))
+
+### Bug Fixes
+
+- **Dev startup reliability and dockerless stability:** Added preflight port-conflict checks before starting native infrastructure, retry logic with structured `503 / Retry-After` responses on consumption proxy connect errors during hot-reload windows, a circuit breaker on the `RestartingProcess` to stop infinite rapid respawns, and cleaner ClickHouse shutdown that waits/escalates so ports are released before the next run. PR: [#4024](https://github.com/514-labs/moose/pull/4024) ([@callicles](https://github.com/callicles))
+- **Cleaner hash-mismatch error output:** When `moose migrate` fails because a delta migration's parent state hash doesn't match the live database, the raw hash string is no longer dumped after the user-friendly explanation. The technical detail is still logged to `~/.moose/*-cli.log`. PR: [#4038](https://github.com/514-labs/moose/pull/4038) ([@onelesd](https://github.com/onelesd))
+
+## Fiveonefour Hosting
+
+### Bug Fixes
+
+- **Fix nested column seeding:** `514 clickhouse seed` now runs `CREATE TABLE ... AS ...` with `flatten_nested=0`, preserving `Nested(...)` column definitions and avoiding duplicate-column errors during subsequent schema reconciliation. PR: [#1870](https://github.com/514-labs/commercial/pull/1870) ([@callicles](https://github.com/callicles))
