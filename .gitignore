@@ -84,4 +84,7 @@ content-generation.mdc
 
 # Claude local marketing context
 .claude/marketing-context/
+
+# Claude Code ephemeral agent worktrees
+.claude/worktrees/
 .pnpm-store

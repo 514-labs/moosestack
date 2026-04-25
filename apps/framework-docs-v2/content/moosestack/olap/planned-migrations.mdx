@@ -57,12 +57,12 @@ olap = true
 
 Once done editing your code in your feature branch, you can generate a plan that diffs your local code against your live remote database:
 
-**For Moose server deployments:**
+**For Moose Server deployments:**
 ```bash filename="Terminal" copy
 moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
 
-**For serverless deployments:**
+**For Standalone CLI deployments:**
 ```bash filename="Terminal" copy
 moose generate migration --clickhouse-url clickhouse://user:pass@host:port/db --save
 ```
@@ -293,7 +293,7 @@ You can also override the the default behavior by using the `RawSql` operation t
 
 ### Moose Server Deployments
 
-For Moose server deployments (with `moose prod` running), migrations are applied automatically on startup. Generate plans using:
+For Moose Server deployments (with `moose prod` running), migrations are applied automatically on startup. Generate plans using:
 
 ```bash filename="Terminal" copy
 moose generate migration --url https://<remote-env> --token <api-token> --save
@@ -301,9 +301,9 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 
 When you deploy, Moose validates the plan and executes it automatically.
 
-### Serverless Deployments
+### Standalone CLI Deployments
 
-For serverless deployments (no Moose server), you manage migrations manually using the ClickHouse connection directly:
+For Standalone CLI deployments (no Moose Server), you manage migrations manually using the ClickHouse connection directly:
 
 ```toml filename="moose.config.toml" copy
 [state_config]

@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_tool_definitions_complete() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
 
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
         assert!(names.contains(&"get_logs"));
@@ -195,5 +195,6 @@ mod tests {
         assert!(names.contains(&"get_issues"));
         assert!(names.contains(&"query_olap"));
         assert!(names.contains(&"get_stream_sample"));
+        assert!(names.contains(&"respond_to_prompt"));
     }
 }

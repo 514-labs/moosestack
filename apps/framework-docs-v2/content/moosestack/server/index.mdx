@@ -1,5 +1,5 @@
 ---
-title: The Moose Runtime
+title: The Moose Server
 description: Understanding how MooseStack runs locally and in production
 languages: ["typescript", "python"]
 order: 3
@@ -7,9 +7,9 @@ order: 3
 
 import { LanguageTabs, LanguageTabContent, Callout, FileTree, CompareBulletPointsCard } from "@/components/mdx";
 
-# The Moose Runtime
+# The Moose Server
 
-The Moose Runtime is the execution engine for your MooseStack application. It connects your code to your infrastructure by:
+The Moose Server is the long-lived process that runs your MooseStack application. It connects your code to your infrastructure by:
 *   **Managing Data Schemas**: It automatically applies changes to ClickHouse and Redpanda based on your code.
 *   **Running Your Application**: It provides the server that runs your APIs, streaming consumers, data synchronization (e.g. Kafka to ClickHouse) workflows, and other server-side processes defined in your code.
 
@@ -43,7 +43,7 @@ Moose runs in two ways: `moose dev` and `moose prod`.
     bullets: [
       {
         title: "Bring Your Own Infrastructure",
-        description: "You bring your own infrastructure. Moose Runtime won't start databases for you in production. It expects services to be running and connects via environment variables."
+        description: "You bring your own infrastructure. Moose Server won't start databases for you in production. It expects services to be running and connects via environment variables."
       },
       {
         title: "Single Migration",
@@ -58,16 +58,16 @@ Moose runs in two ways: `moose dev` and `moose prod`.
 />
 
 <Callout type="info" title="Local Prototyping" compact>
-Even if you are not using the Moose Runtime in production, it is a useful tool for quickly prototyping OLAP models locally. You do not need to have a production environment set up to use the local development server.
+Even if you are not using the Moose Server in production, it is a useful tool for quickly prototyping OLAP models locally. You do not need to have a production environment set up to use the local development server.
 </Callout>
 
 ## The Infrastructure Map
 
-The core of the Moose Runtime is the infrastructure map. This is a representation of your infrastructure as it exists in your code. The runtime uses this map to determine exactly what needs to be provisioned, migrated, or destroyed to make your live infrastructure match your code.
+The core of the Moose Server is the infrastructure map. This is a representation of your infrastructure as it exists in your code. The server uses this map to determine exactly what needs to be provisioned, migrated, or destroyed to make your live infrastructure match your code.
 
 ### Finding Dependencies
 
-Moose Runtime looks at your **Root Entrypoint** (`index.ts` for TypeScript or `main.py` for Python) to figure out what resources to include in the infrastructure map. For MooseStack to manage a resource (like a Table, Stream, or API), **it must be declared in or reachable from your root file**.
+Moose Server looks at your **Root Entrypoint** (`index.ts` for TypeScript or `main.py` for Python) to figure out what resources to include in the infrastructure map. For MooseStack to manage a resource (like a Table, Stream, or API), **it must be declared in or reachable from your root file**.
 
 This "strict declaration" rule ensures that your running infrastructure always matches the active code path of your application, preventing "zombie" tables or endpoints from lingering in your environment.
 

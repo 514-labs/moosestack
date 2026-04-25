@@ -34,5 +34,6 @@ pub mod pending_migration;
 pub mod plan;
 pub mod plan_risk;
 pub mod plan_validator;
+pub mod prompt_bridge;
 pub mod state_storage;
 pub mod version_bump;

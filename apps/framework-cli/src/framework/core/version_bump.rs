@@ -21,6 +21,7 @@ use crate::framework::core::infrastructure::table::{Column, Table};
 use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan_risk::{DestructiveChange, PinnedSession, PlanRisk};
+use crate::framework::core::prompt_bridge::{PendingPrompt, PromptBridge, PromptKind};
 use crate::framework::languages::SupportedLanguages;
 
 /// How the version bump was detected.
@@ -282,6 +283,73 @@ pub fn check_backfill_eligibility(
     BackfillEligibility::Eligible { sql }
 }
 
+/// Obtain a single response from the user, racing stdin (with optional pinned
+/// session) and the MCP prompt bridge when available.
+async fn vb_get_response(
+    is_interactive: bool,
+    bridge: Option<&PromptBridge>,
+    session: &mut Option<PinnedSession>,
+    pinned_text: &str,
+    plain_text: &str,
+    prompt_info: PendingPrompt,
+) -> Result<String, RoutineFailure> {
+    let default_for_stdin = prompt_info.default_response.clone();
+    let plain_default = default_for_stdin.as_deref();
+    match (is_interactive, bridge) {
+        (true, Some(bridge)) => {
+            let stdin_fut = async {
+                if let Some(ref mut s) = session {
+                    Ok(s.prompt(pinned_text).await.unwrap_or_default())
+                } else {
+                    prompt_user_async(plain_text, plain_default, None).await
+                }
+            };
+            let bridge_fut = bridge.prompt(prompt_info);
+            tokio::select! {
+                biased;
+                line = stdin_fut => line,
+                resp = bridge_fut => resp.ok_or_else(|| {
+                    RoutineFailure::error(Message::new(
+                        "Prompt".to_string(),
+                        "Prompt bridge closed unexpectedly".to_string(),
+                    ))
+                }),
+            }
+        }
+        (true, None) => {
+            if let Some(ref mut s) = session {
+                Ok(s.prompt(pinned_text).await.unwrap_or_default())
+            } else {
+                prompt_user_async(plain_text, plain_default, None).await
+            }
+        }
+        (false, Some(bridge)) => {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message::new(
+                    "Waiting".to_string(),
+                    format!(
+                        "Use MCP tool `respond_to_prompt` at {} to accept or reject",
+                        bridge.mcp_url(),
+                    ),
+                ),
+            );
+            bridge.prompt(prompt_info).await.ok_or_else(|| {
+                RoutineFailure::error(Message::new(
+                    "Prompt".to_string(),
+                    "Prompt bridge closed unexpectedly".to_string(),
+                ))
+            })
+        }
+        (false, None) => Err(RoutineFailure::error(Message::new(
+            "Version bump".to_string(),
+            "No interactive stdin and no MCP prompt bridge available.\n\
+             Re-run with --yes-all or set MOOSE_ACCEPT_ALL=1 to auto-accept."
+                .to_string(),
+        ))),
+    }
+}
+
 /// Interactive prompt for version bump decisions.
 ///
 /// For each detected version bump, asks whether to backfill and whether to
@@ -290,12 +358,14 @@ pub async fn version_bump_gate(
     bumps: Vec<VersionBump>,
     default_database: &str,
     auto_accept: bool,
+    bridge: Option<&PromptBridge>,
 ) -> Result<Option<Vec<VersionBumpDecision>>, RoutineFailure> {
     if bumps.is_empty() {
         return Ok(Some(vec![]));
     }
 
-    let is_interactive = std::io::stdin().is_terminal() && stdout().is_terminal();
+    let is_agent = bridge.is_some();
+    let is_interactive = std::io::stdin().is_terminal() && stdout().is_terminal() && !is_agent;
 
     display::show_message_wrapper(
         MessageType::Info,
@@ -308,7 +378,7 @@ pub async fn version_bump_gate(
         ),
     );
 
-    let use_pinned = stdout().is_terminal();
+    let use_pinned = stdout().is_terminal() && !is_agent;
     let mut session = if use_pinned && !auto_accept {
         PinnedSession::start().ok()
     } else {
@@ -372,36 +442,38 @@ pub async fn version_bump_gate(
                 );
             }
             (can_backfill, disposition)
-        } else if !is_interactive {
-            return Err(RoutineFailure::error(Message::new(
-                "Version bump".to_string(),
-                format!(
-                    "Version bump detected for `{}` but running non-interactively.\n\
-                     Re-run with --yes-all or set MOOSE_ACCEPT_ALL=1 to auto-accept.",
-                    bump.old_table.name
-                ),
-            )));
         } else {
             let bf = if can_backfill {
-                let input = if let Some(ref mut s) = session {
-                    let text = format!(
-                        " Bump ({prompt_idx}/{total}): backfill `{}` → `{}`?  \x1b[1my\x1b[0m=yes  \x1b[1mn\x1b[0m=no",
-                        bump.old_table.name, bump.new_table.name
-                    );
-                    s.prompt(&text).await.unwrap_or_default()
-                } else {
-                    prompt_user_async(
-                        &format!(
-                            "Backfill data from `{}` into `{}`? [Y/n]",
+                let pinned_text = format!(
+                    " Bump ({prompt_idx}/{total}): backfill `{}` → `{}`?  \x1b[1my\x1b[0m=yes  \x1b[1mn\x1b[0m=no",
+                    bump.old_table.name, bump.new_table.name
+                );
+                let plain_text = format!(
+                    "Backfill data from `{}` into `{}`? [Y/n]",
+                    bump.old_table.name, bump.new_table.name
+                );
+                let info = PendingPrompt {
+                    kind: PromptKind::VersionBump {
+                        current: prompt_idx,
+                        total,
+                        description: format!(
+                            "backfill `{}` → `{}`?",
                             bump.old_table.name, bump.new_table.name
                         ),
-                        Some("Y"),
-                        None,
-                    )
-                    .await?
+                    },
+                    valid_responses: vec!["y".into(), "n".into()],
+                    default_response: Some("y".into()),
                 };
-                let input_lower = input.trim().to_lowercase();
-                !matches!(input_lower.as_str(), "n" | "no")
+                let input = vb_get_response(
+                    is_interactive,
+                    bridge,
+                    &mut session,
+                    &pinned_text,
+                    &plain_text,
+                    info,
+                )
+                .await?;
+                !matches!(input.trim().to_lowercase().as_str(), "n" | "no")
             } else {
                 false
             };
@@ -409,25 +481,36 @@ pub async fn version_bump_gate(
             let disposition = match bump.kind {
                 VersionBumpKind::NewAlongside => OldTableDisposition::Untouched,
                 VersionBumpKind::InPlace => {
-                    let input = if let Some(ref mut s) = session {
-                        let text = format!(
-                            " Bump ({prompt_idx}/{total}): keep old `{}`?  \x1b[1my\x1b[0m=keep (EXTERNALLY_MANAGED)  \x1b[1mn\x1b[0m=drop",
-                            bump.old_table.name
-                        );
-                        s.prompt(&text).await.unwrap_or_default()
-                    } else {
-                        prompt_user_async(
-                            &format!(
-                                "Keep old table `{}`? (will be marked EXTERNALLY_MANAGED) [y/N]",
+                    let pinned_text = format!(
+                        " Bump ({prompt_idx}/{total}): keep old `{}`?  \x1b[1my\x1b[0m=keep (EXTERNALLY_MANAGED)  \x1b[1mn\x1b[0m=drop",
+                        bump.old_table.name
+                    );
+                    let plain_text = format!(
+                        "Keep old table `{}`? (will be marked EXTERNALLY_MANAGED) [y/N]",
+                        bump.old_table.name
+                    );
+                    let info = PendingPrompt {
+                        kind: PromptKind::VersionBump {
+                            current: prompt_idx,
+                            total,
+                            description: format!(
+                                "keep old `{}`? y=keep (EXTERNALLY_MANAGED) n=drop",
                                 bump.old_table.name
                             ),
-                            Some("N"),
-                            None,
-                        )
-                        .await?
+                        },
+                        valid_responses: vec!["y".into(), "n".into()],
+                        default_response: Some("n".into()),
                     };
-                    let input_lower = input.trim().to_lowercase();
-                    if matches!(input_lower.as_str(), "y" | "yes") {
+                    let input = vb_get_response(
+                        is_interactive,
+                        bridge,
+                        &mut session,
+                        &pinned_text,
+                        &plain_text,
+                        info,
+                    )
+                    .await?;
+                    if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
                         OldTableDisposition::Retain
                     } else {
                         OldTableDisposition::Drop
@@ -731,13 +814,14 @@ pub async fn detect_prompt_and_exclude(
     default_database: &str,
     accept_all: bool,
     risk: &mut PlanRisk,
+    bridge: Option<&PromptBridge>,
 ) -> Result<Option<Vec<VersionBumpDecision>>, RoutineFailure> {
     let (mut version_bumps, remaining) = extract_version_bumps(olap_changes);
     let backfill_only = find_backfill_only_bumps(&remaining, current_infra);
     version_bumps.extend(backfill_only);
 
     let decisions = if !version_bumps.is_empty() {
-        match version_bump_gate(version_bumps, default_database, accept_all).await? {
+        match version_bump_gate(version_bumps, default_database, accept_all, bridge).await? {
             Some(d) => d,
             None => return Ok(None),
         }
@@ -778,6 +862,26 @@ pub fn exclude_bump_drops_from_risk(decisions: &[VersionBumpDecision], risk: &mu
         excluded_tables = ?vb_drop_names,
         "Excluded version-bump drops from destructive risk assessment"
     );
+}
+
+/// If any decision retains the old table, show a note about the
+/// `EXTERNALLY_MANAGED` definition file that will be generated on `--save`.
+pub fn show_retained_table_note(decisions: &[VersionBumpDecision]) {
+    if decisions
+        .iter()
+        .any(|d| d.old_table_disposition == OldTableDisposition::Retain)
+    {
+        use crate::cli::display::{self, Message, MessageType};
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Note".to_string(),
+                details: "Retained table(s) will get an EXTERNALLY_MANAGED definition file \
+                          when you run with --save"
+                    .to_string(),
+            },
+        );
+    }
 }
 
 #[cfg(test)]

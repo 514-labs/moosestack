@@ -33,6 +33,16 @@ const nextConfig = {
         destination: "/moosestack",
         permanent: true,
       },
+      {
+        source: "/moosestack/apis/trigger-api",
+        destination: "/moosestack/workflows/trigger-workflow",
+        permanent: true,
+      },
+      {
+        source: "/moosestack/runtime",
+        destination: "/moosestack/server",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

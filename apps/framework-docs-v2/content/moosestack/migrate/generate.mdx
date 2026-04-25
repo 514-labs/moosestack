@@ -1,0 +1,103 @@
+---
+title: Generate migrations
+description: How Moose generates schema migrations from code changes
+order: 1
+category: migrate
+---
+
+import { Callout } from "@/components/mdx";
+
+# Generate migrations
+
+<Callout type="info" title="Delta-based workflow — opt-in during beta">
+This page describes the delta-based migration workflow, available since the [April 9, 2026 release](/moosestack/release-notes/2026-04-09) and enabled by setting `features.migrate_with_deltas = true` in `moose.config.toml`. The current default is `false`; once beta testing ends, delta migrations will become the default.
+
+**On earlier Moose versions, or running with the default config?** See [Planned Migrations](/moosestack/migrate/planned-migrations) and [Automatic Migrations](/moosestack/migrate/automatic) for the current-default workflow.
+</Callout>
+
+Moose represents schema changes as a series of **migration files** under `./migrations/`. Each committed migration file records an incremental diff from the previous migrated state. Once applied, a migration is tracked in state and is never re-run.
+
+## During development
+
+`moose dev` watches your code for schema changes and appends operations to `./migrations/pending.yaml` in realtime as you save. The pending file reflects the uncommitted changes in your working directory, so you can review it as you work to see exactly what will be included in the next migration.
+
+## Finalizing a migration
+
+When you're ready to commit a migration for deployment, run `moose generate migration --save`. This takes the current pending migration, computes the final diff against the previous migrated state, and writes a new committed migration file under `./migrations/` with a timestamp-prefixed ID (e.g., `20260415_add_user_prefs.yaml`). Review the file, commit it to version control, then deploy.
+
+## Command
+
+Generate a migration by comparing your local code against a remote environment:
+
+```bash
+# Moose Server (connect to the Admin API)
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+
+# Standalone CLI (connect to ClickHouse directly)
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
+## Command Options
+
+The `moose generate migration` command accepts different arguments depending on how you run Moose:
+
+- **Running the Moose Server in production** — use the first command below to connect to the Admin API with `--url` and `--token`.
+- **No Moose Server, using Moose only for remote schema management (Standalone CLI)** — use the second command below to connect directly to ClickHouse with `--clickhouse-url`.
+
+### via Moose Server (`moose prod`)
+
+Connect to the **Admin API** of the running service.
+
+```bash
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--url` | The endpoint of your production Moose Admin API. |
+| `--token` | The authentication token for the Admin API. |
+| `--save` | Writes the generated migration file to the `migrations/` directory. Without this, it performs a dry run. |
+
+### via Standalone CLI (`moose migrate`)
+
+Connect directly to the **ClickHouse database**.
+
+```bash
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
+| `--save` | Writes the generated migration file to the `migrations/` directory. Without this, it performs a dry run. |
+
+### Confirmation flags
+
+These flags control the interactive confirmation prompts during migration generation:
+
+| Option | Environment Variable | Description |
+| :--- | :--- | :--- |
+| `--yes-all` | `MOOSE_ACCEPT_ALL=1` | Skip all confirmation prompts (renames and destructive operations). |
+| `--yes-destructive` | `MOOSE_ACCEPT_DESTRUCTIVE=1` | Skip the confirmation prompt for destructive operations. |
+| `--yes-rename` | `MOOSE_ACCEPT_RENAME=1` | Auto-accept detected column renames as genuine renames. |
+| `--no-auto-backfill-sql` | — | Disable automatic backfill SQL generation for versioned tables. |
+
+<Callout type="info" title="Versioned table backfills" compact>
+If you are using migrations for a breaking OLAP table change, see [Schema Versioning](/moosestack/olap/schema-versioning) for the end-to-end version bump and generated backfill workflow.
+</Callout>
+
+## How migrations are tracked in production
+
+In production, Moose reads every migration file in `./migrations/`, compares against the applied-migrations list stored in state, and runs only the unapplied ones. Applied migrations are never re-run.
+
+<Callout type="warning" title="Production blocks unmigrated changes">
+If your code has pending OLAP changes but no committed migration file covers them, production startup is blocked. Every infrastructure change must flow through a committed migration file so production can apply them with a validated parent state hash.
+
+Run `moose generate migration --save` locally, review the generated file, and commit it before deploying.
+</Callout>
+
+## Related
+
+- [Migration Plan](/moosestack/migrate/plan-format) — the operation reference and migration-file format
+- [Apply migrations](/moosestack/migrate/apply) — how committed migrations are executed against your database
+- [Lifecycle management](/moosestack/migrate/lifecycle-fully-managed) — controlling which changes Moose is allowed to make

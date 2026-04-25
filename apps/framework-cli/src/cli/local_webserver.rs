@@ -695,6 +695,7 @@ struct RouteService {
     http_client: Arc<Client>,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -793,6 +794,7 @@ impl Service<Request<Incoming>> for RouteService {
             },
             self.project.clone(),
             self.redis_client.clone(),
+            self.infra_initialized.clone(),
         ))
     }
 }
@@ -1928,6 +1930,7 @@ async fn router(
     request: RouterRequest,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let now = Instant::now();
 
@@ -1961,6 +1964,24 @@ async fn router(
     let metrics_method = req.method().to_string();
 
     let route_split = route.to_str().unwrap().split('/').collect::<Vec<&str>>();
+
+    // Until the initial infrastructure plan pass completes, reject requests to
+    // data-plane endpoints with 503.  Health/liveness/ready probes and MCP are
+    // allowed through so that readiness checks and agent prompts still work.
+    if !infra_initialized.load(std::sync::atomic::Ordering::Relaxed) {
+        let allow = matches!(
+            &route_split[..],
+            ["health"] | ["liveness"] | ["ready"] | ["mcp", ..]
+        );
+        if !allow {
+            return Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Full::new(Bytes::from(
+                    "Infrastructure initializing, please retry shortly",
+                )));
+        }
+    }
+
     let res = match (configured_producer, req.method(), &route_split[..]) {
         // Handle ingestion routes with nested paths
         (Some(configured_producer), &hyper::Method::POST, segments)
@@ -2771,7 +2792,10 @@ impl Webserver {
         process_registry: Arc<RwLock<ProcessRegistries>>,
         enable_mcp: bool,
         processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
+        prompt_bridge: Option<crate::framework::core::prompt_bridge::PromptBridge>,
         watcher_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+        initial_ready_rx: Option<tokio::sync::oneshot::Receiver<()>>,
+        infra_initialized: Arc<std::sync::atomic::AtomicBool>,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2806,38 +2830,48 @@ impl Webserver {
         // Keep a reference to the producer for shutdown
         let producer_for_shutdown = producer.clone();
 
-        show_message!(
-            MessageType::Success,
-            Message {
-                action: "Started".to_string(),
-                details: "Webserver.\n\n".to_string(),
-            }
-        );
-
-        // Print available routes in table format
-        print_available_routes(route_table, consumption_apis, &project, web_apps).await;
-
-        if !project.is_production {
-            // Fire once-only startup script as soon as server starts
-            {
-                let project_clone = project.clone();
-                spawn_with_span(async move {
-                    project_clone
-                        .http_server_config
-                        .run_dev_start_script_once()
-                        .await;
-                });
-            }
-
-            show_message!(
-                MessageType::Highlight,
-                Message {
-                    action: "Next Steps  ".to_string(),
-                    details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project.http_server_config.url()),
+        // Print startup message / routes after the watcher's initial plan pass
+        // completes (so tables exist before we announce readiness). This runs in
+        // a spawned task so the HTTP accept loop can start immediately — the MCP
+        // endpoint must be reachable for agent-mode prompts during that pass.
+        {
+            let project_for_msg = project.clone();
+            spawn_with_span(async move {
+                if let Some(rx) = initial_ready_rx {
+                    let _ = rx.await;
                 }
-            );
 
-            // Do not run after_dev_server_reload_script at initial start; it's intended for reloads only.
+                show_message!(
+                    MessageType::Success,
+                    Message {
+                        action: "Started".to_string(),
+                        details: "Webserver.\n\n".to_string(),
+                    }
+                );
+
+                print_available_routes(route_table, consumption_apis, &project_for_msg, web_apps)
+                    .await;
+
+                if !project_for_msg.is_production {
+                    {
+                        let project_clone = project_for_msg.clone();
+                        spawn_with_span(async move {
+                            project_clone
+                                .http_server_config
+                                .run_dev_start_script_once()
+                                .await;
+                        });
+                    }
+
+                    show_message!(
+                        MessageType::Highlight,
+                        Message {
+                            action: "Next Steps  ".to_string(),
+                            details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project_for_msg.http_server_config.url()),
+                        }
+                    );
+                }
+            });
         }
 
         let mut sigterm =
@@ -2873,6 +2907,12 @@ impl Webserver {
                 project.clickhouse_config.clone(),
                 Arc::new(project.redpanda_config.clone()),
                 processing_coordinator.clone(),
+                prompt_bridge.clone().unwrap_or_else(|| {
+                    crate::framework::core::prompt_bridge::PromptBridge::new(format!(
+                        "http://{}:{}/mcp",
+                        project.http_server_config.host, project.http_server_config.port
+                    ))
+                }),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))
@@ -2894,6 +2934,7 @@ impl Webserver {
             metrics: metrics.clone(),
             project: project.clone(),
             redis_client: redis_client_arc.clone(),
+            infra_initialized: infra_initialized.clone(),
         };
 
         // Wrap route_service with ApiService to handle MCP routing at the top level

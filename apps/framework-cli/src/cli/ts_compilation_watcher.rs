@@ -1,4 +1,5 @@
-use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::display::{with_spinner_completion_async, Message, MessageType};
+use super::plan_pass::{handle_plan_result, run_plan_pass, PlanPassContext};
 use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 /// # TypeScript Compilation Watcher Module
@@ -27,10 +28,7 @@ use super::settings::Settings;
 /// - `TsCompilationWatcher`: The main struct that initializes and starts the compilation watching process
 /// - `CompileEvent`: JSON structure for parsing compilation events
 /// - `InitialCompileHandle`: Handle returned by initial compilation, passed to start()
-use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
-use display::with_timing_async;
-use framework::core::execute::execute_online_change;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -38,12 +36,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::cli::routines::openapi::openapi;
-use crate::framework::core::plan_risk::{
-    confirm_renames_and_classify, destructive_confirmation_gate, ConfirmationPolicy,
-};
+use crate::framework::core::plan_risk::ConfirmationPolicy;
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorage;
-use crate::framework::core::version_bump;
+use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
 use crate::project::Project;
@@ -294,7 +290,11 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     initial_handle: Option<InitialCompileHandle>,
     confirmation_policy: ConfirmationPolicy,
+    prompt_bridge: Option<PromptBridge>,
+    remote_for_mirrors: Option<ClickHouseRemote>,
     dev_baseline: Arc<InfrastructureMap>,
+    initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+    infra_initialized: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
@@ -368,8 +368,47 @@ async fn watch(
         }
     });
 
-    // Track if we've seen the first compilation in this watcher session.
-    // If initial_compilation_done is true, we start as "already seen first".
+    let ctx = PlanPassContext {
+        project: project.clone(),
+        state_storage,
+        route_update_channel,
+        webapp_update_channel,
+        infrastructure_map,
+        project_registries,
+        metrics,
+        settings,
+        processing_coordinator,
+        confirmation_policy,
+        prompt_bridge,
+        remote_for_mirrors,
+        dev_baseline,
+    };
+
+    // When initial compilation was already completed (initial_handle was
+    // provided), run the plan pass now. Otherwise defer it to the first
+    // compile_complete event in the watch loop.
+    let mut initial_ready_tx = Some(initial_ready_tx);
+    if initial_compilation_done {
+        let activate_spinner = {
+            use crate::utilities::constants::SHOW_TIMING;
+            use std::sync::atomic::Ordering;
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+        };
+
+        let result: anyhow::Result<bool> = with_spinner_completion_async(
+            "Processing initial infrastructure changes",
+            "Infrastructure changes processed successfully",
+            async |spinner_handle| run_plan_pass(&ctx, spinner_handle, true).await,
+            activate_spinner,
+        )
+        .await;
+        handle_plan_result(&project, &result).await;
+        infra_initialized.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(tx) = initial_ready_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+
     let mut seen_first_compile = initial_compilation_done;
 
     loop {
@@ -393,8 +432,6 @@ async fn watch(
                         match serde_json::from_str::<CompileEvent>(&line) {
                             Ok(event) => {
                                 if event.is_compile_start() {
-                                    // Always show "Compiling" for incremental builds
-                                    // (we skip it during initial startup which is handled separately)
                                     if seen_first_compile {
                                         show_message!(MessageType::Info, {
                                             Message {
@@ -405,27 +442,20 @@ async fn watch(
                                     }
                                 } else if event.is_compile_error() {
                                     display_compilation_errors(&event);
-                                    // Mark that we've seen the first compile event
+                                    if !seen_first_compile {
+                                        if let Some(tx) = initial_ready_tx.take() {
+                                            let _ = tx.send(());
+                                        }
+                                    }
                                     seen_first_compile = true;
                                 } else if event.is_compile_complete() {
-                                    // Skip processing for the very first compile_complete if we spawned
-                                    // tspc fresh (initial_compilation_done was false). In that case,
-                                    // start_development_mode already called plan_changes() after the
-                                    // initial compilation, so we don't want to trigger a duplicate.
-                                    //
-                                    // If initial_compilation_done was true (handle passed in),
-                                    // spawn_and_await_initial_compile() consumed the initial event,
-                                    // so ALL events here are incremental and should trigger plan_changes.
+                                    let is_initial = !seen_first_compile;
                                     if !seen_first_compile {
-                                        // This is the first compile_complete in legacy mode.
-                                        // Display success but DON'T trigger plan_changes.
                                         display_compilation_success(&event);
                                         seen_first_compile = true;
-                                        continue;
+                                    } else {
+                                        display_compilation_success(&event);
                                     }
-
-                                    display_compilation_success(&event);
-
                                     let activate_spinner = {
                                         use crate::utilities::constants::SHOW_TIMING;
                                         use std::sync::atomic::Ordering;
@@ -433,154 +463,26 @@ async fn watch(
                                             && !SHOW_TIMING.load(Ordering::Relaxed)
                                     };
 
-                                    let result: anyhow::Result<bool> = with_spinner_completion_async(
-                                        "Processing infrastructure changes",
-                                        "Infrastructure changes processed successfully",
-                                        async |spinner_handle| {
-                                            let plan_result = with_timing_async("Planning", async {
-                                                // IS_DEV_MODE is set, so ensure_typescript_compiled is a no-op
-                                                // (moose-tspc --watch already compiled)
-                                                framework::core::plan::plan_changes(
-                                                    &**state_storage,
-                                                    &project,
-                                                )
-                                                .await
-                                            })
-                                            .await;
+                                    let result: anyhow::Result<bool> =
+                                        with_spinner_completion_async(
+                                            "Processing infrastructure changes",
+                                            "Infrastructure changes processed successfully",
+                                            async |spinner_handle| {
+                                                run_plan_pass(&ctx, spinner_handle, is_initial)
+                                                    .await
+                                            },
+                                            activate_spinner,
+                                        )
+                                        .await;
+                                    handle_plan_result(&project, &result).await;
 
-                                            match plan_result {
-                                                Ok((current_infra, mut plan_result)) => {
-                                                    with_timing_async("Validation", async {
-                                                        framework::core::plan_validator::validate(
-                                                            &project,
-                                                            &plan_result,
-                                                        )
-                                                    })
-                                                    .await?;
-
-                                                    spinner_handle.pause();
-                                                    let mut risk = match confirm_renames_and_classify(&mut plan_result.changes, &confirmation_policy).await? {
-                                                        Some(risk) => risk,
-                                                        None => return Ok(false),
-                                                    };
-
-                                                    // Version bump detection, prompting, and risk exclusion.
-                                                    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
-                                                        &plan_result.changes.olap_changes,
-                                                        &current_infra,
-                                                        &project.clickhouse_config.db_name,
-                                                        confirmation_policy.accept_all,
-                                                        &mut risk,
-                                                    ).await? {
-                                                        Some(d) => d,
-                                                        None => return Ok(false),
-                                                    };
-
-                                                    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
-                                                        return Ok(false);
-                                                    }
-                                                    spinner_handle.resume();
-
-                                                    display::show_changes(&plan_result);
-                                                    // Hold the mutation guard only for execution/persist steps.
-                                                    let _processing_guard =
-                                                        processing_coordinator.begin_processing().await;
-                                                    let mut project_registries =
-                                                        project_registries.write().await;
-
-                                                    let execution_result =
-                                                        with_timing_async("Execution", async {
-                                                            execute_online_change(
-                                                                &project,
-                                                                &plan_result,
-                                                                route_update_channel.clone(),
-                                                                webapp_update_channel.clone(),
-                                                                &mut project_registries,
-                                                                metrics.clone(),
-                                                                &settings,
-                                                                &version_bump_decisions,
-                                                            )
-                                                            .await
-                                                        })
-                                                        .await;
-
-                                                    match execution_result {
-                                                        Ok(_) => {
-                                                            let stored_map = plan_result.target_infra_map;
-
-                                                            with_timing_async("Persist State", async {
-                                                                state_storage
-                                                                    .store_infrastructure_map(
-                                                                        &stored_map,
-                                                                    )
-                                                                    .await
-                                                            })
-                                                            .await?;
-
-                                                            // Generate pending migration (best-effort, delta mode only)
-                                                            if project.features.migrate_with_deltas {
-                                                                if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
-                                                                    &dev_baseline,
-                                                                    &stored_map,
-                                                                    &project,
-                                                                ) {
-                                                                    tracing::warn!("Failed to write pending migration: {}", e);
-                                                                }
-                                                            }
-
-                                                            with_timing_async("OpenAPI Gen", async {
-                                                                openapi(
-                                                                    &project,
-                                                                    &stored_map,
-                                                                )
-                                                                .await
-                                                            })
-                                                            .await?;
-
-                                                            let mut infra_ptr =
-                                                                infrastructure_map.write().await;
-                                                            *infra_ptr = stored_map;
-                                                            Ok(true)
-                                                        }
-                                                        Err(e) => {
-                                                            Err(e.into())
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    Err(e.into())
-                                                }
-                                            }
-                                        },
-                                        activate_spinner,
-                                    )
-                                    .await;
-
-                                    match result {
-                                        Ok(true) => {
-                                            project
-                                                .http_server_config
-                                                .run_after_dev_server_reload_script()
-                                                .await;
-                                        }
-                                        Ok(false) => {
-                                            show_message!(MessageType::Info, {
-                                                Message {
-                                                    action: "Skipped".to_string(),
-                                                    details: "Destructive changes declined by user".to_string(),
-                                                }
-                                            });
-                                        }
-                                        Err(e) => {
-                                            show_message!(MessageType::Error, {
-                                                Message {
-                                                    action: "Failed".to_string(),
-                                                    details: format!(
-                                                        "Processing infrastructure changes failed:\n{e:?}"
-                                                    ),
-                                                }
-                                            });
-                                        }
+                                    // After any plan attempt (even failed), the
+                                    // initial pass is "done" — stop gating HTTP
+                                    // with 503 so the user can interact with the
+                                    // server while fixing errors.
+                                    infra_initialized.store(true, std::sync::atomic::Ordering::Release);
+                                    if let Some(tx) = initial_ready_tx.take() {
+                                        let _ = tx.send(());
                                     }
                                 }
                             }
@@ -601,7 +503,12 @@ async fn watch(
         }
     }
 
-    // Clean up the child process on shutdown
+    // Ensure the webserver startup message is unblocked even if we exit
+    // without having run the plan pass (e.g. shutdown before first compile).
+    if let Some(tx) = initial_ready_tx.take() {
+        let _ = tx.send(());
+    }
+
     if let Some(mut child) = child_process {
         debug!("Killing moose-tspc process on watcher shutdown");
         let _ = child.kill();
@@ -668,9 +575,12 @@ impl TsCompilationWatcher {
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
         initial_handle: Option<InitialCompileHandle>,
         confirmation_policy: ConfirmationPolicy,
+        prompt_bridge: Option<PromptBridge>,
+        remote_for_mirrors: Option<ClickHouseRemote>,
         dev_baseline: Arc<InfrastructureMap>,
+        initial_ready_tx: tokio::sync::oneshot::Sender<()>,
+        infra_initialized: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<(), std::io::Error> {
-        // Move everything into the spawned task
         let watch_task = async move {
             watch(
                 project,
@@ -685,7 +595,11 @@ impl TsCompilationWatcher {
                 shutdown_rx,
                 initial_handle,
                 confirmation_policy,
+                prompt_bridge,
+                remote_for_mirrors,
                 dev_baseline,
+                initial_ready_tx,
+                infra_initialized,
             )
             .await
         };

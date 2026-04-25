@@ -16,10 +16,10 @@ import { Callout } from "@/components/mdx";
 Generate a migration plan by comparing your local code against a production environment:
 
 ```bash
-# For Server Runtime (connect to Moose Admin API)
+# Moose Server (connect to the Admin API)
 moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 
-# For Serverless (connect to ClickHouse directly)
+# Standalone CLI (connect to ClickHouse directly)
 moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 ```
 
@@ -39,11 +39,11 @@ The lifecycle consists of four distinct stages:
     moose generate migration --save ...
     ```
 3.  **Review** — Inspect the generated `migrations/plan.yaml` file and commit it to Git.
-4.  **Application** — Execute the plan during deployment (if using Moose Runtime), manually via the CLI or your own CI/CD pipeline (if using Serverless).
+4.  **Application** — Execute the plan during deployment (if using Moose Server), manually via the CLI or your own CI/CD pipeline (if using the Standalone CLI).
     ```bash
     moose migrate ...
     
-    ## or if using the Moose Runtime
+    ## or if using the Moose Server
     moose prod
     ```
 
@@ -95,7 +95,7 @@ When startup is blocked, the error message lists every destructive operation and
 
 The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
 
-### via Moose Runtime (`moose prod`)
+### via Moose Server (`moose prod`)
 
 Connect to the **Admin API** of the running service.
 
@@ -109,7 +109,7 @@ moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 | `--token` | The authentication token for the Admin API. |
 | `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
 
-### via Serverless (`moose migrate`)
+### via Standalone CLI (`moose migrate`)
 
 Connect directly to the **ClickHouse database**.
 
@@ -150,7 +150,7 @@ Drift occurs when the target database's schema changes between the time you gene
 
 **How it works:**
 1. `moose generate migration` writes the current DB state to `remote_state.json`.
-2. `moose migrate` (serverless) or `moose prod` (server runtime) compares `remote_state.json` with the *current* DB state.
+2. `moose migrate` (Standalone CLI) or `moose prod` (Moose Server) compares `remote_state.json` with the *current* DB state.
 3. If they differ (hash mismatch), the migration **aborts**.
 
 **Resolution:**

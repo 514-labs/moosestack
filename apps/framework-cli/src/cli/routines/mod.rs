@@ -89,7 +89,6 @@
 use crate::cli::display::status::STATUS_ERROR;
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
 use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
-use crate::cli::routines::openapi::openapi;
 use crate::framework::core::execute::{execute_initial_infra_change, ExecutionContext};
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
@@ -122,12 +121,11 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::plan::ReconciliationFilter;
-use crate::framework::core::plan_risk::{
-    classify_plan_risk, confirm_renames_and_classify, destructive_confirmation_gate,
-    ConfirmationPolicy,
-};
+use crate::framework::core::plan::{load_reconciled_infrastructure, load_target_infrastructure};
+use crate::framework::core::plan_risk::{classify_plan_risk, ConfirmationPolicy};
+use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::framework::core::state_storage::StateStorageBuilder;
-use crate::framework::core::version_bump;
+
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
@@ -136,6 +134,8 @@ use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
+use crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry;
+use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
@@ -370,7 +370,7 @@ async fn process_pubsub_message(
 
 /// Creates local tables for EXTERNALLY_MANAGED tables.
 /// Uses remote mirroring if config available, otherwise creates from local schema.
-async fn create_external_mirrors(
+pub(crate) async fn create_external_mirrors(
     project: &Project,
     infra_map: &InfrastructureMap,
     remote: Option<&ClickHouseRemote>,
@@ -550,10 +550,15 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (reconciled_map, mut plan) = plan_changes(&*state_storage, &project).await?;
+    // Only load the target and current maps — the full diff/plan is deferred to
+    // the watcher's initial pass, which runs after the MCP server is available.
+    let target_infra_map = load_target_infrastructure(&project).await?;
+    let olap_client = create_client(project.clickhouse_config.clone());
+    let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
+    let reconciled_map =
+        load_reconciled_infrastructure(&project, &*state_storage, olap_client, &filter).await?;
 
-    let externally_managed: Vec<_> = plan
-        .target_infra_map
+    let externally_managed: Vec<_> = target_infra_map
         .tables
         .values()
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
@@ -588,7 +593,9 @@ pub async fn start_development_mode(
             Ok(stored) => {
                 let remote_clickhouse_url = match stored {
                     Some(url) => Some(url),
-                    None if settings.dev.suppress_dev_setup_prompt => None,
+                    None if settings.dev.suppress_dev_setup_prompt || confirmation_policy.agent => {
+                        None
+                    }
                     None => {
                         display::show_message_wrapper(
                             MessageType::Info,
@@ -709,76 +716,45 @@ pub async fn start_development_mode(
 
     maybe_warmup_connections(&project, &redis_client).await;
 
-    plan_validator::validate(&project, &plan)?;
-
-    let mut risk =
-        match confirm_renames_and_classify(&mut plan.changes, &confirmation_policy).await? {
-            Some(risk) => risk,
-            None => return Ok(()),
-        };
-
-    let version_bump_decisions = match version_bump::detect_prompt_and_exclude(
-        &plan.changes.olap_changes,
-        &reconciled_map,
-        &project.clickhouse_config.db_name,
-        confirmation_policy.accept_all,
-        &mut risk,
-    )
-    .await?
-    {
-        Some(d) => d,
-        None => return Ok(()),
+    // The full plan/confirm/execute pipeline is deferred to the watcher's
+    // initial pass, which runs after the web server (and MCP endpoint) are up.
+    // This means prompts—whether stdin or MCP-driven—always have a working
+    // transport.  The startup message is held until the watcher signals that
+    // the initial infrastructure changes have been processed.
+    let prompt_bridge = if confirmation_policy.agent {
+        let mcp_url = format!("http://{}:{}/mcp", server_config.host, server_config.port);
+        Some(PromptBridge::new(mcp_url))
+    } else {
+        None
     };
 
-    if !destructive_confirmation_gate(&risk, &confirmation_policy).await? {
-        return Ok(());
-    }
+    let dev_baseline = Arc::new(reconciled_map.clone());
 
-    let api_changes_channel = web_server
-        .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
-        .await;
-
-    let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
-
-    // Capture the reconciled map as the dev session baseline for pending migration generation.
-    let dev_baseline = Arc::new(reconciled_map);
-
-    let process_registry = execute_initial_infra_change(ExecutionContext {
-        project: &project,
+    let syncing_registry = SyncingProcessesRegistry::new(
+        project.redpanda_config.clone(),
+        project.clickhouse_config.clone(),
+    );
+    let process_registry = Arc::new(RwLock::new(ProcessRegistries::new(
+        &project,
         settings,
-        plan: &plan,
-        skip_olap: false,
-        api_changes_channel,
-        webapp_changes_channel,
-        metrics: metrics.clone(),
-        version_bump_decisions,
-    })
-    .await?;
-
-    let process_registry = Arc::new(RwLock::new(process_registry));
-
-    let stored_map = plan.target_infra_map;
-
-    // Create mirrors after infra is set up (databases exist)
-    create_external_mirrors(&project, &stored_map, remote_for_mirrors.as_ref()).await;
-
-    let openapi_file = openapi(&project, &stored_map).await?;
-
-    state_storage.store_infrastructure_map(&stored_map).await?;
-
-    // Generate initial pending migration (best-effort, delta mode only)
-    if project.features.migrate_with_deltas {
-        if let Err(e) = crate::framework::core::pending_migration::write_pending_migration(
-            &dev_baseline,
-            &stored_map,
-            &project,
-        ) {
-            tracing::warn!("Failed to write pending migration: {}", e);
-        }
-    }
+        syncing_registry,
+    )));
 
     let infra_map: &'static RwLock<InfrastructureMap> =
-        Box::leak(Box::new(RwLock::new(stored_map)));
+        Box::leak(Box::new(RwLock::new(reconciled_map)));
+
+    let openapi_file = project
+        .internal_dir()
+        .ok()
+        .map(|d| d.join(crate::utilities::constants::OPENAPI_FILE));
+
+    // The watcher sends on this channel once the initial plan pass completes,
+    // so the web server can hold the startup/routes message until tables exist.
+    let (initial_ready_tx, initial_ready_rx) = tokio::sync::oneshot::channel::<()>();
+
+    // Shared flag: the watcher sets this to `true` after the initial plan pass
+    // so the HTTP server can reject data-plane requests with 503 until ready.
+    let infra_initialized = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     // Create processing coordinator to synchronize file watcher with MCP tools
     use crate::cli::processing_coordinator::ProcessingCoordinator;
@@ -792,9 +768,6 @@ pub async fn start_development_mode(
     let state_storage = Arc::new(state_storage);
     match project.language {
         SupportedLanguages::Typescript => {
-            // Pass the handle from spawn_and_await_initial_compile() if we have one.
-            // This continues watching the already-running tspc process instead of
-            // spawning a new one, and ensures we don't trigger duplicate plan_changes.
             let ts_watcher = TsCompilationWatcher::new();
             ts_watcher.start(
                 project.clone(),
@@ -809,7 +782,11 @@ pub async fn start_development_mode(
                 watcher_shutdown_rx,
                 ts_compile_handle,
                 confirmation_policy,
+                prompt_bridge.clone(),
+                remote_for_mirrors.clone(),
                 dev_baseline.clone(),
+                initial_ready_tx,
+                infra_initialized.clone(),
             )?;
         }
         SupportedLanguages::Python => {
@@ -826,7 +803,11 @@ pub async fn start_development_mode(
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
                 confirmation_policy,
+                prompt_bridge.clone(),
+                remote_for_mirrors,
                 dev_baseline.clone(),
+                initial_ready_tx,
+                infra_initialized.clone(),
             )?;
         }
     }
@@ -858,11 +839,14 @@ pub async fn start_development_mode(
             infra_map,
             project,
             metrics,
-            Some(openapi_file),
+            openapi_file,
             process_registry,
             enable_mcp,
             processing_coordinator,
+            prompt_bridge.clone(),
             Some(watcher_shutdown_tx),
+            Some(initial_ready_rx),
+            infra_initialized,
         )
         .await;
 
@@ -1131,7 +1115,10 @@ pub async fn start_production_mode(
             Arc::new(RwLock::new(process_registry)),
             false, // MCP is disabled in production mode
             processing_coordinator,
+            None, // No prompt bridge in production mode
             None, // No file watcher in production mode
+            None, // No initial-ready gate in production mode
+            Arc::new(std::sync::atomic::AtomicBool::new(true)), // Already initialized in prod
         )
         .await;
 
