@@ -711,6 +711,45 @@ system.forceSearchAttributesCacheRefreshOnRead:
         Ok(info.server_errors)
     }
 
+    /// Builds a Docker image locally for dev/test purposes using the native platform.
+    /// Unlike `buildx`, this does not cross-compile, does not pass a DOWNLOAD_URL
+    /// (the Dockerfile should COPY a local binary), and enables BuildKit layer caching.
+    ///
+    /// # Arguments
+    /// * `directory` - The build context directory
+    /// * `tag` - Image tag (e.g., "moose-local-dev:latest")
+    /// * `dockerfile_path` - Optional path to a Dockerfile
+    pub fn build_local(
+        &self,
+        directory: &PathBuf,
+        tag: &str,
+        dockerfile_path: Option<&Path>,
+    ) -> std::io::Result<()> {
+        let mut cmd = self.create_command();
+        cmd.current_dir(directory).arg("build").arg("-t").arg(tag);
+
+        if let Some(path) = dockerfile_path {
+            cmd.arg("-f").arg(path);
+        }
+
+        let mut child = cmd
+            .arg(".")
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+
+        let status = child.wait()?;
+
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "Docker build command failed with exit code: {}",
+                status.code().unwrap_or(-1)
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Runs buildx command
     ///
     /// # Arguments

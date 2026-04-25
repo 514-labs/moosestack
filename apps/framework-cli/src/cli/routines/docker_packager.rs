@@ -22,7 +22,69 @@ use crate::{
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
+
+/// Returns true when the Docker build should copy a local binary into
+/// images instead of downloading from releases. Triggered by:
+/// - On Linux: `CLI_VERSION == "0.0.1"` (ad-hoc local dev builds)
+/// - Any OS: `MOOSE_DOCKER_LOCAL_BUILD` env var is set (explicit opt-in).
+///   The env var value can be a path to a Linux binary; if empty/`"1"`, falls
+///   back to `current_exe()` on Linux or errors on other platforms.
+fn is_local_dev_build() -> bool {
+    let version_is_local_dev = constants::CLI_VERSION == "0.0.1";
+    let env_override = std::env::var("MOOSE_DOCKER_LOCAL_BUILD").is_ok();
+    (version_is_local_dev && cfg!(target_os = "linux")) || env_override
+}
+
+/// Resolves the path to the Linux moose-cli binary for local Docker builds.
+/// - If `MOOSE_DOCKER_LOCAL_BUILD` is set to a file path, uses that path.
+/// - Otherwise on Linux, uses `current_exe()`.
+/// - On non-Linux without an explicit path, returns an error.
+fn resolve_local_cli_binary() -> Result<PathBuf, String> {
+    if let Ok(val) = std::env::var("MOOSE_DOCKER_LOCAL_BUILD") {
+        let val = val.trim();
+        if !val.is_empty() && val != "1" {
+            let p = PathBuf::from(val);
+            if p.exists() {
+                return Ok(p);
+            }
+            return Err(format!(
+                "MOOSE_DOCKER_LOCAL_BUILD points to '{}' which does not exist",
+                p.display()
+            ));
+        }
+    }
+    if cfg!(target_os = "linux") {
+        std::env::current_exe().map_err(|e| format!("Failed to resolve current executable: {e}"))
+    } else {
+        Err(
+            "Local Docker build on non-Linux requires MOOSE_DOCKER_LOCAL_BUILD \
+             to point to a Linux moose-cli binary (e.g. target/x86_64-unknown-linux-gnu/debug/moose-cli)"
+                .to_string(),
+        )
+    }
+}
+
+/// Docker install section for local dev builds -- copies the binary from the
+/// build context instead of downloading from releases.
+const MOOSE_INSTALL_LOCAL: &str = r#"# Install Moose (local dev binary)
+COPY moose-cli /usr/local/bin/moose
+RUN chmod +x /usr/local/bin/moose
+
+RUN moose --version"#;
+
+/// Docker install section for release builds -- downloads the binary from
+/// the release server.
+const MOOSE_INSTALL_RELEASE: &str = r#"# Install Moose
+ARG FRAMEWORK_VERSION="0.0.0"
+ARG DOWNLOAD_URL
+RUN echo "DOWNLOAD_URL: ${DOWNLOAD_URL}"
+RUN ldd --version
+RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
+RUN chmod +x /usr/local/bin/moose
+
+RUN moose --version"#;
 
 #[derive(Debug, Clone)]
 struct PackageInfo {
@@ -161,25 +223,28 @@ RUN npm install -g pnpm@latest
     )
 }
 
-/// Generates the TypeScript compile step for Docker with dynamic source directory
+/// Generates the TypeScript compile step for Docker with dynamic source directory.
+/// In local dev builds, uses `/usr/local/bin/moose` directly instead of `npx moose`
+/// to avoid running the npm-installed CLI (which may be a different version).
+/// `moose-tspc` is from `@514labs/moose-lib` so `npx` is always correct for it.
 fn generate_typescript_compile_step(source_dir: &str) -> String {
-    // Escape single quotes for shell safety: ' becomes '\''
-    // This prevents command substitution ($(...) and backticks) from being executed
-    // Single-quoted strings in shell are literal except for the quote itself
     let escaped_source_dir = source_dir.replace('\'', r"'\''");
+
+    let moose_cmd = if is_local_dev_build() {
+        "moose"
+    } else {
+        "npx moose"
+    };
 
     format!(
         r#"# Run TypeScript type checking
-# Run typecheck before we compile since we skip typecheck there
-RUN npx moose check
+RUN {moose_cmd} check
 
 # Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
-# This eliminates ts-node overhead at runtime for faster worker startup
-RUN MOOSE_SOURCE_DIR='{}' npx moose-tspc
+RUN MOOSE_SOURCE_DIR='{escaped_source_dir}' npx moose-tspc
 
 # Set environment variable to use pre-compiled JavaScript at runtime
 ENV MOOSE_USE_COMPILED=true"#,
-        escaped_source_dir
     )
 }
 
@@ -266,15 +331,7 @@ ENV LC_ALL=en_US.UTF-8
 ENV TZ=UTC
 ENV DOCKER_IMAGE=true
 
-# Install Moose
-ARG FRAMEWORK_VERSION="0.0.0"
-ARG DOWNLOAD_URL
-RUN echo "DOWNLOAD_URL: ${DOWNLOAD_URL}"
-RUN ldd --version
-RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
-RUN chmod +x /usr/local/bin/moose
-
-RUN moose --version
+MOOSE_INSTALL_STEP
 
 # Setup healthcheck
 HEALTHCHECK --interval=30s --timeout=3s \
@@ -674,6 +731,16 @@ COPY --chown=moose:moose ./{} ./{}"#,
         }
     };
 
+    // Custom Dockerfiles persist in the project and are reused across builds,
+    // so always write the release install step. The local dev binary injection
+    // happens at build time via the managed Dockerfile in .moose/packager/.
+    let moose_install = if !project.docker_config.custom_dockerfile && is_local_dev_build() {
+        MOOSE_INSTALL_LOCAL
+    } else {
+        MOOSE_INSTALL_RELEASE
+    };
+    let docker_file = docker_file.replace("MOOSE_INSTALL_STEP", moose_install);
+
     fs::write(&file_path, docker_file).map_err(|err| {
         error!("Failed to write Docker file for project: {}", err);
         RoutineFailure::new(
@@ -834,13 +901,35 @@ pub fn build_dockerfile(
         }
     }
 
-    // consts::CLI_VERSION is set from an environment variable during the CI/CD process
-    // however, it's set to 0.0.1 in development,
-    // so we set it to a recent version for the purpose of local dev testing.
-    let mut cli_version = constants::CLI_VERSION;
-    if cli_version == "0.0.1" {
-        cli_version = "0.6.34";
+    let is_local_dev = is_local_dev_build();
+
+    if is_local_dev {
+        let exe_path = resolve_local_cli_binary().map_err(|msg| {
+            error!("{}", msg);
+            RoutineFailure::new(
+                Message::new("Failed".to_string(), msg.clone()),
+                std::io::Error::new(std::io::ErrorKind::NotFound, msg),
+            )
+        })?;
+        let dest = internal_dir.join("packager/moose-cli");
+        info!(
+            "Local dev build: copying {} -> {}",
+            exe_path.display(),
+            dest.display()
+        );
+        fs::copy(&exe_path, &dest).map_err(|err| {
+            error!("Failed to copy moose-cli binary to build context: {}", err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to copy moose-cli binary to Docker build context".to_string(),
+                ),
+                err,
+            )
+        })?;
     }
+
+    let cli_version = constants::CLI_VERSION;
 
     // Detect CI versions and override release channel if necessary
     // CI versions (containing "-ci-" or "dev") are only available in the dev channel
@@ -858,8 +947,8 @@ pub fn build_dockerfile(
     };
 
     info!(
-        "Building Docker image with CLI version {} from {} channel",
-        cli_version, release_channel
+        "Building Docker image with CLI version {} from {} channel (local_dev={})",
+        cli_version, release_channel, is_local_dev
     );
 
     // Check if this is a monorepo build
@@ -1014,17 +1103,36 @@ pub fn build_dockerfile(
         &dockerfile_path,
     );
 
-    let build_all = is_amd64 == is_arm64;
+    if is_local_dev {
+        // Ensure the staged moose-cli binary is inside the resolved build context.
+        // For monorepo builds the context switches to the workspace root, so
+        // we need to copy the binary there.
+        let staged_binary = internal_dir.join("packager/moose-cli");
+        let context_binary = build_context.join("moose-cli");
+        if staged_binary.exists() && staged_binary != context_binary {
+            info!(
+                "Copying moose-cli binary into build context: {} -> {}",
+                staged_binary.display(),
+                context_binary.display()
+            );
+            fs::copy(&staged_binary, &context_binary).map_err(|err| {
+                error!("Failed to copy moose-cli binary to build context: {}", err);
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to copy moose-cli binary to Docker build context".to_string(),
+                    ),
+                    err,
+                )
+            })?;
+        }
 
-    if build_all || is_amd64 {
-        info!("Creating docker linux/amd64 image");
-        let buildx_result = with_spinner_completion(
-            "Creating docker linux/amd64 image",
-            "Docker linux/amd64 image created successfully",
+        info!("Local dev build: using native docker build (no cross-compilation)");
+        let build_start = Instant::now();
+        let build_result = with_spinner_completion(
+            "Building local dev Docker image",
+            "Local dev Docker image built successfully",
             || {
-                // For monorepo builds, we need to copy config files to workspace root
-                // Skip for custom Dockerfile builds where build_context == project_location
-                // (copying a file to itself is undefined behavior)
                 if monorepo_info_path.exists() {
                     copy_project_config_files(
                         &project.project_location,
@@ -1033,69 +1141,124 @@ pub fn build_dockerfile(
                     );
                 }
 
-                docker_client.buildx(
+                docker_client.build_local(
                     &build_context,
-                    cli_version,
-                    "linux/amd64",
-                    "x86_64-unknown-linux-gnu",
-                    release_channel,
+                    "moose-df-deployment-local:latest",
                     dockerfile_for_buildx.as_deref(),
                 )
             },
             !project.is_production,
         );
-        match buildx_result {
+        let elapsed = build_start.elapsed();
+        info!("Docker build took {:.1}s", elapsed.as_secs_f64());
+        match build_result {
             Ok(_) => {
-                info!("Docker image created");
+                info!(
+                    "Local dev Docker image created in {:.1}s",
+                    elapsed.as_secs_f64()
+                );
             }
             Err(err) => {
-                error!("Failed to create docker image: {}", err);
+                error!("Failed to create local dev docker image: {}", err);
+                // Clean up binary from build context before returning
+                if context_binary.exists() && staged_binary != context_binary {
+                    let _ = fs::remove_file(&context_binary);
+                }
                 return Err(RoutineFailure::new(
                     Message::new("Failed".to_string(), "to create docker image".to_string()),
                     err,
                 ));
             }
         }
-    }
 
-    if build_all || is_arm64 {
-        info!("Creating docker linux/arm64 image");
-        let buildx_result = with_spinner_completion(
-            "Creating docker linux/arm64 image",
-            "Docker linux/arm64 image created successfully",
-            || {
-                // For monorepo builds, we need to copy config files to workspace root
-                // Skip for custom Dockerfile builds where build_context == project_location
-                // (copying a file to itself is undefined behavior)
-                if monorepo_info_path.exists() {
-                    copy_project_config_files(
-                        &project.project_location,
+        // Clean up binary from build context (don't leave it in workspace root)
+        if context_binary.exists() && staged_binary != context_binary {
+            let _ = fs::remove_file(&context_binary);
+        }
+    } else {
+        let build_all = is_amd64 == is_arm64;
+
+        if build_all || is_amd64 {
+            info!("Creating docker linux/amd64 image");
+            let build_start = Instant::now();
+            let buildx_result = with_spinner_completion(
+                "Creating docker linux/amd64 image",
+                "Docker linux/amd64 image created successfully",
+                || {
+                    if monorepo_info_path.exists() {
+                        copy_project_config_files(
+                            &project.project_location,
+                            &build_context,
+                            &internal_dir,
+                        );
+                    }
+
+                    docker_client.buildx(
                         &build_context,
-                        &internal_dir,
-                    );
+                        cli_version,
+                        "linux/amd64",
+                        "x86_64-unknown-linux-gnu",
+                        release_channel,
+                        dockerfile_for_buildx.as_deref(),
+                    )
+                },
+                !project.is_production,
+            );
+            let elapsed = build_start.elapsed();
+            info!("Docker amd64 build took {:.1}s", elapsed.as_secs_f64());
+            match buildx_result {
+                Ok(_) => {
+                    info!("Docker image created");
                 }
-
-                docker_client.buildx(
-                    &build_context,
-                    cli_version,
-                    "linux/arm64",
-                    "aarch64-unknown-linux-gnu",
-                    release_channel,
-                    dockerfile_for_buildx.as_deref(),
-                )
-            },
-            !project.is_production,
-        );
-        match buildx_result {
-            Ok(_) => {
-                info!("Docker image created");
+                Err(err) => {
+                    error!("Failed to create docker image: {}", err);
+                    return Err(RoutineFailure::new(
+                        Message::new("Failed".to_string(), "to create docker image".to_string()),
+                        err,
+                    ));
+                }
             }
-            Err(err) => {
-                error!("Failed to create docker image: {}", err);
-                return Err(RoutineFailure::new(
-                    Message::new("Failed".to_string(), "to create docker image".to_string()),
-                    err,
-                ));
+        }
+
+        if build_all || is_arm64 {
+            info!("Creating docker linux/arm64 image");
+            let build_start = Instant::now();
+            let buildx_result = with_spinner_completion(
+                "Creating docker linux/arm64 image",
+                "Docker linux/arm64 image created successfully",
+                || {
+                    if monorepo_info_path.exists() {
+                        copy_project_config_files(
+                            &project.project_location,
+                            &build_context,
+                            &internal_dir,
+                        );
+                    }
+
+                    docker_client.buildx(
+                        &build_context,
+                        cli_version,
+                        "linux/arm64",
+                        "aarch64-unknown-linux-gnu",
+                        release_channel,
+                        dockerfile_for_buildx.as_deref(),
+                    )
+                },
+                !project.is_production,
+            );
+            let elapsed = build_start.elapsed();
+            info!("Docker arm64 build took {:.1}s", elapsed.as_secs_f64());
+            match buildx_result {
+                Ok(_) => {
+                    info!("Docker image created");
+                }
+                Err(err) => {
+                    error!("Failed to create docker image: {}", err);
+                    return Err(RoutineFailure::new(
+                        Message::new("Failed".to_string(), "to create docker image".to_string()),
+                        err,
+                    ));
+                }
             }
         }
     }
@@ -1509,6 +1672,12 @@ fn create_standard_typescript_dockerfile(
     node_version: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
+    let moose_install = if is_local_dev_build() {
+        MOOSE_INSTALL_LOCAL
+    } else {
+        MOOSE_INSTALL_RELEASE
+    };
+    let dockerfile_content = dockerfile_content.replace("MOOSE_INSTALL_STEP", moose_install);
     let file_path = internal_dir.join("packager/Dockerfile");
 
     fs::write(&file_path, dockerfile_content).map_err(|err| {
