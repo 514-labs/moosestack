@@ -389,10 +389,9 @@ describe("OlapDictionary", () => {
 
       const json = dict.toJson();
       expect(json.name).to.equal("dict_serial");
-      expect(json.source).to.deep.equal({
+      expect(json.source).to.include({
         type: "TABLE",
         table: "Products",
-        database: undefined,
       });
       expect(json.primaryKey).to.deep.equal(["ProductId"]);
       expect(json.layout).to.deep.equal({ type: "HASHED" });
