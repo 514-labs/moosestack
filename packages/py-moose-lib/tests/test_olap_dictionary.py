@@ -66,6 +66,13 @@ class Lookup(BaseModel):
     value: str
 
 
+class CompositeLookup(BaseModel):
+    lookup_id: str
+    category: str
+    region: str
+    value: str
+
+
 # ─── Construction and field defaults ─────────────────────────────────────────
 
 
@@ -224,8 +231,8 @@ def test_get_single_key():
 
 
 def test_get_composite_key_wraps_tuple():
-    table = OlapTable[Lookup](name="tbl_ckg")
-    d = OlapDictionary[Lookup](
+    table = OlapTable[CompositeLookup](name="tbl_ckg")
+    d = OlapDictionary[CompositeLookup](
         name="dict_ck_get",
         config=OlapDictionaryConfig(
             source_table=table,
@@ -252,8 +259,8 @@ def test_get_or_default():
 
 
 def test_get_or_default_composite_key():
-    table = OlapTable[Lookup](name="tbl_god_ck")
-    d = OlapDictionary[Lookup](
+    table = OlapTable[CompositeLookup](name="tbl_god_ck")
+    d = OlapDictionary[CompositeLookup](
         name="dict_god_ck",
         config=OlapDictionaryConfig(
             source_table=table,
@@ -282,8 +289,8 @@ def test_has_single_key():
 
 
 def test_has_composite_key():
-    table = OlapTable[Lookup](name="tbl_has_ck")
-    d = OlapDictionary[Lookup](
+    table = OlapTable[CompositeLookup](name="tbl_has_ck")
+    d = OlapDictionary[CompositeLookup](
         name="dict_has_ck",
         config=OlapDictionaryConfig(
             source_table=table,

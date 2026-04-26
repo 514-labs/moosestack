@@ -252,7 +252,7 @@ export const myDict = new OlapDictionary<ActiveProductLookup>("dict_active_produ
   `,
   sourceTables: [ProductsTable], // required for dependency tracking
   primaryKey: ["product_id"],
-  layout: { type: "COMPLEX_KEY_HASHED" },
+  layout: { type: "HASHED" },
   lifetime: 600,
 });
 ```
@@ -265,7 +265,7 @@ my_dict = OlapDictionary[ActiveProductLookup](
         source_query="SELECT product_id, product_name, category FROM products WHERE is_active = 1",
         source_tables=[products_table],  # required for dependency tracking
         primary_key=["product_id"],
-        layout=ComplexKeyHashedLayout(),
+        layout=HashedLayout(),
         lifetime=DictionaryLifetime(min=600, max=600),
     ),
 )

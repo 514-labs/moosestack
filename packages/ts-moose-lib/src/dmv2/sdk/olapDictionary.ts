@@ -4,7 +4,7 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { OlapTable } from "./olapTable";
 import { View } from "./view";
 import { LifeCycle } from "./lifeCycle";
-import { Sql, sql } from "../../sqlHelpers";
+import { Sql, sql, toStaticQuery } from "../../sqlHelpers";
 import { getSourceFileFromStack } from "../utils/stackTrace";
 
 // ─── Column attributes ────────────────────────────────────────────────────────
@@ -397,6 +397,12 @@ function serializeLifetime(
       `OlapDictionary: lifetime range must use finite non-negative integers with min <= max (got min=${lifetime.min}, max=${lifetime.max}).`,
     );
   }
+  if (lifetime.min === 0 && lifetime.max === 0) {
+    return { type: "STATIC" };
+  }
+  if (lifetime.min === lifetime.max) {
+    return { type: "SINGLE", seconds: lifetime.min };
+  }
   return { type: "RANGE", min: lifetime.min, max: lifetime.max };
 }
 
@@ -486,9 +492,6 @@ function serializeSource(
   }
 
   if (config.sourceQuery !== undefined) {
-    const { toStaticQuery } = require("../../sqlHelpers") as {
-      toStaticQuery: (sql: Sql) => string;
-    };
     return {
       type: "QUERY",
       query: toStaticQuery(config.sourceQuery),
@@ -676,9 +679,6 @@ export class OlapDictionary<T> {
     const parts = keys.map((k) => {
       if (typeof k === "object" && "strings" in k) {
         // Sql fragment — use toStaticQuery (throws if parameterized)
-        const { toStaticQuery } = require("../../sqlHelpers") as {
-          toStaticQuery: (sql: Sql) => string;
-        };
         return toStaticQuery(k as Sql);
       }
       if (typeof k === "string") {
@@ -736,9 +736,6 @@ export class OlapDictionary<T> {
     const keyExpr = this.formatKeyArgs(keys);
     let defaultExpr: string;
     if (typeof defaultVal === "object" && "strings" in defaultVal) {
-      const { toStaticQuery } = require("../../sqlHelpers") as {
-        toStaticQuery: (sql: Sql) => string;
-      };
       defaultExpr = toStaticQuery(defaultVal as Sql);
     } else if (typeof defaultVal === "string") {
       defaultExpr = `'${defaultVal.replace(/'/g, "''")}'`;

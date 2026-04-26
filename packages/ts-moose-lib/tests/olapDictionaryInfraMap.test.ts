@@ -71,6 +71,12 @@ function makeSourceTable(): OlapTable<ProductLookup> {
   });
 }
 
+function makeMultiKeySourceTable(): OlapTable<MultiKeyLookup> {
+  return new OlapTable<MultiKeyLookup>("MultiKeyProducts", {
+    orderByFields: ["RegionId", "ProductId"],
+  });
+}
+
 /**
  * Serialize the current registry to a JSON string, then parse it back.
  * This simulates what the Rust CLI does: read the ___MOOSE_STUFF___ output,
@@ -553,7 +559,7 @@ describe("OlapDictionary infra map round-trip", () => {
     });
 
     it("COMPLEX_KEY_HASHED layout: emits correct type string and snake_case fields", () => {
-      const source = makeSourceTable();
+      const source = makeMultiKeySourceTable();
       new OlapDictionary<MultiKeyLookup>("dict_ck_hashed", {
         sourceTable: source,
         primaryKey: ["RegionId", "ProductId"],
@@ -704,7 +710,7 @@ describe("OlapDictionary infra map round-trip", () => {
   describe("in-process: settings and optional fields are omitted when not set", () => {
     beforeEach(clearRegistry);
 
-    it("settings defaults to empty object {}", () => {
+    it("settings is absent or empty when not set", () => {
       const source = makeSourceTable();
       new OlapDictionary<ProductLookup>("dict_no_settings", {
         sourceTable: source,
@@ -715,7 +721,13 @@ describe("OlapDictionary infra map round-trip", () => {
 
       const infraMap = roundTripInfraMap();
       const dict = infraMap.olapDictionaries["dict_no_settings"];
-      expect(dict.settings).to.deep.equal({});
+      // Rust skips empty maps (skip_serializing_if = "HashMap::is_empty"),
+      // so settings may be absent; TypeScript serializes {} when present.
+      const settings = dict.settings;
+      expect(settings == null || Object.keys(settings).length === 0).to.equal(
+        true,
+        "settings should be absent or empty when not configured",
+      );
     });
 
     it("database is absent when not set", () => {

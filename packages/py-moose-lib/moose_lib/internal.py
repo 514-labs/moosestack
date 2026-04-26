@@ -1340,9 +1340,13 @@ def to_infra_map() -> dict:
     olap_dictionaries = {}
     for name, d in get_olap_dictionaries().items():
         # Build top-level invalidate_query from DictionaryInvalidation if set.
-        # Rust expects a raw SQL string: SELECT fn(column) FROM source_table
+        # Rust expects a raw SQL string: SELECT fn(column) FROM source_table.
+        # External-source dicts (source_tables is empty) have per-source
+        # invalidation — skip the top-level field for those.
+        # For single- and multi-table source/source_query dicts we use the
+        # first source table as the invalidation reference.
         invalidate_query = None
-        if d.config.invalidate is not None and len(d.source_tables) == 1:
+        if d.config.invalidate is not None and len(d.source_tables) >= 1:
             inv = d.config.invalidate
             # Strip backtick quoting to get the plain table reference
             source_ref = d.source_tables[0].replace("`", "")
