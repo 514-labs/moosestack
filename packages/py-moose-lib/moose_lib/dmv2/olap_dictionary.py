@@ -441,6 +441,10 @@ class OlapDictionaryConfig(BaseModel):
             raise ValueError("source_tables is required when using source_query")
         if self.source_query is not None and not self.source_query.strip():
             raise ValueError("source_query must not be blank")
+        if isinstance(self.lifetime, int) and self.lifetime < 0:
+            raise ValueError(
+                f"lifetime must be a non-negative integer, got {self.lifetime}"
+            )
         if not self.primary_key:
             raise ValueError("primary_key must contain at least one column name")
         # Validate primary key cardinality matches layout type
