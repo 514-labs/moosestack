@@ -416,12 +416,17 @@ pub enum GenerateCommand {
         //   --raw-sql             → stub file with a TODO placeholder to edit
         /// Raw SQL escape hatch. Pass SQL inline, or use the flag alone to
         /// scaffold a stub file you can fill in later.
-        #[arg(long, num_args = 0..=1, default_missing_value = "")]
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_missing_value = "",
+            conflicts_with_all = ["url", "clickhouse_url", "redis_url"],
+        )]
         raw_sql: Option<String>,
 
         /// Human description. Required when --raw-sql is used; ignored
         /// otherwise (typed migrations use auto-generated descriptions).
-        #[arg(long, short = 'd')]
+        #[arg(long, short = 'd', requires = "raw_sql")]
         description: Option<String>,
     },
 }

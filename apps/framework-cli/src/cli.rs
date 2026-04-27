@@ -109,7 +109,8 @@ fn generate_raw_sql_migration(
     project: &crate::project::Project,
     description: Option<&str>,
     sql_arg: &str,
-) -> Result<crate::cli::routines::RoutineSuccess, crate::cli::routines::RoutineFailure> {
+) -> std::result::Result<crate::cli::routines::RoutineSuccess, crate::cli::routines::RoutineFailure>
+{
     use crate::cli::display::{Message, MessageType};
     use crate::cli::routines::{RoutineFailure, RoutineSuccess};
     use crate::framework::core::infra_delta::InfraDelta;
@@ -1024,8 +1025,14 @@ pub async fn top_command_handler(
                 // ./migrations/. `Some("")` means the flag was passed without
                 // a value → scaffold a stub with a TODO placeholder.
                 if let Some(sql_arg) = raw_sql {
-                    let outcome =
-                        generate_raw_sql_migration(&project, description.as_deref(), sql_arg);
+                    let outcome = if project.features.migrate_with_deltas {
+                        generate_raw_sql_migration(&project, description.as_deref(), sql_arg)
+                    } else {
+                        Err(RoutineFailure::error(Message::new(
+                            "Raw SQL".to_string(),
+                            "--raw-sql requires features.migrate_with_deltas = true in moose.config.toml".to_string(),
+                        )))
+                    };
                     wait_for_usage_capture(capture_handle).await;
                     return outcome;
                 }

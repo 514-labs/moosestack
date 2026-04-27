@@ -237,9 +237,18 @@ impl MigrationFile {
     pub fn new(description: String, parent_state_hash: String, deltas: Vec<InfraDelta>) -> Self {
         let now = Utc::now();
         let timestamp = now.format("%Y%m%d_%H%M%S_%3f");
-        let slug = description
+        // Sanitize description into a filesystem-safe slug: lowercase ASCII
+        // alphanumerics survive verbatim; everything else (whitespace, path
+        // separators, punctuation, non-ASCII) collapses to a single `_`. This
+        // prevents user-provided descriptions like `backfill users/orders`
+        // from producing nested `id` paths that fail on file write.
+        let slug: String = description
             .to_lowercase()
-            .split_whitespace()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect::<String>()
+            .split('_')
+            .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join("_");
         let id = format!("{}_{}", timestamp, slug);

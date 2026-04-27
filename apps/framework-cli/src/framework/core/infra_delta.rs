@@ -1263,6 +1263,23 @@ impl InfraDelta {
                 } else {
                     format!("raw_sql: {}", description)
                 };
+                // ClickHouse's HTTP query API accepts a single statement per
+                // request, but the `setup` Vec is iterated and each entry is
+                // passed to `run_query` separately. Split on `;` so users can
+                // bundle multiple statements in one RawSql delta. Naive split
+                // — a `;` inside a string literal would split incorrectly,
+                // which is acceptable for an escape hatch.
+                let statements: Vec<String> = sql
+                    .split(';')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
+                let setup = if statements.is_empty() {
+                    vec![sql.clone()]
+                } else {
+                    statements
+                };
                 vec![AtomicOlapOperation::RunSetupSql {
                     resource: SqlResource {
                         name,
@@ -1270,7 +1287,7 @@ impl InfraDelta {
                         source_file: None,
                         source_line: None,
                         source_column: None,
-                        setup: vec![sql.clone()],
+                        setup,
                         teardown: vec![],
                         pulls_data_from: vec![],
                         pushes_data_to: vec![],
@@ -2326,6 +2343,28 @@ mod tests {
                 assert_eq!(resource.setup.len(), 1);
                 assert!(resource.setup[0].contains("ALTER TABLE foo UPDATE"));
                 assert!(resource.teardown.is_empty());
+            }
+            other => panic!("expected RunSetupSql, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_raw_sql_lowering_splits_multiple_statements() {
+        let map = empty_map();
+        let delta = InfraDelta::RawSql {
+            description: "two-step backfill".to_string(),
+            sql: "ALTER TABLE foo UPDATE x = 1 WHERE x IS NULL;\nOPTIMIZE TABLE foo FINAL;"
+                .to_string(),
+        };
+        let ops = delta.to_atomic_operations(&map, TEST_DB);
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            AtomicOlapOperation::RunSetupSql { resource, .. } => {
+                assert_eq!(resource.setup.len(), 2);
+                assert!(resource.setup[0].contains("ALTER TABLE foo UPDATE"));
+                assert!(resource.setup[1].contains("OPTIMIZE TABLE foo FINAL"));
+                // Trailing/empty segments must be filtered out.
+                assert!(resource.setup.iter().all(|s| !s.trim().is_empty()));
             }
             other => panic!("expected RunSetupSql, got {:?}", other),
         }
