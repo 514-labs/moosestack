@@ -906,11 +906,10 @@ pub async fn top_command_handler(
                 // clones the same Arc state, so prompt/respond stay in sync.
                 let (prompt_bridge, _mcp_server) = if agent {
                     use crate::framework::core::prompt_bridge::PromptBridge;
-                    let host = &project.http_server_config.host;
                     let port = project.http_server_config.port;
-                    let mcp_url = format!("http://{host}:{port}/mcp");
+                    let mcp_url = crate::mcp::standalone::mcp_url(port);
                     let bridge = PromptBridge::new(mcp_url);
-                    match crate::mcp::standalone::start(host, port, bridge.clone()).await {
+                    match crate::mcp::standalone::start(port, bridge.clone()).await {
                         Ok(server) => {
                             display::show_message_wrapper(
                                 MessageType::Success,

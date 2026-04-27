@@ -30,6 +30,9 @@ use super::tools::{create_error_result, prompt};
 use crate::framework::core::prompt_bridge::PromptBridge;
 use crate::utilities::constants::CLI_VERSION;
 
+/// Standalone prompt servers are one-shot local control endpoints.
+pub const LOOPBACK_HOST: &str = "127.0.0.1";
+
 /// MCP handler that only serves the `respond_to_prompt` tool.
 #[derive(Clone)]
 struct PromptOnlyHandler {
@@ -113,12 +116,16 @@ pub enum StandaloneServerError {
     Io(#[from] std::io::Error),
 }
 
+/// Returns the loopback MCP URL for a configured port.
+pub fn mcp_url(port: u16) -> String {
+    format!("http://{LOOPBACK_HOST}:{port}/mcp")
+}
+
 /// Start a standalone HTTP server that serves only the prompt MCP tool.
 ///
-/// Binds to `host:port` (`port=0` for OS-assigned) and returns a
+/// Binds to loopback-only `127.0.0.1:port` (`port=0` for OS-assigned) and returns a
 /// [`StandaloneMcpServer`] whose URL can be displayed to the user / agent.
 pub async fn start(
-    host: &str,
     port: u16,
     bridge: PromptBridge,
 ) -> Result<StandaloneMcpServer, StandaloneServerError> {
@@ -137,9 +144,9 @@ pub async fn start(
         StreamableHttpService::new(move || Ok(handler.clone()), session_manager, config);
     let mcp_tower = TowerToHyperService::new(mcp_service);
 
-    let addr: SocketAddr = format!("{host}:{port}")
-        .parse()
-        .map_err(|e| StandaloneServerError::InvalidAddress(format!("{host}:{port}: {e}")))?;
+    let addr: SocketAddr = format!("{LOOPBACK_HOST}:{port}").parse().map_err(|e| {
+        StandaloneServerError::InvalidAddress(format!("{LOOPBACK_HOST}:{port}: {e}"))
+    })?;
     let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
     let url = format!("http://{local_addr}/mcp");
@@ -207,4 +214,22 @@ pub async fn start(
     });
 
     Ok(StandaloneMcpServer { url, _task: task })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn start_binds_prompt_server_to_loopback() {
+        let bridge = PromptBridge::new(mcp_url(0));
+        let server = start(0, bridge).await.expect("server should start");
+        assert!(
+            server
+                .url()
+                .starts_with(&format!("http://{LOOPBACK_HOST}:")),
+            "standalone MCP URL should be loopback-only, got {}",
+            server.url()
+        );
+    }
 }
