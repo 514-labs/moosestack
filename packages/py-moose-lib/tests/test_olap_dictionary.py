@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -750,7 +751,7 @@ def test_all_external_source_types_emit_source_type_discriminant():
 # approach mirrors exactly what `moose build` does in production.
 
 
-def _run_serializer(app_dir: str, moose_lib_root: str) -> dict:
+def _run_serializer(app_dir: str, moose_lib_root: str) -> dict[str, Any]:
     """Run `python -m moose_lib.dmv2_serializer` and return the parsed infra map."""
     env = {
         **os.environ,
@@ -777,7 +778,12 @@ def _run_serializer(app_dir: str, moose_lib_root: str) -> dict:
     assert (
         marker in result.stdout
     ), f"Output marker not found in stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    json_str = result.stdout.split(marker, 1)[1].split(end_marker, 1)[0].strip()
+    after_start = result.stdout.split(marker, 1)[1]
+    assert end_marker in after_start, (
+        f"End marker '{end_marker}' not found after start marker.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    json_str = after_start.split(end_marker, 1)[0].strip()
     return json.loads(json_str)
 
 
@@ -819,7 +825,8 @@ def test_serializer_parses_olap_dictionary_with_source_table():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
 
@@ -876,7 +883,8 @@ def test_serializer_parses_olap_dictionary_with_source_query():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
 
@@ -904,7 +912,8 @@ def test_serializer_syntax_error_in_user_file_fails_gracefully():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(bad_main_py)
 
@@ -1478,7 +1487,8 @@ def test_serializer_external_source_end_to_end():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
         infra_map = _run_serializer(tmp, _moose_lib_root())
@@ -1520,7 +1530,8 @@ def test_serializer_layout_with_params():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
         infra_map = _run_serializer(tmp, _moose_lib_root())
@@ -1562,7 +1573,8 @@ def test_serializer_all_optional_fields():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
         infra_map = _run_serializer(tmp, _moose_lib_root())
@@ -1573,7 +1585,9 @@ def test_serializer_all_optional_fields():
     assert d["clusterName"] == "my_cluster"
     assert d["settings"]["max_threads"] == "2"
     iq = d.get("invalidateQuery")
-    assert iq is not None and "max" in iq and "updated_at" in iq
+    assert iq is not None, "invalidateQuery must be set"
+    assert "max" in iq, f"expected 'max' in invalidateQuery, got: {iq}"
+    assert "updated_at" in iq, f"expected 'updated_at' in invalidateQuery, got: {iq}"
 
 
 def test_serializer_top_level_keys_are_camelcase():
@@ -1606,7 +1620,8 @@ def test_serializer_top_level_keys_are_camelcase():
     with tempfile.TemporaryDirectory() as tmp:
         app_pkg = os.path.join(tmp, "app")
         os.makedirs(app_pkg)
-        open(os.path.join(app_pkg, "__init__.py"), "w").close()
+        with open(os.path.join(app_pkg, "__init__.py"), "w"):
+            pass
         with open(os.path.join(app_pkg, "main.py"), "w") as f:
             f.write(main_py)
         infra_map = _run_serializer(tmp, _moose_lib_root())

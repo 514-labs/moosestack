@@ -435,6 +435,27 @@ class OlapDictionaryConfig(BaseModel):
             raise ValueError("source_query must not be blank")
         if not self.primary_key:
             raise ValueError("primary_key must contain at least one column name")
+        # Validate primary key cardinality matches layout type
+        complex_key_types = {
+            "COMPLEX_KEY_HASHED",
+            "COMPLEX_KEY_SPARSE_HASHED",
+            "COMPLEX_KEY_HASHED_ARRAY",
+            "COMPLEX_KEY_CACHE",
+            "COMPLEX_KEY_SSD_CACHE",
+            "COMPLEX_KEY_DIRECT",
+        }
+        layout_type = self.layout.type if self.layout else None
+        if layout_type in complex_key_types:
+            if len(self.primary_key) < 2:
+                raise ValueError(
+                    f"Layout '{layout_type}' requires at least 2 primary key columns "
+                    f"(got {len(self.primary_key)}). Use a COMPLEX_KEY_* layout for multi-column keys."
+                )
+        elif layout_type is not None and len(self.primary_key) != 1:
+            raise ValueError(
+                f"Layout '{layout_type}' requires exactly 1 primary key column "
+                f"(got {len(self.primary_key)}). Use a COMPLEX_KEY_* layout for multi-column keys."
+            )
         return self
 
 
@@ -496,8 +517,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             raise ValueError(f"OlapDictionary '{name}' is already registered")
         _olap_dictionaries[name] = self
 
-    @staticmethod
-    def _build_key_expr(*keys) -> str:
+    def _build_key_expr(self, *keys) -> str:
         """Build the key expression for a dictGet/dictHas SQL fragment.
 
         Args:
@@ -508,10 +528,16 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             ``tuple(k1, k2, ...)`` for composite keys.
 
         Raises:
-            ValueError: If no keys are provided.
+            ValueError: If no keys are provided or count doesn't match primary key.
         """
         if not keys:
             raise ValueError("At least one key argument is required")
+        expected = len(self.config.primary_key)
+        if len(keys) != expected:
+            raise ValueError(
+                f"Expected {expected} key argument(s) to match primary_key "
+                f"{self.config.primary_key}, got {len(keys)}"
+            )
         if len(keys) > 1:
             return f"tuple({', '.join(str(k) for k in keys)})"
         return str(keys[0])

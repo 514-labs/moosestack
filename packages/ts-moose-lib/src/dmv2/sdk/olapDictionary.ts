@@ -487,6 +487,7 @@ function serializeSource(
       return {
         type: "TABLE",
         table: table.name,
+        database: table.database,
       };
     }
   }
