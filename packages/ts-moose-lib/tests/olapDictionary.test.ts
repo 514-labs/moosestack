@@ -462,8 +462,33 @@ describe("OlapDictionary", () => {
       expect(json.invalidateQuery).to.equal(
         "SELECT max(updated_at) FROM Products",
       );
+      // invalidateQuery must also be threaded into the source object so that
+      // Rust DDL generation can emit INVALIDATE_QUERY inside SOURCE(CLICKHOUSE(...))
+      expect((json.source as any).invalidateQuery).to.equal(
+        "SELECT max(updated_at) FROM Products",
+      );
       expect(json.comment).to.equal("Product lookup dictionary");
       expect(json.settings).to.deep.equal({ max_execution_time: "30" });
+    });
+
+    it("should thread invalidateQuery into QUERY source object", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_query_inv", {
+        sourceQuery: sql`SELECT ProductId, ProductName FROM ${source}`,
+        sourceTables: [source],
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+        invalidateQuery: "SELECT max(updated_at) FROM source",
+      });
+
+      const json = dict.toJson();
+      expect(json.invalidateQuery).to.equal(
+        "SELECT max(updated_at) FROM source",
+      );
+      expect((json.source as any).invalidateQuery).to.equal(
+        "SELECT max(updated_at) FROM source",
+      );
     });
 
     it("should serialize EXTERNAL source with nested externalSource key", () => {
