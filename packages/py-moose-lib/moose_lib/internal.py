@@ -930,7 +930,7 @@ def _serialize_dict_columns(column_list, column_overrides) -> list[dict]:
     overrides = column_overrides or {}
     result = []
     for col in column_list:
-        entry: dict = {"name": col.name, "typeString": col.data_type}
+        entry: dict = {"name": col.name, "typeString": str(col.data_type)}
         override = overrides.get(col.name)
         if override:
             if override.default is not None:
