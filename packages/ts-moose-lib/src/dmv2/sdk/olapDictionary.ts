@@ -618,6 +618,13 @@ export class OlapDictionary<T> {
         `OlapDictionary '${name}': sourceQuery requires sourceTables to be set for dependency tracking.`,
       );
     }
+    if (config.sourceQuery !== undefined) {
+      if (!toStaticQuery(config.sourceQuery).trim()) {
+        throw new Error(
+          `OlapDictionary '${name}': sourceQuery must not be blank.`,
+        );
+      }
+    }
 
     // Validate: primaryKey count must match layout type
     if (!config.primaryKey.length) {

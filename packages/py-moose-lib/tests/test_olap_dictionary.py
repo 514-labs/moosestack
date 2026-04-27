@@ -405,6 +405,17 @@ def test_lifetime_bounds_validation_negative_max():
         DictionaryLifetime(min=0, max=-1)
 
 
+def test_lifetime_int_negative_raises():
+    table = OlapTable[Lookup](name="tbl_lt_neg")
+    with pytest.raises(ValueError, match="non-negative"):
+        OlapDictionaryConfig(
+            source_table=table,
+            primary_key=["lookup_id"],
+            layout=HashedLayout(),
+            lifetime=-5,
+        )
+
+
 # ─── Source serialization ─────────────────────────────────────────────────────
 
 

@@ -891,9 +891,13 @@ def _serialize_dict_source(config, invalidate_query: Optional[str] = None) -> di
         database = None
         if isinstance(src, OlapTable):
             database = src.config.database
+            table_name = src._generate_table_name()
         elif isinstance(src, View):
             database = getattr(src, "database", None)
-        result: dict = {"type": "TABLE", "table": src.name, "database": database}
+            table_name = src.name
+        else:
+            table_name = src.name
+        result: dict = {"type": "TABLE", "table": table_name, "database": database}
         if invalidate_query is not None:
             result["invalidateQuery"] = invalidate_query
         return result

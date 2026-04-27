@@ -64,7 +64,7 @@ describe("OlapDictionary", () => {
       );
     });
 
-    it("should default lifeCycle to FullyManaged when not specified", () => {
+    it("should leave lifeCycle undefined when not specified (Rust applies FullyManaged default)", () => {
       const source = makeSourceTable();
       const dict = new OlapDictionary<ProductLookup>("dict_lc", {
         sourceTable: source,
@@ -317,6 +317,19 @@ describe("OlapDictionary", () => {
           lifetime: 3600,
         });
       }).to.throw("sourceTables");
+    });
+
+    it("should throw when sourceQuery is blank", () => {
+      const source = makeSourceTable();
+      expect(() => {
+        new OlapDictionary<ProductLookup>("dict_blankq", {
+          sourceQuery: sql``,
+          sourceTables: [source],
+          primaryKey: ["ProductId"],
+          layout: { type: "HASHED" },
+          lifetime: 3600,
+        });
+      }).to.throw("sourceQuery must not be blank");
     });
 
     it("should throw when primaryKey is empty", () => {
