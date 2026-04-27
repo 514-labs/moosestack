@@ -81,6 +81,14 @@ class DictionaryLifetime(BaseModel):
     min: int = 0
     max: int = 0
 
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> "DictionaryLifetime":
+        if self.min < 0 or self.max < 0 or self.max < self.min:
+            raise ValueError(
+                f"DictionaryLifetime requires 0 <= min <= max, got min={self.min} max={self.max}"
+            )
+        return self
+
 
 # ─── Invalidation ─────────────────────────────────────────────────────────────
 
@@ -542,6 +550,12 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             return f"tuple({', '.join(str(k) for k in keys)})"
         return str(keys[0])
 
+    def _qualified_name(self) -> str:
+        """Return ``database.name`` when database is set, otherwise just ``name``."""
+        if self.config.database:
+            return f"{self.config.database}.{self.name}"
+        return self.name
+
     def get(self, attr: str, *keys) -> str:
         """Generate a ``dictGet`` SQL fragment.
 
@@ -551,11 +565,10 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
         Returns:
             SQL fragment, e.g.
-            ``dictGet('local.dict_products', 'product_name', product_id)``
+            ``dictGet('mydb.dict_products', 'product_name', product_id)``
         """
-        db = self.config.database or "local"
         key_expr = self._build_key_expr(*keys)
-        return f"dictGet('{db}.{self.name}', '{attr}', {key_expr})"
+        return f"dictGet('{self._qualified_name()}', '{attr}', {key_expr})"
 
     def get_or_default(self, attr: str, default: Any, *keys) -> str:
         """Generate a ``dictGetOrDefault`` SQL fragment.
@@ -572,11 +585,10 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
         Returns:
             SQL fragment, e.g.
-            ``dictGetOrDefault('local.dict_products', 'category', product_id, 'Unknown')``
+            ``dictGetOrDefault('mydb.dict_products', 'category', product_id, 'Unknown')``
         """
-        db = self.config.database or "local"
         key_expr = self._build_key_expr(*keys)
-        return f"dictGetOrDefault('{db}.{self.name}', '{attr}', {key_expr}, {default})"
+        return f"dictGetOrDefault('{self._qualified_name()}', '{attr}', {key_expr}, {default})"
 
     def has(self, *keys) -> str:
         """Generate a ``dictHas`` SQL fragment.
@@ -585,8 +597,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             *keys: Key column expressions.
 
         Returns:
-            SQL fragment, e.g. ``dictHas('local.dict_products', product_id)``
+            SQL fragment, e.g. ``dictHas('mydb.dict_products', product_id)``
         """
-        db = self.config.database or "local"
         key_expr = self._build_key_expr(*keys)
-        return f"dictHas('{db}.{self.name}', {key_expr})"
+        return f"dictHas('{self._qualified_name()}', {key_expr})"

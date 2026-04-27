@@ -481,6 +481,9 @@ function serializeSource(
         type: "TABLE",
         table: table.generateTableName(),
         database: table.config.database,
+        ...(config.invalidateQuery !== undefined ?
+          { invalidateQuery: config.invalidateQuery }
+        : {}),
       };
     } else {
       // View
@@ -488,6 +491,9 @@ function serializeSource(
         type: "TABLE",
         table: table.name,
         database: table.database,
+        ...(config.invalidateQuery !== undefined ?
+          { invalidateQuery: config.invalidateQuery }
+        : {}),
       };
     }
   }
@@ -496,6 +502,9 @@ function serializeSource(
     return {
       type: "QUERY",
       query: toStaticQuery(config.sourceQuery),
+      ...(config.invalidateQuery !== undefined ?
+        { invalidateQuery: config.invalidateQuery }
+      : {}),
     };
   }
 

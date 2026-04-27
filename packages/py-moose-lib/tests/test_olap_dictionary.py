@@ -228,7 +228,7 @@ def test_get_single_key():
         ),
     )
     sql = d.get("value", "lookup_id")
-    assert sql == "dictGet('local.dict_get', 'value', lookup_id)"
+    assert sql == "dictGet('dict_get', 'value', lookup_id)"
 
 
 def test_get_composite_key_wraps_tuple():
@@ -242,7 +242,7 @@ def test_get_composite_key_wraps_tuple():
         ),
     )
     sql = d.get("value", "id1", "cat1")
-    assert sql == "dictGet('local.dict_ck_get', 'value', tuple(id1, cat1))"
+    assert sql == "dictGet('dict_ck_get', 'value', tuple(id1, cat1))"
 
 
 def test_get_or_default():
@@ -256,7 +256,7 @@ def test_get_or_default():
         ),
     )
     sql = d.get_or_default("value", "'Unknown'", "lookup_id")
-    assert sql == "dictGetOrDefault('local.dict_god', 'value', lookup_id, 'Unknown')"
+    assert sql == "dictGetOrDefault('dict_god', 'value', lookup_id, 'Unknown')"
 
 
 def test_get_or_default_composite_key():
@@ -270,9 +270,7 @@ def test_get_or_default_composite_key():
         ),
     )
     sql = d.get_or_default("value", "'N/A'", "id1", "r1")
-    assert (
-        sql == "dictGetOrDefault('local.dict_god_ck', 'value', tuple(id1, r1), 'N/A')"
-    )
+    assert sql == "dictGetOrDefault('dict_god_ck', 'value', tuple(id1, r1), 'N/A')"
 
 
 def test_has_single_key():
@@ -286,7 +284,7 @@ def test_has_single_key():
         ),
     )
     sql = d.has("lookup_id")
-    assert sql == "dictHas('local.dict_has', lookup_id)"
+    assert sql == "dictHas('dict_has', lookup_id)"
 
 
 def test_has_composite_key():
@@ -300,7 +298,7 @@ def test_has_composite_key():
         ),
     )
     sql = d.has("id1", "r1")
-    assert sql == "dictHas('local.dict_has_ck', tuple(id1, r1))"
+    assert sql == "dictHas('dict_has_ck', tuple(id1, r1))"
 
 
 def test_get_no_keys_raises():
@@ -390,6 +388,21 @@ def test_lifetime_range():
         "min": 60,
         "max": 300,
     }
+
+
+def test_lifetime_bounds_validation_min_greater_than_max():
+    with pytest.raises(ValueError, match="0 <= min <= max"):
+        DictionaryLifetime(min=300, max=60)
+
+
+def test_lifetime_bounds_validation_negative_min():
+    with pytest.raises(ValueError, match="0 <= min <= max"):
+        DictionaryLifetime(min=-1, max=60)
+
+
+def test_lifetime_bounds_validation_negative_max():
+    with pytest.raises(ValueError, match="0 <= min <= max"):
+        DictionaryLifetime(min=0, max=-1)
 
 
 # ─── Source serialization ─────────────────────────────────────────────────────
