@@ -125,6 +125,71 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
     db.as_deref().unwrap_or(default_database).to_string()
 }
 
+/// Returns true if two dictionary DDL strings are structurally equivalent.
+///
+/// Strips the `CREATE DICTIONARY …` header from each (everything before the
+/// first `(`), then for the column block and each subsequent clause:
+///   - normalises whitespace (collapses runs of whitespace to a single space)
+///   - sorts the post-column clauses to tolerate ordering differences between
+///     our generated DDL (LAYOUT before LIFETIME) and ClickHouse's SHOW CREATE
+///     output (LIFETIME before LAYOUT)
+///
+/// **Limitation**: identifier quoting and type-alias differences (e.g.
+/// `Int64` vs `Int64`) are preserved as-is; ClickHouse and our generator both
+/// use backtick-quoted identifiers so these should agree in practice.
+fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
+    fn extract_body(ddl: &str) -> (String, Vec<String>) {
+        let start = match ddl.find('(') {
+            Some(i) => i,
+            None => return (ddl.trim().to_string(), vec![]),
+        };
+
+        // Walk the DDL from the opening `(` tracking depth to find the
+        // matching `)` that closes the column list.
+        let mut depth = 0usize;
+        let mut end = start;
+        for (off, ch) in ddl[start..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = start + off + ')'.len_utf8();
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let col_block = ddl[start..end].to_string();
+        let clauses: Vec<String> = ddl[end..]
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        (col_block, clauses)
+    }
+
+    fn norm(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    let (actual_cols, mut actual_clauses) = extract_body(actual_ddl);
+    let (desired_cols, mut desired_clauses) = extract_body(desired_ddl);
+
+    if norm(&actual_cols) != norm(&desired_cols) {
+        return false;
+    }
+
+    actual_clauses.sort();
+    desired_clauses.sort();
+
+    actual_clauses.iter().map(|c| norm(c)).collect::<Vec<_>>()
+        == desired_clauses.iter().map(|c| norm(c)).collect::<Vec<_>>()
+}
+
 /// Normalizes a table reference for comparison.
 /// Now that source_tables come pre-formatted from TypeScript/Python libraries as:
 /// - `database_name`.`table_name` (with backticks) when database is specified
@@ -918,13 +983,62 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             .map(|(key, _)| key.clone())
             .collect();
 
-        // Structural comparison (mismatched) is deferred — list_dictionaries returns names only.
-        let mismatched_dictionaries: Vec<OlapChange> = Vec::new();
+        // Structural comparison: for each dict present in both the infra map and CH,
+        // compare the DDL body from SHOW CREATE DICTIONARY against the infra map
+        // definition.  Credentials are compared as-is (runtime env vars are resolved
+        // before calling to_create_if_not_exists_sql, so a credential rotation is
+        // correctly detected as a mismatch).
+        //
+        // Limitation: SHOW CREATE DICTIONARY may order clauses differently from our
+        // generated DDL (e.g. LIFETIME before LAYOUT).  dicts_ddl_equivalent() sorts
+        // post-column clauses before comparing to avoid false positives.
+        let mut mismatched_dictionaries: Vec<OlapChange> = Vec::new();
+        for desired in infra_map.olap_dictionaries.values() {
+            let db = desired.database.as_deref().unwrap_or(default_db);
+            if !actual_dictionaries.contains(&(db.to_string(), desired.name.clone())) {
+                // Already counted as missing — skip.
+                continue;
+            }
+            let actual_ddl = match self
+                .olap_client
+                .show_create_dictionary(db, &desired.name)
+                .await
+            {
+                Ok(ddl) => ddl,
+                Err(e) => {
+                    debug!(
+                        "Could not get DDL for dictionary '{}.{}': {:?}",
+                        db, desired.name, e
+                    );
+                    continue;
+                }
+            };
+            if actual_ddl.is_empty() {
+                continue;
+            }
+            let desired_ddl = desired.to_create_if_not_exists_sql();
+            if !dicts_ddl_equivalent(&actual_ddl, &desired_ddl) {
+                debug!(
+                    "Structural mismatch in dictionary '{}.{}'",
+                    db, desired.name
+                );
+                // Store the infra-map dict as both before and after.  The actual CH
+                // definition is not reconstructed here — reconcile_with_reality()
+                // removes the dict from the reconciled map so the diff generates an
+                // Added change, which execute_create_dictionary resolves via
+                // CREATE OR REPLACE DICTIONARY.
+                mismatched_dictionaries.push(OlapChange::OlapDictionary(Change::Updated {
+                    before: Box::new(desired.clone()),
+                    after: Box::new(desired.clone()),
+                }));
+            }
+        }
 
         debug!(
-            "Found {} unmapped, {} missing dictionaries",
+            "Found {} unmapped, {} missing, {} mismatched dictionaries",
             unmapped_dictionaries.len(),
-            missing_dictionaries.len()
+            missing_dictionaries.len(),
+            mismatched_dictionaries.len()
         );
 
         let discrepancies = InfraDiscrepancies {
@@ -954,7 +1068,7 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
             {} unmapped views, {} missing views, {} mismatched views, \
             {} unmapped row policies, {} missing row policies, {} mismatched row policies, \
-            {} unmapped dictionaries, {} missing dictionaries",
+            {} unmapped dictionaries, {} missing dictionaries, {} mismatched dictionaries",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),
@@ -971,7 +1085,8 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
             discrepancies.missing_row_policies.len(),
             discrepancies.mismatched_row_policies.len(),
             discrepancies.unmapped_dictionaries.len(),
-            discrepancies.missing_dictionaries.len()
+            discrepancies.missing_dictionaries.len(),
+            discrepancies.mismatched_dictionaries.len()
         );
 
         if discrepancies.is_empty() {
@@ -1006,6 +1121,14 @@ mod tests {
         sql_resources: Vec<SqlResource>,
         row_policies: Vec<SelectRowPolicy>,
         dictionaries: Vec<String>,
+        /// DDL returned by show_create_dictionary, keyed by "db\x00name"
+        dictionary_ddls: std::collections::HashMap<String, String>,
+    }
+
+    impl MockOlapClient {
+        fn ddl_key(db: &str, name: &str) -> String {
+            format!("{}\x00{}", db, name)
+        }
     }
 
     #[async_trait]
@@ -1038,6 +1161,15 @@ mod tests {
 
         async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
             Ok(self.dictionaries.clone())
+        }
+
+        async fn show_create_dictionary(
+            &self,
+            db_name: &str,
+            dict_name: &str,
+        ) -> Result<String, OlapChangesError> {
+            let key = MockOlapClient::ddl_key(db_name, dict_name);
+            Ok(self.dictionary_ddls.get(&key).cloned().unwrap_or_default())
         }
     }
 
@@ -1141,6 +1273,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create empty infrastructure map
@@ -1220,6 +1353,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1304,6 +1438,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1378,6 +1513,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1454,6 +1590,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1546,6 +1683,7 @@ mod tests {
             sql_resources: vec![actual_resource.clone()],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1755,6 +1893,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -1826,6 +1965,7 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let mut infra_map = InfrastructureMap {
@@ -2120,6 +2260,20 @@ mod tests {
             sql_resources: vec![],
             row_policies: vec![],
             dictionaries,
+            dictionary_ddls: std::collections::HashMap::new(),
+        }
+    }
+
+    fn make_mock_with_ddls(
+        dictionaries: Vec<String>,
+        dictionary_ddls: std::collections::HashMap<String, String>,
+    ) -> MockOlapClient {
+        MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+            row_policies: vec![],
+            dictionaries,
+            dictionary_ddls,
         }
     }
 
@@ -2286,5 +2440,144 @@ mod tests {
              reconcile_with_reality can remove it; got '{}', want '{}'",
             discrepancies.missing_dictionaries[0], map_key
         );
+    }
+
+    // ─── dicts_ddl_equivalent helper tests ─────────────────────────────────
+
+    #[test]
+    fn test_dicts_ddl_equivalent_identical() {
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_clause_reordering() {
+        // LAYOUT/LIFETIME order swapped — should still be equivalent
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(actual, desired));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_column_mismatch() {
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64,\n    `value` String\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(!dicts_ddl_equivalent(actual, desired));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_source_mismatch() {
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'old_src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'new_src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(!dicts_ddl_equivalent(actual, desired));
+    }
+
+    // ─── Structural mismatch detection tests ───────────────────────────────
+
+    #[tokio::test]
+    async fn test_dictionary_mismatched_detected() {
+        // dict is in both the infra map AND in reality, but with a different DDL.
+        //
+        // Note: create_test_project() uses clickhouse_config.db_name = "test", while
+        // make_empty_infra_map() uses default_database = DEFAULT_DATABASE_NAME = "local".
+        // check_reality() uses project.clickhouse_config.db_name as the default_db when
+        // resolving a dict's database, so show_create_dictionary is called with "test".
+        // The map key uses DEFAULT_DATABASE_NAME so reconcile_with_reality can remove it.
+        let dict = make_simple_dict("dict_products");
+        let project_db = "test"; // matches create_test_project().clickhouse_config.db_name
+        let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
+
+        // Desired DDL generated from the infra map dict
+        let desired_ddl = dict.to_create_if_not_exists_sql();
+        // Simulate a drifted CH definition (extra column added manually)
+        let drifted_ddl =
+            desired_ddl.replace("PRIMARY KEY", "    `extra_col` String,\nPRIMARY KEY");
+        // Simulate SHOW CREATE DICTIONARY output (no IF NOT EXISTS)
+        let actual_ddl =
+            drifted_ddl.replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY");
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(MockOlapClient::ddl_key(project_db, &dict.name), actual_ddl);
+        let mock_client = make_mock_with_ddls(vec![dict.name.clone()], ddls);
+
+        let mut infra_map = make_empty_infra_map();
+        infra_map.olap_dictionaries.insert(map_key, dict);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let discrepancies = checker
+            .check_reality(&create_test_project(), &infra_map)
+            .await
+            .unwrap();
+
+        assert!(discrepancies.unmapped_dictionaries.is_empty());
+        assert!(discrepancies.missing_dictionaries.is_empty());
+        assert_eq!(discrepancies.mismatched_dictionaries.len(), 1);
+        assert!(!discrepancies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_dictionary_no_false_mismatch_when_ddl_matches() {
+        // dict is in both map and reality with the same structural DDL.
+        // LAYOUT/LIFETIME order difference (SHOW CREATE vs our generator) should not
+        // be flagged as a mismatch.
+        let dict = make_simple_dict("dict_products");
+        let project_db = "test"; // matches create_test_project().clickhouse_config.db_name
+        let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
+
+        let desired_ddl = dict.to_create_if_not_exists_sql();
+        // Simulate SHOW CREATE DICTIONARY: same structure, LAYOUT/LIFETIME swapped,
+        // no IF NOT EXISTS prefix.
+        let actual_ddl = desired_ddl
+            .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
+            .replace(
+                "LAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)",
+                "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
+            );
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(MockOlapClient::ddl_key(project_db, &dict.name), actual_ddl);
+        let mock_client = make_mock_with_ddls(vec![dict.name.clone()], ddls);
+
+        let mut infra_map = make_empty_infra_map();
+        infra_map.olap_dictionaries.insert(map_key, dict);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let discrepancies = checker
+            .check_reality(&create_test_project(), &infra_map)
+            .await
+            .unwrap();
+
+        assert!(discrepancies.mismatched_dictionaries.is_empty());
+        assert!(discrepancies.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty_false_with_mismatched_dictionary() {
+        use crate::framework::core::infrastructure_map::{Change, OlapChange};
+        let dict = make_simple_dict("dict_x");
+        let discrepancies = InfraDiscrepancies {
+            unmapped_tables: vec![],
+            missing_tables: vec![],
+            mismatched_tables: vec![],
+            unmapped_sql_resources: vec![],
+            missing_sql_resources: vec![],
+            mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
+            unmapped_row_policies: vec![],
+            missing_row_policies: vec![],
+            mismatched_row_policies: vec![],
+            unmapped_dictionaries: vec![],
+            missing_dictionaries: vec![],
+            mismatched_dictionaries: vec![OlapChange::OlapDictionary(Change::Updated {
+                before: Box::new(dict.clone()),
+                after: Box::new(dict),
+            })],
+        };
+        assert!(!discrepancies.is_empty());
     }
 }

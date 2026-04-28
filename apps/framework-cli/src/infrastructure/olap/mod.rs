@@ -111,8 +111,8 @@ pub trait OlapOperations {
 
     /// Retrieves the names of all dictionaries present in the given database.
     ///
-    /// Used for reality checking — presence/absence only; full schema diffing is
-    /// handled by comparing `SHOW CREATE DICTIONARY` output via `normalize_sql`.
+    /// Used for reality checking — presence/absence only; structural diffing is
+    /// done separately via `show_create_dictionary`.
     ///
     /// # Arguments
     /// * `db_name` - The name of the database to list dictionaries from
@@ -120,6 +120,23 @@ pub trait OlapOperations {
     /// # Returns
     /// * `Result<Vec<String>, OlapChangesError>` - Dictionary names found in the database
     async fn list_dictionaries(&self, db_name: &str) -> Result<Vec<String>, OlapChangesError>;
+
+    /// Returns the `CREATE DICTIONARY` DDL for an existing dictionary.
+    ///
+    /// Used for structural comparison in reality checking — comparing the actual
+    /// ClickHouse definition against the infra map definition to detect drift.
+    ///
+    /// # Arguments
+    /// * `db_name` - The database containing the dictionary
+    /// * `dict_name` - The dictionary name
+    ///
+    /// # Returns
+    /// * `Result<String, OlapChangesError>` - The CREATE DICTIONARY DDL string
+    async fn show_create_dictionary(
+        &self,
+        db_name: &str,
+        dict_name: &str,
+    ) -> Result<String, OlapChangesError>;
 
     /// Normalizes SQL using the database's native formatting.
     ///

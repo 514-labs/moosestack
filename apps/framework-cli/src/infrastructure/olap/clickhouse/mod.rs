@@ -2079,7 +2079,10 @@ async fn execute_create_dictionary(
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let sql = dict.to_create_if_not_exists_sql();
+    // Use CREATE OR REPLACE so that a structurally mismatched dict (detected by
+    // check_reality and removed from the reconciled map) gets overwritten rather
+    // than silently skipped by IF NOT EXISTS.
+    let sql = dict.to_replace_sql();
     // Log the operation without the SQL body to avoid leaking credentials.
     tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
     build_query(&client.client, &sql)
@@ -3429,6 +3432,38 @@ impl OlapOperations for ConfiguredDBClient {
             names.len()
         );
         Ok(names)
+    }
+
+    async fn show_create_dictionary(
+        &self,
+        db_name: &str,
+        dict_name: &str,
+    ) -> Result<String, OlapChangesError> {
+        #[derive(clickhouse::Row, serde::Deserialize)]
+        struct ShowCreateRow {
+            statement: String,
+        }
+
+        let qualified_name = format!("`{}`.`{}`", db_name, dict_name);
+        let sql = format!("SHOW CREATE DICTIONARY {qualified_name}");
+
+        let mut cursor = self
+            .client
+            .query(&sql)
+            .fetch::<ShowCreateRow>()
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?;
+
+        match cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            Some(row) => Ok(row.statement),
+            None => Err(OlapChangesError::DatabaseError(format!(
+                "SHOW CREATE DICTIONARY returned no rows for `{}`.`{}`",
+                db_name, dict_name
+            ))),
+        }
     }
 
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.

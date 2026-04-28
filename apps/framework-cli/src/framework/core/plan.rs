@@ -629,7 +629,31 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         );
     }
 
-    // Dictionaries have no mismatched entries (presence/absence only).
+    // Remove structurally mismatched dicts from the reconciled map so the diff
+    // against the target produces an Added change.  execute_create_dictionary uses
+    // CREATE OR REPLACE DICTIONARY, which overwrites the drifted CH definition.
+    for change in discrepancies.mismatched_dictionaries {
+        if let OlapChange::OlapDictionary(Change::Updated { before, .. }) = change {
+            let default_db = &reconciled_map.default_database;
+            let dict_db = before.database.as_deref().unwrap_or(default_db.as_str());
+            let dict_name = &before.name;
+            let key = reconciled_map
+                .olap_dictionaries
+                .iter()
+                .find(|(_, d)| {
+                    d.name == *dict_name
+                        && d.database.as_deref().unwrap_or(default_db.as_str()) == dict_db
+                })
+                .map(|(k, _)| k.clone());
+            if let Some(k) = key {
+                debug!(
+                    "Removing structurally mismatched dictionary '{}' to force reconciliation",
+                    k
+                );
+                reconciled_map.olap_dictionaries.remove(&k);
+            }
+        }
+    }
 
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
@@ -962,6 +986,8 @@ mod tests {
         tables: Vec<Table>,
         sql_resources: Vec<SqlResource>,
         dictionaries: Vec<String>,
+        /// DDL returned by show_create_dictionary, keyed by "db\x00name"
+        dictionary_ddls: std::collections::HashMap<String, String>,
     }
 
     #[async_trait]
@@ -994,6 +1020,15 @@ mod tests {
 
         async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
             Ok(self.dictionaries.clone())
+        }
+
+        async fn show_create_dictionary(
+            &self,
+            db_name: &str,
+            dict_name: &str,
+        ) -> Result<String, OlapChangesError> {
+            let key = format!("{}\x00{}", db_name, dict_name);
+            Ok(self.dictionary_ddls.get(&key).cloned().unwrap_or_default())
         }
     }
 
@@ -1091,6 +1126,7 @@ mod tests {
             tables: vec![table.clone()],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create empty infrastructure map (no tables)
@@ -1131,6 +1167,7 @@ mod tests {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
                 dictionaries: vec![],
+                dictionary_ddls: std::collections::HashMap::new(),
             },
         )
         .await
@@ -1160,6 +1197,7 @@ mod tests {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
                 dictionaries: vec![],
+                dictionary_ddls: std::collections::HashMap::new(),
             },
         )
         .await
@@ -1179,6 +1217,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infrastructure map with one table
@@ -1208,6 +1247,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let filter = ReconciliationFilter {
@@ -1263,6 +1303,7 @@ mod tests {
             }],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -1295,6 +1336,7 @@ mod tests {
             }],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let filter = ReconciliationFilter {
@@ -1331,6 +1373,7 @@ mod tests {
             tables: vec![table.clone()],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infrastructure map with the same table
@@ -1359,6 +1402,7 @@ mod tests {
             tables: vec![table.clone()],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let filter = ReconciliationFilter {
@@ -1425,6 +1469,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1489,6 +1534,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let empty_filter = ReconciliationFilter {
@@ -1588,6 +1634,7 @@ mod tests {
             tables: vec![table_from_reality],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1654,6 +1701,7 @@ mod tests {
             tables: vec![reality_table.clone()],
             sql_resources: vec![],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infrastructure map with the infra table
@@ -1716,6 +1764,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![sql_resource.clone()],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1769,6 +1818,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![view_a.clone(), view_b.clone()],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1828,6 +1878,7 @@ mod tests {
             tables: vec![],
             sql_resources: vec![reality_view.clone()],
             dictionaries: vec![],
+            dictionary_ddls: std::collections::HashMap::new(),
         };
 
         // Create infra map with the existing view
@@ -2147,6 +2198,167 @@ mod tests {
         assert!(
             de1 < cu,
             "Events_1_0 drop ({de1}) must come before Users_1_0 create ({cu})"
+        );
+    }
+
+    // ─── Dictionary reconciliation tests ────────────────────────────────────
+
+    fn make_test_dict(
+        name: &str,
+    ) -> crate::framework::core::infrastructure::dictionary::OlapDictionary {
+        use crate::framework::core::infrastructure::dictionary::{
+            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+            DictionaryTableSource, OlapDictionary,
+        };
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 300 },
+            invalidate_query: None,
+            settings: std::collections::HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    fn make_infra_map_with_dict(
+        dict_name: &str,
+    ) -> crate::framework::core::infrastructure_map::InfrastructureMap {
+        use crate::framework::core::infrastructure_map::InfrastructureMap;
+        let mut map = InfrastructureMap::empty_from_project(&create_test_project());
+        let dict = make_test_dict(dict_name);
+        let key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict_name);
+        map.olap_dictionaries.insert(key, dict);
+        map
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_mismatched_dict_removed_from_map() {
+        // A dict that exists in reality but with drifted DDL should be removed
+        // from the reconciled map so that the subsequent diff generates an Added change.
+        let project = create_test_project();
+        let infra_map = make_infra_map_with_dict("dict_foo");
+        let dict_name = "dict_foo";
+        let project_db = &project.clickhouse_config.db_name; // "test"
+
+        // The desired DDL (from the map)
+        let desired_ddl = infra_map
+            .olap_dictionaries
+            .values()
+            .next()
+            .unwrap()
+            .to_create_if_not_exists_sql();
+        // Drifted DDL: LIFETIME changed from 300 to 600
+        // Note: DictionaryLifetime::Single generates "LIFETIME(300)", not "LIFETIME(MIN 0 MAX 300)"
+        let drifted_ddl = desired_ddl
+            .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
+            .replace("LIFETIME(300)", "LIFETIME(600)");
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(format!("{}\x00{}", project_db, dict_name), drifted_ddl);
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+            dictionaries: vec![dict_name.to_string()],
+            dictionary_ddls: ddls,
+        };
+
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
+
+        // The mismatched dict must be absent from the reconciled map so the diff
+        // against the target map will generate an Added change.
+        assert!(
+            reconciled.olap_dictionaries.is_empty(),
+            "mismatched dict should be removed from reconciled map, got: {:?}",
+            reconciled.olap_dictionaries.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_matched_dict_stays_in_map() {
+        // A dict whose DDL matches reality must remain in the reconciled map.
+        let project = create_test_project();
+        let infra_map = make_infra_map_with_dict("dict_bar");
+        let dict_name = "dict_bar";
+        let project_db = &project.clickhouse_config.db_name;
+
+        let desired_ddl = infra_map
+            .olap_dictionaries
+            .values()
+            .next()
+            .unwrap()
+            .to_create_if_not_exists_sql();
+        // Simulate SHOW CREATE DICTIONARY: same content, LAYOUT/LIFETIME swapped, no IF NOT EXISTS
+        // Note: DictionaryLifetime::Single generates "LIFETIME(300)", not "LIFETIME(MIN 0 MAX 300)"
+        let actual_ddl = desired_ddl
+            .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
+            .replace(
+                "LAYOUT(HASHED())\nLIFETIME(300)",
+                "LIFETIME(300)\nLAYOUT(HASHED())",
+            );
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(format!("{}\x00{}", project_db, dict_name), actual_ddl);
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+            dictionaries: vec![dict_name.to_string()],
+            dictionary_ddls: ddls,
+        };
+
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            reconciled.olap_dictionaries.len(),
+            1,
+            "matched dict should remain in reconciled map"
         );
     }
 }
