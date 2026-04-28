@@ -492,8 +492,8 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             ),
         )
 
-        # Use in MV SQL
-        f"dictGet('local.dict_products', 'product_name', product_id)"
+        # Use in MV SQL (no database prefix when database is not configured)
+        f"dictGet('dict_products', 'product_name', product_id)"
         # or via helper:
         product_dict.get("product_name", "product_id")
 
@@ -504,7 +504,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
 
     kind: str = "OlapDictionary"
 
-    def __init__(self, name: str, config: OlapDictionaryConfig, **kwargs) -> None:
+    def __init__(self, name: str, config: OlapDictionaryConfig, **kwargs: Any) -> None:
         t = self._get_type(kwargs)
         self._set_type(name, t)
         self.config = config
@@ -529,7 +529,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             raise ValueError(f"OlapDictionary '{name}' is already registered")
         _olap_dictionaries[name] = self
 
-    def _build_key_expr(self, *keys) -> str:
+    def _build_key_expr(self, *keys: Any) -> str:
         """Build the key expression for a dictGet/dictHas SQL fragment.
 
         Args:
@@ -560,7 +560,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
             return f"{self.config.database}.{self.name}"
         return self.name
 
-    def get(self, attr: str, *keys) -> str:
+    def get(self, attr: str, *keys: Any) -> str:
         """Generate a ``dictGet`` SQL fragment.
 
         Args:
@@ -574,7 +574,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
         key_expr = self._build_key_expr(*keys)
         return f"dictGet('{self._qualified_name()}', '{attr}', {key_expr})"
 
-    def get_or_default(self, attr: str, default: Any, *keys) -> str:
+    def get_or_default(self, attr: str, default: Any, *keys: Any) -> str:
         """Generate a ``dictGetOrDefault`` SQL fragment.
 
         Args:
@@ -594,7 +594,7 @@ class OlapDictionary(BaseTypedResource, Generic[T]):
         key_expr = self._build_key_expr(*keys)
         return f"dictGetOrDefault('{self._qualified_name()}', '{attr}', {key_expr}, {default})"
 
-    def has(self, *keys) -> str:
+    def has(self, *keys: Any) -> str:
         """Generate a ``dictHas`` SQL fragment.
 
         Args:

@@ -1352,8 +1352,9 @@ def to_infra_map() -> dict:
         invalidate_query = None
         if d.config.invalidate is not None and len(d.source_tables) >= 1:
             inv = d.config.invalidate
-            # Strip backtick quoting to get the plain table reference
-            source_ref = d.source_tables[0].replace("`", "")
+            # Preserve ClickHouse quoting; quoted identifiers may contain
+            # dashes, reserved words, or escaped backticks.
+            source_ref = d.source_tables[0]
             invalidate_query = f"SELECT {inv.fn}({inv.column}) FROM {source_ref}"
 
         olap_dictionaries[name] = OlapDictionaryJson(
