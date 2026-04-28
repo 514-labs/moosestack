@@ -32,7 +32,14 @@ Usage::
 """
 
 from typing import Any, Generic, Literal, Optional, Union
-from pydantic import AliasGenerator, BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import (
+    AliasGenerator,
+    BaseModel,
+    ConfigDict,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from .types import BaseTypedResource, T
@@ -279,6 +286,13 @@ class HttpSource(BaseModel):
     method: Optional[str] = None
     where_clause: Optional[str] = None
 
+    @field_validator("where_clause")
+    @classmethod
+    def _reject_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("where_clause must not be blank")
+        return v
+
 
 class ClickHouseRemoteSource(BaseModel):
     """Remote ClickHouse server as dictionary source."""
@@ -294,6 +308,13 @@ class ClickHouseRemoteSource(BaseModel):
     query: Optional[str] = None
     where_clause: Optional[str] = None
     invalidate_query: Optional[str] = None
+
+    @field_validator("query", "where_clause", "invalidate_query")
+    @classmethod
+    def _reject_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("field must not be blank")
+        return v
 
 
 class MysqlSource(BaseModel):
@@ -311,6 +332,13 @@ class MysqlSource(BaseModel):
     where_clause: Optional[str] = None
     invalidate_query: Optional[str] = None
 
+    @field_validator("query", "where_clause", "invalidate_query")
+    @classmethod
+    def _reject_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("field must not be blank")
+        return v
+
 
 class PostgresqlSource(BaseModel):
     """PostgreSQL database as dictionary source."""
@@ -326,6 +354,13 @@ class PostgresqlSource(BaseModel):
     query: Optional[str] = None
     where_clause: Optional[str] = None
     invalidate_query: Optional[str] = None
+
+    @field_validator("query", "where_clause", "invalidate_query")
+    @classmethod
+    def _reject_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("field must not be blank")
+        return v
 
 
 class RedisSource(BaseModel):

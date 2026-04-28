@@ -1684,3 +1684,66 @@ def test_empty_primary_key_rejected():
             primary_key=[],
             layout=HashedLayout(),
         )
+
+
+@pytest.mark.parametrize(
+    "source_factory,field",
+    [
+        (
+            lambda: HttpSource(url="http://x.com", format="CSV", where_clause=""),
+            "where_clause",
+        ),
+        (
+            lambda: ClickHouseRemoteSource(
+                host="h",
+                port=9000,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                query="",
+            ),
+            "query",
+        ),
+        (
+            lambda: ClickHouseRemoteSource(
+                host="h",
+                port=9000,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                where_clause="   ",
+            ),
+            "where_clause",
+        ),
+        (
+            lambda: MysqlSource(
+                host="h",
+                port=3306,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                invalidate_query="",
+            ),
+            "invalidate_query",
+        ),
+        (
+            lambda: PostgresqlSource(
+                host="h",
+                port=5432,
+                user="u",
+                password="p",
+                db="d",
+                table="t",
+                query="  ",
+            ),
+            "query",
+        ),
+    ],
+)
+def test_blank_external_source_fields_rejected(source_factory, field):
+    """Blank strings for query/where_clause/invalidate_query in external sources are rejected."""
+    with pytest.raises(ValidationError, match="blank"):
+        source_factory()

@@ -901,6 +901,30 @@ describe("OlapDictionary", () => {
       expect(rendered).to.include("'it''s_db.dict_escape'");
       expect(rendered).not.to.include("'it's_db.dict_escape'");
     });
+
+    it("should warn when dictionary is interpolated after FROM in sql template", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_from_warn", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(String(args[0]));
+      };
+      try {
+        sql`SELECT * FROM ${dict} WHERE 1=1`;
+      } finally {
+        console.warn = originalWarn;
+      }
+      expect(warnings).to.have.length(1);
+      expect(warnings[0]).to.include("FROM/JOIN");
+      expect(warnings[0]).to.include("dict_from_warn");
+    });
   });
 
   // ── getOlapDictionaries / getOlapDictionary ───────────────────────────────

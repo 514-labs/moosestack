@@ -331,7 +331,11 @@ function dataTypeToString(dataType: Column["data_type"]): string {
       return `${d.name}(${entries})`;
     }
   }
-  return JSON.stringify(dataType);
+  throw new Error(
+    `OlapDictionary: unsupported column data type for dictionary attribute: ${JSON.stringify(dataType)}. ` +
+      `Dictionaries only support scalar value types (strings, integers, floats, booleans, dates, ` +
+      `Nullable wrappers, Array wrappers, and Enum types).`,
+  );
 }
 
 /**
