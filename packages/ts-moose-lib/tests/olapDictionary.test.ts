@@ -455,6 +455,20 @@ describe("OlapDictionary", () => {
       expect(json.lifeCycle).to.equal(LifeCycle.DELETION_PROTECTED);
     });
 
+    it("should emit FULLY_MANAGED as the serialized lifeCycle default", () => {
+      const source = makeSourceTable();
+      const dict = new OlapDictionary<ProductLookup>("dict_lc_default", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "HASHED" },
+        lifetime: 3600,
+      });
+
+      const json = dict.toJson();
+      // LifeCycle is a string enum — Rust deserializer expects the string "FULLY_MANAGED"
+      expect(json.lifeCycle).to.equal("FULLY_MANAGED");
+    });
+
     it("should include optional fields when set", () => {
       const source = makeSourceTable();
       const dict = new OlapDictionary<ProductLookup>("dict_opts", {
