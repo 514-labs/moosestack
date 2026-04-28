@@ -167,7 +167,7 @@ The `layout` controls how the dictionary is stored in memory. Choose based on yo
 <Callout type="info" title="HASHED vs COMPLEX_KEY_HASHED" compact>
   Use `HASHED` for single `UInt64` numeric keys. Use `COMPLEX_KEY_HASHED` when
   your primary key is a string, or when you need a composite (multi-column) key.
-  `COMPLEX_KEY_*` layouts require at least two columns in `primaryKey`.
+  `COMPLEX_KEY_*` layouts support one or more columns of any type in `primaryKey`.
 </Callout>
 
 ## Lifetime

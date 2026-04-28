@@ -1747,3 +1747,41 @@ def test_blank_external_source_fields_rejected(source_factory, field):
     """Blank strings for query/where_clause/invalidate_query in external sources are rejected."""
     with pytest.raises(ValidationError, match="blank"):
         source_factory()
+
+
+def test_complex_key_layout_accepts_single_column_key():
+    """COMPLEX_KEY_* layouts allow a single-column string key (not just multi-column)."""
+    table = OlapTable[Lookup](name="tbl_ck_single")
+    # Should not raise — one string column is valid for COMPLEX_KEY_HASHED.
+    config = OlapDictionaryConfig(
+        source_table=table,
+        primary_key=["lookup_id"],
+        layout=ComplexKeyHashedLayout(),
+    )
+    assert config.primary_key == ["lookup_id"]
+
+
+def test_invalidate_with_external_source_raises():
+    """Setting invalidate on an external-source config must be rejected at construction time."""
+    with pytest.raises(ValidationError, match="external_source"):
+        OlapDictionaryConfig(
+            external_source=HttpSource(url="http://x.com", format="CSV"),
+            primary_key=["id"],
+            layout=HashedLayout(),
+            invalidate=DictionaryInvalidation(column="updated_at", fn="max"),
+        )
+
+
+def test_dictionary_column_comment_serialized():
+    """DictionaryColumn.comment is passed through to the Rust wire format."""
+    table = OlapTable[Lookup](name="tbl_col_comment")
+    config = OlapDictionaryConfig(
+        source_table=table,
+        primary_key=["lookup_id"],
+        layout=HashedLayout(),
+        columns={"lookup_id": DictionaryColumn(comment="primary lookup key")},
+    )
+    d = OlapDictionary[Lookup](name="dict_col_comment", config=config)
+    cols = _serialize_dict_columns(d._column_list, config.columns)
+    pk_col = next(c for c in cols if c["name"] == "lookup_id")
+    assert pk_col.get("comment") == "primary lookup key"

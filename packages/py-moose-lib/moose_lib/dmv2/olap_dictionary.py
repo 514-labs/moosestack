@@ -72,6 +72,8 @@ class DictionaryColumn(BaseModel):
     """IS_INJECTIVE — enables GROUP BY optimisation (one-to-one mapping)."""
     is_object_id: bool = False
     """IS_OBJECT_ID — MongoDB-specific ObjectId attribute."""
+    comment: Optional[str] = None
+    """Optional column-level COMMENT string."""
 
 
 # ─── Lifetime ─────────────────────────────────────────────────────────────────
@@ -482,7 +484,10 @@ class OlapDictionaryConfig(BaseModel):
             )
         if not self.primary_key:
             raise ValueError("primary_key must contain at least one column name")
-        # Validate primary key cardinality matches layout type
+        # Validate primary key cardinality matches layout type.
+        # COMPLEX_KEY_* layouts accept any-type (including string) keys and support
+        # one or more columns. Non-complex layouts (HASHED, FLAT, etc.) require
+        # exactly one UInt64-compatible key.
         complex_key_types = {
             "COMPLEX_KEY_HASHED",
             "COMPLEX_KEY_SPARSE_HASHED",
@@ -492,16 +497,18 @@ class OlapDictionaryConfig(BaseModel):
             "COMPLEX_KEY_DIRECT",
         }
         layout_type = self.layout.type if self.layout else None
-        if layout_type in complex_key_types:
-            if len(self.primary_key) < 2:
+        if layout_type not in complex_key_types and layout_type is not None:
+            if len(self.primary_key) != 1:
                 raise ValueError(
-                    f"Layout '{layout_type}' requires at least 2 primary key columns "
-                    f"(got {len(self.primary_key)}). Use a COMPLEX_KEY_* layout for multi-column keys."
+                    f"Layout '{layout_type}' requires exactly 1 primary key column "
+                    f"(got {len(self.primary_key)}). Use a COMPLEX_KEY_* layout for string or multi-column keys."
                 )
-        elif layout_type is not None and len(self.primary_key) != 1:
+        # Validate that invalidate is not used with external sources
+        if self.external_source is not None and self.invalidate is not None:
             raise ValueError(
-                f"Layout '{layout_type}' requires exactly 1 primary key column "
-                f"(got {len(self.primary_key)}). Use a COMPLEX_KEY_* layout for multi-column keys."
+                "invalidate cannot be set when using external_source — "
+                "use the per-source invalidate_query field instead "
+                "(e.g., ClickHouseRemoteSource.invalidate_query)"
             )
         return self
 

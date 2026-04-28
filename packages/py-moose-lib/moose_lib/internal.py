@@ -947,6 +947,8 @@ def _serialize_dict_columns(column_list, column_overrides) -> list[dict]:
                 entry["isHierarchical"] = True
             if override.is_object_id:
                 entry["isObjectId"] = True
+            if override.comment is not None:
+                entry["comment"] = override.comment
         result.append(entry)
     return result
 
