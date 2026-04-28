@@ -293,8 +293,16 @@ export class Sql {
         }
         this.strings[pos] += rawString;
       } else if (isDictionary(child)) {
-        // Interpolating a dictionary renders as the string-literal form used in dictGet().
-        // e.g. sql`dictGet(${ProductDict}, 'attr', id)` → dictGet('db.dict_name', 'attr', id)
+        // Dictionaries render as single-quoted string literals for use with dictGet():
+        // sql`dictGet(${ProductDict}, 'attr', id)` → dictGet('db.dict_name', 'attr', id)
+        // Note: dictionaries are NOT queryable via FROM — ClickHouse will reject such queries.
+        if (/\b(?:FROM|JOIN)\s*$/i.test(this.strings[pos])) {
+          console.warn(
+            `OlapDictionary '${child.getQualifiedName()}' interpolated after FROM/JOIN in sql tag. ` +
+              `Dictionaries render as string literals (e.g. 'db.dict_name') for use with dictGet(), ` +
+              `not as table identifiers. ClickHouse dictionaries cannot be queried directly with FROM/JOIN.`,
+          );
+        }
         this.strings[pos] +=
           `'${child.getQualifiedName().replace(/'/g, "''")}'`;
         this.strings[pos] += rawString;
