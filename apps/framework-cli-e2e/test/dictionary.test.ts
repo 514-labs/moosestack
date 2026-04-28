@@ -162,7 +162,7 @@ describe("OlapDictionary Tests", function () {
           query: `
             SELECT count() AS cnt
             FROM system.dictionaries
-            WHERE database = 'local' AND name = 'dict_index_test_lookup'
+            WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name = 'dict_index_test_lookup'
           `,
           format: "JSONEachRow",
         });
